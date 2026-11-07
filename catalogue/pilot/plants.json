@@ -1,0 +1,793 @@
+{
+  "version": "pilot-0.1",
+  "status": "draft",
+  "source": "Wikidata structured entities + per-file Commons media",
+  "plants": [
+    {
+      "plant_id": "epipremnum_aureum",
+      "scientific_name": "Epipremnum aureum",
+      "wikidata_id": "Q161809",
+      "source_revision": 2563948953,
+      "labels": {
+        "en": "Epipremnum aureum",
+        "pl": "Epipremnum złociste"
+      },
+      "aliases": {
+        "en": [
+          "Golden pothos",
+          "Hunter's robe",
+          "Ivy arum",
+          "Money plant",
+          "Silver vine",
+          "Solomon Islands ivy",
+          "Taro vine",
+          "Devil's vine",
+          "Devil's ivy"
+        ],
+        "pl": [
+          "Scindapsus aureus",
+          "Scindapsus złoty",
+          "Scindapsus złocisty",
+          "Rafidofora złota",
+          "Epipremnum aureum"
+        ]
+      },
+      "parent_taxa": [
+        {
+          "entity-type": "item",
+          "numeric-id": 1295844,
+          "id": "Q1295844"
+        }
+      ],
+      "image_candidates": [
+        "Epipremnum aureum 31082012.jpg",
+        "Epipremnum pinnatum var.jpg",
+        "Epipremnum aurem flower.png"
+      ],
+      "common_name_statements": [],
+      "taxon_author_abbreviations": [
+        "(Linden & André) Bunting"
+      ],
+      "descriptions": {
+        "en": "species of common houseplant vine in the family Araceae",
+        "pl": "gatunek roślin"
+      },
+      "external_identifiers": {
+        "P815": [
+          "512937"
+        ],
+        "P646": [
+          "/m/0l8pd"
+        ],
+        "P1070": [
+          "kew-70476"
+        ],
+        "P961": [
+          "87014-1"
+        ],
+        "P960": [
+          "2102769"
+        ],
+        "P685": [
+          "78380"
+        ],
+        "P846": [
+          "2868323"
+        ],
+        "P1939": [
+          "6002731"
+        ],
+        "P830": [
+          "1098417"
+        ],
+        "P3088": [
+          "418113"
+        ],
+        "P3151": [
+          "69223"
+        ],
+        "P3186": [
+          "629652"
+        ],
+        "P3591": [
+          "70476"
+        ],
+        "P838": [
+          "991073"
+        ],
+        "P5037": [
+          "urn:lsid:ipni.org:names:87014-1"
+        ],
+        "P5055": [
+          "10251865"
+        ],
+        "P6034": [
+          "276360"
+        ],
+        "P6366": [
+          "2778608425"
+        ],
+        "P2036": [
+          "33465"
+        ],
+        "P7715": [
+          "wfo-0000952367"
+        ],
+        "P2752": [
+          "af27e1d4-9148-45e9-ac96-d87500ca8f9a"
+        ],
+        "P9157": [
+          "679344"
+        ],
+        "P8468": [
+          "30054"
+        ],
+        "P9649": [
+          "191361"
+        ],
+        "P3553": [
+          "19659880"
+        ],
+        "P10585": [
+          "6FWKS"
+        ],
+        "P8814": [
+          "11809196-n"
+        ],
+        "P10701": [
+          "FB609326"
+        ],
+        "P10366": [
+          "17705"
+        ],
+        "P11196": [
+          "绿萝"
+        ],
+        "P11824": [
+          "epau"
+        ],
+        "P2892": [
+          "C1033075"
+        ],
+        "P3606": [
+          "403443"
+        ],
+        "P7537": [
+          "225742"
+        ],
+        "P11829": [
+          "epipremnum_aureum--golden_pothos"
+        ],
+        "P10709": [
+          "epipremnum-aureum"
+        ],
+        "P9243": [
+          "flora/1/3/1390"
+        ],
+        "P8765": [
+          "91403"
+        ],
+        "P9503": [
+          "8716"
+        ],
+        "P1727": [
+          "200027278"
+        ],
+        "P12292": [
+          "a050aea8-1c3e-49e7-a83c-71d21d784c30"
+        ],
+        "P12218": [
+          "t0057331"
+        ]
+      },
+      "care": null,
+      "safety": {
+        "cat": "unknown",
+        "dog": "unknown"
+      },
+      "status": "draft",
+      "care_profile_available": false,
+      "evidence_url": "https://www.wikidata.org/wiki/Q161809",
+      "license": "CC0-1.0",
+      "source_sha256": "87af2ff402e8189cfd6e922e1d9764a8e14d8c3d347da4f9bb018025057b421f",
+      "retrieved_at": "2026-11-02T20:41:33.542711+00:00",
+      "media": [
+        {
+          "plant_id": "epipremnum_aureum",
+          "file_title": "File:Epipremnum aureum 31082012.jpg",
+          "source_page": "https://commons.wikimedia.org/wiki/File:Epipremnum_aureum_31082012.jpg",
+          "source_url": "https://upload.wikimedia.org/wikipedia/commons/9/9d/Epipremnum_aureum_31082012.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+          "source_page_id": 33355833,
+          "source_revision_timestamp": "2014-06-12T16:57:15Z",
+          "api_metadata": "knowledge-base/raw/commons/epipremnum_aureum.metadata.json",
+          "api_metadata_sha256": "3f38970d7db4eb83d426e7c7a997816408aedbe25f38c8e6cd53eec13e2f8a0e",
+          "local_path": "knowledge-base/raw/media/epipremnum_aureum.jpg",
+          "license": "CC-BY-SA-3.0",
+          "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+          "author": "Joydeep",
+          "author_reported_by_api": "<p><a href=\"//commons.wikimedia.org/wiki/User:Joydeep\" title=\"User:Joydeep\">Joydeep</a>\n</p>",
+          "attribution": "Epipremnum aureum 31082012.jpg — Joydeep / Wikimedia Commons / CC-BY-SA-3.0",
+          "modifications": "None; original file downloaded unchanged",
+          "sha256": "90efab876f0fed3681fd90ce64eb7a86a35b33b254921311ea9a71227d6a0cf4",
+          "sha1": "075fe89f892245d93bf5233b3c2ac9da8412541b",
+          "width": 4288,
+          "height": 2848,
+          "bytes": 15946112,
+          "retrieved_at": "2026-11-02T20:40:18.723014+00:00",
+          "verified_at": "2026-11-02T20:44:39.830348+00:00",
+          "review_status": "pilot_asset_license_reviewed; species/photo suitability requires editorial confirmation"
+        }
+      ]
+    },
+    {
+      "plant_id": "ficus_elastica",
+      "scientific_name": "Ficus elastica",
+      "wikidata_id": "Q160576",
+      "source_revision": 2546495189,
+      "labels": {
+        "en": "Ficus elastica",
+        "pl": "Figowiec sprężysty"
+      },
+      "aliases": {
+        "en": [
+          "India-rubber tree",
+          "rubber fig",
+          "rubber bush",
+          "rubber tree",
+          "rubber plant",
+          "Indian rubber bush",
+          "Indian rubber tree"
+        ],
+        "pl": [
+          "Ficus elastica"
+        ]
+      },
+      "parent_taxa": [
+        {
+          "entity-type": "item",
+          "numeric-id": 465570,
+          "id": "Q465570"
+        }
+      ],
+      "image_candidates": [
+        "Da bup do.jpg",
+        "Ficus 1.JPG",
+        "Ficus November 2008-1.jpg"
+      ],
+      "common_name_statements": [
+        {
+          "text": "Indian rubberplant",
+          "language": "en"
+        },
+        {
+          "text": "Rubber Bush",
+          "language": "en"
+        }
+      ],
+      "taxon_author_abbreviations": [
+        "Roxb. ex Hornem."
+      ],
+      "descriptions": {
+        "en": "species of plant",
+        "pl": "gatunek roślin z rodziny morwowatych"
+      },
+      "external_identifiers": {
+        "P815": [
+          "19085"
+        ],
+        "P646": [
+          "/m/05v154"
+        ],
+        "P685": [
+          "182112"
+        ],
+        "P960": [
+          "21302161"
+        ],
+        "P961": [
+          "60458499-2"
+        ],
+        "P1070": [
+          "kew-2810307"
+        ],
+        "P830": [
+          "594821"
+        ],
+        "P1727": [
+          "200006353"
+        ],
+        "P1747": [
+          "200006353"
+        ],
+        "P1772": [
+          "FIEL"
+        ],
+        "P846": [
+          "5361903"
+        ],
+        "P2036": [
+          "24216"
+        ],
+        "P2752": [
+          "ed01bb9a-bbcf-4f96-920d-d4b65779ad0b"
+        ],
+        "P3088": [
+          "417724"
+        ],
+        "P3031": [
+          "FIUEL"
+        ],
+        "P3151": [
+          "126507"
+        ],
+        "P1417": [
+          "plant/India-rubber-plant"
+        ],
+        "P4753": [
+          "1075"
+        ],
+        "P5037": [
+          "urn:lsid:ipni.org:names:60458499-2"
+        ],
+        "P5055": [
+          "10203532"
+        ],
+        "P5698": [
+          "24090"
+        ],
+        "P5984": [
+          "159335"
+        ],
+        "P6034": [
+          "291685"
+        ],
+        "P4301": [
+          "Ficus elastica"
+        ],
+        "P6177": [
+          "175250"
+        ],
+        "P6161": [
+          "13851"
+        ],
+        "P7546": [
+          "Rubber Tree"
+        ],
+        "P6366": [
+          "2777324371"
+        ],
+        "P6105": [
+          "124149"
+        ],
+        "P6864": [
+          "624545"
+        ],
+        "P7715": [
+          "wfo-0000688216"
+        ],
+        "P8248": [
+          "J711"
+        ],
+        "P9157": [
+          "795604"
+        ],
+        "P8468": [
+          "31174"
+        ],
+        "P3105": [
+          "118589"
+        ],
+        "P4342": [
+          "gummifikentre"
+        ],
+        "P10243": [
+          "2.158832"
+        ],
+        "P6114": [
+          "8478"
+        ],
+        "P10585": [
+          "6HXJH"
+        ],
+        "P627": [
+          "116271522"
+        ],
+        "P10701": [
+          "FB607673"
+        ],
+        "P10711": [
+          "13851"
+        ],
+        "P9932": [
+          "VH1166"
+        ],
+        "P9503": [
+          "12563"
+        ],
+        "P11824": [
+          "fiel"
+        ],
+        "P2892": [
+          "C1254225"
+        ],
+        "P3606": [
+          "254200"
+        ],
+        "P7537": [
+          "266607"
+        ],
+        "P10709": [
+          "ficus-elastica"
+        ],
+        "P9243": [
+          "flora/2/9/2906"
+        ],
+        "P8765": [
+          "95720"
+        ],
+        "P7544": [
+          "1d2d1e209ec17589d09a56d21f638d70"
+        ],
+        "P12179": [
+          "35130"
+        ],
+        "P12670": [
+          "38959"
+        ],
+        "P12296": [
+          "34262"
+        ],
+        "P12292": [
+          "be3b75bc-5323-478f-b0c9-f24f0f3024c3"
+        ],
+        "P12100": [
+          "Ficus elastica"
+        ],
+        "P12554": [
+          "Ficus+elastica"
+        ],
+        "P12218": [
+          "t0053690"
+        ],
+        "P11137": [
+          "ficus_elastica"
+        ],
+        "P10890": [
+          "231003"
+        ],
+        "P5063": [
+          "i102185"
+        ],
+        "P8814": [
+          "12423345-n"
+        ]
+      },
+      "care": null,
+      "safety": {
+        "cat": "unknown",
+        "dog": "unknown"
+      },
+      "status": "draft",
+      "care_profile_available": false,
+      "evidence_url": "https://www.wikidata.org/wiki/Q160576",
+      "license": "CC0-1.0",
+      "source_sha256": "8c599689c4e83fc6869a02a4638b43962572d03f933556bd704e2f8abd3c5a83",
+      "retrieved_at": "2026-11-02T20:41:31.475357+00:00",
+      "media": [
+        {
+          "plant_id": "ficus_elastica",
+          "file_title": "File:Da bup do.jpg",
+          "source_page": "https://commons.wikimedia.org/wiki/File:Da_bup_do.jpg",
+          "source_url": "https://upload.wikimedia.org/wikipedia/commons/7/74/Da_bup_do.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+          "source_page_id": 52947317,
+          "source_revision_timestamp": "2016-11-08T06:25:13Z",
+          "api_metadata": "knowledge-base/raw/commons/ficus_elastica.metadata.json",
+          "api_metadata_sha256": "1cf50168ef3a56c85c0ff7c86623db99722f2c30669ad92bb6d35173b800432b",
+          "local_path": "knowledge-base/raw/media/ficus_elastica.jpg",
+          "license": "CC0-1.0",
+          "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+          "author": "VuThiAnh",
+          "author_reported_by_api": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:VuThiAnh&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:VuThiAnh (page does not exist)\">VuThiAnh</a>",
+          "attribution": "Da bup do.jpg — VuThiAnh / Wikimedia Commons / CC0-1.0",
+          "modifications": "None; original file downloaded unchanged",
+          "sha256": "5db6c02546853af753563d76c96d15ffcc280b4ede0d11e9a0ddbce8fc4b8958",
+          "sha1": "d52d7827aabaa02af8059739f0dc908be2f3cbff",
+          "width": 1632,
+          "height": 921,
+          "bytes": 593441,
+          "retrieved_at": "2026-11-02T20:40:15.576932+00:00",
+          "verified_at": "2026-11-02T20:44:39.811155+00:00",
+          "review_status": "pilot_asset_license_reviewed; species/photo suitability requires editorial confirmation"
+        }
+      ]
+    },
+    {
+      "plant_id": "monstera_deliciosa",
+      "scientific_name": "Monstera deliciosa",
+      "wikidata_id": "Q161077",
+      "source_revision": 2547601493,
+      "labels": {
+        "en": "Monstera deliciosa",
+        "pl": "Monstera dziurawa"
+      },
+      "aliases": {
+        "en": [
+          "Fruit Salad Plant",
+          "Swiss Cheese Plant",
+          "split-leaf philodendron"
+        ],
+        "pl": [
+          "Monstera deliciosa"
+        ]
+      },
+      "parent_taxa": [
+        {
+          "entity-type": "item",
+          "numeric-id": 159216,
+          "id": "Q159216"
+        }
+      ],
+      "image_candidates": [
+        "Monstera deliciosa2.jpg"
+      ],
+      "common_name_statements": [
+        {
+          "text": "Swiss Cheese plant",
+          "language": "en"
+        },
+        {
+          "text": "tarovine",
+          "language": "en"
+        }
+      ],
+      "taxon_author_abbreviations": [
+        "Liebm."
+      ],
+      "descriptions": {
+        "en": "species of plant",
+        "pl": null
+      },
+      "external_identifiers": {
+        "P646": [
+          "/m/0359px"
+        ],
+        "P815": [
+          "503872"
+        ],
+        "P685": [
+          "174217"
+        ],
+        "P1070": [
+          "kew-129588"
+        ],
+        "P960": [
+          "2103116"
+        ],
+        "P961": [
+          "87478-1"
+        ],
+        "P830": [
+          "1138107"
+        ],
+        "P1772": [
+          "MODE"
+        ],
+        "P846": [
+          "2868241"
+        ],
+        "P2036": [
+          "33461"
+        ],
+        "P2752": [
+          "38404e57-7e46-483a-957a-31ef7701cb5a"
+        ],
+        "P3088": [
+          "418272"
+        ],
+        "P3031": [
+          "MOSDE"
+        ],
+        "P3151": [
+          "122521"
+        ],
+        "P3186": [
+          "447727"
+        ],
+        "P3591": [
+          "129588"
+        ],
+        "P4122": [
+          "Monstera_deliciosa"
+        ],
+        "P1417": [
+          "plant/split-leaf-philodendron"
+        ],
+        "P4728": [
+          "474720"
+        ],
+        "P4753": [
+          "7813"
+        ],
+        "P5037": [
+          "urn:lsid:ipni.org:names:87478-1"
+        ],
+        "P5055": [
+          "10238554"
+        ],
+        "P5984": [
+          "99799",
+          "4290050"
+        ],
+        "P6034": [
+          "276378"
+        ],
+        "P6159": [
+          "277"
+        ],
+        "P2809": [
+          "15-16-1"
+        ],
+        "P7546": [
+          "Split Leaf Philodendron"
+        ],
+        "P5019": [
+          "fensterblatt"
+        ],
+        "P6366": [
+          "2780824670"
+        ],
+        "P6105": [
+          "232961"
+        ],
+        "P6864": [
+          "320632"
+        ],
+        "P7715": [
+          "wfo-0000245734"
+        ],
+        "P9243": [
+          "flora/1/4/1453"
+        ],
+        "P9157": [
+          "247717"
+        ],
+        "P8468": [
+          "29015"
+        ],
+        "P3105": [
+          "85242"
+        ],
+        "P9799": [
+          "24396"
+        ],
+        "P4342": [
+          "vindublad"
+        ],
+        "P10243": [
+          "2.149293"
+        ],
+        "P8313": [
+          "fingerfilodendron"
+        ],
+        "P10585": [
+          "73PS8"
+        ],
+        "P8814": [
+          "11810058-n",
+          "07762725-n"
+        ],
+        "P10701": [
+          "FB609327"
+        ],
+        "P10711": [
+          "51430"
+        ],
+        "P10366": [
+          "7281"
+        ],
+        "P11824": [
+          "mode"
+        ],
+        "P2892": [
+          "C0331476"
+        ],
+        "P3606": [
+          "403436"
+        ],
+        "P10565": [
+          "514740"
+        ],
+        "P7537": [
+          "230409"
+        ],
+        "P11829": [
+          "monstera_deliciosa--split_leaf_philodendron"
+        ],
+        "P10709": [
+          "monstera-deliciosa"
+        ],
+        "P12179": [
+          "35275"
+        ],
+        "P12086": [
+          "Gatenplant"
+        ],
+        "P1727": [
+          "200027288"
+        ],
+        "P12296": [
+          "27868",
+          "67290"
+        ],
+        "P12292": [
+          "9b978883-277d-4c2e-acef-fb3a75bd5721"
+        ],
+        "P12100": [
+          "Monstera deliciosa"
+        ],
+        "P12554": [
+          "Monstera+deliciosa"
+        ],
+        "P12218": [
+          "t0054494"
+        ],
+        "P3102": [
+          "83675"
+        ],
+        "P13734": [
+          "R09593"
+        ],
+        "P5456": [
+          "monstera-deliciosa"
+        ],
+        "P14541": [
+          "3GAoZs"
+        ],
+        "P8765": [
+          "11192"
+        ],
+        "P7496": [
+          "monstera-deliciosa"
+        ]
+      },
+      "care": null,
+      "safety": {
+        "cat": "unknown",
+        "dog": "unknown"
+      },
+      "status": "draft",
+      "care_profile_available": false,
+      "evidence_url": "https://www.wikidata.org/wiki/Q161077",
+      "license": "CC0-1.0",
+      "source_sha256": "46a3b0a9c68d0e178740cb0d4de2d00249ca8a4a65093fd692cd4ad327805153",
+      "retrieved_at": "2026-11-02T20:41:29.125676+00:00",
+      "media": [
+        {
+          "plant_id": "monstera_deliciosa",
+          "file_title": "File:Monstera deliciosa2.jpg",
+          "source_page": "https://commons.wikimedia.org/wiki/File:Monstera_deliciosa2.jpg",
+          "source_url": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Monstera_deliciosa2.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+          "source_page_id": 7094,
+          "source_revision_timestamp": "2005-05-02T05:18:48Z",
+          "api_metadata": "knowledge-base/raw/commons/monstera_deliciosa.metadata.json",
+          "api_metadata_sha256": "a5c241b3e63c0294035194d49c90deff94293c9820a118552ec86751da4f59bf",
+          "local_path": "knowledge-base/raw/media/monstera_deliciosa.jpg",
+          "license": "CC-BY-SA-3.0",
+          "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+          "author": "Raul654",
+          "author_reported_by_api": null,
+          "attribution": "Monstera deliciosa2.jpg — Raul654 / Wikimedia Commons / CC-BY-SA-3.0",
+          "modifications": "None; original file downloaded unchanged",
+          "sha256": "41b8460719dbe2eb00f1e4fdad0b274cb75bb4d539492ff5168b580846cc80c1",
+          "sha1": "aa0d945a207f29d3615da6d06c3c7f868d5aa424",
+          "width": 1512,
+          "height": 1719,
+          "bytes": 765861,
+          "retrieved_at": "2026-11-02T20:40:12.987553+00:00",
+          "verified_at": "2026-11-02T20:44:39.809694+00:00",
+          "review_status": "pilot_asset_license_reviewed; species/photo suitability requires editorial confirmation"
+        }
+      ]
+    }
+  ]
+}

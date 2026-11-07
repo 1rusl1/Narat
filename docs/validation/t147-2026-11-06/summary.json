@@ -1,0 +1,34 @@
+{
+  "postgresql": "17.11 (Homebrew)",
+  "pgtap": "1.3",
+  "migrations": {
+    "202610200001_ownership_sync.sql": "afeb30c9312c5fa99f1ed279404de383a9f8240f1debcb63a766d538d8d53239",
+    "202610200002_catalogue.sql": "a3fca228bd1031318b72da92b4eac6a5b613e7766bfc9285c43b882c18e49bb9",
+    "202610200003_editorial.sql": "605498aed75d0bd13aabf364dbb01f7cc507276fee2806c60966241b5cbcb006",
+    "202610200004_collection.sql": "f426ee753c33b8058e5ec6d25f479756a8abd36d9220de5a59a6dba5ff8c0f38",
+    "202610200005_analysis_care.sql": "74fc04b543f210993e9db44b641cda8534df236eaf5d5363a0decf1661d84f0c",
+    "202610200006_billing.sql": "cbe15b6d8c915cb1d60bbd0687b5fbcf5f58ab36c4393352b0ba40ecf5eff56c",
+    "202610200007_analysis_quota.sql": "35b11ef990d0d183bd4d33430b1a6ca1628c520ab86d4b54c42fda84fb7fdfab",
+    "202610200008_deletion.sql": "f272453298a60017db12d03b4bd2ca9066348575cf807cdf8036ae97aed7e315",
+    "202610200009_access_policies.sql": "88582a3e51d61b4def46a2d17e5f95dea3d95282aa385e993903c3ceeb5874ef",
+    "202610200010_command_protocol.sql": "cc85d76eda93fa596a08564a6875dbaf4f9374164f5fd7f3a20e314bb4056c8c",
+    "202610200011_schedule_calculator.sql": "76a6137b48482298940f14fd5a5844bedda0689539597212b98158f42028e1a8",
+    "202610200012_quota_operations.sql": "b4f418f728ffaa28646b2a43ad00dc76ef8c1e26d55f85bc8abb280e7f3ef705",
+    "202610200013_guest_claim.sql": "e483a9c8270cba98b5f7ef38eb70d9f38db32c922f6d3d7055a22bfa2b00412f",
+    "202610200014_collection_commands.sql": "ec544290a431e7fcc9ea4e3bcd51bb2ec3d9f4e2bd3cdcc81d7f4da583e10e6b",
+    "202611010001_notification_claims.sql": "dca07a3415eba640782eb8fc6e617954f374320af92c724c15d91c9c8c495ae4",
+    "202611010002_basic_care.sql": "a081d054ee269fe8ee83f466e7012867414205c7c76c77e08e199cc7fe754d40",
+    "202611050001_catalogue_skeleton.sql": "7370c35c2403bd473969eab90a2d24a34383df004951e6c28290e0f40267bbd0"
+  },
+  "tap_plan": 229,
+  "tap_assertions": 229,
+  "tap_result": "PASS",
+  "real_bundle_records": 606,
+  "sql_ts_cards_checked": 1212,
+  "concurrent_scenarios": [
+    "publish before stale import",
+    "import before publish",
+    "direct release update before stale import"
+  ],
+  "live_supabase_storage_http_ios": "not_tested"
+}

@@ -1,0 +1,97 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "English" : {
+
+    },
+    "Polski" : {
+
+    },
+    "profile.language.picker" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Język"
+          }
+        }
+      }
+    },
+    "welcome.intent.care" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up routine care"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skonfiguruj pielęgnację"
+          }
+        }
+      }
+    },
+    "welcome.intent.problem" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help my plant"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pomóż roślinie"
+          }
+        }
+      }
+    },
+    "welcome.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get preliminary diagnosis and first aid or set up reliable care for your plants."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uzyskaj wstępną diagnozę i pierwszą pomoc lub ustaw sprawdzoną pielęgnację roślin."
+          }
+        }
+      }
+    },
+    "welcome.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Narat"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Narat"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

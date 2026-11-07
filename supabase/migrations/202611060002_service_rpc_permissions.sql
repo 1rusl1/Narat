@@ -1,0 +1,48 @@
+-- These routines trust the owner ID supplied by the authenticated API layer.
+REVOKE EXECUTE ON FUNCTION
+    public.advance_owner_watermark(UUID),
+    public.ensure_profile_quota_anchor(),
+    public.lookup_operation_receipt(UUID, UUID, TEXT, TEXT),
+    public.save_operation_receipt(UUID, UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ),
+    public.fetch_sync_delta(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, INT),
+    public.has_verified_paid_access(UUID, TIMESTAMPTZ),
+    public.can_owner_schedule_rule(UUID, UUID, TEXT, UUID, UUID, TIMESTAMPTZ),
+    public.calculate_plant_schedule(UUID, UUID, DATE, TIMESTAMPTZ),
+    public.bind_installation_to_owner(UUID, UUID, TIMESTAMPTZ),
+    public.admit_analysis_quota(TEXT, UUID, UUID, UUID, TIMESTAMPTZ),
+    public.finalize_analysis_quota(UUID, TEXT, BOOLEAN, TIMESTAMPTZ),
+    public.compute_next_available_step(UUID, UUID, TEXT, BOOLEAN, TEXT, TIMESTAMPTZ),
+    public.prepare_guest_claim(UUID, UUID, UUID, TEXT, JSONB, TIMESTAMPTZ),
+    public.commit_guest_claim(UUID, UUID, UUID, JSONB, TIMESTAMPTZ),
+    public.execute_plant_create_command(UUID, UUID, JSONB, TIMESTAMPTZ),
+    public.execute_room_command(UUID, UUID, TEXT, JSONB),
+    public.claim_notification_slot(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ),
+    public.cancel_notification_claim(UUID, TEXT, TEXT, TIMESTAMPTZ),
+    public.reconcile_owner_basic_care(UUID),
+    public.execute_basic_care_command(UUID, UUID, TEXT, JSONB),
+    public.trg_plants_soft_delete_basic_care()
+FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION
+    public.advance_owner_watermark(UUID),
+    public.ensure_profile_quota_anchor(),
+    public.lookup_operation_receipt(UUID, UUID, TEXT, TEXT),
+    public.save_operation_receipt(UUID, UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ),
+    public.fetch_sync_delta(UUID, TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, INT),
+    public.has_verified_paid_access(UUID, TIMESTAMPTZ),
+    public.can_owner_schedule_rule(UUID, UUID, TEXT, UUID, UUID, TIMESTAMPTZ),
+    public.calculate_plant_schedule(UUID, UUID, DATE, TIMESTAMPTZ),
+    public.bind_installation_to_owner(UUID, UUID, TIMESTAMPTZ),
+    public.admit_analysis_quota(TEXT, UUID, UUID, UUID, TIMESTAMPTZ),
+    public.finalize_analysis_quota(UUID, TEXT, BOOLEAN, TIMESTAMPTZ),
+    public.compute_next_available_step(UUID, UUID, TEXT, BOOLEAN, TEXT, TIMESTAMPTZ),
+    public.prepare_guest_claim(UUID, UUID, UUID, TEXT, JSONB, TIMESTAMPTZ),
+    public.commit_guest_claim(UUID, UUID, UUID, JSONB, TIMESTAMPTZ),
+    public.execute_plant_create_command(UUID, UUID, JSONB, TIMESTAMPTZ),
+    public.execute_room_command(UUID, UUID, TEXT, JSONB),
+    public.claim_notification_slot(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ),
+    public.cancel_notification_claim(UUID, TEXT, TEXT, TIMESTAMPTZ),
+    public.reconcile_owner_basic_care(UUID),
+    public.execute_basic_care_command(UUID, UUID, TEXT, JSONB),
+    public.trg_plants_soft_delete_basic_care()
+TO service_role;

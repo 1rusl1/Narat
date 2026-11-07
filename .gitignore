@@ -1,0 +1,76 @@
+# macOS / Universal
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# Xcode / Swift / iOS
+DerivedData/
+.build/
+*.swiftpm/
+Packages/
+xcuserdata/
+*.xcuserdata
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+
+# Supabase / Deno / Node
+node_modules/
+dist/
+build/
+coverage/
+*.log
+supabase/.branches
+supabase/.temp
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.env.*
+!supabase/.env.example
+
+# Server-only secrets & signing keys (including analysis_receipt & decision_receipt keys)
+*.pem
+*.p8
+*.key
+*.crt
+*.secret*
+secrets/
+
+# Python / Knowledge Base Pipeline
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+knowledge-base/raw/
+knowledge-base/staging/
+
+# Per-machine native sign-in configuration
+Auth.local.xcconfig
+
+# Personal reference copies excluded from release/repository publication
+knowledge-base/references/personal/
+
+# Per-machine Personal Team signing
+Personal.local.xcconfig

@@ -1,0 +1,639 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:plants:ai-result:3.0",
+  "title": "PlantVisionClassification — provider contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kb_release_id",
+    "mode",
+    "locale",
+    "image_quality",
+    "identification",
+    "diagnosis",
+    "limitations",
+    "comparison",
+    "visual_markers"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "3.0"
+    },
+    "kb_release_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "identification",
+        "diagnosis",
+        "follow_up"
+      ]
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "pl",
+        "en"
+      ]
+    },
+    "image_quality": {
+      "type": "string",
+      "enum": [
+        "usable",
+        "blurred",
+        "too_dark",
+        "not_a_plant",
+        "comparison_unsuitable"
+      ]
+    },
+    "identification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "plant_id",
+        "genus_id"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "identified",
+            "genus_only",
+            "unknown",
+            "out_of_scope"
+          ]
+        },
+        "plant_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "genus_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "identified"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "plant_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "plant_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "genus_only"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "genus_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "unknown",
+                  "out_of_scope"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "genus_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "diagnosis": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "candidates"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "problem_detected",
+                "healthy",
+                "insufficient_data",
+                "out_of_scope"
+              ]
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "condition_id",
+                  "rank",
+                  "confidence"
+                ],
+                "properties": {
+                  "condition_id": {
+                    "type": "string",
+                    "enum": [
+                      "overwatering",
+                      "underwatering",
+                      "poor_drainage",
+                      "root_rot",
+                      "low_light",
+                      "sunburn",
+                      "cold_stress",
+                      "heat_stress",
+                      "low_humidity",
+                      "fertilizer_burn",
+                      "nutrient_deficiency",
+                      "salt_buildup",
+                      "nitrogen_deficiency",
+                      "iron_chlorosis",
+                      "potassium_deficiency",
+                      "magnesium_deficiency",
+                      "ph_imbalance",
+                      "root_bound",
+                      "transplant_shock",
+                      "acclimation_stress",
+                      "edema",
+                      "mechanical_damage",
+                      "chemical_phytotoxicity",
+                      "natural_leaf_senescence",
+                      "thrips_infestation",
+                      "spider_mites",
+                      "mealybugs",
+                      "scale_insects",
+                      "aphids",
+                      "whiteflies",
+                      "fungus_gnats",
+                      "broad_mites",
+                      "powdery_mildew",
+                      "grey_mould",
+                      "fungal_leaf_spot",
+                      "bacterial_leaf_spot",
+                      "bacterial_soft_rot",
+                      "crown_rot",
+                      "sooty_mould",
+                      "suspected_viral_disease"
+                    ]
+                  },
+                  "rank": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Uncalibrated model score used for a routing heuristic. Not a measured probability and not necessarily normalized across top-2."
+                  }
+                }
+              },
+              "minItems": 0,
+              "maxItems": 2,
+              "uniqueItems": true
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "const": "problem_detected"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "candidates": {
+                    "minItems": 1
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "candidates": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "comparison": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "progress_status",
+            "changes",
+            "limitation_codes"
+          ],
+          "properties": {
+            "progress_status": {
+              "type": "string",
+              "enum": [
+                "improving",
+                "stable",
+                "worsening",
+                "inconclusive"
+              ]
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "symptom_id",
+                  "direction"
+                ],
+                "properties": {
+                  "symptom_id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "increased",
+                      "decreased",
+                      "unchanged",
+                      "not_comparable"
+                    ]
+                  }
+                }
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "limitation_codes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "visual_markers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    }
+  },
+  "description": "Provider-only classification 3.0: plant_id, visual_markers and up to two condition IDs with confidence scores. No advice, plans, questions, products or plan mode. The backend selects questions and protocols from a pinned ConditionProfile, validates closed ID membership, distinct conditions/ranks and descending scores; confidence is not a calibrated probability.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "identification"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "diagnosis": {
+            "type": "null"
+          },
+          "comparison": {
+            "type": "null"
+          },
+          "visual_markers": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "diagnosis": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "candidates"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "problem_detected",
+                  "healthy",
+                  "insufficient_data",
+                  "out_of_scope"
+                ]
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "condition_id",
+                    "rank",
+                    "confidence"
+                  ],
+                  "properties": {
+                    "condition_id": {
+                      "type": "string",
+                      "enum": [
+                        "overwatering",
+                        "underwatering",
+                        "poor_drainage",
+                        "root_rot",
+                        "low_light",
+                        "sunburn",
+                        "cold_stress",
+                        "heat_stress",
+                        "low_humidity",
+                        "fertilizer_burn",
+                        "nutrient_deficiency",
+                        "salt_buildup",
+                        "nitrogen_deficiency",
+                        "iron_chlorosis",
+                        "potassium_deficiency",
+                        "magnesium_deficiency",
+                        "ph_imbalance",
+                        "root_bound",
+                        "transplant_shock",
+                        "acclimation_stress",
+                        "edema",
+                        "mechanical_damage",
+                        "chemical_phytotoxicity",
+                        "natural_leaf_senescence",
+                        "thrips_infestation",
+                        "spider_mites",
+                        "mealybugs",
+                        "scale_insects",
+                        "aphids",
+                        "whiteflies",
+                        "fungus_gnats",
+                        "broad_mites",
+                        "powdery_mildew",
+                        "grey_mould",
+                        "fungal_leaf_spot",
+                        "bacterial_leaf_spot",
+                        "bacterial_soft_rot",
+                        "crown_rot",
+                        "sooty_mould",
+                        "suspected_viral_disease"
+                      ]
+                    },
+                    "rank": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2
+                    },
+                    "confidence": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Uncalibrated model score used for a routing heuristic. Not a measured probability and not necessarily normalized across top-2."
+                    }
+                  }
+                },
+                "minItems": 0,
+                "maxItems": 2,
+                "uniqueItems": true
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "problem_detected"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "candidates": {
+                      "minItems": 1
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "candidates": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "follow_up"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "comparison": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "progress_status",
+              "changes",
+              "limitation_codes"
+            ],
+            "properties": {
+              "progress_status": {
+                "type": "string",
+                "enum": [
+                  "improving",
+                  "stable",
+                  "worsening",
+                  "inconclusive"
+                ]
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "symptom_id",
+                    "direction"
+                  ],
+                  "properties": {
+                    "symptom_id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "increased",
+                        "decreased",
+                        "unchanged",
+                        "not_comparable"
+                      ]
+                    }
+                  }
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              },
+              "limitation_codes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "comparison": {
+            "type": "null"
+          },
+          "image_quality": {
+            "not": {
+              "const": "comparison_unsuitable"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "image_quality": {
+            "not": {
+              "const": "usable"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "identification": {
+            "properties": {
+              "status": {
+                "const": "unknown"
+              },
+              "plant_id": {
+                "type": "null"
+              }
+            }
+          },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "properties": {
+                  "status": {
+                    "const": "insufficient_data"
+                  },
+                  "candidates": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            ]
+          },
+          "limitations": {
+            "minItems": 1
+          },
+          "visual_markers": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

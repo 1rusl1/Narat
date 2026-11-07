@@ -1,0 +1,133 @@
+name: Plants
+options:
+  bundleIdPrefix: app.narat
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+  knownRegions:
+    - en
+    - pl
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    OTHER_SWIFT_FLAGS: "$(inherited) -disable-sandbox"
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift.git
+    from: "2.24.0"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS.git
+    from: "8.0.0"
+
+targets:
+  Plants:
+    configFiles:
+      Debug: Configuration/Auth.xcconfig
+      Release: Configuration/Auth.xcconfig
+    info:
+      path: Configuration/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NaratSupabaseURL: $(NARAT_SUPABASE_URL)
+        NaratSupabasePublishableKey: $(NARAT_SUPABASE_PUBLISHABLE_KEY)
+        GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
+        GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - $(GOOGLE_REVERSED_CLIENT_ID)
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Plants
+    resources:
+      - path: Plants/Resources/Localizable.xcstrings
+      - path: Plants/Resources/Assets.xcassets
+      - path: Configuration/StoreKit.storekit
+    dependencies:
+      - package: Supabase
+        product: Supabase
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.narat.plants
+        CODE_SIGN_ENTITLEMENTS: Configuration/Plants.entitlements
+        INFOPLIST_KEY_CFBundleDisplayName: Narat
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSCameraUsageDescription: "Narat uses the camera to identify plants, inspect symptoms, and estimate lighting conditions."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Narat accesses your photo library to analyze plant photos and attach diary pictures."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Narat saves your plant diary photos to your photo library when requested."
+        GENERATE_INFOPLIST_FILE: YES
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.1.0"
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+  PlantsTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: PlantsTests
+    dependencies:
+      - target: Plants
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.narat.plants.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Plants.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Plants"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+  PlantsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: PlantsUITests
+    dependencies:
+      - target: Plants
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.narat.plants.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Plants
+
+schemes:
+  Plants:
+    build:
+      targets:
+        Plants: all
+        PlantsTests: [test]
+        PlantsUITests: [test]
+    run:
+      config: Debug
+      storeKitConfiguration: Configuration/StoreKit.storekit
+    test:
+      config: Debug
+      gatherCoverageData: true
+      storeKitConfiguration: Configuration/StoreKit.storekit
+      targets:
+        - name: PlantsTests
+          parallelizable: true
+          randomExecutionOrder: true
+        - name: PlantsUITests
+          parallelizable: false
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

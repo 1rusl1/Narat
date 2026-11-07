@@ -1,0 +1,285 @@
+{
+  "schema_version": "1.0",
+  "reviewed_at": "2026-11-04",
+  "runtime_external_catalogue_requests": false,
+  "sources": [
+    {
+      "id": "wikidata_structured",
+      "status": "allowed",
+      "scope": "Main-namespace structured entity JSON only; excludes linked articles and media bytes",
+      "license": "CC0-1.0",
+      "method": "Wikidata entity JSON / batch API; dumps for large volumes",
+      "terms_urls": [
+        "https://www.wikidata.org/wiki/Wikidata:Licensing",
+        "https://www.wikidata.org/wiki/Wikidata:Data_access",
+        "https://www.mediawiki.org/wiki/Wikimedia_APIs/Access_policy"
+      ],
+      "checked_at": "2026-11-02",
+      "review_after": "2026-12-02",
+      "allowed_operations": {
+        "automated_fetch": true,
+        "store_raw": true,
+        "commercial_use": true,
+        "derive_facts": true,
+        "translate": true,
+        "llm_processing": true,
+        "download_media": false
+      },
+      "obligations": [
+        "Identifiable User-Agent with actual public contact",
+        "Respect Wikimedia access limits and Retry-After",
+        "Retain entity ID, revision, URL and hash for provenance"
+      ]
+    },
+    {
+      "id": "wikimedia_commons",
+      "status": "candidate",
+      "scope": "Per-file media licensing required; no blanket photo approval",
+      "method": "MediaWiki imageinfo API with extmetadata, then licensed binary download",
+      "terms_urls": [
+        "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia",
+        "https://www.mediawiki.org/wiki/API:Imageinfo"
+      ],
+      "checked_at": "2026-11-02",
+      "allowed_operations": {},
+      "pending": [
+        "Asset-level license and author extraction",
+        "Attribution/license/change record",
+        "Filter NC/ND/unknown licenses; handle BY-SA derivatives per file",
+        "Quality and species confirmation"
+      ]
+    },
+    {
+      "id": "kew_wcvp_download",
+      "status": "candidate",
+      "scope": "Versioned WCVP taxonomy dataset only; not all POWO text or photos",
+      "method": "Official downloadable archive, pin version and checksum; parse CSV/Darwin Core",
+      "terms_urls": [
+        "https://powo.science.kew.org/cite-us",
+        "https://powo.science.kew.org/about-wcvp",
+        "https://doi.org/10.15468/6h8ucr"
+      ],
+      "checked_at": "2026-11-02",
+      "allowed_operations": {},
+      "pending": [
+        "Download/version/license/README snapshot of the exact selected release",
+        "Check dataset terms rather than extend taxonomy permission to the whole site"
+      ]
+    },
+    {
+      "id": "gbif_taxonomy",
+      "status": "candidate",
+      "method": "Official dataset archive or API; verify underlying dataset license",
+      "terms_urls": [
+        "https://hosted-datasets.gbif.org/datasets/backbone/README.html"
+      ],
+      "checked_at": "2026-11-02",
+      "allowed_operations": {},
+      "pending": [
+        "Select exact checklist/release and verify its license",
+        "Do not assume every GBIF dataset or image is CC0",
+        "Deduplicate upstream evidence with WCVP"
+      ]
+    },
+    {
+      "id": "perenual",
+      "status": "allowed",
+      "scope": "Personal noncommercial reference viewing; bulk extraction is not enabled by the reviewed website terms",
+      "method": "Manual reference consultation; API import only after checking the applicable API grant",
+      "terms_urls": [
+        "https://perenual.com/terms-of-service",
+        "https://perenual.com/docs/api"
+      ],
+      "checked_at": "2026-11-02",
+      "allowed_operations": {
+        "manual_reference": true,
+        "automated_fetch": false,
+        "store_raw": false,
+        "commercial_use": false,
+        "derive_facts": false,
+        "translate": false,
+        "llm_processing": false,
+        "download_media": false,
+        "redistribute": false
+      },
+      "pending": [
+        "Applicable API grant for automated collection and storage, even for a noncommercial prototype",
+        "Separate permission for derivatives/LLM and redistribution if needed",
+        "Per-image license"
+      ],
+      "usage_context": "personal_noncommercial_reference",
+      "review_after": "2026-12-02",
+      "reference_use": {
+        "enabled": true,
+        "purpose": "Owner-authorized noncommercial prototype/reference study; does not establish reuse rights for the released app"
+      }
+    },
+    {
+      "id": "aspca_toxicity",
+      "status": "allowed",
+      "method": "Manual reference consultation; individual personal copies within stated terms",
+      "terms_urls": [
+        "https://www.aspca.org/about-us/legal-information"
+      ],
+      "checked_at": "2026-11-02",
+      "allowed_operations": {
+        "manual_reference": true,
+        "automated_fetch": false,
+        "store_raw": false,
+        "commercial_use": false,
+        "derive_facts": false,
+        "translate": false,
+        "llm_processing": false,
+        "download_media": false,
+        "redistribute": false,
+        "single_personal_copy": true
+      },
+      "pending": [
+        "Permission for automated bulk extraction, transformation and publication if required",
+        "Preserve copyright/trademark notices on individual personal copies",
+        "Do not publish reference-only records as approved app safety data"
+      ],
+      "usage_context": "personal_noncommercial_reference",
+      "review_after": "2026-12-02",
+      "reference_use": {
+        "enabled": true,
+        "purpose": "Owner-authorized noncommercial prototype/reference study; does not establish reuse rights for the released app"
+      },
+      "scope": "Personal noncommercial reference viewing; a single personal copy must preserve notices; not blanket database extraction permission"
+    },
+    {
+      "id": "extension_care_sources",
+      "status": "candidate",
+      "scope": "NC State, UC IPM, Penn State, UMN, Maryland, Clemson must each receive a separate operation-level review before ingestion",
+      "method": "Official export/API preferred; HTML adapter only for explicitly allowed source/content",
+      "terms_urls": [
+        "https://extensiongardener.ces.ncsu.edu/news/get-the-picture-with-the-plant-toolbox/"
+      ],
+      "checked_at": "2026-11-02",
+      "allowed_operations": {},
+      "pending": [
+        "Separate source entries and terms snapshots",
+        "Commercial storage, derivative/translation/LLM permissions",
+        "Text and photographs assessed separately",
+        "Three independent sources per published profile per current specification"
+      ]
+    },
+    {
+      "id": "rhs_and_commercial_care_sources",
+      "status": "candidate",
+      "scope": "RHS, House Plant Journal, PLNTS, Patch, The Sill, Koppert, Biobest each require their own review",
+      "method": "Licensed export/permission; no generic crawling",
+      "terms_urls": [],
+      "checked_at": "2026-11-02",
+      "allowed_operations": {},
+      "pending": [
+        "Check exact website/content terms, not a different catalogue's policy",
+        "Separate source entries and operation-level evidence",
+        "Paid API access alone does not establish permanent mirroring rights"
+      ]
+    },
+    {
+      "id": "wikimedia_commons_pilot_assets",
+      "status": "allowed",
+      "scope": "Only the three individually reviewed files below; original files unchanged. Does not approve other Commons assets.",
+      "method": "MediaWiki imageinfo metadata + original binary, per-file licenses and hashes retained",
+      "terms_urls": [
+        "https://commons.wikimedia.org/wiki/File:Monstera_deliciosa2.jpg",
+        "https://commons.wikimedia.org/wiki/File:Da_bup_do.jpg",
+        "https://commons.wikimedia.org/wiki/File:Epipremnum_aureum_31082012.jpg",
+        "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia"
+      ],
+      "checked_at": "2026-11-02",
+      "review_after": "2026-12-02",
+      "allowed_operations": {
+        "automated_fetch": true,
+        "store_raw": true,
+        "commercial_use": true,
+        "download_media": true
+      },
+      "allowed_asset_titles": [
+        "Monstera deliciosa2.jpg",
+        "Da bup do.jpg",
+        "Epipremnum aureum 31082012.jpg"
+      ],
+      "obligations": [
+        "Raul654: CC BY-SA 3.0; VuThiAnh: CC0 1.0; Joydeep: CC BY-SA 3.0",
+        "Retain attribution and license links; no endorsement implied",
+        "Future derivatives of BY-SA images must meet applicable share-alike terms",
+        "Check metadata license matches the manually selected license; stop on change"
+      ]
+    },
+    {
+      "id": "wikipedia_catalogue_text",
+      "status": "allowed",
+      "scope": "EN/PL introductory article extracts only. CC BY-SA 4.0; retain article/revision/history attribution and license; modifications/translations under the same license. Not care recommendations.",
+      "terms_urls": [
+        "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use",
+        "https://www.mediawiki.org/wiki/API:Etiquette"
+      ],
+      "checked_at": "2026-11-04",
+      "review_after": "2026-12-04",
+      "allowed_operations": {
+        "automated_fetch": true,
+        "store_raw": true,
+        "commercial_use": true,
+        "derive_facts": true,
+        "translate": true,
+        "download_media": false
+      },
+      "obligations": [
+        "Retain source snapshots and hashes",
+        "Respect User-Agent, serial access, Retry-After and access policies",
+        "Preserve authorship, license links and modification notices; comply with share-alike where applicable"
+      ]
+    },
+    {
+      "id": "wikimedia_commons_catalogue",
+      "status": "allowed",
+      "scope": "Only files individually passing importer CC BY/CC BY-SA/CC0/public-domain metadata checks. No approval for unknown/NC/ND/restricted media. Species visual review separate.",
+      "terms_urls": [
+        "https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia",
+        "https://www.mediawiki.org/wiki/API:Imageinfo"
+      ],
+      "checked_at": "2026-11-04",
+      "review_after": "2026-12-04",
+      "allowed_operations": {
+        "automated_fetch": true,
+        "store_raw": true,
+        "commercial_use": true,
+        "derive_facts": true,
+        "translate": false,
+        "download_media": true
+      },
+      "obligations": [
+        "Retain source snapshots and hashes",
+        "Respect User-Agent, serial access, Retry-After and access policies",
+        "Preserve authorship, license links and modification notices; comply with share-alike where applicable"
+      ]
+    },
+    {
+      "id": "plantfolio_common_plants",
+      "status": "allowed",
+      "scope": "Seasonal watering intervals, watering method, and drainage preference (dist/common_plants.json).",
+      "method": "Local pinned JSON snapshot in knowledge-base/references/personal/watering/plantfolio-common-plants/",
+      "terms_urls": [
+        "https://github.com/Luminoid/plantfolio-common-plants"
+      ],
+      "checked_at": "2026-11-04",
+      "review_after": "2026-12-04",
+      "allowed_operations": {
+        "manual_reference": true,
+        "automated_fetch": false,
+        "store_raw": true,
+        "derive_facts": true,
+        "translate": false,
+        "llm_processing": false,
+        "download_media": false
+      },
+      "obligations": [
+        "Retain commit hash and SHA256 of the source snapshot",
+        "Do not silently substitute genus/other-species intervals without explicit match_level metadata"
+      ]
+    }
+  ]
+}

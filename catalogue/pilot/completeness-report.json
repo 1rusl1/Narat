@@ -1,0 +1,187 @@
+{
+  "checked_on": "2026-11-03",
+  "scope": "Local completeness and integrity review of the 3 pilot records; no new donor downloads or botanical facts added",
+  "source_file": "catalogue/pilot/plants.json",
+  "source_sha256": "ca685307272780e01304ae8a01b115f9328837463d9cad26b35b13fa4aff6ba5",
+  "manifest_hash_valid": true,
+  "canonical_schema_id": "urn:plants:plant-profile:1.0",
+  "record_count": 3,
+  "records": [
+    {
+      "plant_id": "epipremnum_aureum",
+      "scientific_name": "Epipremnum aureum",
+      "status": "draft",
+      "labels": {
+        "en": "Epipremnum aureum",
+        "pl": "Epipremnum złociste"
+      },
+      "alias_counts": {
+        "en": 9,
+        "pl": 5
+      },
+      "english_label_is_scientific_name": true,
+      "external_identifier_property_count": 42,
+      "raw_property_count": 60,
+      "raw_sha256_valid": true,
+      "revision_matches_raw": true,
+      "sqlite_export_projection_matches": true,
+      "media": [
+        {
+          "sha256_valid": true,
+          "sha1_valid": true,
+          "metadata_sha256_valid": true,
+          "bytes": 15946112,
+          "license": "CC-BY-SA-3.0",
+          "author_present": true,
+          "editorial_suitability_approved": false,
+          "app_optimized": false
+        }
+      ],
+      "capabilities": {
+        "reference_card": "partial",
+        "production_catalogue_profile": "missing",
+        "basic_care": "missing",
+        "routine_plan": "missing",
+        "diagnosis_and_recovery_protocols": "missing",
+        "en_pl_care_content": "missing",
+        "published_release": "missing"
+      },
+      "missing_or_unverified": [
+        "approved EN/PL display names and classified aliases",
+        "structured family and genus plus accepted-name/synonym cross-check",
+        "production taxon_id and kb_release_id mapping",
+        "care_algorithm_params with field-level evidence",
+        "validated watering and light/soil/fertilizer content in EN/PL",
+        "structured sourced cat/dog safety; unknown is not safe",
+        "common vulnerabilities and condition profile links",
+        "applicable routine/recovery templates and fallback protocol",
+        "profile provenance with independent donors and per-field locators",
+        "canonical schema/semantic validation and editorial review",
+        "published release metadata and app-ready approved media"
+      ],
+      "personal_aspca_reference_exists": false,
+      "canonical_profile_ready": false
+    },
+    {
+      "plant_id": "ficus_elastica",
+      "scientific_name": "Ficus elastica",
+      "status": "draft",
+      "labels": {
+        "en": "Ficus elastica",
+        "pl": "Figowiec sprężysty"
+      },
+      "alias_counts": {
+        "en": 7,
+        "pl": 1
+      },
+      "english_label_is_scientific_name": true,
+      "external_identifier_property_count": 63,
+      "raw_property_count": 81,
+      "raw_sha256_valid": true,
+      "revision_matches_raw": true,
+      "sqlite_export_projection_matches": true,
+      "media": [
+        {
+          "sha256_valid": true,
+          "sha1_valid": true,
+          "metadata_sha256_valid": true,
+          "bytes": 593441,
+          "license": "CC0-1.0",
+          "author_present": true,
+          "editorial_suitability_approved": false,
+          "app_optimized": false
+        }
+      ],
+      "capabilities": {
+        "reference_card": "partial",
+        "production_catalogue_profile": "missing",
+        "basic_care": "missing",
+        "routine_plan": "missing",
+        "diagnosis_and_recovery_protocols": "missing",
+        "en_pl_care_content": "missing",
+        "published_release": "missing"
+      },
+      "missing_or_unverified": [
+        "approved EN/PL display names and classified aliases",
+        "structured family and genus plus accepted-name/synonym cross-check",
+        "production taxon_id and kb_release_id mapping",
+        "care_algorithm_params with field-level evidence",
+        "validated watering and light/soil/fertilizer content in EN/PL",
+        "structured sourced cat/dog safety; unknown is not safe",
+        "common vulnerabilities and condition profile links",
+        "applicable routine/recovery templates and fallback protocol",
+        "profile provenance with independent donors and per-field locators",
+        "canonical schema/semantic validation and editorial review",
+        "published release metadata and app-ready approved media"
+      ],
+      "personal_aspca_reference_exists": false,
+      "canonical_profile_ready": false
+    },
+    {
+      "plant_id": "monstera_deliciosa",
+      "scientific_name": "Monstera deliciosa",
+      "status": "draft",
+      "labels": {
+        "en": "Monstera deliciosa",
+        "pl": "Monstera dziurawa"
+      },
+      "alias_counts": {
+        "en": 3,
+        "pl": 1
+      },
+      "english_label_is_scientific_name": true,
+      "external_identifier_property_count": 66,
+      "raw_property_count": 81,
+      "raw_sha256_valid": true,
+      "revision_matches_raw": true,
+      "sqlite_export_projection_matches": true,
+      "media": [
+        {
+          "sha256_valid": true,
+          "sha1_valid": true,
+          "metadata_sha256_valid": true,
+          "bytes": 765861,
+          "license": "CC-BY-SA-3.0",
+          "author_present": true,
+          "editorial_suitability_approved": false,
+          "app_optimized": false
+        }
+      ],
+      "capabilities": {
+        "reference_card": "partial",
+        "production_catalogue_profile": "missing",
+        "basic_care": "missing",
+        "routine_plan": "missing",
+        "diagnosis_and_recovery_protocols": "missing",
+        "en_pl_care_content": "missing",
+        "published_release": "missing"
+      },
+      "missing_or_unverified": [
+        "approved EN/PL display names and classified aliases",
+        "structured family and genus plus accepted-name/synonym cross-check",
+        "production taxon_id and kb_release_id mapping",
+        "care_algorithm_params with field-level evidence",
+        "validated watering and light/soil/fertilizer content in EN/PL",
+        "structured sourced cat/dog safety; unknown is not safe",
+        "common vulnerabilities and condition profile links",
+        "applicable routine/recovery templates and fallback protocol",
+        "profile provenance with independent donors and per-field locators",
+        "canonical schema/semantic validation and editorial review",
+        "published release metadata and app-ready approved media"
+      ],
+      "personal_aspca_reference_exists": true,
+      "canonical_profile_ready": false
+    }
+  ],
+  "sqlite_integrity": "ok",
+  "summary": {
+    "raw_records_retained": 3,
+    "local_licensed_photos": 3,
+    "care_profiles_available": 0,
+    "plants_with_confirmed_pet_safety": 0,
+    "canonical_profiles_ready": 0,
+    "care_plan_templates_ready": 0,
+    "use_case_assessment": "Enough for a reference/demo collection and import testing; insufficient for plant-specific care, trustworthy diagnoses or a published catalogue release",
+    "recommended_next_stage": "Complete and validate these three profiles before scaling to 300"
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "schema_version": "3.0",
+  "updated_at": "2026-11-02T00:00:00Z",
+  "launch_thresholds": {
+    "min_plant_profiles": 300,
+    "min_condition_profiles": 40,
+    "required_locales": [
+      "pl",
+      "en"
+    ],
+    "commercial_product_max_age_days": 30
+  },
+  "sources": [
+    {
+      "source_code": "POWO_KEW",
+      "title": "Plants of the World Online — Royal Botanic Gardens, Kew",
+      "authority_kind": "taxonomy",
+      "publisher": "Royal Botanic Gardens, Kew",
+      "jurisdiction": "INTL",
+      "url": "https://powo.science.kew.org",
+      "license_code": "CC-BY-4.0",
+      "requires_attribution": true,
+      "approved": false,
+      "rights_status": "candidate",
+      "license_scope": "Exact WCVP taxonomy release only after review; not all POWO text/photos"
+    },
+    {
+      "source_code": "WFO_PLANT_LIST",
+      "title": "World Flora Online Plant List",
+      "authority_kind": "taxonomy",
+      "publisher": "World Flora Online Consortium",
+      "jurisdiction": "INTL",
+      "url": "https://wfoplantlist.org",
+      "license_code": "CC-BY-4.0",
+      "requires_attribution": true,
+      "approved": false,
+      "rights_status": "candidate"
+    },
+    {
+      "source_code": "GBIF_BACKBONE",
+      "title": "GBIF Backbone Taxonomy",
+      "authority_kind": "taxonomy",
+      "publisher": "Global Biodiversity Information Facility",
+      "jurisdiction": "INTL",
+      "url": "https://www.gbif.org",
+      "license_code": "PENDING-EXACT-DATASET-VERIFICATION",
+      "requires_attribution": true,
+      "approved": false,
+      "rights_status": "candidate"
+    },
+    {
+      "source_code": "RHS_GARDENING",
+      "title": "Royal Horticultural Society — Houseplants & Plant Pathology Reference",
+      "authority_kind": "horticultural",
+      "publisher": "Royal Horticultural Society",
+      "jurisdiction": "UK/EU",
+      "url": "https://www.rhs.org.uk",
+      "license_code": "EDITORIAL-REFERENCE",
+      "requires_attribution": false,
+      "approved": false,
+      "rights_status": "candidate"
+    },
+    {
+      "source_code": "UC_IPM_EXTENSION",
+      "title": "University of California Statewide IPM Program — Floriculture & Indoor Plants",
+      "authority_kind": "extension",
+      "publisher": "UC Agriculture and Natural Resources",
+      "jurisdiction": "INTL",
+      "url": "https://ipm.ucanr.edu",
+      "license_code": "EDITORIAL-REFERENCE",
+      "requires_attribution": false,
+      "approved": false,
+      "rights_status": "candidate"
+    },
+    {
+      "source_code": "ASPCA_TOXICOLOGY",
+      "title": "ASPCA Animal Poison Control Center — Toxic and Non-Toxic Plants",
+      "authority_kind": "veterinary_toxicology",
+      "publisher": "ASPCA",
+      "jurisdiction": "INTL",
+      "url": "https://www.aspca.org/pet-care/animal-poison-control/toxic-and-non-toxic-plants",
+      "license_code": "EDITORIAL-REFERENCE",
+      "requires_attribution": false,
+      "approved": false,
+      "rights_status": "personal_noncommercial_reference_only",
+      "reference_enabled": true,
+      "approval_scope": "Manual noncommercial reference; approved=false for published application dataset"
+    },
+    {
+      "source_code": "MRIRW_PL_REGISTER",
+      "title": "Rejestr Środków Ochrony Roślin — Ministerstwo Rolnictwa i Rozwoju Wsi (RP)",
+      "authority_kind": "regulatory_register",
+      "publisher": "Ministerstwo Rolnictwa i Rozwoju Wsi",
+      "jurisdiction": "PL",
+      "url": "https://www.gov.pl/web/rolnictwo/rejestr-rodkow-ochrony-roslin",
+      "license_code": "PUBLIC-REGISTER-PL",
+      "requires_attribution": false,
+      "approved": false,
+      "rights_status": "candidate"
+    }
+  ],
+  "rights_registry": "knowledge-base/manifests/source-registry.json",
+  "approval_note": "Historical candidate list. Previous approved=true values did not prove commercial ingestion/retention rights. Check exact dataset/content and operation-level registry before any import."
+}

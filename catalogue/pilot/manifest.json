@@ -1,0 +1,14 @@
+{
+  "version": "pilot-0.1",
+  "created_at": "2026-11-02T20:44:39.894256+00:00",
+  "status": "draft",
+  "plant_count": 3,
+  "media_count": 3,
+  "json_sha256": "ca685307272780e01304ae8a01b115f9328837463d9cad26b35b13fa4aff6ba5",
+  "limitations": [
+    "Not a published 300-species KB release",
+    "Care/safety/protocols not verified",
+    "Photos are reference material, final UI suitability not approved",
+    "Original media retains original licenses; preserve BY-SA conditions on future derivatives"
+  ]
+}

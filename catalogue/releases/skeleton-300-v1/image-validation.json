@@ -1,0 +1,12 @@
+{
+  "tool": "sips metadata read",
+  "files_read": 300,
+  "formats": {
+    "jpeg": 295,
+    "png": 5
+  },
+  "min_width": 235,
+  "min_height": 281,
+  "errors": "",
+  "visual_species_review": "not_performed"
+}

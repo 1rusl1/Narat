@@ -1,0 +1,2141 @@
+{
+  "records": 606,
+  "unique_qids": 606,
+  "description_en": 606,
+  "description_pl": 606,
+  "description_pl_native": 190,
+  "description_pl_translated": 416,
+  "common_names_en": 407,
+  "common_names_pl": 430,
+  "watering_total": 606,
+  "watering_species_exact": 278,
+  "watering_species_synonym": 16,
+  "watering_genus_representative": 222,
+  "watering_botanical_group_representative": 90,
+  "watering_missing": 0,
+  "downloaded_images": 606,
+  "media_bytes": 165050694,
+  "editorial_review": "pending for all records",
+  "live_application_integration": "not_run",
+  "gaps": [
+    {
+      "plant_id": "ficus_lyrata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "thaumatophyllum_xanadu",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "rhaphidophora_tetrasperma",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "maranta_leuconeura",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "calathea_orbifolia",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_insignis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_roseopicta",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "stromanthe_thalia",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "pilea_involucrata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "pilea_mollis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "pilea_depressa",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "hoya_kerrii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_pubicalyx",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "hoya_lacunosa",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "hoya_linearis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "hoya_obovata",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "curio_rowleyanus",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "yucca_gigantea",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "dypsis_lutescens",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "nepenthes_alata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "phalaenopsis_amabilis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "phalaenopsis_equestris",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "tillandsia_xerographica",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "billbergia_nutans",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "adelonema_wallisii",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "adiantum_aethiopicum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "adiantum_formosum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "aglaonema_modestum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_baginda",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_heterophylla",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_longiloba",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_nebula",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_nycteris",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_portei",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_reginae",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_reginula",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_sarawakensis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_scalprum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_sinuata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_wentii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "angraecum_sesquipedale",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "anthurium_amnicola",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "anthurium_bakeri",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "anthurium_clarinervium",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "anthurium_crenatum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "anthurium_radicans",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "anthurium_vittariifolium",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "anthurium_warocqueanum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "anthurium_watermaliense",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "apocissus_antarctica",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "asparagus_aethiopicus",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "asplenium_antiquum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "asplenium_gracillimum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "astrophytum_asterias",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "begonia_bowerae",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "begonia_conchifolia",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "begonia_maculata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "begonia_venosa",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "caladium_praetermissum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "campanula_isophylla",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "campyloneurum_phyllitidis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "chamaedorea_metallica",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "cissus_discolor",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "colocasia_fallax",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "crassula_arborescens",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassula_muscosa",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "davallia_fejeensis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "delosperma_lehmannii",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "didymochlaena_truncatula",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "disocactus_phyllanthoides",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "sansevieria_bagamoyensis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "dracaena_braunii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "dracaena_hyacinthoides",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "sansevieria_masoniana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "sansevieria_pinguicula",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "dracaena_spathulata",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "dracaena_suffruticosa",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "drymonia_strigosa",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "epipremnum_pinnatum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "excoecaria_cochinchinensis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "fatsia_japonica",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "fittonia_albivenis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "fittonia_gigantea",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_concinna",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_fasciata",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_kegeljanii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "calathea_picturata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_rufibarba",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "guzmania_musaica",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "guzmania_sanguinea",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "gymnocalycium_mihanovichii",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "homalomena_philippinensis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "homalomena_rubescens",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "hoya_calycina",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_kanyakumariana",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "huernia_macrocarpa",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "kalanchoe_manginii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "magnolia_coco",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "maranta_arundinacea",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "monstera_acacoyaguensis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "monstera_acuminata",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "nephrolepis_obliterata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "pachira_glabra",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "peperomia_rotundifolia",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "petrocosmea_forrestii",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "petrocosmea_kerrii",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "petrocosmea_rosettifolia",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "thaumatophyllum_adamantinum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_callosum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_domesticum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_elegans",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "philodendron_gigas",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_tortum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "pilea_cadierei",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "rhaphidophora_hayi",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "sinningia_muscicola",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "spathiphyllum_cannifolium",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "spathiphyllum_cochlearispathum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "stephanotis_floribunda",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "streptocarpus_ionanthus",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "vriesea_splendens",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_wayetii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_curtisii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_retusa",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_serpens",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_caudata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "dischidia_nummularia",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "dischidia_ovata",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "dischidia_ruscifolia",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "curio_radicans",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "curio_repens",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "sedum_pachyphyllum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "sedum_clavatum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassula_perforata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassula_capitella",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassula_marnieriana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassula_pellucida",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassula_tetragona",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassula_pubescens",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echeveria_agavoides",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echeveria_lilacina",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echeveria_pulidonis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echeveria_laui",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echeveria_colorata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echeveria_gibbiflora",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echeveria_runyonii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "graptopetalum_paraguayense",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "graptopetalum_amethystinum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "graptopetalum_bellum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "aeonium_canariense",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "aeonium_undulatum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "aloe_juvenna",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "haworthia_fasciata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "haworthia_limifolia",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "haworthiopsis_reinwardtii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "haworthia_cooperi",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "haworthia_cymbiformis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "haworthia_retusa",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "haworthia_mirabilis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "gasteria_bicolor",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "kalanchoe_luciae",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "kalanchoe_orgyalis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "kalanchoe_millotii",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "kalanchoe_sexangularis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "cotyledon_tomentosa",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "cotyledon_orbiculata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "adromischus_cristatus",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "adromischus_cooperi",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "adromischus_maculatus",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "euphorbia_obesa",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "euphorbia_lactea",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "euphorbia_ingens",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "euphorbia_tithymaloides",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "euphorbia_flanaganii",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "pachypodium_lamerei",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "agave_victoriae_reginae",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "agave_potatorum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "astrophytum_myriostigma",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "astrophytum_capricorne",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "astrophytum_ornatum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "gymnocalycium_saglionis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "mammillaria_elongata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "mammillaria_bocasana",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "mammillaria_zeilmanniana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "mammillaria_schiedeana",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "parodia_magnifica",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "parodia_lenninghausii",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "parodia_scopa",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "parodia_mammulosa",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "rebutia_minuscula",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "echinopsis_chamaecereus",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "echinopsis_oxygona",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "echinopsis_ancistrophora",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "echinopsis_lageniformis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "schlumbergera_russelliana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "rhipsalis_pilocarpa",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "lepismium_houlletianum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "disocactus_ackermannii",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "disocactus_anguliger",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "epiphyllum_hookeri",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "selenicereus_anthonyanus",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "cereus_repandus",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "espostoa_lanata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "cephalocereus_senilis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "ferocactus_latispinus",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "ferocactus_pilosus",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "stenocactus_multicostatus",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "turbinicarpus_schmiedickeanus",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "lithops_lesliei",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "lithops_aucampiae",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "lithops_optica",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "lithops_karasmontana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "lithops_pseudotruncatella",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "frithia_pulchra",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "titanopsis_calcarea",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "aloinopsis_schooneesii",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "conophytum_bilobum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "conophytum_calculus",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "huernia_zebrina",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "huernia_schneideriana",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "radermachera_sinica",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "microsorum_punctatum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "soleirolia_soleirolii",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "begonia_listada",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "begonia_boliviensis",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "begonia_corallina",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "achimenes_grandiflora",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "episcia_cupreata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "aeschynanthus_radicans",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "aeschynanthus_longicaulis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "cyrtanthus_elatus",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "haemanthus_albiflos",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "scadoxus_multiflorus",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "drimiopsis_maculata",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "ornithogalum_dubium",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crossandra_infundibuliformis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "brunfelsia_pauciflora",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "plumeria_obtusa",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "rhododendron_simsii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "ardisia_crenata",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "callisia_repens",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "callisia_fragrans",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "callisia_navicularis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "cyanotis_somaliensis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "nepenthes_ventricosa",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "nepenthes_sanguinea",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "pinguicula_moranensis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "phalaenopsis_schilleriana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "phalaenopsis_aphrodite",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "phalaenopsis_bellina",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "dendrobium_bigibbum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "dendrobium_kingianum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "cymbidium_ensifolium",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "cymbidium_aloifolium",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "oncidium_sphacelatum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "aloe_aristata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "euphorbia_heptagona",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "kroenleinia_grusonii",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "aylostera_heliosa",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "zealandia_pustulata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "gomesa_flexuosa",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "dracaena_goldieana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "peperomia_clusiifolia",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "heptapleurum_actinophyllum",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "alocasia_cuprea",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "anthurium_crystallinum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "anthurium_magnificum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "philodendron_burle_marxii",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "monstera_lechleriana",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "monstera_siltepecana",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_brandtianum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_gloriosum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_mamei",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "philodendron_melanochrysum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "philodendron_verrucosum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "blechnum_gibbum",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "platycerium_alcicorne",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "adenium_multiflorum",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "rhipsalis_mesembryanthemoides",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "begonia_ferox",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "gerbera_jamesonii",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "columnea_microphylla",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_elliptica",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_lietzei",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "goeppertia_majestica",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_lanceolata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_callistophylla",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "hoya_cumingiana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "geogenanthus_ciliatus",
+      "missing": [
+        "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "heliconia_bihai",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "welwitschia_mirabilis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "pinguicula_agnata",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "pinguicula_gigantea",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "pinguicula_esseriana",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "crassothonna_capensis",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "gynura_procumbens",
+      "missing": [
+        "common_names_en"
+      ]
+    }
+  ],
+  "eligible_candidates": 606,
+  "excluded": [
+    {
+      "qid": "Q80714198",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Goeppertia orbifolia"
+      ]
+    },
+    {
+      "qid": "Q50841689",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Goeppertia ornata"
+      ]
+    },
+    {
+      "qid": "Q64524505",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Haworthiopsis attenuata"
+      ]
+    },
+    {
+      "qid": "Q11176489",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Chrysalidocarpus lutescens"
+      ]
+    },
+    {
+      "qid": "Q203834",
+      "reason": "not_unique_species_or_missing_description",
+      "names": []
+    },
+    {
+      "qid": "Q740819",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Aglaonema"
+      ]
+    },
+    {
+      "qid": "Q17759491",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Aichryson ×aizoides"
+      ]
+    },
+    {
+      "qid": "Q113251886",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Alocasia × mortfontanensis"
+      ]
+    },
+    {
+      "qid": "Q4915799",
+      "reason": "not_unique_species_or_missing_description",
+      "names": []
+    },
+    {
+      "qid": "Q1946132",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Boea"
+      ]
+    },
+    {
+      "qid": "Q1945962",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Calla"
+      ]
+    },
+    {
+      "qid": "Q4762348",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Begonia ‘Angel Wing’"
+      ]
+    },
+    {
+      "qid": "Q97355813",
+      "reason": "not_unique_species_or_missing_description",
+      "names": []
+    },
+    {
+      "qid": "Q738915",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Dieffenbachia"
+      ]
+    },
+    {
+      "qid": "Q21223618",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Englerarum"
+      ]
+    },
+    {
+      "qid": "Q102346055",
+      "reason": "not_unique_species_or_missing_description",
+      "names": []
+    },
+    {
+      "qid": "Q5223526",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Nephthytis"
+      ]
+    },
+    {
+      "qid": "Q1354632",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Peperomia"
+      ]
+    },
+    {
+      "qid": "Q87185648",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Phyllotaenium"
+      ]
+    },
+    {
+      "qid": "Q138027799",
+      "reason": "not_unique_species_or_missing_description",
+      "names": []
+    },
+    {
+      "qid": "Q312160",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Sansevieria"
+      ]
+    },
+    {
+      "qid": "Q159180",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Streptocarpus"
+      ]
+    },
+    {
+      "qid": "Q7233959",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Saintpaulia"
+      ]
+    },
+    {
+      "qid": "Q2448411",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Syngonium"
+      ]
+    },
+    {
+      "qid": "Q15704941",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Tolmiea"
+      ]
+    },
+    {
+      "qid": "Q132165",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Zamioculcas"
+      ]
+    },
+    {
+      "qid": "Q2706112",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Sedum × rubrotinctum"
+      ]
+    },
+    {
+      "qid": "Q134282",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Fenestraria rhopalophylla"
+      ]
+    },
+    {
+      "qid": "Q2667306",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Heliconia psittacorum webus"
+      ]
+    },
+    {
+      "qid": "Q159534",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Hibiscus × rosa-sinensis"
+      ]
+    },
+    {
+      "qid": "Q1920024",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Ludisia"
+      ]
+    },
+    {
+      "qid": "Q110867865",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Crassula perfoliata var. falcata"
+      ]
+    },
+    {
+      "qid": "Q15883366",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Fenestraria"
+      ]
+    },
+    {
+      "qid": "Q3666051",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Chamaerops"
+      ]
+    },
+    {
+      "qid": "Q509542",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "×Fatshedera lizei"
+      ]
+    },
+    {
+      "qid": "Q140436089",
+      "reason": "not_unique_species_or_missing_description",
+      "names": []
+    },
+    {
+      "qid": "Q500",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Citrus × limon"
+      ]
+    },
+    {
+      "qid": "Q15044266",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Welwitschia"
+      ]
+    },
+    {
+      "qid": "Q624242",
+      "reason": "not_unique_species_or_missing_description",
+      "names": [
+        "Heliconia"
+      ]
+    }
+  ]
+}

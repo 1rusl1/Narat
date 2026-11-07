@@ -1,0 +1,9 @@
+{
+  "version": "pilot-0.1",
+  "scope": "Three verified name/QID pairs for the import pilot, not the final 300-species PL market seed",
+  "plants": [
+    {"plant_id": "monstera_deliciosa", "scientific_name": "Monstera deliciosa", "wikidata_id": "Q161077"},
+    {"plant_id": "ficus_elastica", "scientific_name": "Ficus elastica", "wikidata_id": "Q160576"},
+    {"plant_id": "epipremnum_aureum", "scientific_name": "Epipremnum aureum", "wikidata_id": "Q161809"}
+  ]
+}

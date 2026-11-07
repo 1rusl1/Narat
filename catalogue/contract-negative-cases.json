@@ -1,0 +1,516 @@
+[
+  {
+    "path": [
+      "taxon_id"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "wikidata_id"
+    ],
+    "value": "not-wikidata"
+  },
+  {
+    "path": [
+      "common_names"
+    ],
+    "value": "oops"
+  },
+  {
+    "path": [
+      "care_profile_available"
+    ],
+    "value": "yes"
+  },
+  {
+    "path": [
+      "scientific_name"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "scientific_name_status"
+    ],
+    "value": false
+  },
+  {
+    "path": [
+      "rank"
+    ],
+    "value": "invalid"
+  },
+  {
+    "path": [
+      "genus"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "family"
+    ],
+    "value": []
+  },
+  {
+    "path": [
+      "external_taxon_ids",
+      "P846"
+    ],
+    "value": [
+      42
+    ]
+  },
+  {
+    "path": [
+      "common_names",
+      "en"
+    ],
+    "value": {}
+  },
+  {
+    "path": [
+      "common_names",
+      "pl"
+    ],
+    "value": {}
+  },
+  {
+    "path": [
+      "common_names",
+      "en",
+      "0",
+      "name"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "common_names",
+      "en",
+      "0",
+      "source_property"
+    ],
+    "value": false
+  },
+  {
+    "path": [
+      "common_names",
+      "en",
+      "0",
+      "source_revision"
+    ],
+    "value": "oops"
+  },
+  {
+    "path": [
+      "search_aliases",
+      "en"
+    ],
+    "value": [
+      42
+    ]
+  },
+  {
+    "path": [
+      "search_aliases",
+      "pl"
+    ],
+    "value": "oops"
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "language"
+    ],
+    "value": "fr"
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "language"
+    ],
+    "value": "en"
+  },
+  {
+    "path": [
+      "name_source"
+    ],
+    "value": "oops"
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "text"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "source_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "source_revision"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "revision_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "history_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "attribution"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "license"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "license_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "modifications"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "en",
+      "review_status"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "text"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "source_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "source_revision"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "revision_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "history_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "attribution"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "license"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "license_url"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "modifications"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "descriptions",
+      "pl",
+      "review_status"
+    ],
+    "value": 0
+  },
+  {
+    "path": [
+      "hero_image",
+      "file_title"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "source_page"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "local_path"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "sha256"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "bytes"
+    ],
+    "value": -1
+  },
+  {
+    "path": [
+      "hero_image",
+      "width"
+    ],
+    "value": -1
+  },
+  {
+    "path": [
+      "hero_image",
+      "height"
+    ],
+    "value": -1
+  },
+  {
+    "path": [
+      "hero_image",
+      "license"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "license_url"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "author"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "attribution"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "modifications"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "hero_image",
+      "sha256"
+    ],
+    "value": "not-a-hash"
+  },
+  {
+    "path": [
+      "hero_image",
+      "mime"
+    ],
+    "value": "image/gif"
+  },
+  {
+    "path": [
+      "hero_image",
+      "source_page"
+    ],
+    "value": "https://"
+  },
+  {
+    "path": [
+      "hero_image",
+      "license_url"
+    ],
+    "value": "javascript:bad"
+  },
+  {
+    "path": [
+      "watering",
+      "intervals_days",
+      "spring"
+    ],
+    "value": -1
+  },
+  {
+    "path": [
+      "watering",
+      "intervals_days",
+      "summer"
+    ],
+    "value": "7"
+  },
+  {
+    "path": [
+      "watering",
+      "intervals_days",
+      "fall"
+    ],
+    "value": 366
+  },
+  {
+    "path": [
+      "watering",
+      "intervals_days",
+      "winter"
+    ],
+    "value": 1.5
+  },
+  {
+    "path": [
+      "watering",
+      "watering_method"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "watering",
+      "drainage_preference"
+    ],
+    "value": false
+  },
+  {
+    "path": [
+      "watering",
+      "match_level"
+    ],
+    "value": "guessed"
+  },
+  {
+    "path": [
+      "watering",
+      "matched_on"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "watering",
+      "source",
+      "id"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "watering",
+      "source",
+      "repository"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "watering",
+      "source",
+      "commit"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "watering",
+      "source",
+      "snapshot_sha256"
+    ],
+    "value": 42
+  },
+  {
+    "path": [
+      "watering",
+      "source",
+      "plantfolio_id"
+    ],
+    "value": 42
+  }
+]

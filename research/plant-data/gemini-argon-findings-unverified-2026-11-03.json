@@ -1,0 +1,323 @@
+{
+  "status": "unverified_external_research",
+  "approved_for_import": false,
+  "report_sha256": "b7f7e81a3eb9ec809ad8f2393c087ddef2e7622857a87d6b6a6222429b8d1fa6",
+  "findings": {
+    "checked_on": "2026-11-03",
+    "candidates": [
+      {
+        "id": "kew_wcvp",
+        "name": "Royal Botanic Gardens, Kew — World Checklist of Vascular Plants (WCVP / POWO)",
+        "category": "taxonomic_backbone",
+        "url": "https://powo.science.kew.org/",
+        "authority_level": "gold_standard_scientific",
+        "extraction_method": "official_bulk_csv_and_api",
+        "license": "CC BY 4.0",
+        "selected_role": "supporting_core_taxonomy"
+      },
+      {
+        "id": "wikidata_commons",
+        "name": "Wikidata + Wikimedia Commons",
+        "category": "open_knowledge_graph_and_media",
+        "url": "https://www.wikidata.org/",
+        "authority_level": "crowdsourced_curated_links",
+        "extraction_method": "sparql_json_dump_and_rest_api",
+        "license": "CC0 1.0 (Wikidata); per-file CC0/CC BY/CC BY-SA filter required (Commons)",
+        "selected_role": "supporting_i18n_names_and_photos"
+      },
+      {
+        "id": "uf_ifas",
+        "name": "UF/IFAS Extension — Foliage Plant Production & Interiorscape Guides (EDIS)",
+        "category": "academic_horticulture_corpus",
+        "url": "https://edis.ifas.ufl.edu/",
+        "authority_level": "peer_reviewed_horticultural_research",
+        "extraction_method": "targeted_html_pdf_fact_extraction",
+        "license": "Copyright University of Florida (facts uncopyrightable; expressive text protected)",
+        "selected_role": "primary_care_and_physiology_source_1"
+      },
+      {
+        "id": "nc_state_toolbox",
+        "name": "NC State Extension Gardener Plant Toolbox",
+        "category": "academic_plant_database",
+        "url": "https://plants.ces.ncsu.edu/",
+        "authority_level": "university_curated",
+        "extraction_method": "targeted_html_fact_extraction",
+        "license": "Copyright NC State University (photos mostly CC BY-NC-ND, excluded from import)",
+        "selected_role": "primary_care_and_toxicity_cross_check_source_2"
+      },
+      {
+        "id": "uw_clemson_extension",
+        "name": "UW-Madison Division of Extension + Clemson HGIC Indoor Plants Corpus",
+        "category": "academic_indoor_care_corpus",
+        "url": "https://hort.extension.wisc.edu/",
+        "authority_level": "university_curated",
+        "extraction_method": "targeted_html_fact_extraction",
+        "license": "University Copyright (educational access free; commercial text reuse restricted)",
+        "selected_role": "primary_indoor_care_consensus_source_3"
+      },
+      {
+        "id": "uc_ipm_penn_state",
+        "name": "UC Statewide IPM Program + Penn State Extension Plant Diseases",
+        "category": "academic_phytopathology_and_entomology",
+        "url": "https://ipm.ucanr.edu/",
+        "authority_level": "gold_standard_diagnostics_and_ipm",
+        "extraction_method": "targeted_html_protocol_fact_extraction",
+        "license": "Copyright UC Regents / Penn State (text & photos protected; biological facts extractable)",
+        "selected_role": "primary_diagnostics_and_first_aid_source"
+      },
+      {
+        "id": "aspca_poison_control",
+        "name": "ASPCA Toxic and Non-Toxic Plants List",
+        "category": "veterinary_toxicology_reference",
+        "url": "https://www.aspca.org/pet-care/animal-poison-control/toxic-and-non-toxic-plants",
+        "authority_level": "clinical_veterinary_standard",
+        "extraction_method": "manual_verification_of_300_taxa_only",
+        "license": "All Rights Reserved (bulk scraping and commercial text mirroring prohibited)",
+        "selected_role": "reference_verification_for_cat_dog_safety"
+      },
+      {
+        "id": "mrirw_poland",
+        "name": "Ministerstwo Rolnictwa i Rozwoju Wsi (MRiRW) — Rejestr Środków Ochrony Roślin",
+        "category": "regulatory_registry",
+        "url": "https://www.gov.pl/web/rolnictwo/wyszukiwarka-srodkow-ochrony-roslin",
+        "authority_level": "official_national_regulator_poland",
+        "extraction_method": "official_xlsx_csv_download",
+        "license": "Polish Public Sector Information (reusable)",
+        "selected_role": "supporting_regulatory_filter_poland"
+      },
+      {
+        "id": "rhs",
+        "name": "Royal Horticultural Society (RHS) Plant Finder & Advice",
+        "category": "horticultural_institution",
+        "url": "https://www.rhs.org.uk/",
+        "authority_level": "high_curated_horticultural",
+        "extraction_method": "web_only_scraping_prohibited",
+        "license": "Strict Terms of Use prohibiting scraping, TDM, and commercial DB creation without B2B contract",
+        "selected_role": "rejected_for_import_due_to_legal_restrictions"
+      },
+      {
+        "id": "perenual",
+        "name": "Perenual Plant API",
+        "category": "commercial_plant_api",
+        "url": "https://perenual.com/docs/api",
+        "authority_level": "low_opaque_unverified",
+        "extraction_method": "json_rest_api",
+        "license": "Proprietary SaaS API subscription",
+        "selected_role": "rejected_due_to_poor_evidence_and_no_perpetual_rights"
+      },
+      {
+        "id": "kindwise",
+        "name": "Kindwise (Plant.id / Plant.health)",
+        "category": "commercial_cv_inference_api",
+        "url": "https://www.kindwise.com/",
+        "authority_level": "high_for_cv_closed_kb",
+        "extraction_method": "inference_api_only_no_catalog_dump",
+        "license": "Commercial per-credit API Terms (no KB extraction allowed)",
+        "selected_role": "rejected_for_static_catalog_architecture"
+      },
+      {
+        "id": "openplantbook_permapeople",
+        "name": "OpenPlantbook / Permapeople",
+        "category": "crowdsourced_iot_and_plant_db",
+        "url": "https://openplantbook.io/",
+        "authority_level": "low_crowdsourced_sensor_thresholds",
+        "extraction_method": "json_api",
+        "license": "Non-commercial restriction (OpenPlantbook) / CC BY-SA 4.0 viral DB risk (Permapeople)",
+        "selected_role": "rejected_insufficient_scientific_rigor"
+      }
+    ],
+    "recommended_sources": [
+      {
+        "role": "core_care_and_quantitative_physiology",
+        "sources": [
+          "uf_ifas",
+          "nc_state_toolbox",
+          "uw_clemson_extension"
+        ],
+        "rationale": "Provides >=3 independent university donors per profile, combining quantitative interiorscape lux/FC, pH, and NPK data (UF/IFAS) with practical apartment watering and dormancy rules (UW-Madison, Clemson, NC State)."
+      },
+      {
+        "role": "diagnostics_and_recovery_protocols",
+        "sources": [
+          "uc_ipm_penn_state",
+          "uf_ifas"
+        ],
+        "rationale": "Covers 39/40 target condition_ids with scientifically validated differential diagnostics, symptom keys, and non-chemical IPM action steps."
+      },
+      {
+        "role": "pet_safety_verification",
+        "sources": [
+          "aspca_poison_control",
+          "nc_state_toolbox"
+        ],
+        "rationale": "Separates cat vs. dog toxicity and identifies the exact toxic principle (e.g., insoluble calcium oxalates, saponins, cardiac glycosides) for manual fact verification without copying protected text."
+      }
+    ],
+    "supporting_sources": [
+      {
+        "id": "kew_wcvp",
+        "purpose": "Accepted scientific names, authorship, ranks, family placement, and complete synonym resolution."
+      },
+      {
+        "id": "wikidata_commons",
+        "purpose": "Stable external QIDs, English and Polish common names, and commercially safe licensed photos (CC0, CC BY, CC BY-SA)."
+      },
+      {
+        "id": "mrirw_poland",
+        "purpose": "Mandatory Polish regulatory check for any amateur plant protection product mentioned in pest/disease protocols."
+      }
+    ],
+    "pilot_coverage": {
+      "species_checked": [
+        {
+          "scientific_name": "Monstera deliciosa",
+          "wikidata_qid": "Q161077",
+          "kew_wcvp": "structured",
+          "nc_state": "structured",
+          "uf_ifas": "structured",
+          "uw_clemson": "text_only",
+          "uc_ipm_penn_state": "structured",
+          "aspca": "structured",
+          "perenual": "structured"
+        },
+        {
+          "scientific_name": "Ficus elastica",
+          "wikidata_qid": "Q160576",
+          "kew_wcvp": "structured",
+          "nc_state": "structured",
+          "uf_ifas": "structured",
+          "uw_clemson": "text_only",
+          "uc_ipm_penn_state": "structured",
+          "aspca": "structured",
+          "perenual": "structured"
+        },
+        {
+          "scientific_name": "Epipremnum aureum",
+          "wikidata_qid": "Q161809",
+          "kew_wcvp": "structured",
+          "nc_state": "structured",
+          "uf_ifas": "structured",
+          "uw_clemson": "text_only",
+          "uc_ipm_penn_state": "structured",
+          "aspca": "structured",
+          "perenual": "structured"
+        }
+      ],
+      "monstera_verified_baseline": {
+        "watering": "Allow top 2.5-5 cm (1-2 inches) of aerated substrate to dry before thorough watering with drainage; reduce frequency in winter.",
+        "light_qualitative": "Bright indirect light; tolerates gentle winter or early-morning sun in high latitudes; protect from direct summer midday sun unless acclimated.",
+        "light_quantitative_interior": "100-150 FC (~1100-1600 lux) maintenance minimum; 150-250+ FC (~1600-2700+ lux) for good indoor vigor and fenestration (UF/IFAS interiorscape guidelines).",
+        "substrate": "Well-aerated peat/bark/perlite mix, pH 5.5-6.5, mandatory drainage hole.",
+        "fertilizing": "3:1:2 NPK ratio balanced foliage fertilizer during active spring-summer growth; withhold in winter dormancy or root stress.",
+        "safety_cats": "toxic (insoluble calcium oxalate raphides — oral irritation, drooling, dysphagia; low systemic lethality)",
+        "safety_dogs": "toxic (insoluble calcium oxalate raphides — oral irritation, drooling, vomiting; low systemic lethality)"
+      }
+    },
+    "operation_rights": {
+      "kew_wcvp_and_wikidata": {
+        "bulk_download": "explicitly_allowed",
+        "permanent_db_storage": "explicitly_allowed",
+        "derivatives_and_en_pl_translation": "explicitly_allowed",
+        "offline_llm_processing": "explicitly_allowed",
+        "commercial_app_display": "explicitly_allowed",
+        "basis": "CC BY 4.0 (POWO/WCVP Terms) and CC0 1.0 (Wikidata)"
+      },
+      "wikimedia_commons_filtered": {
+        "photo_local_storage_and_crop": "explicitly_allowed",
+        "commercial_app_display": "explicitly_allowed",
+        "attribution_and_sharealike_conditions": "conditional",
+        "basis": "Allowed strictly for files under CC0, CC BY, and CC BY-SA with creator/license/modification attribution; exclude all CC BY-NC and CC BY-ND files."
+      },
+      "us_university_extension_corpus": {
+        "bulk_scraping": "unknown",
+        "raw_text_commercial_redistribution": "prohibited",
+        "factual_extraction_and_clean_room_synthesis_en_pl": "conditional",
+        "offline_llm_fact_parsing": "conditional",
+        "commercial_app_display_of_original_facts": "conditional",
+        "basis": "17 U.S.C. § 102(b) excludes scientific facts/measurements from copyright, whereas original prose and photos remain copyrighted by respective universities. Direct written confirmation recommended if storing raw HTML archives commercially."
+      },
+      "aspca": {
+        "automated_scraping_or_db_mirror": "prohibited",
+        "manual_fact_verification_cross_checked": "conditional",
+        "commercial_text_copying": "prohibited",
+        "basis": "ASPCA Terms of Use prohibit commercial reproduction and automated scraping; underlying toxicological facts (e.g., presence of calcium oxalates) verified across veterinary sources are factual."
+      },
+      "perenual": {
+        "api_fetch": "explicitly_allowed",
+        "permanent_storage_after_cancellation": "unknown",
+        "commercial_offline_mirror_without_active_plan": "prohibited",
+        "basis": "Standard SaaS API terms grant active access rights rather than perpetual dataset buyout; enterprise contract quote required."
+      }
+    },
+    "cost_comparison": [
+      {
+        "option": "Recommended Hybrid (WCVP + Wikidata/Commons + University Fact Synthesis + MRiRW)",
+        "payment_model": "free",
+        "initial_data_fee_usd": 0,
+        "estimated_one_time_llm_parsing_cost_usd": "15-50",
+        "mandatory_12m_cost_usd": 0,
+        "mandatory_36m_cost_usd": 0,
+        "post_termination_usage_rights": "perpetual_owned_database",
+        "notes": "Zero licensing fees; main investment is engineering normalization and human botanical QA."
+      },
+      {
+        "option": "Perenual Standard API Subscription",
+        "payment_model": "subscription",
+        "initial_data_fee_usd": null,
+        "mandatory_12m_cost_usd": "228-1188 (based on ~$19-$99/mo public tier range; enterprise buyout is quote_required)",
+        "mandatory_36m_cost_usd": "684-3564 (or quote_required)",
+        "post_termination_usage_rights": "unknown_not_granted_in_public_terms",
+        "notes": "Does not meet scientific quality or provenance requirements regardless of price."
+      },
+      {
+        "option": "RHS Commercial Data License",
+        "payment_model": "negotiated",
+        "initial_data_fee_usd": null,
+        "mandatory_12m_cost_usd": "quote_required",
+        "mandatory_36m_cost_usd": "quote_required",
+        "post_termination_usage_rights": "unknown",
+        "notes": "High editorial quality but lacks quantitative lux and split cat/dog toxicity."
+      }
+    ],
+    "field_mapping": {
+      "taxonomy": "Kew WCVP (accepted taxon, rank, family, synonyms) + Wikidata (QID, EN/PL common names)",
+      "safety": "Manual cross-verification of ASPCA (cat vs. dog) + NC State (toxic principle & clinical mechanism); Narat original EN/PL warning templates",
+      "care_algorithm_params": "Botanical bounds (light FC/lux, temp min/opt, pH, NPK ratio, qualitative moisture strategy) from UF/IFAS + Extension; numeric day intervals and apartment modifiers modeled as Narat dynamic check-in heuristics",
+      "common_vulnerabilities": "UF/IFAS host-pathogen tables + NC State / Extension species problem notes",
+      "care_content_i18n": "Clean-room generated EN and PL structured guidance derived strictly from validated JSON fact matrices",
+      "provenance": "Internal claim ledger tracking source_id, URL, publication date/version, SHA-256 snapshot hash, and reviewer sign-off per field",
+      "photos": "Wikimedia Commons API filtered to CC0, CC BY, CC BY-SA with per-image license metadata"
+    },
+    "unresolved_conflicts": [
+      {
+        "topic": "Direct sunlight tolerance in Monstera deliciosa and tropical foliage plants",
+        "explanation": "Apparent conflict between 'no direct sun' (NC State outdoor/southern US context) and 'gentle winter/morning direct sun allowed' (northern indoor Extension context). Resolved by splitting seasonal/latitude and acclimation attributes rather than averaging."
+      },
+      {
+        "topic": "Taxonomic synonym lag in toxicology databases",
+        "explanation": "ASPCA and older horticultural guides list Sansevieria trifasciata or Calathea spp., whereas Kew WCVP places them in Dracaena and Goeppertia. Resolved via mandatory WCVP synonym expansion before matching."
+      }
+    ],
+    "missing_data": [
+      "Scientifically universal watering intervals in exact days (physically dependent on pot volume, substrate porosity, VPD, and season).",
+      "Empirically proven numeric multipliers for terracotta pots, heating radiators, and window distance.",
+      "Exact recovery timelines in days for root rot or pest eradication (must be represented as observation check-in windows).",
+      "Species-by-species peer-reviewed protocols for semi-hydroponics (LECA/pon) across all 300 indoor taxa.",
+      "Visual-only definitive diagnosis for microscopic broad mites, systemic viruses, and root-zone pH lockouts without user physical checks."
+    ],
+    "spec_conflicts": [
+      {
+        "rule": "Minimum 2 independent sources for numeric recommendations",
+        "conflict": "Quantitative interior light ranges (FC/lux) for foliage plants originate primarily from one foundational experimental research body (UF/IFAS Apopka trials); secondary sites merely copy those numbers.",
+        "proposed_resolution": "Extend the authoritative single-source exception in Narat's specification to cover peer-reviewed experimental physiological measurements (lux/FC, pH, EC) when cited directly from primary academic publications."
+      }
+    ],
+    "next_actions": [
+      "Download Kew WCVP bulk CSV archive and build local taxonomic + synonym resolver in SQLite.",
+      "Download Polish MRiRW amateur plant protection XLSX registry and extract permitted active substances for ornamental indoor plants.",
+      "Execute end-to-end pilot assembly on Monstera deliciosa (Q161077), Ficus elastica (Q160576), and Epipremnum aureum (Q161809) with full field-level provenance and Commons CC-licensed photos.",
+      "Review and decide internally on the proposed spec exception for primary UF/IFAS lux/FC measurements and dynamic moisture-check heuristics.",
+      "Before commercial launch, send the prepared short inquiry to Extension offices regarding factual citation/internal archival policy or review clean-room synthesis workflow with IP counsel."
+    ]
+  }
+}

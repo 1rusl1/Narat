@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.window", "deno.ns"]
+  },
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.46.1",
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@0.32.1",
+    "@apple/app-store-server-library": "npm:@apple/app-store-server-library@1.5.0",
+    "ajv": "npm:ajv@8.17.1",
+    "ajv/dist/2020": "npm:ajv@8.17.1/dist/2020.js",
+    "@std/assert": "jsr:@std/assert@^1.0.8",
+    "@std/crypto": "jsr:@std/crypto@^1.0.3"
+  },
+  "tasks": {
+    "check": "deno check plants-api/index.ts analysis-worker/index.ts billing-webhook/index.ts maintenance/index.ts",
+    "test": "deno test --allow-env --allow-read --allow-net=127.0.0.1,localhost _shared/tests/"
+  }
+}

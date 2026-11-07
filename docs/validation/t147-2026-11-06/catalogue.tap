@@ -1,0 +1,230 @@
+1..229
+ok 1 - Database starts with zero kb_releases (no full care/condition KB published)
+ok 2 - When no catalogue release is published, search returns 0 and get_catalogue_species_card returns NULL
+ok 3 - anon role is denied EXECUTE on upsert_catalogue_skeleton_species
+ok 4 - authenticated role is denied EXECUTE on publish_catalogue_release
+ok 5 - upsert_catalogue_skeleton_species rejects invalid hero_image.sha256
+ok 6 - upsert_catalogue_skeleton_species rejects invalid watering.intervals_days values
+ok 7 - upsert_catalogue_skeleton_species rejects invalid wikidata_id (not-wikidata)
+ok 8 - upsert_catalogue_skeleton_species rejects mismatched descriptions.en.language = fr
+ok 9 - upsert_catalogue_skeleton_species rejects negative hero_image.width (-1)
+ok 10 - upsert_catalogue_skeleton_species stages Monstera deliciosa into draft release v1
+ok 11 - upsert_catalogue_skeleton_species stages Aglaonema commutatum into draft release v1
+ok 12 - Species staged into a DRAFT release are not visible in search or get_catalogue_species_card
+ok 13 - publish_catalogue_release activates release v1
+ok 14 - catalogue_releases v1 is published with kb_release_id = NULL
+ok 15 - search_catalogue_species finds Monstera by Polish common name
+ok 16 - search_catalogue_species finds Monstera by English search alias
+ok 17 - search_catalogue_species matches Polish alias without diacritics (chinski -> Chiński)
+ok 18 - search_catalogue_species matches species by botanical family (Araceae)
+ok 19 - get_catalogue_species_card falls back to scientific_name when PL common name is absent and returns translated PL description
+ok 20 - Species card includes Plantfolio watering intervals, Commons attribution, and canonical 21-key DTO fields
+ok 21 - Staging modified Monstera deliciosa into draft release v2 succeeds
+ok 22 - Staging new species Ficus elastica into draft release v2 succeeds
+ok 23 - Staging draft release v2 does not overwrite active v1 Monstera snapshot and does not expose draft-only Ficus elastica
+ok 24 - Publishing v2 atomically switches Monstera to v2 snapshot, exposes Ficus elastica, and hides species omitted from v2
+ok 25 - Rolling back to v1 restores v1 Monstera & Aglaonema snapshots and hides retired v2 Ficus elastica
+ok 26 - execute_plant_create_command rejects species belonging to a retired/non-active release
+ok 27 - Saving from catalogue without care_profile returns plan_availability = care_profile_unavailable
+ok 28 - Saving from catalogue without care_profile returns next_available_step = view_plant
+ok 29 - Catalogue plant instance links taxon_id & plant_id, defaults personal_name to locale common name, and leaves main_photo_id and current_condition_snapshot_id NULL
+ok 30 - User personal photo is attached as main_photo_id on the user plant instance
+ok 31 - Species catalogue hero_image remains unchanged by user personal photo and both saved plants appear in owner_sync_entries
+ok 32 - Independent SQL input rejection: taxon_id
+ok 33 - Independent SQL input rejection: wikidata_id
+ok 34 - Independent SQL input rejection: common_names
+ok 35 - Independent SQL input rejection: care_profile_available
+ok 36 - Independent SQL input rejection: scientific_name
+ok 37 - Independent SQL input rejection: scientific_name_status
+ok 38 - Independent SQL input rejection: rank
+ok 39 - Independent SQL input rejection: genus
+ok 40 - Independent SQL input rejection: family
+ok 41 - Independent SQL input rejection: external_taxon_ids.P846
+ok 42 - Independent SQL input rejection: common_names.en
+ok 43 - Independent SQL input rejection: common_names.pl
+ok 44 - Independent SQL input rejection: common_names.en.0.name
+ok 45 - Independent SQL input rejection: common_names.en.0.source_property
+ok 46 - Independent SQL input rejection: common_names.en.0.source_revision
+ok 47 - Independent SQL input rejection: search_aliases.en
+ok 48 - Independent SQL input rejection: search_aliases.pl
+ok 49 - Independent SQL input rejection: descriptions.en.language
+ok 50 - Independent SQL input rejection: descriptions.pl.language
+ok 51 - Independent SQL input rejection: name_source
+ok 52 - Independent SQL input rejection: descriptions.en.text
+ok 53 - Independent SQL input rejection: descriptions.en.source_url
+ok 54 - Independent SQL input rejection: descriptions.en.source_revision
+ok 55 - Independent SQL input rejection: descriptions.en.revision_url
+ok 56 - Independent SQL input rejection: descriptions.en.history_url
+ok 57 - Independent SQL input rejection: descriptions.en.attribution
+ok 58 - Independent SQL input rejection: descriptions.en.license
+ok 59 - Independent SQL input rejection: descriptions.en.license_url
+ok 60 - Independent SQL input rejection: descriptions.en.modifications
+ok 61 - Independent SQL input rejection: descriptions.en.review_status
+ok 62 - Independent SQL input rejection: descriptions.pl.text
+ok 63 - Independent SQL input rejection: descriptions.pl.source_url
+ok 64 - Independent SQL input rejection: descriptions.pl.source_revision
+ok 65 - Independent SQL input rejection: descriptions.pl.revision_url
+ok 66 - Independent SQL input rejection: descriptions.pl.history_url
+ok 67 - Independent SQL input rejection: descriptions.pl.attribution
+ok 68 - Independent SQL input rejection: descriptions.pl.license
+ok 69 - Independent SQL input rejection: descriptions.pl.license_url
+ok 70 - Independent SQL input rejection: descriptions.pl.modifications
+ok 71 - Independent SQL input rejection: descriptions.pl.review_status
+ok 72 - Independent SQL input rejection: hero_image.file_title
+ok 73 - Independent SQL input rejection: hero_image.source_page
+ok 74 - Independent SQL input rejection: hero_image.local_path
+ok 75 - Independent SQL input rejection: hero_image.sha256
+ok 76 - Independent SQL input rejection: hero_image.bytes
+ok 77 - Independent SQL input rejection: hero_image.width
+ok 78 - Independent SQL input rejection: hero_image.height
+ok 79 - Independent SQL input rejection: hero_image.license
+ok 80 - Independent SQL input rejection: hero_image.license_url
+ok 81 - Independent SQL input rejection: hero_image.author
+ok 82 - Independent SQL input rejection: hero_image.attribution
+ok 83 - Independent SQL input rejection: hero_image.modifications
+ok 84 - Independent SQL input rejection: hero_image.sha256
+ok 85 - Independent SQL input rejection: hero_image.mime
+ok 86 - Independent SQL input rejection: hero_image.source_page
+ok 87 - Independent SQL input rejection: hero_image.license_url
+ok 88 - Independent SQL input rejection: watering.intervals_days.spring
+ok 89 - Independent SQL input rejection: watering.intervals_days.summer
+ok 90 - Independent SQL input rejection: watering.intervals_days.fall
+ok 91 - Independent SQL input rejection: watering.intervals_days.winter
+ok 92 - Independent SQL input rejection: watering.watering_method
+ok 93 - Independent SQL input rejection: watering.drainage_preference
+ok 94 - Independent SQL input rejection: watering.match_level
+ok 95 - Independent SQL input rejection: watering.matched_on
+ok 96 - Independent SQL input rejection: watering.source.id
+ok 97 - Independent SQL input rejection: watering.source.repository
+ok 98 - Independent SQL input rejection: watering.source.commit
+ok 99 - Independent SQL input rejection: watering.source.snapshot_sha256
+ok 100 - Independent SQL input rejection: watering.source.plantfolio_id
+ok 101 - Independent SQL DTO rejection: taxon_id
+ok 102 - Independent SQL DTO rejection: wikidata_id
+ok 103 - Independent SQL DTO rejection: common_names
+ok 104 - Independent SQL DTO rejection: care_profile_available
+ok 105 - Independent SQL DTO rejection: scientific_name
+ok 106 - Independent SQL DTO rejection: scientific_name_status
+ok 107 - Independent SQL DTO rejection: rank
+ok 108 - Independent SQL DTO rejection: genus
+ok 109 - Independent SQL DTO rejection: family
+ok 110 - Independent SQL DTO rejection: external_taxon_ids.P846
+ok 111 - Independent SQL DTO rejection: common_names.en
+ok 112 - Independent SQL DTO rejection: common_names.pl
+ok 113 - Independent SQL DTO rejection: common_names.en.0.name
+ok 114 - Independent SQL DTO rejection: common_names.en.0.source_property
+ok 115 - Independent SQL DTO rejection: common_names.en.0.source_revision
+ok 116 - Independent SQL DTO rejection: search_aliases.en
+ok 117 - Independent SQL DTO rejection: search_aliases.pl
+ok 118 - Independent SQL DTO rejection: descriptions.en.language
+ok 119 - Independent SQL DTO rejection: descriptions.pl.language
+ok 120 - Independent SQL DTO rejection: name_source
+ok 121 - Independent SQL DTO rejection: descriptions.en.text
+ok 122 - Independent SQL DTO rejection: descriptions.en.source_url
+ok 123 - Independent SQL DTO rejection: descriptions.en.source_revision
+ok 124 - Independent SQL DTO rejection: descriptions.en.revision_url
+ok 125 - Independent SQL DTO rejection: descriptions.en.history_url
+ok 126 - Independent SQL DTO rejection: descriptions.en.attribution
+ok 127 - Independent SQL DTO rejection: descriptions.en.license
+ok 128 - Independent SQL DTO rejection: descriptions.en.license_url
+ok 129 - Independent SQL DTO rejection: descriptions.en.modifications
+ok 130 - Independent SQL DTO rejection: descriptions.en.review_status
+ok 131 - Independent SQL DTO rejection: descriptions.pl.text
+ok 132 - Independent SQL DTO rejection: descriptions.pl.source_url
+ok 133 - Independent SQL DTO rejection: descriptions.pl.source_revision
+ok 134 - Independent SQL DTO rejection: descriptions.pl.revision_url
+ok 135 - Independent SQL DTO rejection: descriptions.pl.history_url
+ok 136 - Independent SQL DTO rejection: descriptions.pl.attribution
+ok 137 - Independent SQL DTO rejection: descriptions.pl.license
+ok 138 - Independent SQL DTO rejection: descriptions.pl.license_url
+ok 139 - Independent SQL DTO rejection: descriptions.pl.modifications
+ok 140 - Independent SQL DTO rejection: descriptions.pl.review_status
+ok 141 - Independent SQL DTO rejection: hero_image.file_title
+ok 142 - Independent SQL DTO rejection: hero_image.source_page
+ok 143 - Independent SQL DTO rejection: hero_image.local_path
+ok 144 - Independent SQL DTO rejection: hero_image.sha256
+ok 145 - Independent SQL DTO rejection: hero_image.bytes
+ok 146 - Independent SQL DTO rejection: hero_image.width
+ok 147 - Independent SQL DTO rejection: hero_image.height
+ok 148 - Independent SQL DTO rejection: hero_image.license
+ok 149 - Independent SQL DTO rejection: hero_image.license_url
+ok 150 - Independent SQL DTO rejection: hero_image.author
+ok 151 - Independent SQL DTO rejection: hero_image.attribution
+ok 152 - Independent SQL DTO rejection: hero_image.modifications
+ok 153 - Independent SQL DTO rejection: hero_image.sha256
+ok 154 - Independent SQL DTO rejection: hero_image.mime
+ok 155 - Independent SQL DTO rejection: hero_image.source_page
+ok 156 - Independent SQL DTO rejection: hero_image.license_url
+ok 157 - Independent SQL DTO rejection: watering.intervals_days.spring
+ok 158 - Independent SQL DTO rejection: watering.intervals_days.summer
+ok 159 - Independent SQL DTO rejection: watering.intervals_days.fall
+ok 160 - Independent SQL DTO rejection: watering.intervals_days.winter
+ok 161 - Independent SQL DTO rejection: watering.watering_method
+ok 162 - Independent SQL DTO rejection: watering.drainage_preference
+ok 163 - Independent SQL DTO rejection: watering.match_level
+ok 164 - Independent SQL DTO rejection: watering.matched_on
+ok 165 - Independent SQL DTO rejection: watering.source.id
+ok 166 - Independent SQL DTO rejection: watering.source.repository
+ok 167 - Independent SQL DTO rejection: watering.source.commit
+ok 168 - Independent SQL DTO rejection: watering.source.snapshot_sha256
+ok 169 - Independent SQL DTO rejection: watering.source.plantfolio_id
+ok 170 - DTO required key: rank
+ok 171 - DTO required key: genus
+ok 172 - DTO required key: family
+ok 173 - DTO required key: safety
+ok 174 - DTO required key: plant_id
+ok 175 - DTO required key: taxon_id
+ok 176 - DTO required key: watering
+ok 177 - DTO required key: hero_image
+ok 178 - DTO required key: description
+ok 179 - DTO required key: name_source
+ok 180 - DTO required key: wikidata_id
+ok 181 - DTO required key: common_names
+ok 182 - DTO required key: descriptions
+ok 183 - DTO required key: display_name
+ok 184 - DTO required key: localized_name
+ok 185 - DTO required key: search_aliases
+ok 186 - DTO required key: scientific_name
+ok 187 - DTO required key: external_taxon_ids
+ok 188 - DTO required key: care_profile_available
+ok 189 - DTO required key: scientific_name_status
+ok 190 - DTO required key: accepted_scientific_name
+ok 191 - DTO wrong type: rank
+ok 192 - DTO wrong type: genus
+ok 193 - DTO wrong type: family
+ok 194 - DTO wrong type: safety
+ok 195 - DTO wrong type: plant_id
+ok 196 - DTO wrong type: taxon_id
+ok 197 - DTO wrong type: watering
+ok 198 - DTO wrong type: hero_image
+ok 199 - DTO wrong type: description
+ok 200 - DTO wrong type: name_source
+ok 201 - DTO wrong type: wikidata_id
+ok 202 - DTO wrong type: common_names
+ok 203 - DTO wrong type: descriptions
+ok 204 - DTO wrong type: display_name
+ok 205 - DTO wrong type: localized_name
+ok 206 - DTO wrong type: search_aliases
+ok 207 - DTO wrong type: scientific_name
+ok 208 - DTO wrong type: external_taxon_ids
+ok 209 - DTO wrong type: care_profile_available
+ok 210 - DTO wrong type: scientific_name_status
+ok 211 - DTO wrong type: accepted_scientific_name
+ok 212 - Required SQL record key: plant_id
+ok 213 - Required SQL record key: scientific_name
+ok 214 - Required SQL record key: scientific_name_status
+ok 215 - Required SQL record key: wikidata_id
+ok 216 - Required SQL record key: external_taxon_ids
+ok 217 - Required SQL record key: common_names
+ok 218 - Required SQL record key: search_aliases
+ok 219 - Required SQL record key: descriptions
+ok 220 - Required SQL record key: hero_image
+ok 221 - Required SQL record key: watering
+ok 222 - Required SQL record key: care_profile_available
+ok 223 - Required SQL record key: source_revision
+ok 224 - Nullable winter accepted
+ok 225 - Non-immersion requires at least two numeric seasons
+ok 226 - Immersion accepts all null seasons
+ok 227 - Direct snapshot mutation cannot bypass schema
+ok 228 - Publishing revalidates legacy snapshots and rejects corruption
+ok 229 - Failed publication keeps the previous release active

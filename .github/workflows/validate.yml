@@ -1,0 +1,47 @@
+name: Validate Narat MVP (CI)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts-and-deno:
+    name: JSON Schemas & Deno Edge Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run G02 & Shared Edge Tests (Fixture-based, no paid API calls)
+        working-directory: supabase/functions
+        run: deno task test
+
+  ios-build-and-tests:
+    name: iOS Build & Tests (PL / EN)
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Xcode Project via XcodeGen
+        run: |
+          brew list xcodegen || brew install xcodegen
+          xcodegen generate --spec ios/project.yml --project ios/
+
+      - name: Build for Testing (iOS Simulator)
+        run: |
+          xcodebuild -project ios/Plants.xcodeproj \
+            -scheme Plants \
+            -destination "generic/platform=iOS Simulator" \
+            build-for-testing

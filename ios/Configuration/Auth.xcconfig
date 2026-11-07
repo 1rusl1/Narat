@@ -1,0 +1,8 @@
+// Public client configuration. Never put Supabase service_role/secret keys here.
+// Set values in Auth.local.xcconfig (ignored by Git); see docs/validation/native-auth.md.
+NARAT_SUPABASE_URL =
+NARAT_SUPABASE_PUBLISHABLE_KEY =
+GOOGLE_IOS_CLIENT_ID =
+GOOGLE_SERVER_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID =
+#include? "Auth.local.xcconfig"

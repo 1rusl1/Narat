@@ -1,0 +1,607 @@
+{
+  "draft_schema_version": "research-0.1",
+  "plant_id": "monstera_deliciosa",
+  "scientific_name": "Monstera deliciosa",
+  "status": "research_draft",
+  "usage": "personal_noncommercial_reference",
+  "publishable": false,
+  "production_care_profile_available": false,
+  "created_at": "2026-11-02T21:27:05.914679+00:00",
+  "updated_at": "2026-11-02T21:27:05.914679+00:00",
+  "provenance": {
+    "method": "editorial_reference_comparison_plus_live_wikidata_snapshots",
+    "sources": [
+      {
+        "source_id": "wikidata_q161077",
+        "donor_id": "wikidata",
+        "independence_group": "wikidata",
+        "url": "https://www.wikidata.org/wiki/Special:EntityData/Q161077.json",
+        "access_method": "direct_http_snapshot",
+        "retrieved_at": "2026-11-02T20:41:29.125676+00:00",
+        "source_content_sha256": "46a3b0a9c68d0e178740cb0d4de2d00249ca8a4a65093fd692cd4ad327805153",
+        "local_path": "knowledge-base/raw/wikidata-http/Q161077.json",
+        "revision": 2547601493,
+        "use_basis": "CC0-1.0 structured entity data",
+        "production_ingestion_status": "allowed"
+      },
+      {
+        "source_id": "wikidata_q159216",
+        "donor_id": "wikidata",
+        "independence_group": "wikidata",
+        "url": "https://www.wikidata.org/wiki/Special:EntityData/Q159216.json",
+        "access_method": "direct_http_snapshot",
+        "retrieved_at": "2026-11-02T21:25:18.370901+00:00",
+        "source_content_sha256": "52dee73442e07f4472a539f5a508d0a06253235a6563288f99aad76ebedbfb0a",
+        "local_path": "knowledge-base/raw/wikidata-http/Q159216.json",
+        "revision": 2557058972,
+        "use_basis": "CC0-1.0 structured entity data",
+        "production_ingestion_status": "allowed"
+      },
+      {
+        "source_id": "wikidata_q48227",
+        "donor_id": "wikidata",
+        "independence_group": "wikidata",
+        "url": "https://www.wikidata.org/wiki/Special:EntityData/Q48227.json",
+        "access_method": "direct_http_snapshot",
+        "retrieved_at": "2026-11-02T21:25:30.329316+00:00",
+        "source_content_sha256": "e6531c68e66b0df7155b442d54f304e95eefe3cbbd744bc008f686fedc00547e",
+        "local_path": "knowledge-base/raw/wikidata-http/Q48227.json",
+        "revision": 2553134869,
+        "use_basis": "CC0-1.0 structured entity data",
+        "production_ingestion_status": "allowed"
+      },
+      {
+        "source_id": "ncsu_monstera",
+        "donor_id": "ncsu",
+        "independence_group": "ncsu",
+        "url": "https://plants.ces.ncsu.edu/plants/monstera-deliciosa/",
+        "title": "Monstera deliciosa — NC State Plant Toolbox",
+        "access_method": "web_reference_read",
+        "checked_on": "2026-11-03",
+        "retrieved_at": null,
+        "source_content_sha256": null,
+        "local_path": null,
+        "use_basis": "Short factual research notes for the private noncommercial pilot; no website text or photos mirrored. Production reuse grant unverified.",
+        "production_ingestion_status": "pending_review"
+      },
+      {
+        "source_id": "rhs_monstera",
+        "donor_id": "rhs",
+        "independence_group": "rhs",
+        "url": "https://www.rhs.org.uk/plants/11192/monstera-deliciosa-f/details",
+        "title": "Monstera deliciosa — RHS Plant Profile",
+        "access_method": "web_reference_read",
+        "checked_on": "2026-11-03",
+        "retrieved_at": null,
+        "source_content_sha256": null,
+        "local_path": null,
+        "use_basis": "Short factual research notes for the private noncommercial pilot; no website text or photos mirrored. Production reuse grant unverified.",
+        "production_ingestion_status": "pending_review"
+      },
+      {
+        "source_id": "rhs_monstera_guide",
+        "donor_id": "rhs",
+        "independence_group": "rhs",
+        "url": "https://www.rhs.org.uk/plants/swiss-cheese-plants",
+        "title": "Swiss cheese plants — RHS Genus Guide",
+        "access_method": "web_reference_read",
+        "checked_on": "2026-11-03",
+        "retrieved_at": null,
+        "source_content_sha256": null,
+        "local_path": null,
+        "use_basis": "Short factual research notes for the private noncommercial pilot; no website text or photos mirrored. Production reuse grant unverified.",
+        "production_ingestion_status": "pending_review"
+      },
+      {
+        "source_id": "wisconsin_monstera",
+        "donor_id": "uw_madison",
+        "independence_group": "uw_madison",
+        "url": "https://hort.extension.wisc.edu/articles/monstera-deliciosa/",
+        "title": "Swiss-Cheese Plant — Wisconsin Horticulture",
+        "access_method": "web_reference_read",
+        "checked_on": "2026-11-03",
+        "retrieved_at": null,
+        "source_content_sha256": null,
+        "local_path": null,
+        "use_basis": "Short factual research notes for the private noncommercial pilot; no website text or photos mirrored. Production reuse grant unverified.",
+        "production_ingestion_status": "pending_review"
+      }
+    ],
+    "notes": "Source page hashes are null for browser-only reference reads; do not replace them with hashes of these notes. RHS pages are one independence group. No ASPCA/Perenual content processed."
+  },
+  "facts": {
+    "/taxonomy/scientific_name": {
+      "value": "Monstera deliciosa",
+      "review_state": "snapshot_checked",
+      "evidence": [
+        {
+          "source_id": "wikidata_q161077",
+          "locator": "/entities/Q161077/claims/P225"
+        }
+      ]
+    },
+    "/taxonomy/genus": {
+      "value": "Monstera",
+      "review_state": "snapshot_checked",
+      "evidence": [
+        {
+          "source_id": "wikidata_q161077",
+          "locator": "/entities/Q161077/claims/P171"
+        },
+        {
+          "source_id": "wikidata_q159216",
+          "locator": "/entities/Q159216/claims/P225"
+        }
+      ]
+    },
+    "/taxonomy/family": {
+      "value": "Araceae",
+      "review_state": "snapshot_checked",
+      "evidence": [
+        {
+          "source_id": "wikidata_q159216",
+          "locator": "/entities/Q159216/claims/P171"
+        },
+        {
+          "source_id": "wikidata_q48227",
+          "locator": "/entities/Q48227/claims/P225"
+        }
+      ]
+    },
+    "/taxonomy/common_names/en": {
+      "value": [
+        "Swiss cheese plant"
+      ],
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "wikidata_q161077",
+          "locator": "/entities/Q161077/claims/P1843"
+        },
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Common Name(s)"
+        },
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Common name"
+        }
+      ]
+    },
+    "/taxonomy/common_names/pl": {
+      "value": [
+        "Monstera dziurawa"
+      ],
+      "review_state": "label_only_editorial_review_pending",
+      "evidence": [
+        {
+          "source_id": "wikidata_q161077",
+          "locator": "/entities/Q161077/labels/pl"
+        }
+      ]
+    },
+    "/taxonomy/synonyms_candidates": {
+      "value": [
+        "Philodendron pertusum"
+      ],
+      "review_state": "single_donor_wcvp_check_pending",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Synonyms"
+        }
+      ]
+    },
+    "/care/light": {
+      "value": "bright_indirect",
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Description: indoor light"
+        },
+        {
+          "source_id": "rhs_monstera",
+          "locator": "How to Grow / Cultivation"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: light"
+        }
+      ]
+    },
+    "/care/watering": {
+      "value": "check_substrate_before_watering; allow_partial_drying; avoid_standing_water",
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Description: watering"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: watering"
+        },
+        {
+          "source_id": "rhs_monstera_guide",
+          "locator": "Preferences / Dislikes"
+        }
+      ]
+    },
+    "/care/substrate": {
+      "value": "organic_potting_medium_with_good_drainage",
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Cultural Conditions: soil/drainage"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: soilless mix"
+        }
+      ]
+    },
+    "/care/humidity": {
+      "value": "moderate_to_high",
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "How to Grow / Cultivation"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: humidity"
+        }
+      ]
+    },
+    "/care/fertilizing": {
+      "value": "during_active_growth",
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "How to Grow / Cultivation"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: seasonal fertilizing"
+        }
+      ]
+    },
+    "/care/fertilizer_type_candidate": {
+      "value": "balanced_liquid",
+      "review_state": "single_donor",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "How to Grow / Cultivation"
+        }
+      ]
+    },
+    "/care/fertilizer_frequency_candidate": {
+      "value": "monthly_during_growth",
+      "review_state": "single_donor_not_mapped_to_fixed_days",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "How to Grow / Cultivation"
+        }
+      ]
+    },
+    "/care/support": {
+      "value": "sturdy_climbing_support",
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Description: support"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: support"
+        }
+      ]
+    },
+    "/care/leaf_cleaning": {
+      "value": "remove_dust",
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Description: maintenance"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: maintenance"
+        }
+      ]
+    },
+    "/safety/pets_hazard": {
+      "value": "harmful_if_eaten",
+      "review_state": "reference_hazard_animal_specific_validation_pending",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Botanical Details / Potentially harmful"
+        },
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Landscape / Problems: cats and dogs"
+        }
+      ]
+    },
+    "/safety/toxin_candidate": {
+      "value": "calcium_oxalate_crystals",
+      "review_state": "plant_hazard_not_animal_severity",
+      "evidence": [
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Poisonous to Humans / Poison Toxic Principle"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Overview: plant toxicity"
+        }
+      ]
+    },
+    "/vulnerabilities/scale_insects": {
+      "value": true,
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Pests"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: pests"
+        }
+      ]
+    },
+    "/vulnerabilities/spider_mites": {
+      "value": true,
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Pests"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: pests"
+        }
+      ]
+    },
+    "/vulnerabilities/root_rot": {
+      "value": true,
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera_guide",
+          "locator": "Dislikes"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: excessive moisture"
+        }
+      ]
+    },
+    "/vulnerabilities/sunburn": {
+      "value": true,
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera_guide",
+          "locator": "Dislikes"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: acclimation"
+        }
+      ]
+    },
+    "/vulnerabilities/low_humidity": {
+      "value": true,
+      "review_state": "corroborated_reference",
+      "evidence": [
+        {
+          "source_id": "rhs_monstera_guide",
+          "locator": "Dislikes"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: leaf edges"
+        }
+      ]
+    },
+    "/vulnerabilities/mealybugs": {
+      "value": true,
+      "review_state": "single_donor",
+      "evidence": [
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: pests"
+        }
+      ]
+    },
+    "/vulnerabilities/aphids": {
+      "value": true,
+      "review_state": "single_donor",
+      "evidence": [
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant: pests"
+        }
+      ]
+    }
+  },
+  "unresolved_conflicts": [
+    {
+      "id": "dryness_threshold",
+      "field": "/care_algorithm_params/watering_strategy",
+      "status": "unresolved",
+      "observations": [
+        {
+          "source_id": "ncsu_monstera",
+          "scope": "species indoors",
+          "value": "upper_quarter_to_third_dry"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "scope": "species indoors",
+          "value": "medium_slightly_dry"
+        },
+        {
+          "source_id": "rhs_monstera_guide",
+          "scope": "genus guidance",
+          "value": "medium_almost_dry"
+        }
+      ],
+      "decision": "No exact dry depth, fixed watering interval or executable watering strategy assigned."
+    },
+    {
+      "id": "direct_sun_context",
+      "field": "/care_algorithm_params/light_requirements/direct_sun_tolerance",
+      "status": "unresolved",
+      "observations": [
+        {
+          "source_id": "ncsu_monstera",
+          "value": "avoid_direct_sun_indoors"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "value": "winter_sun_possible; acclimate_to_outdoor_light"
+        },
+        {
+          "source_id": "rhs_monstera_guide",
+          "value": "summer_direct_sun_can_scorch"
+        }
+      ],
+      "decision": "Bright indirect light retained; universal direct-sun category left unknown."
+    }
+  ],
+  "algorithm_parameters": {
+    "watering_strategy": "unknown",
+    "dry_depth_cm": null,
+    "base_watering_interval_days": {
+      "summer": null,
+      "winter": null
+    },
+    "environment_modifiers": {
+      "low_light_multiplier": null,
+      "terracotta_pot_multiplier": null,
+      "heating_season_multiplier": null
+    },
+    "light_requirements": {
+      "ideal_fc_range": null,
+      "min_survival_fc": null,
+      "direct_sun_tolerance": "unknown"
+    },
+    "soil_preset": null,
+    "fertilizing": {
+      "frequency_days": null,
+      "recommended_npk": null
+    }
+  },
+  "safety_for_release": {
+    "cat": "unknown",
+    "dog": "unknown",
+    "severity": "unknown",
+    "reason": "Animal-specific evidence/reuse and editorial validation not completed; human low-severity label not transferred to pets."
+  },
+  "care_content_i18n_draft": {
+    "en": {
+      "watering_tip": "Check the substrate before watering. Avoid standing water.",
+      "soil_recipe": "Use an organic potting medium with good drainage.",
+      "light_tip": "Choose bright, indirect light.",
+      "fertilizing_tip": "Feed during active growth.",
+      "safety_note": "Keep out of reach of pets; chewing may be harmful."
+    },
+    "pl": {
+      "watering_tip": "Sprawdź podłoże przed podlewaniem. Nie zostawiaj rośliny w stojącej wodzie.",
+      "soil_recipe": "Użyj podłoża bogatego w materię organiczną, które dobrze odprowadza wodę.",
+      "light_tip": "Zapewnij jasne, rozproszone światło.",
+      "fertilizing_tip": "Nawoź w okresie aktywnego wzrostu.",
+      "safety_note": "Trzymaj poza zasięgiem zwierząt; gryzienie rośliny może być szkodliwe."
+    }
+  },
+  "localized_content_state": "editorial_draft_not_language_or_botany_approved",
+  "unknown_or_unverified": [
+    "accepted_name_and_synonyms_wcvp",
+    "editorially_verified_pl_common_names",
+    "numeric_light_limits_fc",
+    "dry_depth_cm",
+    "base_watering_interval_days",
+    "environment_modifiers",
+    "pl_season_months",
+    "min_max_check_interval_days",
+    "unknown_conditions_protocol_id",
+    "canonical_soil_preset_and_mix_ratios",
+    "fertilizer_frequency_days_and_npk",
+    "pet_specific_toxicity_and_severity",
+    "verified_condition_profiles_and_actions",
+    "production_source_rights_and_snapshots",
+    "kb_release_and_semantic_validation"
+  ],
+  "release_blockers": [
+    "unreviewed_care_source_reuse_operations",
+    "missing_care_source_snapshots_and_hashes",
+    "unresolved_dryness_and_sun_context",
+    "incomplete_algorithm_and_fallback",
+    "animal_specific_safety_review",
+    "missing_verified_condition_profiles",
+    "canonical_and_semantic_validation_not_passed",
+    "no_published_kb_release"
+  ],
+  "media_reference": {
+    "manifest": "catalogue/manifests/pilot-media.json",
+    "plant_id": "monstera_deliciosa",
+    "new_media_downloaded": false
+  },
+  "canonical_contract": "specs/001-plants-ios-mvp/contracts/plant-profile.schema.json",
+  "canonical_profile_ready": false,
+  "localized_text_evidence": {
+    "/en/watering_tip": {
+      "fact_pointer": "/care/watering",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/en/soil_recipe": {
+      "fact_pointer": "/care/substrate",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/en/light_tip": {
+      "fact_pointer": "/care/light",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/en/fertilizing_tip": {
+      "fact_pointer": "/care/fertilizing",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/en/safety_note": {
+      "fact_pointer": "/safety/pets_hazard",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/pl/watering_tip": {
+      "fact_pointer": "/care/watering",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/pl/soil_recipe": {
+      "fact_pointer": "/care/substrate",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/pl/light_tip": {
+      "fact_pointer": "/care/light",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/pl/fertilizing_tip": {
+      "fact_pointer": "/care/fertilizing",
+      "state": "editorial_paraphrase_pending_review"
+    },
+    "/pl/safety_note": {
+      "fact_pointer": "/safety/pets_hazard",
+      "state": "editorial_paraphrase_pending_review"
+    }
+  }
+}

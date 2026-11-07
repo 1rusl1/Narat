@@ -1,0 +1,4 @@
+plant_id,scientific_name,label_pl,label_en,wikidata_id,revision,photos,care_status,safety_status
+epipremnum_aureum,Epipremnum aureum,Epipremnum złociste,Epipremnum aureum,Q161809,2563948953,1,not_collected,unknown
+ficus_elastica,Ficus elastica,Figowiec sprężysty,Ficus elastica,Q160576,2546495189,1,not_collected,unknown
+monstera_deliciosa,Monstera deliciosa,Monstera dziurawa,Monstera deliciosa,Q161077,2547601493,1,not_collected,unknown

@@ -1,0 +1,875 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kb_release_id",
+    "record_version",
+    "provenance",
+    "condition_id",
+    "category",
+    "host_scope",
+    "visual_markers",
+    "diagnostic_disambiguation",
+    "required_check_ids",
+    "contraindication_check_ids",
+    "abiotic_priority",
+    "first_help_step_id",
+    "treatment_plan",
+    "recovery_check",
+    "condition_content_i18n"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "kb_release_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "record_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_documents",
+        "field_evidence",
+        "validation"
+      ],
+      "properties": {
+        "source_documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source_id",
+              "donor_id",
+              "independence_group",
+              "url",
+              "retrieved_at",
+              "content_hash",
+              "use_basis",
+              "allowed_for"
+            ],
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "donor_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "independence_group": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "retrieved_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "content_hash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "use_basis": {
+                "type": "string",
+                "minLength": 1
+              },
+              "allowed_for": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "commercial_storage",
+                    "automated_collection",
+                    "llm_processing",
+                    "derived_records"
+                  ]
+                },
+                "minItems": 4,
+                "maxItems": 4,
+                "uniqueItems": true
+              }
+            }
+          },
+          "minItems": 3,
+          "uniqueItems": true
+        },
+        "field_evidence": {
+          "type": "object",
+          "minProperties": 1,
+          "patternProperties": {
+            "^/": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source_id",
+                  "locator",
+                  "scope"
+                ],
+                "properties": {
+                  "source_id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "locator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "scope": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "synthesis_model",
+            "prompt_version",
+            "guardrail_version",
+            "validated_at",
+            "unresolved_conflicts"
+          ],
+          "properties": {
+            "method": {
+              "const": "multi_source_rules"
+            },
+            "synthesis_model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "prompt_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "guardrail_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "validated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "unresolved_conflicts": {
+              "type": "array",
+              "maxItems": 0,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "condition_id": {
+      "type": "string",
+      "enum": [
+        "overwatering",
+        "underwatering",
+        "poor_drainage",
+        "root_rot",
+        "low_light",
+        "sunburn",
+        "cold_stress",
+        "heat_stress",
+        "low_humidity",
+        "fertilizer_burn",
+        "nutrient_deficiency",
+        "salt_buildup",
+        "nitrogen_deficiency",
+        "iron_chlorosis",
+        "potassium_deficiency",
+        "magnesium_deficiency",
+        "ph_imbalance",
+        "root_bound",
+        "transplant_shock",
+        "acclimation_stress",
+        "edema",
+        "mechanical_damage",
+        "chemical_phytotoxicity",
+        "natural_leaf_senescence",
+        "thrips_infestation",
+        "spider_mites",
+        "mealybugs",
+        "scale_insects",
+        "aphids",
+        "whiteflies",
+        "fungus_gnats",
+        "broad_mites",
+        "powdery_mildew",
+        "grey_mould",
+        "fungal_leaf_spot",
+        "bacterial_leaf_spot",
+        "bacterial_soft_rot",
+        "crown_rot",
+        "sooty_mould",
+        "suspected_viral_disease"
+      ]
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "abiotic",
+        "pest",
+        "disease",
+        "syndrome",
+        "physiological"
+      ]
+    },
+    "host_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plant_ids",
+        "families",
+        "general_houseplants"
+      ],
+      "properties": {
+        "plant_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "families": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "general_houseplants": {
+          "type": "boolean"
+        }
+      }
+    },
+    "visual_markers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "diagnostic_disambiguation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "often_confused_with",
+        "clarifying_questions"
+      ],
+      "properties": {
+        "often_confused_with": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "overwatering",
+              "underwatering",
+              "poor_drainage",
+              "root_rot",
+              "low_light",
+              "sunburn",
+              "cold_stress",
+              "heat_stress",
+              "low_humidity",
+              "fertilizer_burn",
+              "nutrient_deficiency",
+              "salt_buildup",
+              "nitrogen_deficiency",
+              "iron_chlorosis",
+              "potassium_deficiency",
+              "magnesium_deficiency",
+              "ph_imbalance",
+              "root_bound",
+              "transplant_shock",
+              "acclimation_stress",
+              "edema",
+              "mechanical_damage",
+              "chemical_phytotoxicity",
+              "natural_leaf_senescence",
+              "thrips_infestation",
+              "spider_mites",
+              "mealybugs",
+              "scale_insects",
+              "aphids",
+              "whiteflies",
+              "fungus_gnats",
+              "broad_mites",
+              "powdery_mildew",
+              "grey_mould",
+              "fungal_leaf_spot",
+              "bacterial_leaf_spot",
+              "bacterial_soft_rot",
+              "crown_rot",
+              "sooty_mould",
+              "suspected_viral_disease"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 39,
+          "uniqueItems": true
+        },
+        "clarifying_questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "question_id",
+              "text_pl",
+              "text_en",
+              "yes_weights_towards",
+              "no_weights_towards"
+            ],
+            "properties": {
+              "question_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "text_pl": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text_en": {
+                "type": "string",
+                "minLength": 1
+              },
+              "yes_weights_towards": {
+                "type": "string",
+                "enum": [
+                  "overwatering",
+                  "underwatering",
+                  "poor_drainage",
+                  "root_rot",
+                  "low_light",
+                  "sunburn",
+                  "cold_stress",
+                  "heat_stress",
+                  "low_humidity",
+                  "fertilizer_burn",
+                  "nutrient_deficiency",
+                  "salt_buildup",
+                  "nitrogen_deficiency",
+                  "iron_chlorosis",
+                  "potassium_deficiency",
+                  "magnesium_deficiency",
+                  "ph_imbalance",
+                  "root_bound",
+                  "transplant_shock",
+                  "acclimation_stress",
+                  "edema",
+                  "mechanical_damage",
+                  "chemical_phytotoxicity",
+                  "natural_leaf_senescence",
+                  "thrips_infestation",
+                  "spider_mites",
+                  "mealybugs",
+                  "scale_insects",
+                  "aphids",
+                  "whiteflies",
+                  "fungus_gnats",
+                  "broad_mites",
+                  "powdery_mildew",
+                  "grey_mould",
+                  "fungal_leaf_spot",
+                  "bacterial_leaf_spot",
+                  "bacterial_soft_rot",
+                  "crown_rot",
+                  "sooty_mould",
+                  "suspected_viral_disease"
+                ]
+              },
+              "no_weights_towards": {
+                "type": "string",
+                "enum": [
+                  "overwatering",
+                  "underwatering",
+                  "poor_drainage",
+                  "root_rot",
+                  "low_light",
+                  "sunburn",
+                  "cold_stress",
+                  "heat_stress",
+                  "low_humidity",
+                  "fertilizer_burn",
+                  "nutrient_deficiency",
+                  "salt_buildup",
+                  "nitrogen_deficiency",
+                  "iron_chlorosis",
+                  "potassium_deficiency",
+                  "magnesium_deficiency",
+                  "ph_imbalance",
+                  "root_bound",
+                  "transplant_shock",
+                  "acclimation_stress",
+                  "edema",
+                  "mechanical_damage",
+                  "chemical_phytotoxicity",
+                  "natural_leaf_senescence",
+                  "thrips_infestation",
+                  "spider_mites",
+                  "mealybugs",
+                  "scale_insects",
+                  "aphids",
+                  "whiteflies",
+                  "fungus_gnats",
+                  "broad_mites",
+                  "powdery_mildew",
+                  "grey_mould",
+                  "fungal_leaf_spot",
+                  "bacterial_leaf_spot",
+                  "bacterial_soft_rot",
+                  "crown_rot",
+                  "sooty_mould",
+                  "suspected_viral_disease"
+                ]
+              }
+            }
+          },
+          "minItems": 0,
+          "maxItems": 12,
+          "uniqueItems": true
+        }
+      }
+    },
+    "required_check_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "contraindication_check_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "abiotic_priority": {
+      "type": "string",
+      "enum": [
+        "default_first",
+        "specific_evidence_required",
+        "neutral"
+      ]
+    },
+    "first_help_step_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "treatment_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "is_contagious",
+        "urgency",
+        "duration_weeks",
+        "steps"
+      ],
+      "properties": {
+        "is_contagious": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "urgency": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "unknown"
+          ]
+        },
+        "duration_weeks": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 52
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step_id",
+              "step_order",
+              "phase",
+              "action_code",
+              "purpose",
+              "start_offset_days",
+              "interval_days",
+              "repeat_count",
+              "active_ingredients",
+              "eco_alternative",
+              "application_selection",
+              "local_products_pl",
+              "product_evidence_ids",
+              "prerequisite_check_ids",
+              "contraindication_check_ids",
+              "action_pl",
+              "action_en"
+            ],
+            "properties": {
+              "step_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "step_order": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "immediate_isolation",
+                  "mechanical_wash",
+                  "treatment_application",
+                  "adjust_environment",
+                  "substrate_correction",
+                  "sanitation",
+                  "monitoring",
+                  "recovery_check"
+                ]
+              },
+              "action_code": {
+                "type": "string",
+                "enum": [
+                  "check_soil",
+                  "inspect_roots",
+                  "inspect_leaves",
+                  "observe",
+                  "water",
+                  "fertilize",
+                  "repot",
+                  "prune",
+                  "isolate",
+                  "wash_pests",
+                  "treat_pests",
+                  "adjust_light",
+                  "adjust_humidity",
+                  "check_up"
+                ]
+              },
+              "purpose": {
+                "type": "string",
+                "enum": [
+                  "diagnostic_check",
+                  "routine_care",
+                  "humidity_management",
+                  "pest_removal",
+                  "treatment",
+                  "observation"
+                ]
+              },
+              "start_offset_days": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 365
+              },
+              "interval_days": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 365
+              },
+              "repeat_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 52
+              },
+              "active_ingredients": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              },
+              "eco_alternative": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "application_selection": {
+                "const": "one_verified_option"
+              },
+              "local_products_pl": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              },
+              "product_evidence_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              },
+              "prerequisite_check_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              },
+              "contraindication_check_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "minItems": 0,
+                "uniqueItems": true
+              },
+              "action_pl": {
+                "type": "string",
+                "minLength": 1
+              },
+              "action_en": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "description": "interval_days is repeat spacing, repeat_count is TOTAL occurrences including the first. start_offset_days is measured from explicit treatment start. Ingredients/eco alternative are alternatives, not a tank mix; only one verified option may be selected. Brand names require corresponding active product evidence.",
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "repeat_count": {
+                      "minimum": 2
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "interval_days": {
+                      "minimum": 1
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "interval_days": {
+                      "const": 0
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 100
+        }
+      }
+    },
+    "recovery_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_offset_days",
+        "comparison_trait_ids",
+        "worsening_symptom_ids"
+      ],
+      "properties": {
+        "check_offset_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 90
+        },
+        "comparison_trait_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "worsening_symptom_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "condition_content_i18n": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "en",
+        "pl"
+      ],
+      "properties": {
+        "en": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "summary",
+            "recovery_check_tip",
+            "photo_angle_hint"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recovery_check_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "photo_angle_hint": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "pl": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "summary",
+            "recovery_check_tip",
+            "photo_angle_hint"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "recovery_check_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "photo_angle_hint": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "description": "Canonical ConditionProfile from the complete owner prompt. An enriched published record, not an approval of the numeric or chemical examples. Cross-field references, evidence, schedule horizon, alternative compatibility and PL label checks require semantic validation.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:plants:condition-profile:1.0",
+  "title": "ConditionProfile Golden Record",
+  "$defs": {
+    "condition_id": {
+      "type": "string",
+      "enum": [
+        "overwatering",
+        "underwatering",
+        "poor_drainage",
+        "root_rot",
+        "low_light",
+        "sunburn",
+        "cold_stress",
+        "heat_stress",
+        "low_humidity",
+        "fertilizer_burn",
+        "nutrient_deficiency",
+        "salt_buildup",
+        "nitrogen_deficiency",
+        "iron_chlorosis",
+        "potassium_deficiency",
+        "magnesium_deficiency",
+        "ph_imbalance",
+        "root_bound",
+        "transplant_shock",
+        "acclimation_stress",
+        "edema",
+        "mechanical_damage",
+        "chemical_phytotoxicity",
+        "natural_leaf_senescence",
+        "thrips_infestation",
+        "spider_mites",
+        "mealybugs",
+        "scale_insects",
+        "aphids",
+        "whiteflies",
+        "fungus_gnats",
+        "broad_mites",
+        "powdery_mildew",
+        "grey_mould",
+        "fungal_leaf_spot",
+        "bacterial_leaf_spot",
+        "bacterial_soft_rot",
+        "crown_rot",
+        "sooty_mould",
+        "suspected_viral_disease"
+      ]
+    }
+  }
+}
