@@ -217,6 +217,17 @@
       "stage": "static",
       "mode": "local",
       "timeout": 300
+    },
+    "t152-ui": {
+      "argv": [
+        "python3",
+        "tools/automation/t152_ui_gate.py",
+        "--run-id",
+        "{check_run_id}"
+      ],
+      "stage": "qa",
+      "mode": "local",
+      "timeout": 900
     }
   },
   "publish": {

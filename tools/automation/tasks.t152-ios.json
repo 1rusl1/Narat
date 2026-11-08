@@ -1,0 +1,93 @@
+{
+  "tasks": [
+    {
+      "id": "t152-ios-unavailable-outbox",
+      "description": "Второй ограниченный срез T152 после принятого backend: заменить демонстрационную помощь в штатном iOS честной недоступностью анализа; проверить care/scan и problem/scan EN/PL, возврат/каталог и сохранность outbox при HTTP503. Реальное фото/identification — T150; не подключать их в этом срезе.",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/Plants/Features/Onboarding/AddPlantRouter.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/PlantsUITests/FirstHelpTests.swift",
+        "specs/001-plants-ios-mvp/spec.md",
+        ".specify/memory/constitution.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/Plants/Features/Onboarding/AddPlantRouter.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/PlantsUITests/FirstHelpTests.swift"
+      ],
+      "risk": "medium",
+      "complexity": "medium",
+      "constraints": [
+        "Изменять только разрешённые файлы. Сохранить обе ветки, поля ввода/намерение/фото и каталог. Не создавать fake analysis/photo/receipt или local quota consumption в production; тестовые данные только внутри test targets. Не делать deployment/OAuth/billing/реальный AI.",
+        "AnalysisFlowModel по умолчанию не имеет подтверждённой квоты/успешного результата. Убрать canned Monstera/overwatering/совет/receipt, shouldFailNextAttemptForTesting и локальное списание. Допустимо optional accessState для неизвестного состояния. Повтор submit с тем же operationId остаётся недоступным, без результата/изменения подтверждённого вида/квоты/потери ввода.",
+        "Пока нет backend анализа/реального photo input, экран обеих scan-веток сразу сообщает Analysis is temporarily unavailable. / Analiza jest tymczasowo niedostępna. Никаких generated sample кнопок, fake camera light estimate и выдуманных чисел оставшихся попыток. Не показывать пустой экран даже при analyzing/preliminaryResult без данных.",
+        "Простой UX: retry, back к выбору care method либо welcome (по намерению) и переход в существующий каталог. Каталог может честно сообщать об отсутствии связи в isolated build. Существующий GuestCatalogueView разрешено менять только для стабильных accessibility identifiers error/back. Возврат не стирает выбранное фото/условия. Никаких runtime launch-флагов fixtures.",
+        "В test target перенести image fixture generator (из CareQuestionsView) для сохранения meaningful проверки >10MB normalization. Заменить старые тесты искусственного успеха тестами unavailable/retry/no quota/no fabricated result/preserved input для обоих intent.",
+        "В SyncPersistenceTests добавить transport с настоящим HTTP503 envelope INTERNAL_ERROR/retryable=true. Проверить 0 committed, запись pending с тем же UUID/payload и ошибкой после повторов/пересоздания LocalStore, не продвинутый watermark и сохранный cache при failed pullDelta. Отдельно проверить owner isolation. Существующие positive retry tests сохранить. Не заявлять cold process restart на inMemory container; для disk test использовать уникальный scope и cleanup.",
+        "FirstHelpTests должен содержать РОВНО четыре test methods: problem EN, problem PL, care/scan EN, care/scan PL. Каждый явно выбирает язык, проверяет локализованную недоступность, отсутствие fake quota/photo/result, повтор, полезный back и переход в каталог. Не skip. Приложить минимум один PNG screenshot на тест через XCTAttachment с lifetime keepAlways, показать текст недоступности. Никакой реальной сети: runner использует isolated build.",
+        "Контроллер выполняет ios-tests (build/welcome/весь PlantsTests), simulator-smoke, t152-ui (четыре case + export PNG), automation-tests и diff-check. Не запускать проверки самостоятельно до первого patch. Review оценивает QA-test реализацию, QA затем читает реальные xcresult/PNG. T152 checkbox не закрывать: срез не подтверждает живой backend/физическую камеру/каталог."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Штатные care/scan и problem/scan на EN/PL показывают явную недоступность вместо sample фото, диагноза, receipt, fake quota или пустого экрана; retry не даёт ложного успеха, back и каталог доступны. Четыре UI-case без skip, экспортированные реальные PNG.",
+          "checks": [
+            "t152-ui",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Unit-проверки отсутствия искусственного результата/локального списания и сохранности ввода/operationId при повторе в обоих intent; нормализация >10MB проверяется только test fixture. Все PlantsTests и welcome проходят. Это локальный Simulator с test transport, не live backend.",
+          "checks": [
+            "ios-tests"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC3",
+          "description": "HTTP503 из API не очищает outbox и не отмечает commit; повтор/пересоздание store сохраняют operationId/payload/owner. Failed sync не меняет watermark/подтверждённые entities и чужую очередь. Подтверждено реально запущенными PlantsTests на test transport.",
+          "checks": [
+            "ios-tests"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC4",
+          "description": "Инфраструктурные fixture tests, включая новый t152_ui_gate acceptance summary, проходят.",
+          "checks": [
+            "automation-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC5",
+          "description": "Whitespace/diff-check проходит.",
+          "checks": [
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
