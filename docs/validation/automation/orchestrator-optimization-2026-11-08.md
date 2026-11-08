@@ -99,3 +99,5 @@ cached: 0 / 12672 / 0. Это raw provider counters, на resume наблюда�
 Live полный цикл с Developer/Reviewer/Astra-QA пока не запускался. Новый unit gate проверен на fixtures, а не новой Simulator-сборкой; исходники iOS не изменены. Live backend/OAuth/камера/PL/EN и T152 не приняты. Новый CI fixture job настроен, его удалённый результат пока неизвестен. Поддержаны Codex и text patches; другие providers, binary/rename edits и дополнительные роли требуют явных адаптеров/стадий. Автоматическое закрытие полной продуктовой задачи по одному infrastructure smoke запрещено.
 
 Следующий шаг: manifest одного среза T152 с явными checks/evidence modes; validate → context → контролируемый run из чистого дерева. Наблюдать calls/task/role/model, prompt_bytes, retries/review cycles, успешность и регрессии; raw CLI usage и unknown учитывать отдельно от estimates и реальной подписочной квоты. Команды приведены в ORCHESTRATOR.md.
+
+Публикация: `537cb2f` (аудит), `ee92fc5` (контекст/state), `dcaa05e` (pipeline/metrics/recovery) успешно отправлены обычным push в origin/main. После отправки реализации рабочее дерево чистое; это дополнение фиксирует результат.
