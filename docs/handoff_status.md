@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-08.** Завершена и принята через оркестратор задача **T152** (все три среза: `t152-api-002`, `t152-ios-001`, `t152-live-disk-002`). Продуктовые статусы: 154 задачи, **29 отмечены выполненными**, **125 открыты** (отмечена `[X] T152`); число отметок не является процентом готовности.
+**Обновлено 2026-11-08.** Завершена и принята задача **T152**; начата и остановлена посреди этапа задача **T148** (подготовлены гейты `t148_catalogue_gate.py`, манифест `tasks.t148-pipeline.json`, обновлён роутинг `developer` без `argon`, исправлена нормализация `diff --git` в `repository.py`; точка остановки — перед запуском `t148-pipeline-001` на оркестраторе). Продуктовые статусы: 154 задачи, **29 отмечены выполненными**, **125 открыты** (`[X] T152`, `[ ] T148`); число отметок не является процентом готовности.
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.  
 **Источники:** [спецификация](../specs/001-plants-ios-mvp/spec.md), [задачи](../specs/001-plants-ios-mvp/tasks.md), конституция 3.0.0.  
 **Дизайн:** [Quiet Garden / «Тихий сад»](../design/design-concept.md), отдельные промпты [EN](../design/stitch-prompt.md) / [PL](../design/stitch-prompt-pl.md); интерфейс разрабатывается на SwiftUI, Stitch не является зависимостью.
@@ -10,42 +10,75 @@
 
 - Narat: Swift 6 / SwiftUI / SwiftData, Supabase, StoreKit 2; PL/EN.
 - Конституция: `.specify/memory/constitution.md`; требования: `specs/001-plants-ios-mvp/{spec,plan,tasks}.md`.
-- Следующая продуктовая задача: **T148** (затем **T149**). 154 задачи: 29 отмечены, 125 открыты; это не процент готовности.
+- Текущая задача в работе: **T148** (остановлена перед запуском среза `t148-pipeline-001`), затем **T149**. 154 задачи: 29 отмечены, 125 открыты; это не процент готовности.
 - Две ветки ухода/диагностики; runtime AI классифицирует, советы приходят из опубликованных Golden Records.
 - T152 полностью принята (fixtures, локальный Simulator UI/disk store и живой `plants-api` на `narat-staging`).
 - Handoff/tasks и Git изменяет только управляющий процесс. Критерии требуют доказательств; fixtures ≠ live.
-- Оркестратор работает с цепочкой `codex` → `agy` (`gemini-4-argon-*` / `gemini-3.8-flash-high`). Далее по порядку: T148 → T149.
+- Роутинг моделей: `developer` (`codex:gpt-6.1-sol` → `agy:gemini-3.8-flash-high`), `reviewer`/`qa` (`codex:gpt-6-astra` → `agy:gemini-4-argon-medium`/`high`).
 <!-- /orchestrator:project-state -->
 
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-**Задача T152 полностью завершена и принята через оркестратор (`t152-api-002`, `t152-ios-001`, `t152-live-disk-002`).** Функция `plants-api` развёрнута на стенде `narat-staging` (`ijwnyjdomwvnzmmcurkt`, `--use-api --no-verify-jwt --import-map supabase/functions/deno.json`), в `supabase/config.toml` закреплён `verify_jwt = false`. В `ios/PlantsTests/SyncPersistenceTests.swift` добавлен тест дискового SQLite `LocalStore` (`inMemory: false`) через четыре независимых `ModelContainer` с проверкой сохранности `LocalOutbox`, подтверждённого кеша, `watermark`, изоляции владельцев при HTTP 503 и последующего идемпотентного replay. В `specs/001-plants-ios-mvp/tasks.md` отмечена `[X] T152` (29/154).
+**Этап T148 остановлен посреди выполнения для передачи следующей модели.** Выполнен полный аудит 606 карточек `catalogue/releases/skeleton-300-v1/plants.json`, временно убран `agy:gemini-4-argon-low` из `developer`, добавлены гейты `t148-pipeline-gate` и `t148-release-gate` (`tools/automation/t148_catalogue_gate.py`), создан манифест первого среза `tools/automation/tasks.t148-pipeline.json`, устранена причина сбоя применения многофайловых unified diff без заголовков `diff --git` при `git apply --recount` в `tools/automation/orchestration/repository.py`. Сама задача `T148` в `specs/001-plants-ios-mvp/tasks.md` остаётся открытой (`[ ] T148`, 29/154).
 
-**Изменённые файлы и доказательства:**
-- Продуктовые и тестовые файлы среза `t152-live-and-disk-safety` (`9871d10`): `supabase/config.toml`, `ios/PlantsTests/SyncPersistenceTests.swift`.
-- Контроллер и инфраструктура (`a8dd044`, `3df22a2`): `tools/automation/orchestrator.config.json`, `tools/automation/tasks.t152-live-disk.json`, `tools/automation/t152_live_api_gate.py`, `tools/automation/tests/test_t152_live_api_gate.py`, `tools/automation/orchestration/{provider.py,engine.py,repository.py}`, `tools/automation/tests/test_orchestration_provider.py`.
-- Отчёты и статус: `docs/validation/t152-safety-2026-11-08.md`, `docs/validation/automation/tasks/t152-live-and-disk-safety.md`, `specs/001-plants-ios-mvp/tasks.md`, `docs/handoff_status.md`.
+**Изменённые файлы (`738b7c4`, `8a0f79c`):**
+- Конфигурация и контроллер оркестратора: `tools/automation/orchestrator.config.json`, `tools/automation/orchestration/repository.py`, `tools/automation/tasks.t148-pipeline.json`.
+- Гейт приёмки каталога T148 и тесты: `tools/automation/t148_catalogue_gate.py`, `tools/automation/tests/test_t148_catalogue_gate.py`, `tools/automation/tests/test_orchestration_context.py`, `tools/automation/tests/test_orchestration_engine.py`.
 
 **Реально запущенные проверки и результаты:**
 - Тестовые данные (fixtures):
-  - `automation-tests` (`python3 -m unittest discover -s tools/automation/tests -q`): **86/86 PASS**.
-  - `deno-tests` (`deno task --cwd supabase/functions test`): **36/36 PASS**.
-- Локальная среда / Simulator (`iPhone 17 Pro`, UDID `32009F39-32EF-426B-A91E-31B368D6C27E`):
-  - `diff-check` (`git diff --check`): **PASS (exit 0)**.
-  - `ios-tests`: сборка `build-for-testing` **PASS**, `welcome` XCUITest **1/1 PASS**, `PlantsTests` **23/23 PASS** (`0 failed, 0 skipped`, включая дисковый SQLite `LocalStore` `inMemory: false` через 4 независимых `ModelContainer`; отчёт `docs/validation/automation/runs/q-e024adda05c062439124c609/summary.json`).
-  - `simulator-smoke` (MobileBuildMCP + Mobile MCP): **PASS** (`docs/validation/automation/runs/q-019cf77ba9ba603037e6d687/summary.json`).
-- Живая интеграция (`t152-live-api` на стенде `narat-staging`, `https://ijwnyjdomwvnzmmcurkt.supabase.co`):
-  - **19/19 PASS** (`docs/validation/automation/runs/q-8b2a3ddbf2197e829b534749/summary.json`): `GET /health` 200 EN/PL (`version=3.0.0`), auth guards без токена и с невалидным токеном 401 `UNAUTHORIZED` EN/PL, реальная анонимная сессия `POST /auth/v1/signup` + проверка активного профиля в `profiles`, `GET /sync` → HTTP 503 `INTERNAL_ERROR`/`retryable=true` EN/PL, 3× повтор `POST /commands` с тем же `operation_id` и `X-Operation-Id` → HTTP 503 `INTERNAL_ERROR`/`retryable=true` EN/PL без `committed`/`replayed`, прямой клиентский вызов серверных RPC `fetch_sync_delta` и `save_operation_receipt` отклонён (403).
+  - `automation-tests` (`python3 -m unittest discover -s tools/automation/tests -v`): **89/89 PASS**.
+  - `kb-tests` (`python3 -m unittest discover -s knowledge-base/tests -v`): **27/27 PASS**.
+  - Валидация манифеста (`python3 tools/automation/orchestrator.py validate --manifest tools/automation/tasks.t148-pipeline.json`): **VALID (1 explicit task; no model calls)**.
+  - Проверка применения сгенерированных патчей (`call-1-developer`, `call-2-developer`, `call-3-developer` из прогона `t148-pipeline-20261108-r1`) через `normalize_patch` + `git apply --recount --check`: **PASS (exit 0 на всех 3 патчах)**.
+- Живые интеграции: в рамках подготовки T148 выполнен 1 прогон `t148-pipeline-20261108-r1` (`codex:gpt-6.1-sol` сгенерировал корректный патч, но до фикса `normalize_patch` отвалился на `git apply --recount`); пересборка релиза 606 видов и финальная приёмка T148 ещё не запускались.
 
-**Работа мульти-провайдерного fallback в цикле:** в `t152-live-disk-002` при исчерпании лимита ChatGPT (`codex:gpt-6.1-sol` и `codex:gpt-6-astra`) оркестратор автоматически переключился на `agy`: Developer `gemini-4-argon-low` (2 вызова в одной сессии), Reviewer `gemini-4-argon-medium` (1 вызов), QA `gemini-4-argon-medium` (1 вызов).
-
-**Ограничения и точный следующий шаг:** T152 подтверждает безопасный отказ и сохранность очереди/кеша при недоступном persistence, но не заменяет полноценную реализацию серверных обработчиков `commands`/`sync` (`T019`/`T149`) и распознавания/диагностики (`T038`/`T150`). Следующий шаг по порядку `tasks.md`: подготовить и запустить на оркестраторе задачу **T148** (регрессионный тест защиты `source_revision` для переведённых PL-названий и редакционная проверка/приёмка базового каталога 606 видов EN/PL), затем **T149**.
+**Фактическая точка остановки и точный следующий шаг:**
+1. Запустить срез 1 на оркестраторе: `PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" /opt/homebrew/bin/python3 tools/automation/orchestrator.py run --manifest tools/automation/tasks.t148-pipeline.json --run-id t148-pipeline-20261108-r3`.
+2. После `COMPLETED` среза `t148-pipeline-001` пересобрать релиз 606 видов офлайн (`python3 knowledge-base/pipeline/import_catalogue_300.py --offline`, `python3 knowledge-base/pipeline/validate_catalogue_skeleton.py`), обновить `image-validation.json` (606 файлов) и `offline-validation.json` (`plants_sha256`), запустить `python3 tools/automation/t148_catalogue_gate.py --mode release`.
+3. Выполнить срез 2 (`t148-acceptance-002`) для документации/приёмки релиза 606 видов (`catalogue/releases/skeleton-300-v1/README.md`, `docs/validation/catalogue-300-import-2026-11-04.md`, `docs/validation/catalogue-stage-review-2026-11-05.md`), после чего отметить `[X] T148` в `specs/001-plants-ios-mvp/tasks.md` и перейти к **T149**.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information
 
 Предыдущие отчёты сохранены ниже. Точки «следующий шаг» внутри истории относятся к датам этих отчётов.
+
+## Подготовка и промежуточная точка остановки T148, 8 ноября
+
+Работа над задачей **T148** остановлена посреди этапа по запросу пользователя для передачи следующей модели. Задача `T148` в `specs/001-plants-ios-mvp/tasks.md` не закрывалась (`[ ] T148`, 29/154).
+
+**Выполненные задачи и изменённые файлы:**
+- `tools/automation/orchestrator.config.json`:
+  - Временно убрана модель `agy:gemini-4-argon-low` из цепочки `developer` (`low`/`medium`/`high` теперь `["codex:gpt-6.1-sol", "agy:gemini-3.8-flash-high"]`).
+  - Добавлены проверки `kb-tests`, `catalogue-schema-sync`, `t148-pipeline-gate`, `t148-release-gate` и `scope_checks` для `knowledge-base/` и `catalogue/`.
+- `tools/automation/t148_catalogue_gate.py` и `tools/automation/tests/test_t148_catalogue_gate.py`:
+  - Реализованы гейты `--mode pipeline` и `--mode release` для детерминированной проверки всех 606 карточек каталога (отклонение 3 ошибочных польских sitelink `Q2893846`/`Q814368`/`Q162311`, очистка ложных `common_names` и родовых латинских имён, регрессионный тест `source_revision` для переведённых PL-названий, проверка реальных размеров/MIME всех 606 изображений в `media/`, синхронизация `image-validation.json`, `offline-validation.json`, `validation.json` и `catalogue-300.sqlite`).
+- `tools/automation/tasks.t148-pipeline.json`:
+  - Манифест первого среза `t148-pipeline-001` (обновление `knowledge-base/pipeline/import_catalogue_300.py`, `knowledge-base/pipeline/validate_catalogue_skeleton.py`, `knowledge-base/tests/test_catalogue_skeleton.py`, `knowledge-base/manifests/pl-description-translations.json`).
+- `tools/automation/orchestration/repository.py` и `tools/automation/tests/test_orchestration_engine.py`:
+  - Добавлена функция `normalize_patch()`, вставляющая отсутствующие заголовки `diff --git a/... b/...` перед парами `--- a/...` / `+++ b/...` (и `/dev/null`). Без этого `git apply --recount` в прогоне `t148-pipeline-20261108-r1` интерпретировал строку `--- a/knowledge-base/pipeline/validate_catalogue_skeleton.py` как удаление внутри предыдущего ханка `import_catalogue_300.py:1073`.
+
+**Реально запущенные проверки и результаты:**
+- Тестовые данные (fixtures):
+  - `/opt/homebrew/bin/python3 -m unittest discover -s tools/automation/tests -v` — **89/89 PASS**.
+  - `/opt/homebrew/bin/python3 -m unittest discover -s knowledge-base/tests -v` — **27/27 PASS**.
+  - `/opt/homebrew/bin/python3 tools/automation/orchestrator.py validate --manifest tools/automation/tasks.t148-pipeline.json` — **VALID: 1 explicit tasks; no model calls**.
+  - Проверка `git apply -v --recount --check` после `normalize_patch()` на всех трёх ответах Developer из `docs/validation/automation/runs/orchestrator-t148-pipeline-20261108-r1/t148-pipeline-001/call-{1,2,3}-developer/answer.json` — **PASS (exit 0)**.
+- Живые вызовы моделей:
+  - Прогон `t148-pipeline-20261108-r1` вызывал `codex:gpt-6.1-sol` (3 вызова Developer); патч был сгенерирован корректно, но отклонён до добавления `normalize_patch()`. Повторный запуск `t148-pipeline-20261108-r2` был остановлен пользователем сразу после старта до завершения первого вызова модели.
+
+**Ограничения и точный следующий шаг:**
+- Изменения в `knowledge-base/` и `catalogue/releases/skeleton-300-v1/` ещё не применены.
+- Следующей модели нужно:
+  1. Запустить `t148-pipeline-001` на оркестраторе (`--manifest tools/automation/tasks.t148-pipeline.json --run-id t148-pipeline-20261108-r3`).
+  2. После успешного принятия `t148-pipeline-001` выполнить офлайн-пересборку релиза 606 видов (`import_catalogue_300.py --offline`, `validate_catalogue_skeleton.py`), обновить `image-validation.json` (на все 606 файлов) и `offline-validation.json` (актуальный `plants_sha256` и счётчики `187 native + 419 translated = 606`), убедиться, что `python3 tools/automation/t148_catalogue_gate.py --mode release` проходит (`PASS`).
+  3. Запустить второй срез `t148-acceptance-002` на оркестраторе для обновления отчётов (`catalogue/releases/skeleton-300-v1/README.md`, `docs/validation/catalogue-300-import-2026-11-04.md`, `docs/validation/catalogue-stage-review-2026-11-05.md`) и прогона `t148-release-gate` + `deno-tests` + `kb-tests` + `catalogue-schema-sync`.
+  4. Закрыть `[X] T148` в `specs/001-plants-ios-mvp/tasks.md`, обновить handoff, сделать commit/push и перейти к **T149**.
+
+## Завершение и приёмка T152 через оркестратор, 8 ноября
+
+**Задача T152 полностью завершена и принята через оркестратор (`t152-api-002`, `t152-ios-001`, `t152-live-disk-002`).** Функция `plants-api` развёрнута на стенде `narat-staging` (`ijwnyjdomwvnzmmcurkt`, `--use-api --no-verify-jwt --import-map supabase/functions/deno.json`), в `supabase/config.toml` закреплён `verify_jwt = false`. В `ios/PlantsTests/SyncPersistenceTests.swift` добавлен тест дискового SQLite `LocalStore` (`inMemory: false`) через четыре независимых `ModelContainer` с проверкой сохранности `LocalOutbox`, подтверждённого кеша, `watermark`, изоляции владельцев при HTTP 503 и последующего идемпотентного replay. В `specs/001-plants-ios-mvp/tasks.md` отмечена `[X] T152` (29/154).
 
 ## Подключение Gemini (`agy`) к оркестратору и fallback-цепочек, 8 ноября
 
