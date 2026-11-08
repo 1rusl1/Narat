@@ -136,7 +136,6 @@ class ContextTests(unittest.TestCase):
             dev = route_models(self.config["roles"]["developer"][lvl])
             self.assertEqual([(m["provider"], m["model"]) for m in dev], [
                 ("codex", "gpt-6.1-sol"),
-                ("agy", "gemini-4-argon-low"),
                 ("agy", "gemini-3.8-flash-high"),
             ])
         rev_high = route_models(self.config["roles"]["reviewer"]["high"])

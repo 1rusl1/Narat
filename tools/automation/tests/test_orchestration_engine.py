@@ -172,7 +172,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(engine.execute()["one"], "COMPLETED")
         self.assertEqual([(c["role"], c["provider"], c["model"]) for c in provider.calls], [
             ("developer", "codex", "gpt-6.1-sol"),
-            ("developer", "agy", "gemini-4-argon-low"),
+            ("developer", "agy", "gemini-3.8-flash-high"),
             ("reviewer", "codex", "gpt-6-astra"),
             ("reviewer", "agy", "gemini-4-argon-medium"),
             ("qa", "codex", "gpt-6-astra"),

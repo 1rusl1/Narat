@@ -16,7 +16,6 @@
         "provider": "codex",
         "models": [
           "codex:gpt-6.1-sol",
-          "agy:gemini-4-argon-low",
           "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
@@ -25,7 +24,6 @@
         "provider": "codex",
         "models": [
           "codex:gpt-6.1-sol",
-          "agy:gemini-4-argon-low",
           "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
@@ -34,7 +32,6 @@
         "provider": "codex",
         "models": [
           "codex:gpt-6.1-sol",
-          "agy:gemini-4-argon-low",
           "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "high"
@@ -141,6 +138,15 @@
     ],
     "tools/automation/": [
       "automation-tests"
+    ],
+    "knowledge-base/": [
+      "kb-tests",
+      "catalogue-schema-sync"
+    ],
+    "catalogue/": [
+      "kb-tests",
+      "catalogue-schema-sync",
+      "deno-tests"
     ]
   },
   "checks": {
@@ -167,6 +173,56 @@
       "stage": "unit",
       "mode": "fixture",
       "timeout": 120
+    },
+    "kb-tests": {
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "knowledge-base/tests",
+        "-q"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 120
+    },
+    "catalogue-schema-sync": {
+      "argv": [
+        "python3",
+        "knowledge-base/pipeline/sync_catalogue_schema.py",
+        "--check"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 60
+    },
+    "t148-pipeline-gate": {
+      "argv": [
+        "python3",
+        "tools/automation/t148_catalogue_gate.py",
+        "--mode",
+        "pipeline",
+        "--run-id",
+        "{check_run_id}"
+      ],
+      "stage": "qa",
+      "mode": "local",
+      "timeout": 180
+    },
+    "t148-release-gate": {
+      "argv": [
+        "python3",
+        "tools/automation/t148_catalogue_gate.py",
+        "--mode",
+        "release",
+        "--run-id",
+        "{check_run_id}"
+      ],
+      "stage": "qa",
+      "mode": "local",
+      "timeout": 180
     },
     "ios-tests": {
       "argv": [
