@@ -74,3 +74,6 @@ knowledge-base/references/personal/
 
 # Per-machine Personal Team signing
 Personal.local.xcconfig
+
+# Local automation evidence (logs may contain local configuration or user data)
+docs/validation/automation/runs/
