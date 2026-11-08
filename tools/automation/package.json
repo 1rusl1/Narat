@@ -1,0 +1,11 @@
+{
+  "name": "narat-terminal-automation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pinned local MCP runtimes for Narat Simulator checks",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@mobilenext/mobile-mcp": "1.0.16",
+    "mobilebuildmcp": "2.7.1"
+  }
+}

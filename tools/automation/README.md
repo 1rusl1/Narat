@@ -30,4 +30,30 @@ CLI ищется в PATH, затем внутри `/Applications/ChatGPT.app`; �
 python3 -m unittest discover -s tools/automation/tests -v
 ```
 
-Основание CLI-флагов: [Codex exec](https://learn.chatgpt.com/docs/non-interactive-mode), [CLI reference](https://learn.chatgpt.com/docs/cli/reference). MCP и автоматический Developer → QA подключаются отдельными этапами согласно существующему handoff.
+## Этап 2: управление Simulator через MCP
+
+Установка и запуск из корня проекта (для текущего Mac Apple Silicon):
+
+```sh
+npm ci --prefix tools/automation --ignore-scripts --no-audit --no-fund --cache tools/automation/.cache/npm
+python3 tools/automation/setup_mobile_agent.py
+python3 tools/automation/simulator_smoke.py
+```
+
+Закреплены MobileBuildMCP 2.7.1 и Mobile MCP 1.0.16, транзитивные зависимости — в `package-lock.json`. Внешний UI-агент devicekit-ios 0.0.36 закреплён отдельно в `mobile-agent.lock.json`: setup скачивает официальный GitHub Release asset через API, проверяет SHA256 и устанавливает только на выбранный локальный iOS Simulator. Причина отдельного setup: штатный загрузчик mobilecli вернул HTTP 504. Уже установленная совпадающая версия повторно не устанавливается; другая версия требует разбора. Глобальная установка Node-пакетов и изменения shell-конфигурации не нужны.
+
+`simulator_smoke.py` под общим lock последовательно:
+
+1. Запускает два stdio MCP-сервера, проверяет initialize/tools/list и выбранный UDID.
+2. Собирает Plants через MobileBuildMCP с пустой backend-конфигурацией, проверяет собранный Info.plist, устанавливает приложение.
+3. Подготавливает UI-агент, запускает Narat и через Mobile MCP проверяет welcome-элементы.
+4. Сохраняет `welcome.png`, нажимает `welcome.intent.care` по свежему native ref и проверяет `care.method.title/scan/catalogue`.
+5. Сохраняет `care-method.png`, accessibility JSON, команды/ответы MCP, build log и итоговый `summary.json` в новом `docs/validation/automation/runs/<run-id>/`.
+
+Можно задать `--simulator <UDID>` и `--run-id <новое-имя>`. Это ограниченный локальный UI smoke; он не принимает диагностику, каталог, OAuth или локализацию. Исходники приложения и продуктовые задачи не меняются. Пропущенная стадия/ошибка RPC/инструмента/локатора не даёт PASS. Первый запуск UI-агента может вывести SpringBoard: smoke подготавливает его до запуска Narat и принимает только ожидаемые элементы приложения.
+
+`mcp_client.py` использует Python stdlib и MCP JSON-RPC stdio, с тайм-аутами и завершением серверов. Кэши npm/мобильного helper находятся в игнорируемом `tools/automation/.cache/`; телеметрия серверов отключена. MobileBuildMCP 2.7.1 жёстко задаёт свою папку логов в home. Поэтому `run_build_mcp.mjs` перед запуском перенаправляет её в проект через экспортированный внутренний override; версия проверяется строго, при обновлении этот адаптер нужно пересмотреть. Пакет и HOME не изменяются. Сам Simulator/Xcode используют штатные служебные каталоги macOS; mobilecli daemon работает в `.cache/mobilecli` и автоматически простаивает/завершается по своему жизненному циклу.
+
+Глобальный MCP config Codex не изменяется. Подключение этих инструментов к независимому Astra QA и проверка ограничений записи — этап 3; оркестратор и автоматическая очередь ещё впереди. Пара моделей остаётся Sol + Astra.
+
+Основание CLI-флагов: [Codex exec](https://learn.chatgpt.com/docs/non-interactive-mode), [CLI reference](https://learn.chatgpt.com/docs/cli/reference). MCP: [MobileBuildMCP](https://github.com/getsentry/MobileBuildMCP), [Mobile MCP](https://github.com/mobile-next/mobile-mcp), [stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports). Текущий статус — существующий handoff.

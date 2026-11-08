@@ -77,3 +77,4 @@ Personal.local.xcconfig
 
 # Local automation evidence (logs may contain local configuration or user data)
 docs/validation/automation/runs/
+tools/automation/.cache/

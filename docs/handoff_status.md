@@ -1,9 +1,21 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-08.** Этап 1 автоматизации проверен; продуктовые статусы сохранены: 154 задачи, 28 отмечены выполненными, 126 открыты; 18 преждевременных отметок сняты при сверке 7 ноября. Число отметок не является процентом готовности.
+**Обновлено 2026-11-08.** Этапы 1 и 2 автоматизации проверены в указанном ниже объёме; продуктовые статусы сохранены: 154 задачи, 28 отмечены выполненными, 126 открыты; 18 преждевременных отметок сняты при сверке 7 ноября. Число отметок не является процентом готовности.
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.  
 **Источники:** [спецификация](../specs/001-plants-ios-mvp/spec.md), [задачи](../specs/001-plants-ios-mvp/tasks.md), конституция 3.0.0.  
 **Дизайн:** [Quiet Garden / «Тихий сад»](../design/design-concept.md), отдельные промпты [EN](../design/stitch-prompt.md) / [PL](../design/stitch-prompt-pl.md); интерфейс разрабатывается на SwiftUI, Stitch не является зависимостью.
+
+## Этап 2 автоматизации — управление Simulator через MCP, 8 ноября
+
+Локально подключены MobileBuildMCP 2.7.1 и Mobile MCP 1.0.16, версии/транзитивные зависимости закреплены npm lock. Добавлены `tools/automation/{package.json,package-lock.json,mcp_client.py,run_build_mcp.mjs,mobile-agent.lock.json,setup_mobile_agent.py,simulator_smoke.py}` и тесты `test_mcp_client.py` / `test_simulator_smoke.py`; обновлены `.gitignore`, README, этот handoff и [отчёт](validation/automation/simulator-mcp-2026-11-08.md). Исходники приложения/планы/tasks не менялись; следующая продуктовая задача — T152, модели — Sol Developer + Astra QA.
+
+**Реальный Simulator/MCP:** `simulator_smoke.py --run-id stage2-mcp-final-20261108` — exit 0, PASS. Оба handshake/tools/list успешны. На закреплённом iPhone 17 Pro / iOS 26.3 выполнены build_sim, установка и запуск изолированной сборки, чтение accessibility welcome, нажатие `welcome.intent.care` по ref и проверка `care.method.title/scan/catalogue`. Сохранены и визуально просмотрены два PNG 1206×2622, JSON UI, JSON-RPC и build log внутри `docs/validation/automation/runs/stage2-mcp-final-20261108/`. Пустые Supabase/Google-параметры проверены в собранном Info.plist. Это локальный UI smoke; живые продуктовые интеграции не принимались.
+
+**Установка helper:** штатная загрузка UI-агента Mobile MCP и ограниченный повтор дали HTTP 504. Тот же официальный devicekit-ios 0.0.36 скачан через GitHub Releases API с проверкой закреплённого SHA256 из source tag mobilecli 1.0.22 и установлен на Simulator. `setup_mobile_agent.py --run-id stage2-agent-setup-final-20261108` — exit 0, версия подтверждена без переустановки. Первый запуск helper может вывести SpringBoard; smoke подготавливает его перед запуском Narat и проверяет реальные элементы, поэтому домашний экран не считается успехом.
+
+**Тестовые данные:** `python3 -m unittest discover -s tools/automation/tests -v` — **22/22 PASS**, log сохранён в финальном run. Проверены transport/error/timeout, локаторы, checksum и целостность PNG; это не подмена реального smoke. `git diff --check` — exit 0. Финальные логи/кэши перенаправлены в проект; Node-пакеты, архивы/бинарники, скриншоты и DerivedData исключены из Git. Для MobileBuildMCP использован внутренний root override с жёсткой проверкой версии 2.7.1; обновление требует пересмотра launcher. Служебное состояние macOS Simulator/Xcode остаётся штатным, предварительные пробы до перенаправления оставили vendor-логи в ~/Library/Developer/MobileBuildMCP.
+
+**Ограничения и следующий шаг:** проверен один переход на локальной сборке, без приёмки PL/EN, анализа/каталога/сохранения/OAuth/камеры. T152 не закрыта. MCP пока проверен через терминальный Python-клиент; независимая Astra QA-сессия и технические ограничения её записи — **этап 3**, это точный следующий шаг. Затем — оркестратор, один небольшой срез и лишь потом автоматическая очередь. Sol/Astra здесь повторно не вызывались, глобальный MCP config Codex не менялся.
 
 ## Зафиксирован выбор Sol Developer + Astra QA, 8 ноября
 
