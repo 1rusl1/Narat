@@ -20,13 +20,9 @@
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-Первый продуктовый срез T152 подготовлен Sol через `t152-api-001`: в `supabase/functions/plants-api/index.ts` убраны фиктивные committed и пустая успешная sync-страница, добавлены EN/PL 503 INTERNAL_ERROR/retryable; новый `supabase/functions/_shared/tests/persistence_unavailable_test.ts` покрывает retry, guards и injected handlers. Это кандидат, пока без Review/QA.
-
-**Остановка:** run `t152-api-001` BLOCKED после 2 Developer calls: новый check вызывал старый `deno task check`, который ссылается на отсутствующие billing-webhook/maintenance entrypoints. Check исправлен в `orchestrator.config.json` на два реально существующих entrypoint; исходная deno task (будущие сервисы) не изменена. Старое состояние/ошибочные логи сохранены. Manifest `tasks.t152-api.json` уточнён для приёмки текущего кандидата в новом run, без подмены истории.
-
-**Проверки подготовки:** исходные 21 Deno fixture и 79 инфраструктурных unittest PASS; validate/context PASS. Исправленный deno static — PASS; новые 15/15 fixture tests — PASS; manifest VALID и git diff --check PASS. Живой backend/клиент этим не проверены.
-
-**Точный следующий шаг:** сохранить кандидат и исправленную конфигурацию, затем новый `orchestrator.py run --manifest tools/automation/tasks.t152-api.json --run-id t152-api-002` с полными проверками и независимыми Review/QA. T152 открыта; далее отдельный iOS analysis unavailable/outbox/UI срез.
+t152-api-persistence-unavailable: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t152-api-persistence-unavailable](validation/automation/tasks/t152-api-persistence-unavailable.md).
+Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information
