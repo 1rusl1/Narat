@@ -113,3 +113,7 @@ Live полный цикл с Developer/Reviewer/Astra-QA пока не запу
 Тесты (78) и содержательная проверка Review/QA прошли, однако QA дважды поместил пояснение об ожидаемых негативных fixture-логах в findings при status=PASS. Строгий acceptance отказал, Reviewer budget исчерпан; run остался BLOCKED. Это не продуктовая приёмка. Исправлены инструкции/schema description: notes → decisions, findings → только actionable defects, PASS → findings=[]. Противоречие теперь даёт WAITING без Developer repair, а read-only acceptance FAIL не вызывает разработчика без writable scope. Добавлена регрессия. Старые evidence/state сохранены.
 
 Проверки исправления формата: 79/79 unittest PASS (26,452 с); diff-check PASS.
+
+### Успешный полный контрольный прогон first-003
+
+После `9d6beca`/`9499b57` (оба push успешны) выполнен `orchestrator.py run --manifest tools/automation/tasks.example.json --run-id first-003`: exit 0, COMPLETED. Контроллер запустил 79 infrastructure fixture tests и diff-check; затем два независимых живых Astra-вызова (Review=1, QA=1), без Developer для read-only задачи. Критерий подтверждён, отчёт/handoff закоммичены и отправлены самим оркестратором (`ab088f9`). Дерево после публикации чистое. Это первое подтверждение полного infrastructure цикла с живыми моделями, без приёмки продукта/новой Simulator-сборки/live backend. Первый и второй blocked run не изменялись; повторный запуск принятого task ID не требуется. Следующий шаг — отдельный manifest среза T152.

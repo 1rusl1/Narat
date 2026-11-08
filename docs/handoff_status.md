@@ -20,9 +20,15 @@
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-example-readonly-infrastructure-audit: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [example-readonly-infrastructure-audit](validation/automation/tasks/example-readonly-infrastructure-audit.md).
-Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
+По указанию владельца проверки закреплены за Developer: `verification.owner=developer`, static/build/unit перед Review, ошибки → Developer repair → повторные checks. Контроллер исполняет команды от его имени, сохраняет реальные логи/exit codes; read-only агента и применение patch сохранены. Developer PASS означает готовность patch к тестам, приёмка требует успешных checks/Review/QA. Для задачи без write_files сначала запускаются checks; лишний Developer не вызывается. Исправлены ролевые инструкции, наследование locks тестов и различие actionable findings / informational decisions. Противоречивый PASS с findings даёт WAITING без цикла repair.
+
+Код/конфиг/тесты/документация сохранены и отправлены: `9d6beca`, `9499b57`. Изменялись `orchestrator.config.json`, `tasks.example.json`, `doctor.py`, `orchestration/{context,engine,provider}.py`, три файла tests context/engine/provider и ORCHESTRATOR.md; текущая фиксация — этот handoff и отчёт оптимизации.
+
+**Fixtures:** 79/79 unittest PASS (26,452 с), validate примера и git diff --check PASS. Отдельно полный набор прошёл под настоящим inherited lock production runner. Регрессии подтверждают failed tests → Developer repair → successful tests → Review → QA и отсутствие ложной приёмки/лишнего repair при противоречивом ответе.
+
+**Живой CLI / полный контрольный цикл:** `orchestrator.py run --manifest tools/automation/tasks.example.json --run-id first-003` — exit 0, COMPLETED. Реально выполнены fixture tests (79) и diff-check, затем независимые Astra Review и QA, по одному вызову; Developer-вызов не нужен для read-only задачи. Commit/push отчёта выполнен самим оркестратором: `ab088f9` успешно опубликован в origin/main. Отчёт: [контрольный прогон](validation/automation/tasks/example-readonly-infrastructure-audit.md), state/JSONL/логи — игнорируемый `docs/validation/automation/runs/orchestrator-first-003/`. После публикации дерево чистое. Старые first-001/002 сохранены BLOCKED и не переписывались; найденные причины/исправления описаны в отчёте оптимизации.
+
+**Ограничения / следующий шаг:** подтверждён полный инфраструктурный цикл с живыми моделями и fixture-проверками, не продуктовая приёмка. Живые backend/Simulator/PL/EN/T152 этим прогоном не принимались; продуктовые tasks.md/исходники не менялись. Следующий точный шаг — подготовить manifest небольшого среза T152 с его backend/outbox/UI criteria/checks, validate/context, затем отдельный контролируемый run. Старый infrastructure task повторно запускать не нужно: его отчёт уже сохранён, повторная задача с тем же ID будет заблокирована защитой от повторного выполнения.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information
