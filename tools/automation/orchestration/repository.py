@@ -76,8 +76,10 @@ def apply_patch(root, text, allowed):
     if any(marker in text for marker in ("GIT binary patch", "Binary files", "mode 120000", "mode 160000",
                                         "rename from ", "rename to ", "copy from ", "copy to ")):
         raise ValueError("Only ordinary text patches are supported")
+    if not text.endswith("\n"):
+        text += "\n"
     data = text.encode()
-    numstat = git(root, "apply", "--numstat", "-z", input_bytes=data)
+    numstat = git(root, "apply", "--recount", "--numstat", "-z", input_bytes=data)
     paths = []
     for entry in numstat.split(b"\0"):
         if not entry:
@@ -92,8 +94,8 @@ def apply_patch(root, text, allowed):
         paths.append(name)
     if not paths:
         raise ValueError("Empty patch has no applicable files")
-    git(root, "apply", "--check", "--whitespace=error-all", input_bytes=data)
-    git(root, "apply", "--whitespace=error-all", input_bytes=data)
+    git(root, "apply", "--recount", "--check", "--whitespace=error-all", input_bytes=data)
+    git(root, "apply", "--recount", "--whitespace=error-all", input_bytes=data)
     return sorted(set(paths))
 
 

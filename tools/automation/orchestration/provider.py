@@ -23,11 +23,11 @@ def extract_json_object(text):
         cleaned = re.sub(r"^```(?:json)?\s*\n?", "", cleaned, count=1)
         cleaned = re.sub(r"\n?```\s*$", "", cleaned, count=1).strip()
     try:
-        return json.loads(cleaned)
+        return json.loads(cleaned, strict=False)
     except ValueError:
         start, end = cleaned.find("{"), cleaned.rfind("}")
         if start != -1 and end > start:
-            return json.loads(cleaned[start:end + 1])
+            return json.loads(cleaned[start:end + 1], strict=False)
         raise
 
 
@@ -86,12 +86,14 @@ def discover_agy_hub(app_data_dir=DEFAULT_AGY_APP_DATA, root=None):
 
 
 def agy_transcript_events(path, min_step=0):
-    """Parse Agy transcript.jsonl entries from min_step onwards."""
+    """Parse Agy transcript.jsonl entries from min_step onwards (preferring transcript_full.jsonl when present)."""
     result = {"completed": False, "errors": [], "usage": {}, "quota": None, "answer_text": None, "steps": 0}
     tokens = ("input_tokens", "output_tokens", "cached_input_tokens")
     usages = []
+    full_path = path.with_name("transcript_full.jsonl")
+    source_path = full_path if full_path.exists() else path
     try:
-        with path.open() as stream:
+        with source_path.open() as stream:
             for line in stream:
                 try:
                     event = json.loads(line)
@@ -350,7 +352,10 @@ class Agy:
         result["elapsed_seconds"] = round(time.monotonic() - started, 3)
         result["session_id"] = session_id
         result.update({k: parsed[k] for k in ("completed", "errors", "usage", "quota", "usage_scope")})
-        error = error_excerpt([directory / "stderr.log", directory / "stdout.log"], 3000)
+        error_logs = [directory / "stderr.log"]
+        if result["status"] != "PASS" or not session_id:
+            error_logs.append(directory / "stdout.log")
+        error = error_excerpt(error_logs, 3000)
         reply = None
         if parsed.get("answer_text"):
             try:

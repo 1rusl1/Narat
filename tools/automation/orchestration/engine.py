@@ -364,12 +364,14 @@ class Engine:
         if result["status"] != "PASS":
             category = result.get("category", "cli_error")
             call["error_category"] = category
-            record["feedback"] = [result.get("error", "CLI error")]
-            self.compact(task, record, role, category)
             if category in ("limit", "unavailable") and model_index + 1 < len(candidates):
+                self.compact(task, record, role, category)
                 record["model_indices"][role] = model_index + 1
+                record["counts"][role] = max(0, record["counts"].get(role, 1) - 1)
                 self.save()
                 return None
+            record["feedback"] = [result.get("error", "CLI error")]
+            self.compact(task, record, role, category)
             if category == "session_lost" and previous:
                 self.save()  # One fresh attempt, still charged to the same persisted budget.
                 return None

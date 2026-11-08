@@ -189,6 +189,22 @@ elif "send-message" in sys.argv:
         self.assertEqual(res2["usage"]["cached_input_tokens"], 80)
         self.assertEqual(resolve_agy_model("gemini-4-argon", "high"), "gemini-4-argon-high")
         self.assertEqual(resolve_agy_model("gemini-4-argon-low", "high"), "gemini-4-argon-low")
+        parsed_raw = extract_json_object('{"task_id": "one", "patch": "line1\nline2"}')
+        self.assertEqual(parsed_raw["patch"], "line1\nline2")
+        trunc_dir = self.root / "trunc"
+        trunc_dir.mkdir()
+        (trunc_dir / "transcript.jsonl").write_text(json.dumps({
+            "step_index": 1, "type": "PLANNER_RESPONSE", "status": "DONE",
+            "content": '{"patch": "short\n<truncated 100 bytes>\nend"}',
+            "truncated_fields": ["content"], "input_tokens": 10, "output_tokens": 5, "cache_read_tokens": 2,
+        }) + "\n")
+        (trunc_dir / "transcript_full.jsonl").write_text(json.dumps({
+            "step_index": 1, "type": "PLANNER_RESPONSE", "status": "DONE",
+            "content": '{"patch": "full untruncated patch"}',
+            "input_tokens": 10, "output_tokens": 5, "cache_read_tokens": 2,
+        }) + "\n")
+        ev = agy_transcript_events(trunc_dir / "transcript.jsonl")
+        self.assertEqual(ev["answer_text"], '{"patch": "full untruncated patch"}')
 
 
 if __name__ == "__main__":
