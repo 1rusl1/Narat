@@ -23,15 +23,17 @@ def error_excerpt(paths, limit):
     return "\n".join(dict.fromkeys(relevant or lines[-20:]))[-limit:]
 
 
-def run(argv, cwd, directory, timeout, input_text=None, lock_fd=None):
+def run(argv, cwd, directory, timeout, input_text=None, lock_fd=None, extra_env=None):
     directory.mkdir(parents=True, exist_ok=True)
     out, err = directory / "stdout.log", directory / "stderr.log"
     # Preserve login storage, not desktop sessions, app pipes or a caller's lock claim.
     env = {k: v for k, v in os.environ.items()
-           if (not k.startswith(("CODEX_", "CUA_", "BROWSER_USE_", "NARAT_AUTOMATION_LOCK_"))
+           if (not k.startswith(("CODEX_", "CUA_", "BROWSER_USE_", "NARAT_AUTOMATION_LOCK_", "ANTIGRAVITY_"))
                or k == "CODEX_HOME")}
     if lock_fd is not None:
         env["NARAT_AUTOMATION_LOCK_FD"] = str(lock_fd)
+    if extra_env:
+        env.update(extra_env)
     started = time.monotonic()
     record = {"argv": argv, "stdout": str(out), "stderr": str(err), "status": "FAIL", "exit_code": None}
     process = None

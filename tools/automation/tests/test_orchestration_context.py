@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from orchestration.context import (PROJECT_START, PROJECT_END, make_packet, safe_path,
+from orchestration.context import (PROJECT_START, PROJECT_END, make_packet, route_models, safe_path,
                                    selected_checks, validate, level)
 from orchestration.storage import State, checkpoint
 
@@ -130,6 +130,21 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(compact["unresolved"], ["Pending check"])
         self.assertNotIn("transcript", compact)
         self.assertNotIn("raw_log", compact)
+
+    def test_route_models_supports_codex_and_agy_fallback_chain(self):
+        dev_low = route_models(self.config["roles"]["developer"]["low"])
+        self.assertEqual([(m["provider"], m["model"]) for m in dev_low], [
+            ("codex", "gpt-6.1-sol"),
+            ("agy", "gemini-4-argon-low"),
+            ("agy", "gemini-3.8-flash-high"),
+        ])
+        rev_high = route_models(self.config["roles"]["reviewer"]["high"])
+        self.assertEqual([(m["provider"], m["model"]) for m in rev_high], [
+            ("codex", "gpt-6-astra"),
+            ("agy", "gemini-4-argon-high"),
+        ])
+        with self.assertRaises(ValueError):
+            route_models({"provider": "codex", "models": ["unknown:model"]})
 
 
 if __name__ == "__main__":

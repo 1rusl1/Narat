@@ -15,21 +15,27 @@
       "low": {
         "provider": "codex",
         "models": [
-          "gpt-6.1-sol"
+          "codex:gpt-6.1-sol",
+          "agy:gemini-4-argon-low",
+          "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
       },
       "medium": {
         "provider": "codex",
         "models": [
-          "gpt-6.1-sol"
+          "codex:gpt-6.1-sol",
+          "agy:gemini-4-argon-low",
+          "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
       },
       "high": {
         "provider": "codex",
         "models": [
-          "gpt-6-astra"
+          "codex:gpt-6-astra",
+          "agy:gemini-4-argon-low",
+          "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "high"
       }
@@ -38,21 +44,24 @@
       "low": {
         "provider": "codex",
         "models": [
-          "gpt-6-astra"
+          "codex:gpt-6-astra",
+          "agy:gemini-4-argon-medium"
         ],
         "reasoning_effort": "medium"
       },
       "medium": {
         "provider": "codex",
         "models": [
-          "gpt-6-astra"
+          "codex:gpt-6-astra",
+          "agy:gemini-4-argon-medium"
         ],
         "reasoning_effort": "medium"
       },
       "high": {
         "provider": "codex",
         "models": [
-          "gpt-6-astra"
+          "codex:gpt-6-astra",
+          "agy:gemini-4-argon-high"
         ],
         "reasoning_effort": "high"
       }
@@ -61,21 +70,24 @@
       "low": {
         "provider": "codex",
         "models": [
-          "gpt-6-astra"
+          "codex:gpt-6-astra",
+          "agy:gemini-4-argon-medium"
         ],
         "reasoning_effort": "medium"
       },
       "medium": {
         "provider": "codex",
         "models": [
-          "gpt-6-astra"
+          "codex:gpt-6-astra",
+          "agy:gemini-4-argon-medium"
         ],
         "reasoning_effort": "medium"
       },
       "high": {
         "provider": "codex",
         "models": [
-          "gpt-6-astra"
+          "codex:gpt-6-astra",
+          "agy:gemini-4-argon-high"
         ],
         "reasoning_effort": "high"
       }

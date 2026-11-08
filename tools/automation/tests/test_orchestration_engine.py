@@ -25,9 +25,9 @@ class FakeProvider:
         self.responses = list(responses or [])
         self.calls = []
 
-    def invoke(self, root, directory, task, fingerprint, prompt, model, effort, session=None, ephemeral=False):
+    def invoke(self, root, directory, task, fingerprint, prompt, model, effort, session=None, ephemeral=False, provider="codex"):
         role = json.loads(prompt.split("\n", 1)[1].split("\nFull task diff:", 1)[0])["role"]
-        call = {"role": role, "task": task["id"], "prompt": prompt, "session": session, "model": model}
+        call = {"role": role, "task": task["id"], "prompt": prompt, "session": session, "model": model, "provider": provider}
         self.calls.append(call)
         reply = {"task_id": task["id"], "fingerprint": fingerprint, "status": "PASS", "summary": "Verified fixture",
                  "patch": "", "decisions": ["Reuse existing behavior"], "findings": [],
@@ -67,6 +67,7 @@ class EngineTests(unittest.TestCase):
         git(self.root, "init", "-b", "main")
         git(self.root, "config", "user.name", "Fixture")
         git(self.root, "config", "user.email", "fixture@example.invalid")
+        git(self.root, "config", "commit.gpgsign", "false")
         (self.root / "docs").mkdir()
         (self.root / "docs/handoff_status.md").write_text(
             PROJECT_START + "\nFixture project state\n" + PROJECT_END + "\n" +
@@ -152,11 +153,32 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(git(self.root, "status", "--porcelain"), b"")
 
     def test_limit_waits_without_automatic_retries(self):
+        self.config["roles"]["developer"]["low"]["models"] = ["codex:gpt-6.1-sol"]
         provider = FakeProvider([{"status": "FAIL", "category": "limit", "error": "usage limit"}])
         engine = self.engine(provider)
         self.assertEqual(engine.execute()["one"], "WAITING")
         self.assertEqual(len(provider.calls), 1)
         self.assertEqual(engine.state.data["tasks"]["one"]["calls"][0]["quota"], None)
+
+    def test_default_config_falls_back_from_codex_to_agy_on_limit(self):
+        provider = FakeProvider([
+            {"status": "FAIL", "category": "limit", "error": "codex usage limit"},
+            {},
+            {"status": "FAIL", "category": "limit", "error": "codex reviewer limit"},
+            {},
+            {},
+        ])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual([(c["role"], c["provider"], c["model"]) for c in provider.calls], [
+            ("developer", "codex", "gpt-6.1-sol"),
+            ("developer", "agy", "gemini-4-argon-low"),
+            ("reviewer", "codex", "gpt-6-astra"),
+            ("reviewer", "agy", "gemini-4-argon-medium"),
+            ("qa", "codex", "gpt-6-astra"),
+        ])
+        self.assertIsNone(provider.calls[1]["session"])
+        self.assertIsNone(provider.calls[3]["session"])
 
     def test_explicit_allowed_fallback_gets_new_session(self):
         self.config["roles"]["developer"]["low"]["models"] = ["primary", "approved-alternative"]

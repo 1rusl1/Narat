@@ -13,8 +13,50 @@ PROJECT_END = "<!-- /orchestrator:project-state -->"
 SUMMARY_START = "<!-- orchestrator:task-summary -->"
 SUMMARY_END = "<!-- /orchestrator:task-summary -->"
 LEVELS = {"low": 0, "medium": 1, "high": 2}
+PROVIDERS = ("codex", "agy")
 PROTECTED = (".git", ".agents", ".codex", "tools/automation", "docs/handoff_status.md",
              "docs/validation/automation", "specs/001-plants-ios-mvp/tasks.md", "AGENTS.md")
+
+
+def route_models(route):
+    """Normalize route models into ordered [{'provider': ..., 'model': ..., 'reasoning_effort': ...}] entries."""
+    if not isinstance(route, dict):
+        raise ValueError("Route must be an object")
+    default_provider = route.get("provider")
+    default_effort = route.get("reasoning_effort", "medium")
+    raw_models = route.get("models")
+    if not isinstance(raw_models, list) or not raw_models:
+        raise ValueError("Route needs a non-empty models list")
+    entries = []
+    seen = set()
+    for item in raw_models:
+        if isinstance(item, str) and item.strip():
+            model_name = item.strip()
+            if ":" in model_name:
+                prov, mod = model_name.split(":", 1)
+                prov, mod = prov.strip(), mod.strip()
+            else:
+                prov, mod = default_provider, model_name
+            effort = default_effort
+        elif isinstance(item, dict):
+            prov = item.get("provider") or default_provider
+            mod = item.get("model", "")
+            effort = item.get("reasoning_effort") or default_effort
+            if not isinstance(mod, str):
+                raise ValueError("Model name must be a string")
+            mod = mod.strip()
+        else:
+            raise ValueError("Each model entry must be a string or object")
+        if prov not in PROVIDERS or not mod:
+            raise ValueError(f"Unsupported provider or empty model in route: {prov!r} / {mod!r}")
+        if not isinstance(effort, str) or not effort.strip():
+            raise ValueError("Invalid reasoning_effort in route")
+        key = (prov, mod)
+        if key in seen:
+            raise ValueError("Route needs distinct explicitly allowed models")
+        seen.add(key)
+        entries.append({"provider": prov, "model": mod, "reasoning_effort": effort.strip()})
+    return entries
 
 
 def safe_path(root, name, writable=False):
@@ -72,10 +114,9 @@ def validate(config, tasks, root):
     for role in ("developer", "reviewer", "qa"):
         for level in LEVELS:
             route = config["roles"][role][level]
-            if not nonempty_strings(route["models"]) or len(set(route["models"])) != len(route["models"]):
-                raise ValueError("Route needs distinct explicitly allowed models")
-            if route["provider"] != "codex":
-                raise ValueError("Only the installed Codex CLI adapter is supported")
+            if "provider" in route and route["provider"] not in PROVIDERS:
+                raise ValueError("Only the installed Codex and Agy CLI adapters are supported")
+            route_models(route)
     checks = config["checks"]
     if not checks:
         raise ValueError("Checks cannot be empty")

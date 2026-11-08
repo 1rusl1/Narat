@@ -131,12 +131,18 @@ reset/clean/stash/force push отсутствуют. Сторонние изме
 незавершённая работа сохраняется и останавливает переход к изменениям другой задачи.
 Зависимости заблокированных задач не запускаются. Есть общий лимит времени и задач.
 
-В `roles.<role>.<level>` задаются provider, ordered `models`, reasoning effort.
+В `roles.<role>.<level>` задаются default `provider`, ordered `models`, reasoning effort.
+Каждая запись в `models` может быть строкой `<provider>:<model>` (например,
+`"codex:gpt-6.1-sol"`, `"agy:gemini-4-argon-low"`, `"agy:gemini-3.8-flash-high"`),
+обычным именем модели (тогда берётся `provider` уровня) или объектом
+`{"provider": "...", "model": "...", "reasoning_effort": "..."}`.
 Используется максимум сложности и риска. Названия моделей находятся только
-в конфигурации, а не в логике routing. Сейчас реализован Codex CLI adapter;
-другие providers отклоняются до запуска. Подключение нового provider требует
-адаптера с тем же контрактом результата. Дополнительные стадии потребуют явных
-правил переходов/acceptance; произвольные роли не исполняются автоматически.
+в конфигурации, а не в логике routing. Поддержаны адаптеры `codex` (ChatGPT Codex CLI)
+и `agy` (Gemini.app / Antigravity local hub `agentapi` с read-only профилем `research`);
+другие providers отклоняются до запуска. При переключении на fallback-модель
+с другим именем или провайдером создаётся новая сессия с сохранением структурированного
+checkpoint. Дополнительные стадии потребуют явных правил переходов/acceptance;
+произвольные роли не исполняются автоматически.
 
 Rate/usage limit или недоступность модели разрешают только следующий явно
 настроенный fallback. Других моделей и обхода квот нет. Auth, timeout, неизвестная
@@ -166,6 +172,7 @@ resume CLI сообщил накопительные значения, а обл
 ```sh
 python3 -m unittest discover -s tools/automation/tests -q
 python3 tools/automation/orchestrator_smoke.py --run-id unique-cli-smoke
+python3 tools/automation/orchestrator_smoke.py --provider agy --model gemini-4-argon-low --run-id unique-agy-smoke
 ```
 
 Первая команда использует fixtures/временные Git-репозитории и локальный bare

@@ -13,7 +13,7 @@ import sys
 from doctor import ROOT, RUNS, BUNDLED_CODEX, exclusive_run
 from orchestration.context import make_packet, validate
 from orchestration.engine import Engine
-from orchestration.provider import Codex
+from orchestration.provider import Agy, BUNDLED_AGY, Codex, MultiProvider
 from orchestration.storage import State
 
 
@@ -24,7 +24,8 @@ def metrics(directory):
                                  "unknown_usage_calls": 0, "elapsed_seconds": 0})
     for tid, record in data["tasks"].items():
         for call in record["calls"]:
-            group = groups[f"{tid}/{call['agent']}/{call['model']}"]
+            prov = call.get("provider", "codex")
+            group = groups[f"{tid}/{call['agent']}/{prov}:{call['model']}"]
             group["calls"] += 1
             group["retries"] += int(call["retry"] > 0)
             group["prompt_bytes"] += call["prompt_bytes"]
@@ -46,6 +47,7 @@ def main():
     parser.add_argument("--role", choices=("developer", "reviewer", "qa"), default="developer")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--codex", default=shutil.which("codex") or str(BUNDLED_CODEX))
+    parser.add_argument("--agy", default=shutil.which("agy") or str(BUNDLED_AGY))
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", args.run_id):
         parser.error("Invalid run ID")
@@ -83,7 +85,11 @@ def main():
             if args.resume and not (directory / "state.json").exists():
                 raise ValueError("No saved run to resume")
             directory.mkdir(parents=True, exist_ok=True)
-            engine = Engine(ROOT, directory, config, tasks, Codex(args.codex, config["agent_timeout"]), lock_fd)
+            provider = MultiProvider({
+                "codex": Codex(args.codex, config["agent_timeout"]),
+                "agy": Agy(args.agy, config["agent_timeout"]),
+            })
+            engine = Engine(ROOT, directory, config, tasks, provider, lock_fd)
             statuses = engine.execute(resume=args.resume)
             print(json.dumps(statuses, ensure_ascii=False, indent=2))
             return 0 if all(x == "COMPLETED" for x in statuses.values()) else 1

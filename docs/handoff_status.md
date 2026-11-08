@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-08.** CLI-оркестрация реализована и проверена в указанном ниже объёме; продуктовые статусы сохранены: 154 задачи, 28 отмечены выполненными, 126 открыты; 18 преждевременных отметок сняты при сверке 7 ноября. Число отметок не является процентом готовности.
+**Обновлено 2026-11-08.** Через оркестратор приняты backend/iOS срезы безопасного отказа T152; полный T152 и live-приёмка открыты. Продуктовые статусы сохранены: 154 задачи, 28 отмечены выполненными, 126 открыты; 18 преждевременных отметок сняты при сверке 7 ноября. Число отметок не является процентом готовности.
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.  
 **Источники:** [спецификация](../specs/001-plants-ios-mvp/spec.md), [задачи](../specs/001-plants-ios-mvp/tasks.md), конституция 3.0.0.  
 **Дизайн:** [Quiet Garden / «Тихий сад»](../design/design-concept.md), отдельные промпты [EN](../design/stitch-prompt.md) / [PL](../design/stitch-prompt-pl.md); интерфейс разрабатывается на SwiftUI, Stitch не является зависимостью.
@@ -14,20 +14,51 @@
 - Две ветки ухода/диагностики; runtime AI классифицирует, советы приходят из опубликованных Golden Records.
 - Doctor и локальный MCP smoke проверены; продуктовые live-интеграции и полный T152 не приняты.
 - Handoff/tasks и Git изменяет только управляющий процесс. Критерии требуют доказательств; fixtures ≠ live.
-- CLI-очередь проверена; backend-срез T152 принят в t152-api-002. Следующий шаг — iOS unavailable/outbox/EN-PL UI срез; полный T152 ещё открыт.
+- Backend/iOS срезы T152 приняты и опубликованы: t152-api-002 и t152-ios-001. Далее staging API + disk restart; затем T148. Полный T152 открыт.
 <!-- /orchestrator:project-state -->
 
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t152-ios-unavailable-outbox: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t152-ios-unavailable-outbox](validation/automation/tasks/t152-ios-unavailable-outbox.md).
-Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
+**Два среза T152 приняты через оркестратор и опубликованы.** API: `5c8ec12` + приёмка `7caf440`; iOS: `5c6454e`. Run `t152-api-002` и `t152-ios-001` — COMPLETED. Sol Developer, независимые Astra Review/QA. В API нет фиктивного committed/пустой успешной sync; iOS не генерирует диагноз/receipt/квоту/фото, обе scan-ветки дают недоступность с retry/back/catalogue. Ошибка HTTP503 сохраняет outbox; неуспешное получение sync-страниц сохраняет прежний кеш/watermark.
+
+**Изменённые файлы и доказательства:** [полный отчёт этапа](validation/t152-safety-2026-11-08.md), [backend](validation/automation/tasks/t152-api-persistence-unavailable.md), [iOS](validation/automation/tasks/t152-ios-unavailable-outbox.md). В отчёте перечислены 2 backend и 9 iOS файлов, manifests/config/UI runner/test, пути к raw evidence. Примечание в tasks.md фиксирует частичную приёмку, checkbox T152 открыт; итоги 28/154 не изменились.
+
+**Реальные проверки:** Deno static двух существующих entrypoint PASS; 36/36 Deno fixtures (включают целевые 15), 80/80 инфраструктурных fixtures PASS; Xcode build-for-testing PASS; welcome 1/1 и PlantsTests 22/22 PASS, без skips; MCP build/launch/accessibility/tap/PNG PASS; четыре T152 UI care/problem × EN/PL PASS, без skips. Четыре PNG экспортированы и визуально просмотрены. Последний diff-check PASS. Оба run опубликованы оркестратором в origin/main. Эта итоговая документация сохраняется отдельным commit/push.
+
+**Исправления в цикле:** API run001 сохранён BLOCKED из-за static-команды с отсутствующими будущими entrypoint; конфигурация исправлена, run002 принят. Первый iOS UI-прогон выявил ошибку теста language picker value; Sol исправил проверку на фактический локализованный текст, затем все checks и Review/QA повторены на новом fingerprint. Неуспешные evidence сохранены.
+
+**Ограничения / точный следующий шаг:** живые модели и Simulator проверены; HTTP503/outbox — test transport, LocalStore пересоздан на inMemory container, не cold restart. Live backend/Auth/Storage/камера/полный каталог не принимались, deployment не выполнялся. Проверить доступность и версию staging, подготовить отдельный manifest live API safety (commands/sync, guards/retry) и disk-store restart; сначала при необходимости подготовить развёртывание проверенной версии с указанием стенда. Полный T152 открыт. После его приёмки — T148, затем T149.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information
 
 Предыдущие отчёты сохранены ниже. Точки «следующий шаг» внутри истории относятся к датам этих отчётов.
+
+## Подключение Gemini (`agy`) к оркестратору и fallback-цепочек, 8 ноября
+
+Подключён мульти-провайдерный роутинг (`codex` + `agy`) в оркестраторе, чтобы при исчерпании лимитов/недоступности моделей ChatGPT (`codex`) задачи автоматически переключались на модели Gemini через локальный hub `Gemini.app` (`agy agentapi` с read-only профилем `research`).
+
+**Выполненные задачи и изменённые файлы:**
+- `tools/automation/orchestration/context.py`: добавлена функция `route_models()`, нормализующая элементы `models` вида `<provider>:<model>` (или объекты) с поддержкой провайдеров `codex` и `agy`.
+- `tools/automation/orchestration/provider.py`: реализованы адаптер `Agy` (автообнаружение порта и CSRF-токена локального hub `Gemini.app`, `project_id` из `conversation_summaries.db`, создание сессии `new-conversation --profile=research`, продолжение `send-message`, чтение structured JSON и статистики токенов из `transcript.jsonl`) и маршрутизатор `MultiProvider`.
+- `tools/automation/orchestration/engine.py`: поддержка по-модельного `provider` в цепочке fallback (`limit`/`unavailable`), сохранение провайдера в `sessions` и принудительная ротация сессии при смене провайдера.
+- `tools/automation/orchestration/process.py`: очистка унаследованных переменных `ANTIGRAVITY_*` с передачей явного `extra_env` для `agy`.
+- `tools/automation/orchestrator.py`, `tools/automation/orchestrator_smoke.py`, `tools/automation/ORCHESTRATOR.md`: подключение `MultiProvider`, флаг `--agy` и `--provider`.
+- `tools/automation/orchestrator.config.json`: настроены цепочки моделей:
+  - `developer` (`low`/`medium`): `codex:gpt-6.1-sol` → `agy:gemini-4-argon-low` → `agy:gemini-3.8-flash-high`; `high`: `codex:gpt-6-astra` → `agy:gemini-4-argon-low` → `agy:gemini-3.8-flash-high`.
+  - `reviewer` и `qa` (`low`/`medium`): `codex:gpt-6-astra` → `agy:gemini-4-argon-medium`; `high`: `codex:gpt-6-astra` → `agy:gemini-4-argon-high`.
+- Тесты: `tools/automation/tests/{test_orchestration_context.py,test_orchestration_provider.py,test_orchestration_engine.py}` (добавлены проверки multi-provider маршрутизации, fallback `codex` → `agy`, парсинга транскрипта и возобновления сессии `Agy`, а также `commit.gpgsign=false` для изолированных тестовых Git-репозиториев в песочнице).
+
+**Реально запущенные проверки и результаты:**
+- Тестовые данные (fixtures/subprocesses): `/opt/homebrew/bin/python3 -m unittest discover -s tools/automation/tests -q` — **83/83 PASS** (28,798 с).
+- Валидация манифестов: `orchestrator.py validate` на `tasks.example.json`, `tasks.t152-api.json`, `tasks.t152-ios.json` — **VALID (exit 0)**.
+- Живая интеграция (`agy` CLI smoke): `/opt/homebrew/bin/python3 tools/automation/orchestrator_smoke.py --provider agy --model gemini-3.8-flash-high --run-id agy-smoke-20261108` — **PASS (exit 0)** (3 живых вызова: новая сессия `9c1c2d21-...`, resume той же сессии `9c1c2d21-...`, новая изолированная сессия `1b3f0b2b-...`; отчёт в `docs/validation/automation/runs/agy-smoke-20261108/summary.json`).
+- `git diff --check` — **PASS (exit 0)**.
+
+**Ограничения и точный следующий шаг:**
+- Прямой standalone-режим `agy --print` блокируется проверкой consumer-региона Google-аккаунта (`Eligibility check failed`), поэтому адаптер `Agy` работает через локальный сервер запущенного десктопного приложения `Gemini.app` (`agy agentapi`). Для работы fallback-моделей `agy` приложение `Gemini.app` должно быть запущено.
+- Продуктовые задачи (`tasks.md`) этим этапом не закрывались (28/154 без изменений). Следующий продуктовый шаг остаётся прежним: проверка доступности/версии staging API и подготовка manifest для live API safety и disk-store restart в рамках T152.
 
 ## Аудит оптимизации оркестратора, 8 ноября
 

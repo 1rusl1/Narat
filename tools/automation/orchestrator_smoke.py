@@ -10,15 +10,17 @@ import shutil
 import signal
 
 from doctor import BUNDLED_CODEX, ROOT, RUNS, exclusive_run, new_run_path
-from orchestration.provider import Codex
+from orchestration.provider import Agy, BUNDLED_AGY, Codex, MultiProvider
 from orchestration.storage import atomic_json
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--provider", choices=("codex", "agy"), default="codex")
     parser.add_argument("--model", default="gpt-6.1-sol")
     parser.add_argument("--codex", default=shutil.which("codex") or str(BUNDLED_CODEX))
+    parser.add_argument("--agy", default=shutil.which("agy") or str(BUNDLED_AGY))
     args = parser.parse_args()
     def interrupted(signum, frame):
         raise InterruptedError(f"signal {signum}")
@@ -27,7 +29,7 @@ def main():
         directory = new_run_path(RUNS, args.run_id)
         report = {"status": "RUNNING", "scope": "CLI transport/session smoke only", "calls": []}
         atomic_json(directory / "summary.json", report)
-        provider = Codex(args.codex, 180)
+        provider = MultiProvider({"codex": Codex(args.codex, 180), "agy": Agy(args.agy, 180)}, default=args.provider)
         session = None
         try:
             for index, tid in enumerate(("smoke-one", "smoke-one", "smoke-two")):
@@ -38,19 +40,20 @@ def main():
                           "Return exactly this JSON: " + json.dumps(reply))
                 result = provider.invoke(ROOT, directory / f"call-{index + 1}", {"id": tid},
                                          "connectivity-only", prompt, args.model, "low",
-                                         session=session if index == 1 else None)
+                                         session=session if index == 1 else None, provider=args.provider)
                 item = {k: result.get(k) for k in ("status", "session_id", "usage", "quota", "elapsed_seconds", "category", "error")}
-                item.update(task_id=tid, model=args.model, provider="codex", prompt_bytes=len(prompt.encode()))
+                item.update(task_id=tid, model=args.model, provider=args.provider, prompt_bytes=len(prompt.encode()))
                 # Connectivity must not perform tool/repository work.
-                with (directory / f"call-{index + 1}/stdout.log").open() as stream:
-                    for line in stream:
-                        try:
-                            event = json.loads(line)
-                        except ValueError:
-                            continue
-                        if event.get("item", {}).get("type") in ("command_execution", "file_change", "mcp_tool_call", "web_search"):
-                            item["status"] = "FAIL"
-                            item["error"] = "Smoke invoked tools"
+                if args.provider == "codex":
+                    with (directory / f"call-{index + 1}/stdout.log").open() as stream:
+                        for line in stream:
+                            try:
+                                event = json.loads(line)
+                            except ValueError:
+                                continue
+                            if event.get("item", {}).get("type") in ("command_execution", "file_change", "mcp_tool_call", "web_search"):
+                                item["status"] = "FAIL"
+                                item["error"] = "Smoke invoked tools"
                 report["calls"].append(item)
                 if item["status"] != "PASS" or not result.get("session_id") or result["reply"] != reply:
                     report["status"] = "FAIL"

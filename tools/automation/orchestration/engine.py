@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import time
 
-from .context import (SUMMARY_START, SUMMARY_END, level, make_packet, selected_checks)
+from .context import (SUMMARY_START, SUMMARY_END, level, make_packet, route_models, selected_checks)
 from .process import error_excerpt, run
 from .repository import (apply_patch, changed_paths, contents, diff, fingerprint, git, manifest, require_clean)
 from .storage import State, atomic_json, atomic_text, checkpoint, digest
@@ -297,8 +297,12 @@ class Engine:
             self.save()
             return None
         route = self.config["roles"][role][level(task)]
+        candidates = route_models(route)
         model_index = record.setdefault("model_indices", {}).get(role, 0)
-        model = route["models"][model_index]
+        selected = candidates[model_index]
+        model = selected["model"]
+        provider_name = selected["provider"]
+        effort = selected["reasoning_effort"]
         previous = record["sessions"].get(role)
         policy = self.config["sessions"]
         current = contents(self.root, task["write_files"])
@@ -317,7 +321,7 @@ class Engine:
         estimate = (len(prompt.encode()) + 3) // 4
         reason = None
         if previous:
-            if previous["model"] != model or policy["policy"] == "fresh":
+            if previous["model"] != model or previous.get("provider", provider_name) != provider_name or policy["policy"] == "fresh":
                 reason = "model/policy changed"
             elif previous["turns"] >= policy["max_turns"]:
                 reason = "turn threshold / irrelevant history"
@@ -330,7 +334,7 @@ class Engine:
             previous = None
         seq = len(record["calls"]) + 1
         call_dir = task_dir / f"call-{seq}-{role}"
-        call = {"id": f"{task['id']}:{seq}", "agent": role, "model": model, "provider": route["provider"],
+        call = {"id": f"{task['id']}:{seq}", "agent": role, "model": model, "provider": provider_name,
                 "status": "STARTED", "retry": record["counts"][role] - 1,
                 "prompt_bytes": len(prompt.encode()), "estimated_prompt_tokens": estimate,
                 "estimate_method": "UTF-8 bytes / 4; heuristic, not measured context",
@@ -341,10 +345,14 @@ class Engine:
         record["calls"].append(call)
         record["inflight"] = {"kind": "agent", "role": role, "directory": str(call_dir)}
         self.save()
-        result = self.provider.invoke(self.root, call_dir, task, record["fingerprint"], prompt, model,
-                                      route.get("reasoning_effort", "medium"),
-                                      session=previous["id"] if previous else None,
-                                      ephemeral=policy["policy"] == "fresh")
+        try:
+            result = self.provider.invoke(self.root, call_dir, task, record["fingerprint"], prompt, model,
+                                          effort, session=previous["id"] if previous else None,
+                                          ephemeral=policy["policy"] == "fresh", provider=provider_name)
+        except TypeError:
+            result = self.provider.invoke(self.root, call_dir, task, record["fingerprint"], prompt, model,
+                                          effort, session=previous["id"] if previous else None,
+                                          ephemeral=policy["policy"] == "fresh")
         record["inflight"] = None
         usage = result.get("usage", {})
         call.update(status=result["status"], elapsed_seconds=result.get("elapsed_seconds"),
@@ -358,7 +366,7 @@ class Engine:
             call["error_category"] = category
             record["feedback"] = [result.get("error", "CLI error")]
             self.compact(task, record, role, category)
-            if category in ("limit", "unavailable") and model_index + 1 < len(route["models"]):
+            if category in ("limit", "unavailable") and model_index + 1 < len(candidates):
                 record["model_indices"][role] = model_index + 1
                 self.save()
                 return None
@@ -369,7 +377,7 @@ class Engine:
             return None
         sid = result.get("session_id")
         if sid:
-            record["sessions"][role] = {"id": sid, "model": model,
+            record["sessions"][role] = {"id": sid, "model": model, "provider": provider_name,
                                        "turns": (previous["turns"] if previous else 0) + 1,
                                        "estimated_tokens": (previous["estimated_tokens"] if previous else 0) + estimate,
                                        "last_input_tokens": usage.get("input_tokens") or 0}

@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import doctor
 from ios_gate import unit_summary_ok
 from orchestration.process import error_excerpt, run
-from orchestration.provider import Codex, classify, events, validate_reply
+from orchestration.provider import (Agy, Codex, MultiProvider, agy_transcript_events,
+                                    classify, events, extract_json_object, resolve_agy_model, validate_reply)
 from test_orchestration_context import task
 
 
@@ -151,6 +152,43 @@ print(json.dumps({"type":"turn.completed", "usage":{"input_tokens":12,"output_to
         self.assertTrue(unit_summary_ok(good))
         for altered in ({"totalTestCount": 0, "passedTests": 0}, {"skippedTests": 1}, {"failedTests": 1}):
             self.assertFalse(unit_summary_ok({**good, **altered}))
+
+    def test_agy_provider_new_and_resumed_session_with_transcript(self):
+        app_data = self.root / "agy-data"
+        conv_id = "conv-fixture-123"
+        tpath = app_data / "brain" / conv_id / ".system_generated/logs/transcript.jsonl"
+        tpath.parent.mkdir(parents=True, exist_ok=True)
+        cli = self.fake_cli(f'''import json, sys
+from pathlib import Path
+tpath = Path({str(tpath)!r})
+reply = {{"task_id":"one", "fingerprint":"hash", "status":"PASS", "summary":"agy done", "patch":"", "decisions":[], "findings":[], "criteria":[]}}
+if "new-conversation" in sys.argv:
+    tpath.write_text(
+        json.dumps({{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"p"}}) + "\\n" +
+        json.dumps({{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","input_tokens":100,"cache_read_tokens":20,"output_tokens":15,"content":json.dumps(reply)}}) + "\\n"
+    )
+    print(json.dumps({{"response":{{"newConversation":{{"conversationId":{conv_id!r}}}}}}}))
+elif "send-message" in sys.argv:
+    with tpath.open("a") as f:
+        f.write(json.dumps({{"step_index":2,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","content":"p2"}}) + "\\n")
+        f.write(json.dumps({{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","input_tokens":150,"cache_read_tokens":80,"output_tokens":18,"content":"```json\\n" + json.dumps(reply) + "\\n```"}}) + "\\n")
+    print(json.dumps({{"response":{{"sendMessage":{{"recipientId":{conv_id!r}}}}}}}))
+''')
+        agy = Agy(cli, timeout=10, app_data_dir=app_data, poll_interval=0.01)
+        multi = MultiProvider({"codex": Codex(cli), "agy": agy})
+        res1 = multi.invoke(self.root, self.root / "agy-call-1", task(), "hash", "prompt 1", "gemini-4-argon-low", "medium", provider="agy")
+        self.assertEqual(res1["status"], "PASS")
+        self.assertEqual(res1["session_id"], conv_id)
+        self.assertEqual(res1["usage"]["input_tokens"], 100)
+        self.assertEqual(res1["usage"]["cached_input_tokens"], 20)
+        self.assertEqual(res1["usage"]["output_tokens"], 15)
+        res2 = multi.invoke(self.root, self.root / "agy-call-2", task(), "hash", "prompt 2", "gemini-4-argon-low", "medium", session=conv_id, provider="agy")
+        self.assertEqual(res2["status"], "PASS")
+        self.assertEqual(res2["session_id"], conv_id)
+        self.assertEqual(res2["usage"]["input_tokens"], 150)
+        self.assertEqual(res2["usage"]["cached_input_tokens"], 80)
+        self.assertEqual(resolve_agy_model("gemini-4-argon", "high"), "gemini-4-argon-high")
+        self.assertEqual(resolve_agy_model("gemini-4-argon-low", "high"), "gemini-4-argon-low")
 
 
 if __name__ == "__main__":
