@@ -53,7 +53,7 @@ client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
 
 [functions.plants-api]
-verify_jwt = true
+verify_jwt = false
 
 [functions.analysis-worker]
 verify_jwt = false

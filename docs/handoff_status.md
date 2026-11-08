@@ -20,15 +20,9 @@
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-**Два среза T152 приняты через оркестратор и опубликованы.** API: `5c8ec12` + приёмка `7caf440`; iOS: `5c6454e`. Run `t152-api-002` и `t152-ios-001` — COMPLETED. Sol Developer, независимые Astra Review/QA. В API нет фиктивного committed/пустой успешной sync; iOS не генерирует диагноз/receipt/квоту/фото, обе scan-ветки дают недоступность с retry/back/catalogue. Ошибка HTTP503 сохраняет outbox; неуспешное получение sync-страниц сохраняет прежний кеш/watermark.
-
-**Изменённые файлы и доказательства:** [полный отчёт этапа](validation/t152-safety-2026-11-08.md), [backend](validation/automation/tasks/t152-api-persistence-unavailable.md), [iOS](validation/automation/tasks/t152-ios-unavailable-outbox.md). В отчёте перечислены 2 backend и 9 iOS файлов, manifests/config/UI runner/test, пути к raw evidence. Примечание в tasks.md фиксирует частичную приёмку, checkbox T152 открыт; итоги 28/154 не изменились.
-
-**Реальные проверки:** Deno static двух существующих entrypoint PASS; 36/36 Deno fixtures (включают целевые 15), 80/80 инфраструктурных fixtures PASS; Xcode build-for-testing PASS; welcome 1/1 и PlantsTests 22/22 PASS, без skips; MCP build/launch/accessibility/tap/PNG PASS; четыре T152 UI care/problem × EN/PL PASS, без skips. Четыре PNG экспортированы и визуально просмотрены. Последний diff-check PASS. Оба run опубликованы оркестратором в origin/main. Эта итоговая документация сохраняется отдельным commit/push.
-
-**Исправления в цикле:** API run001 сохранён BLOCKED из-за static-команды с отсутствующими будущими entrypoint; конфигурация исправлена, run002 принят. Первый iOS UI-прогон выявил ошибку теста language picker value; Sol исправил проверку на фактический локализованный текст, затем все checks и Review/QA повторены на новом fingerprint. Неуспешные evidence сохранены.
-
-**Ограничения / точный следующий шаг:** живые модели и Simulator проверены; HTTP503/outbox — test transport, LocalStore пересоздан на inMemory container, не cold restart. Live backend/Auth/Storage/камера/полный каталог не принимались, deployment не выполнялся. Проверить доступность и версию staging, подготовить отдельный manifest live API safety (commands/sync, guards/retry) и disk-store restart; сначала при необходимости подготовить развёртывание проверенной версии с указанием стенда. Полный T152 открыт. После его приёмки — T148, затем T149.
+t152-live-and-disk-safety: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t152-live-and-disk-safety](validation/automation/tasks/t152-live-and-disk-safety.md).
+Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information

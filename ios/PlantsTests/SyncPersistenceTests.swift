@@ -222,6 +222,141 @@ final class SyncPersistenceTests: XCTestCase {
         XCTAssertEqual(headers, Array(repeating: queued.operationId.uuidString.lowercased(), count: 3))
     }
 
+    func testDiskBackedStoreSurvivesHTTP503AcrossIndependentContainersAndReplaysIdempotently() async throws {
+        let scope = "t152_disk_\(UUID().uuidString)"
+        defer {
+            let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
+            let storeDir = baseURL.appendingPathComponent("NaratStores", isDirectory: true)
+            for suffix in ["", "-wal", "-shm"] {
+                let fileURL = storeDir.appendingPathComponent("store_\(scope).sqlite\(suffix)")
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+
+        let owner = UUID()
+        let otherOwner = UUID()
+        let operationId = UUID()
+        let otherOperationId = UUID()
+        let watermark = Date(timeIntervalSince1970: 1_762_000_000)
+        let payload = #"{"action_type":"water","performed_date":"2026-11-01"}"#
+        let otherPayload = #"{"owner":"other"}"#
+        let confirmedItem = SyncItemDTO(
+            entityType: "plant",
+            id: UUID(),
+            updatedAt: watermark,
+            payloadJSON: #"{"name":"confirmed_disk"}"#
+        )
+        let otherConfirmedItem = SyncItemDTO(
+            entityType: "plant",
+            id: UUID(),
+            updatedAt: watermark,
+            payloadJSON: #"{"name":"other_disk"}"#
+        )
+
+        let queued: OutboxEntrySnapshot
+        let foreignQueued: OutboxEntrySnapshot
+        do {
+            let container1 = try LocalStore.makeContainer(accountScope: scope, inMemory: false)
+            let store1 = LocalStore(modelContainer: container1)
+            try await store1.applySyncedItems([confirmedItem], ownerId: owner)
+            try await store1.applySyncedItems([otherConfirmedItem], ownerId: otherOwner)
+            try await store1.updateWatermark(ownerId: owner, watermark: watermark)
+            try await store1.updateWatermark(ownerId: otherOwner, watermark: watermark)
+            queued = try await store1.enqueueCommand(
+                operationId: operationId,
+                ownerId: owner,
+                plantId: confirmedItem.id,
+                commandName: "care.record",
+                payloadJSON: payload
+            )
+            foreignQueued = try await store1.enqueueCommand(
+                operationId: otherOperationId,
+                ownerId: otherOwner,
+                plantId: otherConfirmedItem.id,
+                commandName: "care.record",
+                payloadJSON: otherPayload
+            )
+        }
+
+        let unavailableTransport = UnavailableSyncTransport()
+        do {
+            let container2 = try LocalStore.makeContainer(accountScope: scope, inMemory: false)
+            let store2 = LocalStore(modelContainer: container2)
+            let engine2 = SyncEngine(store: store2, apiClient: PlantsAPIClient(transport: unavailableTransport))
+
+            let committed = try await engine2.flushOutbox(for: owner)
+            XCTAssertEqual(committed, 0)
+
+            let nextTime = watermark.addingTimeInterval(60)
+            let unconfirmedItem = SyncItemDTO(
+                entityType: "plant",
+                id: confirmedItem.id,
+                updatedAt: nextTime,
+                payloadJSON: #"{"name":"unconfirmed_page"}"#
+            )
+            await unavailableTransport.setFirstPage(SyncPageDTO(
+                ownerId: owner,
+                items: [unconfirmedItem],
+                hasMore: true,
+                nextCursor: SyncCursorDTO(updatedAt: nextTime, entityType: "plant", id: confirmedItem.id),
+                serverWatermark: nextTime,
+                limit: 1
+            ))
+            do {
+                _ = try await engine2.syncNow(for: owner)
+                XCTFail("HTTP503 on second page must fail syncNow")
+            } catch let error as APIErrorResponse {
+                XCTAssertEqual(error.error.code, "INTERNAL_ERROR")
+                XCTAssertTrue(error.error.retryable)
+            }
+
+            do {
+                _ = try await engine2.performFullRefresh(for: owner)
+                XCTFail("HTTP503 must fail performFullRefresh")
+            } catch let error as APIErrorResponse {
+                XCTAssertEqual(error.error.code, "INTERNAL_ERROR")
+                XCTAssertTrue(error.error.retryable)
+            }
+        }
+
+        let mockTransport = MockSyncTransport()
+        do {
+            let container3 = try LocalStore.makeContainer(accountScope: scope, inMemory: false)
+            let store3 = LocalStore(modelContainer: container3)
+            let pending = try await store3.pendingOutboxEntries(for: owner)
+            let entry = try XCTUnwrap(pending.first)
+            XCTAssertEqual(pending.count, 1)
+            XCTAssertEqual(entry.operationId, operationId)
+            XCTAssertEqual(entry.payloadJSON, payload)
+            XCTAssertEqual(entry.sequenceNumber, queued.sequenceNumber)
+            XCTAssertEqual(entry.createdAt, queued.createdAt)
+            XCTAssertEqual(entry.retryCount, 3)
+            XCTAssertTrue(try XCTUnwrap(entry.lastError).contains("INTERNAL_ERROR"))
+            let ownerWatermark3 = try await store3.currentWatermark(ownerId: owner)
+            let ownerPlants3 = try await store3.activeSyncedEntities(ownerId: owner, entityType: "plant")
+            let otherWatermark3 = try await store3.currentWatermark(ownerId: otherOwner)
+            let otherPlants3 = try await store3.activeSyncedEntities(ownerId: otherOwner, entityType: "plant")
+            let otherOutbox3 = try await store3.pendingOutboxEntries(for: otherOwner)
+            XCTAssertEqual(ownerWatermark3, watermark)
+            XCTAssertEqual(ownerPlants3, [confirmedItem])
+            XCTAssertEqual(otherWatermark3, watermark)
+            XCTAssertEqual(otherPlants3, [otherConfirmedItem])
+            XCTAssertEqual(otherOutbox3, [foreignQueued])
+
+            let engine3 = SyncEngine(store: store3, apiClient: PlantsAPIClient(transport: mockTransport))
+            let replayedCommitted = try await engine3.flushOutbox(for: owner)
+            XCTAssertEqual(replayedCommitted, 1)
+        }
+
+        let container4 = try LocalStore.makeContainer(accountScope: scope, inMemory: false)
+        let store4 = LocalStore(modelContainer: container4)
+        let ownerOutbox4 = try await store4.pendingOutboxEntries(for: owner)
+        let otherOutbox4 = try await store4.pendingOutboxEntries(for: otherOwner)
+        XCTAssertTrue(ownerOutbox4.isEmpty)
+        XCTAssertEqual(otherOutbox4, [foreignQueued])
+    }
+
     func testOutboxSurvivesStoreRecreationAndNetworkDropAfterServerCommit() async throws {
         let container = try LocalStore.makeContainer(accountScope: "test_restart_\(UUID().uuidString)", inMemory: true)
         let ownerId = UUID()
