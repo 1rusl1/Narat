@@ -240,6 +240,17 @@
       "stage": "qa",
       "mode": "local",
       "timeout": 900
+    },
+    "t152-live-api": {
+      "argv": [
+        "python3",
+        "tools/automation/t152_live_api_gate.py",
+        "--run-id",
+        "{check_run_id}"
+      ],
+      "stage": "qa",
+      "mode": "live",
+      "timeout": 180
     }
   },
   "publish": {

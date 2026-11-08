@@ -1,0 +1,69 @@
+{
+  "tasks": [
+    {
+      "id": "t152-live-and-disk-safety",
+      "description": "Финальный срез T152 после принятых t152-api-persistence-unavailable и t152-ios-unavailable-outbox: закрепить в supabase/config.toml конфигурацию развёрнутого plants-api (verify_jwt = false) и добавить в SyncPersistenceTests проверку сохранности LocalOutbox/sync-кеша/watermark на дисковом SQLite store (inMemory=false) при закрытии и повторном открытии независимых ModelContainer после HTTP 503. Контроллер дополнительно проверяет живой развёрнутый plants-api на стенде narat-staging (ijwnyjdomwvnzmmcurkt) через t152-live-api.",
+      "depends_on": [],
+      "files": [
+        "supabase/config.toml",
+        "supabase/functions/plants-api/index.ts",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "tools/automation/t152_live_api_gate.py",
+        "tools/automation/tests/test_t152_live_api_gate.py",
+        "specs/001-plants-ios-mvp/contracts/api.md",
+        "specs/001-plants-ios-mvp/contracts/sync.md"
+      ],
+      "write_files": [
+        "supabase/config.toml",
+        "ios/PlantsTests/SyncPersistenceTests.swift"
+      ],
+      "risk": "medium",
+      "complexity": "medium",
+      "constraints": [
+        "Изменять только write_files (supabase/config.toml и ios/PlantsTests/SyncPersistenceTests.swift). Не хардкодить секреты, токены или ключи.",
+        "В supabase/config.toml в секции [functions.plants-api] выставить verify_jwt = false, так как plants-api/index.ts сам валидирует Bearer-токен через Supabase Auth (defaultResolveRequestContext) и возвращает канонический JSON ошибки EN/PL, а также обслуживает публичный GET /health.",
+        "В ios/PlantsTests/SyncPersistenceTests.swift добавить тест дискового хранилища (inMemory: false) с уникальным accountScope и обязательным удалением файлов store_<scope>.sqlite* (включая -wal и -shm) в defer: (1) Container 1 создаёт на диске подтверждённый sync-кеш, watermark и pending команду в LocalOutbox для owner и отдельного otherOwner; (2) новый независимый Container 2 открывает тот же SQLite-файл с диска через LocalStore.makeContainer(accountScope: scope, inMemory: false) и выполняет flushOutbox, syncNow (включая успешную первую страницу и 503 на второй) и performFullRefresh через UnavailableSyncTransport (HTTP 503 INTERNAL_ERROR/retryable=true); (3) новый независимый Container 3 открывает SQLite-файл с диска и проверяет 0 committed, сохранность operationId/payloadJSON/sequenceNumber/createdAt, retryCount=3, lastError с INTERNAL_ERROR, неизменность watermark и подтверждённого кеша без частичной страницы, полную изоляцию otherOwner, а затем успешный идемпотентный replay через MockSyncTransport с проверкой пустого outbox в новом независимом Container 4.",
+        "Сохранить все существующие тесты в SyncPersistenceTests.swift без ослабления проверок.",
+        "Контроллер запускает diff-check, deno-tests, automation-tests, ios-tests, simulator-smoke и t152-live-api. Не запускать тяжёлые проверки самостоятельно внутри developer-сессии."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Живой развёрнутый plants-api на стенде narat-staging (ijwnyjdomwvnzmmcurkt) возвращает 200 на /health, 401 UNAUTHORIZED без токена и с невалидным токеном (EN/PL), 503 INTERNAL_ERROR (retryable=true, EN/PL) на GET /sync и трёхкратный повтор POST /commands с тем же operation_id под реальной анонимной сессией без ложного committed/replayed, а прямой вызов серверных RPC fetch_sync_delta и save_operation_receipt с клиентским JWT отклонён.",
+          "checks": [
+            "t152-live-api"
+          ],
+          "mode": "live"
+        },
+        {
+          "id": "AC2",
+          "description": "Дисковый LocalStore (inMemory=false) сохраняет pending LocalOutbox (operationId, payload, sequenceNumber, retryCount, lastError), подтверждённый sync-кеш, watermark и изоляцию владельцев между независимыми экземплярами ModelContainer при ответах HTTP 503 и после восстановления связи идемпотентно завершает команду.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC3",
+          "description": "Unit-тесты live gate на фикстурах и существующие Deno/automation тесты проходят без регрессий.",
+          "checks": [
+            "automation-tests",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC4",
+          "description": "Конфигурация supabase/config.toml согласована с развёрнутым plants-api (verify_jwt = false), diff-check проходит.",
+          "checks": [
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
