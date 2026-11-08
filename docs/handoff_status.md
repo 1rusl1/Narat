@@ -20,11 +20,9 @@
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-Цикл Developer/tests изменён и отправлен коммитом `9d6beca`: проверки static/build/unit принадлежат Developer, ошибки возвращаются ему для repair, Review/QA ждут PASS. Команды контроллер исполняет от его имени, read-only агента сохранён. Для задач без write_files тесты идут сразу. 78/78 fixture tests прошли, включая production runner с унаследованным lock.
-
-Живой `first-002` выполнил 78 тестов и дважды получил подтверждение Review/QA по критерию. Приёмки не было: QA вернул PASS одновременно с информационным пояснением в findings; строгая проверка не приняла противоречивый ответ, очередь исчерпала reviewer budget. Старые first-001/002 не изменялись и не объявляются COMPLETED. Найден дополнительный дефект протокола: пояснения не были явно запрещены в findings. Теперь findings допускает только нерешённые дефекты; PASS с непустым findings даёт WAITING без Developer-цикла. Read-only задача с проваленной приёмкой не вызывает разработчика без права менять файлы.
-
-Изменены context/engine/provider, engine tests, ORCHESTRATOR.md, этот handoff и отчёт. Добавлена регрессия против лишнего Developer-вызова при противоречивом PASS. Проверки исправления: 79/79 unittest PASS (26,452 с), git diff --check PASS. Точный следующий шаг: commit/push и один новый контрольный first-003. Живые продуктовые интеграции/Simulator не запускались; T152/tasks.md не менялись.
+example-readonly-infrastructure-audit: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [example-readonly-infrastructure-audit](validation/automation/tasks/example-readonly-infrastructure-audit.md).
+Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information
