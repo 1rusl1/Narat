@@ -33,7 +33,7 @@
       "high": {
         "provider": "codex",
         "models": [
-          "codex:gpt-6-astra",
+          "codex:gpt-6.1-sol",
           "agy:gemini-4-argon-low",
           "agy:gemini-3.8-flash-high"
         ],

@@ -132,12 +132,13 @@ class ContextTests(unittest.TestCase):
         self.assertNotIn("raw_log", compact)
 
     def test_route_models_supports_codex_and_agy_fallback_chain(self):
-        dev_low = route_models(self.config["roles"]["developer"]["low"])
-        self.assertEqual([(m["provider"], m["model"]) for m in dev_low], [
-            ("codex", "gpt-6.1-sol"),
-            ("agy", "gemini-4-argon-low"),
-            ("agy", "gemini-3.8-flash-high"),
-        ])
+        for lvl in ("low", "medium", "high"):
+            dev = route_models(self.config["roles"]["developer"][lvl])
+            self.assertEqual([(m["provider"], m["model"]) for m in dev], [
+                ("codex", "gpt-6.1-sol"),
+                ("agy", "gemini-4-argon-low"),
+                ("agy", "gemini-3.8-flash-high"),
+            ])
         rev_high = route_models(self.config["roles"]["reviewer"]["high"])
         self.assertEqual([(m["provider"], m["model"]) for m in rev_high], [
             ("codex", "gpt-6-astra"),

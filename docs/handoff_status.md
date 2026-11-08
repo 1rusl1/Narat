@@ -46,7 +46,7 @@
 - `tools/automation/orchestration/process.py`: очистка унаследованных переменных `ANTIGRAVITY_*` с передачей явного `extra_env` для `agy`.
 - `tools/automation/orchestrator.py`, `tools/automation/orchestrator_smoke.py`, `tools/automation/ORCHESTRATOR.md`: подключение `MultiProvider`, флаг `--agy` и `--provider`.
 - `tools/automation/orchestrator.config.json`: настроены цепочки моделей:
-  - `developer` (`low`/`medium`): `codex:gpt-6.1-sol` → `agy:gemini-4-argon-low` → `agy:gemini-3.8-flash-high`; `high`: `codex:gpt-6-astra` → `agy:gemini-4-argon-low` → `agy:gemini-3.8-flash-high`.
+  - `developer` (`low`/`medium`/`high`): `codex:gpt-6.1-sol` → `agy:gemini-4-argon-low` → `agy:gemini-3.8-flash-high` (для `high` сохраняется `reasoning_effort: "high"`).
   - `reviewer` и `qa` (`low`/`medium`): `codex:gpt-6-astra` → `agy:gemini-4-argon-medium`; `high`: `codex:gpt-6-astra` → `agy:gemini-4-argon-high`.
 - Тесты: `tools/automation/tests/{test_orchestration_context.py,test_orchestration_provider.py,test_orchestration_engine.py}` (добавлены проверки multi-provider маршрутизации, fallback `codex` → `agy`, парсинга транскрипта и возобновления сессии `Agy`, а также `commit.gpgsign=false` для изолированных тестовых Git-репозиториев в песочнице).
 
