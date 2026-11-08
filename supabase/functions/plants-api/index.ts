@@ -10,7 +10,6 @@ import {
   jsonResponse,
   RequestContext,
   requireActiveOwner,
-  requireUuid,
   resolveLocale,
 } from "../_shared/http.ts";
 import {
@@ -215,22 +214,18 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       }
 
       if (req.method === "GET" && normalizedPath === "/sync") {
-        const ownerId = requireActiveOwner(ctx);
+        requireActiveOwner(ctx);
         if (deps.handleSync) {
           return await deps.handleSync(req, ctx, url);
         }
-        const limitParam = Number(url.searchParams.get("limit") ?? "200");
-        const limit = Number.isFinite(limitParam)
-          ? Math.max(1, Math.min(500, limitParam))
-          : 200;
-        return jsonResponse({
-          owner_id: ownerId,
-          items: [],
-          has_more: false,
-          next_cursor: null,
-          server_watermark: new Date().toISOString(),
-          limit,
-        });
+        throw new ApiHttpError(
+          503,
+          "INTERNAL_ERROR",
+          locale === "pl"
+            ? "Synchronizacja jest tymczasowo niedostępna. Spróbuj ponownie później."
+            : "Synchronization is temporarily unavailable. Please try again later.",
+          true,
+        );
       }
 
       if (req.method === "POST" && normalizedPath === "/commands") {
@@ -238,17 +233,14 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         if (deps.handleCommand) {
           return await deps.handleCommand(req, ctx);
         }
-        const body = await req.json().catch(() => null);
-        if (!body || typeof body !== "object") {
-          throw new ApiHttpError(400, "VALIDATION_ERROR", "Invalid JSON body.");
-        }
-        const obj = body as Record<string, unknown>;
-        const operationId = requireUuid(obj.operation_id, "operation_id");
-        return jsonResponse({
-          status: "committed",
-          operation_id: operationId,
-          replayed: false,
-        });
+        throw new ApiHttpError(
+          503,
+          "INTERNAL_ERROR",
+          locale === "pl"
+            ? "Zapisywanie jest tymczasowo niedostępne. Spróbuj ponownie później."
+            : "Saving is temporarily unavailable. Please try again later.",
+          true,
+        );
       }
 
       throw new ApiHttpError(

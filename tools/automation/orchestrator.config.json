@@ -208,10 +208,11 @@
     "deno-check": {
       "argv": [
         "deno",
-        "task",
-        "--cwd",
-        "supabase/functions",
-        "check"
+        "check",
+        "--config",
+        "supabase/functions/deno.json",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/analysis-worker/index.ts"
       ],
       "stage": "static",
       "mode": "local",

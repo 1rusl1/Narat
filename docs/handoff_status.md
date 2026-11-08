@@ -20,11 +20,13 @@
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-Подготовлен первый продуктовый срез T152: `tools/automation/tasks.t152-api.json` и два check в `orchestrator.config.json` (`t152-api-tests`, `deno-check`). Область — только честные ошибки `/commands` и `/sync` при отсутствии persistence; отдельные критерии EN/PL, retry, auth guards и сохранение injected handlers. Developer Sol, независимые Review/QA Astra, risk/complexity medium. Продуктовые исходники и checkbox пока не менялись.
+Первый продуктовый срез T152 подготовлен Sol через `t152-api-001`: в `supabase/functions/plants-api/index.ts` убраны фиктивные committed и пустая успешная sync-страница, добавлены EN/PL 503 INTERNAL_ERROR/retryable; новый `supabase/functions/_shared/tests/persistence_unavailable_test.ts` покрывает retry, guards и injected handlers. Это кандидат, пока без Review/QA.
 
-**Реально выполнено до запуска:** существующий `deno task --cwd supabase/functions test` — 21 passed / 0 failed (fixtures, без живого backend). Validate manifest — VALID; reviewer context сформирован; 79/79 инфраструктурных unittest PASS (26,690 с); git diff --check PASS. Это проверки подготовки, не новой реализации.
+**Остановка:** run `t152-api-001` BLOCKED после 2 Developer calls: новый check вызывал старый `deno task check`, который ссылается на отсутствующие billing-webhook/maintenance entrypoints. Check исправлен в `orchestrator.config.json` на два реально существующих entrypoint; исходная deno task (будущие сервисы) не изменена. Старое состояние/ошибочные логи сохранены. Manifest `tasks.t152-api.json` уточнён для приёмки текущего кандидата в новом run, без подмены истории.
 
-**Ограничения / точный следующий шаг:** T152 открыта. Сохранить подготовку commit/push, затем `orchestrator.py run --manifest tools/automation/tasks.t152-api.json --run-id t152-api-001`. После принятого backend-среза — отдельный manifest iOS analysis unavailable/outbox/UI, без фиктивного результата и квоты. Живые backend/PL/EN/iPhone пока не приняты.
+**Проверки подготовки:** исходные 21 Deno fixture и 79 инфраструктурных unittest PASS; validate/context PASS. Исправленный deno static — PASS; новые 15/15 fixture tests — PASS; manifest VALID и git diff --check PASS. Живой backend/клиент этим не проверены.
+
+**Точный следующий шаг:** сохранить кандидат и исправленную конфигурацию, затем новый `orchestrator.py run --manifest tools/automation/tasks.t152-api.json --run-id t152-api-002` с полными проверками и независимыми Review/QA. T152 открыта; далее отдельный iOS analysis unavailable/outbox/UI срез.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information

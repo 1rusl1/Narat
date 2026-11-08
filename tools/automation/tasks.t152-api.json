@@ -2,7 +2,7 @@
   "tasks": [
     {
       "id": "t152-api-persistence-unavailable",
-      "description": "Первый ограниченный срез T152: убрать фиктивные подтверждения сохранения и пустой успешный sync из штатного plants-api, пока реальные persistence handlers не подключены. Это backend safety, не полная приёмка T152.",
+      "description": "Первый ограниченный срез T152: убрать фиктивные подтверждения сохранения и пустой успешный sync из штатного plants-api, пока реальные persistence handlers не подключены. Это backend safety, не полная приёмка T152. Патч подготовлен Sol в run t152-api-001, остановленном из-за устаревшей static-команды. Провести независимую приёмку текущего кандидата целиком, включая новый regression test; отсутствие нового diff не заменяет чтение реализации.",
       "depends_on": [],
       "files": [
         "supabase/functions/plants-api/index.ts",
