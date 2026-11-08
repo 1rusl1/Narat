@@ -1,5 +1,8 @@
 # Проверка окружения Narat
 
+Рабочая CLI-очередь, конфигурация, сессии, метрики и команды запуска:
+[ORCHESTRATOR.md](ORCHESTRATOR.md). Ниже — существующие самостоятельные smoke-инструменты.
+
 Этап 1: Python 3.11+, только стандартная библиотека. Запуск из обычного Terminal:
 
 ```sh
@@ -54,6 +57,6 @@ python3 tools/automation/simulator_smoke.py
 
 `mcp_client.py` использует Python stdlib и MCP JSON-RPC stdio, с тайм-аутами и завершением серверов. Кэши npm/мобильного helper находятся в игнорируемом `tools/automation/.cache/`; телеметрия серверов отключена. MobileBuildMCP 2.7.1 жёстко задаёт свою папку логов в home. Поэтому `run_build_mcp.mjs` перед запуском перенаправляет её в проект через экспортированный внутренний override; версия проверяется строго, при обновлении этот адаптер нужно пересмотреть. Пакет и HOME не изменяются. Сам Simulator/Xcode используют штатные служебные каталоги macOS; mobilecli daemon работает в `.cache/mobilecli` и автоматически простаивает/завершается по своему жизненному циклу.
 
-Глобальный MCP config Codex не изменяется. Подключение этих инструментов к независимому Astra QA и проверка ограничений записи — этап 3; оркестратор и автоматическая очередь ещё впереди. Пара моделей остаётся Sol + Astra.
+Глобальный MCP config Codex не изменяется. Оркестратор запускает эти runner детерминированно; независимый read-only QA получает сохранённые доказательства. Прямой произвольный MCP-доступ агента не включён. Модели Sol/Astra и routing настраиваются в JSON-конфигурации.
 
 Основание CLI-флагов: [Codex exec](https://learn.chatgpt.com/docs/non-interactive-mode), [CLI reference](https://learn.chatgpt.com/docs/cli/reference). MCP: [MobileBuildMCP](https://github.com/getsentry/MobileBuildMCP), [Mobile MCP](https://github.com/mobile-next/mobile-mcp), [stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports). Текущий статус — существующий handoff.

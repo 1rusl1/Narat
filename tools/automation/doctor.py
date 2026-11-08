@@ -68,11 +68,21 @@ def exclusive_run(base):
         raise ValueError("Каталог отчётов выходит за пределы проекта")
     base.mkdir(parents=True, exist_ok=True)
     with (base / ".doctor.lock").open("a") as lock:
+        inherited = os.environ.get("NARAT_AUTOMATION_LOCK_FD")
+        if inherited is not None:
+            # Only a real inherited descriptor for this exact lock permits nesting.
+            fd = int(inherited)
+            actual, expected = os.fstat(fd), os.fstat(lock.fileno())
+            if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+                raise RuntimeError("Некорректный унаследованный lock")
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield fd
+            return
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("Другой doctor уже запущен") from None
-        yield
+        yield lock.fileno()
 
 
 class Doctor:
@@ -199,6 +209,20 @@ def check_models(doctor, codex, args):
     doctor.add("independent-model-sessions", "PASS" if all(sessions) and len(set(sessions)) == 2 else "FAIL")
 
 
+def ios_command(args):
+    """One source of build settings for doctor and the orchestrator's iOS gate."""
+    derived = ROOT / "DerivedData/Automation"
+    if not derived.resolve().is_relative_to(ROOT):
+        raise ValueError("DerivedData должен находиться внутри проекта")
+    return ["xcodebuild", "-project", str(ROOT / "ios/Plants.xcodeproj"), "-scheme", "Plants",
+            "-destination", f"platform=iOS Simulator,id={args.simulator}",
+            "-destination-timeout", "60", "-derivedDataPath", str(derived),
+            "-clonedSourcePackagesDirPath", str(derived / "SourcePackages"),
+            "-packageCachePath", str(derived / "PackageCache"),
+            "-onlyUsePackageVersionsFromResolvedFile", "-skipPackageUpdates",
+            "-parallel-testing-enabled", "NO", *LOCAL_UI_SETTINGS]
+
+
 def check_ios(doctor, args):
     devices = doctor.command("simulators", ["xcrun", "simctl", "list", "devices", "available", "--json"])
     if devices["status"] != "PASS":
@@ -218,15 +242,7 @@ def check_ios(doctor, args):
     if doctor.command("simulator-ready", ["xcrun", "simctl", "bootstatus", args.simulator, "-b"], 180)["status"] != "PASS":
         return
     derived = ROOT / "DerivedData/Automation"
-    if not derived.resolve().is_relative_to(ROOT):
-        raise ValueError("DerivedData должен находиться внутри проекта")
-    common = ["xcodebuild", "-project", str(ROOT / "ios/Plants.xcodeproj"), "-scheme", "Plants",
-              "-destination", f"platform=iOS Simulator,id={args.simulator}",
-              "-destination-timeout", "60", "-derivedDataPath", str(derived),
-              "-clonedSourcePackagesDirPath", str(derived / "SourcePackages"),
-              "-packageCachePath", str(derived / "PackageCache"),
-              "-onlyUsePackageVersionsFromResolvedFile", "-skipPackageUpdates",
-              "-parallel-testing-enabled", "NO", *LOCAL_UI_SETTINGS]
+    common = ios_command(args)
     doctor.add("local-ui-configuration", "INFO", settings=LOCAL_UI_SETTINGS,
                note="Подключение Supabase/Google отключено build settings только для smoke-сборки")
     build = doctor.command("ios-build", [*common, "build-for-testing"], args.build_timeout)

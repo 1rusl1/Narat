@@ -63,3 +63,39 @@ backend, PL/EN. Проверки фикстур и живые проверки �
 ## Этап 1 — контекст и состояние
 
 Добавлены `orchestration/context.py`, `storage.py`, JSON-конфигурация и 14 контрактных тестов. 36/36 инфраструктурных тестов PASS, diff-check PASS. Критерии не обрезаются; длинный diff получает явный указатель на полный файл. Handoff хранит историю, но prompt выбирает только Project State. Маршрутизация учитывает максимум риска/сложности. State привязан к хешу manifest/config; budgets записываются до запуска. Runtime ещё не подключён; это проверка компонентов на фикстурах, без живых моделей/Simulator.
+
+## Финальная реализация
+
+Сохранены существующие doctor/MCP/Simulator-инструменты. Добавлены:
+
+- `orchestrator.py`: validate/context/run/status/metrics, явный manifest и serial queue.
+- `orchestration/engine.py`: pipeline, зависимости, бюджеты, риск, кэш успешных checks по fingerprint, delta review, проверка criterion evidence, durable publication.
+- `orchestration/provider.py`: Codex CLI, read-only, stdin prompt, output-schema, JSONL, явный resume, строгая проверка ответа и ошибки/usage.
+- `orchestration/process.py`: timeout/process group, полные логи на диске, ограниченный error excerpt.
+- `orchestration/repository.py`: fingerprint tracked/untracked, text diff/patch scope, safe Git без reset/clean/stash/force.
+- `ios_gate.py`: повторно использует doctor's build settings/welcome, запускает существующий PlantsTests и проверяет xcresult; `doctor.py` получил общий ios_command и наследование настоящего lock descriptor.
+- `orchestrator_smoke.py`, `tasks.example.json`, два набора tests engine/provider, `ORCHESTRATOR.md`; обновлены README и CI workflow.
+
+Один task = отдельная сессия. Reuse ограничен task/role/model. Компакция детерминированная: checkpoint и новая сессия, без дополнительной модели. Retry counts сохраняются до вызова; CLI failures не дают бесконечного повторения. Auth/unknown/timeouts/limit без разрешённого fallback → WAITING; отсутствие прогресса/бюджета → BLOCKED. Независимая очередь продолжается только при чистом дереве. Принятая задача не вызывается повторно. COMPLETED требует успешного commit/push; их recovery не запускает модели заново.
+
+Handoff остаётся главным документом. Prompt выбирает только Project State; краткие отчёты задач сохраняются отдельно, историю можно читать по необходимости. Agent patch не может изменять handoff/tasks/controller. Нет автоматического переноса продуктовых checkbox: срез задачи и её полная приёмка различаются.
+
+### Реально выполненные проверки
+
+- `python3 -m unittest discover -s tools/automation/tests -q`: **74 PASS**, 21,823 с; fixtures, реальные subprocess и временные Git/bare origin. Включены прежние 22 tests, 14 context/state и 38 новых engine/provider tests. Проверены pipeline success, failed build без Review, evidence отказ, replay, бюджеты/CLI ошибки, публикация, crash после patch и commit, changed files и независимость задач.
+- `orchestrator.py validate --manifest tools/automation/tasks.example.json`: VALID, без LLM.
+- `orchestrator.py --help`, `ios_gate.py --help`: exit 0.
+- `git diff --check`: PASS.
+- Live `orchestrator_smoke.py --run-id orchestrator-cli-20261108`: **PASS**, три Sol-запроса без tools. Явный resume сохранил session ID; следующая задача получила новый. Локальное evidence в игнорируемом runs-каталоге.
+
+В live JSONL input: 12844 / 26745 / 12844; output: 48 / 96 / 48;
+cached: 0 / 12672 / 0. Это raw provider counters, на resume наблюдаются накопительные значения. В metrics они не складываются как отдельные per-call расходы: область счётчика не гарантирована, estimates выделены отдельно. Пятичасовая квота и reset не сообщены. Измерены три вызова, ~4,662 / 5,514 / 4,813 с, prompt по 335 bytes. Это transport smoke, не разработка задачи.
+
+Детерминированное сравнение перед финальной записью handoff: полный файл 146403 bytes;
+полный начальный packet примера 3997 bytes; все criteria сохранены, Historical Information не включена. Измерение в `runs/context-measurement.json`. Старого рабочего dev/review-пайплайна не было: процент экономии или изменение качества на реальных продуктовых задачах не заявляется.
+
+### Ограничения и дальнейшая проверка
+
+Live полный цикл с Developer/Reviewer/Astra-QA пока не запускался. Новый unit gate проверен на fixtures, а не новой Simulator-сборкой; исходники iOS не изменены. Live backend/OAuth/камера/PL/EN и T152 не приняты. Новый CI fixture job настроен, его удалённый результат пока неизвестен. Поддержаны Codex и text patches; другие providers, binary/rename edits и дополнительные роли требуют явных адаптеров/стадий. Автоматическое закрытие полной продуктовой задачи по одному infrastructure smoke запрещено.
+
+Следующий шаг: manifest одного среза T152 с явными checks/evidence modes; validate → context → контролируемый run из чистого дерева. Наблюдать calls/task/role/model, prompt_bytes, retries/review cycles, успешность и регрессии; raw CLI usage и unknown учитывать отдельно от estimates и реальной подписочной квоты. Команды приведены в ORCHESTRATOR.md.

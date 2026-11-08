@@ -1,0 +1,335 @@
+"""End-to-end controller tests: real subprocess checks and temporary Git repositories.
+
+Models are scripted fixtures; no paid/live calls or Simulator acceptance are implied.
+"""
+
+import copy
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from orchestration.context import PROJECT_START, PROJECT_END, SUMMARY_START, SUMMARY_END, validate
+from orchestration.engine import Engine
+from orchestration.repository import apply_patch, contents, diff, fingerprint, git
+from orchestration.storage import digest
+from test_orchestration_context import CONFIG, task
+
+
+class FakeProvider:
+    def __init__(self, responses=None):
+        self.responses = list(responses or [])
+        self.calls = []
+
+    def invoke(self, root, directory, task, fingerprint, prompt, model, effort, session=None, ephemeral=False):
+        role = json.loads(prompt.split("\n", 1)[1].split("\nFull task diff:", 1)[0])["role"]
+        call = {"role": role, "task": task["id"], "prompt": prompt, "session": session, "model": model}
+        self.calls.append(call)
+        reply = {"task_id": task["id"], "fingerprint": fingerprint, "status": "PASS", "summary": "Verified fixture",
+                 "patch": "", "decisions": ["Reuse existing behavior"], "findings": [],
+                 "criteria": [{"id": c["id"], "status": "PASS", "evidence": c["checks"]}
+                              for c in task["acceptance_criteria"]]}
+        result = {"status": "PASS", "reply": reply, "session_id": session or f"session-{len(self.calls)}",
+                  "usage": {"input_tokens": 100, "output_tokens": 20, "cached_input_tokens": 50}, "elapsed_seconds": 0.1}
+        if self.responses:
+            response = self.responses.pop(0)
+            if isinstance(response, BaseException):
+                raise response
+            if callable(response):
+                response(result, call, root)
+            else:
+                result.update(response)
+        return result
+
+
+def patch_response(before="before\n", after="after\n", path="src/file.txt"):
+    def response(result, call, root):
+        result["reply"]["patch"] = diff({path: before}, {path: after})
+    return response
+
+
+def fail_response(message="Wrong result"):
+    def response(result, call, root):
+        result["reply"].update(status="FAIL", findings=[message])
+    return response
+
+
+class EngineTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name).resolve()
+        self.root = self.base / "repo"
+        self.root.mkdir()
+        git(self.root, "init", "-b", "main")
+        git(self.root, "config", "user.name", "Fixture")
+        git(self.root, "config", "user.email", "fixture@example.invalid")
+        (self.root / "docs").mkdir()
+        (self.root / "docs/handoff_status.md").write_text(
+            PROJECT_START + "\nFixture project state\n" + PROJECT_END + "\n" +
+            SUMMARY_START + "\nPrevious summary\n" + SUMMARY_END + "\nHistory PRIVATE_PAST_REASONING\n")
+        (self.root / "src").mkdir()
+        (self.root / "src/file.txt").write_text("before\n")
+        (self.root / ".gitignore").write_text(".runs/\n")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "baseline")
+        self.remote = self.base / "remote.git"
+        subprocess.run(["git", "init", "--bare", str(self.remote)], check=True, capture_output=True)
+        git(self.root, "remote", "add", "origin", str(self.remote))
+        self.config = copy.deepcopy(CONFIG)
+        self.config["checks"] = {
+            "diff-check": {"argv": ["git", "diff", "--check"], "stage": "static", "mode": "local", "timeout": 10},
+            "unit": {"argv": [sys.executable, "-c", "print('fixture tests PASS')"], "stage": "unit", "mode": "fixture", "timeout": 10},
+            "ui": {"argv": [sys.executable, "-c", "print('fixture UI PASS')"], "stage": "qa", "mode": "fixture", "timeout": 10}}
+        self.config["scope_checks"] = {}
+        self.task = task()
+        self.task["acceptance_criteria"] = [{"id": "AC1", "description": "Fixture unit proof", "mode": "fixture", "checks": ["unit"]},
+                                            {"id": "AC2", "description": "Fixture UI proof", "mode": "fixture", "checks": ["ui"]}]
+        self.directory = self.root / ".runs/test"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def engine(self, provider, tasks=None):
+        tasks = tasks or [self.task]
+        validate(self.config, tasks, self.root)
+        return Engine(self.root, self.directory, self.config, tasks, provider)
+
+    def test_happy_path_checks_review_qa_commit_push_and_no_duplicate_resume(self):
+        provider = FakeProvider([patch_response()])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute(), {"one": "COMPLETED"})
+        self.assertEqual([c["role"] for c in provider.calls], ["developer", "reviewer", "qa"])
+        self.assertEqual((self.root / "src/file.txt").read_text(), "after\n")
+        self.assertEqual(git(self.root, "status", "--porcelain"), b"")
+        self.assertEqual(git(self.root, "rev-parse", "HEAD").strip(),
+                         git(self.root, "ls-remote", "origin", "refs/heads/main").split()[0])
+        reviewer = provider.calls[1]["prompt"]
+        self.assertIn("+after", reviewer)
+        self.assertIn("Fixture unit proof", reviewer)
+        self.assertNotIn("PRIVATE_PAST_REASONING", reviewer)
+        self.assertNotIn("fixture tests PASS", reviewer)  # Successful full stdout is never included.
+        replay = FakeProvider()
+        recovered = self.engine(replay)
+        self.assertEqual(recovered.execute(resume=True), {"one": "COMPLETED"})
+        self.assertEqual(replay.calls, [])
+        metrics = [json.loads(x) for x in (self.directory / "metrics.jsonl").read_text().splitlines()]
+        self.assertEqual(len(metrics), 3)
+        self.assertTrue(all(m["task_status"] == "COMPLETED" for m in metrics))
+        self.assertEqual(sum(m["input_tokens"] for m in metrics), 300)
+
+    def test_failed_build_blocks_reviewer_and_stops_no_progress(self):
+        self.config["checks"]["unit"]["argv"] = [sys.executable, "-c", "import sys; print('file.swift:10: error broken'); sys.exit(1)"]
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual([c["role"] for c in provider.calls], ["developer", "developer"])
+        self.assertIn("file.swift:10: error broken", provider.calls[-1]["prompt"])
+        self.assertEqual(engine.state.data["tasks"]["one"]["counts"].get("reviewer", 0), 0)
+
+    def test_budget_stops_changing_failures(self):
+        provider = FakeProvider([fail_response("one"), fail_response("two"), fail_response("three")])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual(len(provider.calls), 3)
+        self.assertIn("budget exhausted", engine.state.data["tasks"]["one"]["reason"])
+
+    def test_qa_cannot_accept_missing_evidence(self):
+        def no_evidence(result, call, root):
+            result["reply"]["criteria"] = []
+        provider = FakeProvider([{}, {}, no_evidence, {}, {}, no_evidence])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertFalse((self.root / "docs/validation/automation/tasks/one.md").exists())
+
+    def test_patch_outside_scope_never_applied(self):
+        provider = FakeProvider([patch_response(path="docs/handoff_status.md"), patch_response(path="docs/handoff_status.md")])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual(git(self.root, "status", "--porcelain"), b"")
+
+    def test_limit_waits_without_automatic_retries(self):
+        provider = FakeProvider([{"status": "FAIL", "category": "limit", "error": "usage limit"}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "WAITING")
+        self.assertEqual(len(provider.calls), 1)
+        self.assertEqual(engine.state.data["tasks"]["one"]["calls"][0]["quota"], None)
+
+    def test_explicit_allowed_fallback_gets_new_session(self):
+        self.config["roles"]["developer"]["low"]["models"] = ["primary", "approved-alternative"]
+        provider = FakeProvider([{"status": "FAIL", "category": "unavailable", "error": "model unavailable"}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual([c["model"] for c in provider.calls[:2]], ["primary", "approved-alternative"])
+        self.assertIsNone(provider.calls[1]["session"])
+
+    def test_auth_error_does_not_fallback(self):
+        self.config["roles"]["developer"]["low"]["models"] = ["primary", "alternative"]
+        provider = FakeProvider([{"status": "FAIL", "category": "auth", "error": "authentication failed"}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "WAITING")
+        self.assertEqual(len(provider.calls), 1)
+
+    def test_interruption_persists_budget_and_resumes_fresh(self):
+        engine = self.engine(FakeProvider([InterruptedError("fixture signal")]))
+        with self.assertRaises(InterruptedError):
+            engine.execute()
+        record = engine.state.data["tasks"]["one"]
+        self.assertEqual(record["status"], "WAITING")
+        self.assertEqual(record["counts"]["developer"], 1)
+        provider = FakeProvider()
+        recovered = self.engine(provider)
+        self.assertEqual(recovered.execute(resume=True)["one"], "COMPLETED")
+        self.assertIsNone(provider.calls[0]["session"])
+        self.assertEqual(recovered.state.data["tasks"]["one"]["counts"]["developer"], 2)
+
+    def test_changed_source_after_interruption_is_blocked(self):
+        engine = self.engine(FakeProvider([InterruptedError()]))
+        with self.assertRaises(InterruptedError):
+            engine.execute()
+        (self.root / "src/file.txt").write_text("external edit\n")
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute(resume=True)["one"], "BLOCKED")
+        self.assertEqual(provider.calls, [])
+
+    def test_failed_task_does_not_block_independent_clean_task(self):
+        second = task("two")
+        second["write_files"] = []
+        provider = FakeProvider([fail_response(), fail_response()])
+        engine = self.engine(provider, [self.task, second])
+        self.assertEqual(engine.execute(), {"one": "BLOCKED", "two": "COMPLETED"})
+        self.assertIsNone(next(c for c in provider.calls if c["task"] == "two")["session"])
+
+    def test_blocked_dependency_never_runs(self):
+        second = {**task("two"), "depends_on": ["one"]}
+        provider = FakeProvider([fail_response(), fail_response()])
+        engine = self.engine(provider, [second, self.task])
+        self.assertEqual(engine.execute(), {"two": "PENDING", "one": "BLOCKED"})
+        self.assertTrue(all(c["task"] == "one" for c in provider.calls))
+
+    def test_uncommitted_blocked_work_prevents_next_task(self):
+        def blocked(result, call, root):
+            result["reply"].update(status="BLOCKED", findings=["Cannot verify"])
+        provider = FakeProvider([patch_response(), blocked])
+        engine = self.engine(provider, [self.task, task("two")])
+        self.assertEqual(engine.execute(), {"one": "BLOCKED", "two": "WAITING"})
+        self.assertEqual((self.root / "src/file.txt").read_text(), "after\n")
+
+    def test_resume_reuses_only_same_role_and_re_review_uses_delta(self):
+        provider = FakeProvider([patch_response(), fail_response("fix after"),
+                                 patch_response("after\n", "fixed\n"), {}, {}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual(provider.calls[2]["session"], "session-1")
+        self.assertEqual(provider.calls[3]["session"], "session-2")
+        self.assertIn("-after", provider.calls[3]["prompt"])
+        self.assertIn("+fixed", provider.calls[3]["prompt"])
+        self.assertNotIn("-before", provider.calls[3]["prompt"])
+        self.assertIn("fix after", provider.calls[3]["prompt"])
+
+    def test_compaction_threshold_restarts_without_extra_model_call(self):
+        self.config["sessions"]["max_turns"] = 1
+        provider = FakeProvider([fail_response("first attempt")])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual(len(provider.calls), 4)
+        self.assertIsNone(provider.calls[1]["session"])
+        self.assertIn("first attempt", provider.calls[1]["prompt"])
+        compacted = engine.state.data["tasks"]["one"]["compactions"]
+        self.assertEqual(compacted[0]["model_calls"], 0)
+        self.assertTrue(list((self.directory / "one").glob("checkpoint-*.json")))
+
+    def test_unchanged_check_success_is_not_repeated(self):
+        provider = FakeProvider([{}, fail_response("review finding"), {}, {}, {}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual(engine.state.data["tasks"]["one"]["check_sequence"], 3)
+
+    def test_push_failure_waits_and_resume_does_not_reinvoke_models(self):
+        git(self.root, "remote", "set-url", "origin", str(self.base / "missing.git"))
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "WAITING")
+        self.assertIn("Publication failed", engine.state.data["tasks"]["one"]["reason"])
+        git(self.root, "remote", "set-url", "origin", str(self.remote))
+        retry = FakeProvider()
+        recovered = self.engine(retry)
+        self.assertEqual(recovered.execute(resume=True)["one"], "COMPLETED")
+        self.assertEqual(retry.calls, [])
+
+    def test_read_only_agent_changes_block_acceptance(self):
+        def external_write(result, call, root):
+            (root / "src/file.txt").write_text("unexpected\n")
+        provider = FakeProvider([external_write])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual(len(provider.calls), 1)
+
+    def test_check_mutation_invalidates_all_evidence(self):
+        self.config["checks"]["unit"]["argv"] = [sys.executable, "-c", "from pathlib import Path; Path('src/file.txt').write_text('changed')"]
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual(len(provider.calls), 1)
+
+    def test_new_and_deleted_files_are_in_diff_and_apply(self):
+        text = diff({"src/new.txt": None}, {"src/new.txt": "new\n"})
+        apply_patch(self.root, text, ["src/new.txt"])
+        self.assertEqual((self.root / "src/new.txt").read_text(), "new\n")
+        apply_patch(self.root, diff({"src/new.txt": "new\n"}, {"src/new.txt": None}), ["src/new.txt"])
+        self.assertFalse((self.root / "src/new.txt").exists())
+
+    def test_already_reported_task_does_not_call_models(self):
+        report = self.root / "docs/validation/automation/tasks/one.md"
+        report.parent.mkdir(parents=True)
+        report.write_text("Prior accepted task")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "previous task")
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute()["one"], "BLOCKED")
+        self.assertEqual(provider.calls, [])
+
+    def test_crash_after_apply_recovers_without_second_developer(self):
+        provider = FakeProvider([patch_response()])
+        engine = self.engine(provider)
+        original = apply_patch
+        def apply_and_crash(root, text, allowed):
+            original(root, text, allowed)
+            raise InterruptedError("after patch write")
+        with patch("orchestration.engine.apply_patch", side_effect=apply_and_crash):
+            with self.assertRaises(InterruptedError):
+                engine.execute()
+        recovered_provider = FakeProvider()
+        recovered = self.engine(recovered_provider)
+        self.assertEqual(recovered.execute(resume=True)["one"], "COMPLETED")
+        self.assertEqual([c["role"] for c in recovered_provider.calls], ["reviewer", "qa"])
+
+    def test_crash_after_commit_recovers_publication_without_new_models(self):
+        provider = FakeProvider([patch_response()])
+        engine = self.engine(provider)
+        original = git
+        def commit_and_crash(root, *args, **kwargs):
+            value = original(root, *args, **kwargs)
+            if args[0] == "commit":
+                raise InterruptedError("after commit")
+            return value
+        with patch("orchestration.engine.git", side_effect=commit_and_crash):
+            with self.assertRaises(InterruptedError):
+                engine.execute()
+        recovered_provider = FakeProvider()
+        self.assertEqual(self.engine(recovered_provider).execute(resume=True)["one"], "COMPLETED")
+        self.assertEqual(recovered_provider.calls, [])
+
+    def test_pending_push_stops_later_tasks(self):
+        git(self.root, "remote", "set-url", "origin", str(self.base / "missing.git"))
+        provider = FakeProvider()
+        engine = self.engine(provider, [self.task, task("two")])
+        self.assertEqual(engine.execute(), {"one": "WAITING", "two": "PENDING"})
+        self.assertEqual(len(provider.calls), 3)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -41,6 +41,17 @@ def nonempty_strings(values):
 def validate(config, tasks, root):
     if config.get("version") != 1 or not isinstance(tasks, list) or not tasks:
         raise ValueError("Expected version 1 config and a nonempty task list")
+    for key in ("agent_timeout", "max_tasks_per_run", "max_run_seconds"):
+        if type(config[key]) is not int or config[key] < 1:
+            raise ValueError(f"Invalid run limit: {key}")
+    if not nonempty_strings(config["architecture"]):
+        raise ValueError("Architecture constraints are required")
+    publication = config["publish"]
+    if (type(publication["enabled"]) is not bool
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", publication["remote"])
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./-]*", publication["branch"])
+            or ".." in publication["branch"]):
+        raise ValueError("Invalid publication settings")
     for key in ("max_developer_attempts", "max_review_cycles", "max_qa_cycles", "max_same_failure"):
         if type(config["retry"][key]) is not int or config["retry"][key] < 1:
             raise ValueError(f"Invalid retry budget: {key}")
@@ -157,11 +168,17 @@ def discover(root, task, changed, maximum):
 
 def make_packet(root, config, task, record, role, diff="", diff_path=None, dependencies=None):
     paths = discover(root, task, record.get("changed_files", []), config["context"]["max_discovered_files"])
+    compact = checkpoint(task, record)
+    for key in ("goal", "acceptance_criteria", "constraints"):
+        compact.pop(key)  # Already present at the top level; never duplicate requirements.
+    compact["tests"] = {name: {k: v for k, v in result.items() if k in (
+        "name", "status", "exit_code", "mode", "elapsed_seconds", "stdout", "stderr", "error", "evidence_directory")}
+        for name, result in compact["tests"].items()}
     payload = {"task_id": task["id"], "role": role, "description": task["description"],
                "acceptance_criteria": task["acceptance_criteria"], "constraints": task["constraints"],
                "architecture": config["architecture"], "project_state": project_state(root),
                "relevant_paths": paths, "allowed_write_files": task["write_files"],
-               "dependency_decisions": dependencies or [], "checkpoint": checkpoint(task, record),
+               "dependency_decisions": dependencies or [], "checkpoint": compact,
                "fingerprint": record.get("fingerprint", ""),
                "full_diff_path": str(diff_path) if diff_path else None,
                "diff": diff[:config["context"]["diff_chars"]],

@@ -1,0 +1,22 @@
+{
+  "tasks": [
+    {
+      "id": "example-readonly-infrastructure-audit",
+      "description": "Проверить инфраструктуру автоматизации по существующим тестам и коду. Это пример manifest, не приёмка пользовательского сценария Narat.",
+      "depends_on": [],
+      "files": ["tools/automation/README.md", "tools/automation/orchestrator.py"],
+      "write_files": [],
+      "risk": "low",
+      "complexity": "low",
+      "constraints": ["Проверять только перечисленные инфраструктурные критерии; не закрывать продуктовые задачи."],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Инфраструктурные тесты проходят; Review/QA проверяют результаты и границы их применимости.",
+          "checks": ["automation-tests"],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

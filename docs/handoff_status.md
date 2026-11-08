@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-08.** Этапы 1 и 2 автоматизации проверены в указанном ниже объёме; продуктовые статусы сохранены: 154 задачи, 28 отмечены выполненными, 126 открыты; 18 преждевременных отметок сняты при сверке 7 ноября. Число отметок не является процентом готовности.
+**Обновлено 2026-11-08.** CLI-оркестрация реализована и проверена в указанном ниже объёме; продуктовые статусы сохранены: 154 задачи, 28 отмечены выполненными, 126 открыты; 18 преждевременных отметок сняты при сверке 7 ноября. Число отметок не является процентом готовности.
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.  
 **Источники:** [спецификация](../specs/001-plants-ios-mvp/spec.md), [задачи](../specs/001-plants-ios-mvp/tasks.md), конституция 3.0.0.  
 **Дизайн:** [Quiet Garden / «Тихий сад»](../design/design-concept.md), отдельные промпты [EN](../design/stitch-prompt.md) / [PL](../design/stitch-prompt-pl.md); интерфейс разрабатывается на SwiftUI, Stitch не является зависимостью.
@@ -14,15 +14,21 @@
 - Две ветки ухода/диагностики; runtime AI классифицирует, советы приходят из опубликованных Golden Records.
 - Doctor и локальный MCP smoke проверены; продуктовые live-интеграции и полный T152 не приняты.
 - Handoff/tasks и Git изменяет только управляющий процесс. Критерии требуют доказательств; fixtures ≠ live.
-- Активная инфраструктурная задача: изолированные контексты и проверяемая CLI-очередь.
+- CLI-очередь реализована; 74 fixture-теста и live transport/session smoke прошли. Следующий шаг — один контролируемый продуктовый срез T152.
 <!-- /orchestrator:project-state -->
 
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-Этап 1 оптимизации завершён: добавлены `tools/automation/orchestration/{__init__,context,storage}.py`, `orchestrator.config.json`, `tests/test_orchestration_context.py`; handoff разделён на актуальное состояние и сохранённую историю. Реализованы явные критерии/зависимости/область файлов, защита управляющих файлов, адресный контекст без полной истории, атомарное состояние и retry budgets. Аудит `537cb2f` отправлен в origin/main.
+Оптимизация CLI-оркестрации реализована 8 ноября. Аудит `537cb2f` и контекст/state `ee92fc5` отправлены в origin/main. Финальный этап: очередь с зависимостями, Developer patch → обязательные checks → Review → QA → commit/push; безопасный resume, retry budgets/no-progress, routing, checkpoints/compaction, JSONL usage и WAITING при CLI-лимитах. Управляющий процесс единолично пишет handoff; агенты read-only. Полный [отчёт](validation/automation/orchestrator-optimization-2026-11-08.md), [инструкция](../tools/automation/ORCHESTRATOR.md).
 
-Проверки на тестовых данных: `python3 -m unittest discover -s tools/automation/tests -q` — 36/36 PASS; `git diff --check` — PASS. Живые CLI/Simulator не запускались. Очередь исполнения ещё не подключена; продуктовые статусы tasks.md не менялись, T152 открыта. Точный следующий шаг: подключить CLI adapter, проверки → Review → QA, безопасное применение patch и восстановление.
+Изменены/добавлены `tools/automation/orchestrator.py`, `orchestrator_smoke.py`, `ios_gate.py`, `tasks.example.json`, `orchestration/{context,engine,process,provider,repository}.py`, `doctor.py`, два файла тестов engine/provider, README/ORCHESTRATOR.md, workflow CI, этот handoff и отчёт. Конфигурация/контекст/storage и 14 тестов сохранены предыдущим этапом.
+
+**Тестовые данные:** `python3 -m unittest discover -s tools/automation/tests -q` — **74/74 PASS**, 21,823 с. Полный цикл проверен с subprocess-командами, временным Git и локальным bare origin. Проверены failed build → отсутствие Review, budgets/no-progress, fallback/auth/limits, частичные и устаревшие ответы, scope patches, прерывания до/после patch/commit, повторный push без моделей, изоляция следующей задачи и отсутствие повторного выполнения принятой. `orchestrator.py validate --manifest tools/automation/tasks.example.json` — VALID; `git diff --check` — PASS. В CI добавлен fixture job, удалённый CI пока не проверялся.
+
+**Живой CLI:** `python3 tools/automation/orchestrator_smoke.py --run-id orchestrator-cli-20261108` — PASS: три коротких запроса Sol, первая/вторая сессии имеют одинаковый ID, третья новый; инструменты не использовались. Логи/ответы в игнорируемом `docs/validation/automation/runs/orchestrator-cli-20261108/`. CLI сообщил input 12844 / 26745 / 12844, output 48 / 96 / 48, cached 0 / 12672 / 0. Это сырые счётчики: resume выглядит накопительным; они не суммируются как независимый расход. Квота/reset не сообщены. Перед финальным обновлением handoff: 146403 bytes; полный начальный packet примера: 3997 bytes, критерии сохранены, история исключена. Это сравнение размеров, не процент экономии токенов/подписки.
+
+**Ограничения:** полноценная рабочая Developer/Review/Astra-QA задача через очередь ещё не запускалась; новый iOS unit gate не проверен на живом Simulator, текущие iOS/продуктовые исходники не менялись. Прежний MCP smoke остаётся отдельным доказательством welcome. Поддержан Codex CLI и обычные text patches; binary/rename, новые providers/стадии требуют адаптеров. Продуктовые checkbox не менялись: 154 задачи / 28 отмечены / 126 открыты. T152 не принята. Следующий точный шаг: подготовить manifest небольшого среза T152 с конкретными backend/outbox/UI criteria и проверками, выполнить `validate`/`context`, затем один контролируемый `run`; оценить реальные calls/prompt_bytes/retries/regressions и отдельно квоту подписки. Этап сохраняется commit/push в origin; результат публикации фиксируется после выполнения команды.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information

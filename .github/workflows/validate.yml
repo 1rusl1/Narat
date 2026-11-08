@@ -11,6 +11,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  automation:
+    name: CLI orchestration contracts (fixtures)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 -m unittest discover -s tools/automation/tests -q
+
   contracts-and-deno:
     name: JSON Schemas & Deno Edge Tests
     runs-on: ubuntu-latest
