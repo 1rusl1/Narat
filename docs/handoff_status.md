@@ -5,6 +5,30 @@
 **Источники:** [спецификация](../specs/001-plants-ios-mvp/spec.md), [задачи](../specs/001-plants-ios-mvp/tasks.md), конституция 3.0.0.  
 **Дизайн:** [Quiet Garden / «Тихий сад»](../design/design-concept.md), отдельные промпты [EN](../design/stitch-prompt.md) / [PL](../design/stitch-prompt-pl.md); интерфейс разрабатывается на SwiftUI, Stitch не является зависимостью.
 
+<!-- orchestrator:project-state -->
+## Project State
+
+- Narat: Swift 6 / SwiftUI / SwiftData, Supabase, StoreKit 2; PL/EN.
+- Конституция: `.specify/memory/constitution.md`; требования: `specs/001-plants-ios-mvp/{spec,plan,tasks}.md`.
+- Следующая продуктовая задача: T152. 154 задачи: 28 отмечены, 126 открыты; это не процент готовности.
+- Две ветки ухода/диагностики; runtime AI классифицирует, советы приходят из опубликованных Golden Records.
+- Doctor и локальный MCP smoke проверены; продуктовые live-интеграции и полный T152 не приняты.
+- Handoff/tasks и Git изменяет только управляющий процесс. Критерии требуют доказательств; fixtures ≠ live.
+- Активная инфраструктурная задача: изолированные контексты и проверяемая CLI-очередь.
+<!-- /orchestrator:project-state -->
+
+<!-- orchestrator:task-summary -->
+## Task Summary
+
+Этап 1 оптимизации завершён: добавлены `tools/automation/orchestration/{__init__,context,storage}.py`, `orchestrator.config.json`, `tests/test_orchestration_context.py`; handoff разделён на актуальное состояние и сохранённую историю. Реализованы явные критерии/зависимости/область файлов, защита управляющих файлов, адресный контекст без полной истории, атомарное состояние и retry budgets. Аудит `537cb2f` отправлен в origin/main.
+
+Проверки на тестовых данных: `python3 -m unittest discover -s tools/automation/tests -q` — 36/36 PASS; `git diff --check` — PASS. Живые CLI/Simulator не запускались. Очередь исполнения ещё не подключена; продуктовые статусы tasks.md не менялись, T152 открыта. Точный следующий шаг: подключить CLI adapter, проверки → Review → QA, безопасное применение patch и восстановление.
+<!-- /orchestrator:task-summary -->
+
+## Historical Information
+
+Предыдущие отчёты сохранены ниже. Точки «следующий шаг» внутри истории относятся к датам этих отчётов.
+
 ## Аудит оптимизации оркестратора, 8 ноября
 
 Рабочая очередь ещё отсутствует; сохранены существующие doctor/MCP/Simulator. Аудит и конкретный план: [отчёт](validation/automation/orchestrator-optimization-2026-11-08.md). Изменены только отчёт и этот handoff. Реально запущены 22 инфраструктурных unittest — PASS; read-only Git, локальная справка CLI и официальная документация проверены. Живые модели/Simulator на этом этапе не запускались; продуктовые задачи не закрывались.

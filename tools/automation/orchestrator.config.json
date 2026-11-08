@@ -1,0 +1,189 @@
+{
+  "version": 1,
+  "roles": {
+    "developer": {
+      "low": {
+        "provider": "codex",
+        "models": [
+          "gpt-6.1-sol"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "medium": {
+        "provider": "codex",
+        "models": [
+          "gpt-6.1-sol"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "high": {
+        "provider": "codex",
+        "models": [
+          "gpt-6-astra"
+        ],
+        "reasoning_effort": "high"
+      }
+    },
+    "reviewer": {
+      "low": {
+        "provider": "codex",
+        "models": [
+          "gpt-6-astra"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "medium": {
+        "provider": "codex",
+        "models": [
+          "gpt-6-astra"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "high": {
+        "provider": "codex",
+        "models": [
+          "gpt-6-astra"
+        ],
+        "reasoning_effort": "high"
+      }
+    },
+    "qa": {
+      "low": {
+        "provider": "codex",
+        "models": [
+          "gpt-6-astra"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "medium": {
+        "provider": "codex",
+        "models": [
+          "gpt-6-astra"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "high": {
+        "provider": "codex",
+        "models": [
+          "gpt-6-astra"
+        ],
+        "reasoning_effort": "high"
+      }
+    }
+  },
+  "retry": {
+    "max_developer_attempts": 3,
+    "max_review_cycles": 2,
+    "max_qa_cycles": 2,
+    "max_same_failure": 2
+  },
+  "sessions": {
+    "policy": "reuse_within_task",
+    "max_turns": 3,
+    "max_estimated_tokens": 24000,
+    "max_input_tokens": 64000,
+    "rotate_after_phase": true
+  },
+  "context": {
+    "diff_chars": 16000,
+    "error_chars": 3000,
+    "max_discovered_files": 20
+  },
+  "agent_timeout": 900,
+  "max_tasks_per_run": 10,
+  "max_run_seconds": 14400,
+  "architecture": [
+    "Swift 6 / SwiftUI / SwiftData; Supabase backend; StoreKit 2.",
+    "Preserve both care and diagnosis entry points, PL/EN, offline state and subscription rights.",
+    "Runtime AI classifies only; published Golden Records supply plans and advice.",
+    "Never store privileged credentials on clients. Read applicable constitution/spec sections before changes."
+  ],
+  "required_checks": {
+    "low": [
+      "diff-check"
+    ],
+    "medium": [
+      "diff-check"
+    ],
+    "high": [
+      "diff-check"
+    ]
+  },
+  "scope_checks": {
+    "ios/": [
+      "ios-tests",
+      "simulator-smoke"
+    ],
+    "supabase/": [
+      "deno-tests"
+    ],
+    "tools/automation/": [
+      "automation-tests"
+    ]
+  },
+  "checks": {
+    "diff-check": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
+    },
+    "automation-tests": {
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools/automation/tests",
+        "-q"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 120
+    },
+    "ios-tests": {
+      "argv": [
+        "python3",
+        "tools/automation/ios_gate.py",
+        "--run-id",
+        "{check_run_id}"
+      ],
+      "stage": "unit",
+      "mode": "local",
+      "timeout": 1800
+    },
+    "simulator-smoke": {
+      "argv": [
+        "python3",
+        "tools/automation/simulator_smoke.py",
+        "--run-id",
+        "{check_run_id}"
+      ],
+      "stage": "qa",
+      "mode": "local",
+      "timeout": 1800
+    },
+    "deno-tests": {
+      "argv": [
+        "deno",
+        "task",
+        "--cwd",
+        "supabase/functions",
+        "test"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 300
+    }
+  },
+  "publish": {
+    "enabled": true,
+    "remote": "origin",
+    "branch": "main"
+  }
+}
