@@ -73,11 +73,12 @@ def exclusive_run(base):
             # Only a real inherited descriptor for this exact lock permits nesting.
             fd = int(inherited)
             actual, expected = os.fstat(fd), os.fstat(lock.fileno())
-            if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
-                raise RuntimeError("Некорректный унаследованный lock")
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            yield fd
-            return
+            if (actual.st_dev, actual.st_ino) == (expected.st_dev, expected.st_ino):
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                yield fd
+                return
+            # A check may acquire independent fixture/resource locks. Never reuse
+            # the controller's descriptor for another path; take a normal lock below.
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:

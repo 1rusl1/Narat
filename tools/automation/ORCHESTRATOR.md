@@ -35,6 +35,18 @@ Manifest/config должны совпадать с сохранённым хеш
 ## Исполнение и доказательства
 
 `Developer → static/build/unit → Reviewer → QA checks → QA → публикация`.
+В `verification` закреплены `owner: developer`, `before_review: [static, build, unit]`,
+`on_failure: repair_with_developer`. Developer управляет циклом подготовки и
+исправлений; контроллер исполняет команды от его имени, сохраняет exit code и логи.
+PASS Developer означает готовность патча к тестам; итоговую приёмку он не заменяет.
+Провал проверки возвращает Developer ошибку для исправления; Review/QA ждут
+успеха всех обязательных проверок. Отсутствие ещё не запущенных тестов на первом
+шаге Developer само по себе не является BLOCKED.
+
+Для задач с пустым `write_files` действует `read_only_tasks: checks_first`:
+контроллер запускает проверки сразу, затем Review/QA, без лишнего Developer-вызова.
+Если такие проверки падают, задача BLOCKED: разрешённых файлов для исправления нет.
+
 Проверки выбираются по максимальному риску/сложности, scope и criteria.
 Для `ios/` обязательны `ios_gate.py` (существующие doctor build/welcome и target
 PlantsTests) и `simulator_smoke.py`. Для `supabase/` — существующий Deno task;

@@ -101,3 +101,9 @@ Live полный цикл с Developer/Reviewer/Astra-QA пока не запу
 Следующий шаг: manifest одного среза T152 с явными checks/evidence modes; validate → context → контролируемый run из чистого дерева. Наблюдать calls/task/role/model, prompt_bytes, retries/review cycles, успешность и регрессии; raw CLI usage и unknown учитывать отдельно от estimates и реальной подписочной квоты. Команды приведены в ORCHESTRATOR.md.
 
 Публикация: `537cb2f` (аудит), `ee92fc5` (контекст/state), `dcaa05e` (pipeline/metrics/recovery) успешно отправлены обычным push в origin/main. После отправки реализации рабочее дерево чистое; это дополнение фиксирует результат.
+
+## Исправление первого живого BLOCKED и Developer-owned tests
+
+Реальный `first-001` остановился на Developer: модель корректно не подтвердила ещё не запущенные тесты, но контракт ошибочно не отделял готовность patch от acceptance. Старый BLOCKED/логи сохранены. По указанию владельца добавлен verification config, Developer владеет test/fix cycle, контроллер исполняет его проверки детерминированно. Ошибки возвращаются Developer; Review/QA ждут успешных checks. Read-only задачи начинают с checks и не расходуют Developer-вызов. Ролевые инструкции теперь явно различают подготовку patch и доказанную приёмку. Проверены реальный failed subprocess → repair → PASS → Review/QA и отсутствие модельных вызовов для упавшей read-only проверки. Исправлен отдельный lock тестов при наследовании контроллерского fd.
+
+78 unittest PASS, включая полный запуск под настоящим production lock (exit 0, 25,480 с); validate/diff-check PASS. Live повтор полного примера ещё предстоит; исходники приложения/продуктовые checkbox не менялись. Следующий шаг: commit/push, новый `first-002` (старый контракт не изменять задним числом), зафиксировать его реальный исход.

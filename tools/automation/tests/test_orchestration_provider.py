@@ -133,14 +133,15 @@ print(json.dumps({"type":"turn.completed", "usage":{"input_tokens":12,"output_to
             (base / ".doctor.lock").unlink(missing_ok=True)
             base.rmdir()
 
-    def test_fake_lock_descriptor_is_rejected(self):
+    def test_unrelated_lock_descriptor_does_not_bypass_lock(self):
         base = doctor.RUNS / ("lock-reject-" + self.root.name)
         try:
             with (self.root / "not-lock").open("w") as other:
                 with patch.dict(os.environ, {"NARAT_AUTOMATION_LOCK_FD": str(other.fileno())}):
-                    with self.assertRaises(RuntimeError):
-                        with doctor.exclusive_run(base):
-                            self.fail("Wrong lock accepted")
+                    with doctor.exclusive_run(base):
+                        with self.assertRaises(RuntimeError):
+                            with doctor.exclusive_run(base):
+                                self.fail("Unrelated descriptor bypassed a held lock")
         finally:
             (base / ".doctor.lock").unlink(missing_ok=True)
             base.rmdir()

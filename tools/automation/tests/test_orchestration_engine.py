@@ -292,6 +292,36 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(self.engine(provider).execute()["one"], "BLOCKED")
         self.assertEqual(provider.calls, [])
 
+    def test_readonly_task_checks_precede_models_and_skip_developer(self):
+        self.task["write_files"] = []
+        def inspect_evidence(result, call, root):
+            self.assertIn('"status": "PASS"', call["prompt"])
+            self.assertIn("check-2-unit/stdout.log", call["prompt"])
+            self.assertTrue((self.directory / "one/check-2-unit/stdout.log").exists())
+        provider = FakeProvider([inspect_evidence])
+        self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
+        self.assertEqual([c["role"] for c in provider.calls], ["reviewer", "qa"])
+
+    def test_readonly_failed_checks_never_invoke_review(self):
+        self.task["write_files"] = []
+        self.config["checks"]["unit"]["argv"] = [sys.executable, "-c", "raise SystemExit(1)"]
+        provider = FakeProvider([fail_response("Cannot repair without writable files")])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertFalse(any(c["role"] in ("reviewer", "qa") for c in provider.calls))
+        self.assertEqual(provider.calls, [])
+
+    def test_developer_repairs_failing_tests_before_first_review(self):
+        self.config["checks"]["unit"]["argv"] = [sys.executable, "-c",
+            "from pathlib import Path; import sys; sys.exit(0 if Path('src/file.txt').read_text() == 'fixed\\n' else 1)"]
+        provider = FakeProvider([{}, patch_response("before\n", "fixed\n")])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual([c["role"] for c in provider.calls], ["developer", "developer", "reviewer", "qa"])
+        self.assertIn('"status": "FAIL"', provider.calls[1]["prompt"])
+        self.assertIn('"status": "PASS"', provider.calls[2]["prompt"])
+        self.assertEqual(engine.state.data["tasks"]["one"]["checks"]["unit"]["owner"], "developer")
+
     def test_crash_after_apply_recovers_without_second_developer(self):
         provider = FakeProvider([patch_response()])
         engine = self.engine(provider)

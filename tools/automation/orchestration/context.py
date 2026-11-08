@@ -41,6 +41,12 @@ def nonempty_strings(values):
 def validate(config, tasks, root):
     if config.get("version") != 1 or not isinstance(tasks, list) or not tasks:
         raise ValueError("Expected version 1 config and a nonempty task list")
+    verification = config.get("verification", {})
+    if (verification.get("owner") != "developer"
+            or verification.get("before_review") != ["static", "build", "unit"]
+            or verification.get("on_failure") != "repair_with_developer"
+            or verification.get("read_only_tasks") != "checks_first"):
+        raise ValueError("Developer must own static/build/unit checks and repair before Review/QA")
     for key in ("agent_timeout", "max_tasks_per_run", "max_run_seconds"):
         if type(config[key]) is not int or config[key] < 1:
             raise ValueError(f"Invalid run limit: {key}")
@@ -190,12 +196,35 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
         "run Git mutations, commit, push, or update handoff/tasks. The controller owns writes. "
         "Do not launch other agents or external MCP servers. Do not rerun successful checks without cause. "
         "Return only JSON matching the output schema. No reasoning transcripts or full command logs. "
-        "Developer: return a unified git patch (or empty string if no change is needed), concise summary, "
-        "decisions and unresolved findings. Only listed allowed_write_files may be patched. "
-        "Reviewer: inspect the diff, criteria, regressions, architecture, state/error handling, performance "
-        "and security; read full_diff_path if truncated. On re-review verify previous findings against "
-        "the delta; expand to full task diff for high risk/new risks. QA: inspect real evidence paths from "
-        "checks, including screenshots where relevant. Never infer a live result from fixtures. "
-        "Reviewer/QA: patch must be empty; PASS requires every criterion explicitly PASS with evidence "
-        "check IDs. If unable to verify, return BLOCKED. Echo task_id and fingerprint exactly.\n")
+        "Echo task_id and fingerprint exactly. ")
+    if role == "developer":
+        instructions += (
+            "You own implementation AND the test/fix cycle. After your patch the controller executes the "
+            "configured static/build/unit commands on your behalf, preserving raw logs and actual exit codes. "
+            "On failure you will receive errors and log paths; repair them and submit another patch. "
+            "Review/QA cannot start until every mandatory pre-review check passes. "
+            "Your status describes preparation, NOT final acceptance. Return PASS when the patch is ready "
+            "for controller checks, with an empty patch if no change is needed. Pending controller checks "
+            "are expected at this stage: do not run them or return BLOCKED just because evidence is absent. "
+            "Use criteria=[]; the controller runs checks after applying your patch, then Reviewer and QA "
+            "evaluate every criterion. Return a unified git patch, concise summary, decisions and actual "
+            "implementation findings. Only allowed_write_files may be patched. BLOCKED means an actual "
+            "implementation prerequisite is unavailable.\n")
+    else:
+        instructions += (
+            "Patch must be empty. Evaluate only the task's explicit acceptance scope; no broader repository "
+            "audit without a relevant risk. Inspect saved check logs before deciding evidence is unavailable. "
+            "Return each criterion exactly once; evidence entries must be exact check IDs from the packet, "
+            "not descriptions or file paths. Never infer live acceptance from fixtures. ")
+        if role == "reviewer":
+            instructions += (
+                "Inspect diff, requirements, regressions, architecture, state/error handling, performance and "
+                "security relevant to this task. Read full_diff_path if truncated. For re-review verify previous "
+                "findings against the delta; expand to full task diff for high/new risks. QA-stage checks run "
+                "after your review: assess their implementation now, leaving execution to QA. Missing future "
+                "QA check results alone do not block review. PASS requires all current pre-review checks.\n")
+        else:
+            instructions += (
+                "Inspect real evidence paths, including screenshots where relevant. PASS requires all criteria "
+                "explicitly PASS and all required check IDs as evidence. If unable to verify, return BLOCKED.\n")
     return instructions + json.dumps(payload, ensure_ascii=False, indent=2)

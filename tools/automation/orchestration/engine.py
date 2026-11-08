@@ -82,6 +82,10 @@ class Engine:
                               baseline_manifest=manifest(self.root),
                               base_head=git(self.root, "rev-parse", "HEAD").decode().strip(),
                               fingerprint=fingerprint(self.root))
+                if not task["write_files"]:
+                    record.update(phase="checks", summary={
+                        "summary": "Read-only task: controller runs checks before independent Review/QA.",
+                        "decisions": ["No Developer call needed: no files may be changed."], "findings": []})
                 self.save()
             if git(self.root, "rev-parse", "HEAD").decode().strip() != record["base_head"]:
                 self.stop(record, "BLOCKED", "HEAD changed outside this task")
@@ -264,8 +268,12 @@ class Engine:
                 summary["error"] = result.get("error") or error_excerpt(
                     [Path(result["stdout"]), Path(result["stderr"])], self.config["context"]["error_chars"]) or "Check failed"
             record["checks"][name] = summary
+            summary["owner"] = "qa" if qa else self.config["verification"]["owner"]
             self.save()
             if summary["status"] != "PASS":
+                if not task["write_files"]:
+                    self.stop(record, "BLOCKED", f"Read-only task cannot repair failed check {name}: {summary['error']}")
+                    return False
                 self.failure(task, record, [f"{name}: {summary['error']}"])
                 return False
         return True

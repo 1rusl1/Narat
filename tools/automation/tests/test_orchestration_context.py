@@ -59,6 +59,13 @@ class ContextTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(self.config, [self.task], self.root)
 
+    def test_config_cannot_skip_tests_or_delegate_failure_to_review(self):
+        for key, value in (("before_review", ["static"]), ("on_failure", "continue_to_review")):
+            config = copy.deepcopy(self.config)
+            config["verification"][key] = value
+            with self.assertRaises(ValueError):
+                validate(config, [self.task], self.root)
+
     def test_paths_cannot_escape_or_modify_controller(self):
         for path in ("../escape", "/tmp/x", "a/../b", ".git/config", "AGENTS.md",
                      "docs/handoff_status.md", "tools/automation/orchestrator.config.json", ".env.prod"):

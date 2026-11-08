@@ -1,5 +1,11 @@
 {
   "version": 1,
+  "verification": {
+    "owner": "developer",
+    "before_review": ["static", "build", "unit"],
+    "on_failure": "repair_with_developer",
+    "read_only_tasks": "checks_first"
+  },
   "roles": {
     "developer": {
       "low": {
