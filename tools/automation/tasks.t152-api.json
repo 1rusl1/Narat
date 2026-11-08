@@ -1,0 +1,59 @@
+{
+  "tasks": [
+    {
+      "id": "t152-api-persistence-unavailable",
+      "description": "Первый ограниченный срез T152: убрать фиктивные подтверждения сохранения и пустой успешный sync из штатного plants-api, пока реальные persistence handlers не подключены. Это backend safety, не полная приёмка T152.",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/http.ts",
+        "supabase/functions/_shared/tests/foundational_services_test.ts",
+        "specs/001-plants-ios-mvp/contracts/api.md",
+        "specs/001-plants-ios-mvp/contracts/sync.md",
+        ".specify/memory/constitution.md"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/tests/persistence_unavailable_test.ts"
+      ],
+      "risk": "medium",
+      "complexity": "medium",
+      "constraints": [
+        "Изменять только write_files. Не подключать реальную БД, не менять контракты, auth, соседние маршруты или клиент.",
+        "Для отсутствующих handleCommand/handleSync использовать ApiHttpError с HTTP 503, существующим code INTERNAL_ERROR, retryable=true, понятным текстом EN/PL о временной недоступности сохранения/синхронизации. Не выдавать provider/quota ошибку.",
+        "Проверка requireActiveOwner обязательна до handler/fallback. Переданные явно handlers продолжать вызывать с исходными req/ctx/url. Не менять обработку их ошибок.",
+        "Никаких fabricated committed/receipt/replayed/owner/items/cursor/watermark в ответе без persistence. Повтор с тем же operation_id снова честно отказывает. В этом срезе отсутствующая служба приоритетнее validation body (503 даже при malformed body).",
+        "Тесты работают через createPlantsApiHandler с явно переданным контекстом, без реальной сети/секретов. Новый test file обязателен. Fixtures не подтверждают deployed API, outbox и UI; T152 остаётся открытой."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Без persistence handlers GET /sync и POST /commands возвращают HTTP503 с INTERNAL_ERROR/retryable=true и EN/PL сообщениями. Повтор той же команды не даёт успешного committed/receipt; sync не отдаёт фиктивную пустую страницу/курсор/watermark. Проверить обычный и /functions/v1/plants-api префикс.",
+          "checks": [
+            "t152-api-tests",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Оба маршрута сохраняют auth/account guards: отсутствующий owner=401, deleting/deleted=403, без вызова переданных handlers; active owner с явно переданными handlers получает их реальный response, параметры и ошибки без подмены. Health и OPTIONS не регрессируют.",
+          "checks": [
+            "t152-api-tests",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Deno static checking всех существующих Edge entrypoints проходит; patch не содержит проблем whitespace.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

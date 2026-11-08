@@ -2,7 +2,11 @@
   "version": 1,
   "verification": {
     "owner": "developer",
-    "before_review": ["static", "build", "unit"],
+    "before_review": [
+      "static",
+      "build",
+      "unit"
+    ],
     "on_failure": "repair_with_developer",
     "read_only_tasks": "checks_first"
   },
@@ -184,6 +188,33 @@
       ],
       "stage": "unit",
       "mode": "fixture",
+      "timeout": 300
+    },
+    "t152-api-tests": {
+      "argv": [
+        "deno",
+        "test",
+        "--config",
+        "supabase/functions/deno.json",
+        "--allow-env",
+        "--allow-read",
+        "--allow-net=127.0.0.1,localhost",
+        "supabase/functions/_shared/tests/persistence_unavailable_test.ts"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 120
+    },
+    "deno-check": {
+      "argv": [
+        "deno",
+        "task",
+        "--cwd",
+        "supabase/functions",
+        "check"
+      ],
+      "stage": "static",
+      "mode": "local",
       "timeout": 300
     }
   },
