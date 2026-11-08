@@ -304,6 +304,26 @@ class EngineTests(unittest.TestCase):
         apply_patch(self.root, diff({"src/new.txt": "new\n"}, {"src/new.txt": None}), ["src/new.txt"])
         self.assertFalse((self.root / "src/new.txt").exists())
 
+    def test_multifile_patch_without_diff_git_headers_applies_under_recount(self):
+        (self.root / "src/second.txt").write_text("alpha\nbeta\n")
+        raw_patch = (
+            "--- a/src/file.txt\n"
+            "+++ b/src/file.txt\n"
+            "@@ -1,1 +1,1 @@\n"
+            "-before\n"
+            "+after\n"
+            "--- a/src/second.txt\n"
+            "+++ b/src/second.txt\n"
+            "@@ -1,2 +1,2 @@\n"
+            " alpha\n"
+            "-beta\n"
+            "+gamma\n"
+        )
+        changed = apply_patch(self.root, raw_patch, ["src/file.txt", "src/second.txt"])
+        self.assertEqual(changed, ["src/file.txt", "src/second.txt"])
+        self.assertEqual((self.root / "src/file.txt").read_text(), "after\n")
+        self.assertEqual((self.root / "src/second.txt").read_text(), "alpha\ngamma\n")
+
     def test_already_reported_task_does_not_call_models(self):
         report = self.root / "docs/validation/automation/tasks/one.md"
         report.parent.mkdir(parents=True)

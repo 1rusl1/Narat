@@ -70,15 +70,33 @@ def diff(before, after):
     return "".join(parts)
 
 
+def normalize_patch(text):
+    lines = text.splitlines()
+    out = []
+    for i, line in enumerate(lines):
+        if i + 1 < len(lines) and (line.startswith("--- a/") or line == "--- /dev/null"):
+            nxt = lines[i + 1]
+            if nxt.startswith("+++ b/") or nxt == "+++ /dev/null":
+                a_path = line[4:] if line.startswith("--- a/") else "a/" + nxt[6:]
+                b_path = nxt[4:] if nxt.startswith("+++ b/") else "b/" + line[6:]
+                prev_headers = [x for x in out[-3:] if x.startswith("diff --git ")]
+                if not prev_headers:
+                    out.append(f"diff --git {a_path} {b_path}")
+                    if line == "--- /dev/null":
+                        out.append("new file mode 100644")
+                    elif nxt == "+++ /dev/null":
+                        out.append("deleted file mode 100644")
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
 def apply_patch(root, text, allowed):
     if not text.strip():
         return []
     if any(marker in text for marker in ("GIT binary patch", "Binary files", "mode 120000", "mode 160000",
                                         "rename from ", "rename to ", "copy from ", "copy to ")):
         raise ValueError("Only ordinary text patches are supported")
-    if not text.endswith("\n"):
-        text += "\n"
-    data = text.encode()
+    data = normalize_patch(text).encode()
     numstat = git(root, "apply", "--recount", "--numstat", "-z", input_bytes=data)
     paths = []
     for entry in numstat.split(b"\0"):
