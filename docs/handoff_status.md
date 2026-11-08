@@ -5,6 +5,14 @@
 **Источники:** [спецификация](../specs/001-plants-ios-mvp/spec.md), [задачи](../specs/001-plants-ios-mvp/tasks.md), конституция 3.0.0.  
 **Дизайн:** [Quiet Garden / «Тихий сад»](../design/design-concept.md), отдельные промпты [EN](../design/stitch-prompt.md) / [PL](../design/stitch-prompt-pl.md); интерфейс разрабатывается на SwiftUI, Stitch не является зависимостью.
 
+## Зафиксирован выбор Sol Developer + Astra QA, 8 ноября
+
+По решению владельца интеграция Argon отменена. Рабочая схема остаётся на Codex CLI: Developer `gpt-6.1-sol`, QA `gpt-6-astra`. Незакоммиченные добавления Antigravity удалены: installer, lock, отдельные тесты и локальный бинарник `.tools/antigravity/1.5.3/agy`. `.gitignore`, `tools/automation/doctor.py`, README и базовые тесты восстановлены побайтно из проверенного `cb6fc6a`; итоговое изменение проекта — только этот handoff. Логи проб сохранены локально в игнорируемом `docs/validation/automation/runs/`. Предыдущие запросы Argon, включая повтор после отключения VPN, завершились отказом eligibility/location до выполнения модельного turn; готовность Argon не подтверждалась.
+
+После восстановления реально выполнены `python3 -m unittest discover -s tools/automation/tests -v` — **10/10 PASS**, `doctor.py --help` — exit 0; опций Antigravity больше нет. Структурно проверены прежние значения моделей. Проверки на тестовых данных не являются живой интеграцией. Новые запросы моделям и iOS-сборка/тесты при отмене не запускались; результаты этапа 1 ниже сохраняют свои границы. Продуктовые исходники и `tasks.md` не менялись, следующая продуктовая задача — T152.
+
+Точный следующий шаг — этап 2: подключить закреплённые MobileBuildMCP/Mobile MCP и проверить Simulator, accessibility/tap/screenshot для будущего независимого QA на Astra. Автоматический Developer/QA-цикл и очередь пока не реализованы.
+
 ## Этап 1 автоматизации — doctor и реальные smoke-проверки, 8 ноября
 
 Создан `tools/automation/doctor.py` на стандартной библиотеке Python: инвентаризация, поиск встроенного CLI без установки, явный выбор моделей/UDID, два новых независимых ephemeral `codex exec`, build-for-testing и один welcome XCUITest. Есть эксклюзивный lock, тайм-ауты, остановка дочерней группы, промежуточный атомарный JSON и сохранение stdout/stderr. Существующие run-id не перезаписываются. Изменены/добавлены: doctor, `tools/automation/README.md`, `tools/automation/tests/test_doctor.py`, `.gitignore`, этот handoff и [краткий отчёт](validation/automation/environment-2026-11-08.md). Сырые запуски исключены из Git в `docs/validation/automation/runs/`, сборка/SPM — в `DerivedData/Automation/`. Продуктовые исходники, планы и отметки tasks.md не менялись; T152 остаётся следующей продуктовой задачей.
