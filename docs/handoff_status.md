@@ -5,6 +5,12 @@
 **Источники:** [спецификация](../specs/001-plants-ios-mvp/spec.md), [задачи](../specs/001-plants-ios-mvp/tasks.md), конституция 3.0.0.  
 **Дизайн:** [Quiet Garden / «Тихий сад»](../design/design-concept.md), отдельные промпты [EN](../design/stitch-prompt.md) / [PL](../design/stitch-prompt-pl.md); интерфейс разрабатывается на SwiftUI, Stitch не является зависимостью.
 
+## Аудит оптимизации оркестратора, 8 ноября
+
+Рабочая очередь ещё отсутствует; сохранены существующие doctor/MCP/Simulator. Аудит и конкретный план: [отчёт](validation/automation/orchestrator-optimization-2026-11-08.md). Изменены только отчёт и этот handoff. Реально запущены 22 инфраструктурных unittest — PASS; read-only Git, локальная справка CLI и официальная документация проверены. Живые модели/Simulator на этом этапе не запускались; продуктовые задачи не закрывались.
+
+Следующий шаг: реализовать минимальный контекст, manifest/state/retry budgets, затем проверяемый цикл и метрики. T152 остаётся открытой. Аудит сохраняется отдельным commit/push.
+
 ## Этап 2 автоматизации — управление Simulator через MCP, 8 ноября
 
 Локально подключены MobileBuildMCP 2.7.1 и Mobile MCP 1.0.16, версии/транзитивные зависимости закреплены npm lock. Добавлены `tools/automation/{package.json,package-lock.json,mcp_client.py,run_build_mcp.mjs,mobile-agent.lock.json,setup_mobile_agent.py,simulator_smoke.py}` и тесты `test_mcp_client.py` / `test_simulator_smoke.py`; обновлены `.gitignore`, README, этот handoff и [отчёт](validation/automation/simulator-mcp-2026-11-08.md). Исходники приложения/планы/tasks не менялись; следующая продуктовая задача — T152, модели — Sol Developer + Astra QA.
