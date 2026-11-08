@@ -322,6 +322,14 @@ class EngineTests(unittest.TestCase):
         self.assertIn('"status": "PASS"', provider.calls[2]["prompt"])
         self.assertEqual(engine.state.data["tasks"]["one"]["checks"]["unit"]["owner"], "developer")
 
+    def test_contradictory_pass_does_not_trigger_developer_repairs(self):
+        self.task["write_files"] = []
+        def conflicting(result, call, root):
+            result["reply"]["findings"] = ["Informational note in the wrong field"]
+        provider = FakeProvider([conflicting])
+        self.assertEqual(self.engine(provider).execute()["one"], "WAITING")
+        self.assertEqual([c["role"] for c in provider.calls], ["reviewer"])
+
     def test_crash_after_apply_recovers_without_second_developer(self):
         provider = FakeProvider([patch_response()])
         engine = self.engine(provider)

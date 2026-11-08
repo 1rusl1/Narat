@@ -107,3 +107,9 @@ Live полный цикл с Developer/Reviewer/Astra-QA пока не запу
 Реальный `first-001` остановился на Developer: модель корректно не подтвердила ещё не запущенные тесты, но контракт ошибочно не отделял готовность patch от acceptance. Старый BLOCKED/логи сохранены. По указанию владельца добавлен verification config, Developer владеет test/fix cycle, контроллер исполняет его проверки детерминированно. Ошибки возвращаются Developer; Review/QA ждут успешных checks. Read-only задачи начинают с checks и не расходуют Developer-вызов. Ролевые инструкции теперь явно различают подготовку patch и доказанную приёмку. Проверены реальный failed subprocess → repair → PASS → Review/QA и отсутствие модельных вызовов для упавшей read-only проверки. Исправлен отдельный lock тестов при наследовании контроллерского fd.
 
 78 unittest PASS, включая полный запуск под настоящим production lock (exit 0, 25,480 с); validate/diff-check PASS. Live повтор полного примера ещё предстоит; исходники приложения/продуктовые checkbox не менялись. Следующий шаг: commit/push, новый `first-002` (старый контракт не изменять задним числом), зафиксировать его реальный исход.
+
+### Дополнение по first-002
+
+Тесты (78) и содержательная проверка Review/QA прошли, однако QA дважды поместил пояснение об ожидаемых негативных fixture-логах в findings при status=PASS. Строгий acceptance отказал, Reviewer budget исчерпан; run остался BLOCKED. Это не продуктовая приёмка. Исправлены инструкции/schema description: notes → decisions, findings → только actionable defects, PASS → findings=[]. Противоречие теперь даёт WAITING без Developer repair, а read-only acceptance FAIL не вызывает разработчика без writable scope. Добавлена регрессия. Старые evidence/state сохранены.
+
+Проверки исправления формата: 79/79 unittest PASS (26,452 с); diff-check PASS.

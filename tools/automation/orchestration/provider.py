@@ -15,7 +15,7 @@ REPLY_SCHEMA = {
         "status": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
         "summary": {"type": "string"}, "patch": {"type": "string"},
         "decisions": {"type": "array", "items": {"type": "string"}},
-        "findings": {"type": "array", "items": {"type": "string"}},
+        "findings": {"type": "array", "description": "Only actionable unresolved defects. Must be [] for PASS; put informational notes in decisions.", "items": {"type": "string"}},
         "criteria": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
             "properties": {"id": {"type": "string"},

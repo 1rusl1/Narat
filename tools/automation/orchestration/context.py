@@ -196,6 +196,10 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
         "run Git mutations, commit, push, or update handoff/tasks. The controller owns writes. "
         "Do not launch other agents or external MCP servers. Do not rerun successful checks without cause. "
         "Return only JSON matching the output schema. No reasoning transcripts or full command logs. "
+        "findings contains ONLY actionable unresolved defects requiring correction, never observations, "
+        "test output explanations or scope limitations (put those in decisions). status=PASS requires "
+        "findings=[] exactly; otherwise use FAIL/BLOCKED. Expected negative-test FAIL messages followed "
+        "by unittest OK are not defects. "
         "Echo task_id and fingerprint exactly. ")
     if role == "developer":
         instructions += (

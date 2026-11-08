@@ -173,6 +173,9 @@ class Engine:
             reply = self.agent(task, record, phase)
             if reply is None:
                 continue
+            if reply["status"] == "PASS" and reply["findings"]:
+                self.stop(record, "WAITING", "Conflicting agent reply: PASS with unresolved findings. Inspect answer; no repair triggered.")
+                return
             if phase != "developer" and reply["patch"]:
                 self.stop(record, "BLOCKED", "Read-only reviewer/QA returned a patch")
                 return
@@ -203,6 +206,9 @@ class Engine:
                     self.compact(task, record, phase, "major phase complete")
                 self.save()
             else:
+                if not task["write_files"]:
+                    self.stop(record, "BLOCKED", "; ".join(reply["findings"]) or "Read-only acceptance failed; no writable files for repair")
+                    return
                 self.failure(task, record, reply["findings"] or ["Incomplete criteria/evidence; cannot accept"])
                 record["phase"] = "developer"
                 self.save()

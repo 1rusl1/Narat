@@ -61,6 +61,8 @@ tests без skips. Произвольные checks — доверенные к�
 Для T152 нужен отдельный manifest и проверки его backend/outbox/UI-сценариев;
 welcome smoke недостаточен. Физическая камера/OAuth требуют своих доказательств.
 
+Поле findings содержит только нерешённые дефекты, пояснения идут в decisions. PASS с непустым findings — противоречивый ответ: WAITING без запуска Developer repair.
+
 Reviewer/QA обязаны вернуть все criteria и check IDs; неизвестные/пустые или
 устаревшие ответы не дают acceptance. QA получает пути к accessibility/PNG и
 логам из результатов детерминированных runner. Прямой MCP-доступ агента отключён.
