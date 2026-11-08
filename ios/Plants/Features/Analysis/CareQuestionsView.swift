@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 public struct CareQuestionsView: View {
     @Bindable var model: AnalysisFlowModel
@@ -17,10 +16,8 @@ public struct CareQuestionsView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                quotaStatusBanner
-
                 if model.router.flowState.currentStep == .selectPhoto {
-                    photoSelectionSection
+                    AnalysisUnavailableSection(model: model, languageStore: languageStore)
                 } else {
                     questionStepSection
                 }
@@ -28,88 +25,6 @@ public struct CareQuestionsView: View {
             .padding()
         }
         .navigationTitle(isPolish ? "Pierwsza pomoc" : "First Help")
-    }
-
-    private var quotaStatusBanner: some View {
-        let diagRem = model.accessState.diagnosisQuota.remaining
-        let idRem = model.accessState.identificationQuota.remaining
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(
-                isPolish
-                    ? "Dostępne bezpłatne skany startowe: diagnoza \(diagRem)/1 · rozpoznanie gatunku \(idRem)/1"
-                    : "Available free starter scans: diagnosis \(diagRem)/1 · species ID \(idRem)/1"
-            )
-            .font(.footnote.weight(.medium))
-            .accessibilityIdentifier("quota.starter.banner")
-
-            Text(
-                isPolish
-                    ? "Katalog roślin oraz podstawowa pielęgnacja (do 3 roślin) są zawsze dostępne bezpłatnie."
-                    : "The plant catalogue and basic care (up to 3 plants) are always available for free."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("quota.free.catalogue.note")
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var photoSelectionSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(
-                isPolish
-                    ? "Wskazówka: uchwyć na zdjęciu całą roślinę oraz wyraźnie widoczny objaw na liściu lub łodydze w świetle dziennym."
-                    : "Tip: capture both the whole plant and the visible symptom on the leaf or stem in daylight."
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("photo.capture.tip")
-
-            if let photoError = model.photoError {
-                Text(
-                    isPolish
-                        ? "Plik zdjęcia jest uszkodzony lub nieczytelny. Wybierz inne zdjęcie."
-                        : "The photo file is corrupt or unreadable. Please choose another photo."
-                )
-                .font(.footnote)
-                .foregroundStyle(.red)
-                .accessibilityIdentifier(photoError)
-            }
-
-            Button {
-                let sampleData = Self.makeSampleImageData(largeOver10MB: false)
-                model.selectPhotoData(sampleData, identifier: "sample_standard_photo")
-            } label: {
-                Text(isPolish ? "Dodaj zdjęcie rośliny" : "Add plant photo")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("photo.select.standard")
-
-            Button {
-                let largeData = Self.makeSampleImageData(largeOver10MB: true)
-                model.selectPhotoData(largeData, identifier: "sample_large_12mb_photo")
-            } label: {
-                Text(
-                    isPolish
-                        ? "Dodaj duże zdjęcie (> 10 MB, automatyczna kompresja)"
-                        : "Add large photo (> 10 MB, auto-compressed)"
-                )
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("photo.select.large")
-
-            Button {
-                model.router.navigateBack()
-            } label: {
-                Text(isPolish ? "Wstecz" : "Back")
-            }
-            .accessibilityIdentifier("care.navigation.back")
-        }
     }
 
     private var questionStepSection: some View {
@@ -187,17 +102,6 @@ public struct CareQuestionsView: View {
                 .accessibilityIdentifier("care.light.option.\(level.rawValue)")
             }
 
-            Button {
-                model.applyEstimatedLighting(.brightIndirect)
-            } label: {
-                Label(
-                    isPolish ? "Oceń światło aparatem (wskazówka)" : "Estimate light with camera (hint)",
-                    systemImage: "camera.metering.matrix"
-                )
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("care.lighting.estimate.button")
         }
     }
 
@@ -298,19 +202,4 @@ public struct CareQuestionsView: View {
         }
     }
 
-    /// Generates a valid image data buffer; when largeOver10MB is true, appends trailing padding bytes
-    /// after the PNG/BMP container so rawData.count > 10 MB while UIImage(data:) remains readable.
-    public static func makeSampleImageData(largeOver10MB: Bool) -> Data {
-        let size = CGSize(width: 600, height: 800)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        var data = renderer.pngData { ctx in
-            UIColor.systemGreen.setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-        }
-        if largeOver10MB && data.count < (11 * 1024 * 1024) {
-            let paddingCount = (11 * 1024 * 1024) - data.count
-            data.append(Data(repeating: 0, count: paddingCount))
-        }
-        return data
-    }
 }

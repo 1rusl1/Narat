@@ -140,7 +140,17 @@ public actor SyncEngine {
 
     @discardableResult
     public func pullDelta(for ownerId: UUID, pageSize: Int = 200) async throws -> Date? {
-        let since = try await store.currentWatermark(ownerId: ownerId)
+        try await pullDelta(for: ownerId, pageSize: pageSize, fullRefresh: false)
+    }
+
+    private func pullDelta(for ownerId: UUID, pageSize: Int, fullRefresh: Bool) async throws -> Date? {
+        let since: Date?
+        if fullRefresh {
+            since = nil
+        } else {
+            since = try await store.currentWatermark(ownerId: ownerId)
+        }
+        var stagedItems: [SyncItemDTO] = []
         var windowUntil: Date? = nil
         var cursor: SyncCursorDTO? = nil
         var previousWatermark = since
@@ -157,10 +167,7 @@ public actor SyncEngine {
                 windowUntil = page.serverWatermark
             }
 
-            if !page.items.isEmpty {
-                try await store.applySyncedItems(page.items, ownerId: ownerId)
-                ingestSpecialEntities(page.items, ownerId: ownerId)
-            }
+            stagedItems.append(contentsOf: page.items)
 
             if page.hasMore, let nextCursor = page.nextCursor {
                 cursor = nextCursor
@@ -169,6 +176,13 @@ public actor SyncEngine {
                 break
             }
         } while cursor != nil
+
+        // A failed page must not publish a partial snapshot or erase the cache.
+        if fullRefresh {
+            try await store.resetSyncCachePreservingOutbox(ownerId: ownerId)
+        }
+        try await store.applySyncedItems(stagedItems, ownerId: ownerId)
+        ingestSpecialEntities(stagedItems, ownerId: ownerId)
 
         if let finalWatermark = windowUntil {
             if previousWatermark != finalWatermark {
@@ -186,12 +200,10 @@ public actor SyncEngine {
         return try await pullDelta(for: ownerId)
     }
 
-    /// Resets the sync cursor and cached server entities while preserving LocalOutbox,
-    /// then pulls a fresh snapshot from the beginning.
+    /// Publishes a fresh snapshot only after all pages succeed, preserving LocalOutbox.
     public func performFullRefresh(for ownerId: UUID) async throws -> Date? {
-        try await store.resetSyncCachePreservingOutbox(ownerId: ownerId)
         _ = try await flushOutbox(for: ownerId)
-        return try await pullDelta(for: ownerId)
+        return try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: true)
     }
 
     // MARK: - Pending Overlay over Synced Cache

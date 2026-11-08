@@ -20,11 +20,9 @@
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-**Backend-срез T152 принят и опубликован:** Sol patch `5c8ec12`, независимая приёмка run `t152-api-002` — COMPLETED, commit `7caf440` в origin/main. Область: `plants-api/index.ts` и новый `persistence_unavailable_test.ts`: без handlers команды/sync возвращают честный 503 INTERNAL_ERROR/retryable EN/PL, guards/делегирование сохранены. Реальные проверки: Deno static двух существующих entrypoint PASS, общий Deno набор 36/36 fixtures PASS, целевые 15/15 fixtures PASS, diff-check PASS, по одному Sol Developer/Astra Review/Astra QA. Run001 сохранён BLOCKED из-за старой deno task, конфигурация исправлена; live deployed API не проверялся.
-
-**Подготовка iOS:** `tasks.t152-ios.json`, `t152_ui_gate.py` и fixture test runner; config дополнен `t152-ui`. Критерии — default unavailable вместо demo/квот, полезные retry/back/catalogue, HTTP503 outbox/cache, четыре EN/PL UI-case с PNG. Изменения приложения ещё не начаты. Manifest VALID, reviewer context сформирован; 80/80 инфраструктурных fixtures PASS (26,574 с), runner --help и git diff --check PASS. UI и iOS unit пока не запускались.
-
-**Ограничения / следующий шаг:** T152 открыта. Сохранить подготовку, выполнить `orchestrator.py run --manifest tools/automation/tasks.t152-ios.json --run-id t152-ios-001`. Все iOS checks isolated, без live backend; критерии камеры/AI/полного каталога остаются T150/T151. После UI-среза отдельно решить оставшуюся проверку T152 на живом стенде; T148 не пропускать.
+t152-ios-unavailable-outbox: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t152-ios-unavailable-outbox](validation/automation/tasks/t152-ios-unavailable-outbox.md).
+Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
 ## Historical Information

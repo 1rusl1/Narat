@@ -47,6 +47,16 @@ public final class AddPlantRouter {
         flowState.updatedAt = Date()
     }
 
+    public func returnFromUnavailableAnalysis() {
+        flowState.currentStep = flowState.intent == .care ? .selectCareMethod : .selectIntent
+        flowState.updatedAt = Date()
+    }
+
+    public func showCatalogue() {
+        flowState.currentStep = .selectCatalogueSpecies
+        flowState.updatedAt = Date()
+    }
+
     public func navigateBack() {
         switch flowState.currentStep {
         case .selectIntent:
@@ -56,7 +66,7 @@ public final class AddPlantRouter {
         case .selectPhoto:
             flowState.currentStep = flowState.intent == .care ? .selectCareMethod : .selectIntent
         case .selectCatalogueSpecies:
-            flowState.currentStep = .selectCareMethod
+            flowState.currentStep = flowState.intent == .care ? .selectCareMethod : .selectPhoto
         case .confirmSpecies:
             flowState.currentStep = .selectPhoto
         case .careQuestions:

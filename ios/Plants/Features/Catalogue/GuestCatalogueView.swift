@@ -72,6 +72,7 @@ struct GuestCatalogueView: View {
                 ProgressView()
             } else if failed {
                 Text(polish ? "Nie udało się pobrać katalogu." : "Couldn’t load the catalogue.")
+                    .accessibilityIdentifier("catalogue.error")
                 Button(polish ? "Spróbuj ponownie" : "Try again") { retry += 1 }
             } else if let card = selected {
                 ScrollView {
@@ -117,6 +118,7 @@ struct GuestCatalogueView: View {
                 }
             }
             Button(polish ? "Wstecz" : "Back", action: back)
+                .accessibilityIdentifier("catalogue.back")
         }
         .task(id: "\(polish)-\(retry)") {
             loading = true

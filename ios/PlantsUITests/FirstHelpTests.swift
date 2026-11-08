@@ -2,65 +2,109 @@ import XCTest
 
 final class FirstHelpTests: XCTestCase {
     @MainActor
-    func testFirstHelpFlowOnPolishAndEnglishWithLargePhotoUnknownBackAndLimit() throws {
+    func testProblemScanEnglish() {
+        verifyUnavailableFlow(care: false, polish: false)
+    }
+
+    @MainActor
+    func testProblemScanPolish() {
+        verifyUnavailableFlow(care: false, polish: true)
+    }
+
+    @MainActor
+    func testCareScanEnglish() {
+        verifyUnavailableFlow(care: true, polish: false)
+    }
+
+    @MainActor
+    func testCareScanPolish() {
+        verifyUnavailableFlow(care: true, polish: true)
+    }
+
+    @MainActor
+    private func verifyUnavailableFlow(care: Bool, polish: Bool) {
         let app = XCUIApplication()
         app.launch()
+        XCTAssertTrue(app.staticTexts["welcome.title"].waitForExistence(timeout: 5))
+        let language = app.segmentedControls["welcome.language.picker"]
+        let choice = language.buttons[polish ? "Polski" : "English"]
+        XCTAssertTrue(choice.exists)
+        choice.tap()
+        let expectedSubtitle = polish
+            ? "Wybierz, w czym możemy dziś pomóc Twojej roślinie."
+            : "Choose how we can help your plant today."
+        let localizedSubtitle = app.staticTexts.matching(identifier: "welcome.subtitle")
+            .matching(NSPredicate(format: "label == %@", expectedSubtitle)).firstMatch
+        XCTAssertTrue(localizedSubtitle.waitForExistence(timeout: 3),
+                      "The selected language must update the welcome text")
 
-        // 1. Verify Welcome screen and switch to Polish
-        let title = app.staticTexts["welcome.title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5.0))
+        enterScan(app, care: care)
+        assertUnavailable(app, polish: polish)
+        app.buttons["analysis.retry.button"].tap()
+        assertUnavailable(app, polish: polish)
+        app.buttons["analysis.retry.button"].tap()
+        assertUnavailable(app, polish: polish)
 
-        let plButton = app.buttons["Polski"]
-        if plButton.exists {
-            plButton.tap()
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "unavailable-\(care ? "care" : "problem")-\(polish ? "pl" : "en")"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        app.buttons["analysis.back.button"].tap()
+        XCTAssertTrue(app.staticTexts[care ? "care.method.title" : "welcome.title"]
+            .waitForExistence(timeout: 3))
+        if care {
+            app.buttons["care.method.scan"].tap()
+        } else {
+            enterScan(app, care: false)
         }
-
-        // 2. Tap problem intent -> Photo selection with contextual tip & separate starter banner
-        let problemButton = app.buttons["welcome.intent.problem"]
-        XCTAssertTrue(problemButton.exists)
-        problemButton.tap()
-
-        XCTAssertTrue(app.staticTexts["photo.capture.tip"].waitForExistence(timeout: 3.0))
-        XCTAssertTrue(app.staticTexts["quota.starter.banner"].exists)
-
-        // 3. Select > 10 MB photo (auto-compressed on device)
-        let largePhotoBtn = app.buttons["photo.select.large"]
-        XCTAssertTrue(largePhotoBtn.exists)
-        largePhotoBtn.tap()
-
-        // 4. Question 1 of 3: verify progress indicator, select unknown, then camera hint
-        let progressText = app.staticTexts["care.questions.progress"]
-        XCTAssertTrue(progressText.waitForExistence(timeout: 3.0))
-        XCTAssertTrue(app.buttons["care.light.option.unknown"].exists)
-        app.buttons["care.light.option.unknown"].tap()
-        app.buttons["care.lighting.estimate.button"].tap()
-
-        app.buttons["care.navigation.next"].tap()
-
-        // 5. Question 2 of 3: select unknown, navigate back to verify photo & answers preserved, then advance
-        XCTAssertTrue(app.buttons["care.watering.option.unknown"].waitForExistence(timeout: 3.0))
-        app.buttons["care.watering.option.unknown"].tap()
-        app.buttons["care.navigation.back"].tap()
-        XCTAssertTrue(app.staticTexts["care.photo.ready.badge"].exists)
-        app.buttons["care.navigation.next"].tap()
-        app.buttons["care.navigation.next"].tap()
-
-        // 6. Question 3 of 3: select unknown and submit analysis
-        XCTAssertTrue(app.buttons["care.last_watered.option.unknown"].waitForExistence(timeout: 3.0))
-        app.buttons["care.last_watered.option.unknown"].tap()
-        app.buttons["care.navigation.next"].tap()
-
-        // 7. Preliminary Result screen (US1.15): cause, evidence basis, limitations, and first action
-        XCTAssertTrue(app.staticTexts["result.cause.title"].waitForExistence(timeout: 3.0))
-        XCTAssertTrue(app.otherElements["result.evidence.section"].exists || app.staticTexts["Podstawa wniosku"].exists)
-        XCTAssertTrue(app.otherElements["result.limitations.section"].exists || app.staticTexts["Ograniczenia oceny"].exists)
-        XCTAssertTrue(app.otherElements["result.first_action.section"].exists || app.staticTexts["Pierwszy bezpieczny krok teraz"].exists)
-
-        // 8. Switch language to English and verify EN localization
-        let enButton = app.buttons["English"]
-        if enButton.exists {
-            enButton.tap()
-            XCTAssertTrue(app.staticTexts["Likely cause: Overwatering"].waitForExistence(timeout: 3.0))
+        assertUnavailable(app, polish: polish)
+        app.buttons["analysis.catalogue.button"].tap()
+        let catalogueError = app.staticTexts["catalogue.error"]
+        XCTAssertTrue(catalogueError.waitForExistence(timeout: 5))
+        XCTAssertEqual(catalogueError.label, polish
+                       ? "Nie udało się pobrać katalogu." : "Couldn’t load the catalogue.")
+        XCTAssertTrue(app.buttons["catalogue.back"].isHittable)
+        app.buttons["catalogue.back"].tap()
+        if care {
+            XCTAssertTrue(app.staticTexts["care.method.title"].waitForExistence(timeout: 3))
+        } else {
+            assertUnavailable(app, polish: polish)
+            app.buttons["analysis.back.button"].tap()
+            XCTAssertTrue(app.staticTexts["welcome.title"].waitForExistence(timeout: 3))
         }
+        app.terminate()
+    }
+
+    @MainActor
+    private func enterScan(_ app: XCUIApplication, care: Bool) {
+        app.buttons[care ? "welcome.intent.care" : "welcome.intent.problem"].tap()
+        if care {
+            XCTAssertTrue(app.staticTexts["care.method.title"].waitForExistence(timeout: 3))
+            app.buttons["care.method.scan"].tap()
+        }
+    }
+
+    @MainActor
+    private func assertUnavailable(_ app: XCUIApplication, polish: Bool) {
+        let title = app.staticTexts["analysis.unavailable.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        XCTAssertEqual(title.label, polish
+                       ? "Analiza jest tymczasowo niedostępna."
+                       : "Analysis is temporarily unavailable.")
+        XCTAssertTrue(app.buttons["analysis.retry.button"].isHittable)
+        XCTAssertTrue(app.buttons["analysis.back.button"].isHittable)
+        XCTAssertTrue(app.buttons["analysis.catalogue.button"].isHittable)
+        for identifier in [
+            "quota.starter.banner", "analysis.quota_exhausted.title",
+            "photo.select.standard", "photo.select.large", "care.photo.ready.badge",
+            "care.lighting.estimate.button", "result.plant.name", "result.cause.title",
+            "result.evidence.section", "result.first_action.section", "analysis.waiting.neutral_title"
+        ] {
+            XCTAssertFalse(app.descendants(matching: .any)[identifier].exists, identifier)
+        }
+        XCTAssertFalse(app.staticTexts["Swiss Cheese Plant"].exists)
+        XCTAssertFalse(app.staticTexts["Monstera dziurawa"].exists)
+        XCTAssertFalse(app.staticTexts["signed_receipt_v3"].exists)
     }
 }

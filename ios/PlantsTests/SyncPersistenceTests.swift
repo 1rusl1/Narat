@@ -77,8 +77,152 @@ private actor MockSyncTransport: PlantsAPITransport {
     }
 }
 
+// Test transport returns an actual HTTP response and API error envelope, never a thrown network stub.
+private actor UnavailableSyncTransport: PlantsAPITransport {
+    private var firstPage: SyncPageDTO?
+    private(set) var commandBodies: [Data] = []
+    private(set) var operationHeaders: [String] = []
+
+    func setFirstPage(_ page: SyncPageDTO?) {
+        firstPage = page
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let url = request.url!
+        if url.path.hasSuffix("/commands") {
+            commandBodies.append(request.httpBody ?? Data())
+            operationHeaders.append(request.value(forHTTPHeaderField: "X-Operation-Id") ?? "")
+        }
+        if url.path.hasSuffix("/sync"), let page = firstPage {
+            firstPage = nil
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            return (try encoder.encode(page),
+                    HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let data = Data(#"{"error":{"code":"INTERNAL_ERROR","message":"Temporarily unavailable","retryable":true}}"#.utf8)
+        return (data, HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil,
+                                     headerFields: ["Content-Type": "application/json"])!)
+    }
+}
+
 final class SyncPersistenceTests: XCTestCase {
-    func testOutboxSurvivesRestartAndNetworkDropAfterServerCommit() async throws {
+    func testHTTP503KeepsOutboxIdentityPayloadAndErrorAcrossStoreRecreation() async throws {
+        // Recreate LocalStore over the same in-memory container, not a cold process restart.
+        let container = try LocalStore.makeContainer(accountScope: "t152_\(UUID())", inMemory: true)
+        let owner = UUID()
+        let operation = UUID()
+        let plant = UUID()
+        let payload = #"{"action_type":"water","performed_date":"2026-11-01"}"#
+        let transport = UnavailableSyncTransport()
+        let client = PlantsAPIClient(transport: transport)
+        let original = LocalStore(modelContainer: container)
+        let queued = try await original.enqueueCommand(operationId: operation, ownerId: owner,
+            plantId: plant, commandName: "care.record", payloadJSON: payload)
+
+        for attempt in 1...3 {
+            let store = LocalStore(modelContainer: container)
+            let engine = SyncEngine(store: store, apiClient: client)
+            let committed = try await engine.flushOutbox(for: owner)
+            XCTAssertEqual(committed, 0)
+            let pending = try await store.pendingOutboxEntries(for: owner)
+            let entry = try XCTUnwrap(pending.first)
+            XCTAssertEqual(pending.count, 1)
+            XCTAssertEqual(entry.operationId, operation)
+            XCTAssertEqual(entry.ownerId, owner)
+            XCTAssertEqual(entry.plantId, plant)
+            XCTAssertEqual(entry.commandName, queued.commandName)
+            XCTAssertEqual(entry.payloadJSON, payload)
+            XCTAssertEqual(entry.sequenceNumber, queued.sequenceNumber)
+            XCTAssertEqual(entry.createdAt, queued.createdAt)
+            XCTAssertEqual(entry.retryCount, attempt)
+            XCTAssertTrue(try XCTUnwrap(entry.lastError).contains("INTERNAL_ERROR"))
+        }
+        let recreated = LocalStore(modelContainer: container)
+        let persisted = try await recreated.pendingOutboxEntries(for: owner)
+        XCTAssertEqual(persisted.first?.retryCount, 3)
+        XCTAssertNotNil(persisted.first?.lastError)
+        let bodies = await transport.commandBodies
+        let headers = await transport.operationHeaders
+        XCTAssertEqual(bodies.count, 3)
+        XCTAssertEqual(headers, Array(repeating: operation.uuidString.lowercased(), count: 3))
+        let decoder = JSONDecoder()
+        for body in bodies {
+            let envelope = try decoder.decode(CommandEnvelopeDTO.self, from: body)
+            XCTAssertEqual(envelope.operationId, operation)
+            XCTAssertEqual(envelope.plantId, plant)
+            XCTAssertEqual(envelope.commandName, queued.commandName)
+            XCTAssertEqual(envelope.payloadJSON, payload)
+        }
+    }
+
+    func testHTTP503FailedSyncPreservesConfirmedCacheWatermarkAndOtherOwner() async throws {
+        let container = try LocalStore.makeContainer(accountScope: "t152_isolation_\(UUID())", inMemory: true)
+        let store = LocalStore(modelContainer: container)
+        let owner = UUID()
+        let other = UUID()
+        let watermark = Date(timeIntervalSince1970: 1_762_000_000)
+        let item = SyncItemDTO(entityType: "plant", id: UUID(), updatedAt: watermark,
+                              payloadJSON: #"{"name":"confirmed"}"#)
+        let otherItem = SyncItemDTO(entityType: "plant", id: UUID(), updatedAt: watermark,
+                                   payloadJSON: #"{"name":"other owner"}"#)
+        try await store.applySyncedItems([item], ownerId: owner)
+        try await store.applySyncedItems([otherItem], ownerId: other)
+        try await store.updateWatermark(ownerId: owner, watermark: watermark)
+        try await store.updateWatermark(ownerId: other, watermark: watermark)
+        let queued = try await store.enqueueCommand(ownerId: owner, plantId: item.id,
+            commandName: "care.record", payloadJSON: "{}")
+        let foreign = try await store.enqueueCommand(ownerId: other, plantId: otherItem.id,
+            commandName: "care.record", payloadJSON: #"{"owner":"other"}"#)
+        let transport = UnavailableSyncTransport()
+        let engine = SyncEngine(store: store, apiClient: PlantsAPIClient(transport: transport))
+
+        // Failure on page one, then after a successful page, then during full refresh.
+        // None may publish partial entities, remove the cache, or advance the watermark.
+        for mode in 0..<3 {
+            if mode > 0 {
+                let nextTime = watermark.addingTimeInterval(60)
+                let changed = SyncItemDTO(entityType: "plant", id: item.id, updatedAt: nextTime,
+                                          payloadJSON: #"{"name":"unconfirmed page"}"#)
+                await transport.setFirstPage(SyncPageDTO(ownerId: owner, items: [changed],
+                    hasMore: true, nextCursor: SyncCursorDTO(updatedAt: nextTime,
+                        entityType: "plant", id: item.id),
+                    serverWatermark: nextTime, limit: 1))
+            }
+            do {
+                if mode == 2 {
+                    _ = try await engine.performFullRefresh(for: owner)
+                } else {
+                    _ = try await engine.syncNow(for: owner)
+                }
+                XCTFail("HTTP503 must fail sync")
+            } catch let error as APIErrorResponse {
+                XCTAssertEqual(error.error.code, "INTERNAL_ERROR")
+                XCTAssertTrue(error.error.retryable)
+            } catch {
+                XCTFail("Expected decoded HTTP503 envelope, got \(error)")
+            }
+            let current = try await store.currentWatermark(ownerId: owner)
+            let confirmed = try await store.activeSyncedEntities(ownerId: owner, entityType: "plant")
+            let foreignWatermark = try await store.currentWatermark(ownerId: other)
+            let foreignEntities = try await store.activeSyncedEntities(ownerId: other, entityType: "plant")
+            let foreignQueue = try await store.pendingOutboxEntries(for: other)
+            let ownQueue = try await store.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(current, watermark)
+            XCTAssertEqual(confirmed, [item])
+            XCTAssertEqual(foreignWatermark, watermark)
+            XCTAssertEqual(foreignEntities, [otherItem])
+            XCTAssertEqual(foreignQueue, [foreign])
+            XCTAssertEqual(ownQueue.first?.operationId, queued.operationId)
+            XCTAssertEqual(ownQueue.first?.ownerId, owner)
+            XCTAssertEqual(ownQueue.first?.payloadJSON, queued.payloadJSON)
+            XCTAssertEqual(ownQueue.first?.retryCount, mode + 1)
+        }
+        let headers = await transport.operationHeaders
+        XCTAssertEqual(headers, Array(repeating: queued.operationId.uuidString.lowercased(), count: 3))
+    }
+
+    func testOutboxSurvivesStoreRecreationAndNetworkDropAfterServerCommit() async throws {
         let container = try LocalStore.makeContainer(accountScope: "test_restart_\(UUID().uuidString)", inMemory: true)
         let ownerId = UUID()
         let plantId = UUID()
@@ -96,7 +240,7 @@ final class SyncPersistenceTests: XCTestCase {
             )
         }
 
-        // Second session (simulating app restart): outbox still holds the operation
+        // Second LocalStore on the same in-memory container: not a cold process restart.
         let store2 = LocalStore(modelContainer: container)
         let pendingBefore = try await store2.pendingOutboxEntries(for: ownerId)
         XCTAssertEqual(pendingBefore.count, 1)
