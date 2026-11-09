@@ -607,9 +607,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-create-receipt-store: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-create-receipt-store](validation/automation/tasks/parallel-ios-create-receipt-store.md).
-parallel-backend-t163-legacy-state-guard: исходные проверки и Review/QA пройдены, опубликован a04794c; интеграционные SQL/Deno/iOS/Simulator проверки PASS.
-Отчёт: [parallel-backend-t163-legacy-state-guard](validation/automation/tasks/parallel-backend-t163-legacy-state-guard.md).
+parallel-ios-create-receipt-engine: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-create-receipt-engine](validation/automation/tasks/parallel-ios-create-receipt-engine.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

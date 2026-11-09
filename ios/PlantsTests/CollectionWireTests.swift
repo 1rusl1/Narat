@@ -6,6 +6,8 @@ private actor CatalogueTransport: PlantsAPITransport {
     enum Reply: Sendable {
         case http(Int, String)
         case network
+        case cancelled
+        case urlCancelled
     }
 
     private var replies: [Reply]
@@ -21,6 +23,10 @@ private actor CatalogueTransport: PlantsAPITransport {
         switch replies.removeFirst() {
         case .network:
             throw URLError(.networkConnectionLost)
+        case .cancelled:
+            throw CancellationError()
+        case .urlCancelled:
+            throw URLError(.cancelled)
         case let .http(status, json):
             return (
                 Data(json.utf8),
@@ -49,7 +55,7 @@ final class CollectionWireTests: XCTestCase {
         CommandEnvelopeDTO(operationId: operationId, commandName: "plant.create", payloadJSON: payload)
     }
 
-    private func client(_ transport: CatalogueTransport) -> PlantsAPIClient {
+    private func client(_ transport: any PlantsAPITransport) -> PlantsAPIClient {
         PlantsAPIClient(
             baseURL: URL(string: "https://example.invalid/functions/v1/plants-api")!,
             transport: transport,
@@ -1656,5 +1662,500 @@ extension CollectionWireTests {
         XCTAssertTrue(after.isEmpty)
         XCTAssertEqual(saved?.receipt, receipt)
         XCTAssertTrue(saved?.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8) == true)
+    }
+}
+
+/// A fixture ledger commits before optionally losing its response. No live SQL/server.
+private actor CommittingCatalogueTransport: PlantsAPITransport {
+    private let receiptJSON: String
+    private var loseResponse: Bool
+    private var bodies: [UUID: Data] = [:]
+    private var requests: [URLRequest] = []
+
+    init(_ receiptJSON: String, loseResponse: Bool = false) {
+        self.receiptJSON = receiptJSON
+        self.loseResponse = loseResponse
+    }
+
+    func capturedRequests() -> [URLRequest] { requests }
+    func committedCount() -> Int { bodies.count }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        guard let body = request.httpBody else { throw URLError(.badServerResponse) }
+        let command = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+        guard request.httpMethod == "POST", command.commandName == "plant.create",
+              request.value(forHTTPHeaderField: "Authorization") == "Bearer sync-session-token",
+              request.value(forHTTPHeaderField: "X-Operation-Id") == command.operationId.uuidString.lowercased()
+        else { throw URLError(.badServerResponse) }
+        if let prior = bodies[command.operationId] {
+            guard prior == body else { throw URLError(.badServerResponse) }
+        } else {
+            bodies[command.operationId] = body
+        }
+        if loseResponse {
+            loseResponse = false
+            throw URLError(.networkConnectionLost)
+        }
+        return (Data(receiptJSON.utf8),
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+extension CollectionWireTests {
+    /// Retain the seeded checkpoint/cache and B queue; A starts with only this create.
+    @MainActor
+    private func seedEngineCreate(
+        _ url: URL, command: CommandEnvelopeDTO
+    ) async throws -> (create: OutboxEntrySnapshot, other: OutboxEntrySnapshot) {
+        let seeded = try await seedSyncDisk(url)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        try await store.markOutboxCommitted(operationId: seeded[0].operationId)
+        let create = try await queueCreate(command, ownerId: syncOwner, in: store)
+        return (create, seeded[1])
+    }
+
+    @MainActor
+    private func assertEngineCreateState(
+        _ url: URL, store: LocalStore, command: CommandEnvelopeDTO,
+        pending: [OutboxEntrySnapshot], other: OutboxEntrySnapshot,
+        receipt: PlantCreateReceiptDTO? = nil
+    ) async throws {
+        let container = try diskContainer(url)
+        let expectedProfile = try JSONDecoder().decode(
+            SyncWireProfileDTO.self,
+            from: JSONSerialization.data(withJSONObject: syncObject()["profile"]!)
+        )
+        let expectedRights = try JSONDecoder().decode(
+            SyncWireEntitlementDTO.self,
+            from: JSONSerialization.data(withJSONObject: paidSyncEntitlement())
+        )
+        for inspected in [store, LocalStore(modelContainer: container)] {
+            let pendingA = try await inspected.pendingOutboxEntries(for: syncOwner)
+            let pendingB = try await inspected.pendingOutboxEntries(for: otherSyncOwner)
+            let confirmation = try await inspected.catalogueCreateConfirmation(
+                ownerId: syncOwner, operationId: command.operationId
+            )
+            let hidden = try await inspected.catalogueCreateConfirmation(
+                ownerId: otherSyncOwner, operationId: command.operationId
+            )
+            XCTAssertEqual(pendingA, pending)
+            XCTAssertEqual(pendingB, [other])
+            XCTAssertNil(hidden)
+            XCTAssertEqual(confirmation?.receipt, receipt)
+            if receipt != nil {
+                XCTAssertEqual(confirmation?.ownerId, syncOwner)
+                XCTAssertEqual(confirmation?.operationId, command.operationId)
+                XCTAssertTrue(confirmation?.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8) == true)
+            } else {
+                XCTAssertNil(confirmation)
+            }
+            let raw = try await inspected.currentWatermarkRaw(ownerId: syncOwner)
+            let date = try await inspected.currentWatermark(ownerId: syncOwner)
+            let profile = try await inspected.syncedProfile(ownerId: syncOwner)
+            let rights = try await inspected.syncedEntitlement(ownerId: syncOwner)
+            XCTAssertEqual(raw, syncSince)
+            XCTAssertEqual(date, SQLTimestamp.date(from: syncSince))
+            XCTAssertEqual(profile, expectedProfile)
+            XCTAssertEqual(rights, expectedRights)
+            for owner in [syncOwner, otherSyncOwner] {
+                let cached = try await inspected.activeSyncedEntities(ownerId: owner, entityType: "plants")
+                XCTAssertEqual(cached, [
+                    SyncItemDTO(entityType: "plants", id: serverPlantId,
+                                updatedAt: SQLTimestamp.date(from: syncSince)!,
+                                payloadJSON: #"{"name":"confirmed"}"#)
+                ])
+            }
+        }
+        let confirmations = try ModelContext(container).fetch(FetchDescriptor<CatalogueCreateConfirmationRecord>())
+        XCTAssertEqual(confirmations.count, receipt == nil ? 0 : 1)
+    }
+
+    private func assertCreateRequests(
+        _ requests: [URLRequest], command: CommandEnvelopeDTO, count: Int
+    ) throws {
+        XCTAssertEqual(requests.count, count)
+        for request in requests {
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sync-session-token")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), command.operationId.uuidString.lowercased())
+            let body = try XCTUnwrap(request.httpBody)
+            let sent = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+            XCTAssertEqual(sent, command)
+            XCTAssertTrue(sent.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8))
+            XCTAssertEqual(body, requests.first?.httpBody)
+        }
+    }
+
+    @MainActor
+    func testEngineCreatePersistsAuthoritativeReceiptAndOriginalPayloadOnDisk() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let transport = CatalogueTransport([.http(200, receiptJSON())])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        // Prime committed reads before the isolated ACK replaces the queue.
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [seeded.create], other: seeded.other
+        )
+        let engine = SyncEngine(store: store, apiClient: api)
+        let committed = try await engine.flushOutbox(for: syncOwner)
+        let next = try await engine.flushOutbox(for: syncOwner)
+        XCTAssertEqual(committed, 1)
+        XCTAssertEqual(next, 0)
+        let receipt = try decodedCreateReceipt()
+        XCTAssertEqual(receipt.watermarkRaw, timestamp)
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [], other: seeded.other, receipt: receipt
+        )
+        let requests = await transport.capturedRequests()
+        try assertCreateRequests(requests, command: command, count: 1)
+    }
+
+    @MainActor
+    func testEngineCreateLostCommittedResponseReopensAndRetriesSameServerOperation() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let transport = CommittingCatalogueTransport(receiptJSON(), loseResponse: true)
+        do {
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let count = try await SyncEngine(store: store, apiClient: api).flushOutbox(for: syncOwner)
+            XCTAssertEqual(count, 0)
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            let failed = try XCTUnwrap(pending.first)
+            XCTAssertEqual(pending.count, 1)
+            XCTAssertEqual(failed.operationId, command.operationId)
+            XCTAssertTrue(failed.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8))
+            XCTAssertEqual(failed.sequenceNumber, seeded.create.sequenceNumber)
+            XCTAssertEqual(failed.createdAt, seeded.create.createdAt)
+            XCTAssertEqual(failed.retryCount, 1)
+            XCTAssertNotNil(failed.lastError)
+            try await assertEngineCreateState(
+                url, store: store, command: command, pending: [failed], other: seeded.other
+            )
+        }
+        let serverCommitsBeforeRetry = await transport.committedCount()
+        XCTAssertEqual(serverCommitsBeforeRetry, 1)
+        // Recreate API, engine, actor and disk container after the lost response.
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        let count = try await engine.flushOutbox(for: syncOwner)
+        let next = try await engine.flushOutbox(for: syncOwner)
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(next, 0)
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [], other: seeded.other,
+            receipt: decodedCreateReceipt()
+        )
+        let requests = await transport.capturedRequests()
+        let serverCommits = await transport.committedCount()
+        try assertCreateRequests(requests, command: command, count: 2)
+        XCTAssertEqual(serverCommits, 1)
+    }
+
+    @MainActor
+    func testEngineCreateInvalid200CapAuthAndTransportErrorsNeverConfirmOrChangeCommand() async throws {
+        func errorJSON(_ code: String, retryable: Bool = false) -> String {
+            """
+            {"error":{"code":"\(code)","message":"Fixture error","retryable":\(retryable)}}
+            """
+        }
+        let failures: [(CatalogueTransport.Reply, String?)] = [
+            (.http(200, "{}"), nil), (.http(200, "null"), nil),
+            (.http(201, receiptJSON()), nil), (.http(202, receiptJSON()), nil),
+            (.http(200, #"{"status":"committed","operation_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","replayed":false}"#), nil),
+            (.http(409, errorJSON("COLLECTION_LIMIT_REACHED")), "COLLECTION_LIMIT_REACHED"),
+            (.http(401, errorJSON("UNAUTHORIZED")), "UNAUTHORIZED"),
+            (.http(403, errorJSON("FORBIDDEN")), "FORBIDDEN"),
+            (.http(503, errorJSON("INTERNAL_ERROR", retryable: true)), "INTERNAL_ERROR"),
+            (.network, nil)
+        ]
+        for (reply, code) in failures {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let command = createCommand()
+            let seeded = try await seedEngineCreate(url, command: command)
+            let laterCommand = createCommand()
+            let transport = CatalogueTransport([reply, reply])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let original = LocalStore(modelContainer: try diskContainer(url))
+            let later = try await queueCreate(laterCommand, ownerId: syncOwner, in: original)
+            for attempt in 1...2 {
+                let store = attempt == 1 ? original : LocalStore(modelContainer: try diskContainer(url))
+                let count = try await SyncEngine(store: store, apiClient: api).flushOutbox(for: syncOwner)
+                XCTAssertEqual(count, 0)
+                let entries = try await store.pendingOutboxEntries(for: syncOwner)
+                let failed = try XCTUnwrap(entries.first)
+                XCTAssertEqual(failed.operationId, seeded.create.operationId)
+                XCTAssertEqual(failed.ownerId, seeded.create.ownerId)
+                XCTAssertEqual(failed.plantId, seeded.create.plantId)
+                XCTAssertEqual(failed.commandName, seeded.create.commandName)
+                XCTAssertTrue(failed.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8))
+                XCTAssertEqual(failed.createdAt, seeded.create.createdAt)
+                XCTAssertEqual(failed.sequenceNumber, seeded.create.sequenceNumber)
+                XCTAssertEqual(failed.retryCount, attempt)
+                let message = try XCTUnwrap(failed.lastError)
+                if let code { XCTAssertTrue(message.contains(code)) }
+                try await assertEngineCreateState(
+                    url, store: original, command: command, pending: [failed, later], other: seeded.other
+                )
+            }
+            let requests = await transport.capturedRequests()
+            try assertCreateRequests(requests, command: command, count: 2)
+        }
+    }
+
+    @MainActor
+    func testEngineCreateOwnerSwitchABAAndCancellationCannotAcknowledgeOrSendNextCommand() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let later = try await queueCreate(createCommand(), ownerId: syncOwner, in: store)
+        for mode in 0..<3 {
+            let transport = SuspendedCollectionTransport(receiptJSON())
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let engine = SyncEngine(store: store, apiClient: api)
+            let owner = syncOwner
+            let operation = Task { try await engine.flushOutbox(for: owner) }
+            await transport.waitForRequest()
+            if mode == 2 {
+                operation.cancel()
+            } else {
+                await api.bindSyncSession(NativeAuthSession(
+                    userId: otherSyncOwner, accessToken: "owner-b-token", expiresAt: .distantFuture
+                ))
+                do {
+                    _ = try await engine.flushOutbox(for: syncOwner)
+                    XCTFail("A must not be dispatched with B's token")
+                } catch SyncWireValidationError.invalidSession {}
+                if mode == 1 { await api.bindSyncSession(syncSession) }
+            }
+            await transport.resume()
+            do {
+                _ = try await operation.value
+                XCTFail("Stale/cancelled typed response must not acknowledge")
+            } catch is CancellationError {
+                XCTAssertEqual(mode, 2)
+            } catch SyncWireValidationError.invalidSession {
+                XCTAssertNotEqual(mode, 2)
+            }
+            try await assertEngineCreateState(
+                url, store: store, command: command, pending: [seeded.create, later], other: seeded.other
+            )
+            let requests = await transport.capturedRequests()
+            try assertCreateRequests(requests, command: command, count: 1)
+        }
+    }
+
+    @MainActor
+    func testEngineCreateReadOnlyAcknowledgementDoesNotRecordSendFailureAndWritableRetryCommits() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let transport = CommittingCatalogueTransport(receiptJSON())
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+            let engine = SyncEngine(store: store, apiClient: api)
+            try await assertEngineCreateState(
+                url, store: store, command: command, pending: [seeded.create], other: seeded.other
+            )
+            for _ in 0..<2 {
+                do {
+                    _ = try await engine.flushOutbox(for: syncOwner)
+                    XCTFail("Actual read-only SQLite ACK must fail")
+                } catch {
+                    let failure = error as NSError
+                    XCTAssertEqual(failure.domain, NSCocoaErrorDomain)
+                    XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+                }
+                try await assertEngineCreateState(
+                    url, store: store, command: command, pending: [seeded.create], other: seeded.other
+                )
+            }
+        }
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        let count = try await engine.flushOutbox(for: syncOwner)
+        let next = try await engine.flushOutbox(for: syncOwner)
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(next, 0)
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [], other: seeded.other,
+            receipt: decodedCreateReceipt()
+        )
+        let requests = await transport.capturedRequests()
+        let serverCommits = await transport.committedCount()
+        try assertCreateRequests(requests, command: command, count: 3)
+        XCTAssertEqual(serverCommits, 1)
+    }
+
+    @MainActor
+    func testEngineCreateReadOnlyFailureBookkeepingAndLegacyWritesLeaveNoCachedMutations() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let transport = CatalogueTransport([.network, .network])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let store = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+        let engine = SyncEngine(store: store, apiClient: api)
+        for mode in 0..<5 {
+            do {
+                switch mode {
+                case 0, 1:
+                    _ = try await engine.flushOutbox(for: syncOwner)
+                case 2:
+                    try await store.recordOutboxFailure(operationId: command.operationId, errorMessage: "unsaved")
+                case 3:
+                    try await store.markOutboxCommitted(operationId: command.operationId)
+                default:
+                    _ = try await queueCreate(createCommand(), ownerId: syncOwner, in: store)
+                }
+                XCTFail("Read-only SQLite outbox mutation must fail")
+            } catch {
+                let failure = error as NSError
+                XCTAssertEqual(failure.domain, NSCocoaErrorDomain)
+                XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+            }
+            try await assertEngineCreateState(
+                url, store: store, command: command, pending: [seeded.create], other: seeded.other
+            )
+        }
+        let requests = await transport.capturedRequests()
+        try assertCreateRequests(requests, command: command, count: 2)
+        let retryAPI = client(CatalogueTransport([.http(200, receiptJSON())]))
+        await retryAPI.bindSyncSession(syncSession)
+        let writable = LocalStore(modelContainer: try diskContainer(url))
+        let count = try await SyncEngine(store: writable, apiClient: retryAPI).flushOutbox(for: syncOwner)
+        XCTAssertEqual(count, 1)
+        try await assertEngineCreateState(
+            url, store: writable, command: command, pending: [], other: seeded.other,
+            receipt: decodedCreateReceipt()
+        )
+    }
+
+    @MainActor
+    func testEngineCreateConcurrentDuplicateFlushDispatchesOnceAndCountsOneDurableCommit() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let transport = SuspendedCollectionTransport(receiptJSON())
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        let owner = syncOwner
+        let first = Task { try await engine.flushOutbox(for: owner) }
+        await transport.waitForRequest()
+        let overlapping = try await engine.flushOutbox(for: owner)
+        XCTAssertEqual(overlapping, 0)
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [seeded.create], other: seeded.other
+        )
+        await transport.resume()
+        let committed = try await first.value
+        let next = try await engine.flushOutbox(for: owner)
+        XCTAssertEqual(committed, 1)
+        XCTAssertEqual(next, 0)
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [], other: seeded.other,
+            receipt: decodedCreateReceipt()
+        )
+        let requests = await transport.capturedRequests()
+        try assertCreateRequests(requests, command: command, count: 1)
+    }
+
+    @MainActor
+    func testCanonicalCreateRejectsGenericSuccessButPersistsValidationFailureMetadata() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let transport = CatalogueTransport([.http(200, receiptJSON())])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        do {
+            try await store.finishOutboxEntry(
+                operationId: command.operationId, context: lease, authority: api.syncAuthority
+            )
+            XCTFail("Canonical plant.create requires durable receipt acknowledgement")
+        } catch CatalogueCreateAcknowledgementError.invalidCommand {}
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [seeded.create], other: seeded.other
+        )
+        let engine = SyncEngine(store: store, apiClient: api)
+        let committed = try await engine.flushOutbox(for: syncOwner)
+        XCTAssertEqual(committed, 1)
+        let invalid = createCommand()
+        let invalidCommand = CommandEnvelopeDTO(
+            operationId: invalid.operationId, commandName: "plant.create",
+            payloadJSON: #"{"creation_source":"catalogue","plant_id":"fixture_collection_cap","owner_id":"injected"}"#
+        )
+        let queued = try await queueCreate(invalidCommand, ownerId: syncOwner, in: store)
+        let failedCount = try await engine.flushOutbox(for: syncOwner)
+        XCTAssertEqual(failedCount, 0)
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        let failed = try XCTUnwrap(pending.first)
+        XCTAssertEqual(failed.operationId, queued.operationId)
+        XCTAssertEqual(failed.sequenceNumber, queued.sequenceNumber)
+        XCTAssertEqual(failed.createdAt, queued.createdAt)
+        XCTAssertTrue(failed.payloadJSON.utf8.elementsEqual(invalidCommand.payloadJSON.utf8))
+        XCTAssertEqual(failed.retryCount, 1)
+        XCTAssertTrue(try XCTUnwrap(failed.lastError).contains("invalidPayload"))
+        let invalidConfirmation = try await store.catalogueCreateConfirmation(
+            ownerId: syncOwner, operationId: invalidCommand.operationId
+        )
+        XCTAssertNil(invalidConfirmation)
+        try await assertEngineCreateState(
+            url, store: store, command: command, pending: [failed], other: seeded.other,
+            receipt: decodedCreateReceipt()
+        )
+        let requests = await transport.capturedRequests()
+        try assertCreateRequests(requests, command: command, count: 1)
+    }
+
+    @MainActor
+    func testEngineCreateTransportCancellationNeverBecomesRetryMetadata() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let seeded = try await seedEngineCreate(url, command: command)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        for reply in [CatalogueTransport.Reply.cancelled, .urlCancelled] {
+            let transport = CatalogueTransport([reply])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            do {
+                _ = try await SyncEngine(store: store, apiClient: api).flushOutbox(for: syncOwner)
+                XCTFail("Transport cancellation must propagate")
+            } catch is CancellationError {
+            } catch let error as URLError {
+                XCTAssertEqual(error.code, .cancelled)
+            }
+            try await assertEngineCreateState(
+                url, store: store, command: command, pending: [seeded.create], other: seeded.other
+            )
+            let requests = await transport.capturedRequests()
+            try assertCreateRequests(requests, command: command, count: 1)
+        }
     }
 }

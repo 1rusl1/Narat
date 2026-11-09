@@ -81,6 +81,7 @@ public struct EffectiveCareTaskView: Codable, Sendable, Equatable {
 public actor SyncEngine {
     private let store: LocalStore
     private let apiClient: PlantsAPIClient
+    private var drainingOwners = Set<UUID>()
     private var planHistoryByOwner: [UUID: [UUID: CachedPlanHistoryEntry]] = [:]
     private var reportCacheByOwner: [UUID: [String: ProgressReportDTO]] = [:]
 
@@ -99,6 +100,9 @@ public actor SyncEngine {
 
     private func flushOutbox(for ownerId: UUID, context: SyncSessionLease) async throws -> Int {
         try await apiClient.validateSyncContext(context)
+        // Actor reentrancy must not dispatch a second copy of this owner's snapshot.
+        guard drainingOwners.insert(ownerId).inserted else { return 0 }
+        defer { drainingOwners.remove(ownerId) }
         let pending = try await store.pendingOutboxEntries(for: ownerId)
         try await apiClient.validateSyncContext(context)
         guard !pending.isEmpty else { return 0 }
@@ -123,13 +127,11 @@ public actor SyncEngine {
                 payloadJSON: entry.payloadJSON
             )
 
+            let result: OutboxCommandResult
             do {
-                try await apiClient.sendOutboxCommand(envelope, context: context)
-                try await store.finishOutboxEntry(
-                    operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
-                )
-                committedCount += 1
+                result = try await apiClient.sendOutboxCommand(envelope, context: context)
             } catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 // Cancellation/auth changes abort the drain without touching the captured queue.
                 try await apiClient.validateSyncContext(context)
                 try await store.finishOutboxEntry(
@@ -141,7 +143,22 @@ public actor SyncEngine {
                 } else {
                     GlobalChainBlocked = true
                 }
+                continue
             }
+
+            // Disk acknowledgement failures propagate separately from send failures:
+            // do not change retry metadata or count a commit after a failed save.
+            switch result {
+            case let .catalogueCreate(receipt):
+                try await store.acknowledgeCatalogueCreate(
+                    envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
+                )
+            case .generic:
+                try await store.finishOutboxEntry(
+                    operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                )
+            }
+            committedCount += 1
         }
 
         return committedCount

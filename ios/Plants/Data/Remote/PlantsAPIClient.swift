@@ -94,6 +94,12 @@ final class SyncSessionAuthority: @unchecked Sendable {
     }
 }
 
+/// Only a typed canonical receipt can authorize the durable create acknowledgement.
+enum OutboxCommandResult: Sendable {
+    case generic
+    case catalogueCreate(PlantCreateReceiptDTO)
+}
+
 public actor PlantsAPIClient {
     public let baseURL: URL
     private let transport: any PlantsAPITransport
@@ -156,11 +162,14 @@ public actor PlantsAPIClient {
         return result
     }
 
-    func sendOutboxCommand(_ envelope: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+    func sendOutboxCommand(
+        _ envelope: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> OutboxCommandResult {
         try validateSyncContext(context)
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
+        if catalogueCreate { encoder.outputFormatting = [.sortedKeys] }
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(envelope)
         var request = try buildRequest(
@@ -170,12 +179,15 @@ public actor PlantsAPIClient {
             request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         }
         // Build and dispatch with the captured token in the same actor turn.
+        let result: OutboxCommandResult
         if catalogueCreate {
-            _ = try await execute(request, as: PlantCreateReceiptDTO.self)
+            result = .catalogueCreate(try await execute(request, as: PlantCreateReceiptDTO.self, expectedStatus: 200))
         } else {
             _ = try await execute(request, as: CommandResponseDTO.self)
+            result = .generic
         }
         try validateSyncContext(context)
+        return result
     }
 
     public func buildRequest(
@@ -272,7 +284,9 @@ public actor PlantsAPIClient {
         return try await execute(request, as: SyncPageDTO.self)
     }
 
-    private func execute<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
+    private func execute<T: Decodable>(
+        _ request: URLRequest, as type: T.Type, expectedStatus: Int? = nil
+    ) async throws -> T {
         let (data, http) = try await transport.send(request)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -281,6 +295,9 @@ public actor PlantsAPIClient {
             if let apiErr = try? decoder.decode(APIErrorResponse.self, from: data) {
                 throw apiErr
             }
+            throw URLError(.badServerResponse)
+        }
+        if let expectedStatus, http.statusCode != expectedStatus {
             throw URLError(.badServerResponse)
         }
         return try decoder.decode(T.self, from: data)

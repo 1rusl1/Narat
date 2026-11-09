@@ -299,6 +299,7 @@ public actor LocalStore {
         commandName: String,
         payloadJSON: String
     ) throws -> OutboxEntrySnapshot {
+        let modelContext = makeSyncContext()
         let existingDescriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
         )
@@ -346,6 +347,7 @@ public actor LocalStore {
     }
 
     public func pendingOutboxEntries(for ownerId: UUID) throws -> [OutboxEntrySnapshot] {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.ownerId == ownerId },
             sortBy: [SortDescriptor(\.sequenceNumber, order: .forward)]
@@ -449,6 +451,7 @@ public actor LocalStore {
     }
 
     public func markOutboxCommitted(operationId: UUID) throws {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
         )
@@ -459,6 +462,7 @@ public actor LocalStore {
     }
 
     public func recordOutboxFailure(operationId: UUID, errorMessage: String) throws {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
         )
@@ -598,7 +602,7 @@ public actor LocalStore {
 
     // MARK: Synced Entity & Checkpoint Operations
 
-    /// Sync models never escape an operation's context. A failed save can leave
+    /// Sync and outbox models never escape an operation's context. A failed save can leave
     /// registered SwiftData models changed even after rollback, so both writers
     /// and readers start from committed storage rather than those cached models.
     private func makeSyncContext() -> ModelContext {
@@ -727,6 +731,7 @@ public actor LocalStore {
         failure: String? = nil
     ) throws {
         try authority.withValid(context) {
+            let modelContext = makeSyncContext()
             do {
                 let descriptor = FetchDescriptor<LocalOutboxRecord>(
                     predicate: #Predicate { $0.operationId == operationId }
@@ -739,8 +744,12 @@ public actor LocalStore {
                     record.retryCount += 1
                     record.lastError = failure
                 } else {
+                    guard context.session == nil || record.commandName != "plant.create" else {
+                        throw CatalogueCreateAcknowledgementError.invalidCommand
+                    }
                     modelContext.delete(record)
                 }
+                try Task.checkCancellation()
                 try modelContext.save()
             } catch {
                 modelContext.rollback()
