@@ -56,6 +56,26 @@ public final class CatalogueCreateConfirmationRecord {
     }
 }
 
+/// Local input only: no server draft, receipt, credentials, or retention policy.
+@Model
+public final class CatalogueInputCheckpointRecord {
+    @Attribute(.unique) public var compositeKey: String
+    public var ownerId: UUID
+    public var flowId: UUID
+    public var operationId: UUID
+    public var payloadJSON: String
+    public var createdAt: Date
+
+    public init(ownerId: UUID, flowId: UUID, operationId: UUID, payloadJSON: String, createdAt: Date) {
+        self.compositeKey = "\(ownerId.uuidString.lowercased()):\(flowId.uuidString.lowercased())"
+        self.ownerId = ownerId
+        self.flowId = flowId
+        self.operationId = operationId
+        self.payloadJSON = payloadJSON
+        self.createdAt = createdAt
+    }
+}
+
 @Model
 public final class GuestDraftCacheRecord {
     @Attribute(.unique) public var draftId: UUID
@@ -232,6 +252,20 @@ public struct CatalogueCreateConfirmationSnapshot: Sendable, Equatable {
     public let receipt: PlantCreateReceiptDTO
 }
 
+public struct CatalogueInputCheckpointSnapshot: Sendable, Equatable {
+    public let ownerId: UUID
+    public let flowId: UUID
+    public let envelope: CommandEnvelopeDTO
+    public let createdAt: Date
+
+    public var operationId: UUID { envelope.operationId }
+}
+
+enum CatalogueInputCheckpointError: Error, Sendable, Equatable {
+    case flowIdentityMismatch
+    case invalidStoredInput
+}
+
 enum CatalogueCreateJournalMode: Sendable {
     case checkOnly
     case enqueue(canCreate: Bool)
@@ -290,6 +324,7 @@ public actor LocalStore {
         let schema = Schema([
             LocalOutboxRecord.self,
             CatalogueCreateConfirmationRecord.self,
+            CatalogueInputCheckpointRecord.self,
             GuestDraftCacheRecord.self,
             SyncedEntityRecord.self,
             SyncCheckpointRecord.self
@@ -447,6 +482,128 @@ public actor LocalStore {
             } catch {
                 disk.rollback()
                 throw error
+            }
+        }
+    }
+
+    // All catalogue input contexts share this ordering, including distinct API authorities.
+    private static let catalogueInputLock = NSLock()
+
+    /// The original bound lease is required even for anonymous local input caching.
+    /// New unsent edits require an explicitly new flow and operation.
+    func checkpointCatalogueInput(
+        _ input: CatalogueInput, flowId: UUID, operationId: UUID,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CatalogueInputCheckpointSnapshot {
+        try authority.withBoundValid(context) {
+            Self.catalogueInputLock.lock()
+            defer { Self.catalogueInputLock.unlock() }
+            let disk = makeSyncContext()
+            do {
+                let envelope = try input.makeEnvelope(operationId: operationId)
+                let ownerId = context.ownerId
+                let descriptor = FetchDescriptor<CatalogueInputCheckpointRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.flowId == flowId }
+                )
+                if let prior = try disk.fetch(descriptor).first {
+                    let original = try catalogueInputSnapshot(prior)
+                    guard original.operationId == operationId,
+                          original.envelope.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                        throw CatalogueInputCheckpointError.flowIdentityMismatch
+                    }
+                    try validateCatalogueInputIdentity(envelope, ownerId: ownerId, disk: disk)
+                    try Task.checkCancellation()
+                    return original
+                }
+                try validateCatalogueInputIdentity(envelope, ownerId: ownerId, disk: disk)
+                let record = CatalogueInputCheckpointRecord(
+                    ownerId: ownerId, flowId: flowId, operationId: operationId,
+                    payloadJSON: envelope.payloadJSON, createdAt: Date()
+                )
+                disk.insert(record)
+                let snapshot = try catalogueInputSnapshot(record)
+                try Task.checkCancellation()
+                try disk.save()
+                return snapshot
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    func catalogueInputCheckpoint(
+        flowId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CatalogueInputCheckpointSnapshot? {
+        try authority.withBoundValid(context) {
+            Self.catalogueInputLock.lock()
+            defer { Self.catalogueInputLock.unlock() }
+            let disk = makeSyncContext()
+            do {
+                let ownerId = context.ownerId
+                let descriptor = FetchDescriptor<CatalogueInputCheckpointRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.flowId == flowId }
+                )
+                guard let record = try disk.fetch(descriptor).first else {
+                    try Task.checkCancellation()
+                    return nil
+                }
+                let snapshot = try catalogueInputSnapshot(record)
+                try validateCatalogueInputIdentity(snapshot.envelope, ownerId: ownerId, disk: disk)
+                try Task.checkCancellation()
+                return snapshot
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    private func catalogueInputSnapshot(
+        _ record: CatalogueInputCheckpointRecord
+    ) throws -> CatalogueInputCheckpointSnapshot {
+        guard record.compositeKey ==
+                "\(record.ownerId.uuidString.lowercased()):\(record.flowId.uuidString.lowercased())",
+              let payload = try? JSONSerialization.jsonObject(with: Data(record.payloadJSON.utf8)) as? [String: Any],
+              let slug = payload["plant_id"] as? String,
+              payload["creation_source"] as? String == "catalogue",
+              Set(payload.keys).isSubset(of: ["creation_source", "plant_id", "personal_name"]),
+              payload["personal_name"] == nil || payload["personal_name"] is String else {
+            throw CatalogueInputCheckpointError.invalidStoredInput
+        }
+        let envelope = try CatalogueInput(
+            speciesSlug: slug, personalName: payload["personal_name"] as? String
+        ).makeEnvelope(operationId: record.operationId)
+        guard envelope.payloadJSON.utf8.elementsEqual(record.payloadJSON.utf8) else {
+            throw CatalogueInputCheckpointError.invalidStoredInput
+        }
+        return CatalogueInputCheckpointSnapshot(
+            ownerId: record.ownerId, flowId: record.flowId, envelope: envelope, createdAt: record.createdAt
+        )
+    }
+
+    /// Match the accepted journal's global queue identity and own confirmation bytes.
+    /// No foreign record or server receipt escapes this check.
+    private func validateCatalogueInputIdentity(
+        _ envelope: CommandEnvelopeDTO, ownerId: UUID, disk: ModelContext
+    ) throws {
+        let operationId = envelope.operationId
+        let commands = FetchDescriptor<LocalOutboxRecord>(
+            predicate: #Predicate { $0.operationId == operationId }
+        )
+        if let queued = try disk.fetch(commands).first {
+            guard queued.ownerId == ownerId, queued.plantId == envelope.plantId,
+                  queued.commandName.utf8.elementsEqual(envelope.commandName.utf8),
+                  queued.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                throw OutboxEnqueueError.operationIdentityMismatch
+            }
+        }
+        let confirmations = FetchDescriptor<CatalogueCreateConfirmationRecord>(
+            predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+        )
+        if let prior = try disk.fetch(confirmations).first {
+            guard prior.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                throw OutboxEnqueueError.operationIdentityMismatch
             }
         }
     }

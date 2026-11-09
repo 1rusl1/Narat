@@ -1,5 +1,28 @@
 import Foundation
 
+/// Minimal catalogue selection. The caller owns the stable operation ID and flow.
+public struct CatalogueInput: Sendable, Equatable {
+    public let speciesSlug: String
+    public let personalName: String?
+
+    public init(speciesSlug: String, personalName: String? = nil) {
+        self.speciesSlug = speciesSlug
+        self.personalName = personalName
+    }
+
+    public func makeEnvelope(operationId: UUID) throws -> CommandEnvelopeDTO {
+        var payload = ["creation_source": "catalogue", "plant_id": speciesSlug]
+        if let personalName { payload["personal_name"] = personalName }
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        let envelope = CommandEnvelopeDTO(
+            operationId: operationId, commandName: "plant.create",
+            payloadJSON: String(decoding: data, as: UTF8.self)
+        )
+        try CatalogueCreateWire.validate(envelope)
+        return envelope
+    }
+}
+
 public struct CollectionCapacity: Sendable, Equatable {
     public let ownerId: UUID
     public let plantCount: Int

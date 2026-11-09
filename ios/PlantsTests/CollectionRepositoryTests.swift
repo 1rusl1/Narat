@@ -80,11 +80,15 @@ final class CollectionRepositoryTests: XCTestCase {
         return directory.appendingPathComponent("capacity.sqlite")
     }
 
-    private func container(_ url: URL, allowsSave: Bool = true) throws -> ModelContainer {
-        let schema = Schema([
+    private func container(
+        _ url: URL, allowsSave: Bool = true, historicalFiveTables: Bool = false
+    ) throws -> ModelContainer {
+        var models: [any PersistentModel.Type] = [
             LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
             GuestDraftCacheRecord.self, SyncedEntityRecord.self, SyncCheckpointRecord.self
-        ])
+        ]
+        if !historicalFiveTables { models.append(CatalogueInputCheckpointRecord.self) }
+        let schema = Schema(models)
         return try ModelContainer(for: schema, configurations: [
             ModelConfiguration(schema: schema, url: url, allowsSave: allowsSave)
         ])
@@ -706,8 +710,8 @@ extension CollectionRepositoryTests {
         let receipts: [Data]
     }
 
-    private func journalDisk(_ url: URL) async throws -> JournalDisk {
-        let reopened = try container(url)
+    private func journalDisk(_ url: URL, historicalFiveTables: Bool = false) async throws -> JournalDisk {
+        let reopened = try container(url, historicalFiveTables: historicalFiveTables)
         let store = LocalStore(modelContainer: reopened)
         let own = try await state(store, ownerId: owner)
         let foreign = try await state(store, ownerId: other)
@@ -1680,5 +1684,539 @@ extension CollectionRepositoryTests {
         let requests = await transport.captured()
         XCTAssertEqual(requests.count, 1)
         try assertCreateRequest(requests[0], command)
+    }
+}
+
+extension CollectionRepositoryTests {
+    private func inputRows(_ url: URL) throws -> [Data] {
+        let disk = ModelContext(try container(url))
+        disk.autosaveEnabled = false
+        return try disk.fetch(FetchDescriptor<CatalogueInputCheckpointRecord>(
+            sortBy: [SortDescriptor(\.compositeKey)]
+        )).map {
+            Data([$0.compositeKey, $0.ownerId.uuidString, $0.flowId.uuidString, $0.operationId.uuidString,
+                  $0.payloadJSON, $0.createdAt.timeIntervalSince1970.description].joined(separator: "|").utf8)
+        }
+    }
+
+    /// Supplement JournalDisk with every persisted field of the other three old tables.
+    private func legacyCacheBytes(_ url: URL, historicalFiveTables: Bool = false) throws -> [Data] {
+        let disk = ModelContext(try container(url, historicalFiveTables: historicalFiveTables))
+        disk.autosaveEnabled = false
+        func bytes(_ fields: [String?]) throws -> Data {
+            try JSONEncoder().encode(fields)
+        }
+        let entities = try disk.fetch(FetchDescriptor<SyncedEntityRecord>(
+            sortBy: [SortDescriptor(\.compositeKey)]
+        )).map {
+            try bytes([$0.compositeKey, $0.ownerId.uuidString, $0.entityType, $0.entityId.uuidString,
+                       $0.updatedAt.timeIntervalSince1970.description,
+                       $0.deletedAt?.timeIntervalSince1970.description, $0.payloadJSON, $0.updatedAtRaw])
+        }
+        let checkpoints = try disk.fetch(FetchDescriptor<SyncCheckpointRecord>())
+            .sorted { $0.ownerId.uuidString < $1.ownerId.uuidString }.map {
+            try bytes([$0.ownerId.uuidString, $0.watermark?.timeIntervalSince1970.description,
+                       $0.watermarkRaw, $0.syncProfileJSON, $0.syncEntitlementJSON,
+                       $0.freeSelectionRevision.description, $0.entitlementValidUntil?.timeIntervalSince1970.description,
+                       $0.entitlementTrialEndAt?.timeIntervalSince1970.description, $0.entitlementOfferKind,
+                       $0.entitlementState, $0.updatedAt.timeIntervalSince1970.description])
+        }
+        let guests = try disk.fetch(FetchDescriptor<GuestDraftCacheRecord>())
+            .sorted { $0.draftId.uuidString < $1.draftId.uuidString }.map {
+            try bytes([$0.draftId.uuidString, $0.flowId.uuidString, $0.intentRaw, $0.addMethodRaw,
+                       $0.currentStepRaw, $0.photoLocalPath, $0.confirmedPlantId,
+                       $0.confirmedTaxonId?.uuidString, $0.confirmedDisplayName, $0.conditionsJSON,
+                       $0.resultModeRaw, $0.preliminaryAnalysisJSON, $0.analysisReceiptJSON, $0.overridesJSON,
+                       $0.serverExpiresAt.timeIntervalSince1970.description,
+                       $0.isCompleteForFallback.description, $0.updatedAt.timeIntervalSince1970.description])
+        }
+        return entities + checkpoints + guests
+    }
+
+    private func assertInputLeaseRejected(
+        _ store: LocalStore, flowId: UUID, operationId: UUID, input: CatalogueInput,
+        lease: SyncSessionLease, authority: SyncSessionAuthority, cancelled: Bool = false
+    ) async {
+        let absentFlow = UUID()
+        for mode in 0..<4 {
+            let attempt = Task<CatalogueInputCheckpointSnapshot?, Error> {
+                if cancelled { withUnsafeCurrentTask { $0?.cancel() } }
+                let flow = mode % 2 == 0 ? flowId : absentFlow
+                if mode < 2 {
+                    return try await store.catalogueInputCheckpoint(flowId: flow, context: lease, authority: authority)
+                }
+                return try await store.checkpointCatalogueInput(
+                    input, flowId: flow, operationId: operationId, context: lease, authority: authority
+                )
+            }
+            do {
+                _ = try await attempt.value
+                XCTFail("Invalid original lease must not read, replay, or insert input")
+            } catch is CancellationError {
+                XCTAssertTrue(cancelled)
+            } catch SyncWireValidationError.invalidSession {
+                XCTAssertFalse(cancelled)
+            } catch {
+                XCTFail("Unexpected checkpoint lease error: \(error)")
+            }
+        }
+    }
+
+    func testCatalogueInputBuilderSavesBareSpeciesAndExactOptionalUnicodeThroughAcceptedPath() async throws {
+        for name in [nil, "", "  e\u{0301} 🌿 \"\n"] as [String?] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = CatalogueSaveTransport([
+                .http("GET", 200, try json(page())),
+                .http("POST", 200, try JSONEncoder().encode(journalReceipt()))
+            ])
+            let stack = try await saveStack(url, transport)
+            let lease = try await stack.api.captureSyncContext(ownerId: owner)
+            let input = CatalogueInput(speciesSlug: "fixture-fern", personalName: name)
+            let operationId = UUID()
+            let command = try input.makeEnvelope(operationId: operationId)
+            let repeated = try input.makeEnvelope(operationId: operationId)
+            XCTAssertEqual(Data(command.payloadJSON.utf8), Data(repeated.payloadJSON.utf8))
+            let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(command.payloadJSON.utf8)) as? [String: String])
+            let expectedKeys: Set<String> = name == nil
+                ? ["creation_source", "plant_id"] : ["creation_source", "plant_id", "personal_name"]
+            XCTAssertEqual(Set(payload.keys), expectedKeys)
+            XCTAssertEqual(payload["plant_id"], input.speciesSlug)
+            XCTAssertEqual(payload["creation_source"], "catalogue")
+            XCTAssertEqual(payload["personal_name"].map { Data($0.utf8) }, name.map { Data($0.utf8) })
+            let frozen = try await stack.store.checkpointCatalogueInput(
+                input, flowId: UUID(), operationId: operationId, context: lease, authority: stack.api.syncAuthority
+            )
+            let confirmation = try saved(await stack.repository.saveCatalogueCreate(
+                frozen.envelope, session: session, isAnonymous: false
+            ))
+            XCTAssertEqual(confirmation.operationId, operationId)
+            XCTAssertEqual(Data(confirmation.payloadJSON.utf8), Data(command.payloadJSON.utf8))
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+            try assertCreateRequest(requests[1], command)
+            let replay = try await stack.store.catalogueInputCheckpoint(
+                flowId: frozen.flowId, context: lease, authority: stack.api.syncAuthority
+            )
+            XCTAssertEqual(replay, frozen)
+        }
+    }
+
+    func testCatalogueInputInvalidSpeciesFailsBeforeCacheOrRequestsWithoutTrimmingValidBytes() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = CatalogueSaveTransport([])
+        let stack = try await saveStack(url, transport)
+        let lease = try await stack.api.captureSyncContext(ownerId: owner)
+        let before = try await journalDisk(url)
+        for slug in ["", " ", "\n\t"] {
+            let input = CatalogueInput(speciesSlug: slug)
+            XCTAssertThrowsError(try input.makeEnvelope(operationId: UUID()))
+            do {
+                _ = try await stack.store.checkpointCatalogueInput(
+                    input, flowId: UUID(), operationId: UUID(), context: lease, authority: stack.api.syncAuthority
+                )
+                XCTFail("Invalid species must fail before local persistence")
+            } catch CatalogueCreateValidationError.invalidPayload {}
+        }
+        XCTAssertTrue(try inputRows(url).isEmpty)
+        let requests = await transport.captured()
+        XCTAssertTrue(requests.isEmpty)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+        let exact = CatalogueInput(speciesSlug: "  fixture-fern  ", personalName: " e\u{0301} ")
+        let command = try exact.makeEnvelope(operationId: UUID())
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(command.payloadJSON.utf8)) as? [String: String])
+        XCTAssertEqual(Data(try XCTUnwrap(payload["plant_id"]).utf8), Data(exact.speciesSlug.utf8))
+        XCTAssertEqual(Data(try XCTUnwrap(payload["personal_name"]).utf8), Data(try XCTUnwrap(exact.personalName).utf8))
+        XCTAssertTrue(command.payloadJSON.hasPrefix(#"{"creation_source":"catalogue","personal_name":"#))
+    }
+
+    func testCatalogueInputDiskRestartFreezesFlowOperationPayloadAndCreationTime() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let input = CatalogueInput(speciesSlug: "fixture-fern", personalName: "e\u{0301}")
+        let flow = UUID(), operation = UUID()
+        let original: CatalogueInputCheckpointSnapshot
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            try await seed(store)
+            original = try await store.checkpointCatalogueInput(
+                input, flowId: flow, operationId: operation, context: lease, authority: api.syncAuthority
+            )
+        }
+        let before = try await journalDisk(url)
+        let rows = try inputRows(url)
+        let reopened = LocalStore(modelContainer: try container(url))
+        let read = try await reopened.catalogueInputCheckpoint(flowId: flow, context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(read, original)
+        let retry = try await reopened.checkpointCatalogueInput(
+            input, flowId: flow, operationId: operation, context: lease, authority: api.syncAuthority
+        )
+        XCTAssertEqual(retry, original)
+        XCTAssertEqual(retry.flowId, flow)
+        XCTAssertEqual(retry.operationId, operation)
+        for (edited, op) in [
+            (input, UUID()),
+            (CatalogueInput(speciesSlug: "other"), operation),
+            (CatalogueInput(speciesSlug: "fixture-fern", personalName: "é"), operation),
+            (CatalogueInput(speciesSlug: "fixture-fern"), operation)
+        ] {
+            do {
+                _ = try await reopened.checkpointCatalogueInput(
+                    edited, flowId: flow, operationId: op, context: lease, authority: api.syncAuthority
+                )
+                XCTFail("A frozen flow cannot be rewritten")
+            } catch CatalogueInputCheckpointError.flowIdentityMismatch {}
+        }
+        XCTAssertEqual(try inputRows(url), rows)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+        let newFlow = try await reopened.checkpointCatalogueInput(
+            CatalogueInput(speciesSlug: "other"), flowId: UUID(), operationId: UUID(),
+            context: lease, authority: api.syncAuthority
+        )
+        XCTAssertNotEqual(newFlow.flowId, flow)
+        XCTAssertNotEqual(newFlow.operationId, operation)
+        XCTAssertEqual(try inputRows(url).count, 2)
+    }
+
+    func testCatalogueInputAnonymousCacheIsOwnerScopedAndNeverGrantsCreatePermission() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = CatalogueSaveTransport([])
+        let stack = try await saveStack(url, transport)
+        let lease = try await stack.api.captureSyncContext(ownerId: owner)
+        let before = try await journalDisk(url)
+        let flow = UUID()
+        let cached = try await stack.store.checkpointCatalogueInput(
+            CatalogueInput(speciesSlug: "fixture-fern"), flowId: flow, operationId: UUID(),
+            context: lease, authority: stack.api.syncAuthority
+        )
+        let result = try await stack.repository.saveCatalogueCreate(cached.envelope, session: session, isAnonymous: true)
+        XCTAssertEqual(result, .signInRequired)
+        await stack.api.bindSyncSession(NativeAuthSession(userId: other, accessToken: "b", expiresAt: .distantFuture))
+        let otherLease = try await stack.api.captureSyncContext(ownerId: other)
+        let absent = try await stack.store.catalogueInputCheckpoint(
+            flowId: flow, context: otherLease, authority: stack.api.syncAuthority
+        )
+        XCTAssertNil(absent)
+        let otherCache = try await stack.store.checkpointCatalogueInput(
+            CatalogueInput(speciesSlug: "other"), flowId: flow, operationId: UUID(),
+            context: otherLease, authority: stack.api.syncAuthority
+        )
+        XCTAssertEqual(otherCache.ownerId, other)
+        XCTAssertEqual(cached.ownerId, owner)
+        XCTAssertNotEqual(otherCache.operationId, cached.operationId)
+        XCTAssertEqual(try inputRows(url).count, 2)
+        let requests = await transport.captured()
+        XCTAssertTrue(requests.isEmpty)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+    }
+
+    func testCatalogueInputOriginalLeaseRejectsSwitchABASignoutUnboundForeignAuthorityAndCancellation() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = LocalStore(modelContainer: try container(url))
+        let input = CatalogueInput(speciesSlug: "fixture-fern")
+        let flow = UUID(), operation = UUID()
+        let (initial, originalLease) = try await journalSession()
+        _ = try await store.checkpointCatalogueInput(
+            input, flowId: flow, operationId: operation, context: originalLease, authority: initial.syncAuthority
+        )
+        let before = try await journalDisk(url)
+        let rows = try inputRows(url)
+        for mode in 0..<7 {
+            let (api, lease) = try await journalSession()
+            var checkedLease = lease
+            var authority = api.syncAuthority
+            switch mode {
+            case 0, 1:
+                await api.bindSyncSession(NativeAuthSession(userId: other, accessToken: "b", expiresAt: .distantFuture))
+                if mode == 1 { await api.bindSyncSession(session) }
+            case 2:
+                await api.bindSyncSession(nil)
+            case 3, 4:
+                let unbound = PlantsAPIClient(transport: CapacityTransport([]))
+                authority = unbound.syncAuthority
+                checkedLease = mode == 3
+                    ? try authority.capture(ownerId: owner, explicitSession: session)
+                    : try await unbound.captureSyncContext(ownerId: owner)
+            case 5:
+                let (different, _) = try await journalSession()
+                authority = different.syncAuthority
+            default: break
+            }
+            await assertInputLeaseRejected(
+                store, flowId: flow, operationId: operation, input: input,
+                lease: checkedLease, authority: authority, cancelled: mode == 6
+            )
+        }
+        XCTAssertEqual(try inputRows(url), rows)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+    }
+
+    func testCatalogueInputChecksGlobalQueueIdentityAndOwnConfirmationWithoutChangingJournal() async throws {
+        for mode in 0..<8 {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let (api, lease) = try await journalSession()
+            let store = LocalStore(modelContainer: try container(url))
+            let input = CatalogueInput(speciesSlug: "fixture-fern", personalName: "é")
+            let op = UUID(), flow = UUID()
+            let command = try input.makeEnvelope(operationId: op)
+            let changed = try CatalogueInput(speciesSlug: "fixture-fern", personalName: "different").makeEnvelope(operationId: op)
+            let queuedPayload: String
+            switch mode {
+            case 3: queuedPayload = command.payloadJSON + " "
+            case 4: queuedPayload = command.payloadJSON.replacingOccurrences(of: "é", with: "e\u{0301}")
+            case 5: queuedPayload = changed.payloadJSON
+            default: queuedPayload = command.payloadJSON
+            }
+            let queued = CommandEnvelopeDTO(
+                operationId: op, commandName: mode == 2 ? "care.complete" : "plant.create",
+                plantId: mode == 1 ? UUID() : nil, payloadJSON: queuedPayload
+            )
+            _ = try await store.enqueueCommand(
+                operationId: op, ownerId: mode == 0 ? other : owner,
+                plantId: queued.plantId, commandName: queued.commandName, payloadJSON: queued.payloadJSON
+            )
+            if mode == 5 || mode == 7 {
+                try await store.acknowledgeCatalogueCreate(
+                    queued, receipt: journalReceipt(), context: lease, authority: api.syncAuthority
+                )
+            }
+            let before = try await journalDisk(url)
+            do {
+                let cached = try await store.checkpointCatalogueInput(
+                    input, flowId: flow, operationId: op, context: lease, authority: api.syncAuthority
+                )
+                XCTAssertTrue(mode >= 6)
+                let read = try await store.catalogueInputCheckpoint(flowId: flow, context: lease, authority: api.syncAuthority)
+                XCTAssertEqual(read, cached)
+            } catch OutboxEnqueueError.operationIdentityMismatch {
+                XCTAssertTrue(mode < 6)
+            }
+            XCTAssertEqual(try inputRows(url).count, mode >= 6 ? 1 : 0)
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+    }
+
+    func testCatalogueInputReadOnlySQLiteFailureHasNoPhantomAndWritableRetryPersistsOnce() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let input = CatalogueInput(speciesSlug: "fixture-fern")
+        let flow = UUID(), op = UUID()
+        try await seed(LocalStore(modelContainer: container(url)))
+        let before = try await journalDisk(url)
+        do {
+            let store = LocalStore(modelContainer: try container(url, allowsSave: false))
+            for _ in 0..<2 {
+                do {
+                    _ = try await store.checkpointCatalogueInput(
+                        input, flowId: flow, operationId: op, context: lease, authority: api.syncAuthority
+                    )
+                    XCTFail("Real read-only SQLite save must fail")
+                } catch {
+                    let failure = error as NSError
+                    XCTAssertEqual(failure.domain, NSCocoaErrorDomain)
+                    XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+                }
+                let absent = try await store.catalogueInputCheckpoint(flowId: flow, context: lease, authority: api.syncAuthority)
+                XCTAssertNil(absent)
+                let reopened = LocalStore(modelContainer: try container(url))
+                let diskAbsent = try await reopened.catalogueInputCheckpoint(
+                    flowId: flow, context: lease, authority: api.syncAuthority
+                )
+                XCTAssertNil(diskAbsent)
+                XCTAssertTrue(try inputRows(url).isEmpty)
+            }
+        }
+        let writable = LocalStore(modelContainer: try container(url))
+        let saved = try await writable.checkpointCatalogueInput(
+            input, flowId: flow, operationId: op, context: lease, authority: api.syncAuthority
+        )
+        let retry = try await writable.checkpointCatalogueInput(
+            input, flowId: flow, operationId: op, context: lease, authority: api.syncAuthority
+        )
+        XCTAssertEqual(retry, saved)
+        let reopened = LocalStore(modelContainer: try container(url))
+        let read = try await reopened.catalogueInputCheckpoint(flowId: flow, context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(read, saved)
+        XCTAssertEqual(try inputRows(url).count, 1)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+    }
+
+    func testCatalogueInputHistoricalFiveTableSQLiteUpgradePreservesEverySeededTable() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let draftId = UUID()
+        let guest = GuestDraftCacheSnapshot(
+            draftId: draftId, flowState: AddFlowState(
+                intent: .problem, addMethod: .scan, currentStep: .preliminaryResult,
+                photoLocalIdentifier: "old/photo.jpg", confirmedPlantId: "fixture-fern",
+                conditions: CareConditionsInput(
+                    lightLevel: .brightIndirect, lightSource: .cameraEstimate, lightConfirmed: true,
+                    wateringHabit: .moderate, lastWatered: .within7Days,
+                    potType: .standardDrainage, seasonOverride: .auto
+                ), resultMode: .diagnosis, draftId: draftId
+            ),
+            serverExpiresAt: Date(timeIntervalSince1970: 1), isCompleteForFallback: true
+        )
+        let confirmedCommand: CommandEnvelopeDTO
+        do {
+            let historical = try container(url, historicalFiveTables: true)
+            XCTAssertEqual(historical.schema.entities.count, 5)
+            let store = LocalStore(modelContainer: historical)
+            try await seed(store)
+            confirmedCommand = try CatalogueInput(speciesSlug: "fixture-fern").makeEnvelope(operationId: UUID())
+            _ = try await store.catalogueCreateJournal(
+                confirmedCommand, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+            )
+            try await store.acknowledgeCatalogueCreate(
+                confirmedCommand, receipt: journalReceipt(), context: lease, authority: api.syncAuthority
+            )
+            try await store.saveGuestDraft(guest)
+            let disk = ModelContext(historical)
+            disk.autosaveEnabled = false
+            let checkpoint = try XCTUnwrap(disk.fetch(FetchDescriptor<SyncCheckpointRecord>()).first)
+            checkpoint.freeSelectionRevision = 17
+            checkpoint.entitlementValidUntil = Date(timeIntervalSince1970: 123)
+            checkpoint.entitlementTrialEndAt = Date(timeIntervalSince1970: 456)
+            checkpoint.entitlementOfferKind = "legacy-offer"
+            checkpoint.entitlementState = "legacy-state"
+            try disk.save()
+        }
+        let before = try await journalDisk(url, historicalFiveTables: true)
+        let oldCache = try legacyCacheBytes(url, historicalFiveTables: true)
+        XCTAssertEqual(before.own.queue.count, 1)
+        XCTAssertEqual(before.foreign.queue.count, 1)
+        XCTAssertEqual(before.receipts.count, 1)
+        XCTAssertEqual(oldCache.count, 3) // entity, sync checkpoint, guest cache
+        let upgraded = try container(url)
+        XCTAssertEqual(upgraded.schema.entities.count, 6)
+        let store = LocalStore(modelContainer: upgraded)
+        let loaded = try await store.loadGuestDraft(draftId: draftId)
+        XCTAssertEqual(loaded?.flowState.flowId, guest.flowState.flowId)
+        XCTAssertEqual(loaded?.flowState.conditions, guest.flowState.conditions)
+        XCTAssertEqual(loaded?.flowState.photoLocalIdentifier, guest.flowState.photoLocalIdentifier)
+        XCTAssertEqual(loaded?.serverExpiresAt, guest.serverExpiresAt)
+        XCTAssertEqual(loaded?.isCompleteForFallback, guest.isCompleteForFallback)
+        let confirmation = try journalConfirmed(await store.catalogueCreateJournal(
+            confirmedCommand, mode: .checkOnly, context: lease, authority: api.syncAuthority
+        ))
+        XCTAssertEqual(confirmation.receipt, try journalReceipt())
+        let cached = try await store.checkpointCatalogueInput(
+            CatalogueInput(speciesSlug: "fixture-fern"), flowId: UUID(), operationId: UUID(),
+            context: lease, authority: api.syncAuthority
+        )
+        let reopened = LocalStore(modelContainer: try container(url))
+        let read = try await reopened.catalogueInputCheckpoint(
+            flowId: cached.flowId, context: lease, authority: api.syncAuthority
+        )
+        XCTAssertEqual(read, cached)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+        XCTAssertEqual(try legacyCacheBytes(url), oldCache)
+        XCTAssertEqual(try inputRows(url).count, 1)
+    }
+
+    func testCatalogueInputMalformedStoredPayloadAndLaterQueueConflictFailClosedWithoutRepair() async throws {
+        let input = CatalogueInput(speciesSlug: "fixture-fern")
+        let canonical = try input.makeEnvelope(operationId: UUID()).payloadJSON
+        for payload in ["{}", canonical + " ",
+                        #"{"creation_source":"catalogue","personal_name":null,"plant_id":"fixture-fern"}"#,
+                        #"{"creation_source":"catalogue","plant_id":"fixture-fern","rooms":[]}"#,
+                        #"{"creation_source":"catalogue","plant_id":""}"#, canonical] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let (api, lease) = try await journalSession()
+            let model = try container(url)
+            let store = LocalStore(modelContainer: model)
+            let flow = UUID(), op = UUID()
+            let disk = ModelContext(model)
+            disk.autosaveEnabled = false
+            disk.insert(CatalogueInputCheckpointRecord(
+                ownerId: owner, flowId: flow, operationId: op, payloadJSON: payload,
+                createdAt: Date(timeIntervalSince1970: 10)
+            ))
+            try disk.save()
+            if payload == canonical {
+                _ = try await store.enqueueCommand(
+                    operationId: op, ownerId: other, commandName: "plant.create", payloadJSON: canonical
+                )
+            }
+            let rows = try inputRows(url)
+            let before = try await journalDisk(url)
+            for writing in [false, true] {
+                do {
+                    if writing {
+                        _ = try await store.checkpointCatalogueInput(
+                            input, flowId: flow, operationId: op, context: lease, authority: api.syncAuthority
+                        )
+                    } else {
+                        _ = try await store.catalogueInputCheckpoint(flowId: flow, context: lease, authority: api.syncAuthority)
+                    }
+                    XCTFail("Malformed input or a conflicting queue must fail closed")
+                } catch CatalogueInputCheckpointError.invalidStoredInput {
+                    XCTAssertNotEqual(payload, canonical)
+                } catch CatalogueCreateValidationError.invalidPayload {
+                    XCTAssertNotEqual(payload, canonical)
+                } catch OutboxEnqueueError.operationIdentityMismatch {
+                    XCTAssertEqual(payload, canonical)
+                }
+            }
+            XCTAssertEqual(try inputRows(url), rows)
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+    }
+
+    func testCatalogueInputConcurrentDifferentAuthoritiesCannotRewriteFirstSuccessfulCheckpoint() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (firstAPI, firstLease) = try await journalSession()
+        let (secondAPI, secondLease) = try await journalSession()
+        let firstStore = LocalStore(modelContainer: try container(url))
+        let secondStore = LocalStore(modelContainer: try container(url))
+        let before = try await journalDisk(url)
+        let flow = UUID()
+        let first = Task {
+            try await firstStore.checkpointCatalogueInput(
+                CatalogueInput(speciesSlug: "first"), flowId: flow, operationId: UUID(),
+                context: firstLease, authority: firstAPI.syncAuthority
+            )
+        }
+        let second = Task {
+            try await secondStore.checkpointCatalogueInput(
+                CatalogueInput(speciesSlug: "second"), flowId: flow, operationId: UUID(),
+                context: secondLease, authority: secondAPI.syncAuthority
+            )
+        }
+        var successes: [CatalogueInputCheckpointSnapshot] = []
+        for result in [await first.result, await second.result] {
+            switch result {
+            case let .success(snapshot): successes.append(snapshot)
+            case let .failure(error):
+                XCTAssertEqual(error as? CatalogueInputCheckpointError, .flowIdentityMismatch)
+            }
+        }
+        XCTAssertEqual(successes.count, 1)
+        let winner = try XCTUnwrap(successes.first)
+        let reopened = LocalStore(modelContainer: try container(url))
+        let read = try await reopened.catalogueInputCheckpoint(
+            flowId: flow, context: firstLease, authority: firstAPI.syncAuthority
+        )
+        XCTAssertEqual(read, winner)
+        XCTAssertEqual(try inputRows(url).count, 1)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
     }
 }
