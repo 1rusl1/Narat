@@ -1,0 +1,55 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-fixture-recovery",
+      "description": "Full recovered DEBUG fixture candidate acceptance and necessary compile/canonical fixture repair after two malformed diff-header attempts.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files ordinary contextual diff; both skeletons controller includes in app/unit Sources BEFORE evidence. No other files/project/config/tools/handoff/tasks/AGENTS/backend/contracts/deploy/live. Accepted native0a9f2ea and all150old tests preserved. This is TEST FIXTURE support ONLY for forthcoming actual UI; no views or app launch wiring, no production fallback/service rewrite. ALL new app fixture definitions inside #if DEBUG; release must have no factory/fake credentials/server. Future separate releasebuild gate verifies it once views wired. Do not use real keychain/accounts/URLs/privileged secrets; no external HTTP/images/provider calls.",
+        "Implement small explicit fixture factory async with closed enum scenarios (Free2,paid4,cap3,server409,server503,lostresponse,guestProviderCancel,guestProviderSuccess; shared primitives not duplicated full frameworks). It returns accepted CatalogueConnection using ONE actual SupabaseClient configured ONLY for https://<namespace>.invalid, injectable URLSession/URLProtocol that rejects every unknown URL, isolated AuthLocalStorage, actual LocalStore persistent namespace, existing API/engine/repo/model and NativeAuthService with fake IDENTITY provider but REAL SupabaseAuthExchange. No second fake model/sync engine or direct .saved state assignment. Native fake provider returns cancellation or fixture credentials; successful service MUST update actual SDK via mocked token HTTP, not synthesize NativeSignInResult.",
+        "Namespace must be caller-supplied validated UUID to confine files/metadata under dedicated app fixture directory and scoped UserDefaults; no arbitrary paths. Separate namespace isolates complete dataset/SDK storage/SQLite/metadata. Factory/context has cleanup/shutdown for unit tests and supports same namespace recreation across app restart without resetting queues/server receipts/auth state. Debug SDK AuthLocalStorage may persist ONLY generated non-secret fixture session data in dedicated fixture file (simulates SDK keychain persistence), never real credentials/appLocalStore/UserDefaults/logs. Production SDK default keychain untouched. Preserve existing correct metadata pointer+SQLite source API, no new app production persistence framework.",
+        "Mock server ledger durable before response: owner-scoped operation->original exact envelope/body/payload+canonical receipt+server-generated fixture UUID, inventory and scenario flags persisted atomically in debug namespace. Real command handler fixture validates caller token owner/anonymous, envelope and exact replay identity; replay returns SAME receipt/plantID, does not increment inventory/createcount. Lostresponse first commits ledger+inventory then throws URLError, recreating factory loads same ledger and full collectioncount3; production model pending resume must bypass new-create cap and use sameHTTPbody/op. Do NOT derive client plantUUID or deterministic response alone that hides duplicate commits. Fixture can choose literal valid fixture UUIDs server-side, existing typedreceipt validation applies. Unknown/wrong requests failclosed; never alter production API to accept mock envelope/status.",
+        "Canonical GETsync from ledger: until/has_more=false/last_cursor=null/next_since/profile/nullableentitlement/changes nesteddata shape, fixed sixdigit microseconds/nondecreasing timestamps, owner association only actual clientcontext. Inventory includes all live plants and created instance matching receipt UUID/data.id, plant_id/species/name/revision/care_revision/created_at for future actual card readback. No owner_id/items/slots/rooms/plan or caregeneration success fabricated. Paid fixture authoritative entitlement SQL predicate active/paid validfuture, Free nullable rights. POST commands normal/409/503 and lost/replay through actual production transport/engine/ACK. Server409 scenario independent of preflightcount (e.g initial2 then reject/race) to exercise authoritative rejection. Server receipt watermark never directly changes client sync checkpoint.",
+        "Mock actual SDK HTTP for anonymous signup/permanent initial signin/native token exchange/currentuser/logout/refresh only needed routes and catalogue RPC search_catalogue_species returning one published-shaped species (EN/PL/scientificname/description optional, hero null so zero media downloads). Use real SDK auth methods to seed correct isAnonymous; preserve scoped SDK session across fixture recreation, no spurious signup after restart. Mockledger authkind/owner metadata allowed, no extraanalysis/quota/installations API invention. ConnectionModel factory from accepted native code determines permissions and continuation, no default permanent flags in app. Release or absent fixture request never calls this factory (wiring separate).",
+        "Add>=6 actual tests in new already-target CatalogueUIFixtureTests (#ifDEBUG as needed) + all150old =>>=156/no skips. Drive real connection/model/nativeService/API/engine/SQLite against fixture (not merely test fixture code): Free2 save->serverID+canonical readback; paid4; cap3 zeroPOST; precheck2/server409 and503 preserveinput/pending; committedlostresponse+factory recreation currentcount3+restore+explicitretry samebody/op/one serverreceipt+durableACK; actual SDK guestcancel/nativeSuccess on SAMEclient with checkpointbeforeprovider and no otherowner transfer; namespaces isolated/fakeauth metadata persists and unknownURL blocked. Focus bounded tests reuse existing model, no renderedUI claim; screenshots/UI launch mode and Releasebuild later. Trusted build/unit/Simulator, independent Reviewer/QA required; fixtures are not live Auth/SQL/AI/StoreKit/fullparents.",
+        "RECOVERY: original run parallel-ios-catalogue-ui-fixtures-20261110-01 BLOCKED after2 repeated identical applyerrors, runtime unchanged atthatpoint. Call2 full42050byte patch SHA90d4518395e76fe7fb6878d57c4ec250cd3715761b7bc9dcb54399d7d842daf6 recovered by controller removing ONLYONE leadingSPACE before second diff --git; alladdedCODElines identical. NormalizedSHA5e1feac48ae36880a6d8eda2aa813ce10003a8e776462026cff2352eef8f2012, trustedapply PASS. Current unaccepted candidate app495added/test270added (8newXCTest); no build/158tests/ReviewQA yet. Inspect ENTIRE candidate since accepted0a9f2ea, notonly freshdelta. Preserve all150old+8candidate=>158actual/no skip, build/Simulator/independentReviewerQA. Existing firstconstraints describeFULL candidate not skeletonimplementation request. Onlynecessary compile/correctness repairs allowed twofiles, no newview/root wiring. Oldrun/answers remainimmutable BLOCKED.",
+        "KNOWN CONTROLLER FIXTURE FIDELITY GAP: recovered GETsync plants data adds care_enabled:false (notin active SQL projection) and hardcodes display_name:Fern (activeSQL usespersonal_name); remove invented care_enabled and match display_name nullablepersonal_name. Source oftruth read-onlySQL202611090004 entityplants projection. Receipt currently complete_conditions/none: align fixture next_available_step/plan_availability/context_state to possible actual catalogue SQL semantics in202611090002/004, not invented care generation or client decisions. Do not weaken production DTOvalidations or tests. Expand existing assertion(s) to prove canonical fixturevalues and absence of inventedfield; fullscenario tests retainendtoend behavior.",
+        "DIFF FORMAT: every diff --git header MUST begin atcolumn1, no leadingSPACE before subsequentheaders. Generate ordinary contextdiff againstCURRENT candidate source, not imports skeletons. Prior same headerSPACE causedtwo applyfailures. Temp-free python3 -c/difflib forsmallrepair patch; agentdoesnotrun controllercheckcommands."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Explicit DEBUG-only isolated fixture factory drives accepted realSDK/nativeService/model/engine/SQLite and persistent mock ledger across restart; scenarios reflect Free/paid/precap/servererrors/lostreceipt without fake product success or live traffic. All150old+>=6new=>156 actual tests/no skips/build/Simulator and independent Review/QA. No renderedUI/live/release acceptance until dedicated gate. Recovery requires ALL158actual tests and FULLcandidate review, canonical fixturedata/receipt values fixed.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
