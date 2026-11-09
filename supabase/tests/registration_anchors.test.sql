@@ -1,7 +1,14 @@
 -- Current schema, real triggers/RPCs, synthetic data only. The controller runs
 -- this after clean installation and after its seeded forward-upgrade snapshot.
 BEGIN;
-SELECT plan(54);
+SELECT plan(55);
+-- Run BEFORE verified-import fixtures: upgrade must exercise an unresolved permanent owner.
+SELECT throws_ok(
+    format('UPDATE public.profiles SET anonymous=true, app_account_token=NULL WHERE id=%L',
+           (SELECT p.id FROM public.profiles p JOIN public.account_quota_anchors a ON a.owner_id=p.id
+            WHERE NOT p.anonymous ORDER BY a.registered_at NULLS FIRST,p.id LIMIT 1)),
+    '55000','REGISTRATION_ANCHOR_IMMUTABLE',
+    'Permanent owner including unresolved legacy cannot revert to guest');
 
 CREATE TEMP TABLE anchor_import_target AS
 SELECT p.id, to_jsonb(p) AS profile_before, a.registered_at AS original_at,

@@ -28,7 +28,9 @@ consumed=7 Free remaining=0. Возврат в paid даёт 93, а не нов�
 
 Forward migrations: `202611090005_registration_quotas.sql` (anchor/окна),
 `202611090006_registration_ledger.sql` (перенос учёта), затем
-`202611090007_quota_admission.sql` (RPC). Это последовательные срезы, до третьего
+`202611090007_registration_state_guard.sql` (legacy permanent не может стать guest),
+`202611090008_quota_reservation.sql` (reserve),
+`202611090009_quota_settlement.sql` (finalize/bind). До последнего среза
 старый admission не считается заменённым; выкатывать их вместе после приёмки.
 
 `account_quota_anchors(owner_id,registered_at,source)` — отдельный внутренний

@@ -1,6 +1,63 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-09.** B запущена в отдельном worktree/ветке codex/plants-backend от 4bbd35a; подготовлены контракт T163 и два SQL-среза с отдельным trusted PG17 gate. Реальная приёмка этих SQL ещё впереди; T163/T036 открыты. A независимо ведёт клиентский sync; collection-http.md стабилен.
+**Обновлено 2026-11-09.** B/codex/plants-backend: приняты и опубликованы T163 anchors21ee7a7 и ledger e6b1f7c; combined admission/finalize run02 — timeout900s без патча. Найден и подготовлен отдельный forward guard007 для unresolved legacy; reserve008 →settlement009 идут новым bounded run03. Полный T163/API/client/live открыты. collection-http.md и Swift неизменны.
+
+## B / T163 — два принятых SQL-среза, legacy guard и run03
+
+**Опубликовано:** `21ee7a7` —005 immutable anchors/UTC-window и54 pgTAP;
+`e6b1f7c` —006 shared usage/legacy reconciliation и49 pgTAP. Run02:
+anchors1 Developer/1 Reviewer/1 QA; ledger2 Developer (fixture published-release
+conflict исправлен)/1 Reviewer/1 QA. В обоих clean/upgrade старые public rows
+сохранены; по12 UTC window cases; для ledger по54+49 pgTAP,336 Deno fixtures,
+115 automation fixtures, deno-check/diff PASS. State/отчёты —
+`docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-02/`.
+Третий combined admission/finalize вызов: **900s timeout без answer/patch**,
+WAITING,007 не создан. Run02 завершён, не resume с новым config.
+
+**Дополнительный аудит контроллера:** до verified-import тестового setup legacy
+permanent с registered_at=NULL допускает anonymous=true→false и получает clock
+anchor. Отрицательный реальный PG upgrade test: FAIL1/55,
+`/tmp/narat-b163-anchor-review/proof.log`. Владелец подтвердил fail-closed неизвестной
+даты, поэтому этот обход обязателен к исправлению. A уведомлена: SHA21ee7/e6b1
+пока не merge-ready bundle. Оба среза опубликованы, но это не готовая T163.
+
+**Подготовлено, ещё не независимо принято:** следующая свободная007 стала
+`supabase/migrations/202611090007_registration_state_guard.sql` (BEFORE permanent→guest,
+независимо от NULL anchor); принятые005/006 не переписывались. В
+`registration_anchors.test.sql` добавлен55-й case **до** тестового импорта.
+`parallel_backend_quota_gate.py --anchors --legacy-guard` теперь загружает все
+forward migrations и отдельно проверяет unknown-owner B; --reserve — отдельная
+ограниченная приёмка reserve, с99 историческими consumed-fixtures и20 реальными
+waiters. Она **не заменяет** итоговый default gate: после009 тот всё ещё делает
+99 настоящих admit/finalize и6 раундов по20 соединений, terminal/failure/replay.
+Контракт monthly-access.md обновлён:007 guard →008 reserve →009 settlement/bind.
+
+Новый manifest `tasks.parallel-backend-quota-sql-finalization.json`: guard candidate
+→reserve-only →settlement; внешние принятые SHA — constraints, depends_on только
+внутри manifest. Routing/retry/budgets сохранены; config hash
+`59ed00ee3315c8db379677e7aa0ef1558cc7b9be590b64f626d9cf3f043e31ff`, publish только
+origin/codex/plants-backend; общий default config не менялся. Новые checks:
+`parallel-backend-quota-legacy-guard` argv `python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard`;
+`parallel-backend-quota-reserve` argv `python3 tools/automation/parallel_backend_quota_gate.py --reserve`;
+оба unit/fixture/300s. Полный gate прежнего ID теперь требует settlement009.
+Validate3/context/diff PASS; guard в реальном проекте clean/upgrade55 pgTAP+12 UTC
+и trusted unknown-state probe PASS, `/tmp/narat-b163-guard-project.log`.
+
+**Координация:** A передала accepted transport7cb5893 (43 Swift) и engine/disk643622b
+(49 Swift),336 Deno/build/Simulator/ReviewQA; это её fixtures, B их не запускала.
+Durable receipt/repository/UI/save/live и полный T162 у A открыты. Старое sync
+quota_anchor_at сохранено как historical purchase field, A не трактует его как
+registration. Не менять активный HEAD ради merge.
+
+**Ограничения/следующий шаг:** commit/push подготовки, чистое дерево → новый
+`parallel-backend-quota-sql-20261109-03` с явным branch --config. После guard/reserve/
+settlement и full20-connection gate — отдельный B2 SQL snapshot/production access
+adapter/ENPL fixtures/ошибки. Фото job/worker сейчас injection-only (deployed worker
+лишь readiness), поэтому нельзя отвечать фиктивным202 в неработающую очередь;
+настоящий pipeline — boundedT153/T031–034. Auth/Supabase/Storage/provider/StoreKit
+live не проверялись; B не запускала Swift/Simulator. Все parent checkbox открыты,
+клиент T036 и live evidence обязательны. Владелец прямо подтвердил блокировку
+unknown legacy даты до verified Auth import; повторного вопроса не требуется.
 
 ## B / T163 — run-01 WAITING и recovery, 2026-11-09
 
@@ -361,6 +418,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
+- B active: codex/plants-backend отдельного worktree; T163 anchors21ee7a7 и ledger e6b1f7c приняты на fixtures. Combined admission run02 WAITING timeout/no patch. Legacy permanent NULL-anchor reversal обнаружен отдельно; guard007 candidate validated55 pgTAP, затем reserve008/settlement009/run03. До guard+admission bundle не передавать для merge; API/client/live ещё открыты. Пользователь подтвердил unknown-date fail-closed. A1 transport7cb5893 и A2 engine/disk643622b приняты A, полныйT162/receipt/repository/UI/live впереди.
+
 - Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN/PL; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 151 задача: 14 отмечены (12 исторических + T156 документ + T161 серверный пакет), 137 открыты; 23 снятых. Из открытых T172–T174 — отдельные необязательные комнаты; пакеты T161–T174 описаны в orchestrator-cleanup-tasks.md, T161 принят по серверному контракту: cap b5f2c8f, slots 01ba170, TS/API eb58c03; fixtures PostgreSQL/Deno, live/client отдельно. Остальные manifests/gates готовятся перед запуском. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
@@ -381,3 +440,22 @@ parallel-backend-t163-registration-ledger-v2: проверки и Review/QA пр
 <!-- /orchestrator:task-summary -->
 
 Recovery negative control `--baseline --anchors` повторён: ожидаемый exit1 на старом Free1/calendar, `/tmp/narat-b163-baseline-v2.log`; это не продуктовый PASS.
+
+
+Перед run03 дополнительно: `python3 -m unittest discover -s tools/automation/tests -q`
+— **115 tests / OK**, `/tmp/narat-b163-finalization-automation.log`.
+Общий неизменённый `t161_collection_gate.py --slots` — **FAIL** на seeded-upgrade
+snapshot equality после добавления новых таблиц005/006; clean131pgTAP/две гонки
+успели пройти, это не полный PASS. Лог `/tmp/narat-b163-guard-cap.log`.
+A уведомлена, общий runner/config не изменялся. Новый controller-owned режим
+`python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard --cap-regression`
+— **PASS**: clean и upgrade по55 anchor +131 T161 pgTAP, четыре настоящие
+owner-lock гонки, все preexisting public rows сохранены. Лог
+`/tmp/narat-b163-guard-cap-v2.log`. SQL tests и race implementation T161 скопированы
+без изменения условий; generic quota KB fixture имеет draft state, а исходный
+T161 catalogue fixture остаётся единственным published release.
+Check ID `parallel-backend-cap-regression`, unit/fixture/300s; argv — команда выше.
+Он заменяет ошибочное strict-table-key equality только в этой branch config,
+не старый shared runner. Root gate дополнительно сравнивает все прежние строки,
+новые таблицы допускает как additions. Самостоятельный negative old upgrade
+probe остаётся FAIL1/55; guard candidate — ещё до независимой приёмки.

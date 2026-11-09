@@ -67,3 +67,45 @@ Validate3/context/diff PASS; следующий run-id parallel-backend-quota-sq
 Владелец подтвердил fail-closed неизвестной legacy даты; это больше не ожидаемый ответ.
 
 Recovery negative control `--baseline --anchors` повторён: ожидаемый exit1 на старом Free1/calendar, `/tmp/narat-b163-baseline-v2.log`; это не продуктовый PASS.
+
+
+## Run02 результат и run03 подготовка
+
+Accepted/pushed anchors21ee7a7, ledgere6b1f7c;336 Deno115 automation,clean/upgrade
+54+49 pgTAP+12 UTC each. Thirdcombined admission/finalize timeout900/noanswer/nopatch,
+WAITING. Raw logs preserved;007 never existed/applied. Next free007 is now narrow
+registration_state_guard (controller candidate),008_quota_reservation and009_quota_settlement
+are separate bounded pendingtasks. Old manifests/runs are audit, do not resume.
+
+Controller negative upgrade probe BEFORE verified import reproduced legacy NULL
+anchor permanent→guest reversal: FAIL1/55 `/tmp/narat-b163-anchor-review/proof.log`.
+Project guard007 +55 test + independent protected probe now PASS clean/upgrade,
+`/tmp/narat-b163-guard-project.log`. Accepted005/006 unchanged. Notindependentacceptanceyet.
+
+Newmanifest tasks.parallel-backend-quota-sql-finalization.json validate3/context/diffPASS.
+Newconfig hash59ed00ee3315c8db379677e7aa0ef1558cc7b9be590b64f626d9cf3f043e31ff.
+Newcheck parallel-backend-quota-legacy-guard argv python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard;
+newcheck parallel-backend-quota-reserve argv python3 tools/automation/parallel_backend_quota_gate.py --reserve;
+bothunit/fixture/300s, routing/budgets/publishunchanged.
+Reserve-only seeds99 historical consumedfixtures, real20connections; never claimfull
+T163 fromit. Defaultgate after009still uses99 ACTUALadmit+finalize andsix20-connection
+rounds. Nextactualrun parallel-backend-quota-sql-20261109-03. FullAPI/T036/livepending.
+
+
+Перед run03 дополнительно: `python3 -m unittest discover -s tools/automation/tests -q`
+— **115 tests / OK**, `/tmp/narat-b163-finalization-automation.log`.
+Общий неизменённый `t161_collection_gate.py --slots` — **FAIL** на seeded-upgrade
+snapshot equality после добавления новых таблиц005/006; clean131pgTAP/две гонки
+успели пройти, это не полный PASS. Лог `/tmp/narat-b163-guard-cap.log`.
+A уведомлена, общий runner/config не изменялся. Новый controller-owned режим
+`python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard --cap-regression`
+— **PASS**: clean и upgrade по55 anchor +131 T161 pgTAP, четыре настоящие
+owner-lock гонки, все preexisting public rows сохранены. Лог
+`/tmp/narat-b163-guard-cap-v2.log`. SQL tests и race implementation T161 скопированы
+без изменения условий; generic quota KB fixture имеет draft state, а исходный
+T161 catalogue fixture остаётся единственным published release.
+Check ID `parallel-backend-cap-regression`, unit/fixture/300s; argv — команда выше.
+Он заменяет ошибочное strict-table-key equality только в этой branch config,
+не старый shared runner. Root gate дополнительно сравнивает все прежние строки,
+новые таблицы допускает как additions. Самостоятельный negative old upgrade
+probe остаётся FAIL1/55; guard candidate — ещё до независимой приёмки.
