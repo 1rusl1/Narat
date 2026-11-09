@@ -381,6 +381,15 @@
       "stage": "static",
       "mode": "local",
       "timeout": 30
+    },
+    "t158-rooms-upgrade": {
+      "argv": [
+        "python3",
+        "tools/automation/t158_rooms_gate.py"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 300
     }
   },
   "publish": {
