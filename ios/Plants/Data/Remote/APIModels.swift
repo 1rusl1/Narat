@@ -445,3 +445,299 @@ enum SQLTimestamp {
         return whole.addingTimeInterval(fraction - Double(offset))
     }
 }
+
+// MARK: - Canonical SQL sync wire (legacy DTOs above remain disk-compatible)
+
+/// Recursive SQL JSON data; numbers are decoded without a Double conversion.
+public indirect enum SyncWireJSON: Codable, Sendable, Equatable {
+    case object([String: SyncWireJSON])
+    case array([SyncWireJSON])
+    case string(String)
+    case number(Decimal)
+    case bool(Bool)
+    case null
+
+    public init(from decoder: any Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() { self = .null }
+        else if let bool = try? value.decode(Bool.self) { self = .bool(bool) }
+        else if let string = try? value.decode(String.self) { self = .string(string) }
+        else if let object = try? value.decode([String: SyncWireJSON].self) { self = .object(object) }
+        else if let array = try? value.decode([SyncWireJSON].self) { self = .array(array) }
+        else { self = .number(try value.decode(Decimal.self)) }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case let .object(object): try value.encode(object)
+        case let .array(array): try value.encode(array)
+        case let .string(string): try value.encode(string)
+        case let .number(number): try value.encode(number)
+        case let .bool(bool): try value.encode(bool)
+        case .null: try value.encodeNil()
+        }
+    }
+}
+
+public enum SyncWireValidationError: Error, Sendable {
+    case invalidRequest
+    case invalidPage
+    case invalidSession
+}
+
+/// All timestamp properties intentionally retain their original SQL spelling.
+public struct SyncWireCursorDTO: Decodable, Sendable, Equatable {
+    public let since: String?
+    public let until: String
+    public let updatedAt: String
+    public let entityType: String
+    public let id: UUID
+
+    public init(since: String?, until: String, updatedAt: String, entityType: String, id: UUID) {
+        self.since = since
+        self.until = until
+        self.updatedAt = updatedAt
+        self.entityType = entityType
+        self.id = id
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case since, until, id
+        case updatedAt = "updated_at"
+        case entityType = "entity_type"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // decode(Optional.self), rather than decodeIfPresent, requires the nullable key.
+        since = try values.decode(String?.self, forKey: .since)
+        until = try values.decode(String.self, forKey: .until)
+        updatedAt = try values.decode(String.self, forKey: .updatedAt)
+        entityType = try values.decode(String.self, forKey: .entityType)
+        id = try values.decode(UUID.self, forKey: .id)
+        guard SyncWireRules.validCursor(self) else { throw SyncWireValidationError.invalidPage }
+    }
+}
+
+public struct SyncWireChangeDTO: Decodable, Sendable, Equatable {
+    public let entityType: String
+    public let id: UUID
+    public let updatedAt: String
+    public let deletedAt: String?
+    public let data: SyncWireJSON
+
+    enum CodingKeys: String, CodingKey {
+        case id, data
+        case entityType = "entity_type"
+        case updatedAt = "updated_at"
+        case deletedAt = "deleted_at"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        entityType = try values.decode(String.self, forKey: .entityType)
+        id = try values.decode(UUID.self, forKey: .id)
+        updatedAt = try values.decode(String.self, forKey: .updatedAt)
+        deletedAt = try values.decode(String?.self, forKey: .deletedAt)
+        data = try values.decode(SyncWireJSON.self, forKey: .data)
+        guard SyncWireRules.entityTypes.contains(entityType),
+              SQLTimestamp.microseconds(from: updatedAt) != nil,
+              deletedAt == nil || SQLTimestamp.microseconds(from: deletedAt!) != nil else {
+            throw SyncWireValidationError.invalidPage
+        }
+        if deletedAt == nil {
+            guard case .object = data else { throw SyncWireValidationError.invalidPage }
+        } else {
+            guard data == .null else { throw SyncWireValidationError.invalidPage }
+        }
+    }
+}
+
+public struct SyncWireProfileDTO: Decodable, Sendable, Equatable {
+    public let preferredLocale: String
+    public let reminderHourLocal: Int
+    public let reportNotificationsEnabled: Bool
+    public let trialReminderEnabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case preferredLocale = "preferred_locale"
+        case reminderHourLocal = "reminder_hour_local"
+        case reportNotificationsEnabled = "report_notifications_enabled"
+        case trialReminderEnabled = "trial_reminder_enabled"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        preferredLocale = try values.decode(String.self, forKey: .preferredLocale)
+        reminderHourLocal = try values.decode(Int.self, forKey: .reminderHourLocal)
+        reportNotificationsEnabled = try values.decode(Bool.self, forKey: .reportNotificationsEnabled)
+        trialReminderEnabled = try values.decode(Bool.self, forKey: .trialReminderEnabled)
+        guard ["en", "pl"].contains(preferredLocale), (0...23).contains(reminderHourLocal) else {
+            throw SyncWireValidationError.invalidPage
+        }
+    }
+}
+
+public struct SyncWireEntitlementDTO: Decodable, Sendable, Equatable {
+    public let productId: String
+    public let state: String
+    public let offerKind: String
+    public let validUntil: String?
+    public let graceUntil: String?
+    public let trialEndAt: String?
+    public let autoRenewEnabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case productId = "product_id"
+        case state
+        case offerKind = "offer_kind"
+        case validUntil = "valid_until"
+        case graceUntil = "grace_until"
+        case trialEndAt = "trial_end_at"
+        case autoRenewEnabled = "auto_renew_enabled"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        productId = try values.decode(String.self, forKey: .productId)
+        state = try values.decode(String.self, forKey: .state)
+        offerKind = try values.decode(String.self, forKey: .offerKind)
+        validUntil = try values.decode(String?.self, forKey: .validUntil)
+        graceUntil = try values.decode(String?.self, forKey: .graceUntil)
+        trialEndAt = try values.decode(String?.self, forKey: .trialEndAt)
+        autoRenewEnabled = try values.decode(Bool.self, forKey: .autoRenewEnabled)
+        guard !productId.isEmpty, !state.isEmpty, ["trial", "paid"].contains(offerKind),
+              [validUntil, graceUntil, trialEndAt].allSatisfy({
+                  $0 == nil || SQLTimestamp.microseconds(from: $0!) != nil
+              }) else { throw SyncWireValidationError.invalidPage }
+    }
+}
+
+public struct SyncWirePageDTO: Decodable, Sendable, Equatable {
+    public let until: String
+    public let hasMore: Bool
+    public let lastCursor: SyncWireCursorDTO?
+    public let nextSince: String?
+    public let profile: SyncWireProfileDTO
+    public let entitlement: SyncWireEntitlementDTO?
+    public let changes: [SyncWireChangeDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case until, profile, entitlement, changes
+        case hasMore = "has_more"
+        case lastCursor = "last_cursor"
+        case nextSince = "next_since"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        until = try values.decode(String.self, forKey: .until)
+        hasMore = try values.decode(Bool.self, forKey: .hasMore)
+        lastCursor = try values.decode(SyncWireCursorDTO?.self, forKey: .lastCursor)
+        nextSince = try values.decode(String?.self, forKey: .nextSince)
+        profile = try values.decode(SyncWireProfileDTO.self, forKey: .profile)
+        entitlement = try values.decode(SyncWireEntitlementDTO?.self, forKey: .entitlement)
+        changes = try values.decode([SyncWireChangeDTO].self, forKey: .changes)
+        try validate(since: lastCursor?.since, requestedUntil: nil, cursor: nil, limit: 500)
+    }
+
+    func validate(since: String?, requestedUntil: String?, cursor: SyncWireCursorDTO?, limit: Int) throws {
+        guard let end = SQLTimestamp.microseconds(from: until), changes.count <= limit,
+              requestedUntil == nil || SyncWireRules.sameTime(requestedUntil, until),
+              since == nil || SQLTimestamp.microseconds(from: since!).map({ $0 <= end }) == true else {
+            throw SyncWireValidationError.invalidPage
+        }
+        var previous = cursor.map { SyncWireRules.key($0.updatedAt, $0.entityType, $0.id) }
+        for change in changes {
+            let key = SyncWireRules.key(change.updatedAt, change.entityType, change.id)
+            guard key.0 <= end,
+                  since == nil || SQLTimestamp.microseconds(from: since!).map({ key.0 > $0 }) == true,
+                  previous == nil || previous! < key else { throw SyncWireValidationError.invalidPage }
+            previous = key
+        }
+        if hasMore {
+            guard let lastCursor, let last = changes.last, nextSince == nil,
+                  SyncWireRules.sameTime(lastCursor.since, since),
+                  SyncWireRules.sameTime(lastCursor.until, until),
+                  SyncWireRules.key(lastCursor.updatedAt, lastCursor.entityType, lastCursor.id)
+                    == SyncWireRules.key(last.updatedAt, last.entityType, last.id) else {
+                throw SyncWireValidationError.invalidPage
+            }
+        } else {
+            guard lastCursor == nil, SyncWireRules.sameTime(nextSince, until) else {
+                throw SyncWireValidationError.invalidPage
+            }
+        }
+    }
+}
+
+/// Ownership is local authenticated context, never a field supplied by the response.
+public struct SyncWireResult: Sendable, Equatable {
+    public let ownerId: UUID
+    public let page: SyncWirePageDTO
+}
+
+enum SyncWireRules {
+    static let entityTypes: Set<String> = [
+        "plants", "condition_snapshots", "photo_assets", "analysis_summaries",
+        "care_plan_summaries", "care_tasks", "care_entries", "care_reversals",
+        "schedule_changes", "basic_care_memberships", "first_aid_followups",
+        "care_observations", "recovery_transitions", "notification_claim_summaries"
+    ]
+
+    static func sameTime(_ lhs: String?, _ rhs: String?) -> Bool {
+        guard let lhs, let rhs else { return lhs == nil && rhs == nil }
+        guard let parsed = SQLTimestamp.microseconds(from: lhs) else { return false }
+        return parsed == SQLTimestamp.microseconds(from: rhs)
+    }
+
+    static func key(_ timestamp: String, _ entity: String, _ id: UUID) -> (Int64, String, String) {
+        // Only called after validating timestamps. UUID hex order matches PostgreSQL UUID order.
+        (SQLTimestamp.microseconds(from: timestamp)!, entity, id.uuidString.lowercased())
+    }
+
+    static func validCursor(_ cursor: SyncWireCursorDTO) -> Bool {
+        guard let end = SQLTimestamp.microseconds(from: cursor.until),
+              let position = SQLTimestamp.microseconds(from: cursor.updatedAt),
+              entityTypes.contains(cursor.entityType), position <= end else { return false }
+        return cursor.since == nil ||
+            SQLTimestamp.microseconds(from: cursor.since!).map({ $0 < position }) == true
+    }
+
+    static func validateRequest(since: String?, until: String?, cursor: SyncWireCursorDTO?, limit: Int) throws {
+        guard (1...500).contains(limit),
+              since == nil || SQLTimestamp.microseconds(from: since!) != nil,
+              until == nil || SQLTimestamp.microseconds(from: until!) != nil else {
+            throw SyncWireValidationError.invalidRequest
+        }
+        if let since, let until {
+            guard SQLTimestamp.microseconds(from: since)! <= SQLTimestamp.microseconds(from: until)! else {
+                throw SyncWireValidationError.invalidRequest
+            }
+        }
+        if let cursor {
+            guard validCursor(cursor), until != nil,
+                  sameTime(cursor.since, since), sameTime(cursor.until, until) else {
+                throw SyncWireValidationError.invalidRequest
+            }
+        }
+    }
+}
+
+extension SQLTimestamp {
+    /// Parse the whole second separately so binary Date fractions cannot merge adjacent SQL microseconds.
+    static func microseconds(from raw: String) -> Int64? {
+        guard date(from: raw) != nil else { return nil }
+        let fractionRange = raw.range(of: #"\.[0-9]{1,6}"#, options: .regularExpression)
+        var whole = raw
+        var fraction: Int64 = 0
+        if let fractionRange {
+            let digits = String(raw[fractionRange].dropFirst())
+            fraction = Int64(digits + String(repeating: "0", count: 6 - digits.count))!
+            whole.removeSubrange(fractionRange)
+        }
+        guard let seconds = date(from: whole) else { return nil }
+        return Int64(seconds.timeIntervalSince1970.rounded()) * 1_000_000 + fraction
+    }
+}

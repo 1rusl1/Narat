@@ -236,3 +236,39 @@ private enum CatalogueCreateWire {
         return true
     }
 }
+
+// MARK: - Canonical SQL transport, separate from the legacy engine API
+
+extension PlantsAPIClient {
+    /// The caller supplies one authenticated session for both ownership and Authorization.
+    /// This does not apply changes or advance any persisted checkpoint.
+    public func fetchSyncWirePage(
+        session: NativeAuthSession,
+        since: String? = nil,
+        until: String? = nil,
+        cursor: SyncWireCursorDTO? = nil,
+        limit: Int = 200
+    ) async throws -> SyncWireResult {
+        guard !session.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              session.expiresAt > Date() else { throw SyncWireValidationError.invalidSession }
+        try SyncWireRules.validateRequest(since: since, until: until, cursor: cursor, limit: limit)
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let since { query.append(URLQueryItem(name: "since", value: since)) }
+        if let until { query.append(URLQueryItem(name: "until", value: until)) }
+        if let cursor {
+            query.append(URLQueryItem(name: "cursor_updated_at", value: cursor.updatedAt))
+            query.append(URLQueryItem(name: "cursor_entity_type", value: cursor.entityType))
+            query.append(URLQueryItem(name: "cursor_id", value: cursor.id.uuidString.lowercased()))
+        }
+        var request = try buildRequest(path: "sync", method: "GET", queryItems: query)
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        // A literal '+' must not be interpreted as a form-encoded space by a query parser.
+        if let url = request.url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            request.url = components.url
+        }
+        let page = try await execute(request, as: SyncWirePageDTO.self)
+        try page.validate(since: since, requestedUntil: until, cursor: cursor, limit: limit)
+        return SyncWireResult(ownerId: session.userId, page: page)
+    }
+}
