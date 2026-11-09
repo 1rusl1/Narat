@@ -30,7 +30,7 @@ export interface MonthlyQuotaWindowState {
 }
 
 export interface ModeAccessSummary {
-  mode: "identification" | "diagnosis" | "follow_up";
+  mode: "identification" | "diagnosis";
   allowed: boolean;
   activeQuotaKind: AnalysisQuotaKind;
   remaining: number;
@@ -42,8 +42,7 @@ export interface ModeAccessSummary {
     | "starter_exhausted"
     | "free_monthly_starts_next_utc_month"
     | "free_monthly_exhausted"
-    | "paid_monthly_exhausted"
-    | "paid_subscription_required_for_follow_up";
+    | "paid_monthly_exhausted";
 }
 
 export interface AnalysisAccessSnapshotResponse {
@@ -58,7 +57,6 @@ export interface AnalysisAccessSnapshotResponse {
   modes: {
     identification: ModeAccessSummary;
     diagnosis: ModeAccessSummary;
-    follow_up: ModeAccessSummary;
   };
 }
 
@@ -139,21 +137,8 @@ export class AnalysisAccess {
     );
 
     const evaluateMode = (
-      mode: "identification" | "diagnosis" | "follow_up",
+      mode: "identification" | "diagnosis",
     ): ModeAccessSummary => {
-      if (mode === "follow_up" && !hasPaid) {
-        return {
-          mode,
-          allowed: false,
-          activeQuotaKind: "none",
-          remaining: 0,
-          limit: 0,
-          inProgressJobId: null,
-          nextResetAt: null,
-          reason: "paid_subscription_required_for_follow_up",
-        };
-      }
-
       if (hasPaid) {
         const win = params.paidMonthlyWindow;
         const limit = win?.limitCount ?? 100;
@@ -294,7 +279,6 @@ export class AnalysisAccess {
       modes: {
         identification: evaluateMode("identification"),
         diagnosis: evaluateMode("diagnosis"),
-        follow_up: evaluateMode("follow_up"),
       },
     };
   }

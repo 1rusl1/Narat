@@ -1,5 +1,5 @@
 // supabase/functions/analysis-worker/index.ts
-// T034: Background worker for Vision classification jobs (identification, diagnosis, follow_up).
+// T034: Background worker for Vision classification jobs (identification, diagnosis).
 // Enforces 40s provider timeout, 55s total job deadline, daily ProviderBudgetGuard <= $10 USD,
 // and settles lease/quota exactly once against the original reserved period.
 
@@ -23,7 +23,8 @@ export interface LeasedAnalysisJob {
   ownerId: string | null;
   installationId: string | null;
   kbReleaseId: string;
-  mode: "identification" | "diagnosis" | "follow_up";
+  // Persisted adapter data is untrusted, including jobs queued before mode removal.
+  mode: string;
   locale: "pl" | "en";
   imageBase64: string;
   mediaType: "image/jpeg" | "image/png" | "image/webp";
@@ -34,7 +35,6 @@ export interface LeasedAnalysisJob {
     pot_type?: string;
     season_override?: string;
   };
-  comparisonTraitsHint?: string[];
   quotaKind: string;
   monthlyQuotaId: string | null;
   leaseExpiresAt: string;
@@ -80,6 +80,27 @@ export async function processSingleQueuedJob(params: {
 
   if (!job) {
     return { processed: false };
+  }
+
+  // Reject legacy/unknown persisted modes before loading KB or reserving provider budget.
+  // The original analysis quota is released only through the normal idempotent finalizer.
+  if (job.mode !== "identification" && job.mode !== "diagnosis") {
+    const settled = await params.workerAdapter.finalizeJobOnce({
+      jobId: job.id,
+      outcome: "failed",
+      isNonBillableResult: true,
+      projection: null,
+      errorCode: "UNSUPPORTED_ANALYSIS_MODE",
+      errorMessage: "This analysis mode is no longer supported. Submit a new diagnosis.",
+      now,
+    });
+    return {
+      processed: true,
+      jobId: job.id,
+      outcome: "failed",
+      quotaState: settled.quotaState,
+      errorCode: "UNSUPPORTED_ANALYSIS_MODE",
+    };
   }
 
   // Enforce that only Vision classification modes ever invoke the provider
@@ -128,7 +149,6 @@ export async function processSingleQueuedJob(params: {
         imageBase64: job.imageBase64,
         mediaType: job.mediaType,
         careContext: job.careContext,
-        comparisonTraitsHint: job.comparisonTraitsHint,
         catalog,
         signingSecret: params.signingSecret,
       });

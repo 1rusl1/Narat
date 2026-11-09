@@ -1,6 +1,6 @@
 // supabase/functions/_shared/AnthropicAdapter.ts
 // T032: Classification-only AnthropicAdapter pinned to claude-haiku-5-5 with 40s timeout and maxRetries=0.
-// Uses separate prompts for identification vs diagnosis/follow_up, enforces stop_reason === 'end_turn',
+// Uses separate prompts for identification vs diagnosis, enforces stop_reason === 'end_turn',
 // validates against AnalysisValidator (Schema 3.0 + KB membership), and delegates advice/receipts to ProtocolResolver.
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -23,7 +23,7 @@ export const PROVIDER_CALL_TIMEOUT_MS = 40_000;
 export interface AnthropicClassificationInput {
   analysisId: string;
   jobId: string;
-  mode: "identification" | "diagnosis" | "follow_up";
+  mode: "identification" | "diagnosis";
   locale: "pl" | "en";
   imageBase64: string;
   mediaType: "image/jpeg" | "image/png" | "image/webp";
@@ -34,7 +34,6 @@ export interface AnthropicClassificationInput {
     pot_type?: string;
     season_override?: string;
   };
-  comparisonTraitsHint?: string[];
   catalog: PublishedReleaseCatalog;
   signingSecret: string;
 }
@@ -46,6 +45,7 @@ export interface AnthropicAdapterResult {
   projection?: PreliminaryAnalysisProjection;
   shouldConsumeQuota: boolean;
   errorCode?:
+    | "UNSUPPORTED_ANALYSIS_MODE"
     | "PROVIDER_REFUSAL"
     | "PROVIDER_TRUNCATED"
     | "PROVIDER_INVALID_JSON"
@@ -81,25 +81,19 @@ export interface AnthropicMessagesClient {
 }
 
 export function buildSystemPrompt(
-  mode: "identification" | "diagnosis" | "follow_up",
+  mode: "identification" | "diagnosis",
   kbReleaseId: string,
   locale: "pl" | "en",
 ): string {
+  if (mode !== "identification" && mode !== "diagnosis") {
+    throw new Error("Unsupported analysis mode.");
+  }
   if (mode === "identification") {
     return [
       `You are a strict botanical species classifier for indoor houseplants (schema_version="3.0", kb_release_id="${kbReleaseId}", mode="identification", locale="${locale}").`,
       "Perform ONLY species/genus identification using closed KB plant_id and genus_id identifiers.",
-      "Set diagnosis=null, comparison=null, and visual_markers=[].",
+      "Set diagnosis=null and visual_markers=[].",
       "Do NOT diagnose diseases, do NOT generate care advice, plans, product names, or clarifying questions.",
-      "Return ONLY a single valid JSON object conforming to Classification 3.0.",
-    ].join(" ");
-  }
-
-  if (mode === "follow_up") {
-    return [
-      `You are a strict plant pathology follow-up classifier (schema_version="3.0", kb_release_id="${kbReleaseId}", mode="follow_up", locale="${locale}").`,
-      "Classify species/genus, up to 2 candidate condition_ids with rank (1..2) and confidence (0..1), visual_markers from the published ConditionProfile, and comparison trend + observed_trait_ids.",
-      "Do NOT generate care advice, treatment steps, product names, or clarifying questions.",
       "Return ONLY a single valid JSON object conforming to Classification 3.0.",
     ].join(" ");
   }
@@ -107,7 +101,7 @@ export function buildSystemPrompt(
   return [
     `You are a strict plant pathology visual classifier (schema_version="3.0", kb_release_id="${kbReleaseId}", mode="diagnosis", locale="${locale}").`,
     "Classify species/genus, up to 2 candidate condition_ids from the closed 40 condition IDs with rank (1..2) and confidence (0..1), and visual_markers from the published ConditionProfile.",
-    "Set comparison=null. Do NOT generate care advice, first-aid text, plans, product names, or clarifying questions.",
+    "Do NOT generate care advice, first-aid text, plans, product names, or clarifying questions.",
     "Return ONLY a single valid JSON object conforming to Classification 3.0.",
   ].join(" ");
 }
@@ -131,6 +125,15 @@ export class AnthropicAdapter {
   async classifyAndResolve(
     input: AnthropicClassificationInput,
   ): Promise<AnthropicAdapterResult> {
+    // Inputs crossing an adapter boundary still require runtime validation.
+    if (input.mode !== "identification" && input.mode !== "diagnosis") {
+      return {
+        ok: false,
+        shouldConsumeQuota: false,
+        errorCode: "UNSUPPORTED_ANALYSIS_MODE",
+        errorMessage: "Unsupported analysis mode.",
+      };
+    }
     const systemPrompt = buildSystemPrompt(
       input.mode,
       input.catalog.kbReleaseId,
@@ -142,7 +145,6 @@ export class AnthropicAdapter {
       mode: input.mode,
       locale: input.locale,
       care_context: input.careContext ?? null,
-      comparison_traits_hint: input.comparisonTraitsHint ?? null,
     };
 
     try {

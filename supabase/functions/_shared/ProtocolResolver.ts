@@ -33,7 +33,7 @@ export interface PreliminaryAnalysisProjection {
   analysis_id: string;
   job_id: string;
   kb_release_id: string;
-  mode: "identification" | "diagnosis" | "follow_up";
+  mode: "identification" | "diagnosis";
   locale: "pl" | "en";
   identification_status: "identified" | "genus_only" | "unknown" | "out_of_scope";
   plant_id: string | null;
@@ -60,6 +60,10 @@ export interface PreliminaryAnalysisProjection {
     | "context_stale";
   analysis_receipt: string;
 }
+
+// Historical GET/replay data only. Never feed a saved result back into classification.
+export type LegacyPreliminaryAnalysisProjection =
+  Omit<PreliminaryAnalysisProjection, "mode"> & { mode: "follow_up" };
 
 const FALLBACK_SAFE_FIRST_AID = {
   pl: {
@@ -199,6 +203,9 @@ export class ProtocolResolver {
       catalog,
       signingSecret,
     } = params;
+    if (classification.mode !== "identification" && classification.mode !== "diagnosis") {
+      throw new Error("Unsupported analysis mode.");
+    }
     const host = params.hostContext ?? { plantId: classification.identification.plant_id };
     const locale = classification.locale;
     const issuedAt = params.issuedAt ?? new Date().toISOString();
@@ -248,7 +255,7 @@ export class ProtocolResolver {
       };
     }
 
-    // 2. Diagnosis or Follow-up mode
+    // 2. Diagnosis mode (including a new photo of the same plant)
     const diag = classification.diagnosis!;
     const decisionRevision = params.decisionState?.revision ?? 1;
 

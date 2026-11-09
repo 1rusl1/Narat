@@ -15,7 +15,12 @@ public enum AddMethod: String, Codable, Sendable, CaseIterable, Equatable {
 public enum AnalysisMode: String, Codable, Sendable, CaseIterable, Equatable {
     case identification
     case diagnosis
-    case followUp = "follow_up"
+    /// Read-only compatibility for cached analyses and signed receipts.
+    case legacyFollowUp = "follow_up"
+
+    public static let allCases: [AnalysisMode] = [.identification, .diagnosis]
+
+    public var isSelectable: Bool { Self.allCases.contains(self) }
 }
 
 public enum LightLevel: String, Codable, Sendable, CaseIterable, Equatable {
@@ -201,7 +206,6 @@ public enum NextAvailableStep: String, Codable, Sendable, CaseIterable, Equatabl
 public enum PaidActionKind: String, Codable, Sendable, CaseIterable, Equatable {
     case generateFullRoutinePlan = "generate_full_routine_plan"
     case generateFullRecoveryPlan = "generate_full_recovery_plan"
-    case startFollowUpScan = "start_follow_up_scan"
     case unlockUnlimitedBasicCare = "unlock_unlimited_basic_care"
 }
 

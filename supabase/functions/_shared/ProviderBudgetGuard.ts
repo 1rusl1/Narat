@@ -1,12 +1,12 @@
 // supabase/functions/_shared/ProviderBudgetGuard.ts
 // T034: Daily provider budget guard (cap <= $10.00 USD / 1,000,000 micro-USD per UTC day).
-// Called ONLY for Vision classification modes (identification, diagnosis, follow_up).
+// Called ONLY for Vision classification modes (identification, diagnosis).
 // Plan generation is 100% deterministic and never calls the provider or touches provider budget.
 
 export const DAILY_PROVIDER_BUDGET_CAP_MICRO_USD = 10_000_000; // $10.00 USD
 export const ESTIMATED_HAIKU_CLASSIFICATION_COST_MICRO_USD = 5_000; // $0.005 USD reserve per call
 
-export type ProviderEligibleMode = "identification" | "diagnosis" | "follow_up";
+export type ProviderEligibleMode = "identification" | "diagnosis";
 
 export interface DailyBudgetRecord {
   budgetDateUtc: string;
@@ -34,11 +34,10 @@ export class ProviderBudgetGuard {
   static assertModeUsesProvider(mode: string): asserts mode is ProviderEligibleMode {
     if (
       mode !== "identification" &&
-      mode !== "diagnosis" &&
-      mode !== "follow_up"
+      mode !== "diagnosis"
     ) {
       throw new Error(
-        `Mode '${mode}' is deterministic and must NEVER invoke the LLM provider or consume provider budget.`,
+        `Mode '${mode}' is not a supported classification mode and must NEVER invoke the LLM provider or consume provider budget.`,
       );
     }
   }

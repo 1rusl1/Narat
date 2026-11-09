@@ -37,7 +37,6 @@ public struct AnalysisAccessState: Codable, Sendable, Equatable {
     public let starter: StarterAccess
     public let identificationQuota: ModeQuotaSummary
     public let diagnosisQuota: ModeQuotaSummary
-    public let followUpQuota: ModeQuotaSummary
     public let canAlwaysUseCatalogue: Bool
 
     public init(
@@ -45,14 +44,12 @@ public struct AnalysisAccessState: Codable, Sendable, Equatable {
         starter: StarterAccess,
         identificationQuota: ModeQuotaSummary,
         diagnosisQuota: ModeQuotaSummary,
-        followUpQuota: ModeQuotaSummary,
         canAlwaysUseCatalogue: Bool = true
     ) {
         self.isGuest = isGuest
         self.starter = starter
         self.identificationQuota = identificationQuota
         self.diagnosisQuota = diagnosisQuota
-        self.followUpQuota = followUpQuota
         self.canAlwaysUseCatalogue = canAlwaysUseCatalogue
     }
 }
@@ -140,14 +137,6 @@ public actor AnalysisAccessRepository {
                 remaining: 1,
                 limit: 1
             ),
-            followUpQuota: ModeQuotaSummary(
-                mode: .followUp,
-                allowed: false,
-                activeQuotaKind: .none,
-                remaining: 0,
-                limit: 0,
-                reason: "paid_subscription_required_for_follow_up"
-            ),
             canAlwaysUseCatalogue: true
         )
     }
@@ -165,6 +154,7 @@ public actor AnalysisAccessRepository {
     }
 
     public func markStarterConsumed(for mode: AnalysisMode, at date: Date = Date()) {
+        guard mode.isSelectable else { return }
         let newIdRem = mode == .identification ? 0 : currentState.starter.identificationRemaining
         let newDiagRem = mode == .diagnosis ? 0 : currentState.starter.diagnosisRemaining
         let earliest = currentState.starter.firstStarterSuccessAt ?? date
@@ -197,7 +187,6 @@ public actor AnalysisAccessRepository {
             starter: newStarter,
             identificationQuota: idQuota,
             diagnosisQuota: diagQuota,
-            followUpQuota: currentState.followUpQuota,
             canAlwaysUseCatalogue: true
         )
     }

@@ -560,4 +560,69 @@ final class SyncPersistenceTests: XCTestCase {
         XCTAssertEqual(loaded?.flowState.confirmedPlantId, "monstera_deliciosa")
         XCTAssertEqual(loaded?.isCompleteForFallback, true)
     }
+
+    func testLegacyFollowUpAnalysisAndReceiptSurviveCacheRecreation() async throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        for summary in ["Historical first aid", "Historyczna pierwsza pomoc"] {
+            let analysisJSON = #"""
+            {
+              "id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              "kbReleaseId":"88888888-8888-4888-8888-888888888888",
+              "mode":"follow_up", "identificationStatus":"resolved",
+              "plantId":"monstera_deliciosa", "genusId":"monstera",
+              "diagnosisStatus":"condition_detected",
+              "candidates":[{"condition_id":"overwatering","rank":1,"confidence":0.9}],
+              "selectedConditionId":"overwatering",
+              "visualMarkers":["yellowing_lower_leaves"], "evidenceBasis":["photo"],
+              "limitations":["single_angle"], "firstActionSummary":"SUMMARY",
+              "controlIntervalDays":7, "contextState":"current", "planAvailability":"available",
+              "analysisReceipt":"original.base64-and-signature"
+            }
+            """#.replacingOccurrences(of: "SUMMARY", with: summary)
+            let receiptJSON = #"""
+            {
+              "analysis_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "kb_release_id":"88888888-8888-4888-8888-888888888888",
+              "mode":"follow_up", "plant_id":"monstera_deliciosa",
+              "selected_condition_id":"overwatering", "decision_revision":1,
+              "issued_at":"2026-11-01T00:00:00Z", "signature":"original-signature"
+            }
+            """#
+            let analysis = try decoder.decode(PreliminaryAnalysis.self, from: Data(analysisJSON.utf8))
+            let receipt = try decoder.decode(AnalysisReceiptDTO.self, from: Data(receiptJSON.utf8))
+            XCTAssertEqual(analysis.mode, .legacyFollowUp)
+            XCTAssertEqual(receipt.mode, .legacyFollowUp)
+            XCTAssertFalse(analysis.mode.isSelectable)
+            let container = try LocalStore.makeContainer(accountScope: "legacy_\(UUID())", inMemory: true)
+            let store = LocalStore(modelContainer: container)
+            let draftId = UUID()
+            let snapshot = GuestDraftCacheSnapshot(
+                draftId: draftId,
+                flowState: AddFlowState(currentStep: .preliminaryResult,
+                                        resultMode: analysis.mode, draftId: draftId),
+                preliminaryAnalysis: analysis, analysisReceipt: receipt
+            )
+            try await store.saveGuestDraft(snapshot)
+            let recreated = LocalStore(modelContainer: container)
+            let loadedValue = try await recreated.loadGuestDraft(draftId: draftId)
+            let loaded = try XCTUnwrap(loadedValue)
+            XCTAssertEqual(loaded.flowState.resultMode, .legacyFollowUp)
+            XCTAssertEqual(loaded.preliminaryAnalysis, analysis)
+            XCTAssertEqual(loaded.analysisReceipt, receipt)
+            XCTAssertEqual(loaded.preliminaryAnalysis?.analysisReceipt, "original.base64-and-signature")
+            XCTAssertEqual(loaded.preliminaryAnalysis?.firstActionSummary, summary)
+            let encodedReceipt = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: encoder.encode(receipt)) as? [String: Any])
+            XCTAssertEqual(encodedReceipt["mode"] as? String, "follow_up")
+            XCTAssertEqual(encodedReceipt["signature"] as? String, "original-signature")
+            XCTAssertThrowsError(try decoder.decode(PreliminaryAnalysis.self,
+                from: Data(analysisJSON.replacingOccurrences(of: "follow_up", with: "unknown_mode").utf8)))
+            XCTAssertThrowsError(try decoder.decode(AnalysisReceiptDTO.self,
+                from: Data(receiptJSON.replacingOccurrences(of: "follow_up", with: "unknown_mode").utf8)))
+        }
+    }
 }

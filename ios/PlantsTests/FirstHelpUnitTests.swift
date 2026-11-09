@@ -48,9 +48,7 @@ final class FirstHelpUnitTests: XCTestCase {
             identificationQuota: ModeQuotaSummary(mode: .identification, allowed: true,
                 activeQuotaKind: .starterIdentification, remaining: 1, limit: 1),
             diagnosisQuota: ModeQuotaSummary(mode: .diagnosis, allowed: true,
-                activeQuotaKind: .starterDiagnosis, remaining: 1, limit: 1),
-            followUpQuota: ModeQuotaSummary(mode: .followUp, allowed: false,
-                activeQuotaKind: .none, remaining: 0, limit: 0)
+                activeQuotaKind: .starterDiagnosis, remaining: 1, limit: 1)
         )
         for intent in [AddIntent.problem, .care] {
             for locale in [SupportedLocale.en, .pl] {
@@ -104,5 +102,46 @@ final class FirstHelpUnitTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testAnalysisModesOfferOnlyIdentificationAndDiagnosis() throws {
+        XCTAssertEqual(AnalysisMode.allCases, [.identification, .diagnosis])
+        XCTAssertTrue(AnalysisMode.allCases.allSatisfy(\.isSelectable))
+        let legacy = try JSONDecoder().decode(AnalysisMode.self, from: Data(#""follow_up""#.utf8))
+        XCTAssertEqual(legacy, .legacyFollowUp)
+        XCTAssertFalse(legacy.isSelectable)
+        XCTAssertEqual(String(decoding: try JSONEncoder().encode(legacy), as: UTF8.self), #""follow_up""#)
+        XCTAssertThrowsError(try JSONDecoder().decode(AnalysisMode.self, from: Data(#""unknown_mode""#.utf8)))
+        XCTAssertFalse(PaidActionKind.allCases.map(\.rawValue).contains("start_follow_up_scan"))
+    }
+
+    func testTwoModeAccessRoundTripIgnoresOldQuotaAndLegacyDoesNotConsumeStarter() async throws {
+        let repository = AnalysisAccessRepository()
+        let initial = await repository.currentAccessState()
+        let encoded = try JSONEncoder().encode(initial)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNil(object["followUpQuota"])
+        XCTAssertEqual(try JSONDecoder().decode(AnalysisAccessState.self, from: encoded), initial)
+        // Cached access from an older build may still contain the retired summary.
+        object["followUpQuota"] = [
+            "mode": "follow_up", "allowed": false, "activeQuotaKind": "none",
+            "remaining": 0, "limit": 0
+        ]
+        let oldData = try JSONSerialization.data(withJSONObject: object)
+        let restored = try JSONDecoder().decode(AnalysisAccessState.self, from: oldData)
+        XCTAssertEqual(restored, initial)
+        let cleanObject = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(restored)) as? [String: Any])
+        XCTAssertNil(cleanObject["followUpQuota"])
+
+        await repository.markStarterConsumed(for: .legacyFollowUp)
+        let afterLegacy = await repository.currentAccessState()
+        XCTAssertEqual(afterLegacy, initial)
+        await repository.markStarterConsumed(for: .diagnosis)
+        let afterDiagnosis = await repository.currentAccessState()
+        XCTAssertEqual(afterDiagnosis.starter.identificationRemaining, 1)
+        XCTAssertEqual(afterDiagnosis.starter.diagnosisRemaining, 0)
+        XCTAssertEqual(afterDiagnosis.diagnosisQuota.reason, "starter_exhausted")
+        XCTAssertEqual(afterDiagnosis.diagnosisQuota.mode, .diagnosis)
     }
 }

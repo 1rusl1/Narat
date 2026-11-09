@@ -2,25 +2,33 @@
 // T029 & T116: Positive and negative tests for Classification 3.0 validation (AnalysisValidator)
 // and deterministic backend projection (ProtocolResolver).
 
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import Ajv2020Import from "ajv/dist/2020";
 import { AnalysisValidator } from "../AnalysisValidator.ts";
 import {
   CanonicalConditionId,
   CanonicalConditionProfile,
   PublishedReleaseCatalog,
+  VisionClassification30,
   validateConditionProfileSemantics,
 } from "../KnowledgeTypes.ts";
 import {
   ProtocolResolver,
+  signAnalysisReceipt,
   verifyAnalysisReceipt,
 } from "../ProtocolResolver.ts";
 import { AnalysisAccess } from "../AnalysisAccess.ts";
-import { AnthropicAdapter } from "../AnthropicAdapter.ts";
+import { AnthropicAdapter, buildSystemPrompt } from "../AnthropicAdapter.ts";
 import { ProviderBudgetGuard } from "../ProviderBudgetGuard.ts";
-import { processSingleQueuedJob } from "../../analysis-worker/index.ts";
+import { processSingleQueuedJob, WorkerPersistenceAdapter } from "../../analysis-worker/index.ts";
 import { reconcileStuckAnalysisJobs } from "../../maintenance/analysis-jobs.ts";
-import { handleCreateAnalysisJob } from "../../plants-api/analysis.ts";
+import {
+  AnalysisJobStatusResponse,
+  AnalysisJobStoreAdapter,
+  handleCreateAnalysisJob,
+  handleGetAnalysisJob,
+} from "../../plants-api/analysis.ts";
+import { ApiHttpError, RequestContext } from "../http.ts";
 
 const KB_RELEASE_ID = "88888888-8888-4888-8888-888888888888";
 const SIGNING_SECRET = "test-signing-secret-32-bytes-minimum-key";
@@ -105,7 +113,6 @@ function makeSampleCatalog(): PublishedReleaseCatalog {
     plantIds: new Set(["monstera_deliciosa", "epipremnum_aureum"]),
     genusIds: new Set(["monstera", "epipremnum"]),
     conditionProfiles,
-    knownTraitIds: new Set(["leaf_turgor_recovery", "yellowing_progression"]),
   };
 }
 
@@ -195,7 +202,7 @@ Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/P
           status: "problem_detected",
           candidates: [{ condition_id: "overwatering", rank: 1, confidence }],
         },
-        limitations: [], comparison: null, visual_markers: ["yellowing_lower_leaves"],
+        limitations: [], visual_markers: ["yellowing_lower_leaves"],
       }, catalog);
       assertEquals(validated.valid, true, validated.errors.join("; "));
       assert(validated.classification);
@@ -261,7 +268,7 @@ Deno.test("T157 — existing semantic and schema restrictions survive bank remov
   assertEquals(ProtocolResolver.isConditionHostCompatible(restricted, { plantId: null, family: "Araceae" }), true);
 });
 
-Deno.test("T029.1 — Positive validation across identification, diagnosis, and follow_up modes", () => {
+Deno.test("T029.1 — Positive validation across identification and diagnosis modes", () => {
   const catalog = makeSampleCatalog();
 
   const semCheck = validateConditionProfileSemantics(
@@ -284,7 +291,6 @@ Deno.test("T029.1 — Positive validation across identification, diagnosis, and 
       },
       diagnosis: null,
       limitations: ["single_angle"],
-      comparison: null,
       visual_markers: [],
     },
     catalog,
@@ -313,47 +319,12 @@ Deno.test("T029.1 — Positive validation across identification, diagnosis, and 
         ],
       },
       limitations: ["root_inspection_needed"],
-      comparison: null,
       visual_markers: ["yellowing_lower_leaves", "wet_heavy_substrate"],
     },
     catalog,
   );
   assertEquals(diagResult.valid, true, diagResult.errors.join("; "));
   assertEquals(diagResult.shouldConsumeQuota, true);
-
-  // 3. follow_up with comparison traits
-  const followUpResult = AnalysisValidator.validate(
-    {
-      schema_version: "3.0",
-      kb_release_id: KB_RELEASE_ID,
-      mode: "follow_up",
-      locale: "en",
-      image_quality: "usable",
-      identification: {
-        status: "identified",
-        plant_id: "monstera_deliciosa",
-        genus_id: "monstera",
-      },
-      diagnosis: {
-        status: "problem_detected",
-        candidates: [
-          { condition_id: "overwatering", rank: 1, confidence: 0.91 },
-        ],
-      },
-      limitations: [],
-      comparison: {
-        progress_status: "improving",
-        changes: [
-          { symptom_id: "leaf_turgor_recovery", direction: "decreased" },
-        ],
-        limitation_codes: [],
-      },
-      visual_markers: ["yellowing_lower_leaves"],
-    },
-    catalog,
-  );
-  assertEquals(followUpResult.valid, true, followUpResult.errors.join("; "));
-  assertEquals(followUpResult.shouldConsumeQuota, true);
 });
 
 Deno.test("T029.2 — Negative validation rejects unpinned release, unknown plant/condition/marker IDs, duplicate ranks, >2 candidates, and generated advice/plans", () => {
@@ -374,7 +345,6 @@ Deno.test("T029.2 — Negative validation rejects unpinned release, unknown plan
       },
       diagnosis: null,
       limitations: [],
-      comparison: null,
       visual_markers: [],
     },
     catalog,
@@ -402,7 +372,6 @@ Deno.test("T029.2 — Negative validation rejects unpinned release, unknown plan
         ],
       },
       limitations: [],
-      comparison: null,
       visual_markers: ["invented_hallucinated_marker"],
     },
     catalog,
@@ -431,7 +400,6 @@ Deno.test("T029.2 — Negative validation rejects unpinned release, unknown plan
         ],
       },
       limitations: [],
-      comparison: null,
       visual_markers: ["yellowing_lower_leaves"],
     },
     catalog,
@@ -457,7 +425,6 @@ Deno.test("T029.2 — Negative validation rejects unpinned release, unknown plan
         candidates: [],
       },
       limitations: ["blurry_image"],
-      comparison: null,
       visual_markers: [],
     },
     catalog,
@@ -489,7 +456,6 @@ Deno.test("T116 — ProtocolResolver builds localized projection from KB Golden 
         ],
       },
       limitations: ["single_angle"],
-      comparison: null,
       visual_markers: ["yellowing_lower_leaves"],
     },
     catalog,
@@ -571,7 +537,7 @@ Deno.test("T030, T032, T033, T034 — AnalysisAccess, AnthropicAdapter, operatio
   assertEquals(accessSameMonth.modes.identification.activeQuotaKind, "starter_identification");
   assertEquals(accessSameMonth.modes.diagnosis.allowed, false);
   assertEquals(accessSameMonth.modes.diagnosis.reason, "free_monthly_starts_next_utc_month");
-  assertEquals(accessSameMonth.modes.follow_up.allowed, false);
+  assertEquals(Object.keys(accessSameMonth.modes).sort(), ["diagnosis", "identification"]);
 
   // Next UTC month (Dec 2026) unlocks free_monthly = 1
   const accessNextMonth = AnalysisAccess.evaluateAccessSnapshot({
@@ -702,7 +668,6 @@ Deno.test("T030, T032, T033, T034 — AnalysisAccess, AnthropicAdapter, operatio
               ],
             },
             limitations: ["single_angle"],
-            comparison: null,
             visual_markers: ["yellowing_lower_leaves"],
           }),
         },
@@ -776,4 +741,300 @@ Deno.test("T030, T032, T033, T034 — AnalysisAccess, AnthropicAdapter, operatio
     }),
   });
   assertEquals(reconcileRes.releasedCount, 1);
+});
+
+function classificationFixture(
+  mode: VisionClassification30["mode"] = "diagnosis",
+  locale: "en" | "pl" = "en",
+): VisionClassification30 {
+  return {
+    schema_version: "3.0", kb_release_id: KB_RELEASE_ID, mode, locale,
+    image_quality: "usable",
+    identification: {
+      status: "identified", plant_id: "monstera_deliciosa", genus_id: "monstera",
+    },
+    diagnosis: mode === "identification" ? null : {
+      status: "problem_detected",
+      candidates: [{ condition_id: "overwatering", rank: 1, confidence: 0.9 }],
+    },
+    limitations: [],
+    visual_markers: mode === "identification" ? [] : ["yellowing_lower_leaves"],
+  };
+}
+
+Deno.test("T157 — two modes validate in EN/PL; legacy mode, comparison and quality are rejected", () => {
+  for (const locale of ["en", "pl"] as const) {
+    for (const mode of ["identification", "diagnosis"] as const) {
+      const payload = classificationFixture(mode, locale);
+      const valid = AnalysisValidator.validate(payload, makeSampleCatalog());
+      assertEquals(valid.valid, true, valid.errors.join("; "));
+      assertEquals(valid.shouldConsumeQuota, true);
+      for (const invalid of [
+        { ...payload, mode: "follow_up" },
+        { ...payload, comparison: null },
+        { ...payload, comparison: { progress_status: "stable", changes: [], limitation_codes: [] } },
+        {
+          ...payload, image_quality: "comparison_unsuitable",
+          identification: { status: "unknown", plant_id: null, genus_id: null },
+          diagnosis: mode === "identification" ? null : { status: "insufficient_data", candidates: [] },
+          visual_markers: [], limitations: ["single_angle"],
+        },
+      ]) {
+        const result = AnalysisValidator.validate(invalid, makeSampleCatalog());
+        assertEquals(result.valid, false);
+        assertEquals(result.classification, null);
+        assertEquals(result.shouldConsumeQuota, false);
+        assertEquals(result.nonBillableReason, "invalid_schema_or_semantics");
+      }
+    }
+  }
+});
+
+Deno.test("T157 — provider accepts EN/PL without comparison and rejects legacy output/input", async () => {
+  for (const locale of ["en", "pl"] as const) {
+    for (const mode of ["identification", "diagnosis"] as const) {
+      const payload = classificationFixture(mode, locale);
+      let output: unknown = payload;
+      let calls = 0;
+      const adapter = new AnthropicAdapter({
+        create: async (request) => {
+          calls++;
+          assertEquals(request.system.includes("comparison"), false);
+          assertEquals(request.system.includes("follow_up"), false);
+          const text = request.messages[0].content.find((block) => block.type === "text");
+          assert(text?.type === "text");
+          assertEquals(Object.keys(JSON.parse(text.text)).sort(),
+            ["care_context", "kb_release_id", "locale", "mode"]);
+          return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(output) }] };
+        },
+      });
+      const input = {
+        analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(), mode, locale,
+        imageBase64: "dGVzdA==", mediaType: "image/jpeg" as const,
+        catalog: makeSampleCatalog(), signingSecret: SIGNING_SECRET,
+      };
+      const success = await adapter.classifyAndResolve(input);
+      assertEquals(success.ok, true);
+      assertEquals(success.projection?.mode, mode);
+      assertEquals(success.shouldConsumeQuota, true);
+      if (mode === "diagnosis") {
+        assertEquals(success.projection?.first_action_summary,
+          locale === "en" ? "Hold off on watering and check pot drainage."
+            : "Wstrzymaj podlewanie i sprawdź odpływ wody z doniczki.");
+      }
+      for (const invalid of [{ ...payload, mode: "follow_up" }, { ...payload, comparison: null }]) {
+        output = invalid;
+        const rejected = await adapter.classifyAndResolve(input);
+        assertEquals(rejected.ok, false);
+        assertEquals(rejected.shouldConsumeQuota, false);
+        assertEquals(rejected.errorCode, "SCHEMA_VALIDATION_FAILED");
+      }
+      const before = calls;
+      // Emulate persisted/untyped runtime input, not compile-time narrowing.
+      const legacyInput = { ...input, mode: JSON.parse('"follow_up"') };
+      const rejected = await adapter.classifyAndResolve(legacyInput);
+      assertEquals(rejected.errorCode, "UNSUPPORTED_ANALYSIS_MODE");
+      assertEquals(rejected.shouldConsumeQuota, false);
+      assertEquals(calls, before);
+      assertThrows(() => buildSystemPrompt(legacyInput.mode, KB_RELEASE_ID, locale));
+      await assertRejects(() => ProtocolResolver.resolvePreliminaryProjection({
+        ...input, classification: JSON.parse(JSON.stringify({ ...payload, mode: "follow_up" })),
+      }), Error, "Unsupported analysis mode");
+    }
+  }
+});
+
+Deno.test("T157 — API rejects follow_up before receipt lookup/admission, retains auth and conflict guards", async () => {
+  const operationId = crypto.randomUUID();
+  const photoId = crypto.randomUUID();
+  const request = (mode: string) => new Request("https://example.com/analysis/jobs", {
+    method: "POST",
+    body: JSON.stringify({ operation_id: operationId, photo_asset_id: photoId, mode }),
+  });
+  for (const locale of ["en", "pl"] as const) {
+    const ctx: RequestContext = {
+      ownerId: null, installationCredential: "fixture-installation", isAnonymous: true,
+      accountState: null, operationId, locale,
+    };
+    let lookups = 0;
+    let admissions = 0;
+    let savedHash = "";
+    const adapter: AnalysisJobStoreAdapter = {
+      findOperationReceipt: async () => { lookups++; return null; },
+      admitAndCreateJob: async (params) => {
+        admissions++;
+        savedHash = params.payloadHash;
+        assertEquals(params.installationCredential, ctx.installationCredential);
+        assertEquals(params.locale, locale);
+        return {
+          job_id: crypto.randomUUID(), mode: params.mode, status: "queued",
+          quota_kind: "starter_" + params.mode, quota_state: "reserved",
+        };
+      },
+      getJobStatusAndResult: async () => null,
+    };
+    const invalid = await assertRejects(
+      () => handleCreateAnalysisJob(request("follow_up"), ctx, adapter), ApiHttpError,
+    );
+    assertEquals(invalid.status, 400);
+    assertEquals(invalid.code, "VALIDATION_ERROR");
+    assertEquals([lookups, admissions], [0, 0]);
+    for (const mode of ["identification", "diagnosis"] as const) {
+      const missingOwner = await assertRejects(() => handleCreateAnalysisJob(request(mode),
+        { ...ctx, installationCredential: null }, adapter), ApiHttpError);
+      assertEquals(missingOwner.status, 401);
+      assertEquals([lookups, admissions], mode === "identification" ? [0, 0] : [1, 1]);
+      assertEquals((await handleCreateAnalysisJob(request(mode), ctx, adapter)).status, 202);
+    }
+    const cached: AnalysisJobStatusResponse = {
+      job_id: crypto.randomUUID(), mode: "diagnosis", status: "succeeded",
+      quota_kind: "starter_diagnosis", quota_state: "consumed",
+    };
+    adapter.findOperationReceipt = async () => ({ payloadHash: savedHash, responsePayload: cached });
+    assertEquals((await handleCreateAnalysisJob(request("diagnosis"), ctx, adapter)).status, 200);
+    const conflict = await assertRejects(
+      () => handleCreateAnalysisJob(request("identification"), ctx, adapter), ApiHttpError,
+    );
+    assertEquals(conflict.status, 409);
+    assertEquals(conflict.code, "IDEMPOTENCY_CONFLICT");
+    assertEquals(admissions, 2);
+  }
+});
+
+Deno.test("T157 — legacy signature and historical GET survive without reclassification", async () => {
+  const payload = {
+    analysis_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kb_release_id: KB_RELEASE_ID, mode: "follow_up",
+    plant_id: "monstera_deliciosa", selected_condition_id: "overwatering",
+    decision_revision: 1, issued_at: "2026-11-01T00:00:00Z",
+  };
+  // Fixed historical HMAC fixture, generated independently of the current signer.
+  const receipt = "eyJhbmFseXNpc19pZCI6ImFhYWFhYWFhLWFhYWEtNGFhYS04YWFhLWFhYWFhYWFhYWFhYSIsImtiX3JlbGVhc2VfaWQiOiI4ODg4ODg4OC04ODg4LTQ4ODgtODg4OC04ODg4ODg4ODg4ODgiLCJtb2RlIjoiZm9sbG93X3VwIiwicGxhbnRfaWQiOiJtb25zdGVyYV9kZWxpY2lvc2EiLCJzZWxlY3RlZF9jb25kaXRpb25faWQiOiJvdmVyd2F0ZXJpbmciLCJkZWNpc2lvbl9yZXZpc2lvbiI6MSwiaXNzdWVkX2F0IjoiMjAyNi0xMS0wMVQwMDowMDowMFoifQ==.c97702702c49a240ccf392766e52926d9b1d7b77f58da6a64f059597a395cff0";
+  assertEquals(await signAnalysisReceipt(payload, SIGNING_SECRET), receipt);
+  const verified = await verifyAnalysisReceipt(receipt, SIGNING_SECRET);
+  assertEquals(verified, { valid: true, payload });
+  const tampered = btoa(JSON.stringify({ ...payload, mode: "diagnosis" })) + "." + receipt.split(".")[1];
+  assertEquals((await verifyAnalysisReceipt(tampered, SIGNING_SECRET)).valid, false);
+  const classification = classificationFixture();
+  const projection = await ProtocolResolver.resolvePreliminaryProjection({
+    analysisId: payload.analysis_id, jobId: crypto.randomUUID(), classification,
+    catalog: makeSampleCatalog(), signingSecret: SIGNING_SECRET,
+  });
+  const historical: AnalysisJobStatusResponse = {
+    job_id: projection.job_id, mode: "follow_up", status: "succeeded",
+    quota_kind: "paid_monthly", quota_state: "consumed",
+    result: { ...projection, mode: "follow_up", analysis_receipt: receipt },
+  };
+  const ctx: RequestContext = {
+    ownerId: crypto.randomUUID(), installationCredential: null, isAnonymous: false,
+    accountState: "active", operationId: null, locale: "en",
+  };
+  const response = await handleGetAnalysisJob(new Request("https://example.com"), ctx,
+    historical.job_id, {
+      findOperationReceipt: async () => { throw new Error("GET must not look up a create receipt"); },
+      admitAndCreateJob: async () => { throw new Error("GET must not admit"); },
+      getJobStatusAndResult: async (params) => {
+        assertEquals(params.ownerId, ctx.ownerId);
+        assertEquals(params.installationCredential, null);
+        return historical;
+      },
+    });
+  assertEquals(await response.json(), historical);
+});
+
+Deno.test("T157 — runtime legacy worker job finalizes once without provider or budget", async () => {
+  for (const initialState of ["reserved", "released", "consumed"] as const) {
+    let state: "reserved" | "released" | "consumed" = initialState;
+    let releases = 0;
+    let finalizations = 0;
+    let forbiddenCalls = 0;
+    const forbidden = () => { forbiddenCalls++; throw new Error("Legacy job crossed provider boundary"); };
+    const rawJob = JSON.parse(JSON.stringify({
+      id: crypto.randomUUID(), ownerId: null, installationId: crypto.randomUUID(),
+      kbReleaseId: KB_RELEASE_ID, mode: "follow_up", locale: "en",
+      imageBase64: "dGVzdA==", mediaType: "image/jpeg", quotaKind: "paid_monthly",
+      monthlyQuotaId: crypto.randomUUID(), leaseExpiresAt: "2026-11-09T00:01:00Z",
+    }));
+    const workerAdapter: WorkerPersistenceAdapter = {
+      leaseNextQueuedJob: async () => rawJob,
+      loadPublishedCatalog: async () => forbidden(),
+      finalizeJobOnce: async (params) => {
+        finalizations++;
+        assertEquals(params.jobId, rawJob.id);
+        assertEquals(params.outcome, "failed");
+        assertEquals(params.isNonBillableResult, true);
+        assertEquals(params.projection, null);
+        assertEquals(params.errorCode, "UNSUPPORTED_ANALYSIS_MODE");
+        const alreadyFinalized = state !== "reserved";
+        if (!alreadyFinalized) { state = "released"; releases++; }
+        assert(state !== "reserved");
+        return { alreadyFinalized, quotaState: state };
+      },
+    };
+    const run = () => processSingleQueuedJob({
+      workerAdapter, signingSecret: SIGNING_SECRET,
+      anthropicAdapter: new AnthropicAdapter({ create: async () => forbidden() }),
+      budgetAdapter: {
+        reserveDailyBudget: async () => forbidden(),
+        settleDailyBudget: async () => forbidden(),
+      },
+    });
+    for (let retry = 0; retry < 2; retry++) {
+      const result = await run();
+      assertEquals(result.outcome, "failed");
+      assertEquals(result.errorCode, "UNSUPPORTED_ANALYSIS_MODE");
+      assertEquals(result.quotaState, initialState === "consumed" ? "consumed" : "released");
+    }
+    assertEquals(finalizations, 2);
+    assertEquals(releases, initialState === "reserved" ? 1 : 0);
+    assertEquals(forbiddenCalls, 0);
+  }
+  assertThrows(() => ProviderBudgetGuard.assertModeUsesProvider("follow_up"));
+  let reservations = 0;
+  await assertRejects(() => ProviderBudgetGuard.acquireReservation("follow_up", {
+    reserveDailyBudget: async () => { reservations++; throw new Error("Must not reserve"); },
+    settleDailyBudget: async () => { throw new Error("Must not settle"); },
+  }));
+  assertEquals(reservations, 0);
+});
+
+Deno.test("T157 — access exposes two modes for guest, starter-in-progress and paid quota", () => {
+  const starter = {
+    starterIdentificationConsumed: false, starterDiagnosisConsumed: false,
+    starterIdentificationJobId: null, starterDiagnosisJobId: null, firstStarterSuccessAt: null,
+  };
+  const params = {
+    isGuestOrAnonymous: true, entitlement: null, starter,
+    freeMonthlyWindow: null, paidMonthlyWindow: null, now: new Date("2026-11-09T00:00:00Z"),
+  };
+  const guest = AnalysisAccess.evaluateAccessSnapshot(params);
+  assertEquals(Object.keys(guest.modes).sort(), ["diagnosis", "identification"]);
+  assertEquals(guest.modes.diagnosis.allowed, true);
+  assertEquals(guest.modes.diagnosis.activeQuotaKind, "starter_diagnosis");
+  const jobId = crypto.randomUUID();
+  const pending = AnalysisAccess.evaluateAccessSnapshot({
+    ...params, starter: { ...starter, starterDiagnosisJobId: jobId },
+  });
+  assertEquals(pending.modes.diagnosis.reason, "starter_in_progress");
+  assertEquals(pending.modes.diagnosis.inProgressJobId, jobId);
+  for (const consumedCount of [0, 100]) {
+    const paid = AnalysisAccess.evaluateAccessSnapshot({
+      ...params, isGuestOrAnonymous: false,
+      entitlement: {
+        ownerId: crypto.randomUUID(), accountState: "active", subscriptionState: "active",
+        offerKind: "paid", validUntil: "2026-12-09T00:00:00Z", trialEndAt: null,
+        autoRenewEnabled: true, verifiedAt: "2026-11-09T00:00:00Z",
+      },
+      paidMonthlyWindow: {
+        id: crypto.randomUUID(), quotaKind: "paid_monthly",
+        periodStart: "2026-11-09T00:00:00Z", periodEnd: "2026-12-09T00:00:00Z",
+        limitCount: 100, consumedCount, reservedCount: 0,
+      },
+    });
+    assertEquals(Object.keys(paid.modes).sort(), ["diagnosis", "identification"]);
+    for (const mode of ["identification", "diagnosis"] as const) {
+      assertEquals(paid.modes[mode].activeQuotaKind, "paid_monthly");
+      assertEquals(paid.modes[mode].allowed, consumedCount === 0);
+      assertEquals(paid.modes[mode].remaining, 100 - consumedCount);
+    }
+  }
 });

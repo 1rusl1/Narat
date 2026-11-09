@@ -8,11 +8,14 @@ import {
   RequestContext,
   requireUuid,
 } from "../_shared/http.ts";
-import { PreliminaryAnalysisProjection } from "../_shared/ProtocolResolver.ts";
+import {
+  LegacyPreliminaryAnalysisProjection,
+  PreliminaryAnalysisProjection,
+} from "../_shared/ProtocolResolver.ts";
 
 export interface CreateAnalysisJobRequest {
   operation_id: string;
-  mode: "identification" | "diagnosis" | "follow_up";
+  mode: "identification" | "diagnosis";
   photo_asset_id: string;
   flow_id?: string;
   intent?: "problem" | "care";
@@ -30,13 +33,14 @@ export interface CreateAnalysisJobRequest {
   };
 }
 
+// Read model retains the original mode and signed result for historical GET/replays.
 export interface AnalysisJobStatusResponse {
   job_id: string;
-  mode: "identification" | "diagnosis" | "follow_up";
+  mode: PreliminaryAnalysisProjection["mode"] | LegacyPreliminaryAnalysisProjection["mode"];
   status: "queued" | "running" | "succeeded" | "failed" | "expired";
   quota_kind: string;
   quota_state: "reserved" | "consumed" | "released" | "not_required";
-  result?: PreliminaryAnalysisProjection | null;
+  result?: PreliminaryAnalysisProjection | LegacyPreliminaryAnalysisProjection | null;
   error_code?: string | null;
   error_message?: string | null;
 }
@@ -53,7 +57,7 @@ export interface AnalysisJobStoreAdapter {
     installationCredential: string | null;
     operationId: string;
     payloadHash: string;
-    mode: "identification" | "diagnosis" | "follow_up";
+    mode: "identification" | "diagnosis";
     photoAssetId: string;
     flowId: string | null;
     intent: "problem" | "care" | null;
@@ -95,13 +99,12 @@ export async function handleCreateAnalysisJob(
   const mode = obj.mode;
   if (
     mode !== "identification" &&
-    mode !== "diagnosis" &&
-    mode !== "follow_up"
+    mode !== "diagnosis"
   ) {
     throw new ApiHttpError(
       400,
       "VALIDATION_ERROR",
-      "Field 'mode' must be 'identification', 'diagnosis', or 'follow_up'.",
+      "Field 'mode' must be 'identification' or 'diagnosis'.",
       false,
       { field: "mode" },
     );

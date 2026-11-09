@@ -3,7 +3,7 @@
  *
  * Verifies:
  * 1. Canonical JSON Schema Draft 2020-12 (`contracts/ai-result.schema.json`, v3.0):
- *    - Three modes: `identification`, `diagnosis`, `follow_up` (`plan` is forbidden in provider schema)
+ *    - Two modes: `identification`, `diagnosis` (`plan` is forbidden in provider schema)
  *    - Max 2 condition candidates, distinct ranks (1, 2), confidence in [0, 1]
  *    - Closed vocabulary of 40 canonical condition_ids & visual_markers
  *    - Strict absence of generated advice (`first_action`, `full_plan`, `questions`, `products`)
@@ -29,7 +29,7 @@ const validateClassification3 = ajv.compile(rawSchema);
 
 const PINNED_KB_RELEASE_ID = "11111111-1111-4111-8111-111111111111";
 
-Deno.test("G02.1 — Classification 3.0 accepts valid identification mode (diagnosis/comparison null, visual_markers empty)", () => {
+Deno.test("G02.1 — Classification 3.0 accepts valid identification mode (diagnosis null, visual_markers empty)", () => {
   const payload = {
     schema_version: "3.0",
     kb_release_id: PINNED_KB_RELEASE_ID,
@@ -43,7 +43,6 @@ Deno.test("G02.1 — Classification 3.0 accepts valid identification mode (diagn
     },
     diagnosis: null,
     limitations: [],
-    comparison: null,
     visual_markers: [],
   };
 
@@ -82,7 +81,6 @@ Deno.test("G02.2 — Classification 3.0 accepts valid diagnosis mode with top-2 
       ],
     },
     limitations: [],
-    comparison: null,
     visual_markers: ["silvery_stippling_streaks", "black_fecal_specks_on_leaves"],
   };
 
@@ -93,7 +91,7 @@ Deno.test("G02.2 — Classification 3.0 accepts valid diagnosis mode with top-2 
   );
 });
 
-Deno.test("G02.3 — Classification 3.0 accepts valid follow_up mode with comparison object", () => {
+Deno.test("G02.3 — Classification 3.0 rejects legacy follow_up, comparison and comparison_unsuitable", () => {
   const payload = {
     schema_version: "3.0",
     kb_release_id: PINNED_KB_RELEASE_ID,
@@ -129,11 +127,26 @@ Deno.test("G02.3 — Classification 3.0 accepts valid follow_up mode with compar
     visual_markers: ["silvery_stippling_streaks"],
   };
 
-  const valid = validateClassification3(payload);
-  assert(
-    valid,
-    `Expected valid follow_up payload, got errors: ${JSON.stringify(validateClassification3.errors)}`,
-  );
+  assertEquals(validateClassification3(payload), false);
+  const { comparison, ...withoutComparison } = payload;
+  assertEquals(validateClassification3(withoutComparison), false);
+  for (const mode of ["identification", "diagnosis"]) {
+    const current = {
+      ...withoutComparison, mode,
+      diagnosis: mode === "identification" ? null : payload.diagnosis,
+      visual_markers: mode === "identification" ? [] : payload.visual_markers,
+    };
+    // Verify the baseline to avoid negatives passing due to an unrelated malformed field.
+    assertEquals(validateClassification3(current), true);
+    assertEquals(validateClassification3({ ...current, comparison }), false);
+    assertEquals(validateClassification3({ ...current, comparison: null }), false);
+    assertEquals(validateClassification3({
+      ...current, image_quality: "comparison_unsuitable",
+      identification: { status: "unknown", plant_id: null, genus_id: null },
+      diagnosis: mode === "identification" ? null : { status: "insufficient_data", candidates: [] },
+      visual_markers: [], limitations: ["single_angle"],
+    }), false);
+  }
 });
 
 Deno.test("G02.4 — Classification 3.0 rejects >2 candidates, out-of-range confidence, mode=plan, generated advice, or generated questions", () => {
@@ -155,7 +168,6 @@ Deno.test("G02.4 — Classification 3.0 rejects >2 candidates, out-of-range conf
       ],
     },
     limitations: [],
-    comparison: null,
     visual_markers: ["lower_leaf_yellowing"],
   };
 

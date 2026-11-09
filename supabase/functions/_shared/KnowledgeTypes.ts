@@ -83,27 +83,15 @@ export interface VisionDiagnosisBlock {
   candidates: VisionDiagnosisCandidate[];
 }
 
-export interface VisionComparisonChange {
-  symptom_id: string;
-  direction: "increased" | "decreased" | "unchanged" | "not_comparable";
-}
-
-export interface VisionComparisonBlock {
-  progress_status: "improving" | "stable" | "worsening" | "inconclusive";
-  changes: VisionComparisonChange[];
-  limitation_codes: string[];
-}
-
 export interface VisionClassification30 {
   schema_version: "3.0";
   kb_release_id: string;
-  mode: "identification" | "diagnosis" | "follow_up";
+  mode: "identification" | "diagnosis";
   locale: "pl" | "en";
-  image_quality: "usable" | "blurred" | "too_dark" | "not_a_plant" | "comparison_unsuitable";
+  image_quality: "usable" | "blurred" | "too_dark" | "not_a_plant";
   identification: VisionIdentificationBlock;
   diagnosis: VisionDiagnosisBlock | null;
   limitations: string[];
-  comparison: VisionComparisonBlock | null;
   visual_markers: string[];
 }
 
@@ -203,7 +191,6 @@ export interface PublishedReleaseCatalog {
   plantIds: Set<string>;
   genusIds: Set<string>;
   conditionProfiles: Map<CanonicalConditionId, CanonicalConditionProfile>;
-  knownTraitIds?: Set<string>;
 }
 
 export interface ValidationOutcome {

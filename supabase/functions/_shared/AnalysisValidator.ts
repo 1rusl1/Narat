@@ -117,9 +117,6 @@ export class AnalysisValidator {
       if (data.diagnosis !== null) {
         errors.push("mode='identification' requires diagnosis to be null.");
       }
-      if (data.comparison !== null) {
-        errors.push("mode='identification' requires comparison to be null.");
-      }
       if (data.visual_markers.length > 0) {
         errors.push("mode='identification' requires visual_markers to be empty.");
       }
@@ -195,20 +192,6 @@ export class AnalysisValidator {
             `diagnosis.status='${data.diagnosis.status}' requires visual_markers to be empty.`,
           );
         }
-      }
-
-      if (data.mode === "follow_up") {
-        if (!data.comparison) {
-          errors.push("mode='follow_up' requires a non-null comparison object.");
-        } else if (catalog.knownTraitIds) {
-          for (const ch of data.comparison.changes) {
-            if (!catalog.knownTraitIds.has(ch.symptom_id)) {
-              errors.push(`Unknown comparison symptom_id '${ch.symptom_id}'.`);
-            }
-          }
-        }
-      } else if (data.comparison !== null) {
-        errors.push("mode='diagnosis' requires comparison to be null.");
       }
     }
 

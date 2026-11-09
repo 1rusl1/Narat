@@ -13,7 +13,6 @@
     "identification",
     "diagnosis",
     "limitations",
-    "comparison",
     "visual_markers"
   ],
   "properties": {
@@ -28,8 +27,7 @@
       "type": "string",
       "enum": [
         "identification",
-        "diagnosis",
-        "follow_up"
+        "diagnosis"
       ]
     },
     "locale": {
@@ -45,8 +43,7 @@
         "usable",
         "blurred",
         "too_dark",
-        "not_a_plant",
-        "comparison_unsuitable"
+        "not_a_plant"
       ]
     },
     "identification": {
@@ -286,70 +283,6 @@
       "minItems": 0,
       "uniqueItems": true
     },
-    "comparison": {
-      "anyOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "progress_status",
-            "changes",
-            "limitation_codes"
-          ],
-          "properties": {
-            "progress_status": {
-              "type": "string",
-              "enum": [
-                "improving",
-                "stable",
-                "worsening",
-                "inconclusive"
-              ]
-            },
-            "changes": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "symptom_id",
-                  "direction"
-                ],
-                "properties": {
-                  "symptom_id": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
-                  },
-                  "direction": {
-                    "type": "string",
-                    "enum": [
-                      "increased",
-                      "decreased",
-                      "unchanged",
-                      "not_comparable"
-                    ]
-                  }
-                }
-              },
-              "minItems": 0,
-              "uniqueItems": true
-            },
-            "limitation_codes": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]*$"
-              },
-              "minItems": 0,
-              "uniqueItems": true
-            }
-          }
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "visual_markers": {
       "type": "array",
       "items": {
@@ -360,7 +293,7 @@
       "uniqueItems": true
     }
   },
-  "description": "Provider-only classification 3.0: plant_id, visual_markers and up to two condition IDs with confidence scores. No advice, plans, questions, products or plan mode. The backend selects questions and protocols from a pinned ConditionProfile, validates closed ID membership, distinct conditions/ranks and descending scores; confidence is not a calibrated probability.",
+  "description": "Provider-only classification 3.0: plant_id, visual_markers and up to two condition IDs with confidence scores. No advice, plans, questions, products or plan mode. The backend selects protocols from a pinned ConditionProfile, validates closed ID membership, distinct conditions/ranks and descending scores; confidence is not a calibrated probability.",
   "allOf": [
     {
       "if": {
@@ -373,9 +306,6 @@
       "then": {
         "properties": {
           "diagnosis": {
-            "type": "null"
-          },
-          "comparison": {
             "type": "null"
           },
           "visual_markers": {
@@ -501,88 +431,6 @@
                 }
               }
             ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "mode": {
-            "const": "follow_up"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "comparison": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "progress_status",
-              "changes",
-              "limitation_codes"
-            ],
-            "properties": {
-              "progress_status": {
-                "type": "string",
-                "enum": [
-                  "improving",
-                  "stable",
-                  "worsening",
-                  "inconclusive"
-                ]
-              },
-              "changes": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "symptom_id",
-                    "direction"
-                  ],
-                  "properties": {
-                    "symptom_id": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]*$"
-                    },
-                    "direction": {
-                      "type": "string",
-                      "enum": [
-                        "increased",
-                        "decreased",
-                        "unchanged",
-                        "not_comparable"
-                      ]
-                    }
-                  }
-                },
-                "minItems": 0,
-                "uniqueItems": true
-              },
-              "limitation_codes": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "minItems": 0,
-                "uniqueItems": true
-              }
-            }
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "comparison": {
-            "type": "null"
-          },
-          "image_quality": {
-            "not": {
-              "const": "comparison_unsuitable"
-            }
           }
         }
       }
