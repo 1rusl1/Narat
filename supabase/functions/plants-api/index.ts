@@ -1,7 +1,7 @@
 // supabase/functions/plants-api/index.ts
 // T019: Main Edge Function router for Narat plants-api per contracts/api.md.
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   ApiHttpError,
   CORS_HEADERS,
@@ -36,8 +36,13 @@ import {
   handleGetAnalysisJob,
 } from "./analysis.ts";
 
+// The default resolver still authenticates through Supabase; tests can supply
+// a real client with a mocked transport without reading credentials or using the network.
+export type AuthClientFactory = (token: string) => SupabaseClient | null;
+
 export interface PlantsApiDependencies {
   resolveRequestContext?: (req: Request) => Promise<RequestContext>;
+  authClientFactory?: AuthClientFactory;
   notificationAdapter?: NotificationClaimRpcAdapter;
   installationsAdapter?: InstallationsStoreAdapter;
   analysisAccessAdapter?: AnalysisAccessQueryAdapter;
@@ -47,17 +52,30 @@ export interface PlantsApiDependencies {
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
 }
 
-async function defaultResolveRequestContext(req: Request): Promise<RequestContext> {
+function createSupabaseAuthClient(token: string): SupabaseClient | null {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  if (!supabaseUrl || !supabaseAnonKey) return null;
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function defaultResolveRequestContext(
+  req: Request,
+  authClientFactory: AuthClientFactory = createSupabaseAuthClient,
+): Promise<RequestContext> {
   const locale = resolveLocale(req);
   const installationCredential =
     req.headers.get("x-installation-credential")?.trim() ?? null;
   const operationId = req.headers.get("x-operation-id")?.trim() ?? null;
   const token = extractBearerToken(req);
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  const client = token && !/\s/.test(token) ? authClientFactory(token) : null;
 
-  if (!token || !supabaseUrl || !supabaseAnonKey) {
+  if (!client || !token) {
     return {
       ownerId: null,
       isAnonymous: true,
@@ -68,13 +86,8 @@ async function defaultResolveRequestContext(req: Request): Promise<RequestContex
     };
   }
 
-  const client = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
   const { data: userData, error: userErr } = await client.auth.getUser(token);
-  if (userErr || !userData?.user) {
+  if (userErr || !userData?.user?.id) {
     throw new ApiHttpError(
       401,
       "UNAUTHORIZED",
@@ -85,22 +98,43 @@ async function defaultResolveRequestContext(req: Request): Promise<RequestContex
   }
 
   const userId = userData.user.id;
-  const isAnonymous = Boolean(userData.user.is_anonymous);
+  let profile;
+  try {
+    const result = await client
+      .from("profiles")
+      .select("account_state, anonymous")
+      .eq("id", userId)
+      .maybeSingle();
+    if (result.error) throw new Error("Profile lookup failed.");
+    profile = result.data;
+  } catch {
+    throw new ApiHttpError(
+      503,
+      "INTERNAL_ERROR",
+      locale === "pl"
+        ? "Weryfikacja konta jest tymczasowo niedostępna. Spróbuj ponownie później."
+        : "Account verification is temporarily unavailable. Please try again later.",
+      true,
+    );
+  }
 
-  const { data: profile } = await client
-    .from("profiles")
-    .select("account_state, anonymous")
-    .eq("id", userId)
-    .maybeSingle();
-
-  const accountState =
-    (profile?.account_state as "active" | "deleting" | "deleted" | undefined) ??
-    "active";
+  if (
+    !profile || profile.account_state !== "active" ||
+    typeof profile.anonymous !== "boolean"
+  ) {
+    throw new ApiHttpError(
+      403,
+      "FORBIDDEN",
+      locale === "pl"
+        ? "Konto jest w trakcie usuwania lub niedostępne."
+        : "Account is deleting or unavailable.",
+    );
+  }
 
   return {
     ownerId: userId,
-    isAnonymous: profile?.anonymous ?? isAnonymous,
-    accountState,
+    isAnonymous: profile.anonymous,
+    accountState: "active",
     installationCredential,
     locale,
     operationId,
@@ -155,7 +189,7 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
 
       const ctx = deps.resolveRequestContext
         ? await deps.resolveRequestContext(req)
-        : await defaultResolveRequestContext(req);
+        : await defaultResolveRequestContext(req, deps.authClientFactory);
 
       if (req.method === "POST" && normalizedPath === "/notifications/claim") {
         const adapter = deps.notificationAdapter ??

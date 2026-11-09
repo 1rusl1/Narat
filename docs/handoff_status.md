@@ -266,7 +266,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t168-retire-unused-client-light-estimator: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t168-retire-unused-client-light-estimator](validation/automation/tasks/t168-retire-unused-client-light-estimator.md).
+t019-auth-profile-fail-closed: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t019-auth-profile-fail-closed](validation/automation/tasks/t019-auth-profile-fail-closed.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
