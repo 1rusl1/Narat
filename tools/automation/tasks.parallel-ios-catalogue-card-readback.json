@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-card-readback",
+      "description": "Guarded server-confirmed catalogue instance readback for forthcoming rendered card; durable save state remains truthful if details refresh fails.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "supabase/migrations/202611090004_retire_free_slots.sql"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift"
+      ],
+      "constraints": [
+        "Only allowed existing files exact contextual diff; no newtargets/tools/config/backend/contracts/handoff/tasks/live. Accepted native0a9f2ea and all158 actual tests retained. This packet only server card readback helper, no views or care generation/account framework. Read exact active SQL sync plant projection and contracts, never guess fields. New small typed sendable/equatable card summary can live in Repository file (id/species/name/revisions if available); generic DTO validation unchanged.",
+        "Use SAME model original context/authority + accepted repository/engine/store. Model only exposes guarded readback while its actual durable state .saved, from exact confirmation.owner/receipt.plantID/operation/current originallease. Repository internal helper uses its existing SyncEngine.performFullRefresh(context:SAMEoriginal), no outbox drain or recapture afterABA; reads actual existing canonical LocalStore plants under SAMEowner, validates lease before/aftereach await and immediately before returning. Do not fabricate plant from input/receipt or use server count alone; actual entity UUID must match receipt and nesteddata.id if present; no default owner/permanent assumptions. No watermark from receipt, canonical GET window checkpoint only.",
+        "Observable model keeps a small card state (idle/loading/loaded/unavailable) and guarded card getters under originallease. Durable save state remains .saved if GET fails/missing/deleted/malformed/readonly/cancelled, UI later shows saved+details unavailable with explicit retry. A/B/ABA/logout/cancel redacts old summary and savedstate, no stale publication. Capture confirmation only under guardedstate, no raw receipt/private data destination detached from model. Separate detailsTask busy guard avoids duplicate refresh, Observation callbacks outsideauthoritylock (preserve all accepted synchronous observer regressions); meaningful test callback reread+invalidate during cardloading/loaded should not deadlock or expose data.",
+        "At least5 meaningful new actual model->repo->API->engine->realSQLite/reopen tests (all158old+5>=163/no skips): save receipt then canonical readback exactserverUUID/name/species; GETfailure and retry/missing/malformed match saved remainssaved/no newcreate; diskrestart restore same receipt then cardread; A/B/ABA/cancel duringGET no old card/payload leak or checkpointmutation/newPOST; duplicate load plus realObservation reread/invalidate. Existing unitfixtures reusable; never fake assign model saved or bypass accepted repository. No renderedUI/native/live/fullparent acceptance. Trustedbuild/alltests/Simulator + independenthighriskReviewer/QA inspectcomplete candidate.",
+        "Read-only exact active SQL plants data projection202611090004: id,origin_flow_id,creation_intent,add_method,personal_name,display_name(personal_name),taxon_id,plant_id,cultivar_label,main_photo_id,current_condition_snapshot_id,origin_draft_id,creation_source,revision,care_revision,created_at. Minimal useful summary decodes UUID id/string plant_id/nullable personal_name/revision/care_revision; do not require unrelated optional fields or compare current revised name to original saved input (canonical data is authoritative). Require entity.id and data.id equal actual receipt.plantId; preserve server values. Care status/actions not inferred from receipt; render no caregeneration success. If concurrent legitimate change makes record missing/malformed, detailsUnavailable, durable receipt remainssaved.",
+        "DIFF FORMAT: every diff --git header MUST begin column1, no leading space before subsequent headers; include exact actual oldcontext. A previous native/model/fixture patch failed because SPACE before secondheader was parsed asoldcontext. Temp-free python3 -c/difflib can generate complete ordinary patch; no controllercheckcommands needed in readonlyagent.",
+        "Accepted DEBUGfactory98b2010 and full158actualtests already independently accepted, then finalmainintegration7502bee/docs19e6c83 published with SQL/Deno115automation/158Swift/Simulator and unchangedf7cdd858fingerprint. Do not change fixturecode. Allcurrent158tests retained; minimum5meaningful newcard tests=>163. No newfile/targetprep needed. Actualviews/guestflow metadata/UIlocaleheader fixes are future separate packet, do not implement themhere."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Actual durable receipt permits matching canonical owner instance readback through SAME originalcontext/engine/SQLite; oldowner redaction and saved-vs-detailsfailure truth preserved; all158old+>=5=>163actualtests/no skips/build/Simulator/highriskReviewerQA. No renderedUI/live/care acceptance.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

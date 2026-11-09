@@ -5,6 +5,16 @@
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Подготовлен guarded server card readback
+
+main публикация подтверждена7502bee; docs-only подтверждение**19e6c83** также отправлено в origin/main и iOS. Runtime/contracts/tools fingerprintf7cdd858/1488files неизменен; исходный main checkout и B не менялись. После итоговых gates менялись только документы.
+
+Новый `tools/automation/tasks.parallel-ios-catalogue-card-readback.json`: write только existing `CollectionRepository.swift`, `CatalogueSaveModel.swift`, `CatalogueSaveModelTests.swift`, новые targets не требуются. Под durable saved receipt и ORIGINAL bound lease — canonical full refresh тем же engine без outbox drain, точный owner/serverUUID/entity.id/data.id, минимальные реальные species/name/revisions. Guarded observable card state не выдаёт данные старой сессии после A/B/ABA/cancel; Observation callbacks вне authority lock. Ошибка/отмена/missing details не превращает уже подтверждённое сохранение в pending и не создаёт новый plant; отдельный details retry. Никаких care-success/планов из receipt/input, только фактический canonical row.
+
+**Требуемая приёмка:** сохранить все158old+>=5meaningful actualmodel/repository/API/engine/SQLite tests=>минимум163/no skips/build/Simulator, high-risk независимые Reviewer/QA; before/after authrace, restart, missing/error/retry, duplicate read и synchronous observer regression. Read-only active SQL004 projection прилагается, B не правится. Views/root wiring, guest cancel+restart metadata и EN/PL HTTP locale header остаются следующим UI-пакетом; fixture code не меняется.
+
+**Подготовительные проверки:** validate VALID(1task), полный context просмотрен, diff-check PASS; build/163tests/приёмка ещё не запускались. **Точный следующий шаг:** validate/context→commit/push manifest/handoff→clean run `parallel-ios-catalogue-card-readback-20261110-01` с прежним branch-only config1bf347cc. После helper — реальные EN/PL catalogue save/card/native views,16 UI cases и isolated Release fixture exclusion. Два gate drafts и их count/source negative probes в /tmp — не продуктовые UI/Release результаты. Родители14/151/T162/T149/Auth/live открыты; B011/012 approval ожидается в B, не обходить.
+
 ## iOS integration опубликована в main — 10 ноября
 
 **Публикация подтверждена:** из отдельного чистого `/private/tmp/narat-ios-integration-20261109-01` выполнен fast-forward72bcccc→**7502beec57c3bc003f2e7924c3f4a2bf2b2346ed**, fingerprint `f7cdd858b21a4e4926b40ff7c9aa65878ba035bf4e224191f0e6daf56ca4807c`/1488files совпал с проверенным source. Обычный `git push origin HEAD:main` exit0: `72bcccc..7502bee HEAD -> main`. origin/codex/plants-ios также на7502bee; исходный main checkout и B worktree не менялись. Включены только принятые iOS engine→repository/input/model/SDK/native/DEBUGfixture и прежняя B005–007 история; SQL008–012/непринятый B4333509 не включены.
