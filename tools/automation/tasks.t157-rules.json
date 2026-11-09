@@ -1,0 +1,114 @@
+{
+  "tasks": [
+    {
+      "id": "t157-score-routing-cleanup",
+      "description": "Последовательно после принятого follow_up-среза a97ff20 убрать старую маршрутизацию по confidence/gap и decision/question DTO, сохраняя явную неопределённость, подтверждённые действия из KB и чтение исторических receipts. Это часть T157, не вся T155.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "supabase/functions/_shared/ProtocolResolver.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "specs/001-plants-ios-mvp/spec.md",
+        "specs/001-plants-ios-mvp/contracts/revision-2026-11-09.md",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "tools/automation/t157_score_gate.py"
+      ],
+      "write_files": [
+        "supabase/functions/_shared/ProtocolResolver.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift"
+      ],
+      "constraints": [
+        "Только write_files; не трогать schema/квоты/auth/SQL/provider/контроллер/tasks/handoff. Не делать deploy/live calls. Raw confidence может остаться в classification как историческое/внутреннее поле, но больше не управляет маршрутом или доступностью действия.",
+        "Удалить DecisionStateDTO/DecisionResolutionInputState/параметр decisionState и projection decision_state. Удалить все confidence/gap thresholds. Явный healthy/out_of_scope/insufficient_data идёт по собственному статусу; только problem_detected ровно с одним опубликованным host-compatible кандидатом может выбрать его первую применимую помощь. Два кандидата — неоднозначность: не выбирать лечение по confidence/rank и не задавать вопрос. Текущие host/applicability/источники не ослаблять.",
+        "Fallback не должен выдавать придуманные советы из FALLBACK_SAFE_FIRST_AID за опубликованные данные: если нет применимой конкретной карточки/базового fallback, action/title/следующая дата nullable и понятные status/limitations. Healthy не получает выдуманное лечение. Не вводить новый движок fallback/генерацию советов. Отказ в рекомендации не ломает сохранение результата.",
+        "Подпись/verify исторических analysis_receipt и поля подписанного payload decision_revision оставить совместимыми; для нового результата допустима постоянная revision=1 без question machinery. Не менять/переподписывать старые токены, не удалять историю. Активные Swift DiagnosticQuestion/Answer/Decision DTO удалить как неиспользуемые; если найдётся реальный persisted consumer — обеспечить минимальное read-only чтение без нового опроса. Не трогать другие treatment/report DTO здесь.",
+        "Обновить Deno regression tests: одинаковое действие для единственного применимого кандидата при 0.1/0.79/0.8/0.9; два кандидата не выбирают специфическое лечение независимо от gap; host mismatch/unknown/unpublished/недостатокданных не выдают фиктивный совет/дату; EN/PL. Удаление decisionState override подтверждается тестом runtime extra argument: не может обойти неопределённость. Старые signed tokens по-прежнему verify. Существующие positive assertions, ожидавшие pending только из score, заменить проверкой нового поведения, не skip/не ослаблять unrelated.",
+        "Swift PlantsTests должны подтвердить decode/перезапуск настоящего сохранённого контекста/анализа с историческими лишними question/decision данными без включения опроса; тестировать используемые Codable/LocalStore, не отдельную бессодержательную test-only модель. Existing outbox/history tests остаются. Все Deno/iOS/smoke обязательны; никакого закрытия T157 одним build."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Пороговые ветки/decision override/активные question DTO удалены; поведение определяется явным статусом и применимостью, не confidence/gap.",
+          "checks": [
+            "t157-no-score-routing",
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Deno behavioral tests подтверждают независимость от scores, безопасную неоднозначность, EN/PL/applicability и совместимость исторических подписей без выдуманных fallback советов.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Swift tests сохранности старого контекста/истории и полный local iOS build/unit/smoke проходят.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "t157-manual-evidence-cleanup",
+      "description": "Следующий независимый по файлам срез T157: убрать обязательные три источника и обязательный LLM synthesis workflow из обеих profile schema. Сохранить происхождение/права/применимость. Это минимальная часть перехода к ручной подготовке, не полный новый формат карточки.",
+      "depends_on": [
+        "t157-score-routing-cleanup"
+      ],
+      "risk": "medium",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+        "specs/001-plants-ios-mvp/contracts/plant-profile.schema.json",
+        "supabase/functions/_shared/tests/profile_evidence_test.ts",
+        "specs/001-plants-ios-mvp/spec.md",
+        "specs/001-plants-ios-mvp/contracts/revision-2026-11-09.md",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "tools/automation/t157_evidence_gate.py"
+      ],
+      "write_files": [
+        "specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+        "specs/001-plants-ios-mvp/contracts/plant-profile.schema.json",
+        "supabase/functions/_shared/tests/profile_evidence_test.ts"
+      ],
+      "constraints": [
+        "Только write_files; без pipeline/release данных/SQL/DTO/production deploy. Не подменять факт проверенного источника наличием schema-valid записи. Никаких новых dependencies/lock или synthetic данных в настоящем выпуске.",
+        "В обоих schema сделать ровно изменения gate: provenance.source_documents.minItems=1 (не0); donor_id/independence_group optional metadata (properties сохранить); allowed_for.minItems=1 maxItems4 enum/unique сохраняются; validation.method enum [manual_review,multi_source_rules]; synthesis_model/prompt_version/guardrail_version optional metadata (properties сохраняются). Остальные поля/ограничения/description не менять в этом срезе. При manual_review не требовать выдуманную модель. Для реально автоматического/LLM использования по-прежнему нужно соответствующее разрешение, проверяемое registry/pipeline; изменение metadata не разрешает неподтверждённое использование.",
+        "Добавить Deno AJV2020 schema regression test для обоих файлов: ручная проверка с одним реальным по формату синтетическим источником и без donor-group/synthesis metadata проходит; ноль источников, пустой use_basis, пустой allowed_for, неверный enum, отсутствующие field_evidence/validated_at и unresolved_conflicts отвергаются; старый multi_source_rules с полным metadata продолжает валидироваться. Фикстуры полных профилей можно брать/адаптировать из существующих tests/локальных pilot, но без сетевых вызовов и ослабления schema. Обозначить synthetic evidence, не выдавать это за проверенные рекомендации.",
+        "Не менять/удалять field_evidence, units, применимость/unknown/EN-PL/treatment constraints. Не добавлять framework для проверки всего каталога. Все Deno tests и точный semantic hash gate обязательны. T157/T148/KB release этим не закрываются."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "В обеих схемах выполнены только принятые изменения single-source/manual metadata; остальные schema constraints сохранены точно.",
+          "checks": [
+            "t157-manual-evidence",
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "AJV/Deno tests для обоих schema принимают single-source/manual и исторический multi-source, отвергают отсутствие происхождения/прав/проверки и нерешённые конфликты. Остальные backend tests проходят.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

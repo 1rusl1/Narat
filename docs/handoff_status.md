@@ -42,15 +42,17 @@ Run `t157-questions-20261109-01`, manifest `tools/automation/tasks.t157-cleanup.
 
 **Ограничение:** принята только часть OLD-01/T157; follow_up, scores/routing, полный профиль/источники, treatment timeline, Swift DTO и прочие остатки T158–T160 ещё требуют очистки. T157 и T155 не закрыты; новые checkbox не добавлены. Успешный пилот подтверждает пригодность оркестратора для ограниченных срезов с точными файлами/проверками, а не автоматическую безопасность любой миграции.
 
-## Следующий последовательный запуск
+## Последовательная очистка: follow_up принят
 
-Подготовлен `tasks.t157-followup.json` + независимый `t157_followup_gate.py` и config check: два активных режима schema/backend/iOS, безопасное чтение legacy и завершение старого queued job без provider/нового расхода. Manifest validate PASS (1 high-risk задача). Разрешены 16 явно указанных schema/backend/Swift/test файлов. Обязательны Deno regression и iOS build/unit/Simulator smoke. Runtime checks ещё не запускались для нового патча; stage preparation не приёмка T157.
+Run `t157-followup-20261109-01` — **COMPLETED / Verified and published**, коммит `a97ff20` отправлен контроллером в origin/main. Удалён новый follow_up/comparison из AI schema/provider/validator/access/API/worker; Swift active modes/квоты сокращены до identification/diagnosis. Исторический режим допускается только для чтения кеша/receipt, исходная подпись сохраняется. Legacy queued job завершает finalizeOnce до provider/budget, не создаёт ложного успеха. Контрольные фото и история сохранены.
 
-Run-id: `t157-followup-20261109-01`. После чистого Git запускается Developer → checks → Reviewer → QA → push. Исторический SQL mode/RPC остаётся отдельной forward-migration задачей с clean/upgrade приёмкой, не объявлять его очищенным этим срезом.
+Проверки: **45 Deno tests PASS**, deno-check/точный structural gate/whitespace PASS; **89 automation tests PASS**; iOS build/welcome/PlantsTests PASS без skips и Simulator smoke PASS. Reviewer/QA подтвердили все AC, по одному вызову каждой роли, без repairs. [Отчёт](validation/automation/tasks/t157-followup-cleanup.md). Это fixtures и local Simulator, живые AI/DB и forward migration не проверены; старые SQL mode/RPC остаются следующей migration-работой.
+
+Подготовлена очередь `tasks.t157-rules.json`: (1) score routing/decision/question DTO и безопасная неопределённость, (2) single-source/manual provenance schema. Manifest validate PASS, две зависимые задачи. Независимые structural/hash gates добавлены в config; stage preparation не приёмка. Run-id `t157-rules-20261109-01`, Developer/checks/Review/QA/push для каждого среза. Product checkbox T157/T155 остаются открыты.
 
 ## Точный следующий шаг
 
-Продолжить **T157** следующим согласованным срезом оркестратора: составить список потребителей `follow_up`/comparison в `ai-result.schema.json`, `KnowledgeTypes.ts`, validator/adapter/worker/API и Swift DTO; подготовить manifest с синхронным удалением нового режима, обычной diagnosis для повторного фото, безопасным чтением истории и Deno/iOS regression checks. Не удалять режим только из schema при оставшихся writers. После этого очистить score routing и компактные карточки, затем T158/T159/T160 с forward migrations и отдельными clean/upgrade проверками. Весь объём нельзя принимать по текущему question-bank пилоту.
+Выполнить очередь **T157 rules** по подготовленному manifest, дождаться приёмки/push каждой задачи. Затем согласовать компактные карточки вместо обязательного полного профиля/timeline и переходить к T158/T159/T160 с отдельными forward migrations и clean/upgrade проверками. Сохранение signed истории и фактического расхода обязательно. Текущие локальные PASS не являются приёмкой всей T157 или живого фото→уход маршрута.
 
 T148 остаётся на прежней остановке до запуска следующего pipeline-среза; фактические дефекты имён/переводов/медиа перечислены в обновлённом `tools/automation/tasks.t148-pipeline.json` и [архиве handoff](archive/handoff_status_before_simplification_2026-11-09.md). Полная редакционная приёмка отдельна; минимум охвата снят, сохранность 606 карточек проверяется.
 
@@ -63,7 +65,7 @@ T148 остаётся на прежней остановке до запуска
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 137 активных задач: 13 отмечены (12 исторических + T156 документ), 124 открыты; 23 снятых. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Тарифы/expiry не изменены.
-- T157 question-bank срез опубликован: f15e6c6, run t157-questions-20261109-01 COMPLETED. Остальная T157 и T158–T160 открыты; следующий manifest — согласованное удаление follow_up/comparison с Deno/iOS проверками. T148 независима; применённые миграции не переписывать.
+- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Следующая очередь t157-rules-20261109-01: score/question DTO → manual evidence. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
 - Handoff/tasks/Git изменяет только управляющий процесс. Fixtures ≠ live; снятый объём не выполнение. Субагенты не запускаются без отдельного разрешения.
 <!-- /orchestrator:project-state -->
 

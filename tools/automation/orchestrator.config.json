@@ -325,6 +325,24 @@
       "stage": "static",
       "mode": "local",
       "timeout": 30
+    },
+    "t157-no-score-routing": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_score_gate.py"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
+    },
+    "t157-manual-evidence": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_evidence_gate.py"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
     }
   },
   "publish": {
