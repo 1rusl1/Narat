@@ -343,6 +343,15 @@
       "stage": "static",
       "mode": "local",
       "timeout": 30
+    },
+    "t157-sql-mode-upgrade": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_sql_mode_gate.py"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 300
     }
   },
   "publish": {

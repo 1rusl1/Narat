@@ -48,11 +48,21 @@ Run `t157-followup-20261109-01` — **COMPLETED / Verified and published**, ко
 
 Проверки: **45 Deno tests PASS**, deno-check/точный structural gate/whitespace PASS; **89 automation tests PASS**; iOS build/welcome/PlantsTests PASS без skips и Simulator smoke PASS. Reviewer/QA подтвердили все AC, по одному вызову каждой роли, без repairs. [Отчёт](validation/automation/tasks/t157-followup-cleanup.md). Это fixtures и local Simulator, живые AI/DB и forward migration не проверены; старые SQL mode/RPC остаются следующей migration-работой.
 
-Подготовлена очередь `tasks.t157-rules.json`: (1) score routing/decision/question DTO и безопасная неопределённость, (2) single-source/manual provenance schema. Manifest validate PASS, две зависимые задачи. Независимые structural/hash gates добавлены в config; stage preparation не приёмка. Run-id `t157-rules-20261109-01`, Developer/checks/Review/QA/push для каждого среза. Product checkbox T157/T155 остаются открыты.
+Очередь `tasks.t157-rules.json`, run `t157-rules-20261109-01` — обе задачи **COMPLETED**, без repair: score routing/DTO — коммит `31a465f`, manual evidence — `e2a446d`, оба опубликованы контроллером. В resolver нет confidence/gap routing/decision override и выдуманных fallback действий; неоднозначность не выбирает лечение, исторические подписи сохраняются. Из Swift удалены неиспользуемые question/decision DTO. Обе profile schema принимают одну source запись и manual_review без выдуманных synthesis metadata; происхождение/права/field evidence/проверка обязательны.
+
+Проверки score-среза: 50 Deno tests PASS, iOS build/welcome/unit и Simulator smoke PASS, gates/static/89 automation tests PASS; evidence-среза — **104 Deno tests PASS**, точный hash gate/статические проверки/89 automation tests PASS. Reviewer/QA подтвердили AC каждого среза. Это fixtures/local Simulator, не live AI/DB. Отчёты: `docs/validation/automation/tasks/t157-{score-routing,manual-evidence}-cleanup.md`. T157/T155 остаются открыты: обязательный полный профиль/timeline и прочие SQL/collection/report остатки ещё не согласованы.
+
+### База для следующих SQL-срезов
+
+Docker/Podman недоступны; CLI Supabase status не может поднять контейнеры. Альтернатива проверена в собственной временной Unix-socket БД: **PostgreSQL 17.11 + настоящий pgTAP 1.3** (cached upstream `/private/tmp/pgtap-1.3.4/sql/pgtap.sql`). Системный PATH по умолчанию указывает на PostgreSQL14, использовать явный `/opt/homebrew/opt/postgresql@17/bin/`.
+
+Изолированный baseline `/tmp/narat_sql_baseline.py` — PASS: **21 неизменённая миграция, 235/235 pgTAP, 1212 EN/PL SQL/TS проекций и реальные mutex/race сценарии каталога**. Логи: `/var/folders/_7/qq9rxkm91sb087_l46fjnbj00000gn/T/narat-cleanup-sql-baseline-59321aki/`. Первая попытка baseline остановилась на пустом PGSERVICE во временном окружении; после удаления inherited PG* выполнена заново успешно. Обе временные БД/кластеры остановлены и удалены; production/staging не использовались. Это не тест новой миграции.
+
+Подготовлен `tasks.t157-sql-mode.json`, run `t157-sql-mode-20261109-01`: узкая forward-миграция quota RPC, запрет нового follow_up/plan/unknown/NULL без изменения действующих period rules или legacy rows. Trusted `t157_sql_mode_gate.py` проверяет точный diff функции, запускает clean и seeded-upgrade на отдельном PostgreSQL17 с настоящим pgTAP и сравнением всех public table rows. Manifest validate PASS; сама миграция и её проверки пока не выполнены.
 
 ## Точный следующий шаг
 
-Выполнить очередь **T157 rules** по подготовленному manifest, дождаться приёмки/push каждой задачи. Затем согласовать компактные карточки вместо обязательного полного профиля/timeline и переходить к T158/T159/T160 с отдельными forward migrations и clean/upgrade проверками. Сохранение signed истории и фактического расхода обязательно. Текущие локальные PASS не являются приёмкой всей T157 или живого фото→уход маршрута.
+Выполнить **T157 SQL mode guard** через подготовленный manifest, дождаться clean/upgrade tests, Reviewer/QA и push. Затем согласовать компактные карточки вместо обязательного полного профиля/timeline и переходить к T158/T159/T160 с отдельными forward migrations. Историю, исходные подписи и расход сохранять. Текущие PASS не закрывают всю T157 или живой фото→уход маршрут.
 
 T148 остаётся на прежней остановке до запуска следующего pipeline-среза; фактические дефекты имён/переводов/медиа перечислены в обновлённом `tools/automation/tasks.t148-pipeline.json` и [архиве handoff](archive/handoff_status_before_simplification_2026-11-09.md). Полная редакционная приёмка отдельна; минимум охвата снят, сохранность 606 карточек проверяется.
 
@@ -65,7 +75,7 @@ T148 остаётся на прежней остановке до запуска
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 137 активных задач: 13 отмечены (12 исторических + T156 документ), 124 открыты; 23 снятых. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Тарифы/expiry не изменены.
-- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Следующая очередь t157-rules-20261109-01: score/question DTO → manual evidence. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
+- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. Следующий run t157-sql-mode-20261109-01 — forward mode guard, изолированный PostgreSQL17/pgTAP доступен. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
 - Handoff/tasks/Git изменяет только управляющий процесс. Fixtures ≠ live; снятый объём не выполнение. Субагенты не запускаются без отдельного разрешения.
 <!-- /orchestrator:project-state -->
 

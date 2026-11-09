@@ -2,7 +2,7 @@
 
 **Целевое поведение от 2026-11-09:** [spec](../spec.md), [API](api.md), [sync](sync.md), [переход](revision-2026-11-09.md).
 
-**Прогресс 9 ноября:** банк diagnostic_disambiguation удалён из ConditionProfile schema и backend-типа/semantic validator в первом срезе T157; новые regression tests прошли, коммит f15e6c6. Follow_up/comparison в новом AI/API/worker и active iOS удалены в a97ff20: 45 Deno tests, iOS build/unit/Simulator и Review/QA PASS. Legacy cache/подписи читаются; SQL upgrade и остальные поля ещё не согласованы, T157 остаётся открытой.
+**Прогресс 9 ноября:** банк diagnostic_disambiguation удалён из ConditionProfile schema и backend-типа/semantic validator в первом срезе T157; новые regression tests прошли, коммит f15e6c6. Follow_up/comparison в новом AI/API/worker и active iOS удалены в a97ff20: 45 Deno tests, iOS build/unit/Simulator и Review/QA PASS. Legacy cache/подписи читаются; SQL upgrade и остальные поля ещё не согласованы, Score routing и question DTO удалены в 31a465f; квота источников/обязательный synthesis workflow сняты в e2a446d (104 Deno tests PASS). Обязательный полный профиль/timeline и SQL переход ещё остаются; T157 открыта.
 
 Существующие `ai-result.schema.json`, `plant-profile.schema.json`, `condition-profile.schema.json` — машинные контракты прежней реализации. Они ещё содержат старые режимы/поля; их нельзя использовать как основание вернуть снятые функции. T157 согласует schema, TypeScript validator/resolver, Swift DTO и fixtures вместе. `catalogue-skeleton.schema.json` обслуживает отдельный существующий каталог и не удаляется из-за сокращения лечебной базы.
 

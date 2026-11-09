@@ -1,0 +1,63 @@
+{
+  "tasks": [
+    {
+      "id": "t157-sql-mode-guard",
+      "description": "После удаления нового follow_up в API/provider/iOS закрыть старый прямой quota RPC путь: forward migration для admit_analysis_quota с только identification/diagnosis; сохранить legacy table rows/check constraints и расход. Это узкий SQL-срез T157, не пересмотр квот/anchor T158.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "supabase/migrations/202611090001_analysis_mode_guard.sql",
+        "supabase/tests/analysis_mode_upgrade.seed.sql",
+        "supabase/tests/analysis_mode_guard.test.sql",
+        "supabase/migrations/202610200012_quota_operations.sql",
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202610200007_analysis_quota.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "tools/automation/t157_sql_mode_gate.py",
+        "specs/001-plants-ios-mvp/contracts/revision-2026-11-09.md"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090001_analysis_mode_guard.sql",
+        "supabase/tests/analysis_mode_upgrade.seed.sql",
+        "supabase/tests/analysis_mode_guard.test.sql"
+      ],
+      "constraints": [
+        "Только новые write_files; все применённые миграции сохраняются побайтово. Не запускать deploy/живую БД; controller gate создаёт и удаляет собственный PostgreSQL17 cluster с auth stubs и настоящим pgTAP. Это fixtures, не Supabase live.",
+        "Содержимое новой миграции — только CREATE OR REPLACE исходной public.admit_analysis_quota с той же сигнатурой/SECURITY DEFINER/search_path и body. Извлечь исходную функцию программно из 202610200012_quota_operations.sql, заменить только whitelist guard на IF p_mode IS NULL OR p_mode NOT IN (identification,diagnosis) THEN, удалить obsolete paid_subscription_required_for_follow_up IF branch. Точный expected diff уже реализован в независимом gate. Никаких переименований, wrappers, новых grants/таблиц/обнуления квот. Остальные известные устаревшие period/Free правила не исправлять в этом срезе.",
+        "Новые follow_up, plan, неизвестный и NULL mode отвергаются INVALID_ANALYSIS_MODE до доступа/побочных эффектов; допустимые modes сохраняют прежнюю admission semantics. Legacy анализы/receipts/фото/ledger не удалять и не преобразовывать, старые mode CHECK допускают исторические записи.",
+        "Seed SQL наполняет собственную тестовую БД до upgrade и также после clean install: два владельца/installation, KB, legacy follow_up analysis_jobs и operation_receipts, расход/маркеры если нужны. Заполнить реальные обязательные поля исходных таблиц, без отключения constraints/triggers/RLS/поддельных функций. Остальные таблицы могут быть пустыми. Никаких production IDs/секретов. Gate сравнивает все public table rows до/после upgrade, сохранность legacy rows проверять SQL assertions явно.",
+        "Новый pgTAP test BEGIN/plan/finish/ROLLBACK, без skip/TODO. Проверить все forbidden modes с настоящими throws_ok и неизменностью starter/расхода/rows, успешный admission identification/diagnosis с реальными owner+installation и подготовленными job rows, сохранение раздельных starter/in-progress/guard inactive owner, чтение legacy job/receipt как исходных и service-role grants на прежнюю RPC сигнатуру. Не тестировать через тестовый заменитель admission и не объявлять sequential test конкурентным. Не изменять старый quota_admission.test.sql: его приёмка новых месячных правил — отдельная T028/T158.",
+        "При ошибки baseline, которую нельзя устранить в write_files, вернуть конкретный блокер, не обходить проверку. Deno all-tests и clean/upgrade SQL gate обязательны; это не закрывает T157/T155."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Forward migration меняет ровно guard и отменённую paid-only ветку в исходной RPC, не меняя применённые SQL/историю/period semantics.",
+          "checks": [
+            "t157-sql-mode-upgrade",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Действительные pgTAP assertions на clean и seeded upgrade отвергают новые forbidden modes до расхода, сохраняют допустимые starter guards и исторические rows/receipts/grants.",
+          "checks": [
+            "t157-sql-mode-upgrade"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Статика backend и whitespace без регрессий; SQL pass не выдаётся за live Supabase deployment.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
