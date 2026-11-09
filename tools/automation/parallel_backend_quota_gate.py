@@ -18,6 +18,8 @@ LEDGER = '202611090006_registration_ledger.sql'
 RESERVE = '202611090008_quota_reservation.sql'
 SECOND = '202611090009_quota_settlement.sql'
 BIND = '202611090010_installation_quota_bind.sql'
+INSTALLATIONS = '202611090011_installation_access_api.sql'
+ACCESS = '202611090012_analysis_access_snapshot.sql'
 CAP_OWNER = '15800000-0000-4000-8000-000000000001'
 A = '16300000-0000-4000-8000-000000000001'
 B = '16300000-0000-4000-8000-000000000002'
@@ -37,9 +39,13 @@ def main():
     parser.add_argument('--cap-regression', action='store_true')
     parser.add_argument('--reserve', action='store_true')
     parser.add_argument('--bind', action='store_true')
+    parser.add_argument('--installations', action='store_true')
+    parser.add_argument('--access', action='store_true')
     parser.add_argument('--accounting', action='store_true')
     parser.add_argument('--baseline', action='store_true', help='Negative control; expected product rejection is NOT acceptance')
     args = parser.parse_args()
+    assert not args.installations or args.bind, '--installations requires --bind'
+    assert not args.access or args.installations, '--access requires --installations'
     assert BIN.joinpath('initdb').is_file() and PGTAP.is_file(), 'PG17/pgTAP required'
     work = Path(tempfile.mkdtemp(prefix='narat-backend-quota-'))
     sock = work / 'socket'
@@ -269,6 +275,10 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 assert any(m.name == SECOND for m in selected), 'Settlement migration required'
             if args.bind:
                 assert any(m.name == BIND for m in selected), 'Binding migration required'
+            if args.installations:
+                assert any(m.name == INSTALLATIONS for m in selected), 'Credential API migration required'
+            if args.access:
+                assert any(m.name == ACCESS for m in selected), 'Access snapshot migration required'
         for case in ('clean','upgrade'):
             sql('postgres', f'CREATE DATABASE {case};')
             sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean);")
@@ -318,6 +328,10 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     tap(case, ROOT/'supabase/tests/registration_admission.test.sql')
                 if args.bind:
                     tap(case, ROOT/'supabase/tests/registration_bind.test.sql')
+                if args.installations:
+                    tap(case, ROOT/'supabase/tests/registration_installations.test.sql')
+                if args.access:
+                    tap(case, ROOT/'supabase/tests/registration_access.test.sql')
                 concurrency(case, same=False)
                 concurrency(case, same=True)
                 if not args.reserve:

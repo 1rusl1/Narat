@@ -1,6 +1,32 @@
 # Narat — текущий статус и передача работы
 
 
+## B2 — подготовлены credential SQL11 и bounded API SQL manifest
+
+Controller материализовал кандидат011: private starter merge из принятого010,
+register active guest/permanent owner + hash, atomic credential proof/bind. Изменены
+новые011/registration_installations.test.sql, controller quota gate (`--installations`,
+`--access` fail-closed при отсутствующем файле), новый tasks.parallel-backend-quota-api.json:
+2 узких задачи011 credential RPC →012 authoritative snapshot. Это кандидат, не acceptance.
+
+Реальный precheck `python3 tools/automation/parallel_backend_quota_gate.py --bind --installations`
+PASS clean/upgrade по420pgTAP (384 прежних+36 новых),12UTC, preexisting rows retained,
+99actual admit/finalize перед каждым6x20real-connection round. Лог `/tmp/narat-b2-installations-candidate.log`.
+Validate2/developer context/diff-check PASS. Новые Deno/Review/QA выполнятся в run06;
+012 ещё отсутствует, его gate не запускался/не объявлен PASS.
+
+Branch config SHA256 `7b9b9b38d11cdc0227599a9b0b301c25472040280803cbc24394fd40c234e904`;
+добавлены только два B gate checks, routing/retry/budgets неизменны, publish только
+origin/codex/plants-backend. Новый run `parallel-backend-quota-api-sql-20261109-06`,
+явный --config; старые runs не resume. До запуска сохранить preparation commit/push.
+Следом реальный run06; после SQL12 — отдельные HTTP adapters+protected transport gate,
+согласование additive wire с A. Неизвестная legacy дата блокируется по ответу владельца.
+
+Передача отчёта в A автоматически отклонена: review не нашёл явного разрешения
+пользователя на межчатовую отправку внутренних данных. Отчёт сохранён локально, не
+обходили запрет. Async разрешение запрошено; это не блокирует локальную разработку.
+B1 bc6a879 опубликован; fullT163/T036/live/worker остаются открыты, Swift B не трогала.
+
 ## B — SQL005–010 принят; следующий B2 authoritative API
 
 **Принято и опубликовано:** reserve141d548, finalize42ed071, bind a367d0b.

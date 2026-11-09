@@ -1,0 +1,139 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-t163-installation-api-sql",
+      "description": "B2 prerequisite: accept controller materialized credential-aware registration/bind SQL11; anonymous JWT owner linking; preserve accepted010 settlement semantics.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/monthly-access.md",
+        "specs/001-plants-ios-mvp/contracts/monthly-access-http.md",
+        "specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202610200007_analysis_quota.sql",
+        "supabase/migrations/202610200012_quota_operations.sql",
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/migrations/202611090006_registration_ledger.sql",
+        "supabase/migrations/202611090007_registration_state_guard.sql",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/migrations/202611090009_quota_settlement.sql",
+        "supabase/migrations/202611090010_installation_quota_bind.sql",
+        "supabase/migrations/202611090011_installation_access_api.sql",
+        "supabase/tests/registration_installations.test.sql",
+        "supabase/tests/registration_bind.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090011_installation_access_api.sql",
+        "supabase/tests/registration_installations.test.sql"
+      ],
+      "constraints": [
+        "Only exact write_files. No applied migration edits, tools, handoff, tasks.md, Swift, collection wire, auth/cap/sync rewrites or network/deploy. All new definer functions pin empty search_path, revoke PUBLIC/anon/authenticated. Service-only new public RPCs; private helpers revoke service too. Preserve every existing row on forward migration; no migration-time DML.",
+        "External accepted SQL005-010 through a367d0b, T161/auth/sync and main72bcccc are constraints, not manifest dependencies. User confirmed unknown legacy permanent registration blocks monthly until verified Auth evidence. No guesses/purchase anchor/client time, no refill by trial/purchase/restore/expiry, no parent checkbox closure. No live proof, fixtures only.",
+        "Bounded ordinary unified patch. Concrete controller candidates may already exist: inspect entire implementation and tests, return empty patch if correct, repair only actual defects. Independent Developer/Reviewer/QA must evaluate complete slice, not last diff. Existing113 bind,89 finalize,78 reserve,49 ledger,55 anchor tests and99ACTUALadmit/finalize +6x20 real-connection rounds must pass. Keep original roles/retries/budgets. No output fingerprints invented: copy context fingerprint exactly.",
+        "Candidate011 factors010 starter logic into private merge_installation_starters(uuid,uuid,timestamptz), any active owner incl anonymous; optional null installation permits account-only normalization. Permanent public bind remains permanent-only and missing installation rejects. Preserve consumed OR/earliest time, conflicting live reservations fail closed, reserved+succeeded pointer retained until finalizer decides nonbillable. Never claim/reassign foreign jobs/media.",
+        "register_installation_access(p_credential_hash text,p_owner_id uuid,p_now default now) requires canonical64lowerhex hash, verified active owner incl guest, locks owner before insert/upsert hash and installation, idempotent same hash, appends owner without discarding linked IDs. bind_installation_credential(uuid,uuid,text,timestamptz) atomically locks owner then installation and checks hash+UUID before permanent bind; never bodyUUID-only proof. Clients cannot execute helper or RPC; service cannot execute helper directly. All prior113binding tests mandatory.",
+        "Meaningful newpgTAP: actual008 guest admission after register, exact replay, wrong credential no mutation, account anonymous/deleting/null guards, actual009 nonbillable release copied pointer normalization, shared physical installation expense OR, unchanged registration/jobowner/purchase, no new monthly usage, all grants. Improve tests for discovered concrete gaps without weakening old suites. No TS/HTTP yet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Real isolated clean/upgrade SQL, preserved history, old regression and actual concurrency.",
+          "checks": [
+            "parallel-backend-quota-installations",
+            "parallel-backend-cap-regression"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Deno fixture regressions.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Types and diff.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "parallel-backend-t163-access-snapshot-sql",
+      "description": "B2 authoritative SQL snapshot only: one shared monthly pool, server eligibility/anchor/history, no job creation/reservation or JS forecasting.",
+      "depends_on": [
+        "parallel-backend-t163-installation-api-sql"
+      ],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/monthly-access.md",
+        "specs/001-plants-ios-mvp/contracts/monthly-access-http.md",
+        "specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202610200007_analysis_quota.sql",
+        "supabase/migrations/202610200012_quota_operations.sql",
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/migrations/202611090006_registration_ledger.sql",
+        "supabase/migrations/202611090007_registration_state_guard.sql",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/migrations/202611090009_quota_settlement.sql",
+        "supabase/migrations/202611090010_installation_quota_bind.sql",
+        "supabase/migrations/202611090011_installation_access_api.sql",
+        "supabase/tests/registration_installations.test.sql",
+        "supabase/migrations/202611090012_analysis_access_snapshot.sql",
+        "supabase/tests/registration_access.test.sql",
+        "supabase/tests/registration_reservation.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090012_analysis_access_snapshot.sql",
+        "supabase/tests/registration_access.test.sql"
+      ],
+      "constraints": [
+        "Only exact write_files. No applied migration edits, tools, handoff, tasks.md, Swift, collection wire, auth/cap/sync rewrites or network/deploy. All new definer functions pin empty search_path, revoke PUBLIC/anon/authenticated. Service-only new public RPCs; private helpers revoke service too. Preserve every existing row on forward migration; no migration-time DML.",
+        "External accepted SQL005-010 through a367d0b, T161/auth/sync and main72bcccc are constraints, not manifest dependencies. User confirmed unknown legacy permanent registration blocks monthly until verified Auth evidence. No guesses/purchase anchor/client time, no refill by trial/purchase/restore/expiry, no parent checkbox closure. No live proof, fixtures only.",
+        "Bounded ordinary unified patch. Concrete controller candidates may already exist: inspect entire implementation and tests, return empty patch if correct, repair only actual defects. Independent Developer/Reviewer/QA must evaluate complete slice, not last diff. Existing113 bind,89 finalize,78 reserve,49 ledger,55 anchor tests and99ACTUALadmit/finalize +6x20 real-connection rounds must pass. Keep original roles/retries/budgets. No output fingerprints invented: copy context fingerprint exactly.",
+        "Only012+registration_access.test.sql, ONE public.get_analysis_access_snapshot(p_owner_id uuid,p_installation_credential_hash text DEFAULT NULL,p_now timestamptz DEFAULT now()) returns canonical JSON in monthly-access-http/fixtures. Active owner lock plus tuple fence, owner->installation->jobs stable lock order. Guest requires known credential linked to owner; permanent optional credential, provided bad/unlinked credential fails closed. GET must not associate credential to a new owner. Call private011 helper to normalize terminal copied starter pointers, reread profile; nullinstallation account-only normalization allowed. No new job/usage reservation, no admit dryrun, no provider.",
+        "Database has_verified_paid_access + compute_paid_quota_window; paid/trial100 with no starterfallback, Free3 one shared identification+diagnosis pool and unused per-mode starter first; guest independentstarteronly. UTC registration boundaries/clamp29-31/leap preserved inclmicroseconds, server timestamps opaque; no localcalendar/trialexpiry asreset. paid kind even when history unknown, unknown counts/limit/remainingNULL; mode denied0 and knownmode limit3/100; unusedFree starter may stillbeallowed. owner_id/is_guest/starter/monthly/modes as fixtures; onlyidentification+diagnosis, mode camelCase fields. Modes reason quota_registration_required/history_unresolved and exhaustion/inprogress matchcontract.",
+        "Copy EXACT008 history eligibility predicate: 006 global requires_review includes nonoverlapping old residue and truly unmappable jobs. Do NOT blanket deny all old residuals. Unknown registration or futureanchor => registration_required. With knownanchor computeperiod/reconcile, honor globalunmappablejobs and CURRENT overlapping residuals. Existing canonical pointerless reservation uses ledger reservewindow even when created_at differs: preserve008 check. Count reserved+consumed FROM account_quota_usage currentperiod once across oldfree/paid and newFree/paid. Snapshot consumed/reserved separately; statusready remaining=max(0,limit-c-r). No refill on paidexpiry/restoration, no fabricated defaults on unknown.",
+        "Meaningful pgTAP actualsnapshot vsactual008freshjob on distinctfixtures/transactions: FreeIDstarter+diagnosismonthly; paid/trial starterignored; expiryspent>3denial; restoration samepool; legacyNULLanchor allowedstarter but blockedmonthly; unknowncurrentresidue; nonoverlapoldresidueallowed; pointerless delayedcanonicalwindow; microseconds/exactboundary/leap/timezones; guestlinkproof/A-B; repeatedgetter no newjob/reserve/charge, readonlygrants. At least one truecompeting GET+admit eligibility boundary if useful, existing6x20realraces mandatory. Returnedstatus onlyready/registration_required/history_unresolved/not_applicable, nullfields percontract. No HTTP yet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Real isolated clean/upgrade SQL, preserved history, old regression and actual concurrency.",
+          "checks": [
+            "parallel-backend-quota-access",
+            "parallel-backend-cap-regression"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Deno fixture regressions.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Types and diff.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
