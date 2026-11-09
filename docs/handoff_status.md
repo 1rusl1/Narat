@@ -96,6 +96,14 @@ Run `t157-swift-profiles-20261109-01`, manifest `tasks.t157-swift-profiles.json`
 
 `--print-migration` gate выводит согласованный room-only SQL; исходные функции извлекаются из неизменённых migrations, не переписываются вручную. Целевые SQL/Deno/iOS tests ещё не выполнены. После validate и сохранения чистого Git запустить run `t158-rooms-20261109-01`.
 
+### Восстановление очереди комнат
+
+Run `t158-rooms-20261109-01`: Developer CLI завершился timeout900с без answer/патча; SQL task WAITING, клиент PENDING. Runtime/данные этим вызовом не менялись, приёмки нет. Исходные state/logs сохранены, запуск не переписан.
+
+Управляющий процесс материализовал `202611090002_retire_rooms.sql` точно через `t158_rooms_gate.py --print-migration` и подготовил `rooms_upgrade.seed.sql`/`rooms_retirement.test.sql`: реальные два owner/legacy rooms/plant links/photo/snapshot/расход/receipts и66 pgTAP assertions. **PASS**: clean PostgreSQL17 —66; seeded upgrade —66, snapshot всех public rows до/после совпал; два реальных concurrent retries дождались owner lock, по одному plant/receipt. Все временные кластеры удалены. Первая sandbox-попытка initdb не смогла создать shared memory; повтор с разрешением системного запуска прошёл. Это локальные fixtures, не live deployment и не полный guest claim.
+
+Кандидат не принят до независимых Review/QA. Новый `tasks.t158-rooms-recovery.json`, run `t158-rooms-20261109-02`: read-only полнотекстовая SQL приёмка с повторными trusted checks → затем исходный клиентский срез. Продуктовые checkbox не менялись. После сохранения чистого Git запустить эту очередь; при finding исправление только отдельным проверяемым шагом.
+
 ## Точный следующий шаг
 
 Перейти к ограниченному срезу **T158: плоская коллекция вместо room CRUD/Free places**. Сначала проследить реальные SQL/RPC/API/Swift consumers и составить manifest совместимого изменения; исторические комнаты/владельцев/фото/расход не удалять. Для forward migration обязательны clean/seeded upgrade PostgreSQL17/pgTAP и concurrent/retry/owner проверки; для API/iOS — Deno/PlantsTests/Simulator. Месячные правила/expiry вынести в следующий отдельный срез T158, не смешивать с удалением комнат. T159/T160 идут после соответствующих зависимостей.
@@ -113,7 +121,7 @@ T148 остаётся на прежней остановке до запуска
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 137 активных задач: 13 отмечены (12 исторических + T156 документ), 124 открыты; 23 снятых. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Тарифы/expiry не изменены.
-- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по 50 pgTAP PASS, history unchanged. Компактные Condition2/Plant2 e7d2d7b/eb40f28 опубликованы: 257 Deno PASS. Три неиспользуемые Swift DTO удалены в 93d77bc: 27 PlantsTests/build/welcome/Simulator PASS. Подготовлен tasks.t158-rooms.json: SQL room retirement → TS/Swift overrides; Free places/cap/квоты отдельно. PostgreSQL17/pgTAP доступен. Guest claim baseline несовместим с таблицами/API: не объявлять положительный перенос проверенным, исправление T159. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
+- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по 50 pgTAP PASS, history unchanged. Компактные Condition2/Plant2 e7d2d7b/eb40f28 опубликованы: 257 Deno PASS. Три неиспользуемые Swift DTO удалены в 93d77bc: 27 PlantsTests/build/welcome/Simulator PASS. Исходный rooms run-01 WAITING по timeout без patch. Подготовлен tested SQL candidate: clean/upgrade по66 pgTAP + real owner-lock retry PASS; Review/QA ещё нужны. Запустить tasks.t158-rooms-recovery.json/run-02: read-only SQL acceptance → TS/Swift overrides; Free places/cap/квоты отдельно. PostgreSQL17/pgTAP доступен. Guest claim baseline несовместим с таблицами/API: не объявлять положительный перенос проверенным, исправление T159. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
 - Handoff/tasks/Git изменяет только управляющий процесс. Fixtures ≠ live; снятый объём не выполнение. Субагенты не запускаются без отдельного разрешения.
 <!-- /orchestrator:project-state -->
 

@@ -1,0 +1,125 @@
+{
+  "tasks": [
+    {
+      "id": "t158-room-sql-retirement",
+      "description": "Независимая read-only приёмка полного room-only SQL кандидата после Developer CLI timeout, не только пустого diff. Управляющий процесс материализовал точный expected SQL и реальные seed/66 pgTAP; PostgreSQL clean/upgrade/race PASS, но Review/QA ещё обязательны. Узкий T158: остановить новые room CRUD/link/creation и исключить rooms/room_id из sync без удаления истории. Не менять Free/квоты/expiry и не объявлять старый несовместимый guest claim рабочим.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "supabase/tests/rooms_upgrade.seed.sql",
+        "supabase/tests/rooms_retirement.test.sql",
+        "specs/001-plants-ios-mvp/contracts/room-retirement.md",
+        "tools/automation/t158_rooms_gate.py",
+        "supabase/migrations/202610200004_collection.sql",
+        "supabase/migrations/202610200010_command_protocol.sql",
+        "supabase/migrations/202610200013_guest_claim.sql",
+        "supabase/migrations/202610200014_collection_commands.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql"
+      ],
+      "write_files": [],
+      "constraints": [
+        "READ-ONLY acceptance: полностью прочитать новую migration, seed/test и trusted gate, сравнить с применёнными источниками/room-retirement.md. Пустой task diff не означает отсутствие изменений: кандидат сохранён отдельным checkpoint; анализировать фактический код целиком. SQL tests не заменять и не ослаблять. При обнаружении дефекта вернуть конкретный finding; этот task не разрешает patch. Не объявлять baseline claim готовым.",
+        "Только новые write_files; applied migrations побайтово неизменны. Обычный unified text diff, без copy/rename headers. Нет deploy/live DB/новых grants/таблиц/миграционного engine. SQL expected целиком выведет python3 tools/automation/t158_rooms_gate.py --print-migration; сформировать новую migration из этого вывода без ручного переписывания 1009 строк. Gate уже закрепляет точный scope четырёх функций и view; комментарии допустимы.",
+        "Прочитать room-retirement.md. Новые room commands/payload keys включая null отвергаются; точный успешный legacy room/plant/claim receipt replay сохраняется. Никакого удаления rooms/plants.room_id/photos/receipts, нового успешного room command или замены исторических рекомендаций. Исторические room CRUD функции заменены только в новой migration. Сигнатуры/SECURITY DEFINER/search_path/права неизменны.",
+        "rooms_upgrade.seed.sql — реальные валидные строки схемы без отключения triggers/RLS/constraints или подмены функций: два permanent owner A/B, комнаты/plant links обоих, photo metadata, operation receipt завершённой room.create с настоящим payload hash; legacy plant.create/claim.commit receipt для replay, расход monthly_quotas consumed=7 reserved=1. Catalogue published release + taxon plant_id=fixture_rooms_plant. Обязательный owner A UUID=15800000-0000-4000-8000-000000000001 нужен trusted retry race; seed не создаёт plant с personal_name=Concurrent и receipt operation UUID=15800000-0000-4000-8000-000000000901.",
+        "Новый pgTAP BEGIN/plan/finish/ROLLBACK без skip/TODO. Реальные throws_ok для room.create/rename/delete/null/unknown, всех трёх aliases top-level и nested plant input, prepare/commit room overrides до несовместимой части. Проверить никакие table rows/watermarks не меняются после отказа, legacy exact replay равен исходному JSON и mismatch конфликтует, service grants сохранены anon/auth запрещены. Успешный no-room catalogue create с настоящим taxon, nullable conditions без фиктивной KB; room_id NULL в БД, ключ не в новом response, retry один plant/receipt. Проверить реальные fetch_sync_delta A/B без rooms/room_id, photo/history проекции сохранены, pagination/cursor на одинаковых timestamps без потерь/дублей. Для auth RLS можно GRANT SELECT rooms/plants только в откатываемом fixture test; production privileges не менять.",
+        "Известный baseline guest claim несовместим с таблицами; не менять unrelated поля/TTL/proof/расход ради положительного claim. Тесты отрицательных room guards и exact receipts не доказывают перенос; ограничение явно оставить в decisions. Нельзя подменять функции или добавлять columns в seed. Если no-room plant create падает на реальном unrelated baseline, вернуть конкретную ошибку, не ослаблять gate.",
+        "Gate исполняет clean/upgrade и сравнивает все public table rows, затем отдельный реальный конкурентный retry с ожиданием owner lock. Не называть sequential тест concurrency. Deno all-tests/deno-check обязательны. T158/T155 checkbox не закрывать."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Точный room-only forward SQL без изменения applied migrations; история/расход/rooms/links/receipts неизменны на clean/upgrade.",
+          "checks": [
+            "t158-rooms-upgrade"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Реальные retired guards/legacy replay/owner isolation/sync pagination/grants и успешный no-room create проходят; actual concurrent retry создаёт один plant/receipt. Guest baseline не скрыт.",
+          "checks": [
+            "t158-rooms-upgrade"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Остальной backend fixtures и статика без регрессий; live не заявляется.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC4",
+          "description": "Typecheck и whitespace PASS.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "t158-room-client-retirement",
+      "description": "Согласовать TS/Swift claim overrides без room fields после SQL retirement; проверить чтение старого JSON и явный отказ HTTP до RPC. Сохранить историю/outbox и известные ограничения claim.",
+      "depends_on": [
+        "t158-room-sql-retirement"
+      ],
+      "risk": "medium",
+      "complexity": "medium",
+      "files": [
+        "supabase/functions/plants-api/claims.ts",
+        "supabase/functions/_shared/tests/claim_transfer_test.ts",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "specs/001-plants-ios-mvp/contracts/room-retirement.md"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/claims.ts",
+        "supabase/functions/_shared/tests/claim_transfer_test.ts",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift"
+      ],
+      "constraints": [
+        "Удалить только room_id/create_room_name из ClaimOverridesInput и roomId/newRoomName из Swift ClaimOverridesDTO (property/init/assignment/CodingKeys). В handlePrepareClaim перед RPC отвергать любой room_id/new_room_name/create_room_name в overrides с400 VALIDATION_ERROR; null тоже retired. Не добавлять новый wrapper/SDK/schema engine. Обновить obsolete room comment и текущий room-only stale test на display_name-only: name не делает анализ stale, реальные conditions делают.",
+        "Добавить Deno behavior tests с fake Supabase adapter: запрещённые ключи по отдельности включая null отклоняются до любого RPC; body/other fields не мутируются. Допустимый non-room override продолжает существующий вызов (никакой фиктивной приёмки реальной RPC: baseline params mismatch остаётся T159). Проверки signature/права/receipt и остальные Free slots tests не удалять/не менять в этом срезе.",
+        "Добавить один meaningful PlantsTests regression: decode старый persisted overrides JSON с room_id/new_room_name плюс реальные plantId/displayName/условия, правильное сохранение остальных значений; encode не возвращает retired keys. Исторические generic sync room/tombstone и outbox тесты оставлять как backward-read, не превращать их в new commands. LocalStore/raw cache/outbox/owner isolation/AnalysisReceiptDTO/другие сериализуемые поля не менять.",
+        "Обычный unified text diff без copy/rename. Не удалять FreeSelection/basic care/profile fields/season/camera/report: следующие срезы. Не чинить guest TTL/RPC/proof/context вне room scope; limitations фиксировать. iOS build/welcome/27+ PlantsTests без skips и Simulator smoke обязательны; fixtures не live."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Новые TS/Swift room writer fields удалены; HTTP room input явно отвергается до RPC без мутации; non-room поведение/receipt regression сохранены.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Реальный Swift regression подтверждает чтение старого overrides JSON и encode без room keys при сохранении прочих условий; build/welcome/unit и Simulator PASS.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC3",
+          "description": "Typecheck и whitespace без регрессий; guest baseline ограничения не скрыты.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
