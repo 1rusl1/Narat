@@ -1,9 +1,21 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-09.** Сессия A запущена в отдельном worktree/ветке `codex/plants-ios`; A1 canonical sync transport принят и опубликован в 7cb5893 (43 Swift tests, build/Simulator/Review/QA PASS); A2 canonical engine/disk принят и опубликован 643622b (49 tests/build/Simulator/high-risk Review/QA PASS); durable create receipt store принят 09e9b3a (55 tests), engine ACK/repository/UI впереди. Все 137 открытых ID распределены между A/B. Завершена очередь из четырёх принятых срезов; также опубликован узкий T168 client light-estimator cleanup (29 Swift tests/build/Simulator PASS, combined acceptance). Принят и опубликован серверный пакет T161: cap Free=3, retirement slots и согласованный TS/API; проверки PostgreSQL/Deno и независимая приёмка пройдены, live/client отдельно. Применена оптимизация оркестратора: совмещённая приёмка простых задач, Sol/Astra по риску и замечаниям, delta-resume и расход на принятую задачу; 115 automation tests PASS на fixtures. Живая экономия пока не измерена. Принят и опубликован room-срез T158: SQL room retirement/плоский sync и TS/Swift overrides без комнат. Ранее приняты компактные Condition2/Plant2 и удаление трёх неиспользуемых Swift DTO. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Документальное сокращение scope завершено; принятые runtime-срезы и ограничения перечислены ниже.
+**Обновлено 2026-11-09.** A приняла sync transport7cb5893, engine/disk643622b и durable receipt store09e9b3a (55 Swift tests/Simulator/Review/QA). Между runs объединяется принятый B prerequisite a04794c: anchors005/ledger006/guard007; повторные SQL/Deno/automation/iOS/Simulator gates объединённого runtime PASS; учитывается docs-only движение main перед публикацией. Engine ACK/repository/UI-save, полные квоты/API и live не приняты; продуктовые checkbox14/151.
 
-**Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Main этим этапом не меняется.
+**Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Интеграция A + принятого B prerequisite — повторные gates PASS
+
+На чистом A worktree между runs после ec47bb1 начат обычный merge конкретного `a04794c` (B явно подтвердила готовность этого ограниченного среза). Он содержит только принятые005 anchors21ee7a7,006 ledger e6b1f7c,007 state guard a04794c, их fixtures/gate/контракт/отчёты и историю подготовки. Reserve008/settlement009/API B2 отсутствуют в этом merge. Никакого deploy/перехода к monthly-клиенту или закрытия T163/T164/T036.
+
+Единственный конфликт — handoff: вручную сохранена вся история A, новые секции/дополнение B, исходные task reports и оба Task Summary; текущий Project State согласован по принятым SHA, не выбран слепо ours/theirs. Обновляется частичный статус T163, checkbox по-прежнему14/151. Swift/default config/общий t161 runner/backend working diff B не изменялись.
+
+**Повторные проверки объединённого runtime — PASS:** запущена расширенная команда `python3 tools/automation/parallel_backend_quota_gate.py --accounting --legacy-guard --cap-regression` (включает всю anchors/guard/cap-проверку B и дополнительно49 ledger pgTAP). Clean и seeded-upgrade: по **55 anchor+49 ledger+131 cap/care pgTAP**, по12 UTC boundary/leap/timezone cases; **4 реальные owner-lock гонки**, все preexisting public rows byte-equal, unknown legacy anchor остаётся NULL до verified import. Только изолированные временные PG17 fixtures. Old shared t161 --slots equality по newtablekeys не запускался повторно/не заявляется PASS; пройдены все прежние131pgTAP и races новым trusted gate.
+
+Deno **336 PASS/0failed** и deno-check PASS; automation **115 tests/OK**,40.284s; Xcode build/welcome и **55 PlantsTests PASS/0failed/0skips**,52 source XCTest+3 Swift Testing; Simulator smoke PASS. Logs `docs/validation/automation/runs/parallel-integration-20261109-01/{sql,deno-tests,deno-check,automation,ios,simulator}.log`; unit evidence `parallel-integration-ios-20261109-01/{summary.json,unit-result.stdout.log,source-test-coverage.json}`, UI evidence `parallel-integration-sim-20261109-01/`. Runtime/contracts/tools fingerprint **63025c67bcf86dec2b30d6a4da4b53192aa0313a00bc1c698ad80b3a972a4ae8**,1464 tracked files: before/after JSON совпали; проверки не изменили source. Это final local/fixture checks данного ограниченного merge, не live/backend deploy/UI-save/полныйT163. Найдено движение origin/main до6a9584d: только handoff/allocation, их историю/состояние запуска необходимо объединить перед публикацией main; runtime не изменён.
+
+**Точный следующий шаг:** завершить реальные gates и записать результаты → merge commit/push origin/codex/plants-ios → обычная интеграция main из отдельного чистого checkout, если origin/main не внёс новый runtime; при новых изменениях сначала merge и затронутые checks → передать B итоговый SHA. Затем следующий клиентский пакет — engine typed receipt→durable ACK, repository/UI позже.
 
 ## Durable create receipt store принят — 9 ноября 2026
 
@@ -100,6 +112,140 @@ Checkpoint `6f188dd` успешно отправлен в origin/codex/plants-io
 **Проверки подготовки:** оба `validate` — VALID (по 1 задаче), оба Developer `context` просмотрены полностью; py_compile/diff-check PASS. Coverage helper: stale 35-test evidence и отсутствующий метод/skip отвергаются, полный synthetic log принят (только fixture self-check). Установлены закреплённые npm MCP-зависимости через `npm ci --ignore-scripts` (audit сообщил 3 moderate; версии не менялись). UI-agent setup `parallel-ios-agent-20261109-01` — PASS, установленная версия 0.0.36 подтверждена без замены. `python3 -m unittest discover -s tools/automation/tests -q` — 115 tests / OK, 39.686s (fixtures/subprocess/temp Git). Xcode/build/unit/Simulator app-smoke на новом коде пока не выполнялись. Product checkbox прежние: 14/151; T162/T025/T026/T149 и live/UI остаются открыты. Секреты/локальные configs/артефакты не staged.
 
 **Точный следующий шаг:** commit/push подготовки в свою ветку → на чистом дереве запустить `python3 tools/automation/orchestrator.py run --config docs/validation/automation/runs/parallel-ios.config.json --manifest tools/automation/tasks.parallel-ios-sync-transport.json --run-id parallel-ios-sync-transport-20261109-01`. Наблюдать checks/Reviewer/QA/publication до фактического результата; A2 с новым ID только после принятого A1. Live Auth/Supabase/AI/StoreKit не проверены, комнаты T172–T174 исключены.
+
+## История сессии B из принятого a04794c
+
+Ниже сохранены обе B-подготовки/остановки и результаты, включая формулировки до приёмки guard. Актуальный статус: guard007 принят в a04794c, затем B явно разрешила A интегрировать этот ограниченный SHA; полный T163 всё ещё открыт. Точные исходные отчёты anchors/ledger/guard сохранены в validation/automation/tasks.
+
+## B / T163 — два принятых SQL-среза, legacy guard и run03
+
+**Опубликовано:** `21ee7a7` —005 immutable anchors/UTC-window и54 pgTAP;
+`e6b1f7c` —006 shared usage/legacy reconciliation и49 pgTAP. Run02:
+anchors1 Developer/1 Reviewer/1 QA; ledger2 Developer (fixture published-release
+conflict исправлен)/1 Reviewer/1 QA. В обоих clean/upgrade старые public rows
+сохранены; по12 UTC window cases; для ledger по54+49 pgTAP,336 Deno fixtures,
+115 automation fixtures, deno-check/diff PASS. State/отчёты —
+`docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-02/`.
+Третий combined admission/finalize вызов: **900s timeout без answer/patch**,
+WAITING,007 не создан. Run02 завершён, не resume с новым config.
+
+**Дополнительный аудит контроллера:** до verified-import тестового setup legacy
+permanent с registered_at=NULL допускает anonymous=true→false и получает clock
+anchor. Отрицательный реальный PG upgrade test: FAIL1/55,
+`/tmp/narat-b163-anchor-review/proof.log`. Владелец подтвердил fail-closed неизвестной
+даты, поэтому этот обход обязателен к исправлению. A уведомлена: SHA21ee7/e6b1
+пока не merge-ready bundle. Оба среза опубликованы, но это не готовая T163.
+
+**Подготовлено, ещё не независимо принято:** следующая свободная007 стала
+`supabase/migrations/202611090007_registration_state_guard.sql` (BEFORE permanent→guest,
+независимо от NULL anchor); принятые005/006 не переписывались. В
+`registration_anchors.test.sql` добавлен55-й case **до** тестового импорта.
+`parallel_backend_quota_gate.py --anchors --legacy-guard` теперь загружает все
+forward migrations и отдельно проверяет unknown-owner B; --reserve — отдельная
+ограниченная приёмка reserve, с99 историческими consumed-fixtures и20 реальными
+waiters. Она **не заменяет** итоговый default gate: после009 тот всё ещё делает
+99 настоящих admit/finalize и6 раундов по20 соединений, terminal/failure/replay.
+Контракт monthly-access.md обновлён:007 guard →008 reserve →009 settlement/bind.
+
+Новый manifest `tasks.parallel-backend-quota-sql-finalization.json`: guard candidate
+→reserve-only →settlement; внешние принятые SHA — constraints, depends_on только
+внутри manifest. Routing/retry/budgets сохранены; config hash
+`59ed00ee3315c8db379677e7aa0ef1558cc7b9be590b64f626d9cf3f043e31ff`, publish только
+origin/codex/plants-backend; общий default config не менялся. Новые checks:
+`parallel-backend-quota-legacy-guard` argv `python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard`;
+`parallel-backend-quota-reserve` argv `python3 tools/automation/parallel_backend_quota_gate.py --reserve`;
+оба unit/fixture/300s. Полный gate прежнего ID теперь требует settlement009.
+Validate3/context/diff PASS; guard в реальном проекте clean/upgrade55 pgTAP+12 UTC
+и trusted unknown-state probe PASS, `/tmp/narat-b163-guard-project.log`.
+
+**Координация:** A передала accepted transport7cb5893 (43 Swift) и engine/disk643622b
+(49 Swift),336 Deno/build/Simulator/ReviewQA; это её fixtures, B их не запускала.
+Durable receipt/repository/UI/save/live и полный T162 у A открыты. Старое sync
+quota_anchor_at сохранено как historical purchase field, A не трактует его как
+registration. Не менять активный HEAD ради merge.
+
+**Ограничения/следующий шаг:** commit/push подготовки, чистое дерево → новый
+`parallel-backend-quota-sql-20261109-03` с явным branch --config. После guard/reserve/
+settlement и full20-connection gate — отдельный B2 SQL snapshot/production access
+adapter/ENPL fixtures/ошибки. Фото job/worker сейчас injection-only (deployed worker
+лишь readiness), поэтому нельзя отвечать фиктивным202 в неработающую очередь;
+настоящий pipeline — boundedT153/T031–034. Auth/Supabase/Storage/provider/StoreKit
+live не проверялись; B не запускала Swift/Simulator. Все parent checkbox открыты,
+клиент T036 и live evidence обязательны. Владелец прямо подтвердил блокировку
+unknown legacy даты до verified Auth import; повторного вопроса не требуется.
+
+## B / T163 — run-01 WAITING и recovery, 2026-11-09
+
+Подготовка `365840a` успешно опубликована в origin/codex/plants-backend.
+Реальный `parallel-backend-quota-sql-20261109-01`: Developer Sol/high вызван один
+раз, **900s timeout**, answer.json/патча нет; первый срез WAITING, admission PENDING.
+SQL не создан/не применён, Reviewer/QA и продуктовые SQL/Deno gates не запускались.
+State/logs сохранены в ignored `docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-01/`; исходный run не resume.
+
+Владелец прямо подтвердил: неизвестную legacy дату permanent регистрации
+блокировать до подтверждённого импорта из Auth. Решение передано A, starter не
+выдаётся заново. Подготовлен новый `tasks.parallel-backend-quota-sql-recovery.json`:
+005 anchors/windows →006 legacy ledger →007 admission. Старый manifest сохранён
+как аудит run-01, **не запускать**. `parallel_backend_quota_gate.py` получил --anchors,
+контракт monthly-access.md согласован с тремя миграциями. Config hash теперь
+`608c6a50dd40b90e6aeb6b89163e6fc666469b8d44b81d2d1b10289df73bcbb9`;
+новый check argv `python3 tools/automation/parallel_backend_quota_gate.py --anchors`,
+unit/fixture/300s. Routing/budgets/default config/publish branch не менялись.
+Validate (3 tasks), developer context и diff-check PASS. Product checkbox открыты.
+
+**Точный следующий шаг:** commit/push recovery подготовки, затем clean-tree
+`parallel-backend-quota-sql-20261109-02` с явным branch --config; runtime приёмки нет.
+После принятого SQL — отдельный API-пакет; live и клиент A/T036 остаются обязательными.
+
+## B / T163 — подготовка registration quota, 2026-11-09
+
+**Выполнено:** `contracts/monthly-access.md` фиксирует registration UTC anchor,
+короткие месяцы, shared Free3/paid100, стартеры и перенос consumed/reserved/unknown.
+Новый controller-owned `tools/automation/parallel_backend_quota_gate.py`: отдельный
+PG17 clean/upgrade, retained rows, pgTAP и 20 настоящих соединений под наблюдаемым
+owner lock. `tasks.parallel-backend-quota-sql.json` содержит два bounded SQL-пакета
+005 accounting →006 admission; runtime SQL пока не реализован. Default config,
+collection wire, Swift/tasks не менялись. Branch config игнорируется; hash/check
+argv/mode/timeout и routing — [отчёт подготовки](validation/automation/parallel-backend-quota-preparation-2026-11-09.md).
+
+**Реальные проверки:** validate (2 tasks), developer context и diff-check PASS;
+115 automation fixture tests / OK (`/tmp/narat-b163-automation.log`).
+Отрицательный контроль старого SQL — ожидаемый exit1: Free после первого запроса
+remaining=0 вместо2 и calendar window; это не продуктовая приёмка. PG17 работает
+с разрешённым локальным запуском вне sandbox shared-memory restriction.
+
+**Ограничения:** legacy дата permanent регистрации неизвестна; отдельный service
+verified import, без молчаливой покупки/guest created_at в роли anchor. Вопрос
+владельцу отправлен. Full T163 ждёт API B2 + клиента A/T036; live Supabase/Auth/
+Storage/provider/StoreKit и iOS не проверялись. 20-connection code подготовлен,
+успешное прохождение ещё не заявлено. Продуктовые checkbox без изменений.
+
+**Следующий шаг:** после commit/push подготовки запустить новый
+`parallel-backend-quota-sql-20261109-01` через branch-specific --config, принять
+оба SQL-среза реальными gates/Reviewer/QA, затем отдельно подготовить API.
+
+### Дополнение B к подготовке guard
+
+Recovery negative control `--baseline --anchors` повторён: ожидаемый exit1 на старом Free1/calendar, `/tmp/narat-b163-baseline-v2.log`; это не продуктовый PASS.
+
+
+Перед run03 дополнительно: `python3 -m unittest discover -s tools/automation/tests -q`
+— **115 tests / OK**, `/tmp/narat-b163-finalization-automation.log`.
+Общий неизменённый `t161_collection_gate.py --slots` — **FAIL** на seeded-upgrade
+snapshot equality после добавления новых таблиц005/006; clean131pgTAP/две гонки
+успели пройти, это не полный PASS. Лог `/tmp/narat-b163-guard-cap.log`.
+A уведомлена, общий runner/config не изменялся. Новый controller-owned режим
+`python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard --cap-regression`
+— **PASS**: clean и upgrade по55 anchor +131 T161 pgTAP, четыре настоящие
+owner-lock гонки, все preexisting public rows сохранены. Лог
+`/tmp/narat-b163-guard-cap-v2.log`. SQL tests и race implementation T161 скопированы
+без изменения условий; generic quota KB fixture имеет draft state, а исходный
+T161 catalogue fixture остаётся единственным published release.
+Check ID `parallel-backend-cap-regression`, unit/fixture/300s; argv — команда выше.
+Он заменяет ошибочное strict-table-key equality только в этой branch config,
+не старый shared runner. Root gate дополнительно сравнивает все прежние строки,
+новые таблицы допускает как additions. Самостоятельный negative old upgrade
+probe остаётся FAIL1/55; guard candidate — ещё до независимой приёмки.
 
 ## Подготовлены задания двум параллельным сессиям — 9 ноября 2026
 
@@ -413,7 +559,8 @@ T148 остаётся на прежней остановке до запуска
 - T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по 50 pgTAP PASS, history unchanged. Компактные Condition2/Plant2 e7d2d7b/eb40f28 опубликованы: 257 Deno PASS. Три неиспользуемые Swift DTO удалены в 93d77bc: 27 PlantsTests/build/welcome/Simulator PASS. Rooms run-02 COMPLETED: SQL b80a74e и клиент 0d8d4ee опубликованы; clean/upgrade по 66 pgTAP + real owner-lock retry, 259 Deno, 28 PlantsTests/build/welcome/Simulator PASS. Run-01 WAITING по timeout без patch сохранён. Серверная T161 принята; следующий клиентский пакет T162, квоты T163 и полный expiry T164 отдельно. T168 client estimator slice dadfcb1 принят (29 PlantsTests/build/Simulator, Sol combined); full T168 server/API guards остаются открыты. PostgreSQL17/pgTAP доступен. Guest claim baseline несовместим с таблицами/API: не объявлять положительный перенос проверенным, исправление T159. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
 - Оркестратор: простые low/low задачи проходят все checks и одну совмещённую Review/QA на Sol; высокий риск/сложные или повторные замечания — Astra. Resume известной сессии передаёт delta/errors; свежая сессия — полный контракт. Metrics включает все повторы на COMPLETED и сравнивает только одинаковый quality_contract. 115 automation fixtures PASS; live CLI cap/SQL Astra split, TS Sol split и T168 Sol combined приняты, экономика одинакового контракта не измерена. Для нового config нужен новый run-id.
 - Auth/profile 9551807, production sync c26a4e0/catalogue create 88345ed и typed receipt e8a12fe приняты. Receipt принят e8a12fe; canonical sync DTO/transport A1 принят 7cb5893 (43 tests/Simulator/Review/QA). A2 canonical engine/disk принят 643622b (49 tests/Simulator/high-risk Review/QA), после исправления null encode и failed-save contexts; durable receipt store 09e9b3a принят(55 tests), engine ACK/UI/repository/live не готовы.
-- Владелец поручил подготовить два оркестратора: docs/parallel/README.md, session-ios.md (A=59 ID) и session-backend.md (B=78 ID), allocation.json покрывает все 137 открытых ID. A worktree/ветка codex/plants-ios создана от 4bbd35a; подготовка f4a67ad опубликована. A1 run-01 WAITING: два невалидных diff, третий вызов прерван; кандидат call-2 восстановлен изменением только diff-разделителя, затем принят в run-03. Run-02 compile failure сохранён; run-03 COMPLETED 7cb5893 с полной приёмкой A1 (43 tests); A2 run-01 timeout/raw diff сохранён; run-02/03 FAIL оставлены в истории. Run-04 COMPLETED 643622b,49tests/Simulator/Review/QA; durable receipt store 09e9b3a COMPLETED 55tests; далее mergeB a04794c→engine ACK→repository/UI. B подтвердила запуск, подготовка 365840a не runtime; нет merge/main. A: клиент T162 wire→disk→save и интегратор; B: T163 quota SQL/API→guest/контракты. Свои ветки/publish config обязательны; общий Simulator только A. T172–T174 не входят в текущий запуск.
+- Владелец поручил подготовить два оркестратора: docs/parallel/README.md, session-ios.md (A=59 ID) и session-backend.md (B=78 ID), allocation.json покрывает все 137 открытых ID. A worktree/ветка codex/plants-ios создана от 4bbd35a; подготовка f4a67ad опубликована. A1 run-01 WAITING: два невалидных diff, третий вызов прерван; кандидат call-2 восстановлен изменением только diff-разделителя, затем принят в run-03. Run-02 compile failure сохранён; run-03 COMPLETED 7cb5893 с полной приёмкой A1 (43 tests); A2 run-01 timeout/raw diff сохранён; run-02/03 FAIL оставлены в истории. Run-04 COMPLETED 643622b,49tests/Simulator/Review/QA; durable receipt store 09e9b3a COMPLETED 55tests; далее mergeB a04794c→engine ACK→repository/UI. B подтвердила запуск; a04794c разрешён для ограниченного merge. Интеграция в работе, main ещё не опубликован. A: клиент T162 wire→disk→save и интегратор; B: T163 quota SQL/API→guest/контракты. Свои ветки/publish config обязательны; общий Simulator только A. T172–T174 не входят в текущий запуск.
+- B prerequisite a04794c объединяется:005 immutable registration anchors21ee7a7,006 ledger e6b1f7c,007 legacy state guard. ПолныйT163/новые reserve/settlement/B2 и клиентT036 ещё открыты; unknown legacy registration fail-closed подтверждён владельцем. Collection wire не менялся. Объединённые SQL/Deno/115automation/55Swift/Simulator gates PASS, fingerprint63025c67; docs-only main6a9584d объединяется до публикации, live/deploy нет.
 - Handoff/tasks/Git изменяет только управляющий процесс; в параллельных worktree каждый controller обновляет собственный handoff, A объединяет факты и итоговые tasks. Fixtures ≠ live; снятый объём не выполнение. Задания A/B разрешают существующий Developer/Reviewer/QA workflow; дополнительные деревья субагентов на старте не запускаются.
 <!-- /orchestrator:project-state -->
 
@@ -422,5 +569,7 @@ T148 остаётся на прежней остановке до запуска
 
 parallel-ios-create-receipt-store: проверки и Review/QA пройдены; публикация фиксируется в state.
 Отчёт: [parallel-ios-create-receipt-store](validation/automation/tasks/parallel-ios-create-receipt-store.md).
+parallel-backend-t163-legacy-state-guard: исходные проверки и Review/QA пройдены, опубликован a04794c; интеграционные SQL/Deno/iOS/Simulator проверки PASS.
+Отчёт: [parallel-backend-t163-legacy-state-guard](validation/automation/tasks/parallel-backend-t163-legacy-state-guard.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

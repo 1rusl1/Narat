@@ -298,7 +298,7 @@
 
 - [ ] T162 **Частично: canonical client sync transport `7cb5893` и engine/disk `643622b` приняты (49 Swift tests/build/Simulator/Review/QA, local fixtures); durable create receipt store `09e9b3a` принят (55 Swift, local disk); engine ACK/repository/cap/UI-save/live ещё открыты.** T158: убрать клиентские FreeSelection/slot writers, согласовать cap до сохранения, legacy decode и pending/retry. Зависимости: T161. Покрытие: FR-009, FR-010, FR-011, SC-005.
 
-- [ ] T163 T158: Free=3/paid=100 и единый период от регистрации; migration расхода/reservations, короткие месяцы, 20 реальных конкурентных запросов. Зависимости: T161. Покрытие: FR-005, FR-017, FR-065, SC-008.
+- [ ] T163 **Частично: приняты SQL registration anchors `21ee7a7`, ledger `e6b1f7c`, state guard `a04794c`; объединённые clean/upgrade/SQL cap races/Deno/55 Swift/Simulator checks PASS (fixtures). Reserve/settlement, access API, клиент T036 и live ещё открыты.** T158: Free=3/paid=100 и единый период от регистрации; migration расхода/reservations, короткие месяцы, 20 реальных конкурентных запросов. Зависимости: T161. Покрытие: FR-005, FR-017, FR-065, SC-008.
 
 - [ ] T164 T158: после expiry остановить всю автоматику/напоминания, сохранить чтение и ручной журнал; не выбирать Free-тройку. Зависимости: T162, T163. Покрытие: FR-020, FR-023, FR-028, FR-035, SC-021.
 
