@@ -29,12 +29,78 @@ public struct URLSessionAPITransport: PlantsAPITransport {
     }
 }
 
+/// A captured operation is invalid after *any* auth-context change, including A -> B -> A.
+struct SyncSessionLease: Sendable {
+    let ownerId: UUID
+    let generation: UInt64
+    let session: NativeAuthSession?
+}
+
+/// The short synchronous critical section also covers LocalStore's save. There is no
+/// lock across an await: auth changes and disk publication have one ordering.
+final class SyncSessionAuthority: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generation: UInt64 = 0
+    private var canonical = false
+    private var session: NativeAuthSession?
+
+    func bind(_ session: NativeAuthSession?) {
+        lock.withLock {
+            generation &+= 1
+            canonical = true
+            self.session = session
+        }
+    }
+
+    func invalidate() {
+        lock.withLock {
+            generation &+= 1
+            session = nil
+        }
+    }
+
+    func capture(ownerId: UUID, explicitSession: NativeAuthSession? = nil) throws -> SyncSessionLease {
+        try lock.withLock {
+            let captured = canonical ? session : explicitSession
+            if canonical {
+                guard let captured, explicitSession == nil || captured == explicitSession else {
+                    throw SyncWireValidationError.invalidSession
+                }
+            }
+            let lease = SyncSessionLease(ownerId: ownerId, generation: generation, session: captured)
+            try validateLocked(lease)
+            return lease
+        }
+    }
+
+    private func validateLocked(_ lease: SyncSessionLease) throws {
+        try Task.checkCancellation()
+        guard lease.generation == generation,
+              !canonical || (session != nil && session == lease.session) else {
+            throw SyncWireValidationError.invalidSession
+        }
+        if let captured = lease.session {
+            guard captured.userId == lease.ownerId,
+                  !captured.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  captured.expiresAt > Date() else { throw SyncWireValidationError.invalidSession }
+        }
+    }
+
+    func withValid<T>(_ lease: SyncSessionLease, _ body: () throws -> T) throws -> T {
+        try lock.withLock {
+            try validateLocked(lease)
+            return try body()
+        }
+    }
+}
+
 public actor PlantsAPIClient {
     public let baseURL: URL
     private let transport: any PlantsAPITransport
     private var installationCredential: String?
     private var clientLocale: String
     private var bearerToken: String?
+    nonisolated let syncAuthority = SyncSessionAuthority()
 
     public init(
         baseURL: URL = URL(string: "https://api.narat.app/functions/v1/plants-api")!,
@@ -55,9 +121,61 @@ public actor PlantsAPIClient {
         clientLocale: String,
         bearerToken: String?
     ) {
+        syncAuthority.invalidate()
         self.installationCredential = installationCredential
         self.clientLocale = clientLocale
         self.bearerToken = bearerToken
+    }
+
+    /// Bind on sign-in/refresh, and bind nil on sign-out. Once bound, this client
+    /// never falls back to legacy sync, even while signed out. UI wiring is separate.
+    public func bindSyncSession(_ session: NativeAuthSession?) {
+        syncAuthority.bind(session)
+        bearerToken = session?.accessToken
+    }
+
+    func captureSyncContext(ownerId: UUID) throws -> SyncSessionLease {
+        try syncAuthority.capture(ownerId: ownerId)
+    }
+
+    func validateSyncContext(_ context: SyncSessionLease) throws {
+        try syncAuthority.withValid(context) {}
+    }
+
+    /// Authenticated engine path; errors never trigger a legacy retry.
+    func fetchSyncPage(
+        context: SyncSessionLease, since: String?, until: String?,
+        cursor: SyncWireCursorDTO?, limit: Int
+    ) async throws -> SyncWireResult {
+        try validateSyncContext(context)
+        guard let session = context.session else { throw SyncWireValidationError.invalidSession }
+        let result = try await fetchSyncWirePage(
+            session: session, since: since, until: until, cursor: cursor, limit: limit
+        )
+        try validateSyncContext(context)
+        return result
+    }
+
+    func sendOutboxCommand(_ envelope: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+        try validateSyncContext(context)
+        let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
+        if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let body = try encoder.encode(envelope)
+        var request = try buildRequest(
+            path: "commands", method: "POST", operationId: envelope.operationId, body: body
+        )
+        if let session = context.session {
+            request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        // Build and dispatch with the captured token in the same actor turn.
+        if catalogueCreate {
+            _ = try await execute(request, as: PlantCreateReceiptDTO.self)
+        } else {
+            _ = try await execute(request, as: CommandResponseDTO.self)
+        }
+        try validateSyncContext(context)
     }
 
     public func buildRequest(
@@ -125,6 +243,7 @@ public actor PlantsAPIClient {
         return try await execute(request, as: PlantCreateReceiptDTO.self)
     }
 
+    /// Explicit legacy DTO/Date compatibility API. Bound SyncEngine uses the overload above.
     public func fetchSyncPage(
         since: Date?,
         until: Date?,
@@ -249,8 +368,7 @@ extension PlantsAPIClient {
         cursor: SyncWireCursorDTO? = nil,
         limit: Int = 200
     ) async throws -> SyncWireResult {
-        guard !session.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              session.expiresAt > Date() else { throw SyncWireValidationError.invalidSession }
+        let context = try syncAuthority.capture(ownerId: session.userId, explicitSession: session)
         try SyncWireRules.validateRequest(since: since, until: until, cursor: cursor, limit: limit)
         var query = [URLQueryItem(name: "limit", value: String(limit))]
         if let since { query.append(URLQueryItem(name: "since", value: since)) }
@@ -268,6 +386,7 @@ extension PlantsAPIClient {
             request.url = components.url
         }
         let page = try await execute(request, as: SyncWirePageDTO.self)
+        try validateSyncContext(context)
         try page.validate(since: since, requestedUntil: until, cursor: cursor, limit: limit)
         return SyncWireResult(ownerId: session.userId, page: page)
     }

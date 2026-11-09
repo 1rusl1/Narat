@@ -554,7 +554,7 @@ public struct SyncWireChangeDTO: Decodable, Sendable, Equatable {
     }
 }
 
-public struct SyncWireProfileDTO: Decodable, Sendable, Equatable {
+public struct SyncWireProfileDTO: Codable, Sendable, Equatable {
     public let preferredLocale: String
     public let reminderHourLocal: Int
     public let reportNotificationsEnabled: Bool
@@ -579,7 +579,7 @@ public struct SyncWireProfileDTO: Decodable, Sendable, Equatable {
     }
 }
 
-public struct SyncWireEntitlementDTO: Decodable, Sendable, Equatable {
+public struct SyncWireEntitlementDTO: Codable, Sendable, Equatable {
     public let productId: String
     public let state: String
     public let offerKind: String

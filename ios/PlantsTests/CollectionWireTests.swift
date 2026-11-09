@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import Plants
 
 private actor CatalogueTransport: PlantsAPITransport {
@@ -646,5 +647,499 @@ extension CollectionWireTests {
         }
         let requests = await transport.capturedRequests()
         XCTAssertEqual(requests.count, 4)
+    }
+}
+
+/// Deliberately ignores task cancellation until released; no sleeps or blocking waits.
+private actor SuspendedCollectionTransport: PlantsAPITransport {
+    private let json: String
+    private var requests: [URLRequest] = []
+    private var observers: [CheckedContinuation<Void, Never>] = []
+    private var release: CheckedContinuation<Void, Never>?
+
+    init(_ json: String) { self.json = json }
+    func capturedRequests() -> [URLRequest] { requests }
+
+    func waitForRequest() async {
+        if !requests.isEmpty { return }
+        await withCheckedContinuation { observers.append($0) }
+    }
+
+    func resume() {
+        release?.resume()
+        release = nil
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        guard requests.count == 1 else { throw URLError(.resourceUnavailable) }
+        await withCheckedContinuation { continuation in
+            release = continuation
+            for observer in observers { observer.resume() }
+            observers.removeAll()
+        }
+        return (Data(json.utf8),
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+extension CollectionWireTests {
+    private var otherSyncOwner: UUID { UUID(uuidString: "44444444-4444-4444-8444-444444444444")! }
+
+    private func diskURL() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("sync.sqlite")
+    }
+
+    private func diskContainer(_ url: URL, allowsSave: Bool = true) throws -> ModelContainer {
+        let schema = Schema([
+            LocalOutboxRecord.self, GuestDraftCacheRecord.self,
+            SyncedEntityRecord.self, SyncCheckpointRecord.self
+        ])
+        return try ModelContainer(for: schema, configurations: [
+            ModelConfiguration(schema: schema, url: url, allowsSave: allowsSave)
+        ])
+    }
+
+    private func requestQuery(_ request: URLRequest) throws -> [String: String] {
+        let components = try XCTUnwrap(URLComponents(url: XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+        return Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+    }
+
+    private func paidSyncEntitlement() -> [String: Any] {
+        ["product_id": "app.narat.pro", "state": "active", "offer_kind": "paid",
+         "valid_until": syncUntil, "grace_until": NSNull(), "trial_end_at": NSNull(),
+         "auto_renew_enabled": true]
+    }
+
+    /// Seeds through the real bound API/engine, then closes the disk container.
+    @MainActor
+    private func seedSyncDisk(_ url: URL) async throws -> [OutboxEntrySnapshot] {
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        var page = syncObject()
+        page["until"] = syncSince
+        page["next_since"] = syncSince
+        page["entitlement"] = paidSyncEntitlement()
+        let api = client(CatalogueTransport([.http(200, try syncJSON(page))]))
+        await api.bindSyncSession(syncSession)
+        _ = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner)
+        for owner in [syncOwner, otherSyncOwner] {
+            try await store.applySyncedItems([
+                SyncItemDTO(entityType: "plants", id: serverPlantId,
+                            updatedAt: SQLTimestamp.date(from: syncSince)!, payloadJSON: #"{"name":"confirmed"}"#)
+            ], ownerId: owner)
+        }
+        let a = try await store.enqueueCommand(
+            operationId: operationId, ownerId: syncOwner, plantId: serverPlantId,
+            commandName: "care.record", payloadJSON: #"{"action":"water"}"#
+        )
+        let b = try await store.enqueueCommand(
+            ownerId: otherSyncOwner, plantId: serverPlantId, commandName: "care.record", payloadJSON: "{}"
+        )
+        return [a, b]
+    }
+
+    @MainActor
+    private func assertSeedUnchanged(
+        _ url: URL, outbox: [OutboxEntrySnapshot], extraA: [OutboxEntrySnapshot] = []
+    ) async throws {
+        // An independent container must see the old checkpoint, entities, rights and queue.
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let raw = try await store.currentWatermarkRaw(ownerId: syncOwner)
+        let profile = try await store.syncedProfile(ownerId: syncOwner)
+        let rights = try await store.syncedEntitlement(ownerId: syncOwner)
+        XCTAssertEqual(raw, syncSince)
+        XCTAssertEqual(profile?.preferredLocale, "pl")
+        XCTAssertEqual(rights?.productId, "app.narat.pro")
+        for (index, owner) in [syncOwner, otherSyncOwner].enumerated() {
+            let items = try await store.activeSyncedEntities(ownerId: owner, entityType: "plants")
+            let pending = try await store.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(items.map(\.payloadJSON), [#"{"name":"confirmed"}"#])
+            XCTAssertEqual(pending, [outbox[index]] + (index == 0 ? extraA : []))
+        }
+    }
+
+    @MainActor
+    func testCanonicalEngineTwoPagesExactDiskCheckpointAndNextRequest() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let nextSince = "2026-11-03T11:00:00.999999+02:00"
+        let liveId = "33333333-3333-4333-8333-333333333333"
+        var live = syncChange("2026-11-03T09:00:00.999998+00:00", id: liveId)
+        live["data"] = ["nested": ["array": [true, NSNull(), ["decimal": 1.25, "name": "żółty"]]]]
+        var first = syncObject()
+        first["has_more"] = true
+        first["next_since"] = NSNull()
+        first["last_cursor"] = syncCursorObject(live)
+        first["changes"] = [live]
+        first["entitlement"] = paidSyncEntitlement()
+        var tombstone = syncChange()
+        tombstone["deleted_at"] = syncUntil
+        tombstone["data"] = NSNull()
+        var last = syncObject()
+        last["changes"] = [tombstone]
+        last["entitlement"] = paidSyncEntitlement()
+        last["next_since"] = nextSince
+        let transport = CatalogueTransport([.http(200, try syncJSON(first)), .http(200, try syncJSON(last))])
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let result = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner, pageSize: 1)
+            XCTAssertEqual(result, SQLTimestamp.date(from: syncUntil))
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(try requestQuery(requests[0]), ["since": syncSince, "limit": "1"])
+        XCTAssertEqual(try requestQuery(requests[1]), [
+            "since": syncSince, "until": syncUntil, "limit": "1",
+            "cursor_updated_at": "2026-11-03T09:00:00.999998+00:00",
+            "cursor_entity_type": "plants", "cursor_id": liveId
+        ])
+        do {
+            let container = try diskContainer(url)
+            let store = LocalStore(modelContainer: container)
+            let raw = try await store.currentWatermarkRaw(ownerId: syncOwner)
+            let active = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+            let rights = try await store.syncedEntitlement(ownerId: syncOwner)
+            XCTAssertEqual(raw, nextSince)
+            XCTAssertEqual(active.map(\.id), [UUID(uuidString: liveId)!])
+            XCTAssertEqual(rights?.validUntil, syncUntil)
+            let records = try ModelContext(container).fetch(FetchDescriptor<SyncedEntityRecord>())
+            let deleted = try XCTUnwrap(records.first { $0.ownerId == syncOwner && $0.entityId == serverPlantId })
+            XCTAssertNotNil(deleted.deletedAt)
+            XCTAssertEqual(deleted.payloadJSON, "null")
+            XCTAssertEqual(deleted.updatedAtRaw, syncUntil)
+            for (index, owner) in [syncOwner, otherSyncOwner].enumerated() {
+                let pending = try await store.pendingOutboxEntries(for: owner)
+                XCTAssertEqual(pending, [outbox[index]])
+            }
+        }
+        // Cold-open delta must send the original SQL next_since, including its offset.
+        var empty = syncObject()
+        let end = "2026-11-03T10:01:00.000001Z"
+        empty["until"] = end
+        empty["next_since"] = end
+        empty["profile"] = ["preferred_locale": "en", "reminder_hour_local": 17,
+                            "report_notifications_enabled": false, "trial_reminder_enabled": true]
+        let nextTransport = CatalogueTransport([.http(200, try syncJSON(empty))])
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let items = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+            let item = try XCTUnwrap(items.first)
+            let data = try JSONDecoder().decode(SyncWireJSON.self, from: Data(item.payloadJSON.utf8))
+            XCTAssertEqual(data, .object(["nested": .object([
+                "array": .array([.bool(true), .null, .object(["decimal": .number(Decimal(string: "1.25")!), "name": .string("żółty")])])
+            ])]))
+            let api = client(nextTransport)
+            await api.bindSyncSession(syncSession)
+            _ = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner)
+        }
+        let nextRequests = await nextTransport.capturedRequests()
+        XCTAssertEqual(try requestQuery(XCTUnwrap(nextRequests.first)), ["since": nextSince, "limit": "200"])
+        do {
+            let container = try diskContainer(url)
+            let store = LocalStore(modelContainer: container)
+            let profile = try await store.syncedProfile(ownerId: syncOwner)
+            let rights = try await store.syncedEntitlement(ownerId: syncOwner)
+            XCTAssertEqual(profile?.preferredLocale, "en")
+            XCTAssertEqual(profile?.reminderHourLocal, 17)
+            XCTAssertEqual(profile?.trialReminderEnabled, true)
+            XCTAssertNil(rights)
+            let checkpoints = try ModelContext(container).fetch(FetchDescriptor<SyncCheckpointRecord>())
+            let checkpoint = try XCTUnwrap(checkpoints.first { $0.ownerId == syncOwner })
+            XCTAssertEqual(checkpoint.watermarkRaw, end)
+            XCTAssertNil(checkpoint.entitlementState)
+            XCTAssertNil(checkpoint.entitlementValidUntil)
+            XCTAssertNil(checkpoint.entitlementOfferKind)
+        }
+        // Successful full refresh replaces only this owner's cache and preserves both queues.
+        empty["until"] = "2026-11-03T10:02:00.000001Z"
+        empty["next_since"] = "2026-11-03T10:02:00.000001Z"
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let refreshTransport = CatalogueTransport([.http(200, try syncJSON(empty))])
+            let api = client(refreshTransport)
+            await api.bindSyncSession(syncSession)
+            _ = try await SyncEngine(store: store, apiClient: api).performFullRefresh(for: syncOwner)
+            let own = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+            let foreign = try await store.activeSyncedEntities(ownerId: otherSyncOwner, entityType: "plants")
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(own.isEmpty)
+            XCTAssertEqual(foreign.count, 1)
+            XCTAssertEqual(pending, [outbox[0]])
+            let refreshRequests = await refreshTransport.capturedRequests()
+            XCTAssertEqual(refreshRequests.count, 1)
+            XCTAssertEqual(try requestQuery(XCTUnwrap(refreshRequests.first)), ["limit": "200"])
+        }
+    }
+
+    @MainActor
+    func testCanonicalFailedMalformedNonadvancingWindowsAreAtomicOnDisk() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        for mode in 0..<6 {
+            let refresh = mode == 5
+            let change = syncChange("2026-11-03T09:00:00.999998+00:00")
+            var first = syncObject()
+            var cursor = syncCursorObject(change)
+            if refresh { cursor["since"] = NSNull() }
+            first["changes"] = [change]
+            first["has_more"] = true
+            first["last_cursor"] = cursor
+            first["next_since"] = NSNull()
+            // If these projections were published early, existing rights would be cleared.
+            var second = syncObject()
+            let reply: CatalogueTransport.Reply
+            switch mode {
+            case 0, 5: reply = .network
+            case 1:
+                second.removeValue(forKey: "profile")
+                reply = .http(200, try syncJSON(second))
+            case 2: reply = .http(200, try syncJSON(first)) // Repeated tuple cannot progress.
+            case 3:
+                second["until"] = "2026-11-03T09:01:00Z"
+                second["next_since"] = "2026-11-03T09:01:00Z"
+                reply = .http(200, try syncJSON(second))
+            default:
+                second["has_more"] = true // Missing advancing cursor.
+                second["next_since"] = NSNull()
+                reply = .http(200, try syncJSON(second))
+            }
+            let transport = CatalogueTransport([.http(200, try syncJSON(first)), reply])
+            do {
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                let api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let engine = SyncEngine(store: store, apiClient: api)
+                do {
+                    if refresh { _ = try await engine.performFullRefresh(for: syncOwner) }
+                    else { _ = try await engine.pullDelta(for: syncOwner, pageSize: 1) }
+                    XCTFail("Invalid/failed window must not commit, mode \(mode)")
+                } catch is URLError {
+                    XCTAssertTrue(mode == 0 || mode == 5)
+                } catch is DecodingError {
+                    XCTAssertEqual(mode, 1)
+                } catch SyncWireValidationError.invalidPage {
+                    XCTAssertTrue((2...4).contains(mode))
+                }
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 2)
+            try await assertSeedUnchanged(url, outbox: outbox)
+        }
+    }
+
+    @MainActor
+    func testCanonicalSaveFailureRollsBackWindowAndProjection() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+            var page = syncObject()
+            page["changes"] = [syncChange()]
+            let api = client(CatalogueTransport([.http(200, try syncJSON(page))]))
+            await api.bindSyncSession(syncSession)
+            do {
+                _ = try await SyncEngine(store: store, apiClient: api).performFullRefresh(for: syncOwner)
+                XCTFail("Read-only disk save must fail")
+            } catch {
+                // A real SwiftData save failure, not a synthetic transport error.
+            }
+            let raw = try await store.currentWatermarkRaw(ownerId: syncOwner)
+            let items = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+            let rights = try await store.syncedEntitlement(ownerId: syncOwner)
+            XCTAssertEqual(raw, syncSince)
+            XCTAssertEqual(items.map(\.payloadJSON), [#"{"name":"confirmed"}"#])
+            XCTAssertEqual(rights?.state, "active")
+        }
+        try await assertSeedUnchanged(url, outbox: outbox)
+    }
+
+    @MainActor
+    func testLegacyDiskDateAndPageRemainReadableAndCanonicalNeverDowngrades() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let oldDate = SQLTimestamp.date(from: "2026-11-03T08:00:00Z")!
+        let oldItem = SyncItemDTO(entityType: "room", id: serverPlantId, updatedAt: oldDate,
+                                  payloadJSON: #"{"name":"historical","unknown":{"kept":true}}"#)
+        let legacy = SyncPageDTO(ownerId: syncOwner, items: [oldItem], hasMore: false,
+                                 nextCursor: nil, serverWatermark: oldDate, limit: 200)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let legacyJSON = String(decoding: try encoder.encode(legacy), as: UTF8.self)
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let api = client(CatalogueTransport([.http(200, legacyJSON)]))
+            _ = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner)
+        }
+        do {
+            let container = try diskContainer(url)
+            let store = LocalStore(modelContainer: container)
+            let raw = try await store.currentWatermarkRaw(ownerId: syncOwner)
+            XCTAssertEqual(raw, "2026-11-03T08:00:00.000Z")
+            let checkpoint = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<SyncCheckpointRecord>()).first)
+            XCTAssertNil(checkpoint.watermarkRaw) // Reading has not migrated/reformatted disk data.
+            let items = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "room")
+            XCTAssertEqual(items, [oldItem])
+            let foreign = SyncPageDTO(ownerId: otherSyncOwner, items: [], hasMore: false,
+                                      nextCursor: nil, serverWatermark: oldDate.addingTimeInterval(60), limit: 200)
+            let transport = CatalogueTransport([
+                .http(200, String(decoding: try encoder.encode(foreign), as: UTF8.self)),
+                .http(200, legacyJSON)
+            ])
+            let api = client(transport)
+            let engine = SyncEngine(store: store, apiClient: api)
+            do {
+                _ = try await engine.pullDelta(for: syncOwner)
+                XCTFail("Legacy foreign owner must be rejected")
+            } catch SyncWireValidationError.invalidSession {}
+            await api.bindSyncSession(syncSession)
+            do {
+                _ = try await engine.pullDelta(for: syncOwner)
+                XCTFail("Canonical client must not downgrade to legacy JSON")
+            } catch is DecodingError {}
+            let retained = try await store.currentWatermark(ownerId: syncOwner)
+            XCTAssertEqual(retained, oldDate)
+            await api.bindSyncSession(nil)
+            do {
+                _ = try await engine.pullDelta(for: syncOwner)
+                XCTFail("Sign-out must not enable legacy mode")
+            } catch SyncWireValidationError.invalidSession {}
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 2)
+        }
+        let transport = CatalogueTransport([.http(200, try syncJSON(syncObject()))])
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            _ = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner)
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(try requestQuery(XCTUnwrap(requests.first)), [
+            "since": "2026-11-03T08:00:00.000Z", "limit": "200"
+        ])
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let history = try await reopened.activeSyncedEntities(ownerId: syncOwner, entityType: "room")
+        XCTAssertEqual(history, [oldItem])
+    }
+
+    @MainActor
+    func testOwnerSwitchABAAndCancellationDuringPullAndFlushRetainDiskState() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let extra: OutboxEntrySnapshot
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            extra = try await store.enqueueCommand(
+                ownerId: syncOwner, plantId: UUID(), commandName: "care.record", payloadJSON: "{}"
+            )
+        }
+        for flush in [false, true] {
+            for mode in 0..<3 {
+                let json = flush
+                    ? #"{"status":"committed","operation_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","replayed":false}"#
+                    : try syncJSON(syncObject())
+                let transport = SuspendedCollectionTransport(json)
+                let api = PlantsAPIClient(transport: transport)
+                await api.bindSyncSession(syncSession)
+                do {
+                    let store = LocalStore(modelContainer: try diskContainer(url))
+                    let engine = SyncEngine(store: store, apiClient: api)
+                    let owner = syncOwner
+                    let operation = Task {
+                        if flush { _ = try await engine.flushOutbox(for: owner) }
+                        else { _ = try await engine.pullDelta(for: owner) }
+                    }
+                    await transport.waitForRequest()
+                    if mode == 2 {
+                        operation.cancel()
+                    } else {
+                        await api.bindSyncSession(NativeAuthSession(
+                            userId: otherSyncOwner, accessToken: "owner-b-token", expiresAt: .distantFuture
+                        ))
+                        do {
+                            _ = try await engine.flushOutbox(for: syncOwner)
+                            XCTFail("Owner A queue must never be sent with owner B token")
+                        } catch SyncWireValidationError.invalidSession {}
+                        if mode == 1 { await api.bindSyncSession(syncSession) }
+                    }
+                    await transport.resume()
+                    do {
+                        try await operation.value
+                        XCTFail("Stale/cancelled operation must fail")
+                    } catch is CancellationError {
+                        XCTAssertEqual(mode, 2)
+                    } catch SyncWireValidationError.invalidSession {
+                        XCTAssertNotEqual(mode, 2)
+                    }
+                    let requests = await transport.capturedRequests()
+                    XCTAssertEqual(requests.count, 1)
+                    XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer sync-session-token")
+                }
+                try await assertSeedUnchanged(url, outbox: outbox, extraA: [extra])
+            }
+        }
+    }
+
+    @MainActor
+    func testStorePublicationRevalidatesSessionGenerationAndCanonicalCreateDrainsExistingOutbox() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let api = client(CatalogueTransport([]))
+            await api.bindSyncSession(syncSession)
+            let stale = try await api.captureSyncContext(ownerId: syncOwner)
+            await api.bindSyncSession(NativeAuthSession(
+                userId: otherSyncOwner, accessToken: "b-token", expiresAt: .distantFuture
+            ))
+            await api.bindSyncSession(syncSession)
+            do {
+                try await store.publishSyncWindow(
+                    items: [], ownerId: syncOwner, watermark: SQLTimestamp.date(from: syncUntil),
+                    fullRefresh: true, context: stale, authority: api.syncAuthority
+                )
+                XCTFail("Store must reject a stale generation even when owner A is active again")
+            } catch SyncWireValidationError.invalidSession {}
+            do {
+                try await store.finishOutboxEntry(
+                    operationId: operationId, context: stale, authority: api.syncAuthority
+                )
+                XCTFail("Store must not acknowledge a stale operation")
+            } catch SyncWireValidationError.invalidSession {}
+        }
+        try await assertSeedUnchanged(url, outbox: outbox)
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            // Existing legacy entry remains meaningful; canonical create consumes the
+            // accepted SQL receipt on the same drain, without a second queue.
+            let create = try await store.enqueueCommand(
+                ownerId: syncOwner, plantId: nil, commandName: "plant.create", payloadJSON: envelope().payloadJSON
+            )
+            let transport = CatalogueTransport([
+                .http(200, #"{"status":"committed","operation_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","replayed":false}"#),
+                .http(200, receiptJSON())
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let count = try await SyncEngine(store: store, apiClient: api).flushOutbox(for: syncOwner)
+            XCTAssertEqual(count, 2)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 2)
+            XCTAssertEqual(requests[1].value(forHTTPHeaderField: "X-Operation-Id"), create.operationId.uuidString.lowercased())
+        }
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let pendingA = try await reopened.pendingOutboxEntries(for: syncOwner)
+        let pendingB = try await reopened.pendingOutboxEntries(for: otherSyncOwner)
+        XCTAssertTrue(pendingA.isEmpty)
+        XCTAssertEqual(pendingB, [outbox[1]])
     }
 }

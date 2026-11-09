@@ -93,7 +93,14 @@ public actor SyncEngine {
 
     @discardableResult
     public func flushOutbox(for ownerId: UUID) async throws -> Int {
+        let context = try await apiClient.captureSyncContext(ownerId: ownerId)
+        return try await flushOutbox(for: ownerId, context: context)
+    }
+
+    private func flushOutbox(for ownerId: UUID, context: SyncSessionLease) async throws -> Int {
+        try await apiClient.validateSyncContext(context)
         let pending = try await store.pendingOutboxEntries(for: ownerId)
+        try await apiClient.validateSyncContext(context)
         guard !pending.isEmpty else { return 0 }
 
         var blockedPlantIds = Set<UUID>()
@@ -117,13 +124,17 @@ public actor SyncEngine {
             )
 
             do {
-                _ = try await apiClient.sendCommand(envelope)
-                try await store.markOutboxCommitted(operationId: entry.operationId)
+                try await apiClient.sendOutboxCommand(envelope, context: context)
+                try await store.finishOutboxEntry(
+                    operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                )
                 committedCount += 1
             } catch {
-                try await store.recordOutboxFailure(
-                    operationId: entry.operationId,
-                    errorMessage: String(describing: error)
+                // Cancellation/auth changes abort the drain without touching the captured queue.
+                try await apiClient.validateSyncContext(context)
+                try await store.finishOutboxEntry(
+                    operationId: entry.operationId, context: context, authority: apiClient.syncAuthority,
+                    failure: String(describing: error)
                 )
                 if let plantId = entry.plantId {
                     blockedPlantIds.insert(plantId)
@@ -140,70 +151,132 @@ public actor SyncEngine {
 
     @discardableResult
     public func pullDelta(for ownerId: UUID, pageSize: Int = 200) async throws -> Date? {
-        try await pullDelta(for: ownerId, pageSize: pageSize, fullRefresh: false)
+        let context = try await apiClient.captureSyncContext(ownerId: ownerId)
+        return try await pullDelta(for: ownerId, pageSize: pageSize, fullRefresh: false, context: context)
     }
 
-    private func pullDelta(for ownerId: UUID, pageSize: Int, fullRefresh: Bool) async throws -> Date? {
-        let since: Date?
-        if fullRefresh {
-            since = nil
-        } else {
-            since = try await store.currentWatermark(ownerId: ownerId)
+    private func pullDelta(
+        for ownerId: UUID, pageSize: Int, fullRefresh: Bool, context: SyncSessionLease
+    ) async throws -> Date? {
+        if context.session != nil {
+            return try await pullCanonicalDelta(
+                for: ownerId, pageSize: pageSize, fullRefresh: fullRefresh, context: context
+            )
         }
+        // Explicit legacy compatibility for existing Date DTO clients. No error from
+        // the bound canonical path can enter here.
+        try await apiClient.validateSyncContext(context)
+        let since: Date?
+        if fullRefresh { since = nil }
+        else { since = try await store.currentWatermark(ownerId: ownerId) }
         var stagedItems: [SyncItemDTO] = []
-        var windowUntil: Date? = nil
-        var cursor: SyncCursorDTO? = nil
-        var previousWatermark = since
+        var windowUntil: Date?
+        var cursor: SyncCursorDTO?
 
         repeat {
+            try await apiClient.validateSyncContext(context)
             let page = try await apiClient.fetchSyncPage(
-                since: since,
-                until: windowUntil,
-                cursor: cursor,
-                limit: pageSize
+                since: since, until: windowUntil, cursor: cursor, limit: pageSize
             )
-
-            if windowUntil == nil {
-                windowUntil = page.serverWatermark
-            }
-
+            try await apiClient.validateSyncContext(context)
+            guard page.ownerId == ownerId else { throw SyncWireValidationError.invalidSession }
+            if windowUntil == nil { windowUntil = page.serverWatermark }
             stagedItems.append(contentsOf: page.items)
-
-            if page.hasMore, let nextCursor = page.nextCursor {
-                cursor = nextCursor
+            if page.hasMore {
+                guard let next = page.nextCursor, !page.items.isEmpty else {
+                    throw SyncWireValidationError.invalidPage
+                }
+                if let cursor {
+                    let previous: (Date, String, String) = (cursor.updatedAt, cursor.entityType, cursor.id.uuidString)
+                    let following: (Date, String, String) = (next.updatedAt, next.entityType, next.id.uuidString)
+                    guard previous < following else { throw SyncWireValidationError.invalidPage }
+                }
+                cursor = next
             } else {
-                cursor = nil
+                guard page.nextCursor == nil else { throw SyncWireValidationError.invalidPage }
                 break
             }
-        } while cursor != nil
+        } while true
 
-        // A failed page must not publish a partial snapshot or erase the cache.
-        if fullRefresh {
-            try await store.resetSyncCachePreservingOutbox(ownerId: ownerId)
-        }
-        try await store.applySyncedItems(stagedItems, ownerId: ownerId)
+        try await store.publishSyncWindow(
+            items: stagedItems, ownerId: ownerId, watermark: windowUntil,
+            fullRefresh: fullRefresh, context: context, authority: apiClient.syncAuthority
+        )
+        if fullRefresh { planHistoryByOwner[ownerId] = nil }
         ingestSpecialEntities(stagedItems, ownerId: ownerId)
-
-        if let finalWatermark = windowUntil {
-            if previousWatermark != finalWatermark {
-                invalidateReportCache(for: ownerId, newWatermark: finalWatermark)
-                previousWatermark = finalWatermark
-            }
-            try await store.updateWatermark(ownerId: ownerId, watermark: finalWatermark)
-        }
-
+        if let windowUntil { invalidateReportCache(for: ownerId, newWatermark: windowUntil) }
         return windowUntil
     }
 
-    public func syncNow(for ownerId: UUID) async throws -> Date? {
-        _ = try await flushOutbox(for: ownerId)
-        return try await pullDelta(for: ownerId)
+    private func pullCanonicalDelta(
+        for ownerId: UUID, pageSize: Int, fullRefresh: Bool, context: SyncSessionLease
+    ) async throws -> Date? {
+        let since: String?
+        if fullRefresh { since = nil }
+        else { since = try await store.currentWatermarkRaw(ownerId: ownerId) }
+        var windowUntil: String?
+        var cursor: SyncWireCursorDTO?
+        var changes: [SyncWireChangeDTO] = []
+        var firstPage: SyncWirePageDTO?
+        var finalPage: SyncWirePageDTO
+
+        repeat {
+            let result = try await apiClient.fetchSyncPage(
+                context: context, since: since, until: windowUntil, cursor: cursor, limit: pageSize
+            )
+            guard result.ownerId == ownerId else { throw SyncWireValidationError.invalidSession }
+            let page = result.page
+            if let firstPage {
+                guard page.profile == firstPage.profile, page.entitlement == firstPage.entitlement else {
+                    throw SyncWireValidationError.invalidPage
+                }
+            } else {
+                firstPage = page
+                windowUntil = page.until
+            }
+            changes.append(contentsOf: page.changes)
+            if page.hasMore {
+                // A1 validates complete, strictly advancing tuples against this request.
+                guard let next = page.lastCursor else { throw SyncWireValidationError.invalidPage }
+                cursor = next
+            } else {
+                finalPage = page
+                break
+            }
+        } while true
+
+        let encoder = JSONEncoder()
+        let items = try changes.map { change in
+            SyncItemDTO(
+                entityType: change.entityType, id: change.id,
+                updatedAt: SQLTimestamp.date(from: change.updatedAt)!,
+                deletedAt: change.deletedAt.flatMap { SQLTimestamp.date(from: $0) },
+                payloadJSON: String(decoding: try encoder.encode(change.data), as: UTF8.self)
+            )
+        }
+        let watermark = finalPage.nextSince.flatMap { SQLTimestamp.date(from: $0) }
+        try await apiClient.validateSyncContext(context)
+        try await store.publishSyncWindow(
+            items: items, ownerId: ownerId, watermark: watermark, wirePage: finalPage, changes: changes,
+            fullRefresh: fullRefresh, context: context, authority: apiClient.syncAuthority
+        )
+        if fullRefresh { planHistoryByOwner[ownerId] = nil }
+        ingestSpecialEntities(items, ownerId: ownerId)
+        if let watermark { invalidateReportCache(for: ownerId, newWatermark: watermark) }
+        return watermark
     }
 
-    /// Publishes a fresh snapshot only after all pages succeed, preserving LocalOutbox.
+    public func syncNow(for ownerId: UUID) async throws -> Date? {
+        let context = try await apiClient.captureSyncContext(ownerId: ownerId)
+        _ = try await flushOutbox(for: ownerId, context: context)
+        return try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+    }
+
+    /// Canonical refresh never drains the outbox: failed refresh retains the whole old snapshot/queue.
     public func performFullRefresh(for ownerId: UUID) async throws -> Date? {
-        _ = try await flushOutbox(for: ownerId)
-        return try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: true)
+        let context = try await apiClient.captureSyncContext(ownerId: ownerId)
+        if context.session == nil { _ = try await flushOutbox(for: ownerId, context: context) }
+        return try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: true, context: context)
     }
 
     // MARK: - Pending Overlay over Synced Cache

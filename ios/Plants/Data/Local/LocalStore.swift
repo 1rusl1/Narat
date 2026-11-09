@@ -106,6 +106,7 @@ public final class SyncedEntityRecord {
     public var updatedAt: Date
     public var deletedAt: Date?
     public var payloadJSON: String
+    public var updatedAtRaw: String?
 
     public init(
         ownerId: UUID,
@@ -129,6 +130,9 @@ public final class SyncedEntityRecord {
 public final class SyncCheckpointRecord {
     @Attribute(.unique) public var ownerId: UUID
     public var watermark: Date?
+    public var watermarkRaw: String?
+    public var syncProfileJSON: String?
+    public var syncEntitlementJSON: String?
     public var freeSelectionRevision: Int
     public var entitlementValidUntil: Date?
     public var entitlementTrialEndAt: Date?
@@ -480,13 +484,35 @@ public actor LocalStore {
     // MARK: Synced Entity & Checkpoint Operations
 
     public func applySyncedItems(_ items: [SyncItemDTO], ownerId: UUID) throws {
+        do {
+            try stageSyncedItems(items, ownerId: ownerId)
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+    }
+
+    private func stageSyncedItems(
+        _ items: [SyncItemDTO], ownerId: UUID, rawTimes: [String: String] = [:]
+    ) throws {
         for item in items {
             let key = "\(ownerId.uuidString.lowercased()):\(item.entityType):\(item.id.uuidString.lowercased())"
             let descriptor = FetchDescriptor<SyncedEntityRecord>(
                 predicate: #Predicate { $0.compositeKey == key }
             )
             if let existing = try modelContext.fetch(descriptor).first {
-                if item.updatedAt >= existing.updatedAt {
+                let raw = rawTimes[key]
+                let isNewer: Bool
+                if let raw, let old = existing.updatedAtRaw,
+                   let incoming = SQLTimestamp.microseconds(from: raw),
+                   let previous = SQLTimestamp.microseconds(from: old) {
+                    isNewer = incoming >= previous
+                } else {
+                    isNewer = item.updatedAt >= existing.updatedAt
+                }
+                if isNewer {
+                    existing.updatedAtRaw = raw
                     existing.updatedAt = item.updatedAt
                     existing.deletedAt = item.deletedAt
                     existing.payloadJSON = item.payloadJSON
@@ -500,10 +526,131 @@ public actor LocalStore {
                     deletedAt: item.deletedAt,
                     payloadJSON: item.payloadJSON
                 )
+                record.updatedAtRaw = rawTimes[key]
                 modelContext.insert(record)
             }
         }
-        try modelContext.save()
+    }
+
+    /// One disk transaction for the entire validated window. The same session
+    /// authority used at request time is checked *inside* publication.
+    func publishSyncWindow(
+        items: [SyncItemDTO], ownerId: UUID, watermark: Date?,
+        wirePage: SyncWirePageDTO? = nil, changes: [SyncWireChangeDTO] = [],
+        fullRefresh: Bool, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
+        try authority.withValid(context) {
+            let autosave = modelContext.autosaveEnabled
+            modelContext.autosaveEnabled = false
+            defer { modelContext.autosaveEnabled = autosave }
+            do {
+                let descriptor = FetchDescriptor<SyncCheckpointRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId }
+                )
+                let checkpoint: SyncCheckpointRecord
+                if let existing = try modelContext.fetch(descriptor).first {
+                    checkpoint = existing
+                } else {
+                    checkpoint = SyncCheckpointRecord(ownerId: ownerId)
+                    modelContext.insert(checkpoint)
+                }
+                if let next = wirePage?.nextSince, let previous = checkpoint.watermarkRaw,
+                   let end = SQLTimestamp.microseconds(from: next),
+                   let old = SQLTimestamp.microseconds(from: previous), end < old {
+                    throw SyncWireValidationError.invalidPage
+                }
+                if fullRefresh {
+                    let entities = FetchDescriptor<SyncedEntityRecord>(
+                        predicate: #Predicate { $0.ownerId == ownerId }
+                    )
+                    for entity in try modelContext.fetch(entities) { modelContext.delete(entity) }
+                }
+                var rawTimes: [String: String] = [:]
+                for change in changes {
+                    let key = "\(ownerId.uuidString.lowercased()):\(change.entityType):\(change.id.uuidString.lowercased())"
+                    rawTimes[key] = change.updatedAt
+                }
+                try stageSyncedItems(items, ownerId: ownerId, rawTimes: rawTimes)
+                checkpoint.watermark = watermark
+                checkpoint.watermarkRaw = wirePage?.nextSince
+                if let wirePage {
+                    let encoder = JSONEncoder()
+                    checkpoint.syncProfileJSON = String(decoding: try encoder.encode(wirePage.profile), as: UTF8.self)
+                    checkpoint.syncEntitlementJSON = try wirePage.entitlement.map {
+                        String(decoding: try encoder.encode($0), as: UTF8.self)
+                    }
+                    // Null entitlement clears previous rights, including legacy projections.
+                    checkpoint.entitlementValidUntil = wirePage.entitlement?.validUntil.flatMap { SQLTimestamp.date(from: $0) }
+                    checkpoint.entitlementTrialEndAt = wirePage.entitlement?.trialEndAt.flatMap { SQLTimestamp.date(from: $0) }
+                    checkpoint.entitlementOfferKind = wirePage.entitlement?.offerKind
+                    checkpoint.entitlementState = wirePage.entitlement?.state
+                }
+                checkpoint.updatedAt = Date()
+                try Task.checkCancellation()
+                try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw error
+            }
+        }
+    }
+
+    func finishOutboxEntry(
+        operationId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority,
+        failure: String? = nil
+    ) throws {
+        try authority.withValid(context) {
+            do {
+                let descriptor = FetchDescriptor<LocalOutboxRecord>(
+                    predicate: #Predicate { $0.operationId == operationId }
+                )
+                guard let record = try modelContext.fetch(descriptor).first,
+                      record.ownerId == context.ownerId else {
+                    throw SyncWireValidationError.invalidSession
+                }
+                if let failure {
+                    record.retryCount += 1
+                    record.lastError = failure
+                } else {
+                    modelContext.delete(record)
+                }
+                try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw error
+            }
+        }
+    }
+
+    /// Original SQL spelling wins. Only historical Date-only caches use this fallback.
+    /// Reading never rewrites a historical checkpoint.
+    public func currentWatermarkRaw(ownerId: UUID) throws -> String? {
+        let descriptor = FetchDescriptor<SyncCheckpointRecord>(
+            predicate: #Predicate { $0.ownerId == ownerId }
+        )
+        guard let checkpoint = try modelContext.fetch(descriptor).first else { return nil }
+        if let raw = checkpoint.watermarkRaw { return raw }
+        guard let date = checkpoint.watermark else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
+    }
+
+    public func syncedProfile(ownerId: UUID) throws -> SyncWireProfileDTO? {
+        let descriptor = FetchDescriptor<SyncCheckpointRecord>(
+            predicate: #Predicate { $0.ownerId == ownerId }
+        )
+        guard let raw = try modelContext.fetch(descriptor).first?.syncProfileJSON else { return nil }
+        return try JSONDecoder().decode(SyncWireProfileDTO.self, from: Data(raw.utf8))
+    }
+
+    public func syncedEntitlement(ownerId: UUID) throws -> SyncWireEntitlementDTO? {
+        let descriptor = FetchDescriptor<SyncCheckpointRecord>(
+            predicate: #Predicate { $0.ownerId == ownerId }
+        )
+        guard let raw = try modelContext.fetch(descriptor).first?.syncEntitlementJSON else { return nil }
+        return try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data(raw.utf8))
     }
 
     public func activeSyncedEntities(ownerId: UUID, entityType: String) throws -> [SyncItemDTO] {
@@ -530,6 +677,7 @@ public actor LocalStore {
         )
         if let existing = try modelContext.fetch(descriptor).first {
             existing.watermark = watermark
+            existing.watermarkRaw = nil
             existing.updatedAt = Date()
         } else {
             let record = SyncCheckpointRecord(ownerId: ownerId, watermark: watermark)
@@ -559,6 +707,7 @@ public actor LocalStore {
         )
         for cp in try modelContext.fetch(checkpointDescriptor) {
             cp.watermark = nil
+            cp.watermarkRaw = nil
             cp.updatedAt = Date()
         }
         try modelContext.save()
