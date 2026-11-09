@@ -5,6 +5,14 @@
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Обзор готовности к запуску — 9 ноября 2026
+
+По запросу владельца сверены текущий код, tasks, quickstart и доказательства приёмки. Итог: публичный MVP ещё не готов; остаются шесть блоков — сохранение/sync, фотоанализ, проверенные данные/рекомендации, уход, доступ/покупки и безопасность/выпуск. Подробности и конкретные code blockers: [launch-readiness](validation/launch-readiness-2026-11-09.md). Изменены только этот handoff и новый отчёт; runtime/tasks checkbox не менялись (14 отмечены / 137 открыты, из них 3 необязательные комнаты).
+
+**Реально выполнено:** чтение Swift/TS/SQL/CI, инвентаризация и сверка checkbox; targeted Deno `persistence_unavailable_test.ts` — **15 PASS, 0 failed** на fixtures. Они подтверждают явный 503 при неподключённой persistence, не успешный серверный save. `git diff --check` — PASS. Полные SQL/Deno/iOS suites, Simulator, live Auth/Supabase/Storage/AI/StoreKit, физическая камера и production не проверялись повторно; прежние PASS остаются историческими доказательствами своих срезов. Отсутствие release отчётов и billing/card/care UI зафиксировано без объявления всей инфраструктуры отсутствующей.
+
+**Точный следующий шаг:** подготовить T162 на принятом T161, явно выделив отсутствующий фундамент T019/T044–T048: command/sync adapter → repository → минимальное подтверждённое сохранение из каталога и карточка. Затем client cap/server rejection, legacy decode, pending/retry/restart/A-B; отдельная live test integration. Удаление DTO само по себе T162 не закрывает. Далее T163/T166 и остальные зависимости по отчёту. Очередь разработки/оркестратор этим запросом не запускались. Этот раздел задаёт текущую точку продолжения; прежние «следующие шаги» ниже сохраняются как история.
+
 ## Итог текущей очереди — четыре среза приняты и опубликованы
 
 **Результат 2026-11-09:** через обновлённый оркестратор приняты четыре среза: T161 cap `b5f2c8f`, T161 SQL retirement `01ba170`, T161 TypeScript/API `eb58c03`, ограниченный T168 client light-estimator `dadfcb1`. Все четыре — **COMPLETED / Verified and published** в своих успешных run/task records, обычный push в origin/main подтверждён. T161 закрыта как серверный пакет по собственным SQL/Deno AC; полные T155/T158/T168 и клиентская T162 не закрывались.
