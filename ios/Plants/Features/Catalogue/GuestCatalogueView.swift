@@ -18,12 +18,23 @@ struct CatalogueSDKSnapshot: Sendable, Equatable {
 private final class CatalogueSDKEpoch: @unchecked Sendable {
     private let lock = NSLock()
     private var value: UInt64 = 0
+    private var hasEstablishedSession: Bool
+
+    init(hasEstablishedSession: Bool = false) {
+        self.hasEstablishedSession = hasEstablishedSession
+    }
 
     func read() -> UInt64 { lock.withLock { value } }
 
-    func invalidate(_ authority: SyncSessionAuthority) {
+    func allowsAnonymousSignup(at epoch: UInt64) -> Bool {
+        lock.withLock { !hasEstablishedSession && value == epoch }
+    }
+
+    func invalidate(_ authority: SyncSessionAuthority, session: Session? = nil) {
         lock.withLock {
             value &+= 1
+            // Monotonic for this connection, including anonymous and expired sessions.
+            if session != nil { hasEstablishedSession = true }
             authority.invalidate()
         }
     }
@@ -39,8 +50,7 @@ final class CatalogueConnection {
     let repository: CollectionRepository?
     let unavailable: CatalogueConnectionUnavailable?
     private var observedSnapshot: CatalogueSDKSnapshot?
-    @ObservationIgnored private let sdkEpoch = CatalogueSDKEpoch()
-    @ObservationIgnored private let hadSessionBeforeObservation: Bool
+    @ObservationIgnored private let sdkEpoch: CatalogueSDKEpoch
     @ObservationIgnored private var observer: Task<any AuthStateChangeListenerRegistration, Never>?
     @ObservationIgnored private var pending: Task<UUID, Error>?
     @ObservationIgnored private var binding: Task<Void, Error>?
@@ -77,8 +87,8 @@ final class CatalogueConnection {
         transport: any PlantsAPITransport = URLSessionAPITransport(),
         clientLocale: String = "pl"
     ) {
-        // Initial-session delivery may delete the stored session and swallow its refresh error.
-        hadSessionBeforeObservation = client.auth.currentSession != nil
+        // Seed before initial-session delivery can delete storage and swallow its refresh error.
+        sdkEpoch = CatalogueSDKEpoch(hasEstablishedSession: client.auth.currentSession != nil)
         let api = PlantsAPIClient(
             baseURL: configuration.supabaseURL.appendingPathComponent("functions/v1/plants-api"),
             transport: transport, clientLocale: clientLocale
@@ -93,9 +103,9 @@ final class CatalogueConnection {
         let epoch = sdkEpoch
         let authority = api.syncAuthority
         observer = Task { [weak self] in
-            let registration = await client.auth.onAuthStateChange { [weak self] _, _ in
-                // Runs on the SDK emitter before a MainActor task can publish/bind.
-                epoch.invalidate(authority)
+            let registration = await client.auth.onAuthStateChange { [weak self] _, session in
+                // Record session history and invalidate before any MainActor publication/bind.
+                epoch.invalidate(authority, session: session)
                 Task { @MainActor [weak self] in
                     await self?.observeCurrentSession()
                 }
@@ -112,7 +122,7 @@ final class CatalogueConnection {
         syncEngine = nil
         repository = nil
         self.unavailable = unavailable
-        hadSessionBeforeObservation = false
+        sdkEpoch = CatalogueSDKEpoch()
     }
 
     deinit {
@@ -225,8 +235,6 @@ final class CatalogueConnection {
     func sessionOwner() async throws -> UUID {
         guard let client else { throw unavailable ?? .configurationMissing }
         if let pending { return try await pending.value }
-        // Capture before the observer wait, including owners established since initialization.
-        let hadSession = hadSessionBeforeObservation || client.auth.currentSession != nil
         let task = Task {
             _ = await observer?.value
             let epoch = sdkEpoch.read()
@@ -235,7 +243,7 @@ final class CatalogueConnection {
             do {
                 current = try await client.auth.session
             } catch AuthError.sessionMissing {
-                guard !hadSession, sdkEpoch.read() == epoch, client.auth.currentSession == nil else {
+                guard sdkEpoch.allowsAnonymousSignup(at: epoch), client.auth.currentSession == nil else {
                     throw CatalogueSaveUnavailable.sessionChanged
                 }
                 current = try await client.auth.signInAnonymously()

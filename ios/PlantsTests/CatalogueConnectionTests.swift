@@ -622,6 +622,91 @@ final class CatalogueConnectionTests: XCTestCase {
         }
     }
 
+    func testLaterSDKTerminalCleanupNeverCreatesReplacementOwnerOnRepeatedStartup() async throws {
+        for code in ["refresh_token_not_found", "session_expired"] {
+            for anonymous in [true, false] {
+                for cleanupBeforeCall in [true, false] {
+                    let h = try Harness(emitLocalSessionAsInitialSession: false)
+                    defer { h.close() }
+                    await h.ready()
+                    XCTAssertNil(h.client.auth.currentSession)
+                    try auth(h, owner: owner, anonymous: anonymous, expired: true)
+                    h.fixture.append(.init(
+                        method: "POST", path: "/auth/v1/token",
+                        data: try json([
+                            "code": code, "error_code": code, "message": "Fixture rejected"
+                        ]),
+                        status: 400, suspend: !cleanupBeforeCall,
+                        query: "grant_type=refresh_token"
+                    ))
+
+                    if cleanupBeforeCall {
+                        let done = DispatchSemaphore(value: 0)
+                        let client = h.client
+                        let cleanup = Task.detached {
+                            defer { done.signal() }
+                            let established = try await client.auth.signInWithIdToken(
+                                credentials: .init(provider: .apple, idToken: "FIXTURE-ONLY-ID-TOKEN")
+                            )
+                            do {
+                                _ = try await client.auth.refreshSession()
+                                return (established, false)
+                            } catch AuthError.sessionMissing {
+                                return (established, true)
+                            }
+                        }
+                        // Both SDK events complete while the MainActor observer cannot run.
+                        XCTAssertEqual(done.wait(timeout: .now() + 5), .success)
+                        let (established, rejected) = try await cleanup.value
+                        XCTAssertTrue(rejected)
+                        XCTAssertEqual(established.user.id, owner)
+                        XCTAssertEqual(established.user.isAnonymous, anonymous)
+                        XCTAssertTrue(established.isExpired)
+                    } else {
+                        try await h.signIn()
+                        XCTAssertEqual(h.client.auth.currentSession?.user.id, owner)
+                        XCTAssertEqual(h.client.auth.currentSession?.user.isAnonymous, anonymous)
+                        let startup = Task { try await h.connection.sessionOwner() }
+                        try await waitForSuspension(h.fixture)
+                        h.fixture.release()
+                        do {
+                            _ = try await startup.value
+                            XCTFail("Terminal refresh must not replace an established owner")
+                        } catch {
+                            XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged)
+                        }
+                    }
+
+                    for _ in 0..<2 {
+                        do {
+                            _ = try await h.connection.sessionOwner()
+                            XCTFail("Session history must survive cleanup and every retry")
+                        } catch {
+                            XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged)
+                        }
+                    }
+                    XCTAssertNil(h.client.auth.currentSession)
+                    XCTAssertNil(h.connection.snapshot)
+                    // Exactly one fixture sign-in and one terminal refresh: no signup or plants HTTP.
+                    XCTAssertEqual(h.fixture.captured.map(\.url?.path), [
+                        "/auth/v1/token", "/auth/v1/token"
+                    ])
+                    XCTAssertEqual(h.fixture.captured.map(\.url?.query), [
+                        "grant_type=id_token", "grant_type=refresh_token"
+                    ])
+                    let disk = ModelContext(h.store.modelContainer)
+                    XCTAssertEqual(try disk.fetchCount(FetchDescriptor<CatalogueInputCheckpointRecord>()), 0)
+                    XCTAssertEqual(try disk.fetchCount(FetchDescriptor<GuestDraftCacheRecord>()), 0)
+                    XCTAssertEqual(try disk.fetchCount(FetchDescriptor<LocalOutboxRecord>()), 0)
+                    XCTAssertEqual(try disk.fetchCount(FetchDescriptor<CatalogueCreateConfirmationRecord>()), 0)
+                    XCTAssertEqual(try disk.fetchCount(FetchDescriptor<SyncedEntityRecord>()), 0)
+                    XCTAssertEqual(try disk.fetchCount(FetchDescriptor<SyncCheckpointRecord>()), 0)
+                    assertClosed(h)
+                }
+            }
+        }
+    }
+
     func testMissingConfigurationAndDiskFailureStayExplicitlyUnavailable() async throws {
         var configurationReads = 0, diskAttempts = 0
         let missing = CatalogueConnection(configuration: {
