@@ -352,6 +352,26 @@
       "stage": "unit",
       "mode": "fixture",
       "timeout": 300
+    },
+    "t157-compact-condition": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_compact_profile_gate.py",
+        "condition"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
+    },
+    "t157-compact-plant": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_compact_profile_gate.py",
+        "plant"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
     }
   },
   "publish": {

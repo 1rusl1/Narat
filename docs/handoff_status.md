@@ -68,6 +68,12 @@ Run `t157-sql-mode-20261109-01` — **COMPLETED / Verified and published**, ко
 
 **Итог последовательности:** a97ff20 → 31a465f → e2a446d → bd481a9, все COMPLETED и опубликованы. T157/T155 и T158–T160 остаются открыты: обязательный полный профиль/timeline, новая collection/quota/expiry модель, report/product/guest остатки и простой уход ещё не завершены. Число checkbox не менялось; приёмка срезов не равна готовности пользовательского фото→уход сценария.
 
+## Следующая очередь T157: компактные профили
+
+Подготовлены `contracts/compact-profiles.md`, `tools/automation/tasks.t157-compact-profiles.json`, независимый `t157_compact_profile_gate.py` и два config checks. Формат2: независимые действия вместо лечебных фаз/повторов, first_help_action_id, nullable проверенный next-check interval; PlantProfile2 без полного алгоритма, с optional independent safety. V1 snapshots сохраняются побайтово в legacy и не исполняются как новый профиль. Срок1..90 — прежняя техническая граница, не универсальный таймер.
+
+Manifest validate — PASS, 2 последовательные задачи: `t157-compact-condition-profile` → `t157-compact-plant-profile`. Schema/TS/resolver/fixtures меняются совместно; canonical AI schema/квоты/SQL/пользовательские данные/Swift этим этапом не меняются. Целевые tests/gates ещё не запускались, T157 не закрыта. Run-id `t157-compact-20261109-01` после сохранения чистого Git. Старые hash gates вопросников/evidence относятся к принятым историческим срезам и не являются воротами новой2.0 schema.
+
 ## Точный следующий шаг
 
 Продолжить **T157 компактные карточки**: составить минимальный согласованный schema/TS формат действий сейчас и следующей проверки вместо обязательных `treatment_plan.steps`, repeat_count/start_offset/phase и полного `care_algorithm_params`. Подготовить следующий manifest с совместным обновлением schema, KnowledgeTypes/semantic validator, ProtocolResolver и fixtures; исходные результаты/планы читать без переписывания/автоматической конвертации в новые рекомендации. После приёмки этого контракта — T158/T159/T160 с отдельными forward migrations и clean/upgrade проверками. Текущие PASS не закрывают всю T157 или живой фото→уход маршрут.
