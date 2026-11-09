@@ -35,18 +35,10 @@ public final class AnalysisFlowModel {
         }
     }
 
-    public func selectLightLevel(_ level: LightLevel, source: LightSource = .manual) {
+    public func selectLightLevel(_ level: LightLevel) {
         router.flowState.conditions.lightLevel = level
-        router.flowState.conditions.lightSource = level == .unknown ? .unknown : source
+        router.flowState.conditions.lightSource = level == .unknown ? .unknown : .manual
         router.flowState.conditions.lightConfirmed = (level != .unknown)
-    }
-
-    public func applyEstimatedLighting(_ level: LightLevel) {
-        // Direct sun is never auto-selected by camera estimation (FR-034)
-        let safeLevel: LightLevel = (level == .brightDirect) ? .brightIndirect : level
-        router.flowState.conditions.lightLevel = safeLevel
-        router.flowState.conditions.lightSource = safeLevel == .unknown ? .unknown : .cameraEstimate
-        router.flowState.conditions.lightConfirmed = (safeLevel != .unknown)
     }
 
     public func selectWateringHabit(_ habit: WateringHabit) {

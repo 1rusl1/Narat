@@ -86,7 +86,7 @@ public struct CareQuestionsView: View {
             ForEach(LightLevel.allCases, id: \.self) { level in
                 let isSelected = model.router.flowState.conditions.lightLevel == level
                 Button {
-                    model.selectLightLevel(level, source: .manual)
+                    model.selectLightLevel(level)
                 } label: {
                     HStack {
                         Text(labelForLight(level))

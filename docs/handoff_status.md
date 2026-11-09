@@ -224,7 +224,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t161-align-backend-collection-policy: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t161-align-backend-collection-policy](validation/automation/tasks/t161-align-backend-collection-policy.md).
+t168-retire-unused-client-light-estimator: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t168-retire-unused-client-light-estimator](validation/automation/tasks/t168-retire-unused-client-light-estimator.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

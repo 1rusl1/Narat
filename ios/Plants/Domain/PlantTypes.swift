@@ -173,24 +173,6 @@ public struct AddFlowState: Codable, Sendable, Equatable {
     }
 }
 
-// MARK: - Lighting Estimation Protocol (FR-034)
-
-public struct LightingEstimateResult: Codable, Sendable, Equatable {
-    public let level: LightLevel
-    public let source: LightSource
-    public let exposureScore: Double
-
-    public init(level: LightLevel, source: LightSource = .cameraEstimate, exposureScore: Double) {
-        self.level = level
-        self.source = source
-        self.exposureScore = exposureScore
-    }
-}
-
-public protocol LightingEstimating: Sendable {
-    func estimateAmbientLighting() async throws -> LightingEstimateResult
-}
-
 // MARK: - Next Step & Plan Availability (FR-048, FR-050)
 
 public enum NextAvailableStep: String, Codable, Sendable, CaseIterable, Equatable {

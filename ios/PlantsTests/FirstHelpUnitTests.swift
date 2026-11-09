@@ -104,6 +104,76 @@ final class FirstHelpUnitTests: XCTestCase {
         }
     }
 
+    func testLegacyLightingStaysHistoricalUntilExplicitManualSelection() throws {
+        let legacyJSON = #"""
+        {
+          "light_level":"low", "light_source":"camera_estimate", "light_confirmed":false,
+          "watering_habit":"sparse", "last_watered":"within_3_days",
+          "pot_type":"terracotta", "season_override":"autumn_winter"
+        }
+        """#
+        let decoder = JSONDecoder()
+        let encoder = JSONEncoder()
+        let legacy = try decoder.decode(CareConditionsInput.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(legacy.lightLevel, .low)
+        XCTAssertEqual(legacy.lightSource, .cameraEstimate)
+        XCTAssertFalse(legacy.lightConfirmed)
+
+        for intent in [AddIntent.problem, .care] {
+            let initial = AddFlowState(
+                intent: intent, addMethod: .scan, currentStep: .careQuestions,
+                questionIndex: 2, photoLocalIdentifier: "legacy-photo",
+                confirmedPlantId: "monstera_deliciosa", confirmedTaxonId: UUID(),
+                confirmedDisplayName: "My Monstera", conditions: legacy,
+                resultMode: intent == .care ? .identification : .diagnosis, draftId: UUID()
+            )
+            let router = AddPlantRouter(initialState: initial, hasCompletedWelcome: true)
+            let model = AnalysisFlowModel(router: router)
+            XCTAssertTrue(model.router === router)
+            XCTAssertEqual(router.flowState, initial)
+            let historicalData = try encoder.encode(router.flowState.conditions)
+            let historicalJSON = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: historicalData) as? [String: Any])
+            XCTAssertEqual(historicalJSON["light_source"] as? String, "camera_estimate")
+            XCTAssertEqual(historicalJSON["light_confirmed"] as? Bool, false)
+            XCTAssertEqual(try decoder.decode(CareConditionsInput.self, from: historicalData), legacy)
+
+            model.selectPhotoData(photoFixture(), identifier: "test-photo")
+            let photo = try XCTUnwrap(model.preparedPhoto)
+            model.submitAnalysis(locale: .en)
+            let operation = try XCTUnwrap(model.currentOperationId)
+            let before = router.flowState
+            XCTAssertEqual(before.conditions, legacy)
+
+            // Cover direct sun as well as every other known choice, then clear it explicitly.
+            for level in [LightLevel.brightDirect, .brightIndirect, .medium, .low, .unknown] {
+                model.selectLightLevel(level)
+                let known = level != .unknown
+                var expected = before
+                expected.conditions.lightLevel = level
+                expected.conditions.lightSource = known ? .manual : .unknown
+                expected.conditions.lightConfirmed = known
+                XCTAssertEqual(router.flowState, expected)
+                XCTAssertTrue(router.hasCompletedWelcome)
+                XCTAssertEqual(model.preparedPhoto, photo)
+                XCTAssertEqual(model.currentOperationId, operation)
+                XCTAssertEqual(model.analysisError, "analysis.error.unavailable")
+                XCTAssertFalse(model.isAnalyzing)
+                XCTAssertFalse(model.isPreparingPhoto)
+                XCTAssertNil(model.photoError)
+                XCTAssertNil(model.preliminaryResult)
+                XCTAssertNil(model.accessState)
+
+                let data = try encoder.encode(router.flowState.conditions)
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                XCTAssertEqual(object["light_level"] as? String, level.rawValue)
+                XCTAssertEqual(object["light_source"] as? String, known ? "manual" : "unknown")
+                XCTAssertEqual(object["light_confirmed"] as? Bool, known)
+                XCTAssertEqual(try decoder.decode(CareConditionsInput.self, from: data), expected.conditions)
+            }
+        }
+    }
+
     func testAnalysisModesOfferOnlyIdentificationAndDiagnosis() throws {
         XCTAssertEqual(AnalysisMode.allCases, [.identification, .diagnosis])
         XCTAssertTrue(AnalysisMode.allCases.allSatisfy(\.isSelectable))
