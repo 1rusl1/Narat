@@ -417,6 +417,25 @@
       "stage": "unit",
       "mode": "fixture",
       "timeout": 300
+    },
+    "t161-collection-cap": {
+      "argv": [
+        "python3",
+        "tools/automation/t161_collection_gate.py"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 300
+    },
+    "t161-slots-retired": {
+      "argv": [
+        "python3",
+        "tools/automation/t161_collection_gate.py",
+        "--slots"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 300
     }
   },
   "publish": {

@@ -1,0 +1,186 @@
+{
+  "tasks": [
+    {
+      "id": "t161-atomic-collection-cap",
+      "description": "T161 первый срез: атомарный Free collection cap 3 на всех writers, paid unlimited. PostgreSQL clean/upgrade, real concurrent retries and distinct operations.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "supabase/migrations/202610200004_collection.sql",
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "supabase/migrations/202610200011_schedule_calculator.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/tests/rooms_upgrade.seed.sql",
+        "tools/automation/t161_collection_gate.py",
+        "tools/automation/sql/t161_cap.sql",
+        "specs/001-plants-ios-mvp/orchestrator-cleanup-tasks.md",
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/tests/collection_cap.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/tests/collection_cap.test.sql"
+      ],
+      "constraints": [
+        "Только точные write_files; applied migrations не менять; no deploy/network/production calls/data cleanup. Preserve owners/RLS/media/history/quota/operation receipts and sync pagination. Read relevant spec/constitution and current SQL via rg/sed. Fixtures do not prove live integrations or positive guest claim.",
+        "Developer PASS means patch ready; controller runs all checks and returns failures for repair. Return ordinary unified git patch; no rename/binary. Do not change tools/automation, tasks.md, handoff or AGENTS. Parent T155/T158 remain open.",
+        "Implement narrow new migration 202611090003_collection_cap.sql. At database boundary serialize owner profile row, active account, count nondeleted plant instances; new INSERT/restore/owner transfer to Free only if count excluding this row <3. Paid verified has_verified_paid_access(owner) bypasses collection cap, expired does not. Keep all historical over-cap instances on upgrade/expiry; edits existing live instance do not count as adding. No automatic deletion/slot assignment. Universal BEFORE trigger is suitable to cover plant.create, guest commit, legacy fallback and direct service insert without copying huge functions. Preserve privilege hardening (new definer helpers revoked PUBLIC/anon/authenticated); trigger must not permit supplied p_now bypass. Honor transaction isolation/concurrent statement snapshots with actual owner lock; tests include real lock wait.",
+        "Use exact P0001 COLLECTION_LIMIT_REACHED for limit. Controller trusted tools/automation/sql/t161_cap.sql tests Free0/2/3, paid5/expired, soft delete/restore/owner transfer, RPC exact retries, RLS and quota retention. All must pass, not mere textual checks. Existing guest RPC has baseline incompatible columns; do not fix guest/proof/TTL here or claim positive guest acceptance. Universal writer constraint protects its eventual INSERT.",
+        "Write meaningful pgTAP collection_cap.test.sql against actual schema (profiles preferred_locale, plants taxon_id/plant_id, current operation_receipts). BEGIN/plan/finish/ROLLBACK, no skip/TODO/mocking production functions. Cover single transaction multi-row inserts at cap, no mutation/receipt on rejected operation, paid >3, deleted rows, active row edits, inactive owner. May create own valid published catalogue fixture. No dependency on fake plant_species/locale columns from obsolete tests. Keep migration small; no unrelated subscription/quota/basic-care changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Real clean/seeded upgrade retains all public rows; Free0/2/3, paid>3, expiry/restore/owner-transfer guards and RLS pass. Actual concurrent same retry and distinct last-slot race observe profile lock and commit one instance/receipt.",
+          "checks": [
+            "t161-collection-cap"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Backend fixture regressions remain green, without claiming live guest transfer.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Local typecheck and diff clean.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "t161-retire-sql-free-slots",
+      "description": "T161 второй срез: снять free_care.select и автоматическую тройку из SQL, новых basic-care/profile/sync projections и next step; preserve historical memberships and receipts.",
+      "depends_on": [
+        "t161-atomic-collection-cap"
+      ],
+      "risk": "high",
+      "complexity": "high",
+      "files": [
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/migrations/202611010002_basic_care.sql",
+        "supabase/migrations/202610200013_guest_claim.sql",
+        "supabase/migrations/202610200011_schedule_calculator.sql",
+        "supabase/migrations/202610200010_command_protocol.sql",
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "tools/automation/sql/t161_slots.sql",
+        "tools/automation/t161_collection_gate.py",
+        "specs/001-plants-ios-mvp/orchestrator-cleanup-tasks.md",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/tests/free_care.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/tests/free_care.test.sql"
+      ],
+      "constraints": [
+        "Только точные write_files; applied migrations не менять; no deploy/network/production calls/data cleanup. Preserve owners/RLS/media/history/quota/operation receipts and sync pagination. Read relevant spec/constitution and current SQL via rg/sed. Fixtures do not prove live integrations or positive guest claim.",
+        "Developer PASS means patch ready; controller runs all checks and returns failures for repair. Return ordinary unified git patch; no rename/binary. Do not change tools/automation, tasks.md, handoff or AGENTS. Parent T155/T158 remain open.",
+        "New forward migration only. Replace reconcile_owner_basic_care/execute_basic_care_command/compute_next_available_step/can_owner_schedule_rule and current owner_sync_entries/fetch_sync_delta to remove active Free slots and selection projections. Do not copy rooms view from old pre-retirement migration: latest owner_sync_entries=202611090002. Full same-signature replacements permitted, preserve all unrelated fields/filters/pagination/privileges. Keep historical physical columns/tables/rows unchanged by migration. No schema-driven dynamic string substitution at migration runtime; use explicit SQL.",
+        "Baseline execute_basic_care_command uses nonexistent receipt columns status_code/response_body/command_type! Replace with actual lookup_operation_receipt/save_operation_receipt command_name/response_payload. Lock active owner BEFORE lookup (concurrent idempotency), legacy payload hash is encode(digest(coalesce(p_payload::text,'{}'),'sha256'),'hex'). Lookup validates command AND hash, raises 23505 operation_payload_mismatch. Exact historical free_care.select receipt returns verbatim, mismatch conflicts, all NEW free_care.select rejected 22023 FREE_SELECTION_RETIRED before mutation/watermark. Unknown/null commands rejected. New enable/disable idempotent and owner plant validation; no slot quota check or assignment. Disable may clear legacy slot as required by existing slot_requires_enabled constraint; do not mutate old membership during upgrade/reconcile.",
+        "Basic-care eligibility: enabled owner membership+active applicable plan, no free_slot. Verified paid access allowed; ordinary Free with no paid entitlement can schedule all enabled memberships (collection cap limits new instances). Owner with expired/revoked/billing_retry entitlement must not regain an automatic Free triple: basic-care stops. Keep first_aid/premium behavior unchanged until T164. reconcile updates rules/reminders consistently with basic predicate, no arbitrary first3/selection. Next step never select_free_plants/unlock_unlimited_basic_care; preserve other first-aid/plan readiness semantics. No promise all-automation expiry complete (T164 separate).",
+        "New reconcile response omits free_slot/free_selection_explicit, membership sync omits free_slot/selection_revision, sync profile omits free_selection_revision/free_selection_explicit. Historical receipts/raw rows retained; old room retirement still active; photos/conditions/other projection fields/owner pagination unchanged. Update obsolete supabase/tests/free_care.test.sql to current schema+contracts, preserve meaningful owner/persistence/disable/retry/scheduling coverage. Add real pgTAP tests for no-entitlement Free/paid/expired with valid care_plan/rule/membership fixtures, not mocks. Trusted t161_slots.sql and cap runner must pass. Historical room gate exact-source assertion is not current acceptance gate; room guards and retained data must remain correct."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "SQL retirement has real clean/upgrade proof, exact legacy receipt replay/conflict, no new select/mutation/automatic slots; cap races remain safe and retained history unchanged.",
+          "checks": [
+            "t161-slots-retired"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "All backend fixture tests pass independently.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Local backend typecheck and whitespace pass; no claim of completed T164 or positive guest.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "t161-align-backend-collection-policy",
+      "description": "T161 третий срез: TS DTO/entitlement/basic-care HTTP больше не выбирают Free-места; align authoritative SQL, behavioral tests and API/sync addendum.",
+      "depends_on": [
+        "t161-retire-sql-free-slots"
+      ],
+      "risk": "medium",
+      "complexity": "medium",
+      "files": [
+        "supabase/functions/_shared/BasicCareService.ts",
+        "supabase/functions/_shared/EntitlementGate.ts",
+        "supabase/functions/plants-api/basic-care.ts",
+        "supabase/functions/_shared/tests/foundational_services_test.ts",
+        "supabase/functions/_shared/tests/claim_transfer_test.ts",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/functions/plants-api/index.ts",
+        "specs/001-plants-ios-mvp/contracts/api.md",
+        "specs/001-plants-ios-mvp/contracts/sync.md",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md"
+      ],
+      "write_files": [
+        "supabase/functions/_shared/BasicCareService.ts",
+        "supabase/functions/_shared/EntitlementGate.ts",
+        "supabase/functions/plants-api/basic-care.ts",
+        "supabase/functions/_shared/tests/foundational_services_test.ts",
+        "supabase/functions/_shared/tests/claim_transfer_test.ts",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md"
+      ],
+      "constraints": [
+        "Только точные write_files; applied migrations не менять; no deploy/network/production calls/data cleanup. Preserve owners/RLS/media/history/quota/operation receipts and sync pagination. Read relevant spec/constitution and current SQL via rg/sed. Fixtures do not prove live integrations or positive guest claim.",
+        "Developer PASS means patch ready; controller runs all checks and returns failures for repair. Return ordinary unified git patch; no rename/binary. Do not change tools/automation, tasks.md, handoff or AGENTS. Parent T155/T158 remain open.",
+        "Remove resolveActiveFreePlantIds/canEnableFreeBasicCareWithoutReplacement and freeSlot/free_slot/selection fields from active TS snapshot/DTOs; replace obsolete helper tests with actual no-slot behavior assertions. Do not erase unrelated room/claim/proof/history assertions. EntitlementGate.canScheduleBasicCare aligned to previous SQL: owner/enabled/notdeleted, verified paid OR no subscription history (snapshot subscriptionState none/offerKind none). Expired/grace past verified date/revoked/billing_retry denied regardless old slot. Keep existing plan read/chemical/first-aid/quota semantics unchanged; T164 later covers entire automation lifecycle.",
+        "New typed BasicCareCommandInput permits only enable/disable with plant_id, no selected_plant_ids. HTTP retired free_care.select (including null/invalid selected arrays) must flow through authoritative SQL receipt logic: exact historical replay succeeds, new command returns 400 VALIDATION_ERROR FREE_SELECTION_RETIRED, mismatch 409 CONFLICT. Do not reject every historical select before RPC; receive untrusted wire body and validate supported/retired command separately, preserve original payload for historical lookup including selected_plant_ids as it was hashed. No new successful select. No new framework/SDK, minimal backward replay adapter. Backend module not wired in production index.ts: explicitly document this known boundary, do not manufacture live readiness or add unrelated route here.",
+        "Use fake Supabase RPC adapter with real HTTP handler tests for enable/disable arguments, new retired command, exact legacy replay, hash mismatch, unknown command, invalid JSON, RPC failure; verify no new keys and no fallback successes. Tests isolated fixture only. Add collection-cap.md API/sync addendum: new cap/limit errors, table writer coverage, retired new slots/projections and exact legacy receipts/hash convention, historical data intact, client T162/pending/expiry T164 and positive guest not yet accepted. Do not rewrite whole api/sync docs. Keep all mandatory Deno tests and SQL cap/slots gate."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Deno behavioral tests prove no slot-based schedule/new DTOs; HTTP exact historical replay, new select rejection and hash conflict preserve receipt contract.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "All SQL cap/retirement/races remain green, data unchanged; backend fixtures are not live integration proof.",
+          "checks": [
+            "t161-slots-retired"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Typecheck/diff pass and addendum records actual implemented boundary incl unwired HTTP module/client/guest limitations.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
