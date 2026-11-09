@@ -1,9 +1,19 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-09.** A приняла sync transport7cb5893, engine/disk643622b и durable receipt store09e9b3a (55 Swift tests/Simulator/Review/QA). Между runs объединяется принятый B prerequisite a04794c: anchors005/ledger006/guard007; объединённые SQL/Deno/115automation/55Swift/Simulator gates PASS, интеграция опубликована в origin/main 947d602; следующий engine durable ACK. Engine ACK/repository/UI-save, полные квоты/API и live не приняты; продуктовые checkbox14/151.
+**Обновлено 2026-11-09.** A приняла sync transport7cb5893, engine/disk643622b и durable receipt store09e9b3a (55 Swift tests/Simulator/Review/QA). Между runs объединяется принятый B prerequisite a04794c: anchors005/ledger006/guard007; объединённые SQL/Deno/115automation/55Swift/Simulator gates PASS, интеграция опубликована в origin/main 947d602; подготовлен следующий engine durable ACK manifest (runtime не изменён). Engine ACK/repository/UI-save, полные квоты/API и live не приняты; продуктовые checkbox14/151.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Подготовлен engine→durable receipt ACK после интеграции main
+
+Интеграционный runtime947d602 опубликован в main, docs-подтверждение72bcccc также успешно fast-forward/push в origin/main и iOS. B переданы SHA/точные расширенные SQL gates/fingerprint, подхват только между её runs. Source/runtime/contracts/tools fingerprint63025c67 остаётся тем же до следующей подготовки.
+
+**Следующий узкий manifest:** `tools/automation/tasks.parallel-ios-create-receipt-engine.json`; accepted store09e9b3a не переделывается. Write scope только PlantsAPIClient/SyncEngine/LocalStore/CollectionWireTests. Captured-token transport возвращает существующий typed receipt, existing engine вызывает atomic acknowledgeCatalogueCreate; canonical create не проходит generic delete без receipt. Раздельно проверить network/invalid200/cap/auth и disk ACK failure, failed-save retry metadata/fresh context, lost-response/restart/ABA/cancel. Receipt watermark не advance sync checkpoint. Minimum60 actual tests (старые55+meaningful новые), build/welcome/Simulator и high-risk Reviewer/QA; repository/cap UI остаются следующим срезом. Новых Swift-файлов/target regeneration не нужно.
+
+**Факт подготовки:** validate VALID(1 task), полный Developer context просмотрен, diff-check PASS; runtime ещё не изменён. Общий default config/engine automation/SQL/B файлы не меняются, тот же branch-only config SHA256 `1bf347cc4848ab4d54844c1b69c69c83ac3ed2db98a348135ced1d5c3f77a561`. Live/remote CI не принимались этим этапом (локальный gh CLI отсутствует); это не блокирует разрешённую клиентскую fixture-работу. Parent checkbox14/151/T162/T149/T163/T164/T036 открыты, комнаты исключены.
+
+**Точный следующий шаг:** validate/context → commit/push manifest/handoff в codex/plants-ios → чистый запуск `python3 tools/automation/orchestrator.py run --config docs/validation/automation/runs/parallel-ios.config.json --manifest tools/automation/tasks.parallel-ios-create-receipt-engine.json --run-id parallel-ios-create-receipt-engine-20261109-01`; дождаться реального результата/всех gates/Reviewer/QA/publication, затем repository catalogue save/cap и UI.
 
 ## Интеграция опубликована в main — 9 ноября 2026
 

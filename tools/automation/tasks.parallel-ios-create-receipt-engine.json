@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-create-receipt-engine",
+      "description": "Narrow T162/T046 prerequisite: return captured-token typed catalogue create receipt from current transport, atomically persist through accepted LocalStore ACK in existing SyncEngine, real API->engine->disk lost-response/retry/failure/session tests. No repository/UI/cap invention.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Only write_files/ordinary unified diff, no new Swift files/tools/config/AGENTS/handoff/tasks/backend/contracts/deploy/live writes/calls. Read constitution/current spec. Keep all55 existing tests/legacy public APIs and meaningful disk scenarios, no skips/empty tests or weakened assertions. Existing receipt e8a12fe, A1 7cb5893, A2 643622b, durable LocalStore09e9b3a accepted and integrated in main72bcccc. B anchors/ledger/guarda04794c also integrated; full quotas/B2/provider/claim/UI still open. Do not redo accepted DTO/SQL wire or add a second framework.",
+        "Use existing sendOutboxCommand/SyncEngine.flushOutbox and accepted acknowledgeCatalogueCreate(_:receipt:context:authority:). Return an internal typed result carrying existing PlantCreateReceiptDTO for canonical bound-session plant.create, preserving captured token/lease generation validation. Engine must send ORIGINAL CommandEnvelopeDTO to atomic receipt+queue ACK after authoritative typed200. No created UUID/default owner/synthetic status/operation/replayed fields, no duplicate creates, no DTO redesign. Generic commands and explicit historical legacy mode remain compatible. No response-owner fallback; no A commands sent with tokenB. Current direct sendCatalogueCreate behavior/accepted tests unchanged.",
+        "No successful canonical plant.create may reach generic finishOutboxEntry deletion without durable receipt. Add a guard for bound canonical plant.create success in generic ACK if useful; failure metadata must remain possible. Local receipt/queue commit is one isolated context/save under captured authority. A disk ACK failure must preserve queue/no confirmation in same store+reopen, not silently count a commit or advance checkpoint. Actual transport error/invalid200/cap/auth/503 keeps operation/payload stable and no confirmation. Keep per-plant sequencing/retry and never regenerate operation ID.",
+        "Inspect failure bookkeeping too: canonical command/send failure and LocalStore ACK failure are distinct; do not mutate queue/confirmation as false success after failed disk save. Use isolated contexts/fresh committed reads for affected outbox mutation/read paths if required, as A2 does for sync; do not leave cached retryCount/lastError from a failed save. Do not blanket-clear outbox/cache or swallow session/cancellation. Preserve public enqueue/legacy APIs, existing care tests and owner isolation. Receipt watermark MUST NOT become sync since or fabricate cache/profile/plant. Upcoming repository supplies cap/UI; no local business rules here.",
+        "Meaningful tests through ACTUAL APIClient->existing SyncEngine->real disk LocalStore. Minimum60 total (55 old+new meaningful scenarios),0skips: canonical receipt+raw payload/watermark linked durably after engine flush/reopen; fixture server commits then loses HTTP response, queue retains exact operation/body, restart/retry yields same server plant ID/one confirmation and no duplicate, next flush0; malformed200 and actual API cap409/auth/503 yield no durable receipt/false commit and preserve command; owner switch A->B/ABA/cancel while in-flight cannot ACK/mutateA or sendA with tokenB; actual readonly SQLite ACK failure leaves old queues/confirmation/checkpoint/cache on same store+independent reopen and successful retry after writable reopen. Exercise concurrent duplicate flush if needed for replay risk. Use existing or small bounded mock transport, not fake production success. Clearly fixtures not live SQL/server/UI.",
+        "No repository/login/card work in this packet and no parent checkbox completion. On source patch generation use exact surrounding context/unindented diff headers; small diff, do not rewrite whole existing files. Preserve accepted store receipt conflict/replay guards, schema upgrade and A2 failed-page/readonly rollback tests."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Canonical engine flush durably associates authoritative typed receipt with original owner/operation/payload and removes only that queue entry atomically; lost response/retry/reopen, invalid/cap/auth/errors, failed disk save, stale ABA/cancel prove no false commit or checkpoint change.55 old plus new(min60) actual tests/build/Simulator no skips; full independent high-risk Review/QA. Fixture client integration only, not UI/live/fullT162.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
