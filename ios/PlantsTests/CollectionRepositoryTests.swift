@@ -2150,7 +2150,7 @@ extension CollectionRepositoryTests {
             try disk.save()
             if payload == canonical {
                 _ = try await store.enqueueCommand(
-                    operationId: op, ownerId: other, commandName: "plant.create", payloadJSON: canonical
+                    operationId: op, ownerId: other, plantId: nil, commandName: "plant.create", payloadJSON: canonical
                 )
             }
             let rows = try inputRows(url)
