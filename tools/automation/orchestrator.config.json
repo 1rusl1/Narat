@@ -307,6 +307,15 @@
       "stage": "qa",
       "mode": "live",
       "timeout": 180
+    },
+    "t157-question-contract": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_question_contract_gate.py"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
     }
   },
   "publish": {

@@ -1,0 +1,53 @@
+{
+  "tasks": [
+    {
+      "id": "t157-question-bank-cleanup",
+      "description": "Первый ограниченный срез T157/OLD-01: удалить отменённый банк вопросов после анализа из ConditionProfile JSON Schema, TypeScript профиля/semantic validator и тестовых данных. Это не вся T157 и не приёмка живой диагностики. Код и схема ещё старые: другие отменённые механизмы удаляются следующими согласованными срезами.",
+      "depends_on": [],
+      "risk": "medium",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "supabase/functions/_shared/AnalysisValidator.ts",
+        "supabase/functions/_shared/ProtocolResolver.ts",
+        "specs/001-plants-ios-mvp/contracts/revision-2026-11-09.md",
+        "specs/001-plants-ios-mvp/spec.md",
+        "tools/automation/t157_question_contract_gate.py"
+      ],
+      "write_files": [
+        "specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts"
+      ],
+      "constraints": [
+        "Только write_files; не редактировать gate/config/tasks/handoff/AGENTS/миграции, не выполнять deploy или подключение живой БД. Не менять тарифы, квоты, лечение/вещества, provider mode, Swift DTO и подпись receipts в этом срезе.",
+        "В JSON Schema удалить только diagnostic_disambiguation из required и properties. Сохранить schema_version 1.0, остальные свойства/ограничения без изменений. Это изменение контракта новой публикуемой карточки; ранее сохранённые данные не мигрировать/удалять. В contracts/README отмечено что другие части старого контракта ещё не приведены к цели.",
+        "В KnowledgeTypes удалить неиспользуемый ClarifyingQuestion, обязательное поле diagnostic_disambiguation и весь блок semantic validation банка вопросов. Сохранить тип/проверки host scope, step IDs, ссылку first-help на step, повторов и EN/PL действий без ослабления. Наличие исторического лишнего поля в уже загруженном объекте не должно мешать чтению/semantic validation, но не может включать опрос.",
+        "Обновить makeSampleCatalog и добавить реальные regression tests в analysis_result_test.ts: профиль без банка вопросов проходит schema AJV и semantic validator/resolver; новый профиль с диагностическим банком отвергается schema; historical extra field не вызывает semantic validator падения или вопроса; прежние ошибки duplicate step, first-help dangling reference, неправильные повторы и отсутствие EN/PL продолжают отклоняться. Можно использовать существующий fixture builder. Тесты не должны отключать validators/использовать skip или подменять ожидаемые ошибки универсальным успехом.",
+        "Использовать AJV 2020 через закреплённый import map, загрузку schema по import.meta.url без сети. Нет новых зависимостей/файлов lock. Deno all-tests и существующий static check обязательны. Fixture PASS не объявлять live AI/весь T157 готовым."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "В схеме удалено ровно отменённое поле/required; все остальные ограничения сохранены, банк вопросов отсутствует в TypeScript и semantic validator.",
+          "checks": [
+            "t157-question-contract",
+            "diff-check",
+            "deno-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Deno regression tests проверяют действительное поведение schema/semantic validator/resolver без банка, отказ новой карточке с полем, безопасное чтение исторического поля и сохранение существующих отрицательных ограничений. Все backend tests проходят без skip.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}
