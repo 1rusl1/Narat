@@ -4,7 +4,7 @@
   "reviewed_base": "344eeb3",
   "source": "specs/001-plants-ios-mvp/tasks.md",
   "protocol": "docs/parallel/README.md",
-  "status": "assignments_prepared_not_started",
+  "status": "sessions_started",
   "counts": {
     "open": 137,
     "A": 59,
@@ -15,12 +15,18 @@
     "A": {
       "branch": "codex/plants-ios",
       "assignment": "docs/parallel/session-ios.md",
-      "integrator": true
+      "integrator": true,
+      "threadId": "01a1c14d-187a-7d91-ac6d-62ae00ec6104",
+      "hostId": "local",
+      "worktree": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants"
     },
     "B": {
       "branch": "codex/plants-backend",
       "assignment": "docs/parallel/session-backend.md",
-      "integrator": false
+      "integrator": false,
+      "threadId": "01a1c14d-2b1b-7673-83c4-c95f6fe7f7c1",
+      "hostId": "local",
+      "worktree": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants"
     }
   },
   "groups": [
