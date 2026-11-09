@@ -1,0 +1,44 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-ui-binding",
+      "description": "Current-owner durable flow discovery for guest/permanent UI restart, explicit checkpoint/forget metadata, and EN/PL HTTP header updates without changing auth lease. No rendered views yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsTests/NativeAuthTests.swift",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift"
+      ],
+      "constraints": [
+        "Only fourallowed existing files exactsmallcontextdiff, no targets/tools/config/handoff/tasks/backend/contracts/live/views/debugfactory changes. Accepted card17d70f8/native0a9f2ea/SDK68d3e46/fixture98b2010 and all167actual tests preserved. This packet small prerequisite helpers forforthcoming actualSwiftUI, no new model/framework or businessrules. Every diff --git headercolumn1 including second/third, noleadingSPACE; generateexactdiff againstactualcurrentfiles.",
+        "Current Connection.resumableFlow excludesanonymous and onlynative success writespointer, so guestnativecancel+restart and normal registeredpending UIcannotdiscover durableinput. Add small explicit async remember/checkpoint method taking currentCatalogueSaveModel AND expectedactualSDKsnapshot. Require model bound to SAMEstore/API/session/isAnonymous and accessible originallease, not merely equalowner. Generalize existing model isGuest helper via smallinternal exactscope predicate ifneeded, keeping acceptednativebehavior. Actuallycheckpoint/replay model inputunderORIGINALlease BEFORE metadata; require snapshot.owner samecheckpointowner and validate SDKepoch before/afterawait and metadata publication. Reuse existingowner-scoped UserDefaults flowUUIDkey/resumeDefaults, neverpayload/token/newstate table/allowner scan. CurrentSDKvalid owner only; never genericAuthobserver auto-copy/call. Foreignmodel even sameownerotherstore/API/session, staleA/B/ABA,cancel or diskerror mustnotpublishpointer orsendcommands.",
+        "ResumableFlow guardedcurrentSDK mayreturn guest ORpermanent ownpointer. explicitcurrentowner restore via existingrestoreModel returns SAMEflow/op/payload andjournal state, noHTTP/noUUIDregen/noautoNative provider. Add conditional explicitforget helper owner+expectedflow+SDKsnapshot removing ONLY matchingpointer (notrecords/outbox/receipts, nototherflow/owner). User willinvoke onexplicitnewunsentintent later, neverautomaticaccountchange. Preserve nativecommittedcancel metadata/currentSDKtruth and allnativehelpertests. No readexpiredidentity/accountrecovery framework ordeletedguestfallback.",
+        "Current default clientLocalepl remainsstale afterENselection. Add small actor method validating en/pl and updates ONLY locale header metadata; noauth/token/installation/context replacement, no syncAuthorityinvalidate. Do NOTcall existing updateContext forlanguage change: itrevokes modelswhileSourceboundEpochcachecouldskiprebinding. Expose source helper (optionalexpectedSDK guard) forviews tosetlocale; source + tests actual API GET/POST headers en/pl, same model/originallease and frozenpendingoperation remainvalid. Invalidlocale failclosed without mutation, preserve old APIpublicmethods. No synthauth/defaultUUID/secondSDK.",
+        "Add>=6meaningful actualSDK/URLProtocol/model/repository/engine/SQLite tests (all167old+>=6=>173/no skips): guest checkpoint->provider cancel->source+disk recreate sameSDKowner pointer restore sameop/body zeroPOST; normal permanent remember->pending/lostresponse restart discover/retryexact; pointer write onlyafteractualdiskcommit/readOnlyfailure nochange/provider0; foreignsameownerstore/API/lease and A/B/ABA/cancel rejection preservesownerkeys; explicitforget matchingflowonly+otherowner unchanged; EN/PL actual requestheaders and noauthleaseinvalidation/pendingopregen includinginvalidlocale. Existing ConnectionTests fixtures canextend; boundedfocused no screenshots/rendered/liveclaim. Trusted alltests/build/Simulator+independenthighriskReviewer/QA. Original167retained, processkillDURINGnative transition/offlinetokenexpiry remainseparategates."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Explicit samecurrentowner checkpoint->UUIDmetadata discovers guest/permanent exactflow afterrestart without sends/ownertransfer, and ENPL HTTP locale changes preserveauthlease/frozenoperation; all167old+>=6=>173actualtests/no skips/build/Simulator/highriskReviewerQA. No views/live/fullparents.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
