@@ -434,8 +434,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-backend-t163-registration-ledger-v2: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-backend-t163-registration-ledger-v2](validation/automation/tasks/parallel-backend-t163-registration-ledger-v2.md).
+parallel-backend-t163-legacy-state-guard: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-backend-t163-legacy-state-guard](validation/automation/tasks/parallel-backend-t163-legacy-state-guard.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
