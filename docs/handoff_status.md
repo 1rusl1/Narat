@@ -128,7 +128,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t157-unused-swift-profile-dto: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t157-unused-swift-profile-dto](validation/automation/tasks/t157-unused-swift-profile-dto.md).
-Продуктовые checkbox не менялись автоматически. Следующий шаг — ограниченный manifest T158: плоская коллекция вместо room CRUD/Free places.
+t158-room-sql-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t158-room-sql-retirement](validation/automation/tasks/t158-room-sql-retirement.md).
+Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
