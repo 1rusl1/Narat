@@ -5,6 +5,10 @@
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Продолжение T162: клиентский wire prerequisite
+
+По команде владельца «вперед» подготовлены два зависимых пакета `tools/automation/tasks.t162-client-wire.json`: typed create receipt/API с точными timestamp и затем canonical sync→существующий engine/store с disk checkpoints/owner isolation/legacy decode. Runtime ещё не изменён; tools config прежний. Сохранение через UI требует этих предпосылок и остаётся следующим отдельным пакетом, полный T162 не закрывается. Проверки подготовки: validate/context/diff-check выполняются перед запуском; build/unit/Simulator и независимые Review/QA — во время run. Live/guest/deploy не включены. Следующий шаг: commit/push подготовки, run `t162-client-wire-20261109-01`, наблюдать до результата, затем repository/save/card и UI gates.
+
 ## T162 HTTP adapters приняты и опубликованы — 9 ноября 2026
 
 `t162-adapters-20261109-01`: обе задачи **COMPLETED / Verified and published**, по одному Developer/Reviewer/QA без repairs. Sync `c26a4e0`, catalogue create `88345ed` отправлены в origin/main. Production entrypoint использует `createProductionPlantsApiHandler`: подключены настоящие service-role RPC adapters `fetch_sync_delta` и `execute_plant_create_command`; auth/profile prerequisite сохранён. Bare factory сохраняет 503 fallback для тестовых/неподключённых handlers. Добавлены query/payload validation, owner boundaries, generic EN/PL errors и отдельный HTTP409 COLLECTION_LIMIT_REACHED; возврат авторитетного SQL JSON без синтетических receipts/watermarks.
