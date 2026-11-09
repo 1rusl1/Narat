@@ -612,6 +612,18 @@ public struct SyncWireEntitlementDTO: Codable, Sendable, Equatable {
                   $0 == nil || SQLTimestamp.microseconds(from: $0!) != nil
               }) else { throw SyncWireValidationError.invalidPage }
     }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(productId, forKey: .productId)
+        try values.encode(state, forKey: .state)
+        try values.encode(offerKind, forKey: .offerKind)
+        // Required nullable keys must survive disk encoding for the strict decoder.
+        try values.encode(validUntil, forKey: .validUntil)
+        try values.encode(graceUntil, forKey: .graceUntil)
+        try values.encode(trialEndAt, forKey: .trialEndAt)
+        try values.encode(autoRenewEnabled, forKey: .autoRenewEnabled)
+    }
 }
 
 public struct SyncWirePageDTO: Decodable, Sendable, Equatable {

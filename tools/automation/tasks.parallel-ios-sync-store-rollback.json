@@ -1,0 +1,56 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-sync-store-rollback-repair",
+      "description": "Repair actual LocalStore failed-save atomicity: memory checkpoint must remain old after SQLite read-only save failure. Then independently accept FULL canonical A2 engine/disk/session candidate.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/Plants.xcodeproj/project.pbxproj"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Only write_files, ordinary unified diff. No tools/config/handoff/tasks/AGENTS/server/SQL/contracts/deploy/live writes or calls. Read current constitution/spec and collection-http.md. No new Swift files; extend the already-in-target CollectionWireTests.swift. Preserve all existing tests, public legacy DTO initializers and disk decode. No skips or empty tests. No second sync/outbox framework, synthetic successes or client business-rule invention.",
+        "External accepted prerequisites (not manifest depends_on): auth 9551807, production sync c26a4e0, catalogue create 88345ed, typed create receipt e8a12fe and cap/retirement b5f2c8f/01ba170/eb58c03 already in base 4bbd35a. Do not redo typed receipt. T162/T025/T026/T149 remain open; fixtures do not prove live or UI.",
+        "External prerequisite ACCEPTED: canonical A1 full candidate checkpoint 6f188dd independently accepted+published in 7cb589369c81e5b400891be9b69aed49738c8dcf (run parallel-ios-sync-transport-20261109-03), 43 real Swift tests/build/Simulator/Review/QA PASS. Its ID belongs to another manifest, so depends_on stays empty. Use existing fetchSyncWirePage(session:since:until:cursor:limit:) and SyncWire* types. Do not redo receipt or A1 transport.",
+        "Adapt production fetchSyncPage/pullDelta to canonical SQL until/has_more/last_cursor/next_since/profile/entitlement/changes with nested data or tombstone data=null; no server owner_id/items/limit invented. Owner for storing must come explicitly from authenticated caller context, never response fallback/random/default UUID. Preserve old DTO initializers and old disk/cache/fixture JSON compatibility; separate wire DTO plus mapping is acceptable if small. Retired slots/rooms not required in new profile; no forced old field defaults to revive behavior.",
+        "Preserve exact SQL timestamp strings at request/pagination/checkpoint boundary (microseconds) including last_cursor and until, since/next_since across disk restart. Existing Date-only checkpoint cannot safely round microseconds: add backward compatible optional raw checkpoint value and use it when present, legacy Date fallback only for old caches. Avoid rewriting historical values on load. Existing public Date APIs may remain as compatibility views. No millisecond Date reserialization for current SQL cursor/window. Handle SQL timezone offsets.",
+        "Use existing SyncEngine/LocalStore/outbox: stage complete pages, fixed until, stable cursor, preserve tombstones and opaque nested data as JSON. On failed/malformed page keep old cache and checkpoint/outbox. Validate has_more requires complete advancing cursor and coherent window to avoid loops or dropping changes. Reject response owner mismatch for legacy responses; for canonical response associate only explicit caller owner. Owner switch during request must not apply A data to B or send A queued action with B token; capture/validate session context/version in API client as necessary. No implicit anonymous-to-permanent transfer.",
+        "Include actual canonical profile/entitlement projection in adapted page rather than discarding it. Preserve reading historical generic entities but do not create new removed entities. Plan/report cleanup remains separate; do not change unrelated business lifecycle.",
+        "Extend CollectionWireTests with real SQL JSON pages: nested data/tombstones, empty page/profile/entitlement, fractions/offsets, two pages and exact outgoing cursor/until, malformed page/no progress, network failure mid pagination with unchanged disk store, next_since exact checkpoint through disk restart and next request, legacy page/cache decode and A/B isolation/session switch. Tests must exercise actual APIClient+SyncEngine+disk LocalStore where persistence is asserted; static string assertions or fixtures only decoding do not prove disk path. Retain first task tests. Full T162/UI/live still open.",
+        "Preserve legacy test clients/pages and public APIs compatibly, but production engine consumes canonical pages and exact strings. Profile/entitlement must persist even for empty changes, including entitlement=null clearing previous rights; no retired slots/rooms writes. Window data, profile, entitlement and exact checkpoint commit atomically in one LocalStore transaction only after all pages validated; rollback on save failure. Full refresh preserves outbox and old state on failed page.",
+        "Capture authenticated owner/token/session generation across awaits and validate before request, after response and before atomic store publication. Cancellation, A->B and A->B->A context changes must not apply stale A results or send queued A commands with B token. Existing outbox tests with legacy contexts remain meaningful; no implicit guest transfer. Test real APIClient->engine->disk, not a second fake engine. Include two-page exact query, failed/malformed/nonadvancing page atomicity, independent disk reopen/next original next_since, legacy disk date checkpoint, tombstones, empty profile/entitlement, owner switch during pull/flush.",
+        "Existing 43 tests must remain meaningful and pass; tests under SyncPersistenceTests.swift use old owner-scoped DTO/Date APIs and mock transport. Preserve these as explicit legacy compatibility APIs if needed, while a bound authenticated session path on the SAME SyncEngine always consumes canonical A1 pages. Never downgrade to legacy or empty success after canonical validation/auth/transport errors. Explain canonical binding/call-site prerequisites; upcoming repository/UI integration is separate.",
+        "For session changes validate ownership/generation inside LocalStore atomic publication as well as engine/API boundaries so an await to store cannot publish a stale session. A->B->A invalidates the original request even when user ID matches again. Cancellation during transport must be tested even when mock transport ignores cancellation. Avoid blocking/semaphores; one bounded code/test package, no unrelated cleanup.",
+        "Return a well-formed small unified Git diff with exact surrounding context and unindented diff --git separators; do not rewrite entire files unnecessarily. Add actual disk tests to already-in-target CollectionWireTests.swift; explicit Swift tuple types where inference is ambiguous. No skipped tests.",
+        "FULL A2 acceptance from checkpoint2e1cc75 plus accepted-in-checkpoint explicit nullable encoder; inspect all current runtime/test files, not just repair diff. Run-03 actual49 tests:48 passed/1failed/0skips. Failing test testCanonicalSaveFailureRollsBackWindowAndProjection at CollectionWireTests.swift:956 observes new watermarkRaw after real Cocoa513 read-only SQLite save failure (old syncSince08:00:00.000001 expected, received syncUntil09:00:00.999999). Logs docs/validation/automation/runs/q-b4f4c0d02694c7e447028ad4/unit.stdout.log. APIModels nullable encode is already correct, leave untouched. Developer fix LocalStore.publishSyncWindow transaction boundaries and cache state so ANY save error keeps old checkpoint/profile/entitlement/entities/queue in the same store and independent disk reopen; next request must use old since. Consider a short-lived isolated ModelContext for staging/saving and fresh reads rather than trusting failed save rollback of cached models; choose correct SwiftData approach. Retain session-authority atomic ordering/cancellation and successful read-after-write. Do not merely hide assertion, return empty fallback, swallow error, clear cache/outbox, disable rollback scenario or weaken any of49 tests. Changes limited LocalStore and only meaningful extra regression in CollectionWireTests if needed. Legacy Date, all exact timestamps and A/B isolation must remain. Existing tests must all pass/no skips and whole high-risk A2 reviewed by Reviewer/QA. Return small well-formed diff with exact context."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Canonical sync is consumed by real existing engine/store, preserving exact SQL boundaries through pagination and disk checkpoint/restart, tombstones and profile; failed/malformed page is atomic, outbox retained, A/B session isolation and legacy caches verified by meaningful tests.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
