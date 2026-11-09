@@ -20,6 +20,7 @@
 		47E2C2CD6F792211A9D673E2 /* PlantsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F9CD80AA4DD37A53A72483 /* PlantsUITests.swift */; };
 		4A78CE422C4EB9F29A998D01 /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78EFBA290DC19BBF401135FE /* LocalStore.swift */; };
 		604A231D843684FD6882B99E /* CatalogueConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CF212919E5860E5FEFF756 /* CatalogueConnectionTests.swift */; };
+		63BBED9A10F903C990E7F0BA /* CatalogueUIFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA8ED8D3D5A68921B587504 /* CatalogueUIFixtures.swift */; };
 		6D900267E76268239847FD6A /* CatalogueSaveModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362A9E7E683E11C97ACC24F4 /* CatalogueSaveModelTests.swift */; };
 		6F049773148DCC6E6DD96497 /* CollectionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8266B9BDDB29CEA4A096143 /* CollectionRepository.swift */; };
 		79FE2E507C13EBD47715D904 /* NativeAuthConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46CA71BE29E0E0C3D4C4683 /* NativeAuthConfiguration.swift */; };
@@ -41,6 +42,7 @@
 		DF11B8EE584013755718E1CB /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = DFB7597DF559DC682BD45B93 /* GoogleSignInSwift */; };
 		E74FA67EC712BA99C75EF3BF /* GuestCatalogueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF1A57F30CE90226FA3FCA7 /* GuestCatalogueView.swift */; };
 		EBB9A89C1794C2FE19D0324D /* NativeAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3EA6CB274FD7BB671AE96C4 /* NativeAuthTests.swift */; };
+		EC228F603D7FAEB42FA5E534 /* CatalogueUIFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB2B0AC2ABCA615D72F59C2 /* CatalogueUIFixtureTests.swift */; };
 		FFA2D8F4608A27AE2FBD3152 /* NativeAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481C9DE40A11A1924375A739 /* NativeAuthService.swift */; };
 /* End PBXBuildFile section */
 
@@ -93,10 +95,12 @@
 		D30FC4C5F59EED37701E4345 /* AnalysisAccessRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisAccessRepository.swift; sourceTree = "<group>"; };
 		D84B1C61BDADC5C6706BDC70 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		DB624C883B6C42E0806796E7 /* NativeIdentityProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeIdentityProvider.swift; sourceTree = "<group>"; };
+		DCB2B0AC2ABCA615D72F59C2 /* CatalogueUIFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueUIFixtureTests.swift; sourceTree = "<group>"; };
 		E3EA6CB274FD7BB671AE96C4 /* NativeAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthTests.swift; sourceTree = "<group>"; };
 		E94A843068E8C94DB5624B05 /* AnalysisPhotoInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisPhotoInput.swift; sourceTree = "<group>"; };
 		F24C19F53C753771E608D374 /* FirstHelpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstHelpTests.swift; sourceTree = "<group>"; };
 		F5ED18BDC9941DA4A86F0D59 /* CareQuestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareQuestionsView.swift; sourceTree = "<group>"; };
+		FAA8ED8D3D5A68921B587504 /* CatalogueUIFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueUIFixtures.swift; sourceTree = "<group>"; };
 		FE7ADF3DB10F961D1467C1E0 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -176,6 +180,7 @@
 			children = (
 				65CF212919E5860E5FEFF756 /* CatalogueConnectionTests.swift */,
 				362A9E7E683E11C97ACC24F4 /* CatalogueSaveModelTests.swift */,
+				DCB2B0AC2ABCA615D72F59C2 /* CatalogueUIFixtureTests.swift */,
 				8097EE5109CAE9D4A02ED456 /* CollectionRepositoryTests.swift */,
 				477EB0429D17FA0253D830B1 /* CollectionWireTests.swift */,
 				54336AF0334AC86C7E445CB5 /* FirstHelpUnitTests.swift */,
@@ -312,6 +317,7 @@
 			isa = PBXGroup;
 			children = (
 				1B67457C67E9921A50DBA115 /* CatalogueSaveModel.swift */,
+				FAA8ED8D3D5A68921B587504 /* CatalogueUIFixtures.swift */,
 				5CF1A57F30CE90226FA3FCA7 /* GuestCatalogueView.swift */,
 			);
 			path = Catalogue;
@@ -561,6 +567,7 @@
 				7DF29CF749C4D82F6D6233CE /* AnalysisPhotoInput.swift in Sources */,
 				D85F4281D085FD364D1E969C /* CareQuestionsView.swift in Sources */,
 				BE3CE73DF8709C8D775E7A42 /* CatalogueSaveModel.swift in Sources */,
+				63BBED9A10F903C990E7F0BA /* CatalogueUIFixtures.swift in Sources */,
 				6F049773148DCC6E6DD96497 /* CollectionRepository.swift in Sources */,
 				E74FA67EC712BA99C75EF3BF /* GuestCatalogueView.swift in Sources */,
 				B576BE1938EAD199DB1743E4 /* LanguageStore.swift in Sources */,
@@ -583,6 +590,7 @@
 			files = (
 				604A231D843684FD6882B99E /* CatalogueConnectionTests.swift in Sources */,
 				6D900267E76268239847FD6A /* CatalogueSaveModelTests.swift in Sources */,
+				EC228F603D7FAEB42FA5E534 /* CatalogueUIFixtureTests.swift in Sources */,
 				0B343DAAFBD7664EE2C55B91 /* CollectionRepositoryTests.swift in Sources */,
 				C7EA87D0EA08112899749010 /* CollectionWireTests.swift in Sources */,
 				AB33B2A60B7E2DB0A9CC94AA /* FirstHelpUnitTests.swift in Sources */,
