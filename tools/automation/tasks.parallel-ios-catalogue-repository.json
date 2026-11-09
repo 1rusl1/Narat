@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-repository",
+      "description": "T162/T046 narrow catalogue repository core over existing authenticated canonical sync/outbox/durable receipts: pre-save collection cap, immutable pending retry/resume and authoritative operation status. No UI/login/card/guest claim work.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md",
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/migrations/202610200011_schedule_calculator.sql",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift"
+      ],
+      "constraints": [
+        "Only write_files/ordinary diff. No new files/project/config/AGENTS/handoff/tasks/server/contracts/deploy/live writes/calls. Two new Swift files contain ONLY imports for controller target preparation, NOT implemented stubs; IMPLEMENT repository and meaningful tests. Controller XcodeGen already added both to real Sources before evidence. Retain all64 existing tests and accepted receipt e8a12fe/A1 7cb5893/A2 643622b/store09e9b3a/engine22bc1a6b99f801a0a2b551f3093058aca1263464; main72bcccc includes B005/006/007. No second sync/outbox framework, no DTO/receipt rewrite, no skips/empty tests/parent-checkbox claims.",
+        "Implement small Sendable catalogue input/outcome/capacity types and CollectionRepository using INJECTED existing LocalStore/PlantsAPIClient/SyncEngine (reuse engine instance, no fake client). Session/owner must explicitly come from authenticated NativeAuthSession and caller SDK anonymous flag (no default permanent/owner/random UUID). Require actually bound canonical API context, not legacy fallback. Guest creation returns sign-in-required without enqueue/POST; public catalogue browsing unaffected. No auth provider, guest-claim, expired-draft or local fallback implementation in this packet.",
+        "Input supports catalogue selector plant_id slug/taxon UUID, optional personal name/basic manual-or-unknown conditions/origin_flow_id and user intent; no mandatory questions/photo, owner/rooms/slots/camera/season/local-fallback payload. Reuse accepted CatalogueCreateWire validation (internal visibility adjustment allowed, validation behavior unchanged), do not duplicate/guess server rules. Freeze original payload JSON once, deterministic envelope/payload for persisted retry. Explicit operation ID from caller, never regenerate on error/resume or substitute local plant UUID. Changed input for existing operation fails safely instead of overwriting/silently saving different data; resume uses exact persisted original envelope. No new input-persistence framework; UI draft persistence/login/cancel is later.",
+        "For genuinely NEW create, obtain successful canonical collection snapshot (all nondeleted plants, even care-disabled/legacy over-cap, plus profile/entitlement) via existing engine before cap decision. Count all active plants plural; Free new create only count<3, paid unlimited. Mirror actual has_verified_paid_access: state active/grace, valid_until>injected/current time, offer paid OR trial_end_at>time; grace_until alone is insufficient. HTTP active-owner guard is authoritative; no fabricated profile/rights/count0 after failure. Do not compute analysis/monthly quota/reset/registration from legacy fields. Failed/invalid preflight keeps old cache/checkpoint/input and enqueues no new operation. No deleting excess old plants.",
+        "Existing pending OR durable confirmed operation MUST bypass new-create cap gate (lost response may already have filled last slot). Recheck pending/confirmation atomically around enqueue after awaited preflight so duplicate/resume is not falsely rejected at cap. Only matching owner+operation durable receipt proves confirmation, never flush count or cached/invented ID. Return exact authoritative server plant ID/receipt; confirmed receipt never fabricates active cache/card. Server cap409 stays authoritative even after client count<3; preserve pending original payload/ID and expose stable cap error, no false success. No receipt watermark->sync checkpoint.",
+        "Capture ONE existing authenticated SyncSessionLease for the whole repository operation, validate after awaits/before outcomes; pass SAME lease into internal contextual engine preflight/drain helpers, never recapture a new A lease after A->B->A. Keep old public engine APIs compatible, add only small internal context overloads. Enqueue under existing SyncSessionAuthority atomic guard so auth/cancel cannot create/send/confirm A commands with B context. Harden LocalStore enqueue reuse: matching owner/command/target/UTF8 payload only; global operation collision must not return another owner snapshot or overwrite. No await under lock. Preserve existing durable receipt conflict/ABA/save-failure guards and all64 old tests.",
+        "Persist machine-readable APIErrorResponse for network API failures in existing lastError string (or equivalently small typed compatible metadata) so repository maps COLLECTION_LIMIT_REACHED after restart without parsing String(describing:) substrings. Legacy raw-text failures remain generic pending/error, never success. Do not persist tokens/raw SDK secrets; API generic ENPL error contract unchanged. Repository distinguishes confirmed, pending/error/cap/sign-in and propagates cancellation/stale context/disk failure; a flush committing another operation does not confirm the requested operation.",
+        "New meaningful CollectionRepositoryTests via ACTUAL APIClient->CollectionRepository->existing engine->real disk: Free2 allows; Free3/overcap blocks before POST/no queued new create; paid/grace/trial bounds including expired valid_until with future grace_until; fresh-sync failure no empty-count success; actual cap409 race retains original input/envelope and retry after rights/slot change; pending/confirmed at full cap replay exact operation/server UUID after reopen; wrong owner/ABA/cancel during preflight/enqueue/drain no data/commands crossing; changed payload/same-op and foreign enqueue collision fail closed; machine API error restored on disk; old64 plus new>=70 total/no skips. Small bounded fixture transports, no fake production successes. Disk schema must include existing confirmation record, no test target omissions.",
+        "No SwiftUI/App/router/login/card/StoreKit/reminders/analysis/claims changes and no fullT162/T046/T149 completion. This packet yields repository core only. Test files already in target; do not modify pbxproj. Return small well-formed contextual unified diff, preserve original files/tests and avoid rewriting huge existing files."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Catalogue repository core enforces authoritative advisory collection cap before NEW operation, preserves exact pending/replay and typed durable confirmation, handles cap/error/restart/session/cancel without false save or owner leakage. Existing64+meaningful new>=70 real tests,build/Simulator/target membership and independent high-risk Review/QA pass. Local fixtures only; UI/live/guest claim/full parents open.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
