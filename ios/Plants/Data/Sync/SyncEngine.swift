@@ -296,6 +296,18 @@ public actor SyncEngine {
         return try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: true, context: context)
     }
 
+    /// Repository preflight keeps its original lease across the entire refresh and read.
+    /// This overload never drains commands or permits legacy compatibility.
+    func performFullRefresh(context: SyncSessionLease) async throws -> Date? {
+        try await apiClient.validateSyncContext(context)
+        guard context.session != nil else { throw SyncWireValidationError.invalidSession }
+        let result = try await pullDelta(
+            for: context.ownerId, pageSize: 200, fullRefresh: true, context: context
+        )
+        try await apiClient.validateSyncContext(context)
+        return result
+    }
+
     // MARK: - Pending Overlay over Synced Cache
 
     public func pendingOutboxOverlayCount(for ownerId: UUID) async throws -> Int {

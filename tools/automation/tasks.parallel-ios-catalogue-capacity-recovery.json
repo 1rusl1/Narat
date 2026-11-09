@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-capacity-recovery",
+      "description": "Read-only independent acceptance of FULL capacity candidate recovered from Developer answer after patch context mismatch, with explicit controller fractional-expiry correction and regression. Inspect complete files despite empty diff.",
+      "risk": "medium",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md",
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/migrations/202610200011_schedule_calculator.sql",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Only write_files and ordinary contextual diff. No new files/project/tools/config/AGENTS/handoff/tasks/backend/contracts/deploy/live calls. Read current constitution/spec and collection-cap/HTTP. Prior wide repository run timed out900s NO answer/patch; both new Swift files still imports ONLY. They are ALREADY in real Xcode Sources via controller8-line pbxproj prep. Implement a SMALL working capacity facade and tests, not fake save/TODO stubs. Do not implement other parts of old wide manifest. All existing64 tests/accepted wire/store/engine22bc1a6 unchanged behavior.",
+        "CollectionRepository should inject existing LocalStore/PlantsAPIClient/SyncEngine (do not construct a parallel sync engine), plus deterministic test clock/default real time. Add small Sendable capacity result/types and ONE async capacity/preflight method accepting explicit authenticated NativeAuthSession and explicit SDK isAnonymous flag. No owner/default UUID/permanent-role assumptions. Require actually BOUND canonical session matching caller snapshot, never legacy fallback. Guest result is sign-in-required/no request/no mutation; no input/storage/sign-in service in this packet.",
+        "Use ONE original existing SyncSessionLease captured before awaits. Expose only a small internal contextual full-refresh overload on SyncEngine if needed; it must use same lease, never recapture A after ABA, keep public legacy/full-refresh behavior. Validate original context/cancellation after awaits and before returning result; A/B/ABA/cancel during request must keep cache/checkpoint/outbox unchanged and never read/return B data to A. Existing authority guards apply to publication; no await under lock.",
+        "Capacity is computed only from SUCCESSFUL canonical full collection refresh: all nondeleted plants (canonical entity_type=plants), profile and nullable entitlement. Free may create iff count<3, paid unlimited. Mirror SQL has_verified_paid_access exactly: active/grace AND valid_until>clock AND (paid OR trial_end_at>clock). grace_until alone is insufficient; do not calculate monthly analysis quota/reset/registration. Count ALL plants including disabled-care/legacy over-cap; do not choose slots/delete excess. If needed add one coherent committed LocalStore read snapshot under same authority, no new persistence framework or schema.",
+        "No fake count0/rights/default profile after missing/malformed/failed sync. Throw/return explicit unavailable while preserving old confirmed cache/checkpoint/queue; nullable entitlement from a valid canonical response genuinely means no paid rights. Reading cap is advisory, server final create guard remains authoritative; this packet sends NO POST, enqueues/acks NO commands and does not fabricate plants/receipts. Do not touch input validation/lastError metadata/enqueue-owner bug yet: next journal packet owns them.",
+        "Implement focused meaningful tests in already-target CollectionRepositoryTests through actual APIClient->repository->existing engine->real disk. Six or more distinct useful scenarios (old64+new minimum70, no skips): Free2/3/overcap and tombstone not counted; paid/grace/trial expiry including future grace_until with expired valid_until; empty changes with valid profile/entitlement; failed/malformed/second-page failure leaves old disk state; guest/unbound/wrong-owner and A->B/ABA/cancel mid-preflight; legacy disk Date and exact canonical boundary/reopen. Use bounded SQL-shaped mock transport, no fake production fallback or second engine. Original64 tests must remain included/pass. No UI/card/save/login/claim acceptance.",
+        "RECOVERY READ ONLY: previous constraints describe complete current candidate, not permission to edit. Developer call-1 produced full answer/diff; patch context wrongly assumed Foundation import in test skeleton. Controller stopped retry, added only missing Foundation import and applied unchanged original diff. Controller then reproduced exact expiry bug at 2026-11-03T09:00:00.000003Z (Double integer microseconds > Date Unix time*1e6 by0.25us at equality), replaced advisory comparison with SQLTimestamp.date > captured clock Date, added real API->engine->disk before/equal/offset/after test for valid_until and trial_end_at. Inspect ALL four candidate files, authority/context/atomic publication and full existing tests; minimum72 actual tests (64old+8new), zero skips. Full candidate unaccepted until trusted checks and independent Reviewer/QA; no save/UI/live/parent completion."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Small read-only catalogue capacity facade gets successful canonical owner snapshot and returns correct collection cap/paid eligibility; failures/guest/session cancellation never fabricate count/rights or mutate pending queue. Actual repository/engine/disk tests plus all64 old>=72 no skips/build/Simulator, independent Reviewer/QA. Does NOT implement save or close parents.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

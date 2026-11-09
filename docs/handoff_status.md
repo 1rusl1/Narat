@@ -5,6 +5,14 @@
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Capacity candidate восстановлен; точная expiry исправлена до приёмки
+
+Run `parallel-ios-catalogue-capacity-20261109-01` — WAITING/interrupted, не принят. Developer1 вернул полный24551-char patch, но context тестового import Foundation отсутствовал в skeleton; автоматический второй вызов остановлен controller SIGINT, оригинальные answer/state/logs сохранены. Controller добавил только этот import и применил неизменённый diff через trusted scope/whitespace validator. Кандидат: CollectionRepository.swift read-only preflight/capacity, LocalStore.swift coherent snapshot, SyncEngine.swift same-lease full refresh, CollectionRepositoryTests.swift7 API→engine→disk tests.
+
+Controller отдельно воспроизвёл Foundation точную границу: `.000003Z` при Double(micros)>DateUnix*1e6 ошибочно future на0.25us. Исправлено сравнение advisory expiry через SQLTimestamp.date>однократно захваченную clock Date; добавлен восьмой реальный repository/disk test before/equal/equivalent offset/after для valid_until/trial_end_at. Это явная controller-коррекция, не приписывается Developer. Подготовлен read-only `tasks.parallel-ios-catalogue-capacity-recovery.json`: весь текущий кандидат, минимум72 actual tests, zero skips, build/welcome/Simulator и независимые Reviewer/QA. Пока реально выполнены только Foundation probe и diff-check PASS; Swift gates ещё НЕ запускались. T162/UI/save/родительские checkbox14/151 остаются открытыми, live нет.
+
+**Следующий шаг:** validate/context → checkpoint commit/push непринятого кандидата/manifest/handoff → новый чистый run `parallel-ios-catalogue-capacity-20261109-02` со своим прежним config1bf347cc. Старый run не resume. Дождаться реальных checks/Review/QA; далее journal/input/enqueue owner+payload guards и отдельный save/resume.
+
 ## Repository run остановлен без patch; новый capacity-only пакет
 
 Подготовка28ac700 успешно отправлена в origin/codex/plants-ios; run `parallel-ios-catalogue-repository-20261109-01` — **WAITING**,1Developer, timeout900s, answer.json/полный patch отсутствуют, task.patch пуст. Runtime не изменён, оба новые Swift файла остаются только imports, Xcode target подготовлен8строками. Build/unit/Review/QA нового repository не запускались. Это НЕ реализация capacity/save и не новые70tests. Старые state/logs/manifest сохранены; старый run не resume.

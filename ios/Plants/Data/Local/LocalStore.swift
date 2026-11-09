@@ -773,6 +773,39 @@ public actor LocalStore {
         return formatter.string(from: date)
     }
 
+    /// One coherent committed read, ordered against auth changes by the same authority as publication.
+    func collectionCapacitySnapshot(
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CollectionCapacitySnapshot {
+        try authority.withValid(context) {
+            guard context.session != nil else { throw SyncWireValidationError.invalidSession }
+            let ownerId = context.ownerId
+            let modelContext = makeSyncContext()
+            let checkpoints = FetchDescriptor<SyncCheckpointRecord>(
+                predicate: #Predicate { $0.ownerId == ownerId }
+            )
+            guard let checkpoint = try modelContext.fetch(checkpoints).first,
+                  let raw = checkpoint.syncProfileJSON,
+                  let watermark = checkpoint.watermarkRaw,
+                  SQLTimestamp.microseconds(from: watermark) != nil else {
+                throw SyncWireValidationError.invalidPage
+            }
+            // A missing/malformed profile is not an empty Free collection.
+            _ = try JSONDecoder().decode(SyncWireProfileDTO.self, from: Data(raw.utf8))
+            let entitlement = try checkpoint.syncEntitlementJSON.map {
+                try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data($0.utf8))
+            }
+            let plants = FetchDescriptor<SyncedEntityRecord>(
+                predicate: #Predicate {
+                    $0.ownerId == ownerId && $0.entityType == "plants" && $0.deletedAt == nil
+                }
+            )
+            return CollectionCapacitySnapshot(
+                plantCount: try modelContext.fetchCount(plants), entitlement: entitlement
+            )
+        }
+    }
+
     public func syncedProfile(ownerId: UUID) throws -> SyncWireProfileDTO? {
         let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncCheckpointRecord>(
