@@ -394,7 +394,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-sync-transport-compile-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-sync-transport-compile-repair](validation/automation/tasks/parallel-ios-sync-transport-compile-repair.md).
+parallel-ios-sync-store-rollback-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-sync-store-rollback-repair](validation/automation/tasks/parallel-ios-sync-store-rollback-repair.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

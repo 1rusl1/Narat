@@ -483,9 +483,19 @@ public actor LocalStore {
 
     // MARK: Synced Entity & Checkpoint Operations
 
+    /// Sync models never escape an operation's context. A failed save can leave
+    /// registered SwiftData models changed even after rollback, so both writers
+    /// and readers start from committed storage rather than those cached models.
+    private func makeSyncContext() -> ModelContext {
+        let context = ModelContext(modelContainer)
+        context.autosaveEnabled = false
+        return context
+    }
+
     public func applySyncedItems(_ items: [SyncItemDTO], ownerId: UUID) throws {
+        let modelContext = makeSyncContext()
         do {
-            try stageSyncedItems(items, ownerId: ownerId)
+            try stageSyncedItems(items, ownerId: ownerId, in: modelContext)
             try modelContext.save()
         } catch {
             modelContext.rollback()
@@ -494,7 +504,8 @@ public actor LocalStore {
     }
 
     private func stageSyncedItems(
-        _ items: [SyncItemDTO], ownerId: UUID, rawTimes: [String: String] = [:]
+        _ items: [SyncItemDTO], ownerId: UUID, rawTimes: [String: String] = [:],
+        in modelContext: ModelContext
     ) throws {
         for item in items {
             let key = "\(ownerId.uuidString.lowercased()):\(item.entityType):\(item.id.uuidString.lowercased())"
@@ -541,9 +552,9 @@ public actor LocalStore {
     ) throws {
         guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try authority.withValid(context) {
-            let autosave = modelContext.autosaveEnabled
-            modelContext.autosaveEnabled = false
-            defer { modelContext.autosaveEnabled = autosave }
+            // Discard the staging context on either outcome; it never shares
+            // registered checkpoint/entity instances with subsequent reads.
+            let modelContext = makeSyncContext()
             do {
                 let descriptor = FetchDescriptor<SyncCheckpointRecord>(
                     predicate: #Predicate { $0.ownerId == ownerId }
@@ -571,7 +582,7 @@ public actor LocalStore {
                     let key = "\(ownerId.uuidString.lowercased()):\(change.entityType):\(change.id.uuidString.lowercased())"
                     rawTimes[key] = change.updatedAt
                 }
-                try stageSyncedItems(items, ownerId: ownerId, rawTimes: rawTimes)
+                try stageSyncedItems(items, ownerId: ownerId, rawTimes: rawTimes, in: modelContext)
                 checkpoint.watermark = watermark
                 checkpoint.watermarkRaw = wirePage?.nextSince
                 if let wirePage {
@@ -626,6 +637,7 @@ public actor LocalStore {
     /// Original SQL spelling wins. Only historical Date-only caches use this fallback.
     /// Reading never rewrites a historical checkpoint.
     public func currentWatermarkRaw(ownerId: UUID) throws -> String? {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncCheckpointRecord>(
             predicate: #Predicate { $0.ownerId == ownerId }
         )
@@ -638,6 +650,7 @@ public actor LocalStore {
     }
 
     public func syncedProfile(ownerId: UUID) throws -> SyncWireProfileDTO? {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncCheckpointRecord>(
             predicate: #Predicate { $0.ownerId == ownerId }
         )
@@ -646,6 +659,7 @@ public actor LocalStore {
     }
 
     public func syncedEntitlement(ownerId: UUID) throws -> SyncWireEntitlementDTO? {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncCheckpointRecord>(
             predicate: #Predicate { $0.ownerId == ownerId }
         )
@@ -654,6 +668,7 @@ public actor LocalStore {
     }
 
     public func activeSyncedEntities(ownerId: UUID, entityType: String) throws -> [SyncItemDTO] {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncedEntityRecord>(
             predicate: #Predicate {
                 $0.ownerId == ownerId && $0.entityType == entityType && $0.deletedAt == nil
@@ -672,6 +687,7 @@ public actor LocalStore {
     }
 
     public func updateWatermark(ownerId: UUID, watermark: Date?) throws {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncCheckpointRecord>(
             predicate: #Predicate { $0.ownerId == ownerId }
         )
@@ -687,6 +703,7 @@ public actor LocalStore {
     }
 
     public func currentWatermark(ownerId: UUID) throws -> Date? {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncCheckpointRecord>(
             predicate: #Predicate { $0.ownerId == ownerId }
         )
@@ -695,6 +712,7 @@ public actor LocalStore {
 
     /// Resets cached synced entities and cursor while strictly preserving LocalOutbox and GuestDraftCache.
     public func resetSyncCachePreservingOutbox(ownerId: UUID) throws {
+        let modelContext = makeSyncContext()
         let entityDescriptor = FetchDescriptor<SyncedEntityRecord>(
             predicate: #Predicate { $0.ownerId == ownerId }
         )

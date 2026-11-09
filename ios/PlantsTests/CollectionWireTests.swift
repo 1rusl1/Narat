@@ -787,8 +787,14 @@ extension CollectionWireTests {
             let store = LocalStore(modelContainer: try diskContainer(url))
             let api = client(transport)
             await api.bindSyncSession(syncSession)
+            let before = try await store.currentWatermarkRaw(ownerId: syncOwner)
+            XCTAssertEqual(before, syncSince)
             let result = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner, pageSize: 1)
             XCTAssertEqual(result, SQLTimestamp.date(from: syncUntil))
+            let saved = try await store.currentWatermarkRaw(ownerId: syncOwner)
+            let savedItems = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+            XCTAssertEqual(saved, nextSince)
+            XCTAssertEqual(savedItems.map(\.id), [UUID(uuidString: liveId)!])
         }
         let requests = await transport.capturedRequests()
         XCTAssertEqual(requests.count, 2)
@@ -835,7 +841,16 @@ extension CollectionWireTests {
             ])]))
             let api = client(nextTransport)
             await api.bindSyncSession(syncSession)
+            let previousRights = try await store.syncedEntitlement(ownerId: syncOwner)
+            let previousProfile = try await store.syncedProfile(ownerId: syncOwner)
+            XCTAssertNotNil(previousRights)
+            XCTAssertEqual(previousProfile?.preferredLocale, "pl")
             _ = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner)
+            let savedRights = try await store.syncedEntitlement(ownerId: syncOwner)
+            let savedProfile = try await store.syncedProfile(ownerId: syncOwner)
+            XCTAssertNil(savedRights)
+            XCTAssertEqual(savedProfile?.preferredLocale, "en")
+            XCTAssertEqual(savedProfile?.reminderHourLocal, 17)
         }
         let nextRequests = await nextTransport.capturedRequests()
         XCTAssertEqual(try requestQuery(XCTUnwrap(nextRequests.first)), ["since": nextSince, "limit": "200"])
@@ -940,22 +955,69 @@ extension CollectionWireTests {
         let outbox = try await seedSyncDisk(url)
         do {
             let store = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+            // Prime every view before publishing; neither a failed write nor a
+            // cached read may replace the last committed snapshot.
+            let oldDate = try await store.currentWatermark(ownerId: syncOwner)
+            let oldProfile = try await store.syncedProfile(ownerId: syncOwner)
+            let oldRights = try await store.syncedEntitlement(ownerId: syncOwner)
             var page = syncObject()
             page["changes"] = [syncChange()]
-            let api = client(CatalogueTransport([.http(200, try syncJSON(page))]))
+            page["profile"] = ["preferred_locale": "en", "reminder_hour_local": 17,
+                               "report_notifications_enabled": false, "trial_reminder_enabled": true]
+            let json = try syncJSON(page)
+            let transport = CatalogueTransport([.http(200, json), .http(200, json), .network])
+            let api = client(transport)
             await api.bindSyncSession(syncSession)
-            do {
-                _ = try await SyncEngine(store: store, apiClient: api).performFullRefresh(for: syncOwner)
-                XCTFail("Read-only disk save must fail")
-            } catch {
-                // A real SwiftData save failure, not a synthetic transport error.
+            let engine = SyncEngine(store: store, apiClient: api)
+            for refresh in [true, false] {
+                let before = try await store.currentWatermarkRaw(ownerId: syncOwner)
+                let beforeItems = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+                XCTAssertEqual(before, syncSince)
+                XCTAssertEqual(beforeItems.map(\.payloadJSON), [#"{"name":"confirmed"}"#])
+                do {
+                    if refresh { _ = try await engine.performFullRefresh(for: syncOwner) }
+                    else { _ = try await engine.pullDelta(for: syncOwner) }
+                    XCTFail("Read-only disk save must fail")
+                } catch {
+                    // Require the actual SQLite read-only save error.
+                    let failure = error as NSError
+                    XCTAssertEqual(failure.domain, NSCocoaErrorDomain)
+                    XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+                }
+                let raw = try await store.currentWatermarkRaw(ownerId: syncOwner)
+                let date = try await store.currentWatermark(ownerId: syncOwner)
+                let items = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+                let profile = try await store.syncedProfile(ownerId: syncOwner)
+                let rights = try await store.syncedEntitlement(ownerId: syncOwner)
+                XCTAssertEqual(raw, syncSince)
+                XCTAssertEqual(date, oldDate)
+                XCTAssertEqual(items, beforeItems)
+                XCTAssertEqual(profile, oldProfile)
+                XCTAssertEqual(rights, oldRights)
+                XCTAssertEqual(rights?.state, "active")
+                XCTAssertEqual(profile?.preferredLocale, "pl")
+                for (index, owner) in [syncOwner, otherSyncOwner].enumerated() {
+                    let pending = try await store.pendingOutboxEntries(for: owner)
+                    let confirmed = try await store.activeSyncedEntities(ownerId: owner, entityType: "plants")
+                    XCTAssertEqual(pending, [outbox[index]])
+                    XCTAssertEqual(confirmed.map(\.payloadJSON), [#"{"name":"confirmed"}"#])
+                }
+                try await assertSeedUnchanged(url, outbox: outbox)
             }
-            let raw = try await store.currentWatermarkRaw(ownerId: syncOwner)
-            let items = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
-            let rights = try await store.syncedEntitlement(ownerId: syncOwner)
-            XCTAssertEqual(raw, syncSince)
-            XCTAssertEqual(items.map(\.payloadJSON), [#"{"name":"confirmed"}"#])
-            XCTAssertEqual(rights?.state, "active")
+            // A subsequent delta on this same store must request the old exact
+            // since, even after both failed replacement and failed entity update.
+            do {
+                _ = try await engine.pullDelta(for: syncOwner)
+                XCTFail("Network failure must propagate")
+            } catch let error as URLError {
+                XCTAssertEqual(error.code, .networkConnectionLost)
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 3)
+            XCTAssertEqual(try requestQuery(XCTUnwrap(requests.first)), ["limit": "200"])
+            for request in requests.dropFirst() {
+                XCTAssertEqual(try requestQuery(request), ["since": syncSince, "limit": "200"])
+            }
         }
         try await assertSeedUnchanged(url, outbox: outbox)
     }
