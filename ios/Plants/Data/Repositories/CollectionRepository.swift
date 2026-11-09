@@ -89,6 +89,16 @@ public struct CollectionRepository: Sendable {
         guard !isAnonymous else { return .signInRequired }
         let context = try await apiClient.captureSyncContext(ownerId: session.userId)
         guard context.session == session else { throw SyncWireValidationError.invalidSession }
+        return try await saveCatalogueCreate(envelope: envelope, context: context)
+    }
+
+    /// Internal composition must retain the model's original bound authority, including ABA.
+    /// The caller must explicitly guard its SDK anonymous snapshot before this registered path.
+    func saveCatalogueCreate(
+        envelope: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> CatalogueSaveResult {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        try CatalogueCreateWire.validate(envelope)
 
         var journal = try await store.catalogueCreateJournal(
             envelope, mode: .checkOnly, context: context, authority: apiClient.syncAuthority
