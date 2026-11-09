@@ -232,6 +232,18 @@ public struct CatalogueCreateConfirmationSnapshot: Sendable, Equatable {
     public let receipt: PlantCreateReceiptDTO
 }
 
+enum CatalogueCreateJournalMode: Sendable {
+    case checkOnly
+    case enqueue(canCreate: Bool)
+}
+
+enum CatalogueCreateJournalState: Sendable, Equatable {
+    case absent
+    case pending(OutboxEntrySnapshot)
+    case confirmed(CatalogueCreateConfirmationSnapshot)
+    case collectionLimitNotEnqueued
+}
+
 enum CatalogueCreateAcknowledgementError: Error, Sendable, Equatable {
     case invalidCommand
     case missingQueuedOperation
@@ -359,6 +371,92 @@ public actor LocalStore {
             retryCount: record.retryCount,
             lastError: record.lastError,
             createdAt: record.createdAt
+        )
+    }
+
+    /// One session-ordered disk operation. Capacity is advisory; durable replay wins.
+    /// No transport, recapture, watermark publication, or managed models escape here.
+    func catalogueCreateJournal(
+        _ envelope: CommandEnvelopeDTO, mode: CatalogueCreateJournalMode,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CatalogueCreateJournalState {
+        try authority.withBoundValid(context) {
+            try CatalogueCreateWire.validate(envelope)
+            let ownerId = context.ownerId
+            let operationId = envelope.operationId
+            let disk = makeSyncContext()
+            do {
+                let confirmations = FetchDescriptor<CatalogueCreateConfirmationRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+                )
+                let prior = try disk.fetch(confirmations).first
+                if let prior {
+                    guard prior.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                        throw OutboxEnqueueError.operationIdentityMismatch
+                    }
+                }
+                // Global operation identity must also hold when a receipt already exists.
+                let commands = FetchDescriptor<LocalOutboxRecord>(
+                    predicate: #Predicate { $0.operationId == operationId }
+                )
+                let queued = try disk.fetch(commands).first
+                if let queued {
+                    guard queued.ownerId == ownerId, queued.plantId == envelope.plantId,
+                          queued.commandName.utf8.elementsEqual(envelope.commandName.utf8),
+                          queued.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                        throw OutboxEnqueueError.operationIdentityMismatch
+                    }
+                }
+
+                let result: CatalogueCreateJournalState
+                if let prior {
+                    result = .confirmed(CatalogueCreateConfirmationSnapshot(
+                        ownerId: prior.ownerId, operationId: prior.operationId,
+                        payloadJSON: prior.payloadJSON,
+                        receipt: try JSONDecoder().decode(
+                            PlantCreateReceiptDTO.self, from: Data(prior.receiptJSON.utf8)
+                        )
+                    ))
+                } else if let queued {
+                    result = .pending(journalSnapshot(queued))
+                } else {
+                    switch mode {
+                    case .checkOnly:
+                        result = .absent
+                    case .enqueue(canCreate: false):
+                        result = .collectionLimitNotEnqueued
+                    case .enqueue(canCreate: true):
+                        var sequence = FetchDescriptor<LocalOutboxRecord>(
+                            sortBy: [SortDescriptor(\.sequenceNumber, order: .reverse)]
+                        )
+                        sequence.fetchLimit = 1
+                        let next = (try disk.fetch(sequence).first?.sequenceNumber ?? 0) + 1
+                        let record = LocalOutboxRecord(
+                            operationId: operationId, ownerId: ownerId, plantId: envelope.plantId,
+                            commandName: envelope.commandName, payloadJSON: envelope.payloadJSON,
+                            sequenceNumber: next
+                        )
+                        disk.insert(record)
+                        try Task.checkCancellation()
+                        try disk.save()
+                        return .pending(journalSnapshot(record))
+                    }
+                }
+                try Task.checkCancellation()
+                return result
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    private func journalSnapshot(_ record: LocalOutboxRecord) -> OutboxEntrySnapshot {
+        OutboxEntrySnapshot(
+            operationId: record.operationId, ownerId: record.ownerId, plantId: record.plantId,
+            commandName: record.commandName, payloadJSON: record.payloadJSON,
+            sequenceNumber: record.sequenceNumber, retryCount: record.retryCount,
+            lastError: record.lastError, createdAt: record.createdAt
         )
     }
 

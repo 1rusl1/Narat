@@ -34,6 +34,7 @@ struct SyncSessionLease: Sendable {
     let ownerId: UUID
     let generation: UInt64
     let session: NativeAuthSession?
+    fileprivate let authority: SyncSessionAuthority
 }
 
 /// The short synchronous critical section also covers LocalStore's save. There is no
@@ -67,7 +68,9 @@ final class SyncSessionAuthority: @unchecked Sendable {
                     throw SyncWireValidationError.invalidSession
                 }
             }
-            let lease = SyncSessionLease(ownerId: ownerId, generation: generation, session: captured)
+            let lease = SyncSessionLease(
+                ownerId: ownerId, generation: generation, session: captured, authority: self
+            )
             try validateLocked(lease)
             return lease
         }
@@ -83,6 +86,18 @@ final class SyncSessionAuthority: @unchecked Sendable {
             guard captured.userId == lease.ownerId,
                   !captured.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   captured.expiresAt > Date() else { throw SyncWireValidationError.invalidSession }
+        }
+    }
+
+    /// Explicit-session capture is a transport compatibility path, not bound proof.
+    /// Check on this authority under the very lock that covers the disk action.
+    func withBoundValid<T>(_ lease: SyncSessionLease, _ body: () throws -> T) throws -> T {
+        try lock.withLock {
+            try validateLocked(lease)
+            guard canonical, session != nil, lease.authority === self else {
+                throw SyncWireValidationError.invalidSession
+            }
+            return try body()
         }
     }
 
@@ -310,7 +325,7 @@ public enum CatalogueCreateValidationError: Error, Sendable {
 }
 
 // Validate the catalogue subset without rewriting the caller's persisted payload.
-private enum CatalogueCreateWire {
+enum CatalogueCreateWire {
     private static let conditionValues: [String: Set<String>] = [
         "light_level": ["low", "medium", "bright_indirect", "direct_sun", "unknown"],
         "light_code": ["low", "medium", "bright_indirect", "direct_sun", "unknown"],

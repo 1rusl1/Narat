@@ -80,12 +80,14 @@ final class CollectionRepositoryTests: XCTestCase {
         return directory.appendingPathComponent("capacity.sqlite")
     }
 
-    private func container(_ url: URL) throws -> ModelContainer {
+    private func container(_ url: URL, allowsSave: Bool = true) throws -> ModelContainer {
         let schema = Schema([
             LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
             GuestDraftCacheRecord.self, SyncedEntityRecord.self, SyncCheckpointRecord.self
         ])
-        return try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: url)])
+        return try ModelContainer(for: schema, configurations: [
+            ModelConfiguration(schema: schema, url: url, allowsSave: allowsSave)
+        ])
     }
 
     private func change(_ index: Int, deleted: Bool = false) -> [String: Any] {
@@ -655,5 +657,497 @@ final class CollectionRepositoryTests: XCTestCase {
         XCTAssertEqual(failed.retryCount, 1)
         XCTAssertEqual(failed.lastError, String(describing: URLError(.notConnectedToInternet) as any Error))
         XCTAssertNil(failed.lastAPIError)
+    }
+}
+
+extension CollectionRepositoryTests {
+    private func journalCommand(
+        operationId: UUID = UUID(),
+        payload: String = #" { "creation_source":"catalogue", "plant_id":"fixture-fern", "personal_name":"é" } "#
+    ) -> CommandEnvelopeDTO {
+        CommandEnvelopeDTO(operationId: operationId, commandName: "plant.create", payloadJSON: payload)
+    }
+
+    private func journalSession() async throws -> (PlantsAPIClient, SyncSessionLease) {
+        let api = PlantsAPIClient(transport: CapacityTransport([]))
+        await api.bindSyncSession(session)
+        return (api, try await api.captureSyncContext(ownerId: owner))
+    }
+
+    private func journalPending(_ state: CatalogueCreateJournalState) throws -> OutboxEntrySnapshot {
+        guard case let .pending(entry) = state else {
+            XCTFail("Expected durable pending command")
+            throw SyncWireValidationError.invalidPage
+        }
+        return entry
+    }
+
+    private func journalConfirmed(
+        _ state: CatalogueCreateJournalState
+    ) throws -> CatalogueCreateConfirmationSnapshot {
+        guard case let .confirmed(receipt) = state else {
+            XCTFail("Expected durable confirmation")
+            throw SyncWireValidationError.invalidPage
+        }
+        return receipt
+    }
+
+    private func journalReceipt() throws -> PlantCreateReceiptDTO {
+        try JSONDecoder().decode(PlantCreateReceiptDTO.self, from: json([
+            "plant_id": "22222222-2222-4222-8222-222222222222", "care_revision": 1,
+            "context_state": "current", "next_available_step": "enable_basic_care",
+            "paid_action": NSNull(), "plan_availability": "available", "watermark": "2026-11-04T09:00:00.123456Z"
+        ]))
+    }
+
+    private struct JournalDisk: Equatable {
+        let own: DiskState
+        let foreign: DiskState
+        let receipts: [Data]
+    }
+
+    private func journalDisk(_ url: URL) async throws -> JournalDisk {
+        let reopened = try container(url)
+        let store = LocalStore(modelContainer: reopened)
+        let own = try await state(store, ownerId: owner)
+        let foreign = try await state(store, ownerId: other)
+        let context = ModelContext(reopened)
+        context.autosaveEnabled = false
+        let receipts = try context.fetch(FetchDescriptor<CatalogueCreateConfirmationRecord>(
+            sortBy: [SortDescriptor(\.compositeKey)]
+        )).map {
+            Data(($0.compositeKey + "|" + $0.ownerId.uuidString + "|" + $0.operationId.uuidString
+                  + "|" + $0.payloadJSON + "|" + $0.receiptJSON).utf8)
+        }
+        return JournalDisk(own: own, foreign: foreign, receipts: receipts)
+    }
+
+    private func assertJournalConflict(
+        _ command: CommandEnvelopeDTO, store: LocalStore,
+        lease: SyncSessionLease, authority: SyncSessionAuthority
+    ) async {
+        for mode in [CatalogueCreateJournalMode.checkOnly, .enqueue(canCreate: false), .enqueue(canCreate: true)] {
+            do {
+                _ = try await store.catalogueCreateJournal(command, mode: mode, context: lease, authority: authority)
+                XCTFail("Conflicting identity must not return a snapshot or enqueue")
+            } catch OutboxEnqueueError.operationIdentityMismatch {
+            } catch CatalogueCreateValidationError.invalidCommand {
+            } catch CatalogueCreateValidationError.invalidPayload {
+            } catch {
+                XCTFail("Unexpected journal conflict error: \(error)")
+            }
+        }
+    }
+
+    private func journalConflicts(_ command: CommandEnvelopeDTO) -> [CommandEnvelopeDTO] {
+        [
+            CommandEnvelopeDTO(operationId: command.operationId, commandName: "plant.create",
+                               plantId: UUID(), payloadJSON: command.payloadJSON),
+            CommandEnvelopeDTO(operationId: command.operationId, commandName: "care.complete",
+                               payloadJSON: command.payloadJSON),
+            journalCommand(operationId: command.operationId, payload: command.payloadJSON + " "),
+            journalCommand(operationId: command.operationId,
+                           payload: #"{"plant_id":"fixture-fern","creation_source":"catalogue","personal_name":"é"}"#),
+            journalCommand(operationId: command.operationId,
+                           payload: command.payloadJSON.replacingOccurrences(of: "é", with: "e\u{0301}")),
+            journalCommand(operationId: command.operationId,
+                           payload: command.payloadJSON.replacingOccurrences(of: "fixture-fern", with: "different"))
+        ]
+    }
+
+    /// Receipt setup goes through the accepted ACK; it is a fixture, not a live save.
+    private func journalSeedStates(
+        _ store: LocalStore, lease: SyncSessionLease, authority: SyncSessionAuthority
+    ) async throws -> [CommandEnvelopeDTO] {
+        let absent = journalCommand()
+        let pending = journalCommand()
+        let confirmed = journalCommand()
+        for command in [pending, confirmed] {
+            _ = try await store.catalogueCreateJournal(
+                command, mode: .enqueue(canCreate: true), context: lease, authority: authority
+            )
+        }
+        try await store.acknowledgeCatalogueCreate(
+            confirmed, receipt: journalReceipt(), context: lease, authority: authority
+        )
+        return [absent, pending, confirmed]
+    }
+
+    private func assertJournalInvalidLease(
+        _ commands: [CommandEnvelopeDTO], store: LocalStore,
+        lease: SyncSessionLease, authority: SyncSessionAuthority
+    ) async {
+        for command in commands {
+            for mode in [CatalogueCreateJournalMode.checkOnly, .enqueue(canCreate: false), .enqueue(canCreate: true)] {
+                do {
+                    _ = try await store.catalogueCreateJournal(command, mode: mode, context: lease, authority: authority)
+                    XCTFail("Invalid original lease must not read, replay, or insert")
+                } catch SyncWireValidationError.invalidSession {
+                } catch {
+                    XCTFail("Unexpected session error: \(error)")
+                }
+            }
+        }
+    }
+
+    func testJournalCheckOnlyAbsentAndBlockedAllocateNothingAcrossReopen() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let command = journalCommand()
+        for seeded in [false, true] {
+            if seeded { try await seed(LocalStore(modelContainer: try container(url))) }
+            let before = try await journalDisk(url)
+            for _ in 0..<2 {
+                let store = LocalStore(modelContainer: try container(url))
+                let absent = try await store.catalogueCreateJournal(
+                    command, mode: .checkOnly, context: lease, authority: api.syncAuthority
+                )
+                XCTAssertEqual(absent, .absent)
+                let blocked = try await store.catalogueCreateJournal(
+                    command, mode: .enqueue(canCreate: false), context: lease, authority: api.syncAuthority
+                )
+                XCTAssertEqual(blocked, .collectionLimitNotEnqueued)
+                let after = try await journalDisk(url)
+                XCTAssertEqual(after, before)
+            }
+        }
+        let store = LocalStore(modelContainer: try container(url))
+        let beforeInvalid = try await journalDisk(url)
+        await assertJournalConflict(
+            journalCommand(payload: "{}"), store: store, lease: lease, authority: api.syncAuthority
+        )
+        let afterInvalid = try await journalDisk(url)
+        XCTAssertEqual(afterInvalid, beforeInvalid)
+        let inserted = try journalPending(await store.catalogueCreateJournal(
+            command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+        ))
+        XCTAssertEqual(inserted.sequenceNumber, 3)
+    }
+
+    func testJournalInsertAndPendingReplayBypassFalseCapacityWithFrozenTypedRetry() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let command = journalCommand()
+        let original: OutboxEntrySnapshot
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            try await seed(store)
+            original = try journalPending(await store.catalogueCreateJournal(
+                command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+            ))
+            XCTAssertEqual(original.operationId, command.operationId)
+            XCTAssertEqual(original.ownerId, owner)
+            XCTAssertNil(original.plantId)
+            XCTAssertTrue(original.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8))
+            XCTAssertEqual(original.sequenceNumber, 3)
+            let typed = String(decoding: try json([
+                "error": ["code": "COLLECTION_LIMIT_REACHED", "message": "Limit", "retryable": false]
+            ]), as: UTF8.self)
+            try await store.recordOutboxFailure(operationId: command.operationId, errorMessage: typed)
+        }
+        let before = try await journalDisk(url)
+        let frozen = try XCTUnwrap(before.own.queue.last)
+        XCTAssertEqual(frozen.retryCount, 1)
+        XCTAssertEqual(frozen.lastAPIError?.error.code, "COLLECTION_LIMIT_REACHED")
+        for _ in 0..<2 {
+            let store = LocalStore(modelContainer: try container(url))
+            for mode in [CatalogueCreateJournalMode.checkOnly, .enqueue(canCreate: false), .enqueue(canCreate: true)] {
+                let replay = try journalPending(await store.catalogueCreateJournal(
+                    command, mode: mode, context: lease, authority: api.syncAuthority
+                ))
+                XCTAssertEqual(replay, frozen)
+                assertFrozenCommand(replay, original)
+            }
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+        let next = try await LocalStore(modelContainer: container(url)).enqueueCommand(
+            ownerId: other, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+        )
+        XCTAssertEqual(next.sequenceNumber, original.sequenceNumber + 1)
+    }
+
+    func testJournalConfirmedReplayBypassesFalseCapacityUsingOriginalACKReceipt() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let command = journalCommand()
+        let receipt = try journalReceipt()
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            try await seed(store)
+            _ = try await store.catalogueCreateJournal(
+                command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+            )
+            try await store.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: lease, authority: api.syncAuthority
+            )
+        }
+        let before = try await journalDisk(url)
+        XCTAssertEqual(before.own.queue.count, 1)
+        XCTAssertEqual(before.receipts.count, 1)
+        XCTAssertNotEqual(before.own.raw, receipt.watermarkRaw)
+        for _ in 0..<2 {
+            let store = LocalStore(modelContainer: try container(url))
+            for mode in [CatalogueCreateJournalMode.checkOnly, .enqueue(canCreate: false), .enqueue(canCreate: true)] {
+                let replay = try journalConfirmed(await store.catalogueCreateJournal(
+                    command, mode: mode, context: lease, authority: api.syncAuthority
+                ))
+                XCTAssertEqual(replay.ownerId, owner)
+                XCTAssertEqual(replay.operationId, command.operationId)
+                XCTAssertTrue(replay.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8))
+                XCTAssertEqual(replay.receipt, receipt)
+                XCTAssertEqual(replay.receipt.watermarkRaw, receipt.watermarkRaw)
+                XCTAssertNotEqual(replay.receipt.plantId, command.operationId)
+            }
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+    }
+
+    func testJournalPendingConflictsRejectForeignOwnerAndAllChangedIdentityFields() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let command = journalCommand()
+        let store = LocalStore(modelContainer: try container(url))
+        try await seed(store)
+        _ = try await store.catalogueCreateJournal(
+            command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+        )
+        let before = try await journalDisk(url)
+        for conflict in journalConflicts(command) {
+            try await assertJournalConflict(
+                conflict, store: LocalStore(modelContainer: container(url)),
+                lease: lease, authority: api.syncAuthority
+            )
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+        let foreignAPI = PlantsAPIClient(transport: CapacityTransport([]))
+        await foreignAPI.bindSyncSession(NativeAuthSession(
+            userId: other, accessToken: "foreign", expiresAt: .distantFuture
+        ))
+        let foreignLease = try await foreignAPI.captureSyncContext(ownerId: other)
+        await assertJournalConflict(command, store: store, lease: foreignLease, authority: foreignAPI.syncAuthority)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+        // Legacy writers may have stored a different target or command for a new UUID.
+        for (plant, name) in [(Optional(UUID()), "plant.create"), (nil, "care.complete")] {
+            let expected = journalCommand()
+            _ = try await store.enqueueCommand(
+                operationId: expected.operationId, ownerId: owner, plantId: plant,
+                commandName: name, payloadJSON: expected.payloadJSON
+            )
+            let collision = try await journalDisk(url)
+            await assertJournalConflict(expected, store: store, lease: lease, authority: api.syncAuthority)
+            let unchanged = try await journalDisk(url)
+            XCTAssertEqual(unchanged, collision)
+        }
+    }
+
+    func testJournalConfirmedConflictsAndGlobalPendingCollisionPreserveAllReceipts() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let store = LocalStore(modelContainer: try container(url))
+        try await seed(store)
+        let commands = try await journalSeedStates(store, lease: lease, authority: api.syncAuthority)
+        let command = commands[2]
+        let foreignAPI = PlantsAPIClient(transport: CapacityTransport([]))
+        await foreignAPI.bindSyncSession(NativeAuthSession(
+            userId: other, accessToken: "foreign", expiresAt: .distantFuture
+        ))
+        let foreignLease = try await foreignAPI.captureSyncContext(ownerId: other)
+        let foreignCommand = journalCommand()
+        _ = try await store.catalogueCreateJournal(
+            foreignCommand, mode: .enqueue(canCreate: true),
+            context: foreignLease, authority: foreignAPI.syncAuthority
+        )
+        try await store.acknowledgeCatalogueCreate(
+            foreignCommand, receipt: journalReceipt(),
+            context: foreignLease, authority: foreignAPI.syncAuthority
+        )
+        let before = try await journalDisk(url)
+        XCTAssertEqual(before.receipts.count, 2)
+        for conflict in journalConflicts(command) {
+            try await assertJournalConflict(
+                conflict, store: LocalStore(modelContainer: container(url)),
+                lease: lease, authority: api.syncAuthority
+            )
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+        // A legacy global outbox collision must not be hidden by the owner's receipt.
+        _ = try await store.enqueueCommand(
+            operationId: command.operationId, ownerId: other, plantId: nil,
+            commandName: command.commandName, payloadJSON: command.payloadJSON
+        )
+        let collision = try await journalDisk(url)
+        await assertJournalConflict(command, store: store, lease: lease, authority: api.syncAuthority)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, collision)
+    }
+
+    func testJournalOriginalLeaseRejectsOwnerSwitchABAAndSignOutForEveryState() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (setupAPI, setupLease) = try await journalSession()
+        let store = LocalStore(modelContainer: try container(url))
+        try await seed(store)
+        let commands = try await journalSeedStates(store, lease: setupLease, authority: setupAPI.syncAuthority)
+        let before = try await journalDisk(url)
+        for mode in 0..<3 {
+            let (api, original) = try await journalSession()
+            if mode == 2 {
+                await api.bindSyncSession(nil)
+            } else {
+                await api.bindSyncSession(NativeAuthSession(
+                    userId: other, accessToken: "foreign", expiresAt: .distantFuture
+                ))
+                if mode == 1 { await api.bindSyncSession(session) }
+            }
+            await assertJournalInvalidLease(commands, store: store, lease: original, authority: api.syncAuthority)
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+    }
+
+    func testJournalRejectsUnboundExplicitSessionAndDifferentAuthorityWithoutDiskEffects() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let store = LocalStore(modelContainer: try container(url))
+        let commands = try await journalSeedStates(store, lease: lease, authority: api.syncAuthority)
+        let before = try await journalDisk(url)
+        let unbound = PlantsAPIClient(transport: CapacityTransport([]))
+        let compatibility = try unbound.syncAuthority.capture(ownerId: owner, explicitSession: session)
+        XCTAssertEqual(compatibility.session, session)
+        await assertJournalInvalidLease(
+            commands, store: store, lease: compatibility, authority: unbound.syncAuthority
+        )
+        let anonymous = try await unbound.captureSyncContext(ownerId: owner)
+        await assertJournalInvalidLease(
+            commands, store: store, lease: anonymous, authority: unbound.syncAuthority
+        )
+        // Same owner, token and generation on another authority are not this lease.
+        let (otherAPI, _) = try await journalSession()
+        await assertJournalInvalidLease(commands, store: store, lease: lease, authority: otherAPI.syncAuthority)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+    }
+
+    func testJournalCancellationCannotInsertReadOrReplayAnyState() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let store = LocalStore(modelContainer: try container(url))
+        try await seed(store)
+        let commands = try await journalSeedStates(store, lease: lease, authority: api.syncAuthority)
+        let before = try await journalDisk(url)
+        for command in commands {
+            for mode in [CatalogueCreateJournalMode.checkOnly, .enqueue(canCreate: false), .enqueue(canCreate: true)] {
+                let operation = Task {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return try await store.catalogueCreateJournal(
+                        command, mode: mode, context: lease, authority: api.syncAuthority
+                    )
+                }
+                do {
+                    _ = try await operation.value
+                    XCTFail("Cancelled journal must not return a snapshot or enqueue")
+                } catch is CancellationError {
+                } catch {
+                    XCTFail("Unexpected cancellation error: \(error)")
+                }
+            }
+        }
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+    }
+
+    func testJournalFailedSQLiteSaveHasNoPhantomAndWritableRetryInsertsOnce() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let command = journalCommand()
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            try await seed(store)
+        }
+        let before = try await journalDisk(url)
+        do {
+            let store = LocalStore(modelContainer: try container(url, allowsSave: false))
+            for _ in 0..<2 {
+                do {
+                    _ = try await store.catalogueCreateJournal(
+                        command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+                    )
+                    XCTFail("Real read-only SQLite save must fail")
+                } catch {
+                    let failure = error as NSError
+                    XCTAssertEqual(failure.domain, NSCocoaErrorDomain)
+                    XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+                }
+                let absent = try await store.catalogueCreateJournal(
+                    command, mode: .checkOnly, context: lease, authority: api.syncAuthority
+                )
+                XCTAssertEqual(absent, .absent)
+                let blocked = try await store.catalogueCreateJournal(
+                    command, mode: .enqueue(canCreate: false), context: lease, authority: api.syncAuthority
+                )
+                XCTAssertEqual(blocked, .collectionLimitNotEnqueued)
+                let local = try await state(store, ownerId: owner)
+                XCTAssertEqual(local, before.own)
+                let after = try await journalDisk(url)
+                XCTAssertEqual(after, before)
+            }
+        }
+        let inserted: OutboxEntrySnapshot
+        do {
+            let writable = LocalStore(modelContainer: try container(url))
+            inserted = try journalPending(await writable.catalogueCreateJournal(
+                command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+            ))
+            XCTAssertEqual(inserted.sequenceNumber, 3)
+        }
+        let reopened = LocalStore(modelContainer: try container(url))
+        let replay = try journalPending(await reopened.catalogueCreateJournal(
+            command, mode: .enqueue(canCreate: false), context: lease, authority: api.syncAuthority
+        ))
+        XCTAssertEqual(replay, inserted)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after.own.queue, before.own.queue + [inserted])
+        XCTAssertEqual(after.own.raw, before.own.raw)
+        XCTAssertEqual(after.foreign, before.foreign)
+        XCTAssertEqual(after.receipts, before.receipts)
+    }
+
+    func testJournalConcurrentConditionalEnqueueAcrossStoresInsertsOnlyOnce() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (api, lease) = try await journalSession()
+        let first = LocalStore(modelContainer: try container(url))
+        try await seed(first)
+        let before = try await journalDisk(url)
+        let second = LocalStore(modelContainer: try container(url))
+        let command = journalCommand()
+        async let left = first.catalogueCreateJournal(
+            command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+        )
+        async let right = second.catalogueCreateJournal(
+            command, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+        )
+        let (leftState, rightState) = try await (left, right)
+        let inserted = try journalPending(leftState)
+        XCTAssertEqual(rightState, .pending(inserted))
+        XCTAssertEqual(inserted.sequenceNumber, 3)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after.own.queue, before.own.queue + [inserted])
+        XCTAssertEqual(after.foreign, before.foreign)
+        XCTAssertEqual(after.own.raw, before.own.raw)
+        XCTAssertEqual(after.receipts, before.receipts)
     }
 }
