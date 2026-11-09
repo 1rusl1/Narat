@@ -1,45 +1,43 @@
 # Narat — текущий статус и передача работы
 
 
-## B — reserve принят141d548; finalize/bind разделены после run04 timeout
+## B — SQL005–010 принят; следующий B2 authoritative API
 
-**Факт принятия008:** `141d548` опубликован в origin/codex/plants-backend,
-1 Developer/1 Reviewer/1 QA; clean/upgrade по78 reserve+55 anchor+49 ledger pgTAP,
-12UTC cases, четыре20-real-connection races (distinct/same operation), один reserve,
-replay без нового расхода;336Deno/115automation/typecheck/diff PASS. Код включает
-контроллерские исправления из d5e6c5d, независимая приёмка выполнена заново.
-Отчёт `docs/validation/automation/tasks/parallel-backend-t163-reserve-recovery.md`.
-Это не settlement;99consumed в reserve-only — historical fixtures, не99finalize.
+**Принято и опубликовано:** reserve141d548, finalize42ed071, bind a367d0b.
+Run05 COMPLETED; finalize Developer/Reviewer/QA1/1/1, bind3/2/1. Reviewer нашёл
+преждевременное списание reserved+succeeded до nonbillable finalize: исправлено,
+только quota_state consumed подтверждает расход, до settlement указатель блокирует.
+113 binding regressions приняты. Истории timeout/rejected patch сохранены.
 
-**Run04 остановлен:** combined settlement Developer вызван1раз, timeout900s,
-answer/patch отсутствуют. Статус WAITING, миграция009 не создана. State/logs в
-ignored `docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-04/`
-сохранены. Run04 не resume после изменения config/manifest. Ни один полный
-99actual admit/finalize +6x20 gate ещё не объявлен PASS.
+**Реально выполненные проверки:** `python3 tools/automation/parallel_backend_quota_gate.py --bind`
+PASS clean/seeded-upgrade по384 pgTAP (55anchor+49ledger+78reserve+89finalize+113bind),
+12UTC cases, preexisting public rows byte-equal. Шесть раундов по20 настоящих
+PostgreSQL соединений, одновременно ожидающих owner lock; перед каждым99 actual
+admit+finalize на synthetic jobs, last-slot/replay/technical failure/exactly once PASS.
+Отдельный `--anchors --legacy-guard --cap-regression`: clean/upgrade55+131pgTAP,
+4 реальные T161 races PASS. Deno336, automation115, deno-check/diff-check PASS.
+Старый shared t161 --slots FAIL table-key equality из-за новых таблиц: не изменён
+и не выдан за PASS. [Подробный отчёт](validation/automation/parallel-backend-quota-sql-acceptance-2026-11-09.md).
 
-**Подготовка run05:** новый узкий `tasks.parallel-backend-quota-settle-bind.json`
-(2tasks):009 только finalize/release →010 только installation bind. Оба —
-Developer/Reviewer/QA high-risk; внешние accepted SHA constraints, depends_on
-только внутри manifest. Контракт monthly-access.md согласован с010.
-Controller gate добавил `--bind`, проверку обязательного010 и реальные pgTAP
-binding tests; full gate теперь также повторяет все78 reserve regression.
-В default full gate сохранены99настоящих admit/finalize +6раундов20одновременно
-наблюдаемых соединений, technical failure/replay/terminalOnce; --reserve их не заменяет.
-Check `parallel-backend-quota-bind` argv `python3 tools/automation/parallel_backend_quota_gate.py --bind`,
-unit/fixture/300s. Config hash `5df700479dc274b65fb61fd76c836251c09594d04ebd0ff122a98010dbd96f49`;
-routing/retry/budgets/defaultconfig неизменны, publish только origin/codex/plants-backend.
-Validate2/developer context/help/diff PASS. Full finalize/bind gates до реализации
-не выполнялись; их наличие не означает продуктовой готовности.
+**Файлы завершённого среза:** новые009/010 SQL, registration_admission/bind pgTAP,
+controller gate/manifest, task reports. Сейчас добавлены B1 сводка и B2 proposal
+`contracts/monthly-access-http.md`, canonical expected fixtures/monthly-access.json,
+уточнён monthly-access.md. Это предложение нового API, не работающий endpoint.
 
-**Следующий шаг:** commit/push подготовки и clean-tree
-`parallel-backend-quota-sql-20261109-05` с явным branch --config. Сначала одна
-bounded finalize RPC безbind, затем отдельныйbind. После принятых009/010 —
-B2 authoritative access snapshot/production HTTP adapters/ENPL fixtures.
-Prod worker/job adapters пока injection-only, нельзя выдавать фиктивный202;
-full T163/T036/client/live остаются открыты. Swift B не редактировала/не запускала.
-A сообщила accepted durable ACK22bc1a6 (64Swift); main по последней согласованной
-интеграции72bcccc, уже подхвачен междуB runs. Новые A commits — после опубликованного
-интеграционногоSHA и только междуruns. Истории handoff сохранены, checkbox B не меняла.
+**Ограничения:** fixtures не live Auth/Supabase/Storage/provider/StoreKit. Swift/
+Simulator B не запускала; full T163/T036/guest transfer/T153 открыты, checkbox не
+менялись. Владелец подтвердил: неизвестную legacy дату блокировать до verified Auth
+import, не угадывать по покупке/созданию guest. Production job/worker пока injection-only,
+нельзя объявлять фиктивный202. Collection wire неизменён.
+
+**Точный следующий шаг:** отдельный bounded `tasks.parallel-backend-quota-api.json`:
+сначала credential register/bind RPC и authoritative SQL snapshot, затем реальные
+production HTTP adapters/ENPL/transport fixture gates; новый run ID и явный branch
+config, publish только origin/codex/plants-backend. B1 merge-ready a367d0b передаётся
+A только как SQL prerequisite, без deploy/полного T163. A сообщила repository save/
+resume193a704 (99Swift), это evidence A. Последняя согласованная main72bcccc уже
+подхвачена B; новые integration SHA — только между B runs. Подготовку/сводку сохранить
+обычным commit/push до запуска B2.
 
 
 ## B — run03: guard принят; reserve-кандидат восстановлен, run04 следующий
@@ -685,7 +683,7 @@ T148 остаётся на прежней остановке до запуска
 - Оркестратор: простые low/low задачи проходят все checks и одну совмещённую Review/QA на Sol; высокий риск/сложные или повторные замечания — Astra. Resume известной сессии передаёт delta/errors; свежая сессия — полный контракт. Metrics включает все повторы на COMPLETED и сравнивает только одинаковый quality_contract. 115 automation fixtures PASS; live CLI cap/SQL Astra split, TS Sol split и T168 Sol combined приняты, экономика одинакового контракта не измерена. Для нового config нужен новый run-id.
 - Auth/profile 9551807, production sync c26a4e0/catalogue create 88345ed и typed receipt e8a12fe приняты. Receipt принят e8a12fe; canonical sync DTO/transport A1 принят 7cb5893 (43 tests/Simulator/Review/QA). A2 canonical engine/disk принят 643622b (49 tests/Simulator/high-risk Review/QA), после исправления null encode и failed-save contexts; durable receipt store 09e9b3a принят(55 tests), engine ACK/UI/repository/live не готовы.
 - Владелец поручил подготовить два оркестратора: docs/parallel/README.md, session-ios.md (A=59 ID) и session-backend.md (B=78 ID), allocation.json покрывает все 137 открытых ID. A worktree/ветка codex/plants-ios создана от 4bbd35a; подготовка f4a67ad опубликована. A1 run-01 WAITING: два невалидных diff, третий вызов прерван; кандидат call-2 восстановлен изменением только diff-разделителя, затем принят в run-03. Run-02 compile failure сохранён; run-03 COMPLETED 7cb5893 с полной приёмкой A1 (43 tests); A2 run-01 timeout/raw diff сохранён; run-02/03 FAIL оставлены в истории. Run-04 COMPLETED 643622b,49tests/Simulator/Review/QA; durable receipt store 09e9b3a COMPLETED 55tests; далее mergeB a04794c→engine ACK→repository/UI. B подтвердила запуск; a04794c разрешён для ограниченного merge. Интеграция 947d602 опубликована обычным main push из чистого checkout, runtime fingerprint63025c67/55Swift+SQL+Deno/Simulator PASS; следующий engine durable ACK. A: клиент T162 wire→disk→save и интегратор; B: T163 quota SQL/API→guest/контракты. Свои ветки/publish config обязательны; общий Simulator только A. T172–T174 не входят в текущий запуск.
-- B prerequisite a04794c объединяется:005 immutable registration anchors21ee7a7,006 ledger e6b1f7c,007 legacy state guard. ПолныйT163/новые reserve/settlement/B2 и клиентT036 ещё открыты; unknown legacy registration fail-closed подтверждён владельцем. Collection wire не менялся. Объединённые SQL/Deno/115automation/55Swift/Simulator gates PASS, fingerprint63025c67; docs-only main6a9584d сохранён, main 947d602 опубликован; live/deploy нет.
+- B SQL core a367d0b принят:008 reserve141d548,009 finalize42ed071,010 bind a367d0b; clean/upgrade384pgTAP,99actual+6x20races,Deno336/automation115 PASS. B2 API/T036/live ещё открыты; legacy unknown date блокируется по подтверждению владельца. Подробности в верхней B секции. Ранее B prerequisite a04794c объединяется:005 immutable registration anchors21ee7a7,006 ledger e6b1f7c,007 legacy state guard. ПолныйT163/новые reserve/settlement/B2 и клиентT036 ещё открыты; unknown legacy registration fail-closed подтверждён владельцем. Collection wire не менялся. Объединённые SQL/Deno/115automation/55Swift/Simulator gates PASS, fingerprint63025c67; docs-only main6a9584d сохранён, main 947d602 опубликован; live/deploy нет.
 - Реестр запуска из main6a9584d сохранён: A chat01a1c14d-187a-7d91-ac6d-62ae00ec6104, B chat01a1c14d-2b1b-7673-83c4-c95f6fe7f7c1, host local, отдельные worktree/ветки; allocation.status=sessions_started.
 - Handoff/tasks/Git изменяет только управляющий процесс; в параллельных worktree каждый controller обновляет собственный handoff, A объединяет факты и итоговые tasks. Fixtures ≠ live; снятый объём не выполнение. Задания A/B разрешают существующий Developer/Reviewer/QA workflow; дополнительные деревья субагентов на старте не запускаются.
 <!-- /orchestrator:project-state -->

@@ -1,6 +1,6 @@
 # Месячный доступ — T163
 
-Статус 2026-11-09: контракт подготовки B; реализация/приёмка фиксируются в handoff.
+Статус 2026-11-09: SQL005–010 приняты на fixtures до a367d0b; HTTP B2/client/live ещё не приняты.
 Основание: spec FR-005/017/065. `collection-http.md` не изменяется.
 
 ## Период и доступ
@@ -75,11 +75,14 @@ registration anchor/period UTC. Remaining=max(0,limit-consumed-reserved),
 nextResetAt=end регистрационного окна; гостю без monthly — null.
 До B2 это целевая граница, текущий инъекционный TS adapter не production proof.
 Exhaustion: free_monthly_exhausted / paid_monthly_exhausted, HTTP 429
-QUOTA_EXCEEDED с remaining=0/reset; starter_in_progress — 409; missing verified
-anchor/history — 503 QUOTA_UNAVAILABLE (EN/PL), без успешного fallback.
+QUOTA_EXHAUSTED с remaining=0/reset; starter_in_progress — 409; missing verified
+anchor/history — unavailable status в GET (независимый starter может быть доступен),
+503 INTERNAL_ERROR в будущей denied mutation; EN/PL, без успешного fallback.
 Identity/owner mismatch — 403, payload/operation mismatch — 409, invalid mode —400.
 
 Готовность: trusted PG17 clean + seeded-upgrade, 20 одновременно наблюдаемых
 соединений на последний остаток, replay/finalizeOnce/failure/A-B; затем Deno
 handlers/production adapters и клиент A/T036. Fixtures не доказывают live Supabase,
 Auth, Storage, provider или StoreKit. Полная T163 остаётся открытой.
+
+Конкретный B2 HTTP wire proposal и canonical fixtures: [monthly-access-http.md](monthly-access-http.md).
