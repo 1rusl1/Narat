@@ -5,6 +5,14 @@
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Принят первый prerequisite T019/T162 — 9 ноября 2026
+
+Оркестратор `t019-auth-profile-20261109-01` завершён **COMPLETED / Verified and published**; runtime commit `9551807` отправлен в origin/main. Developer 1, независимые Reviewer 1 и QA 1, без repairs. Устранён fail-open default auth resolver: missing/invalid/deleting/deleted profile не становится active; ошибка чтения profile даёт generic EN/PL 503 без raw DB error. Auth seam использует настоящий Supabase client с mocked transport только в тестах; штатная авторизация остаётся настоящей.
+
+**Изменены:** `supabase/functions/plants-api/index.ts`, новый `_shared/tests/auth_profile_test.ts`; оркестратор сохранил task report и Task Summary handoff. Контроллер дополнительно обновил этот текущий статус. **Проверки:** Deno typecheck/diff-check PASS; полный Deno fixture suite **316 PASS / 0 failed**, включая **57 новых auth HTTP fixtures PASS**; отдельный targeted gate также 57 PASS. Это не 373 уникальных теста. Проверены реальные default resolver и Supabase HTTP composition на mocked transport, owner boundaries и отсутствие вызова handlers при отказе. Reviewer/QA PASS. Live Auth/Supabase, SQL, iOS/Simulator не запускались этим срезом; сохранение/sync пока не подключены. Полные T019/T162 и остальные checkbox остаются открытыми.
+
+**Точная точка продолжения:** из `tasks.t162-foundation.json` подготовить меньший manifest только command/sync adapter после принятого auth prerequisite: canonical Swift envelope → execute_plant_create_command/fetch_sync_delta, production wiring, collection cap mapping, exact receipt/sync projection, HTTP fixtures и существующий PostgreSQL cap regression. Исключить уже выполненную auth-работу, не resume старый timeout run. Затем клиентские DTO/repository/save/card/pending/restart/A-B. Старый большой run сохранён WAITING без патча; его timeout не выдан за приёмку. Комнаты/live/deploy не запускались.
+
 ## T162 run-01: тайм-аут без патча; уменьшен следующий срез
 
 `t162-foundation-20261109-01` — WAITING, Developer 1: CLI timeout900s, answer.json отсутствует, патч не применён. Product checks/Review/QA не запускались, готовность не подтверждена. Исходные evidence сохраняются; старую очередь не resume с изменённым контрактом.
