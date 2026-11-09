@@ -378,8 +378,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     ["entity_type": "plants", "id": plant.id.uuidString, "updated_at": plant.timestamp,
                      "deleted_at": NSNull(), "data": [
                         "id": plant.id.uuidString, "plant_id": plant.species,
-                        "personal_name": plant.name as Any? ?? NSNull(), "display_name": "Fern",
-                        "revision": 1, "care_revision": 1, "care_enabled": false,
+                        "personal_name": plant.name as Any? ?? NSNull(),
+                        "display_name": plant.name as Any? ?? NSNull(),
+                        "revision": 1, "care_revision": 1,
                         "created_at": plant.timestamp
                      ]]
                 }
@@ -424,12 +425,16 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 try persist(next); return try error(409, "COLLECTION_LIMIT_REACHED")
             }
             next.tick += 1
+            // Match SQL trim/NULLIF and the published Polish catalogue-name fallback.
+            let suppliedName = (payload["personal_name"] as? String)?.trimmingCharacters(in: CharacterSet(charactersIn: " "))
+            let personalName = suppliedName.flatMap { $0.isEmpty ? nil : $0 } ?? "Paproć"
             let plant = Plant(owner: caller, id: UUID(), species: "fixture-fern",
-                              name: payload["personal_name"] as? String, timestamp: Self.time(next.tick))
+                              name: personalName, timestamp: Self.time(next.tick))
             let receipt = try json([
                 "plant_id": plant.id.uuidString, "care_revision": 1, "context_state": "current",
-                "next_available_step": "complete_conditions", "paid_action": NSNull(),
-                "plan_availability": "none", "watermark": plant.timestamp
+                // This published species has no published care profile or generated plan.
+                "next_available_step": "view_plant", "paid_action": NSNull(),
+                "plan_availability": "care_profile_unavailable", "watermark": plant.timestamp
             ])
             next.plants.append(plant)
             next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)

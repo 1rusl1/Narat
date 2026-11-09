@@ -767,7 +767,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-catalogue-native-recovery: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-catalogue-native-recovery](validation/automation/tasks/parallel-ios-catalogue-native-recovery.md).
+parallel-ios-catalogue-fixture-recovery: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-catalogue-fixture-recovery](validation/automation/tasks/parallel-ios-catalogue-fixture-recovery.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
