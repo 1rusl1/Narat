@@ -200,5 +200,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-Оптимизация оркестратора: combined Review/QA для low/low, Sol/Astra escalation, delta-resume и метрики на принятую задачу реализованы. 115 automation tests PASS; все 14 manifests валидны; новое context и чтение старых metrics PASS. Живые модели/продуктовый run не запускались; экономия не измерена. Продуктовые checkbox не менялись. Следующий инфраструктурный шаг — сопоставимый split/combined замер в изолированных копиях; продуктовый — manifest/gate T161.
+t161-atomic-collection-cap: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t161-atomic-collection-cap](validation/automation/tasks/t161-atomic-collection-cap.md).
+Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
