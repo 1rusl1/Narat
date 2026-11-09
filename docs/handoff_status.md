@@ -210,7 +210,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t161-atomic-collection-cap: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t161-atomic-collection-cap](validation/automation/tasks/t161-atomic-collection-cap.md).
+t161-retire-sql-free-slots-recovery: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t161-retire-sql-free-slots-recovery](validation/automation/tasks/t161-retire-sql-free-slots-recovery.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
