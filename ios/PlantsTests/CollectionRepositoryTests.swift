@@ -43,6 +43,27 @@ private actor CapacityTransport: PlantsAPITransport {
     }
 }
 
+private actor OutboxFailureTransport: PlantsAPITransport {
+    private let status: Int?
+    private let body: Data
+    private var requests: [URLRequest] = []
+
+    init(status: Int? = nil, body: Data = Data()) {
+        self.status = status
+        self.body = body
+    }
+
+    func captured() -> [URLRequest] { requests }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        guard let status else { throw URLError(.notConnectedToInternet) }
+        return (body, HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil
+        )!)
+    }
+}
+
 @MainActor
 final class CollectionRepositoryTests: XCTestCase {
     private let owner = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
@@ -379,5 +400,260 @@ final class CollectionRepositoryTests: XCTestCase {
         XCTAssertNil(after.entitlement)
         let legacy = try await reopened.activeSyncedEntities(ownerId: owner, entityType: "plant")
         XCTAssertTrue(legacy.isEmpty)
+    }
+
+    private func assertFrozenCommand(_ actual: OutboxEntrySnapshot, _ original: OutboxEntrySnapshot) {
+        XCTAssertEqual(actual.operationId, original.operationId)
+        XCTAssertEqual(actual.ownerId, original.ownerId)
+        XCTAssertEqual(actual.plantId, original.plantId)
+        XCTAssertTrue(actual.commandName.utf8.elementsEqual(original.commandName.utf8))
+        XCTAssertTrue(actual.payloadJSON.utf8.elementsEqual(original.payloadJSON.utf8))
+        XCTAssertEqual(actual.sequenceNumber, original.sequenceNumber)
+        XCTAssertEqual(actual.createdAt, original.createdAt)
+    }
+
+    func testEnqueueExactReplayAfterDiskRestartPreservesCommittedRetrySnapshot() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let original: OutboxEntrySnapshot
+        let foreign: OutboxEntrySnapshot
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            let queued = try await store.enqueueCommand(
+                ownerId: owner, plantId: UUID(), commandName: "care.complete", payloadJSON: #" { "amount": 1 } "#
+            )
+            try await store.recordOutboxFailure(operationId: queued.operationId, errorMessage: "legacy failure")
+            try await store.recordOutboxFailure(operationId: queued.operationId, errorMessage: "second failure")
+            let pending = try await store.pendingOutboxEntries(for: owner)
+            original = try XCTUnwrap(pending.first)
+            foreign = try await store.enqueueCommand(
+                ownerId: other, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+            )
+        }
+        for _ in 0..<2 {
+            let store = LocalStore(modelContainer: try container(url))
+            let replay = try await store.enqueueCommand(
+                operationId: original.operationId, ownerId: owner, plantId: original.plantId,
+                commandName: original.commandName, payloadJSON: original.payloadJSON
+            )
+            XCTAssertEqual(replay, original)
+            assertFrozenCommand(replay, original)
+            XCTAssertEqual(replay.retryCount, 2)
+            XCTAssertEqual(replay.lastError, "second failure")
+            let own = try await store.pendingOutboxEntries(for: owner)
+            let others = try await store.pendingOutboxEntries(for: other)
+            XCTAssertEqual(own, [original])
+            XCTAssertEqual(others, [foreign])
+        }
+        let reopened = LocalStore(modelContainer: try container(url))
+        let next = try await reopened.enqueueCommand(
+            ownerId: owner, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+        )
+        XCTAssertEqual(next.sequenceNumber, foreign.sequenceNumber + 1)
+    }
+
+    private func assertRejectedReplays(
+        foreignOwner: Bool, changes: [(UUID?, String, String)]
+    ) async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let original: OutboxEntrySnapshot
+        let foreign: OutboxEntrySnapshot
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            let queued = try await store.enqueueCommand(
+                ownerId: owner, plantId: other, commandName: "care.complete",
+                payloadJSON: "{ \"name\": \"\u{00E9}\", \"amount\": 1 }"
+            )
+            try await store.recordOutboxFailure(operationId: queued.operationId, errorMessage: "retained")
+            let pending = try await store.pendingOutboxEntries(for: owner)
+            original = try XCTUnwrap(pending.first)
+            foreign = try await store.enqueueCommand(
+                ownerId: other, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+            )
+        }
+        for (plantId, commandName, payload) in changes {
+            let store = LocalStore(modelContainer: try container(url))
+            do {
+                _ = try await store.enqueueCommand(
+                    operationId: original.operationId, ownerId: foreignOwner ? other : owner,
+                    plantId: plantId, commandName: commandName, payloadJSON: payload
+                )
+                XCTFail("Conflicting enqueue must fail without returning a queued snapshot")
+            } catch {
+                XCTAssertEqual(error as? OutboxEnqueueError, .operationIdentityMismatch)
+            }
+            let reopened = LocalStore(modelContainer: try container(url))
+            let own = try await reopened.pendingOutboxEntries(for: owner)
+            let others = try await reopened.pendingOutboxEntries(for: other)
+            XCTAssertEqual(own, [original])
+            assertFrozenCommand(try XCTUnwrap(own.first), original)
+            XCTAssertEqual(others, [foreign])
+        }
+        let reopened = LocalStore(modelContainer: try container(url))
+        let next = try await reopened.enqueueCommand(
+            ownerId: foreignOwner ? other : owner, plantId: nil,
+            commandName: "care.complete", payloadJSON: "{}"
+        )
+        XCTAssertEqual(next.sequenceNumber, foreign.sequenceNumber + 1)
+    }
+
+    func testEnqueueForeignOwnerCollisionCannotExposeOrMutateCommittedQueue() async throws {
+        let exact = (Optional(other), "care.complete", "{ \"name\": \"\u{00E9}\", \"amount\": 1 }")
+        try await assertRejectedReplays(foreignOwner: true, changes: [exact, exact])
+    }
+
+    func testEnqueueChangedPlantCommandOrPayloadCannotMutateDiskOrAllocateSequence() async throws {
+        let payload = "{ \"name\": \"\u{00E9}\", \"amount\": 1 }"
+        try await assertRejectedReplays(foreignOwner: false, changes: [
+            (nil, "care.complete", payload),
+            (UUID(), "care.complete", payload),
+            (other, "care.undo", payload),
+            (other, "care.complete", payload + " "),
+            (other, "care.complete", #"{"amount":1,"name":"é"}"#),
+            (other, "care.complete", "{ \"name\": \"e\u{0301}\", \"amount\": 1 }"),
+            (other, "care.complete", #"{"name":"é","amount":2}"#)
+        ])
+    }
+
+    private func assertTypedOutboxFailure(
+        status: Int, code: String, message: String, retryable: Bool
+    ) async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let body = try json(["error": ["code": code, "message": message, "retryable": retryable]])
+        let expected = APIErrorResponse(error: .init(code: code, message: message, retryable: retryable))
+        let original: OutboxEntrySnapshot
+        let foreign: OutboxEntrySnapshot
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            original = try await store.enqueueCommand(
+                ownerId: owner, plantId: nil, commandName: "plant.create",
+                payloadJSON: #" { "plant_id":"fixture-fern", "creation_source":"catalogue", "personal_name":"Paproć" } "#
+            )
+            foreign = try await store.enqueueCommand(
+                ownerId: other, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+            )
+        }
+        var firstBody: Data?
+        for attempt in 1...2 {
+            do {
+                // Recreate the API, engine, actor and disk container for each delivery.
+                let store = LocalStore(modelContainer: try container(url))
+                let transport = OutboxFailureTransport(status: status, body: body)
+                let api = PlantsAPIClient(transport: transport)
+                await api.bindSyncSession(session)
+                let committed = try await SyncEngine(store: store, apiClient: api).flushOutbox(for: owner)
+                XCTAssertEqual(committed, 0)
+                let requests = await transport.captured()
+                XCTAssertEqual(requests.count, 1)
+                let request = try XCTUnwrap(requests.first)
+                XCTAssertEqual(request.httpMethod, "POST")
+                XCTAssertEqual(request.url?.lastPathComponent, "commands")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), original.operationId.uuidString.lowercased())
+                let sentBody = try XCTUnwrap(request.httpBody)
+                if let firstBody { XCTAssertEqual(sentBody, firstBody) }
+                else { firstBody = sentBody }
+                let sent = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: sentBody)
+                XCTAssertEqual(sent.operationId, original.operationId)
+                XCTAssertEqual(sent.plantId, original.plantId)
+                XCTAssertEqual(sent.commandName, original.commandName)
+                XCTAssertTrue(sent.payloadJSON.utf8.elementsEqual(original.payloadJSON.utf8))
+            }
+            let reopened = LocalStore(modelContainer: try container(url))
+            let pending = try await reopened.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(pending.count, 1)
+            let failed = try XCTUnwrap(pending.first)
+            assertFrozenCommand(failed, original)
+            XCTAssertEqual(failed.retryCount, attempt)
+            XCTAssertEqual(failed.lastAPIError, expected)
+            let stored = try XCTUnwrap(failed.lastError)
+            XCTAssertEqual(try JSONDecoder().decode(APIErrorResponse.self, from: Data(stored.utf8)), expected)
+            let replay = try await reopened.enqueueCommand(
+                operationId: original.operationId, ownerId: owner, plantId: original.plantId,
+                commandName: original.commandName, payloadJSON: original.payloadJSON
+            )
+            XCTAssertEqual(replay, failed)
+            let others = try await reopened.pendingOutboxEntries(for: other)
+            XCTAssertEqual(others, [foreign])
+            let confirmation = try await reopened.catalogueCreateConfirmation(ownerId: owner, operationId: original.operationId)
+            XCTAssertNil(confirmation)
+        }
+    }
+
+    func testAPI409CollectionLimitPersistsTypedNonretryableFailureThroughEngineAndRestart() async throws {
+        try await assertTypedOutboxFailure(
+            status: 409, code: "COLLECTION_LIMIT_REACHED",
+            message: "Limit kolekcji osiągnięty — spróbuj później.", retryable: false
+        )
+    }
+
+    func testAPI503InternalErrorPersistsTypedRetryableFailureThroughEngineAndRestart() async throws {
+        try await assertTypedOutboxFailure(
+            status: 503, code: "INTERNAL_ERROR",
+            message: "Temporarily unavailable: \"try again\".\nSpróbuj ponownie.", retryable: true
+        )
+    }
+
+    func testLegacyAndMalformedErrorTextNeverBecomesTypedAfterDiskRestart() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let original: OutboxEntrySnapshot
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            original = try await store.enqueueCommand(
+                ownerId: owner, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+            )
+        }
+        XCTAssertNil(original.lastAPIError)
+        let messages = [
+            "COLLECTION_LIMIT_REACHED / QUOTA_EXHAUSTED / UNAUTHORIZED",
+            "APIErrorResponse(error: COLLECTION_LIMIT_REACHED)",
+            #"{"error":{"code":"COLLECTION_LIMIT_REACHED","message":"Legacy","retryable":"false"}}"#,
+            #"{"error":{"code":"INTERNAL_ERROR","message":"Legacy"}}"#,
+            #"{"error":{"code":"INTERNAL_ERROR","message":"Legacy","retryable":true}} trailing"#,
+            #"{"code":"UNAUTHORIZED","message":"Legacy","retryable":false}"#,
+            "{}"
+        ]
+        for (index, message) in messages.enumerated() {
+            do {
+                let store = LocalStore(modelContainer: try container(url))
+                try await store.recordOutboxFailure(operationId: original.operationId, errorMessage: message)
+            }
+            let reopened = LocalStore(modelContainer: try container(url))
+            let pending = try await reopened.pendingOutboxEntries(for: owner)
+            let failed = try XCTUnwrap(pending.first)
+            assertFrozenCommand(failed, original)
+            XCTAssertEqual(failed.lastError, message)
+            XCTAssertEqual(failed.retryCount, index + 1)
+            XCTAssertNil(failed.lastAPIError)
+        }
+    }
+
+    func testNonAPITransportFailureKeepsLegacyDiagnosticAndNilTypedProjectionOnDisk() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let original: OutboxEntrySnapshot
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            original = try await store.enqueueCommand(
+                ownerId: owner, plantId: nil, commandName: "plant.create",
+                payloadJSON: #"{"plant_id":"fixture-fern","creation_source":"catalogue"}"#
+            )
+            let transport = OutboxFailureTransport()
+            let api = PlantsAPIClient(transport: transport)
+            await api.bindSyncSession(session)
+            let committed = try await SyncEngine(store: store, apiClient: api).flushOutbox(for: owner)
+            XCTAssertEqual(committed, 0)
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.count, 1)
+        }
+        let reopened = LocalStore(modelContainer: try container(url))
+        let pending = try await reopened.pendingOutboxEntries(for: owner)
+        let failed = try XCTUnwrap(pending.first)
+        assertFrozenCommand(failed, original)
+        XCTAssertEqual(failed.retryCount, 1)
+        XCTAssertEqual(failed.lastError, String(describing: URLError(.notConnectedToInternet) as any Error))
+        XCTAssertNil(failed.lastAPIError)
     }
 }

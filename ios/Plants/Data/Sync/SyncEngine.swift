@@ -134,9 +134,15 @@ public actor SyncEngine {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 // Cancellation/auth changes abort the drain without touching the captured queue.
                 try await apiClient.validateSyncContext(context)
+                let failure: String
+                if let apiError = error as? APIErrorResponse {
+                    failure = String(decoding: try JSONEncoder().encode(apiError), as: UTF8.self)
+                } else {
+                    failure = String(describing: error)
+                }
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority,
-                    failure: String(describing: error)
+                    failure: failure
                 )
                 if let plantId = entry.plantId {
                     blockedPlantIds.insert(plantId)

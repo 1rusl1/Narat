@@ -647,7 +647,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-catalogue-capacity-recovery: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-catalogue-capacity-recovery](validation/automation/tasks/parallel-ios-catalogue-capacity-recovery.md).
+parallel-ios-outbox-identity-errors: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-outbox-identity-errors](validation/automation/tasks/parallel-ios-outbox-identity-errors.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

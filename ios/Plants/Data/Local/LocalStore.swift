@@ -192,6 +192,12 @@ public struct OutboxEntrySnapshot: Codable, Sendable, Equatable {
     public let lastError: String?
     public let createdAt: Date
 
+    /// Legacy diagnostic text is deliberately not classified as an API error.
+    public var lastAPIError: APIErrorResponse? {
+        guard let lastError else { return nil }
+        return try? JSONDecoder().decode(APIErrorResponse.self, from: Data(lastError.utf8))
+    }
+
     public init(
         operationId: UUID,
         ownerId: UUID,
@@ -213,6 +219,10 @@ public struct OutboxEntrySnapshot: Codable, Sendable, Equatable {
         self.lastError = lastError
         self.createdAt = createdAt
     }
+}
+
+public enum OutboxEnqueueError: Error, Sendable, Equatable {
+    case operationIdentityMismatch
 }
 
 public struct CatalogueCreateConfirmationSnapshot: Sendable, Equatable {
@@ -304,6 +314,12 @@ public actor LocalStore {
             predicate: #Predicate { $0.operationId == operationId }
         )
         if let existing = try modelContext.fetch(existingDescriptor).first {
+            guard existing.ownerId == ownerId,
+                  existing.plantId == plantId,
+                  existing.commandName.utf8.elementsEqual(commandName.utf8),
+                  existing.payloadJSON.utf8.elementsEqual(payloadJSON.utf8) else {
+                throw OutboxEnqueueError.operationIdentityMismatch
+            }
             return OutboxEntrySnapshot(
                 operationId: existing.operationId,
                 ownerId: existing.ownerId,
