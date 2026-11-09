@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-input-checkpoint",
+      "description": "Minimal canonical catalogue input and immutable owner+flow checkpoint in existing LocalStore before native provider. No UI/Auth SDK wiring or guest claim.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files exact small contextual diff; no new files/project/backend/contracts/tools/config/handoff/tasks/AGENTS/deploy/live. Accepted save193a704 (99actual tests/build/Simulator/highrisk Review/QA) and all99 actual tests preserved. This packet input/checkpoint ONLY, not UI/provider/session migration. Existing LocalStore and SwiftData/schema; no second persistence framework, no UserDefaults storing payload, no synthetic guest serverdraft/claim/receipt/expiry.",
+        "Add small public Sendable Equatable catalogue input value for selected species slug and optional personal name ONLY. Builder produces existing CommandEnvelopeDTO with CALLER supplied stable operationUUID, creation_source=catalogue, plant_id species slug and personal_name only when supplied (or explicitnull allowed consistently); deterministic sorted encoding and reuse existing CatalogueCreateWire.validate. Preserve exact string bytes/no trimming or invented names. Bare catalogue species/no photo is valid; empty/invalid species fails before cache/requests. Do NOT serialize old CareConditionsInput enums, season_override/camera_estimate/rooms/sourceguest/photo/analysis/TTL/defaultprofile; do not invent transformations or require old questionnaire.",
+        "Add dedicated tiny @Model CatalogueInputCheckpointRecord inside existing LocalStore.swift plus existing makeContainer schema registration (new table, no destructive migration). Scope by explicit authenticated SDK session owner AND flowUUID; snapshot Sendable with original flow/op/exact envelope/createdAt (no managedmodel escape). Immutable checkpoint: first successful checkpoint freezes flow+op+payload; exact retry returns original, different op/payload for same flow fails closed without mutation. UI may later explicitly start a NEW flow/op for new unsent edited input. Do not silently rewrite or generate operationId. Read only exact owner+flow under original bound lease. No generic allowner search, no owner reassignment/copying outbox/receipt, no automatic cache transfer on login.",
+        "Expose internal checkpoint/read methods accepting ORIGINAL bound canonical SyncSessionLease+sameauthority; use withBoundValid and isolated fresh ModelContext, no await under lock, cancellation/session/authority checked inside atomic disk operation. Anonymous bound session may cache LOCAL catalogue input (this is not plant.create permission); existing repository still returns signInRequired/no GET/POST/enqueue for isAnonymoustrue. Never infer permanent SDK flag. Check conflicts against existing global queued op owner/plant/command/UTF8payload and own durable confirmation payload without exposing foreign details; keep accepted journal/ACK semantics unchanged, small shared helper allowed if needed. No queue insert/dispatch/ACK/checkpoint watermark mutation here.",
+        "Persist only canonical validated envelope/input; malformed cache errors fail closed without manufacturing defaults or deleting originaldata. Real SQLite save failure must not leave phantom checkpoint in same actor or reopen; exact writable retry persists once. Keep existing five tables/data/schemas/backward read including GuestDraftCache unchanged (do not reuse seven-day guest-cache fields or isCompleteForFallback). No TTL/business retention invention; no credential/token/signin proof in record or logs.",
+        "Add>=6 meaningful actual tests to already-target CollectionRepositoryTests; retain99old, total>=105/no skips. Use actual builder->accepted repository/API/engine path for valid bare species/optionalUnicode name and exact outgoing admitted fields; actual on-disk checkpoint+independent reopen/exact replay/changedpayload or op rejected/owner-isolation/queue/receipt/rawwatermark unchanged. Open real historical5table SQLite schema seeded with queued ops+confirmation/cache/checkpoint+guest data, upgrade to new6table schema, prove data unchanged and newcache works; modify test container helper schema properly before evidence, no fake migration claim. Include original bound guest input checkpoint+save signInRequired/no network/queue; A/B/ABA/cancel/unbound/differentauthority cannot read/write; real readonlySQLite save failure/no phantom/writable retry. Build/unit/Simulator/highrisk independent Reviewer/QA. UI/nativeAuth/live/T162 parents remainopen."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Minimal admitted catalogue input yields frozen envelope and immutable owner+flow local checkpoint across disk restart; guest input caching differs from create permission, sessions/conflicts/failed writes and old5table upgrade preserve all state. All99old+>=6new => >=105 actual tests/no skips/build/Simulator and independent highrisk Review/QA; no UI/Auth/live/parent acceptance.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
