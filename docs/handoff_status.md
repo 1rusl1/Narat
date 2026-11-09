@@ -2,6 +2,29 @@
 
 **Обновлено 2026-11-09.** B запущена в отдельном worktree/ветке codex/plants-backend от 4bbd35a; подготовлены контракт T163 и два SQL-среза с отдельным trusted PG17 gate. Реальная приёмка этих SQL ещё впереди; T163/T036 открыты. A независимо ведёт клиентский sync; collection-http.md стабилен.
 
+## B / T163 — run-01 WAITING и recovery, 2026-11-09
+
+Подготовка `365840a` успешно опубликована в origin/codex/plants-backend.
+Реальный `parallel-backend-quota-sql-20261109-01`: Developer Sol/high вызван один
+раз, **900s timeout**, answer.json/патча нет; первый срез WAITING, admission PENDING.
+SQL не создан/не применён, Reviewer/QA и продуктовые SQL/Deno gates не запускались.
+State/logs сохранены в ignored `docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-01/`; исходный run не resume.
+
+Владелец прямо подтвердил: неизвестную legacy дату permanent регистрации
+блокировать до подтверждённого импорта из Auth. Решение передано A, starter не
+выдаётся заново. Подготовлен новый `tasks.parallel-backend-quota-sql-recovery.json`:
+005 anchors/windows →006 legacy ledger →007 admission. Старый manifest сохранён
+как аудит run-01, **не запускать**. `parallel_backend_quota_gate.py` получил --anchors,
+контракт monthly-access.md согласован с тремя миграциями. Config hash теперь
+`608c6a50dd40b90e6aeb6b89163e6fc666469b8d44b81d2d1b10289df73bcbb9`;
+новый check argv `python3 tools/automation/parallel_backend_quota_gate.py --anchors`,
+unit/fixture/300s. Routing/budgets/default config/publish branch не менялись.
+Validate (3 tasks), developer context и diff-check PASS. Product checkbox открыты.
+
+**Точный следующий шаг:** commit/push recovery подготовки, затем clean-tree
+`parallel-backend-quota-sql-20261109-02` с явным branch --config; runtime приёмки нет.
+После принятого SQL — отдельный API-пакет; live и клиент A/T036 остаются обязательными.
+
 ## B / T163 — подготовка registration quota, 2026-11-09
 
 **Выполнено:** `contracts/monthly-access.md` фиксирует registration UTC anchor,
@@ -356,3 +379,5 @@ t162-client-create-receipt-recovery: проверки и Review/QA пройде�
 Отчёт: [t162-client-create-receipt-recovery](validation/automation/tasks/t162-client-create-receipt-recovery.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
+
+Recovery negative control `--baseline --anchors` повторён: ожидаемый exit1 на старом Free1/calendar, `/tmp/narat-b163-baseline-v2.log`; это не продуктовый PASS.

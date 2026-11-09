@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 BIN = Path('/opt/homebrew/opt/postgresql@17/bin')
 PGTAP = Path('/private/tmp/pgtap-1.3.4/sql/pgtap.sql')
 FIRST = '202611090005_registration_quotas.sql'
-SECOND = '202611090006_quota_admission.sql'
+LEDGER = '202611090006_registration_ledger.sql'
+SECOND = '202611090007_quota_admission.sql'
 A = '16300000-0000-4000-8000-000000000001'
 B = '16300000-0000-4000-8000-000000000002'
 K = '16300000-0000-4000-8000-000000000100'
@@ -28,6 +29,7 @@ def job(i):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--anchors', action='store_true')
     parser.add_argument('--accounting', action='store_true')
     parser.add_argument('--baseline', action='store_true', help='Negative control; expected product rejection is NOT acceptance')
     args = parser.parse_args()
@@ -92,7 +94,10 @@ def main():
         # Legacy profile cannot silently obtain a purchase-derived anchor.
         if db == 'upgrade':
             check(db, f"(SELECT registered_at IS NULL FROM public.account_quota_anchors WHERE owner_id='{A}')", 'unproven legacy registration remains explicit NULL')
-            sql(db, f"SELECT public.set_registration_quota_anchor('{A}','{ANCHOR}','fixture verified permanent-registration event'); SELECT public.reconcile_registration_quota('{A}');")
+            sql(db, f"SELECT public.set_registration_quota_anchor('{A}','{ANCHOR}','fixture verified permanent-registration event');")
+            if args.anchors:
+                return
+            sql(db, f"SELECT public.reconcile_registration_quota('{A}');")
             check(db, f"(SELECT count(*)=2 FROM public.account_quota_usage WHERE owner_id='{A}')", 'two known legacy jobs imported once')
             before = sql(db, f"SELECT jsonb_agg(to_jsonb(t) ORDER BY job_id) FROM public.account_quota_usage t WHERE owner_id='{A}';")
             sql(db, f"SELECT public.reconcile_registration_quota('{A}'); SELECT public.set_registration_quota_anchor('{A}','{ANCHOR}','fixture retry');")
@@ -101,7 +106,8 @@ def main():
         else:
             check(db, f"(SELECT registered_at='{ANCHOR}'::timestamptz FROM public.account_quota_anchors WHERE owner_id='{A}')", 'new permanent profile gets registration anchor')
         check(db, "NOT has_function_privilege('authenticated','public.set_registration_quota_anchor(uuid,timestamp with time zone,text)','EXECUTE')", 'client cannot set registration anchor')
-        check(db, "NOT has_function_privilege('anon','public.reconcile_registration_quota(uuid)','EXECUTE')", 'anon cannot reconcile ledger')
+        if not args.anchors:
+            check(db, "NOT has_function_privilege('anon','public.reconcile_registration_quota(uuid)','EXECUTE')", 'anon cannot reconcile ledger')
 
     def concurrency(db, same=False, outcome='succeeded'):
         # Fresh owner with exactly one remaining paid slot; 20 independent psql
@@ -167,10 +173,11 @@ def main():
         started = True
         sql('postgres', 'CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;')
         migrations = sorted((ROOT/'supabase/migrations').glob('*.sql'))
-        selected = [m for m in migrations if m.name < FIRST or not args.baseline and (not args.accounting or m.name < SECOND)]
+        ceiling = LEDGER if args.anchors else SECOND if args.accounting else '999999999999'
+        selected = [m for m in migrations if m.name < FIRST or not args.baseline and m.name < ceiling]
         if not args.baseline:
             assert any(m.name == FIRST for m in selected), 'Registration migration required'
-            if not args.accounting:
+            if not args.accounting and not args.anchors:
                 assert any(m.name == SECOND for m in selected), 'Admission migration required'
         for case in ('clean','upgrade'):
             sql('postgres', f'CREATE DATABASE {case};')
@@ -199,13 +206,15 @@ def main():
                 assert old.get('remaining_after_reserve') == 2, f"OLD RULE REJECTED: Free must reserve from 3 immediately in registration window, got {old}"
                 raise AssertionError('Baseline unexpectedly passed product rule; investigate negative control')
             accounting(case)
-            tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
-            if not args.accounting:
+            tap(case, ROOT/'supabase/tests/registration_anchors.test.sql')
+            if not args.anchors:
+                tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
+            if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_admission.test.sql')
                 concurrency(case, same=False)
                 concurrency(case, same=True)
                 concurrency(case, same=False, outcome='failed')
-        print('PASS T163 accounting' if args.accounting else 'PASS T163 accounting/admission/20-connection races; fixtures only', flush=True)
+        print('PASS T163 anchors' if args.anchors else 'PASS T163 accounting' if args.accounting else 'PASS T163 accounting/admission/20-connection races; fixtures only', flush=True)
     finally:
         if started:
             subprocess.run([str(BIN/'pg_ctl'), '-D', str(work/'data'), '-m', 'fast', '-w', 'stop'], capture_output=True, timeout=30, check=True)

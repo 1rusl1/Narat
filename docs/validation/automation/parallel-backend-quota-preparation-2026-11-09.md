@@ -47,3 +47,23 @@ Live Auth/Supabase/Storage/provider/StoreKit и iOS/Simulator не запуск�
 
 Следующий шаг: clean-tree real run `parallel-backend-quota-sql-20261109-01` с
 явным branch config, проверки и независимые Reviewer/QA; затем отдельный B2 manifest.
+
+
+## Recovery после реального run-01
+
+Подготовка опубликована SHA365840a. Run-01 действительно запущен, но Developer
+Sol/high завершился timeout900s без answer.json/patch; WAITING, следующий PENDING.
+Raw state/metrics/stdout сохранены, исходный manifest не resume и не заменяется в
+старом run. Это выполненный модельный вызов, не SQL-приёмка и не нулевой расход.
+
+Новый manifest `tasks.parallel-backend-quota-sql-recovery.json`: три более узких
+среза 005 anchor/windows →006 ledger/import →007 admission. Новый --anchors
+trusted mode не требует ledger следующего среза. Новый config SHA256
+`608c6a50dd40b90e6aeb6b89163e6fc666469b8d44b81d2d1b10289df73bcbb9`;
+добавлен check parallel-backend-quota-anchors, argv
+`python3 tools/automation/parallel_backend_quota_gate.py --anchors`,
+unit / fixture / 300s. Остальные argv/routing/budgets прежние.
+Validate3/context/diff PASS; следующий run-id parallel-backend-quota-sql-20261109-02.
+Владелец подтвердил fail-closed неизвестной legacy даты; это больше не ожидаемый ответ.
+
+Recovery negative control `--baseline --anchors` повторён: ожидаемый exit1 на старом Free1/calendar, `/tmp/narat-b163-baseline-v2.log`; это не продуктовый PASS.

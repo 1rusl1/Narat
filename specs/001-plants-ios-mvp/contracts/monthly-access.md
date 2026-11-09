@@ -26,8 +26,9 @@ consumed=7 Free remaining=0. Возврат в paid даёт 93, а не нов�
 
 ## Хранение и перенос
 
-Forward migrations: `202611090005_registration_quotas.sql` (anchor/учёт), затем
-`202611090006_quota_admission.sql` (RPC). Это последовательные срезы, до второго
+Forward migrations: `202611090005_registration_quotas.sql` (anchor/окна),
+`202611090006_registration_ledger.sql` (перенос учёта), затем
+`202611090007_quota_admission.sql` (RPC). Это последовательные срезы, до третьего
 старый admission не считается заменённым; выкатывать их вместе после приёмки.
 
 `account_quota_anchors(owner_id,registered_at,source)` — отдельный внутренний
