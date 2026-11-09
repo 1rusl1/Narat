@@ -13,6 +13,7 @@ import {
   validateConditionProfileSemantics,
 } from "../KnowledgeTypes.ts";
 import {
+  PreliminaryAnalysisProjection,
   ProtocolResolver,
   signAnalysisReceipt,
   verifyAnalysisReceipt,
@@ -190,7 +191,7 @@ Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/P
   };
   assertEquals(validateConditionProfileSemantics(historical), { valid: true, errors: [] });
   for (const locale of ["en", "pl"] as const) {
-    for (const confidence of [0.9, 0.6]) {
+    for (const confidence of [0.1, 0.79, 0.8, 0.9]) {
       const catalog = makeSampleCatalog();
       const validated = AnalysisValidator.validate({
         schema_version: "3.0", kb_release_id: KB_RELEASE_ID, mode: "diagnosis", locale,
@@ -217,12 +218,13 @@ Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/P
       catalog.conditionProfiles.set("overwatering", historical);
       const restored = await ProtocolResolver.resolvePreliminaryProjection(params);
       assertEquals(restored, clean);
-      assertEquals(clean.decision_state, confidence === 0.9 ? "resolved" : "pending");
-      assertEquals(clean.plan_availability, confidence === 0.9 ? "available" : "diagnosis_unresolved");
-      if (confidence === 0.9) {
-        const step = profile.treatment_plan.steps[0];
-        assertEquals(clean.first_action_summary, locale === "en" ? step.action_en : step.action_pl);
-      }
+      assertEquals(clean.selected_condition_id, "overwatering");
+      assertEquals(clean.plan_availability, "available");
+      assertEquals(clean.control_interval_days, 7);
+      assertEquals(clean.first_action_title, profile.condition_content_i18n[locale].title);
+      const step = profile.treatment_plan.steps[0];
+      assertEquals(clean.first_action_summary, locale === "en" ? step.action_en : step.action_pl);
+      assertEquals("decision_state" in clean, false);
       for (const key of ["diagnostic_disambiguation", "clarifying_questions", "questions"]) {
         assertEquals(key in restored, false);
       }
@@ -434,7 +436,7 @@ Deno.test("T029.2 — Negative validation rejects unpinned release, unknown plan
   assertEquals(blurryResult.nonBillableReason, "unsuitable_image_quality");
 });
 
-Deno.test("T116 — ProtocolResolver builds localized projection from KB Golden Record, signs receipt, and falls back safely when pending/uncertain", async () => {
+Deno.test("T116 — ProtocolResolver uses published first help, signs receipt, and preserves ambiguity without advice", async () => {
   const catalog = makeSampleCatalog();
   const validDiag = AnalysisValidator.validate(
     {
@@ -452,7 +454,6 @@ Deno.test("T116 — ProtocolResolver builds localized projection from KB Golden 
         status: "problem_detected",
         candidates: [
           { condition_id: "overwatering", rank: 1, confidence: 0.88 },
-          { condition_id: "root_rot", rank: 2, confidence: 0.35 },
         ],
       },
       limitations: ["single_angle"],
@@ -462,7 +463,7 @@ Deno.test("T116 — ProtocolResolver builds localized projection from KB Golden 
   );
   assert(validDiag.classification);
 
-  // Resolved high-confidence diagnosis uses ConditionProfile first help step
+  // A single applicable candidate uses the published first-help step.
   const projection = await ProtocolResolver.resolvePreliminaryProjection({
     analysisId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     jobId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -471,7 +472,7 @@ Deno.test("T116 — ProtocolResolver builds localized projection from KB Golden 
     signingSecret: SIGNING_SECRET,
   });
 
-  assertEquals(projection.decision_state, "resolved");
+  assertEquals("decision_state" in projection, false);
   assertEquals(projection.selected_condition_id, "overwatering");
   assertEquals(projection.first_action_title, "Przelanie (nadmiar wody)");
   assertEquals(
@@ -488,7 +489,7 @@ Deno.test("T116 — ProtocolResolver builds localized projection from KB Golden 
   assertEquals(verified.payload?.kb_release_id, KB_RELEASE_ID);
   assertEquals(verified.payload?.selected_condition_id, "overwatering");
 
-  // Pending / ambiguous diagnosis (e.g. confidence 0.65 vs 0.60) uses safe fallback first aid and plan_availability='diagnosis_unresolved'
+  // Ambiguity has no treatment or invented fallback.
   const ambiguousDiag = AnalysisValidator.validate(
     {
       ...validDiag.classification,
@@ -511,7 +512,7 @@ Deno.test("T116 — ProtocolResolver builds localized projection from KB Golden 
     catalog,
     signingSecret: SIGNING_SECRET,
   });
-  assertEquals(pendingProj.decision_state, "pending");
+  assertNoPublishedAction(pendingProj);
   assertEquals(pendingProj.selected_condition_id, null);
   assertEquals(pendingProj.plan_availability, "diagnosis_unresolved");
   assertEquals(pendingProj.control_interval_days, null);
@@ -761,6 +762,241 @@ function classificationFixture(
     visual_markers: mode === "identification" ? [] : ["yellowing_lower_leaves"],
   };
 }
+
+function assertNoPublishedAction(projection: PreliminaryAnalysisProjection) {
+  assertEquals(projection.selected_condition_id, null);
+  assertEquals(projection.first_action_title, null);
+  assertEquals(projection.first_action_summary, null);
+  assertEquals(projection.control_interval_days, null);
+  assert(projection.limitations.length > 0);
+  assertEquals("decision_state" in projection, false);
+  for (const key of ["questions", "disambiguation_question", "diagnostic_decision"]) {
+    assertEquals(key in projection, false);
+  }
+}
+
+Deno.test("T157 — two candidates stay ambiguous for every gap, rank and runtime decision override in EN/PL", async () => {
+  for (const locale of ["en", "pl"] as const) {
+    for (const scores of [[0.9, 0.1], [0.8, 0.79], [0.1, 0.1]]) {
+      for (const reversed of [false, true]) {
+        const classification = classificationFixture("diagnosis", locale);
+        classification.diagnosis!.candidates = [
+          { condition_id: reversed ? "root_rot" : "overwatering", rank: 1, confidence: scores[0] },
+          { condition_id: reversed ? "overwatering" : "root_rot", rank: 2, confidence: scores[1] },
+        ];
+        const catalog = makeSampleCatalog();
+        const validated = AnalysisValidator.validate(classification, catalog);
+        assertEquals(validated.valid, true, validated.errors.join("; "));
+        const params = {
+          analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(), classification,
+          catalog, signingSecret: SIGNING_SECRET, issuedAt: "2026-11-09T00:00:00Z",
+        };
+        const clean = await ProtocolResolver.resolvePreliminaryProjection(params);
+        assertNoPublishedAction(clean);
+        assertEquals(clean.diagnosis_status, "problem_detected");
+        assertEquals(clean.plan_availability, "diagnosis_unresolved");
+        assertEquals(clean.candidates, classification.diagnosis!.candidates);
+        for (const state of ["resolved", "pending", "uncertain"]) {
+          // An untyped caller may still send the removed field; it has no authority.
+          const runtimeParams = {
+            ...params,
+            decisionState: { state, revision: 99, selectedConditionId: "overwatering" },
+          };
+          const result = await ProtocolResolver.resolvePreliminaryProjection(runtimeParams);
+          assertEquals(result, clean);
+          const verified = await verifyAnalysisReceipt(result.analysis_receipt, SIGNING_SECRET);
+          assertEquals(verified.valid, true);
+          assertEquals(verified.payload?.decision_revision, 1);
+          assertEquals(verified.payload?.selected_condition_id, null);
+        }
+        // Filtering out an incompatible candidate must not silently resolve ambiguity.
+        catalog.conditionProfiles.get("root_rot")!.host_scope = {
+          plant_ids: [], families: [], general_houseplants: false,
+        };
+        assertNoPublishedAction(await ProtocolResolver.resolvePreliminaryProjection(params));
+      }
+    }
+  }
+});
+
+Deno.test("T157 — explicit healthy, insufficient-data and out-of-scope statuses never invent help in EN/PL", async () => {
+  for (const locale of ["en", "pl"] as const) {
+    for (const status of ["healthy", "insufficient_data", "out_of_scope"] as const) {
+      const classification = classificationFixture("diagnosis", locale);
+      classification.diagnosis = { status, candidates: [] };
+      classification.visual_markers = [];
+      const catalog = makeSampleCatalog();
+      const validated = AnalysisValidator.validate(classification, catalog);
+      assertEquals(validated.valid, true, validated.errors.join("; "));
+      const result = await ProtocolResolver.resolvePreliminaryProjection({
+        analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(), classification,
+        catalog, signingSecret: SIGNING_SECRET,
+      });
+      assertNoPublishedAction(result);
+      assertEquals(result.diagnosis_status, status);
+      assertEquals(result.evidence_basis, status === "healthy" ? ["no_pathological_markers_detected"] : []);
+      const expected = {
+        en: { healthy: "No problem detected.", insufficient_data: "Insufficient data", out_of_scope: "outside indoor houseplant" },
+        pl: { healthy: "Nie wykryto problemu.", insufficient_data: "Za mało danych", out_of_scope: "poza zakresem" },
+      };
+      assert(result.limitations.some((message) => message.includes(expected[locale][status])));
+      const verified = await verifyAnalysisReceipt(result.analysis_receipt, SIGNING_SECRET);
+      assertEquals(verified.valid, true);
+      assertEquals(verified.payload?.selected_condition_id, null);
+    }
+  }
+});
+
+Deno.test("T157 — missing publication, unknown host and inapplicable first help have no invented fallback/date", async () => {
+  for (const locale of ["en", "pl"] as const) {
+    for (const scenario of [
+      "host_mismatch", "unknown_host", "unknown_condition", "unpublished",
+      "wrong_release", "blocked", "profile_contra", "step_contra",
+      "unconfirmed_prerequisite", "missing_first_help", "no_steps", "missing_en", "missing_pl",
+    ]) {
+      const classification = classificationFixture("diagnosis", locale);
+      const catalog = makeSampleCatalog();
+      const profile = catalog.conditionProfiles.get("overwatering")!;
+      const hostContext = {
+        plantId: "monstera_deliciosa" as string | null,
+        activeContraindicationIds: [] as string[],
+        blockedConditionIds: new Set<string>(),
+      };
+      switch (scenario) {
+        case "host_mismatch":
+        case "unknown_host":
+          profile.host_scope = { plant_ids: ["epipremnum_aureum"], families: [], general_houseplants: false };
+          if (scenario === "unknown_host") {
+            classification.identification = { status: "unknown", plant_id: null, genus_id: null };
+            hostContext.plantId = null;
+          }
+          break;
+        case "unknown_condition":
+          classification.diagnosis!.candidates[0].condition_id = JSON.parse('"not_published"');
+          break;
+        case "unpublished":
+          catalog.conditionProfiles.delete("overwatering");
+          break;
+        case "wrong_release":
+          profile.kb_release_id = "99999999-9999-4999-8999-999999999999";
+          break;
+        case "blocked":
+          hostContext.blockedConditionIds.add("overwatering");
+          break;
+        case "profile_contra":
+          profile.contraindication_check_ids = ["unsafe_here"];
+          hostContext.activeContraindicationIds = ["unsafe_here"];
+          break;
+        case "step_contra":
+          profile.treatment_plan.steps[0].contraindication_check_ids = ["unsafe_here"];
+          hostContext.activeContraindicationIds = ["unsafe_here"];
+          break;
+        case "unconfirmed_prerequisite":
+          profile.treatment_plan.steps[0].prerequisite_check_ids = ["unconfirmed_check"];
+          break;
+        case "missing_first_help":
+          profile.first_help_step_id = "missing";
+          break;
+        case "no_steps":
+          profile.treatment_plan.steps = [];
+          break;
+        case "missing_en":
+          profile.treatment_plan.steps[0].action_en = "";
+          break;
+        case "missing_pl":
+          profile.treatment_plan.steps[0].action_pl = "";
+          break;
+      }
+      const result = await ProtocolResolver.resolvePreliminaryProjection({
+        analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(), classification,
+        catalog, hostContext, signingSecret: SIGNING_SECRET,
+      });
+      assertNoPublishedAction(result);
+      assertEquals(result.plan_availability, "missing_condition_profile");
+      assertEquals(result.diagnosis_status, "problem_detected");
+      assertEquals((await verifyAnalysisReceipt(result.analysis_receipt, SIGNING_SECRET)).valid, true);
+    }
+  }
+});
+
+Deno.test("T157 — published general and family host applicability remains available in EN/PL", async () => {
+  for (const locale of ["en", "pl"] as const) {
+    for (const scope of ["general", "family"] as const) {
+      const catalog = makeSampleCatalog();
+      const profile = catalog.conditionProfiles.get("overwatering")!;
+      profile.host_scope = {
+        plant_ids: [], families: scope === "family" ? ["Araceae"] : [],
+        general_houseplants: scope === "general",
+      };
+      const result = await ProtocolResolver.resolvePreliminaryProjection({
+        analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(),
+        classification: classificationFixture("diagnosis", locale), catalog,
+        hostContext: { plantId: null, family: scope === "family" ? "Araceae" : null },
+        signingSecret: SIGNING_SECRET,
+      });
+      assertEquals(result.selected_condition_id, "overwatering");
+      assertEquals(result.plan_availability, "available");
+      assertEquals(result.first_action_summary, locale === "en"
+        ? profile.treatment_plan.steps[0].action_en : profile.treatment_plan.steps[0].action_pl);
+    }
+  }
+});
+
+Deno.test("T157 — worker finalizes and preserves an ambiguous result without a recommendation", async () => {
+  for (const locale of ["en", "pl"] as const) {
+    const classification = classificationFixture("diagnosis", locale);
+    classification.diagnosis!.candidates.push({
+      condition_id: "root_rot", rank: 2, confidence: 0.1,
+    });
+    let finalizations = 0;
+    const result = await processSingleQueuedJob({
+      signingSecret: SIGNING_SECRET,
+      anthropicAdapter: new AnthropicAdapter({
+        create: async () => ({
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: JSON.stringify(classification) }],
+        }),
+      }),
+      workerAdapter: {
+        leaseNextQueuedJob: async () => ({
+          id: crypto.randomUUID(), ownerId: null, installationId: crypto.randomUUID(),
+          kbReleaseId: KB_RELEASE_ID, mode: "diagnosis", locale,
+          imageBase64: "dGVzdA==", mediaType: "image/jpeg", quotaKind: "starter_diagnosis",
+          monthlyQuotaId: null, leaseExpiresAt: new Date(Date.now() + 55_000).toISOString(),
+        }),
+        loadPublishedCatalog: async () => makeSampleCatalog(),
+        finalizeJobOnce: async (params) => {
+          finalizations++;
+          assertEquals(params.outcome, "succeeded");
+          assertEquals(params.isNonBillableResult, false);
+          assert(params.projection);
+          assertNoPublishedAction(params.projection);
+          assertEquals(params.projection.diagnosis_status, "problem_detected");
+          assertEquals((await verifyAnalysisReceipt(
+            params.projection.analysis_receipt, SIGNING_SECRET,
+          )).valid, true);
+          return { alreadyFinalized: false, quotaState: "consumed" };
+        },
+      },
+      budgetAdapter: {
+        reserveDailyBudget: async (params) => ({
+          allowed: true,
+          record: {
+            budgetDateUtc: params.budgetDateUtc, capMicroUsd: params.maxCapMicroUsd,
+            spentMicroUsd: 0, reservedMicroUsd: params.reserveMicroUsd, circuitOpen: false,
+          },
+        }),
+        settleDailyBudget: async (params) => ({
+          budgetDateUtc: params.budgetDateUtc, capMicroUsd: 10_000_000,
+          spentMicroUsd: params.actualSpentMicroUsd, reservedMicroUsd: 0, circuitOpen: false,
+        }),
+      },
+    });
+    assertEquals(result.outcome, "succeeded");
+    assertEquals(result.quotaState, "consumed");
+    assertEquals(finalizations, 1);
+  }
+});
 
 Deno.test("T157 — two modes validate in EN/PL; legacy mode, comparison and quality are rejected", () => {
   for (const locale of ["en", "pl"] as const) {

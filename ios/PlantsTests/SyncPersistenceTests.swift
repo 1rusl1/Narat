@@ -561,18 +561,36 @@ final class SyncPersistenceTests: XCTestCase {
         XCTAssertEqual(loaded?.isCompleteForFallback, true)
     }
 
-    func testLegacyFollowUpAnalysisAndReceiptSurviveCacheRecreation() async throws {
+    @MainActor
+    func testHistoricalAnalysisWithObsoleteQuestionsSurvivesDiskReopen() async throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        for summary in ["Historical first aid", "Historyczna pierwsza pomoc"] {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        func makeContainer(at url: URL) throws -> ModelContainer {
+            let schema = Schema([
+                LocalOutboxRecord.self, GuestDraftCacheRecord.self,
+                SyncedEntityRecord.self, SyncCheckpointRecord.self
+            ])
+            return try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url)
+            ])
+        }
+
+        for (mode, summary) in [
+            ("follow_up", "Historical first aid"), ("follow_up", "Historyczna pierwsza pomoc"),
+            ("diagnosis", "Historical first aid"), ("diagnosis", "Historyczna pierwsza pomoc")
+        ] {
             let analysisJSON = #"""
             {
               "id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               "jobId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
               "kbReleaseId":"88888888-8888-4888-8888-888888888888",
-              "mode":"follow_up", "identificationStatus":"resolved",
+              "mode":"MODE", "identificationStatus":"resolved",
               "plantId":"monstera_deliciosa", "genusId":"monstera",
               "diagnosisStatus":"condition_detected",
               "candidates":[{"condition_id":"overwatering","rank":1,"confidence":0.9}],
@@ -580,49 +598,117 @@ final class SyncPersistenceTests: XCTestCase {
               "visualMarkers":["yellowing_lower_leaves"], "evidenceBasis":["photo"],
               "limitations":["single_angle"], "firstActionSummary":"SUMMARY",
               "controlIntervalDays":7, "contextState":"current", "planAvailability":"available",
-              "analysisReceipt":"original.base64-and-signature"
+              "analysisReceipt":"original.base64-and-signature",
+              "decision_state":"pending", "decisionState":"pending",
+              "diagnosticQuestion":{"question_code":"old_check","prompt":"OBSOLETE?",
+                                    "options":[{"value":"yes","label":"Yes"}]},
+              "diagnosticAnswers":[{"question_code":"old_check","answer_value":"yes"}],
+              "diagnosticDecision":{"revision":7,"resolution_state":"needs_disambiguation",
+                                    "disambiguation_question":{"prompt":"OBSOLETE?"}}
             }
             """#.replacingOccurrences(of: "SUMMARY", with: summary)
+                .replacingOccurrences(of: "MODE", with: mode)
             let receiptJSON = #"""
             {
               "analysis_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               "kb_release_id":"88888888-8888-4888-8888-888888888888",
-              "mode":"follow_up", "plant_id":"monstera_deliciosa",
-              "selected_condition_id":"overwatering", "decision_revision":1,
+              "mode":"MODE", "plant_id":"monstera_deliciosa",
+              "selected_condition_id":"overwatering", "decision_revision":7,
               "issued_at":"2026-11-01T00:00:00Z", "signature":"original-signature"
             }
-            """#
+            """#.replacingOccurrences(of: "MODE", with: mode)
             let analysis = try decoder.decode(PreliminaryAnalysis.self, from: Data(analysisJSON.utf8))
             let receipt = try decoder.decode(AnalysisReceiptDTO.self, from: Data(receiptJSON.utf8))
-            XCTAssertEqual(analysis.mode, .legacyFollowUp)
-            XCTAssertEqual(receipt.mode, .legacyFollowUp)
-            XCTAssertFalse(analysis.mode.isSelectable)
-            let container = try LocalStore.makeContainer(accountScope: "legacy_\(UUID())", inMemory: true)
-            let store = LocalStore(modelContainer: container)
+            let expectedMode = try XCTUnwrap(AnalysisMode(rawValue: mode))
+            XCTAssertEqual(analysis.mode, expectedMode)
+            XCTAssertEqual(receipt.mode, expectedMode)
+            XCTAssertEqual(analysis.mode.isSelectable, mode == "diagnosis")
             let draftId = UUID()
-            let snapshot = GuestDraftCacheSnapshot(
-                draftId: draftId,
-                flowState: AddFlowState(currentStep: .preliminaryResult,
-                                        resultMode: analysis.mode, draftId: draftId),
-                preliminaryAnalysis: analysis, analysisReceipt: receipt
+            let flowId = UUID()
+            let storeURL = directory.appendingPathComponent("\(draftId).sqlite")
+            let conditions = CareConditionsInput(
+                lightLevel: .brightIndirect, lightSource: .manual, lightConfirmed: true,
+                wateringHabit: .moderate, lastWatered: .within7Days, potType: .standardDrainage
             )
-            try await store.saveGuestDraft(snapshot)
-            let recreated = LocalStore(modelContainer: container)
-            let loadedValue = try await recreated.loadGuestDraft(draftId: draftId)
-            let loaded = try XCTUnwrap(loadedValue)
-            XCTAssertEqual(loaded.flowState.resultMode, .legacyFollowUp)
-            XCTAssertEqual(loaded.preliminaryAnalysis, analysis)
-            XCTAssertEqual(loaded.analysisReceipt, receipt)
-            XCTAssertEqual(loaded.preliminaryAnalysis?.analysisReceipt, "original.base64-and-signature")
-            XCTAssertEqual(loaded.preliminaryAnalysis?.firstActionSummary, summary)
+            let conditionsJSON = String(decoding: try encoder.encode(conditions), as: UTF8.self)
+            // Seed the actual stored JSON, including historical unknown fields, before decoding it.
+            do {
+                let container = try makeContainer(at: storeURL)
+                let context = ModelContext(container)
+                context.insert(GuestDraftCacheRecord(
+                    draftId: draftId, flowId: flowId, intentRaw: "problem", addMethodRaw: "scan",
+                    currentStepRaw: "preliminary_result", photoLocalPath: "historical/photo.jpg",
+                    confirmedPlantId: "monstera_deliciosa", confirmedTaxonId: nil,
+                    confirmedDisplayName: "My Monstera", conditionsJSON: conditionsJSON,
+                    resultModeRaw: mode, preliminaryAnalysisJSON: analysisJSON,
+                    analysisReceiptJSON: receiptJSON, overridesJSON: nil,
+                    serverExpiresAt: Date().addingTimeInterval(3600), isCompleteForFallback: true
+                ))
+                try context.save()
+            }
+            // Separate containers reopen the on-disk store; no in-memory container is reused.
+            for _ in 0..<2 {
+                let container = try makeContainer(at: storeURL)
+                let restored = LocalStore(modelContainer: container)
+                let loadedValue = try await restored.loadGuestDraft(draftId: draftId)
+                let loaded = try XCTUnwrap(loadedValue)
+                XCTAssertEqual(loaded.flowState.flowId, flowId)
+                XCTAssertEqual(loaded.flowState.resultMode, expectedMode)
+                XCTAssertEqual(loaded.flowState.conditions, conditions)
+                XCTAssertEqual(loaded.flowState.photoLocalIdentifier, "historical/photo.jpg")
+                XCTAssertEqual(loaded.flowState.confirmedDisplayName, "My Monstera")
+                XCTAssertEqual(loaded.preliminaryAnalysis, analysis)
+                XCTAssertEqual(loaded.analysisReceipt, receipt)
+                XCTAssertEqual(loaded.analysisReceipt?.decisionRevision, 7)
+                XCTAssertEqual(loaded.preliminaryAnalysis?.analysisReceipt, "original.base64-and-signature")
+                XCTAssertEqual(loaded.preliminaryAnalysis?.firstActionSummary, summary)
+                let router = AddPlantRouter(initialState: loaded.flowState)
+                XCTAssertEqual(router.flowState.currentStep, .preliminaryResult)
+                XCTAssertNotEqual(router.flowState.currentStep, .diagnosticRefinement)
+                let encoded = try XCTUnwrap(JSONSerialization.jsonObject(
+                    with: encoder.encode(try XCTUnwrap(loaded.preliminaryAnalysis))) as? [String: Any])
+                for key in ["decision_state", "decisionState", "diagnosticQuestion",
+                            "diagnosticAnswers", "diagnosticDecision"] {
+                    XCTAssertNil(encoded[key])
+                }
+                // Re-saving a readable historical result preserves its signed receipt and context.
+                try await restored.saveGuestDraft(loaded)
+            }
             let encodedReceipt = try XCTUnwrap(JSONSerialization.jsonObject(
                 with: encoder.encode(receipt)) as? [String: Any])
-            XCTAssertEqual(encodedReceipt["mode"] as? String, "follow_up")
+            XCTAssertEqual(encodedReceipt["mode"] as? String, mode)
+            XCTAssertEqual(encodedReceipt["decision_revision"] as? Int, 7)
             XCTAssertEqual(encodedReceipt["signature"] as? String, "original-signature")
             XCTAssertThrowsError(try decoder.decode(PreliminaryAnalysis.self,
-                from: Data(analysisJSON.replacingOccurrences(of: "follow_up", with: "unknown_mode").utf8)))
+                from: Data(analysisJSON.replacingOccurrences(of: mode, with: "unknown_mode").utf8)))
             XCTAssertThrowsError(try decoder.decode(AnalysisReceiptDTO.self,
-                from: Data(receiptJSON.replacingOccurrences(of: "follow_up", with: "unknown_mode").utf8)))
+                from: Data(receiptJSON.replacingOccurrences(of: mode, with: "unknown_mode").utf8)))
         }
+    }
+
+    func testAnalysisWithoutRecommendationRemainsSaveable() async throws {
+        let container = try LocalStore.makeContainer(accountScope: "no_advice_\(UUID())", inMemory: true)
+        let store = LocalStore(modelContainer: container)
+        let draftId = UUID()
+        let analysis = PreliminaryAnalysis(
+            id: UUID(), jobId: UUID(), kbReleaseId: UUID(), mode: .diagnosis,
+            identificationStatus: .unknown, plantId: nil, genusId: nil,
+            diagnosisStatus: .unknown, candidates: [], selectedConditionId: nil,
+            visualMarkers: [], evidenceBasis: [], limitations: ["Insufficient data"],
+            firstActionSummary: nil, controlIntervalDays: nil,
+            planAvailability: .diagnosisUnresolved, analysisReceipt: "unchanged.signed-result"
+        )
+        try await store.saveGuestDraft(GuestDraftCacheSnapshot(
+            draftId: draftId,
+            flowState: AddFlowState(currentStep: .preliminaryResult, resultMode: .diagnosis, draftId: draftId),
+            preliminaryAnalysis: analysis
+        ))
+        let reopened = LocalStore(modelContainer: container)
+        let loadedValue = try await reopened.loadGuestDraft(draftId: draftId)
+        let loaded = try XCTUnwrap(loadedValue)
+        XCTAssertEqual(loaded.preliminaryAnalysis, analysis)
+        XCTAssertNil(loaded.preliminaryAnalysis?.firstActionSummary)
+        XCTAssertNil(loaded.preliminaryAnalysis?.controlIntervalDays)
+        XCTAssertEqual(loaded.flowState.currentStep, .preliminaryResult)
     }
 }

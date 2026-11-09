@@ -2,7 +2,7 @@
 // T116: Deterministic ProtocolResolver mapping validated Classification 3.0 + KB Golden Records
 // into backend PreliminaryAnalysis projections and signed analysis_receipts.
 // Never uses an LLM to generate advice. Enforces host scope, contraindications, treatment blocks,
-// and decision state (resolved -> ConditionProfile first help; pending/uncertain -> safe fallback first help).
+// and explicit diagnosis status. Ambiguity never selects treatment by score or rank.
 
 import {
   CanonicalConditionId,
@@ -10,14 +10,6 @@ import {
   PublishedReleaseCatalog,
   VisionClassification30,
 } from "./KnowledgeTypes.ts";
-
-export type DecisionResolutionInputState = "resolved" | "pending" | "uncertain";
-
-export interface DecisionStateDTO {
-  revision: number;
-  state: DecisionResolutionInputState;
-  selectedConditionId: CanonicalConditionId | null;
-}
 
 export interface PlantHostContext {
   plantId: string | null;
@@ -39,7 +31,6 @@ export interface PreliminaryAnalysisProjection {
   plant_id: string | null;
   genus_id: string | null;
   diagnosis_status: "problem_detected" | "healthy" | "insufficient_data" | "out_of_scope" | null;
-  decision_state: DecisionResolutionInputState | null;
   selected_condition_id: CanonicalConditionId | null;
   candidates: Array<{
     condition_id: CanonicalConditionId;
@@ -65,28 +56,21 @@ export interface PreliminaryAnalysisProjection {
 export type LegacyPreliminaryAnalysisProjection =
   Omit<PreliminaryAnalysisProjection, "mode"> & { mode: "follow_up" };
 
-const FALLBACK_SAFE_FIRST_AID = {
+// Explanations only: this catalog has no published basic-care fallback.
+const NO_ACTION_LIMITATIONS = {
   pl: {
-    healthyTitle: "Roślina wygląda na zdrową",
-    healthyAction:
-      "Kontynuuj regularną obserwację liści i sprawdzaj wilgotność podłoża przed kolejnym podlewaniem.",
-    uncertainTitle: "Wymagana ostrożna obserwacja",
-    uncertainAction:
-      "Sprawdź wilgotność górnej warstwy podłoża palcem, ustaw roślinę w miejscu bez przeciągów i powstrzymaj się od nawożenia lub oprysków do czasu potwierdzenia objawów.",
-    outOfScopeTitle: "Zdjęcie poza zakresem diagnostyki roślin domowych",
-    outOfScopeAction:
-      "Zrób wyraźne zdjęcie rośliny doniczkowej oraz widocznego objawu w świetle dziennym.",
+    healthy: "Nie wykryto problemu. Brak opublikowanego działania podstawowej pielęgnacji w tym wyniku.",
+    outOfScope: "Wynik poza zakresem diagnostyki roślin domowych; brak zalecenia.",
+    insufficient: "Za mało danych do wyboru odpowiedniego działania.",
+    ambiguous: "Niejednoznaczny wynik; nie wybrano leczenia.",
+    unavailable: "Brak opublikowanej, mającej zastosowanie pierwszej pomocy i terminu kontroli.",
   },
   en: {
-    healthyTitle: "The plant appears healthy",
-    healthyAction:
-      "Continue observing the leaves and check top-layer soil moisture before the next watering.",
-    uncertainTitle: "Cautious observation recommended",
-    uncertainAction:
-      "Check top-layer soil moisture with your finger, keep the plant away from drafts, and hold off on fertilizer or sprays until symptoms are confirmed.",
-    outOfScopeTitle: "Photo is outside indoor houseplant scope",
-    outOfScopeAction:
-      "Take a clear daylight photo of your potted houseplant and the visible symptom.",
+    healthy: "No problem detected. No published basic-care action is provided in this result.",
+    outOfScope: "Result is outside indoor houseplant diagnosis scope; no recommendation is available.",
+    insufficient: "Insufficient data to select an applicable action.",
+    ambiguous: "The result is ambiguous; no treatment has been selected.",
+    unavailable: "No published, applicable first aid or check interval is available.",
   },
 } as const;
 
@@ -192,7 +176,6 @@ export class ProtocolResolver {
     classification: VisionClassification30;
     catalog: PublishedReleaseCatalog;
     hostContext?: PlantHostContext;
-    decisionState?: DecisionStateDTO;
     signingSecret: string;
     issuedAt?: string;
   }): Promise<PreliminaryAnalysisProjection> {
@@ -206,10 +189,10 @@ export class ProtocolResolver {
     if (classification.mode !== "identification" && classification.mode !== "diagnosis") {
       throw new Error("Unsupported analysis mode.");
     }
-    const host = params.hostContext ?? { plantId: classification.identification.plant_id };
+    const host: PlantHostContext = params.hostContext ?? { plantId: classification.identification.plant_id };
     const locale = classification.locale;
     const issuedAt = params.issuedAt ?? new Date().toISOString();
-    const fallbackStrings = FALLBACK_SAFE_FIRST_AID[locale];
+    const noAction = NO_ACTION_LIMITATIONS[locale];
 
     const hasPlantProfile = Boolean(
       classification.identification.plant_id &&
@@ -241,7 +224,6 @@ export class ProtocolResolver {
         plant_id: classification.identification.plant_id,
         genus_id: classification.identification.genus_id,
         diagnosis_status: null,
-        decision_state: null,
         selected_condition_id: null,
         candidates: [],
         visual_markers: [],
@@ -257,27 +239,8 @@ export class ProtocolResolver {
 
     // 2. Diagnosis mode (including a new photo of the same plant)
     const diag = classification.diagnosis!;
-    const decisionRevision = params.decisionState?.revision ?? 1;
-
-    // Determine effective decision state from explicit DTO or top-2 confidence routing rules (threshold 0.80, gap 0.10)
-    let effectiveDecisionState: DecisionResolutionInputState = "uncertain";
-    let selectedConditionId: CanonicalConditionId | null = null;
-
-    if (params.decisionState) {
-      effectiveDecisionState = params.decisionState.state;
-      selectedConditionId = params.decisionState.selectedConditionId;
-    } else if (diag.status === "problem_detected" && diag.candidates.length > 0) {
-      const top1 = diag.candidates[0];
-      const top2 = diag.candidates[1];
-      const gap = top2 ? top1.confidence - top2.confidence : top1.confidence;
-      if (top1.confidence >= 0.8 && gap >= 0.1) {
-        effectiveDecisionState = "resolved";
-        selectedConditionId = top1.condition_id;
-      } else {
-        effectiveDecisionState = "pending";
-        selectedConditionId = null;
-      }
-    }
+    // The signed historical field remains stable; new results need no question revisions.
+    const decisionRevision = 1;
 
     if (diag.status === "out_of_scope" || classification.identification.status === "out_of_scope") {
       const receipt = await signAnalysisReceipt(
@@ -303,14 +266,13 @@ export class ProtocolResolver {
         plant_id: null,
         genus_id: null,
         diagnosis_status: "out_of_scope",
-        decision_state: "uncertain",
         selected_condition_id: null,
         candidates: [],
         visual_markers: [],
         evidence_basis: [],
-        limitations: [...classification.limitations],
-        first_action_title: fallbackStrings.outOfScopeTitle,
-        first_action_summary: fallbackStrings.outOfScopeAction,
+        limitations: [...classification.limitations, noAction.outOfScope],
+        first_action_title: null,
+        first_action_summary: null,
         control_interval_days: null,
         plan_availability: "diagnosis_unresolved",
         analysis_receipt: receipt,
@@ -341,34 +303,43 @@ export class ProtocolResolver {
         plant_id: classification.identification.plant_id,
         genus_id: classification.identification.genus_id,
         diagnosis_status: "healthy",
-        decision_state: "resolved",
         selected_condition_id: null,
         candidates: [],
         visual_markers: [],
         evidence_basis: ["no_pathological_markers_detected"],
-        limitations: [...classification.limitations],
-        first_action_title: fallbackStrings.healthyTitle,
-        first_action_summary: fallbackStrings.healthyAction,
+        limitations: [...classification.limitations, noAction.healthy],
+        first_action_title: null,
+        first_action_summary: null,
         control_interval_days: null,
-        plan_availability: hasPlantProfile ? "available" : "missing_plant_profile",
+        plan_availability: hasPlantProfile ? "missing_condition_profile" : "missing_plant_profile",
         analysis_receipt: receipt,
       };
     }
 
-    // Check if resolved condition is present and host-compatible
-    const profile = selectedConditionId
-      ? catalog.conditionProfiles.get(selectedConditionId) ?? null
+    // Two candidates remain ambiguous, even when only one is host-compatible.
+    const candidate = diag.status === "problem_detected" && diag.candidates.length === 1
+      ? diag.candidates[0]
       : null;
+    const profile = candidate
+      ? catalog.conditionProfiles.get(candidate.condition_id) ?? null
+      : null;
+    const hostCompatible = profile !== null &&
+      profile.condition_id === candidate?.condition_id &&
+      profile.kb_release_id === catalog.kbReleaseId &&
+      ProtocolResolver.isConditionHostCompatible(profile, host);
+    // Use only the published first-help entry point, never an arbitrary treatment step.
+    // Unconfirmed prerequisites cannot be inferred from a classification score.
+    const activeContras = new Set(host.activeContraindicationIds ?? []);
+    const firstHelpStep = hostCompatible && profile
+      ? profile.treatment_plan.steps.find((step) =>
+        step.step_id === profile.first_help_step_id &&
+        step.prerequisite_check_ids.length === 0 &&
+        !step.contraindication_check_ids.some((id) => activeContras.has(id)) &&
+        step.action_en.trim().length > 0 && step.action_pl.trim().length > 0
+      )
+      : undefined;
 
-    const hostCompatible = profile
-      ? ProtocolResolver.isConditionHostCompatible(profile, host)
-      : false;
-
-    if (effectiveDecisionState === "resolved" && profile && hostCompatible) {
-      const firstHelpStep = profile.treatment_plan.steps.find(
-        (s) => s.step_id === profile.first_help_step_id,
-      ) ?? profile.treatment_plan.steps[0];
-
+    if (profile && firstHelpStep) {
       const localizedContent = profile.condition_content_i18n[locale];
       const firstActionText = locale === "pl"
         ? firstHelpStep.action_pl
@@ -397,7 +368,6 @@ export class ProtocolResolver {
         plant_id: classification.identification.plant_id,
         genus_id: classification.identification.genus_id,
         diagnosis_status: "problem_detected",
-        decision_state: "resolved",
         selected_condition_id: profile.condition_id,
         candidates: diag.candidates.map((c) => ({ ...c })),
         visual_markers: [...classification.visual_markers],
@@ -411,7 +381,7 @@ export class ProtocolResolver {
       };
     }
 
-    // Pending / uncertain / host-incompatible / unknown -> safe non-destructive fallback first aid
+    // Preserve a saveable signed result without inventing advice or a check date.
     const receipt = await signAnalysisReceipt(
       {
         analysis_id: analysisId,
@@ -435,18 +405,19 @@ export class ProtocolResolver {
       plant_id: classification.identification.plant_id,
       genus_id: classification.identification.genus_id,
       diagnosis_status: diag.status,
-      decision_state: effectiveDecisionState === "pending" ? "pending" : "uncertain",
       selected_condition_id: null,
       candidates: diag.candidates.map((c) => ({ ...c })),
       visual_markers: [...classification.visual_markers],
       evidence_basis: [...classification.visual_markers],
-      limitations: [...classification.limitations],
-      first_action_title: fallbackStrings.uncertainTitle,
-      first_action_summary: fallbackStrings.uncertainAction,
+      limitations: [
+        ...classification.limitations,
+        diag.status === "insufficient_data" ? noAction.insufficient
+          : diag.candidates.length > 1 ? noAction.ambiguous : noAction.unavailable,
+      ],
+      first_action_title: null,
+      first_action_summary: null,
       control_interval_days: null,
-      plan_availability: profile && !hostCompatible
-        ? "missing_condition_profile"
-        : "diagnosis_unresolved",
+      plan_availability: candidate ? "missing_condition_profile" : "diagnosis_unresolved",
       analysis_receipt: receipt,
     };
   }
