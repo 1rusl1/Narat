@@ -82,7 +82,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t157-manual-evidence-cleanup: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t157-manual-evidence-cleanup](validation/automation/tasks/t157-manual-evidence-cleanup.md).
+t157-sql-mode-guard: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t157-sql-mode-guard](validation/automation/tasks/t157-sql-mode-guard.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
