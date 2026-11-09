@@ -445,6 +445,21 @@
       "stage": "static",
       "mode": "local",
       "timeout": 30
+    },
+    "t162-collection-http": {
+      "argv": [
+        "deno",
+        "test",
+        "--config",
+        "supabase/functions/deno.json",
+        "--allow-env",
+        "--allow-read",
+        "--allow-net=127.0.0.1,localhost",
+        "supabase/functions/_shared/tests/collection_http_test.ts"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 120
     }
   },
   "publish": {

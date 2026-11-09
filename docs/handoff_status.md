@@ -5,6 +5,12 @@
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Подготовка запуска T162 foundation — 9 ноября 2026
+
+Владелец поручил реализацию через оркестратор. Подготовлен ограниченный серверный manifest `tools/automation/tasks.t162-foundation.json`: production plant.create/catalogue и sync adapters, fail-closed auth/profile, cap/error mapping и meaningful HTTP fixtures. Новый check `t162-collection-http` в config; SQL regression использует существующий настоящий PostgreSQL cap gate. Изменены manifest/config/handoff; продуктовые checkbox не менялись. Это первый фундамент T019/T044/T162, без клиентского UI, guest claim, live/deploy и без закрытия родительских задач.
+
+Следующий шаг: validate/context/diff-check, commit/push подготовки и запуск отдельного run `t162-foundation-20261109-01`; наблюдать проверки, независимые Review/QA и публикацию. Затем подготовить клиентский save/card пакет на принятом HTTP контракте. Подготовка: validate — VALID (1 task), context Developer просмотрен, diff-check PASS; 115 automation fixture tests PASS (40.097s, вне sandbox). Новый HTTP gate до реализации ещё не пройден; live не проверялся. Фактические результаты запуска фиксируются после приёмки.
+
 ## Обзор готовности к запуску — 9 ноября 2026
 
 По запросу владельца сверены текущий код, tasks, quickstart и доказательства приёмки. Итог: публичный MVP ещё не готов; остаются шесть блоков — сохранение/sync, фотоанализ, проверенные данные/рекомендации, уход, доступ/покупки и безопасность/выпуск. Подробности и конкретные code blockers: [launch-readiness](validation/launch-readiness-2026-11-09.md). Изменены только этот handoff и новый отчёт; runtime/tasks checkbox не менялись (14 отмечены / 137 открыты, из них 3 необязательные комнаты).
