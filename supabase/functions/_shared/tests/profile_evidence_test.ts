@@ -76,6 +76,32 @@ function conditionProfile() {
 }
 
 function plantProfile() {
+  return {
+    schema_version: "2.0",
+    kb_release_id: "88888888-8888-4888-8888-888888888888",
+    record_version: 1,
+    provenance: provenance("/actions/0"),
+    plant_id: "synthetic_plant",
+    actions: [{
+      action_id: "synthetic_check", action_code: "check_soil", purpose: "diagnostic_check",
+      next_check_interval_days: null,
+      prerequisite_check_ids: [], contraindication_check_ids: [],
+      action_en: "Synthetic check only", action_pl: "Wyłącznie fikcyjna kontrola",
+    }],
+  };
+}
+
+function safetyOnlyProfile() {
+  return {
+    ...plantProfile(),
+    provenance: provenance("/safety"),
+    actions: [],
+    safety: legacyPlantProfile().safety,
+  };
+}
+
+// Frozen synthetic v1 shape for historical-read regression; never used for new advice.
+function legacyPlantProfile() {
   const content = {
     watering_tip: "Synthetic fixture; not advice",
     soil_recipe: "Synthetic fixture; not advice",
@@ -180,6 +206,82 @@ for (const [name, makeProfile] of [
     assertEquals(validate(historical), true, JSON.stringify(validate.errors));
   });
 
+  Deno.test(`T157 ${name}: null interval stays unknown; checked bounds are accepted`, () => {
+    const profile = makeProfile();
+    const before = structuredClone(profile);
+    assertEquals(validate(profile), true, JSON.stringify(validate.errors));
+    assertEquals(profile.actions[0].next_check_interval_days, null);
+    assertEquals(profile, before);
+    for (const days of [1, 90]) {
+      assertEquals(validate(changed(profile, ["actions", "0", "next_check_interval_days"], days)),
+        true, JSON.stringify(validate.errors));
+    }
+  });
+
+  Deno.test(`T157 ${name}: old version is rejected without conversion or mutation`, () => {
+    const historical = changed(makeProfile(), ["schema_version"], "1.0");
+    const before = structuredClone(historical);
+    assertEquals(validate(historical), false);
+    assert(validate.errors?.some((error) => error.keyword === "const"));
+    assertEquals(historical, before);
+  });
+
+  if (name === "plant-profile") {
+    Deno.test("T157 plant-profile: v1 snapshot stays readable only under its legacy schema", () => {
+      const legacyValidate = ajv.compile(JSON.parse(Deno.readTextFileSync(new URL(
+        "../../../../specs/001-plants-ios-mvp/contracts/legacy/plant-profile.v1.schema.json",
+        import.meta.url,
+      ))));
+      const historical = legacyPlantProfile();
+      const before = structuredClone(historical);
+      assertEquals(legacyValidate(historical), true, JSON.stringify(legacyValidate.errors));
+      assertEquals(validate(historical), false);
+      assert(validate.errors?.some((error) => error.keyword === "const"));
+      assertEquals(historical, before);
+      assertEquals(legacyValidate(historical), true, JSON.stringify(legacyValidate.errors));
+    });
+
+    Deno.test("T157 plant-profile: independent check needs no full profile or safety", () => {
+      const profile = plantProfile();
+      assertEquals(validate(profile), true, JSON.stringify(validate.errors));
+      assertEquals(profile.actions.length, 1);
+      assertEquals(profile.actions[0].action_code, "check_soil");
+      for (const field of ["safety", "taxonomy", "care_algorithm_params", "soil_preset", "fertilizing"]) {
+        assertEquals(field in profile, false);
+      }
+    });
+
+    Deno.test("T157 plant-profile: safety-only preserves unknown pets and has no care actions", () => {
+      const profile = safetyOnlyProfile();
+      const before = structuredClone(profile);
+      assertEquals(validate(profile), true, JSON.stringify(validate.errors));
+      assertEquals(profile.actions, []);
+      assertEquals(profile.safety.is_toxic_to_pets, null);
+      for (const pet of ["cat", "dog"] as const) {
+        assertEquals(profile.safety.pet_specific[pet].status, "unknown");
+        assertEquals(profile.safety.pet_specific[pet].source_ids, []);
+      }
+      assertEquals(profile, before);
+    });
+
+    for (const field of ["provenance", "actions", "plant_id"]) {
+      Deno.test(`T157 plant-profile: safety-only cannot bypass ${field}`, () => {
+        assertEquals(validate(changed(safetyOnlyProfile(), [field], undefined)), false);
+      });
+    }
+    for (const pet of ["cat", "dog"]) {
+      Deno.test(`T157 plant-profile: safety-only requires ${pet} declaration`, () => {
+        assertEquals(validate(changed(safetyOnlyProfile(), ["safety", "pet_specific", pet], undefined)),
+          false);
+      });
+    }
+    for (const safety of [null, {}, { is_toxic_to_pets: false }]) {
+      Deno.test(`T157 plant-profile: incomplete safety ${JSON.stringify(safety)} is rejected`, () => {
+        assertEquals(validate(changed(safetyOnlyProfile(), ["safety"], safety)), false);
+      });
+    }
+  }
+
   const p = ["provenance"];
   const s = [...p, "source_documents", "0"];
   const v = [...p, "validation"];
@@ -210,7 +312,52 @@ for (const [name, makeProfile] of [
     ["empty optional prompt", [...v, "prompt_version"], "", "minLength"],
     ["empty optional guardrail", [...v, "guardrail_version"], "", "minLength"],
   ];
+  invalidCases.push(
+    ["missing actions", ["actions"], undefined, "required"],
+    ["empty actions without safety", ["actions"], [], "minItems"],
+    ["invalid action code", ["actions", "0", "action_code"], "invent_advice", "enum"],
+    ["invalid purpose", ["actions", "0", "purpose"], "instant_cure", "enum"],
+    ["invalid action id", ["actions", "0", "action_id"], "", "pattern"],
+    ["missing prerequisites", ["actions", "0", "prerequisite_check_ids"], undefined, "required"],
+    ["missing contraindications", ["actions", "0", "contraindication_check_ids"], undefined, "required"],
+    ["missing interval", ["actions", "0", "next_check_interval_days"], undefined, "required"],
+  );
+  for (const locale of ["en", "pl"]) {
+    invalidCases.push(
+      [`missing action ${locale}`, ["actions", "0", `action_${locale}`], undefined, "required"],
+      [`empty action ${locale}`, ["actions", "0", `action_${locale}`], "", "minLength"],
+    );
+    if (name === "condition-profile") {
+      invalidCases.push(
+        [`missing content ${locale}`, ["condition_content_i18n", locale], undefined, "required"],
+      );
+    }
+  }
+  for (const interval of [-1, 0, 91, 1.5, "7", "unknown", false]) {
+    invalidCases.push([
+      `invalid interval ${JSON.stringify(interval)}`,
+      ["actions", "0", "next_check_interval_days"], interval, "anyOf",
+    ]);
+  }
+  // Reject legacy/full-profile and timeline/recipe fields at both object boundaries.
+  for (const field of [
+    "treatment_plan", "first_help_step_id", "timeline", "duration_days", "steps",
+    "repeat_count", "start_offset_days", "order", "soil_recipe", "soil_preset",
+    "care_algorithm_params", "environment_modifiers", "fertilizing", "active_months",
+    "taxonomy", "care_content_i18n", "base_watering_interval_days",
+  ]) {
+    for (const path of [[field], ["actions", "0", field]]) {
+      invalidCases.push([`banned ${path.join("/")}`, path, {}, "additionalProperties"]);
+    }
+  }
   for (const [label, path, value, keyword] of invalidCases) {
+    if (name === "plant-profile" && path[0] === "provenance") {
+      Deno.test(`T157 plant-profile: safety-only rejects ${label}`, () => {
+        assertEquals(validate(changed(safetyOnlyProfile(), path, value)), false, label);
+        assert(validate.errors?.some((error) => error.keyword === keyword),
+          JSON.stringify(validate.errors));
+      });
+    }
     Deno.test(`T157 ${name}: rejects ${label}`, () => {
       assertEquals(validate(changed(makeProfile(), path, value)), false, label);
       assert(validate.errors?.some((error) => error.keyword === keyword),

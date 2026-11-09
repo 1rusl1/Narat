@@ -104,7 +104,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t157-compact-condition-profile: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t157-compact-condition-profile](validation/automation/tasks/t157-compact-condition-profile.md).
+t157-compact-plant-profile: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t157-compact-plant-profile](validation/automation/tasks/t157-compact-plant-profile.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
