@@ -52,8 +52,6 @@ public struct ClaimOverridesDTO: Codable, Sendable, Equatable {
     public var plantId: String?
     public var taxonId: UUID?
     public var displayName: String?
-    public var roomId: UUID?
-    public var newRoomName: String?
     public var lightLevel: LightLevel?
     public var lightSource: LightSource?
     public var lightConfirmed: Bool?
@@ -66,8 +64,6 @@ public struct ClaimOverridesDTO: Codable, Sendable, Equatable {
         plantId: String? = nil,
         taxonId: UUID? = nil,
         displayName: String? = nil,
-        roomId: UUID? = nil,
-        newRoomName: String? = nil,
         lightLevel: LightLevel? = nil,
         lightSource: LightSource? = nil,
         lightConfirmed: Bool? = nil,
@@ -79,8 +75,6 @@ public struct ClaimOverridesDTO: Codable, Sendable, Equatable {
         self.plantId = plantId
         self.taxonId = taxonId
         self.displayName = displayName
-        self.roomId = roomId
-        self.newRoomName = newRoomName
         self.lightLevel = lightLevel
         self.lightSource = lightSource
         self.lightConfirmed = lightConfirmed
@@ -94,8 +88,6 @@ public struct ClaimOverridesDTO: Codable, Sendable, Equatable {
         case plantId = "plant_id"
         case taxonId = "taxon_id"
         case displayName = "display_name"
-        case roomId = "room_id"
-        case newRoomName = "new_room_name"
         case lightLevel = "light_level"
         case lightSource = "light_source"
         case lightConfirmed = "light_confirmed"

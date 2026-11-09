@@ -5,8 +5,6 @@ import { verifyAnalysisReceipt } from "../_shared/ProtocolResolver.ts";
 export interface ClaimOverridesInput {
   species_id?: string | null;
   display_name?: string | null;
-  room_id?: string | null;
-  create_room_name?: string | null;
   watering_habit?: string | null;
   light_level?: string | null;
   light_source?: "manual_selection" | "camera_estimate" | "unknown" | null;
@@ -82,7 +80,7 @@ export function evaluateClaimStaleTransition(
     overrides.season_override !== null &&
     overrides.season_override !== (originalContext.season_override ?? "auto");
 
-  // Room changes alone do NOT make the analysis stale (FR-046 / US2.9)
+  // Display name changes alone do NOT make the analysis stale (FR-046 / US2.9)
   const isStale =
     speciesChanged ||
     wateringChanged ||
@@ -116,6 +114,21 @@ export async function handlePrepareClaim(
         400,
         "VALIDATION_ERROR",
         "operation_id, draft_id, installation_id, and installation_credential are required",
+      ),
+    );
+  }
+
+  if (
+    body.overrides &&
+    ["room_id", "new_room_name", "create_room_name"].some((key) =>
+      Object.prototype.hasOwnProperty.call(body.overrides, key)
+    )
+  ) {
+    return errorResponse(
+      new ApiHttpError(
+        400,
+        "VALIDATION_ERROR",
+        "Room fields are retired from claim overrides",
       ),
     );
   }

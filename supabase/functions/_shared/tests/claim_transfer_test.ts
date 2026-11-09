@@ -1,6 +1,8 @@
 import { assertEquals } from "@std/assert";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   evaluateClaimStaleTransition,
+  handlePrepareClaim,
   verifyAnalysisReceiptSignature,
 } from "../../plants-api/claims.ts";
 import { rankCatalogueSpecies } from "../../plants-api/catalogue.ts";
@@ -10,7 +12,7 @@ import {
 } from "../BasicCareService.ts";
 import { signAnalysisReceipt } from "../ProtocolResolver.ts";
 
-Deno.test("T040: Claim overrides keep context_state=current and care_revision=1 when only room or display_name changes", () => {
+Deno.test("T040: Claim overrides keep context_state=current and care_revision=1 when only display_name changes", () => {
   const original = {
     species_id: "11111111-1111-4111-8111-111111111101",
     watering_habit: "weekly",
@@ -20,13 +22,12 @@ Deno.test("T040: Claim overrides keep context_state=current and care_revision=1 
     season_override: "auto",
   };
 
-  const roomOnly = evaluateClaimStaleTransition(original, {
-    room_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  const nameOnly = evaluateClaimStaleTransition(original, {
     display_name: "Salon Monstera",
   });
-  assertEquals(roomOnly.isStale, false);
-  assertEquals(roomOnly.careRevision, 1);
-  assertEquals(roomOnly.contextState, "current");
+  assertEquals(nameOnly.isStale, false);
+  assertEquals(nameOnly.careRevision, 1);
+  assertEquals(nameOnly.contextState, "current");
 });
 
 Deno.test("T040: Claim overrides transition analysis to stale and care_revision=2 when species or care conditions change", () => {
@@ -52,6 +53,96 @@ Deno.test("T040: Claim overrides transition analysis to stale and care_revision=
   assertEquals(conditionChanged.isStale, true);
   assertEquals(conditionChanged.careRevision, 2);
   assertEquals(conditionChanged.contextState, "stale");
+});
+
+// Return the same frozen parsed object so writes to the request body cannot be
+// hidden by Request.json() producing a separate object for the handler.
+function claimRequest(body: object): Request {
+  const request = new Request("https://example.test/claims/prepare", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  request.json = () => Promise.resolve(body);
+  return request;
+}
+
+Deno.test("T158: prepare rejects each retired room key, including null, before any RPC without mutation", async () => {
+  for (const key of ["room_id", "new_room_name", "create_room_name"]) {
+    for (const value of ["legacy-room", null]) {
+      const overrides = Object.freeze({
+        display_name: "Salon Monstera",
+        light_level: "low",
+        light_confirmed: false,
+        [key]: value,
+      });
+      const body = Object.freeze({
+        operation_id: "operation-1",
+        draft_id: "draft-1",
+        installation_id: "installation-1",
+        installation_credential: "fixture-credential",
+        overrides,
+      });
+      const before = JSON.stringify(body);
+      let rpcCalls = 0;
+      const adapter = {
+        rpc: () => {
+          rpcCalls += 1;
+          throw new Error("Retired room input must not reach RPC");
+        },
+      } as unknown as SupabaseClient;
+      const response = await handlePrepareClaim(claimRequest(body), adapter, "owner-1");
+      assertEquals(response.status, 400);
+      assertEquals((await response.json()).error.code, "VALIDATION_ERROR");
+      assertEquals(rpcCalls, 0);
+      assertEquals(JSON.stringify(body), before);
+    }
+  }
+});
+
+Deno.test("T158: non-room overrides preserve existing prepare RPC arguments and response", async () => {
+  const overrides = Object.freeze({
+    species_id: "species-1",
+    display_name: "Salon Monstera",
+    watering_habit: "weekly",
+    light_level: "low",
+    light_source: "manual_selection",
+    light_confirmed: false,
+    recent_changes: "none",
+    pot_type: "drainage",
+    season_override: "auto",
+  });
+  const body = Object.freeze({
+    operation_id: "operation-1",
+    draft_id: "draft-1",
+    installation_id: "installation-1",
+    installation_credential: "fixture-credential",
+    overrides,
+  });
+  const before = JSON.stringify(body);
+  const calls: { name: string; args: unknown }[] = [];
+  const fixtureResult = { claim_id: "fixture-claim" };
+  const adapter = {
+    rpc: (name: string, args: unknown) => {
+      calls.push({ name, args });
+      return Promise.resolve({ data: fixtureResult, error: null });
+    },
+  } as unknown as SupabaseClient;
+  const response = await handlePrepareClaim(claimRequest(body), adapter, "owner-1");
+  assertEquals(calls, [{
+    name: "prepare_guest_claim",
+    args: {
+      p_owner_id: "owner-1",
+      p_operation_id: body.operation_id,
+      p_draft_id: body.draft_id,
+      p_installation_id: body.installation_id,
+      p_credential_raw: body.installation_credential,
+      p_overrides: overrides,
+    },
+  }]);
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), fixtureResult);
+  assertEquals(JSON.stringify(body), before);
+  // This adapter checks forwarding only; the baseline SQL signature mismatch is T159.
 });
 
 Deno.test("T040: Fallback receipt verification accepts valid HMAC signature and rejects tampered payload or hash", async () => {

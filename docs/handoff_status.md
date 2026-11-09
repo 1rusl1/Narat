@@ -128,7 +128,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t158-room-sql-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t158-room-sql-retirement](validation/automation/tasks/t158-room-sql-retirement.md).
+t158-room-client-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t158-room-client-retirement](validation/automation/tasks/t158-room-client-retirement.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

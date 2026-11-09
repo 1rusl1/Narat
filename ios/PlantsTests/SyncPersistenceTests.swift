@@ -107,6 +107,66 @@ private actor UnavailableSyncTransport: PlantsAPITransport {
 }
 
 final class SyncPersistenceTests: XCTestCase {
+    func testPersistedLegacyClaimOverridesReadConditionsAndEncodeWithoutRoomKeys() async throws {
+        let container = try LocalStore.makeContainer(accountScope: "t158_\(UUID())", inMemory: true)
+        let draftId = UUID()
+        let taxonId = UUID(uuidString: "11111111-1111-4111-8111-111111111101")!
+        let legacyJSON = #"""
+        {
+          "plant_id":"monstera_deliciosa", "taxon_id":"11111111-1111-4111-8111-111111111101",
+          "display_name":"Salon Monstera", "room_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "new_room_name":"Salon", "light_level":"low", "light_source":"camera_estimate",
+          "light_confirmed":false, "watering_habit":"sparse", "last_watered":"within_3_days",
+          "pot_type":"terracotta", "season_override":"autumn_winter"
+        }
+        """#
+        let expected = ClaimOverridesDTO(
+            plantId: "monstera_deliciosa", taxonId: taxonId, displayName: "Salon Monstera",
+            lightLevel: .low, lightSource: .cameraEstimate, lightConfirmed: false,
+            wateringHabit: .sparse, lastWatered: .within3Days,
+            potType: .terracotta, seasonOverride: .autumnWinter
+        )
+        let encoder = JSONEncoder()
+        let conditionsJSON = String(decoding: try encoder.encode(CareConditionsInput()), as: UTF8.self)
+        // Seed historical raw JSON in SwiftData, then read it through the production store.
+        do {
+            let context = ModelContext(container)
+            context.insert(GuestDraftCacheRecord(
+                draftId: draftId, flowId: UUID(), intentRaw: "problem", addMethodRaw: "scan",
+                currentStepRaw: "preliminary_result", photoLocalPath: nil,
+                confirmedPlantId: "monstera_deliciosa", confirmedTaxonId: taxonId,
+                confirmedDisplayName: "Salon Monstera", conditionsJSON: conditionsJSON,
+                resultModeRaw: "diagnosis", preliminaryAnalysisJSON: nil,
+                analysisReceiptJSON: nil, overridesJSON: legacyJSON,
+                serverExpiresAt: Date().addingTimeInterval(3600), isCompleteForFallback: true
+            ))
+            try context.save()
+        }
+        let store = LocalStore(modelContainer: container)
+        let loadedValue = try await store.loadGuestDraft(draftId: draftId)
+        let loaded = try XCTUnwrap(loadedValue)
+        XCTAssertEqual(loaded.overrides, expected)
+        let encoded = try encoder.encode(try XCTUnwrap(loaded.overrides))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        for key in ["room_id", "new_room_name", "create_room_name"] {
+            XCTAssertNil(object[key])
+        }
+        XCTAssertEqual(object.count, 10)
+        XCTAssertEqual(try JSONDecoder().decode(ClaimOverridesDTO.self, from: encoded), expected)
+        try await store.saveGuestDraft(loaded)
+        let recreated = LocalStore(modelContainer: container)
+        let savedValue = try await recreated.loadGuestDraft(draftId: draftId)
+        XCTAssertEqual(try XCTUnwrap(savedValue).overrides, expected)
+        let context = ModelContext(container)
+        let records = try context.fetch(FetchDescriptor<GuestDraftCacheRecord>())
+        let savedJSON = try XCTUnwrap(records.first(where: { $0.draftId == draftId })?.overridesJSON)
+        let savedObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(savedJSON.utf8)) as? [String: Any])
+        for key in ["room_id", "new_room_name", "create_room_name"] {
+            XCTAssertNil(savedObject[key])
+        }
+        XCTAssertEqual(try JSONDecoder().decode(ClaimOverridesDTO.self, from: Data(savedJSON.utf8)), expected)
+    }
+
     func testHTTP503KeepsOutboxIdentityPayloadAndErrorAcrossStoreRecreation() async throws {
         // Recreate LocalStore over the same in-memory container, not a cold process restart.
         let container = try LocalStore.makeContainer(accountScope: "t152_\(UUID())", inMemory: true)
