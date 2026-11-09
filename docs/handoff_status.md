@@ -637,7 +637,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-create-receipt-engine: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-create-receipt-engine](validation/automation/tasks/parallel-ios-create-receipt-engine.md).
+parallel-ios-catalogue-capacity-recovery: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-catalogue-capacity-recovery](validation/automation/tasks/parallel-ios-catalogue-capacity-recovery.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
