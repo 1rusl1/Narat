@@ -57,7 +57,7 @@ EntitlementGate допускает basic care для active owner, enabled/nonde
 ## Sync и границы готовности
 
 SQL `202611090004_retire_free_slots.sql` удаляет free_slot из активных membership
-проекций и free_care_selection_explicit из profile sync. Порядок
+проекций и free_selection_explicit/free_selection_revision из profile sync. Порядок
 updated_at/entity_type/id, since/until, cursor, watermark и tombstones сохранены.
 Старые физические поля, исторические receipts, растения/фото/история не очищаются;
 upgrade не запускает reconciliation. Старые receipts не переписываются в новый DTO.

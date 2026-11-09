@@ -1,5 +1,6 @@
 # Client API — целевой MVP
 
+> Актуальная серверная граница Free-коллекции и retirement slots: [collection-cap.md](collection-cap.md), 2026-11-09. Исторические slot/selection поля ниже не входят в новые проекции; клиентская T162 и живой API ещё не приняты.
 Редакция 2026-11-09; base `/functions/v1/plants-api/v1`. [Переход](revision-2026-11-09.md), [статус схем](README.md). Наличие endpoint в документе не доказывает реализацию.
 
 ## Общие границы

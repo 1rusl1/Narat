@@ -436,6 +436,15 @@
       "stage": "unit",
       "mode": "fixture",
       "timeout": 300
+    },
+    "t168-client-light-writer": {
+      "argv": [
+        "python3",
+        "tools/automation/t168_light_writer_gate.py"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
     }
   },
   "publish": {

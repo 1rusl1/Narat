@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t168-retire-unused-client-light-estimator",
+      "description": "Ограниченный T168 клиентский срез: удалить неиспользуемые camera-estimate writer/protocol и оставить новый выбор света только ручным; старый cache/происхождение сохраняются. Это не полная T168 server/API приёмка.",
+      "depends_on": [],
+      "risk": "low",
+      "complexity": "low",
+      "files": [
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "tools/automation/t168_light_writer_gate.py",
+        "specs/001-plants-ios-mvp/orchestrator-cleanup-tasks.md"
+      ],
+      "write_files": [
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift"
+      ],
+      "constraints": [
+        "Only listed write_files, ordinary unified patch. No tools/config/handoff/tasks/SQL/backend/APIModels/data/history writes. Read relevant current spec/constitution. No live network/deploy. Preserve unrelated flow/UI identifiers and fields.",
+        "Delete unused LightingEstimateResult and LightingEstimating protocol/obsolete section marker from PlantTypes.swift; delete applyEstimatedLighting from AnalysisFlowModel. Keep LightSource.cameraEstimate Codable case for historical read/write of unchanged cache (do not silently rewrite legacy to manual/unknown). Do not claim all new server/wire camera input blocked: requires later T168 SQL/API/DTO work.",
+        "Change selectLightLevel to exactly func selectLightLevel(_ level: LightLevel) with no caller-supplied source. Explicit UI choice: known level sets source manual, confirmed true; unknown sets source unknown, confirmed false. Update CareQuestionsView call to one argument. Preserve all other conditions/router/operation/retry state.",
+        "Add meaningful FirstHelpUnitTests @MainActor regression: decode historical CareConditionsInput with source camera_estimate and confirmed false; initialize router/model from it and assert no automatic conversion on init. Explicit selection of known light updates exactly light fields and retains other data/flow/photo/species; unknown not confirmed; explicit known+unknown JSON encodes correct source and roundtrips. Existing SyncPersistenceTests legacy disk/cache tests left unchanged, must pass. No fake services or new modules. Controller executes build/welcome/all real PlantsTests and Simulator smoke before combined acceptance.",
+        "Product T168/T155 remain open because API/direct RPC guards and historical resubmission are separate unbuilt scope. This slice removes only real unused estimator contract and makes current UI manual writer explicit; report limitation in decisions, not findings when scoped criteria pass."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Retired estimator symbols removed from production Swift; UI cannot pass camera source. All build/welcome/PlantsTests including old cache and new explicit manual/unknown behavior pass without skips; existing local UI smoke passes.",
+          "checks": [
+            "t168-client-light-writer",
+            "ios-tests",
+            "simulator-smoke",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
