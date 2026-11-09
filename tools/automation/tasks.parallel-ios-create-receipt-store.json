@@ -1,0 +1,44 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-create-receipt-store",
+      "description": "T162/T046 narrow prerequisite only: durable owner-scoped catalogue create confirmation and atomic receipt+outbox acknowledgement in existing LocalStore. No engine/repository/UI integration yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Only write_files, ordinary diff, no new files/tools/config/AGENTS/handoff/tasks/backend/contracts/deploy/live calls. Read applicable constitution/spec. No second outbox/framework. Preserve all existing49 tests and old public APIs/disk caches; no skips/empty tests or weakened assertions. Typed create receipt e8a12fe, A1 7cb5893 and A2 643622bafcd527bb1f34995d94c58d46ddc9dfef are accepted external prerequisites, not depends_on tasks. Do not redo their accepted wire/engine behavior.",
+        "Implement only the durable LocalStore primitive for the NEXT engine/repository slice. Add a small SwiftData record in LocalStore.swift and register it in production Schema and relevant CollectionWireTests disk Schema (no new Swift files/target changes). Expose an immutable Sendable confirmation snapshot/read method scoped by explicit owner+operation. Store the authoritative existing PlantCreateReceiptDTO (all canonical fields, exact watermarkRaw), original operation_id and original payloadJSON unchanged as local association metadata. No invented server status/replayed/client plant UUID. No client SQL payload hash/canonicalization. No active FreeSelection/slots/rooms writers. Historical caches remain readable.",
+        "Atomic acknowledgement method must accept original CommandEnvelopeDTO, decoded PlantCreateReceiptDTO, and captured existing SyncSessionLease/SyncSessionAuthority from authenticated caller. In one isolated context/save under existing authority validate matching owner, queued operation/command/plant target/original payload, insert durable receipt then remove only that queued command. Error/cancellation/stale A->B->A or save failure keeps queue and receipts unchanged on same store and independent disk reopen. Use A2 isolated sync context technique; no await under lock. No standalone markOutboxCommitted followed by receipt insert. Read-after-success must see committed result.",
+        "Exact acknowledgement replay must be idempotent after queued command is gone, scoped to owner+operation and original payload/receipt; different payload or different server receipt/plant ID must fail without overwriting confirmation. Same operation UUID in another owner namespace must not read/ack/overwrite A record. Do not derive ownership from response fields. Schema uniqueness should match owner+operation rather than global receipt operation if possible, preserving existing outbox constraints. Reject missing queued operation unless a matching prior confirmation proves exact replay.",
+        "Create receipt watermark is NOT a sync checkpoint: receipt ack must not advance since/clear canonical cache or fabricate synced plant/profile/entitlement. UI save/cap/status/repository remain future; no parent checkbox completion. Do not hook SyncEngine or transport in this store-only slice (out of write scope); current A2 typed create drain still discards receipt until next dependent manifest. Report this limitation clearly.",
+        "Meaningful direct LocalStore+real disk tests in CollectionWireTests: queue A/B, canonical receipt decoded with existing DTO, atomic removal only A+durable receipt exact fields/payload through independent disk reopen; exact replay after removal; conflicting payload/receipt rejected; wrong-owner and A->B->A stale lease rejected; readonly SQLite Cocoa513 saves keep old queues/no receipt in same store and reopen; successful retry with same operation/payload; sync checkpoint/cache unchanged. Use real APIClient binding/captured authority for session context, not a duplicate fake engine. Existing49 tests all run plus new tests, minimum53 total/no skips. All old A2 failed-save and restart regressions must pass."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Durable owner+operation create confirmation and outbox deletion commit atomically, preserve original payload/SQL receipt/watermark; exact replay/conflicts/A-B/stale session/save failure/reopen verified with real disk and current store.49 old+meaningful new(min53) tests no skips/build/Simulator PASS. Store-only fixture prerequisite, not engine/UI/live save acceptance.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
