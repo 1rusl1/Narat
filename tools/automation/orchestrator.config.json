@@ -316,6 +316,15 @@
       "stage": "static",
       "mode": "local",
       "timeout": 30
+    },
+    "t157-followup-contract": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_followup_gate.py"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
     }
   },
   "publish": {

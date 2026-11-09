@@ -42,6 +42,12 @@ Run `t157-questions-20261109-01`, manifest `tools/automation/tasks.t157-cleanup.
 
 **Ограничение:** принята только часть OLD-01/T157; follow_up, scores/routing, полный профиль/источники, treatment timeline, Swift DTO и прочие остатки T158–T160 ещё требуют очистки. T157 и T155 не закрыты; новые checkbox не добавлены. Успешный пилот подтверждает пригодность оркестратора для ограниченных срезов с точными файлами/проверками, а не автоматическую безопасность любой миграции.
 
+## Следующий последовательный запуск
+
+Подготовлен `tasks.t157-followup.json` + независимый `t157_followup_gate.py` и config check: два активных режима schema/backend/iOS, безопасное чтение legacy и завершение старого queued job без provider/нового расхода. Manifest validate PASS (1 high-risk задача). Разрешены 16 явно указанных schema/backend/Swift/test файлов. Обязательны Deno regression и iOS build/unit/Simulator smoke. Runtime checks ещё не запускались для нового патча; stage preparation не приёмка T157.
+
+Run-id: `t157-followup-20261109-01`. После чистого Git запускается Developer → checks → Reviewer → QA → push. Исторический SQL mode/RPC остаётся отдельной forward-migration задачей с clean/upgrade приёмкой, не объявлять его очищенным этим срезом.
+
 ## Точный следующий шаг
 
 Продолжить **T157** следующим согласованным срезом оркестратора: составить список потребителей `follow_up`/comparison в `ai-result.schema.json`, `KnowledgeTypes.ts`, validator/adapter/worker/API и Swift DTO; подготовить manifest с синхронным удалением нового режима, обычной diagnosis для повторного фото, безопасным чтением истории и Deno/iOS regression checks. Не удалять режим только из schema при оставшихся writers. После этого очистить score routing и компактные карточки, затем T158/T159/T160 с forward migrations и отдельными clean/upgrade проверками. Весь объём нельзя принимать по текущему question-bank пилоту.

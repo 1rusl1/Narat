@@ -1,0 +1,92 @@
+{
+  "tasks": [
+    {
+      "id": "t157-followup-cleanup",
+      "description": "Следующий последовательный срез T157: убрать отдельный новый AI follow_up/comparison из schema, backend API/access/worker/provider и iOS активного выбора/квот. Новое фото того же растения использует diagnosis. Сохраняются прежние результаты/подписи и ручные/контрольные фото; не путать с полностью отдельной очисткой расписания T160. Предыдущий question-bank срез принят f15e6c6.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "high",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/ai-result.schema.json",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/AnalysisValidator.ts",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/ProtocolResolver.ts",
+        "supabase/functions/_shared/AnalysisAccess.ts",
+        "supabase/functions/_shared/ProviderBudgetGuard.ts",
+        "supabase/functions/plants-api/analysis.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "supabase/functions/_shared/tests/runtime_compatibility_test.ts",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Data/Repositories/AnalysisAccessRepository.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "specs/001-plants-ios-mvp/spec.md",
+        "specs/001-plants-ios-mvp/contracts/revision-2026-11-09.md",
+        "supabase/functions/plants-api/analysis-access.ts",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "tools/automation/t157_followup_gate.py"
+      ],
+      "write_files": [
+        "specs/001-plants-ios-mvp/contracts/ai-result.schema.json",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/AnalysisValidator.ts",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/ProtocolResolver.ts",
+        "supabase/functions/_shared/AnalysisAccess.ts",
+        "supabase/functions/_shared/ProviderBudgetGuard.ts",
+        "supabase/functions/plants-api/analysis.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "supabase/functions/_shared/tests/runtime_compatibility_test.ts",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Data/Repositories/AnalysisAccessRepository.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift"
+      ],
+      "constraints": [
+        "Только write_files, без deploy/живых provider/DB/покупок; не редактировать controller/config/gates/tasks/handoff/применённые миграции. Все изменения code/schema/test согласованы в одном патче. Работа не закрывает всю T157/T155. Лимиты/anchor/expiry и схема карточки лечения не меняются здесь.",
+        "Новые schema/prompt/types/worker/access/API допускают только identification и diagnosis. Из нового AI payload удалить comparison и comparison_unsuitable, follow_up branch; валидатор отвергает режим follow_up и comparison в новом результате. Сохранить текущую schema_version 3.0 как transitional revision без лишнего переименования всех типов; остальные ограничения closed IDs/семантики/отказов/квот/EN-PL не ослаблять. Дополнительные вопросы не возвращать.",
+        "В AnalysisAccess нет нового follow_up summary/paid-only gate; повторная диагностика использует обычный diagnosis доступ. API POST follow_up должен отказать 400 VALIDATION_ERROR до admitAndCreateJob/нового reserve/provider call. Сохранить auth/owner/idempotency guards для допустимых modes. Не переинтерпретировать старую подписанную receipt/replay или прошлую классификацию как новый анализ; legacy response чтение допускается отдельной совместимой read-моделью без нового follow_up execution.",
+        "Worker должен безопасно завершать уже очередной legacy follow_up job явной ошибкой без provider вызова и нового budget reservation; существующий quota reserve освобождается ровно раз штатной finalizeOnce. Не зависнуть на типовом narrowing: тестировать фактический runtime payload от adapter, включая повтор/уже finalized. Ошибка не создаёт ложный диагноз/списание успешного анализа.",
+        "Удалить comparison hint из provider adapter/worker запроса и prompt, VisionComparison types/semantic comparison checks/knownTraitIds если больше не используются для AI. Ручное фото/наблюдение, старые recovery-check descriptors и фотоатрибуты не удалять в этом срезе: это данные истории и будущая T160. Не добавлять mock success вместо real unavailable T152.",
+        "В iOS убрать followUpQuota и paid startFollowUpScan из активных моделей/CaseIterable/actions; повторный запрос использует diagnosis. Для исторических Codable AnalysisMode/receipt обеспечить безопасное чтение без изменения исходного подписанного токена/данных; допустим явно legacy read-only case, исключённый из selectable cases и новых запросов. Unknown modes не должны молча стать diagnosis. Добавить Swift regression tests в существующий FirstHelpUnitTests/SyncPersistenceTests, без xcodeproj/новых targets.",
+        "Backend regression tests: identification/diagnosis EN-PL проходят без comparison; новые follow_up/comparison отвергаются; API не вызывает admission для старого режима, worker не вызывает provider/budget для legacy job и освобождает reserve штатно; доступ summary только2mode, starter/idempotency retained, signature legacy verify retained. Swift tests: allCases/selectable only2, legacy cached decoding retained, new state encode/decode без followUpQuota, unknown decode failure. Старые positive follow_up tests заменить отрицательными, не удалять unrelated coverage/не skip.",
+        "Детерминированные checks mandatory: deno-check, deno-tests, ios-tests (build/welcome/реальный PlantsTests target без skips), simulator-smoke и independent t157-followup-contract. iOS environment failure не обходить и не выдавать build/fixtures за live acceptance. SQL всё ещё содержит исторический mode CHECK/старый privileged quota RPC; никакой лжи о clean/upgrade применении — это следующая отдельная migration-задача."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Новые AI schema/prompt/types/access/API worker только identification/diagnosis; удалены comparison payload/hint и selectable paid follow_up, остальные guards сохранены.",
+          "checks": [
+            "t157-followup-contract",
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Все Deno tests без skip, новые отрицательные schema/API/worker проверки и сохранение signature/replay/EN-PL; legacy job освобождает reserve без provider/budget вызова.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Swift legacy cache decoding и новый2mode/access state покрыты настоящими PlantsTests; сборка/welcome/unit и UI smoke проходят. Это local Simulator, не live AI/DB приёмка.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
