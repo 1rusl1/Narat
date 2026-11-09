@@ -98,7 +98,14 @@ public actor SyncEngine {
         return try await flushOutbox(for: ownerId, context: context)
     }
 
+    /// Repository composition keeps one bound lease through refresh, drain and disk read.
+    func flushOutbox(context: SyncSessionLease) async throws -> Int {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        return try await flushOutbox(for: context.ownerId, context: context)
+    }
+
     private func flushOutbox(for ownerId: UUID, context: SyncSessionLease) async throws -> Int {
+        guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
         // Actor reentrancy must not dispatch a second copy of this owner's snapshot.
         guard drainingOwners.insert(ownerId).inserted else { return 0 }

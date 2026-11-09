@@ -1151,3 +1151,534 @@ extension CollectionRepositoryTests {
         XCTAssertEqual(after.receipts, before.receipts)
     }
 }
+
+/// Scripted HTTP server, including a durable server commit whose first response is lost.
+private actor CatalogueSaveTransport: PlantsAPITransport {
+    enum Reply: Sendable {
+        case http(String, Int, Data)
+        case commitAndLose(Data)
+        case replayCommitted
+    }
+
+    private let replies: [Reply]
+    private let suspendAt: Int?
+    private var requests: [URLRequest] = []
+    private var release: CheckedContinuation<Void, Never>?
+    private var observers: [CheckedContinuation<Void, Never>] = []
+    private var committed: [UUID: (body: Data, receipt: Data)] = [:]
+
+    init(_ replies: [Reply], suspendAt: Int? = nil) {
+        self.replies = replies
+        self.suspendAt = suspendAt
+    }
+
+    func captured() -> [URLRequest] { requests }
+    func serverCommitCount() -> Int { committed.count }
+    func waitForSuspension() async {
+        if release != nil { return }
+        await withCheckedContinuation { observers.append($0) }
+    }
+    func resume() { release?.resume(); release = nil }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let index = requests.count
+        requests.append(request)
+        guard index < replies.count else { throw URLError(.badServerResponse) }
+        if index == suspendAt {
+            await withCheckedContinuation { continuation in
+                release = continuation
+                for observer in observers { observer.resume() }
+                observers.removeAll()
+            }
+        }
+        let status: Int
+        let data: Data
+        switch replies[index] {
+        case let .http(method, code, body):
+            guard request.httpMethod == method,
+                  request.url?.lastPathComponent == (method == "GET" ? "sync" : "commands") else {
+                throw URLError(.badServerResponse)
+            }
+            status = code
+            data = body
+        case let .commitAndLose(receipt):
+            guard request.httpMethod == "POST", let body = request.httpBody else {
+                throw URLError(.badServerResponse)
+            }
+            let command = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+            committed[command.operationId] = (body, receipt)
+            throw URLError(.networkConnectionLost)
+        case .replayCommitted:
+            guard request.httpMethod == "POST", let body = request.httpBody else {
+                throw URLError(.badServerResponse)
+            }
+            let command = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+            guard let original = committed[command.operationId], original.body == body else {
+                throw URLError(.badServerResponse)
+            }
+            status = 200
+            data = original.receipt
+        }
+        return (data, HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil
+        )!)
+    }
+}
+
+extension CollectionRepositoryTests {
+    private func saveStack(
+        _ url: URL, _ transport: CatalogueSaveTransport, allowsSave: Bool = true
+    ) async throws -> (
+        store: LocalStore, api: PlantsAPIClient, engine: SyncEngine, repository: CollectionRepository
+    ) {
+        let store = LocalStore(modelContainer: try container(url, allowsSave: allowsSave))
+        let api = PlantsAPIClient(transport: transport)
+        await api.bindSyncSession(session)
+        let engine = SyncEngine(store: store, apiClient: api)
+        let now = SQLTimestamp.date(from: boundary)!
+        let repository = CollectionRepository(store: store, apiClient: api, syncEngine: engine, clock: { now })
+        return (store, api, engine, repository)
+    }
+
+    private func saved(_ result: CatalogueSaveResult) throws -> CatalogueCreateConfirmationSnapshot {
+        guard case let .saved(confirmation) = result else {
+            XCTFail("Only a durable typed receipt proves save")
+            throw SyncWireValidationError.invalidPage
+        }
+        return confirmation
+    }
+
+    private func savePending(_ result: CatalogueSaveResult) throws -> OutboxEntrySnapshot {
+        guard case let .pending(entry) = result else {
+            XCTFail("Expected original durable pending command")
+            throw SyncWireValidationError.invalidPage
+        }
+        return entry
+    }
+
+    private func enqueueSave(_ command: CommandEnvelopeDTO, _ store: LocalStore) async throws -> OutboxEntrySnapshot {
+        try await store.enqueueCommand(
+            operationId: command.operationId, ownerId: owner, plantId: command.plantId,
+            commandName: command.commandName, payloadJSON: command.payloadJSON
+        )
+    }
+
+    private func assertCreateRequest(_ request: URLRequest, _ command: CommandEnvelopeDTO) throws {
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.lastPathComponent, "commands")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer capacity-a")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), command.operationId.uuidString.lowercased())
+        let body = try XCTUnwrap(request.httpBody)
+        let sent = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+        XCTAssertEqual(sent, command)
+        XCTAssertEqual(Data(sent.payloadJSON.utf8), Data(command.payloadJSON.utf8))
+    }
+
+    func testSaveNewFreeTwoThreeAndPaidFourRefreshBeforeExactCreate() async throws {
+        for (count, paid) in [(2, false), (3, false), (4, true)] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let command = journalCommand()
+            let receipt = try journalReceipt()
+            let allowed = count < 3 || paid
+            var replies: [CatalogueSaveTransport.Reply] = [
+                .http("GET", 200, try json(page(
+                    (1...count).map { change($0) }, entitlement: paid ? rights() as Any : NSNull()
+                )))
+            ]
+            if allowed { replies.append(.http("POST", 200, try JSONEncoder().encode(receipt))) }
+            let transport = CatalogueSaveTransport(replies)
+            let stack = try await saveStack(url, transport)
+            let result = try await stack.repository.saveCatalogueCreate(command, session: session, isAnonymous: false)
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), allowed ? ["GET", "POST"] : ["GET"])
+            XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Authorization"), "Bearer capacity-a")
+            let query = URLComponents(url: requests[0].url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertFalse(query.contains { $0.name == "since" })
+            if allowed {
+                let confirmation = try saved(result)
+                XCTAssertEqual(confirmation.receipt, receipt)
+                XCTAssertEqual(confirmation.ownerId, owner)
+                XCTAssertEqual(confirmation.operationId, command.operationId)
+                XCTAssertEqual(Data(confirmation.payloadJSON.utf8), Data(command.payloadJSON.utf8))
+                try assertCreateRequest(requests[1], command)
+            } else {
+                guard case let .collectionLimitNotEnqueued(capacity) = result else {
+                    return XCTFail("Free full collection must not enqueue")
+                }
+                XCTAssertEqual(capacity.plantCount, 3)
+                XCTAssertFalse(capacity.canCreate)
+            }
+            let disk = try await journalDisk(url)
+            XCTAssertTrue(disk.own.queue.isEmpty)
+            XCTAssertEqual(disk.receipts.count, allowed ? 1 : 0)
+            XCTAssertEqual(disk.own.plants.count, count)
+            XCTAssertEqual(disk.own.raw, until) // ACK does not publish its newer watermark/cache.
+        }
+    }
+
+    func testSaveGuestMalformedUnboundAndDifferentSessionHaveNoEffects() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try await seed(LocalStore(modelContainer: container(url)))
+        let before = try await journalDisk(url)
+        for mode in 0..<6 {
+            let transport = CatalogueSaveTransport([])
+            let store = LocalStore(modelContainer: try container(url))
+            let api = PlantsAPIClient(transport: transport)
+            if mode != 2 { await api.bindSyncSession(session) }
+            if mode == 3 {
+                await api.bindSyncSession(NativeAuthSession(userId: other, accessToken: "b", expiresAt: .distantFuture))
+            }
+            if mode == 4 {
+                await api.bindSyncSession(NativeAuthSession(userId: owner, accessToken: "new", expiresAt: .distantFuture))
+            }
+            let valid = journalCommand()
+            let command = mode == 5
+                ? CommandEnvelopeDTO(operationId: valid.operationId, commandName: "care.complete", payloadJSON: valid.payloadJSON)
+                : journalCommand(operationId: valid.operationId, payload: mode == 1 ? "{}" : valid.payloadJSON)
+            do {
+                let result = try await repository(store, api).saveCatalogueCreate(
+                    command, session: session, isAnonymous: mode == 0
+                )
+                XCTAssertEqual(mode, 0)
+                XCTAssertEqual(result, .signInRequired)
+            } catch CatalogueCreateValidationError.invalidPayload {
+                XCTAssertEqual(mode, 1)
+            } catch CatalogueCreateValidationError.invalidCommand {
+                XCTAssertEqual(mode, 5)
+            } catch SyncWireValidationError.invalidSession {
+                XCTAssertTrue((2...4).contains(mode))
+            }
+            let requests = await transport.captured()
+            XCTAssertTrue(requests.isEmpty)
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+        }
+    }
+
+    func testSaveLostCommittedResponseResumesSameBodyAfterRestartAtFullCapacityAndReplaysReceipt() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = journalCommand()
+        let receipt = try journalReceipt()
+        var committedPlant = change(3)
+        committedPlant["id"] = receipt.plantId.uuidString
+        let transport = CatalogueSaveTransport([
+            .http("GET", 200, try json(page([change(1), change(2)]))),
+            .commitAndLose(try JSONEncoder().encode(receipt)),
+            .http("GET", 200, try json(page([change(1), change(2), committedPlant]))),
+            .replayCommitted
+        ])
+        let pending: OutboxEntrySnapshot
+        do {
+            let stack = try await saveStack(url, transport)
+            pending = try savePending(await stack.repository.saveCatalogueCreate(
+                command, session: session, isAnonymous: false
+            ))
+            XCTAssertEqual(pending.retryCount, 1)
+            XCTAssertNotNil(pending.lastError)
+            XCTAssertNil(pending.lastAPIError)
+            let full = try confirmed(await stack.repository.preflightCapacity(session: session, isAnonymous: false))
+            XCTAssertFalse(full.canCreate)
+        }
+        let before = try await journalDisk(url)
+        XCTAssertEqual(before.own.queue, [pending])
+        XCTAssertTrue(before.receipts.isEmpty)
+        do {
+            let stack = try await saveStack(url, transport)
+            for _ in 0..<2 {
+                let confirmation = try saved(await stack.repository.saveCatalogueCreate(
+                    command, session: session, isAnonymous: false
+                ))
+                XCTAssertEqual(confirmation.receipt, receipt)
+                XCTAssertEqual(confirmation.operationId, command.operationId)
+                XCTAssertEqual(Data(confirmation.payloadJSON.utf8), Data(command.payloadJSON.utf8))
+            }
+        }
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET", "POST"])
+        try assertCreateRequest(requests[1], command)
+        try assertCreateRequest(requests[3], command)
+        XCTAssertEqual(requests[1].httpBody, requests[3].httpBody)
+        let commits = await transport.serverCommitCount()
+        XCTAssertEqual(commits, 1)
+        let after = try await journalDisk(url)
+        XCTAssertTrue(after.own.queue.isEmpty)
+        XCTAssertEqual(after.receipts.count, 1)
+        XCTAssertEqual(after.own.raw, until)
+        XCTAssertNotEqual(after.own.raw, receipt.watermarkRaw)
+        XCTAssertEqual(after.own.plants.count, 3)
+        XCTAssertTrue(after.own.plants.contains { $0.hasPrefix(receipt.plantId.uuidString) })
+        // A fresh repository/client must also replay disk confirmation with zero HTTP.
+        let silent = CatalogueSaveTransport([])
+        let reopened = try await saveStack(url, silent)
+        let replay = try saved(await reopened.repository.saveCatalogueCreate(
+            command, session: session, isAnonymous: false
+        ))
+        XCTAssertEqual(replay.receipt, receipt)
+        let noRequests = await silent.captured()
+        XCTAssertTrue(noRequests.isEmpty)
+    }
+
+    func testSaveServerCapAuthUnavailableAndMalformedReceiptRemainPendingAcrossReopen() async throws {
+        for (status, code) in [(409, "COLLECTION_LIMIT_REACHED"), (401, "UNAUTHORIZED"),
+                               (503, "INTERNAL_ERROR"), (200, "")] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let command = journalCommand()
+            let body = try json(code.isEmpty ? [:] : [
+                "error": ["code": code, "message": "Try later", "retryable": status == 503]
+            ])
+            let transport = CatalogueSaveTransport([
+                .http("GET", 200, try json(page([change(1), change(2)]))),
+                .http("POST", status, body), .http("POST", status, body)
+            ])
+            let original: OutboxEntrySnapshot
+            do {
+                let stack = try await saveStack(url, transport)
+                original = try savePending(await stack.repository.saveCatalogueCreate(
+                    command, session: session, isAnonymous: false
+                ))
+                XCTAssertEqual(original.retryCount, 1)
+                XCTAssertNotNil(original.lastError)
+                XCTAssertEqual(original.lastAPIError?.error.code, code.isEmpty ? nil : code)
+                if !code.isEmpty {
+                    XCTAssertEqual(original.lastAPIError?.error.retryable, status == 503)
+                    XCTAssertEqual(original.lastAPIError?.error.message, "Try later")
+                }
+            }
+            let persisted = try await journalDisk(url)
+            XCTAssertEqual(persisted.own.queue, [original])
+            XCTAssertTrue(persisted.receipts.isEmpty)
+            do {
+                let stack = try await saveStack(url, transport)
+                let retried = try savePending(await stack.repository.saveCatalogueCreate(
+                    command, session: session, isAnonymous: false
+                ))
+                assertFrozenCommand(retried, original)
+                XCTAssertEqual(retried.retryCount, 2)
+                XCTAssertEqual(retried.lastAPIError, original.lastAPIError)
+                let disk = try await journalDisk(url)
+                XCTAssertEqual(disk.own.queue, [retried])
+                XCTAssertTrue(disk.receipts.isEmpty)
+            }
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "POST"])
+            try assertCreateRequest(requests[1], command)
+            XCTAssertEqual(requests[1].httpBody, requests[2].httpBody)
+        }
+    }
+
+    func testSaveUnavailableOrMalformedPreflightPreservesOldDiskWithoutEnqueue() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try await seed(LocalStore(modelContainer: container(url)))
+        let before = try await journalDisk(url)
+        for reply in [
+            CatalogueSaveTransport.Reply.http("GET", 503, try json([
+                "error": ["code": "INTERNAL_ERROR", "message": "Unavailable", "retryable": true]
+            ])),
+            .http("GET", 200, try json([:]))
+        ] {
+            let transport = CatalogueSaveTransport([reply])
+            let stack = try await saveStack(url, transport)
+            do {
+                _ = try await stack.repository.saveCatalogueCreate(journalCommand(), session: session, isAnonymous: false)
+                XCTFail("Failed refresh cannot create or manufacture a result")
+            } catch {}
+            let after = try await journalDisk(url)
+            XCTAssertEqual(after, before)
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET"])
+        }
+    }
+
+    func testSaveOriginalLeaseRejectsOwnerSwitchABAAndCancellationDuringRefreshAndPOST() async throws {
+        for suspendedIndex in [0, 1] {
+            for mode in 0..<3 {
+                let url = try diskURL()
+                defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+                let command = journalCommand()
+                let transport = CatalogueSaveTransport([
+                    .http("GET", 200, try json(page([change(1), change(2)]))),
+                    .http("POST", 200, try JSONEncoder().encode(journalReceipt()))
+                ], suspendAt: suspendedIndex)
+                let stack = try await saveStack(url, transport)
+                _ = try await stack.store.enqueueCommand(
+                    ownerId: other, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+                )
+                let caller = session
+                let operation = Task {
+                    try await stack.repository.saveCatalogueCreate(command, session: caller, isAnonymous: false)
+                }
+                await transport.waitForSuspension()
+                let atBoundary = try await journalDisk(url)
+                if mode == 2 {
+                    operation.cancel()
+                } else {
+                    await stack.api.bindSyncSession(NativeAuthSession(
+                        userId: other, accessToken: "b", expiresAt: .distantFuture
+                    ))
+                    if mode == 1 { await stack.api.bindSyncSession(session) }
+                }
+                await transport.resume()
+                do {
+                    _ = try await operation.value
+                    XCTFail("Original stale/cancelled save cannot return success or pending")
+                } catch is CancellationError {
+                    XCTAssertEqual(mode, 2)
+                } catch SyncWireValidationError.invalidSession {
+                    XCTAssertNotEqual(mode, 2)
+                }
+                let after = try await journalDisk(url)
+                XCTAssertEqual(after, atBoundary)
+                XCTAssertTrue(after.receipts.isEmpty)
+                XCTAssertEqual(after.own.queue.count, suspendedIndex)
+                let requests = await transport.captured()
+                XCTAssertEqual(requests.count, suspendedIndex + 1)
+                XCTAssertTrue(requests.allSatisfy {
+                    $0.value(forHTTPHeaderField: "Authorization") == "Bearer capacity-a"
+                })
+            }
+        }
+    }
+
+    func testSaveConcurrentActiveDrainReturnsPendingUntilExactDiskACK() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = journalCommand()
+        let receipt = try journalReceipt()
+        let transport = CatalogueSaveTransport([
+            .http("POST", 200, try JSONEncoder().encode(receipt))
+        ], suspendAt: 0)
+        let stack = try await saveStack(url, transport)
+        let original = try await enqueueSave(command, stack.store)
+        let foreign = try await stack.store.enqueueCommand(
+            ownerId: other, plantId: nil, commandName: "care.complete", payloadJSON: "{}"
+        )
+        let ownerId = owner
+        let drain = Task { try await stack.engine.flushOutbox(for: ownerId) }
+        await transport.waitForSuspension()
+        let waiting = try savePending(await stack.repository.saveCatalogueCreate(
+            command, session: session, isAnonymous: false
+        ))
+        XCTAssertEqual(waiting, original) // The active drain's zero count is not a receipt.
+        let during = try await journalDisk(url)
+        XCTAssertEqual(during.own.queue, [original])
+        XCTAssertTrue(during.receipts.isEmpty)
+        await transport.resume()
+        let count = try await drain.value
+        XCTAssertEqual(count, 1)
+        let confirmation = try saved(await stack.repository.saveCatalogueCreate(
+            command, session: session, isAnonymous: false
+        ))
+        XCTAssertEqual(confirmation.receipt, receipt)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.count, 1)
+        try assertCreateRequest(requests[0], command)
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after.foreign.queue, [foreign])
+        XCTAssertEqual(after.receipts.count, 1)
+    }
+
+    func testSaveUnrelatedCommitCountCannotProveTargetSuccess() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let unrelated = journalCommand()
+        let target = journalCommand()
+        let transport = CatalogueSaveTransport([
+            .http("POST", 200, try JSONEncoder().encode(journalReceipt())),
+            .http("POST", 409, try json([
+                "error": ["code": "COLLECTION_LIMIT_REACHED", "message": "Limit", "retryable": false]
+            ]))
+        ])
+        let stack = try await saveStack(url, transport)
+        _ = try await enqueueSave(unrelated, stack.store)
+        let original = try await enqueueSave(target, stack.store)
+        let pending = try savePending(await stack.repository.saveCatalogueCreate(
+            target, session: session, isAnonymous: false
+        ))
+        assertFrozenCommand(pending, original)
+        XCTAssertEqual(pending.lastAPIError?.error.code, "COLLECTION_LIMIT_REACHED")
+        let reopened = LocalStore(modelContainer: try container(url))
+        let missing = try await reopened.catalogueCreateConfirmation(ownerId: owner, operationId: target.operationId)
+        XCTAssertNil(missing)
+        let committed = try await reopened.catalogueCreateConfirmation(ownerId: owner, operationId: unrelated.operationId)
+        XCTAssertNotNil(committed)
+        let disk = try await journalDisk(url)
+        XCTAssertEqual(disk.own.queue, [pending])
+        XCTAssertEqual(disk.receipts.count, 1)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.count, 2)
+        try assertCreateRequest(requests[0], unrelated)
+        try assertCreateRequest(requests[1], target)
+    }
+
+    func testSaveOverlappingSameOperationPendingOrACKWinsOverFalseCapacityAfterAwait() async throws {
+        for confirmBeforeResume in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let command = journalCommand()
+            let receipt = try journalReceipt()
+            let transport = CatalogueSaveTransport([
+                .http("GET", 200, try json(page([change(1), change(2), change(3)]))),
+                .http("POST", 200, try JSONEncoder().encode(receipt))
+            ], suspendAt: 0)
+            let stack = try await saveStack(url, transport)
+            let caller = session
+            let first = Task {
+                try await stack.repository.saveCatalogueCreate(command, session: caller, isAnonymous: false)
+            }
+            await transport.waitForSuspension()
+            _ = try await enqueueSave(command, stack.store)
+            if confirmBeforeResume {
+                let overlapping = try saved(await stack.repository.saveCatalogueCreate(
+                    command, session: session, isAnonymous: false
+                ))
+                XCTAssertEqual(overlapping.receipt, receipt)
+            }
+            await transport.resume()
+            let confirmation = try saved(await first.value)
+            XCTAssertEqual(confirmation.receipt, receipt)
+            XCTAssertEqual(confirmation.operationId, command.operationId)
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+            try assertCreateRequest(requests[1], command)
+            let disk = try await journalDisk(url)
+            XCTAssertEqual(disk.receipts.count, 1)
+            XCTAssertTrue(disk.own.queue.isEmpty)
+            XCTAssertEqual(disk.own.plants.count, 3)
+        }
+    }
+
+    func testSaveReadOnlyDiskACKFailurePropagatesAndRetainsOriginalQueue() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = journalCommand()
+        do {
+            let writable = LocalStore(modelContainer: try container(url))
+            _ = try await enqueueSave(command, writable)
+        }
+        let before = try await journalDisk(url)
+        let transport = CatalogueSaveTransport([
+            .http("POST", 200, try JSONEncoder().encode(journalReceipt()))
+        ])
+        do {
+            let stack = try await saveStack(url, transport, allowsSave: false)
+            do {
+                _ = try await stack.repository.saveCatalogueCreate(command, session: session, isAnonymous: false)
+                XCTFail("A network receipt is not durable after a failed disk ACK")
+            } catch {
+                let failure = error as NSError
+                XCTAssertEqual(failure.domain, NSCocoaErrorDomain)
+                XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+            }
+        }
+        let after = try await journalDisk(url)
+        XCTAssertEqual(after, before)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.count, 1)
+        try assertCreateRequest(requests[0], command)
+    }
+}
