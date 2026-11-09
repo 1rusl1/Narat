@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-sync-transport",
+      "description": "T162 A1 only: canonical SQL sync DTO and transport alongside legacy API. No engine/store/UI changes.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "supabase/migrations/202611090004_retire_free_slots.sql"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Only write_files, ordinary unified diff. No tools/config/handoff/tasks/AGENTS/server/SQL/contracts/deploy/live writes or calls. Read current constitution/spec and collection-http.md. No new Swift files; extend the already-in-target CollectionWireTests.swift. Preserve all existing tests, public legacy DTO initializers and disk decode. No skips or empty tests. No second sync/outbox framework, synthetic successes or client business-rule invention.",
+        "External accepted prerequisites (not manifest depends_on): auth 9551807, production sync c26a4e0, catalogue create 88345ed, typed create receipt e8a12fe and cap/retirement b5f2c8f/01ba170/eb58c03 already in base 4bbd35a. Do not redo typed receipt. T162/T025/T026/T149 remain open; fixtures do not prove live or UI.",
+        "Add separate canonical SyncWire DTO/transport method for until/has_more/last_cursor/next_since/profile/entitlement/changes, nested JSON object/array/scalar/null inside data, tombstone data=null. Validate required envelope and projection fields/types. Actual SQL wire has no owner/items/limit/server_watermark. Explicit owner context must come from authenticated caller session, never response fallback/default/random UUID; preserve legacy fetchSyncPage and DTOs unchanged until A2. No engine/store/UI writes.",
+        "Keep exact original timestamp strings with all microseconds/offsets for outgoing since/until/cursor and response next_since. Reuse existing SQLTimestamp helper but compare at SQL microsecond precision; never Date-to-ISO round current boundaries. Validate since<=until, fixed window, complete cursor triple, since<cursor<=until and strict tuple advancement; has_more needs nonempty changes and last_cursor matching final change, next_since null; final has null cursor and next_since equal until. Reject malformed/nonadvancing/cross-window pages, invalid dates/UUID/entity types/limit before sending as applicable; never convert errors to empty success. Allow harmless unknown JSON keys without reviving rooms/slots.",
+        "Meaningful tests via actual PlantsAPIClient+mock transport using SQL-shaped JSON: nested data, tombstone, empty changes with profile and nullable entitlement, fractions 1..6 and offsets, exact outgoing query/headers/owner context, pagination validation, malformed envelopes, network/auth/503 propagation and unchanged legacy receipt regressions. Test session owner mismatch if new context API allows it. Minimum all existing 35 tests plus new tests actually executed without skips. No checkpoint/restart claim from decode fixtures. Independent Reviewer/QA must assess complete wire contract, not just build."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Canonical DTO/transport matches SQL wire, lossless raw timestamp query/cursor and nested data, explicit authenticated owner, strict pagination/error rejection; all old 35 plus new meaningful tests, Xcode build and Simulator baseline pass. Only fixture transport accepted, not engine/disk/UI/live.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
