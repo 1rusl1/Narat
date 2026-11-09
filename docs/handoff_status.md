@@ -72,7 +72,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t157-score-routing-cleanup: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t157-score-routing-cleanup](validation/automation/tasks/t157-score-routing-cleanup.md).
+t157-manual-evidence-cleanup: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t157-manual-evidence-cleanup](validation/automation/tasks/t157-manual-evidence-cleanup.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

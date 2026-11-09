@@ -47,8 +47,6 @@
             "additionalProperties": false,
             "required": [
               "source_id",
-              "donor_id",
-              "independence_group",
               "url",
               "retrieved_at",
               "content_hash",
@@ -95,13 +93,13 @@
                     "derived_records"
                   ]
                 },
-                "minItems": 4,
+                "minItems": 1,
                 "maxItems": 4,
                 "uniqueItems": true
               }
             }
           },
-          "minItems": 3,
+          "minItems": 1,
           "uniqueItems": true
         },
         "field_evidence": {
@@ -144,15 +142,15 @@
           "additionalProperties": false,
           "required": [
             "method",
-            "synthesis_model",
-            "prompt_version",
-            "guardrail_version",
             "validated_at",
             "unresolved_conflicts"
           ],
           "properties": {
             "method": {
-              "const": "multi_source_rules"
+              "enum": [
+                "manual_review",
+                "multi_source_rules"
+              ]
             },
             "synthesis_model": {
               "type": "string",
