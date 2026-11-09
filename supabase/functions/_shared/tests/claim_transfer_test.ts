@@ -6,10 +6,8 @@ import {
   verifyAnalysisReceiptSignature,
 } from "../../plants-api/claims.ts";
 import { rankCatalogueSpecies } from "../../plants-api/catalogue.ts";
-import {
-  canEnableFreeBasicCareWithoutReplacement,
-  resolveActiveFreePlantIds,
-} from "../BasicCareService.ts";
+import type { BasicCareStateDTO } from "../BasicCareService.ts";
+import { handleBasicCareCommand } from "../../plants-api/basic-care.ts";
 import { signAnalysisReceipt } from "../ProtocolResolver.ts";
 
 Deno.test("T040: Claim overrides keep context_state=current and care_revision=1 when only display_name changes", () => {
@@ -229,50 +227,142 @@ Deno.test("T045: Catalogue search ranks PL/EN/Latin/synonyms and falls back to s
   assertEquals(fallbackMatch[0].care_profile_available, false);
 });
 
-Deno.test("T129: BasicCareService resolves Free-3 slots deterministically and supports paid unlimited + expiry fallback", () => {
-  const memberships = [
-    {
-      plant_id: "p-4",
-      enabled: true,
-      enabled_at: "2026-11-01T10:04:00Z",
-      free_slot: null,
+Deno.test("T161: basic-care HTTP forwards no-slot commands and preserves legacy receipt boundaries", async () => {
+  const ownerId = "11111111-1111-4111-8111-111111111111";
+  const plantId = "22222222-2222-4222-8222-222222222222";
+  const state: BasicCareStateDTO = {
+    has_paid_access: false,
+    memberships: Array.from({ length: 4 }, (_, i) => ({
+      plant_id: `plant-${i}`, enabled: i !== 1, enabled_at: "2026-11-01T00:00:00Z",
+    })),
+  };
+  const legacyPayload = { plant_id: plantId, selected_plant_ids: ["p-2", "p-1"] };
+  const legacyResponse = {
+    status: "committed", command_type: "free_care.select",
+    state: {
+      has_paid_access: false, free_selection_explicit: true,
+      memberships: [{ plant_id: "p-2", enabled: true, enabled_at: "old", free_slot: 1 }],
     },
-    {
-      plant_id: "p-1",
-      enabled: true,
-      enabled_at: "2026-11-01T10:01:00Z",
-      free_slot: 1,
+  };
+  // Fixture receipt lookup only; SQL tests own PostgreSQL jsonb hashing/atomicity.
+  const receipts = new Map([
+    ["legacy", { payload: legacyPayload, response: legacyResponse }],
+    ["legacy-null", { payload: {}, response: legacyResponse }],
+  ]);
+  const calls: Record<string, unknown>[] = [];
+  const fake = {
+    rpc: (name: string, args: Record<string, unknown>) => {
+      assertEquals(name, "execute_basic_care_command");
+      assertEquals(Object.keys(args).sort(), [
+        "p_command_type", "p_operation_id", "p_owner_id", "p_payload",
+      ]);
+      assertEquals(args.p_owner_id, ownerId);
+      calls.push(args);
+      const cached = receipts.get(args.p_operation_id as string);
+      if (cached) {
+        if (
+          args.p_command_type !== "free_care.select" ||
+          JSON.stringify(args.p_payload) !== JSON.stringify(cached.payload)
+        ) return Promise.resolve({ data: null, error: { message: "operation_payload_mismatch" } });
+        return Promise.resolve({ data: cached.response, error: null });
+      }
+      if (args.p_command_type === "free_care.select") {
+        return Promise.resolve({ data: null, error: { message: "FREE_SELECTION_RETIRED" } });
+      }
+      if (args.p_operation_id === "rpc-failure") {
+        return Promise.resolve({ data: null, error: { message: "rpc unavailable" } });
+      }
+      if (args.p_operation_id === "rpc-empty") {
+        return Promise.resolve({ data: null, error: null });
+      }
+      return Promise.resolve({
+        data: { status: "committed", command_type: args.p_command_type, state }, error: null,
+      });
     },
-    {
-      plant_id: "p-2",
-      enabled: true,
-      enabled_at: "2026-11-01T10:02:00Z",
-      free_slot: 2,
+  } as unknown as SupabaseClient;
+  const request = (body: unknown) => handleBasicCareCommand(new Request(
+    "https://fixture.invalid/basic-care", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     },
-    {
-      plant_id: "p-3",
-      enabled: true,
-      enabled_at: "2026-11-01T10:03:00Z",
-      free_slot: 3,
-    },
-  ];
+  ), fake, ownerId);
 
-  // Free user without explicit selection gets first 3 by enabled_at
-  const freeAuto = resolveActiveFreePlantIds(memberships, false, false);
-  assertEquals(freeAuto, ["p-1", "p-2", "p-3"]);
-  assertEquals(canEnableFreeBasicCareWithoutReplacement(memberships, "p-4", false), false);
+  for (const command_type of ["basic_care.enable", "basic_care.disable"]) {
+    const response = await request({ operation_id: command_type, command_type, plant_id: plantId });
+    assertEquals(response.status, 200);
+    assertEquals(await response.json(), { status: "committed", command_type, state });
+    assertEquals(calls.at(-1), {
+      p_owner_id: ownerId, p_operation_id: command_type, p_command_type: command_type,
+      p_payload: { plant_id: plantId },
+    });
+  }
+  // New select always reaches SQL, including malformed/null arrays; no fallback success.
+  for (const selection of [null, "invalid", [], ["1", "2", "3", "4"], ["p-1"]]) {
+    const before = calls.length;
+    const response = await request({
+      operation_id: "new-select", command_type: "free_care.select",
+      selected_plant_ids: selection,
+    });
+    assertEquals(response.status, 400);
+    assertEquals((await response.json()).error, {
+      code: "VALIDATION_ERROR", message: "FREE_SELECTION_RETIRED", retryable: false,
+    });
+    assertEquals(calls.length, before + 1);
+    assertEquals(calls.at(-1)?.p_payload, selection ? { selected_plant_ids: selection } : {});
+  }
+  for (const [operation_id, payload] of [
+    ["legacy", legacyPayload],
+    ["legacy-null", { selected_plant_ids: null }],
+  ] as const) {
+    const response = await request({ operation_id, command_type: "free_care.select", ...payload });
+    assertEquals(response.status, 200);
+    // Historical fields remain in historical receipts, never projected into a new DTO.
+    assertEquals(await response.json(), legacyResponse);
+  }
+  for (const payload of [
+    { ...legacyPayload, selected_plant_ids: ["p-1", "p-2"] },
+    { selected_plant_ids: legacyPayload.selected_plant_ids },
+    { ...legacyPayload, selected_plant_ids: null },
+    { ...legacyPayload, selected_plant_ids: "invalid" },
+  ]) {
+    const response = await request({
+      operation_id: "legacy", command_type: "free_care.select", ...payload,
+    });
+    assertEquals(response.status, 409);
+    assertEquals((await response.json()).error.code, "CONFLICT");
+  }
+  const wrongCommand = await request({
+    operation_id: "legacy", command_type: "basic_care.enable", plant_id: plantId,
+  });
+  assertEquals(wrongCommand.status, 409);
+  assertEquals((await wrongCommand.json()).error.code, "CONFLICT");
 
-  // Paid user gets all 4 enabled plants
-  const paidAll = resolveActiveFreePlantIds(memberships, false, true);
-  assertEquals(paidAll.length, 4);
-
-  // Explicit selection replaces p-2 with p-4
-  const explicitMemberships = [
-    { ...memberships[0], free_slot: 2 },
-    { ...memberships[1], free_slot: 1 },
-    { ...memberships[2], free_slot: null },
-    { ...memberships[3], free_slot: 3 },
-  ];
-  const freeExplicit = resolveActiveFreePlantIds(explicitMemberships, true, false);
-  assertEquals(freeExplicit, ["p-1", "p-4", "p-3"]);
+  for (const body of [
+    null, [], 1, {}, { operation_id: 1, command_type: "free_care.select" },
+    { operation_id: "unknown", command_type: "unknown" },
+    { operation_id: "missing-plant", command_type: "basic_care.enable" },
+    { operation_id: "bad-plant", command_type: "basic_care.disable", plant_id: [] },
+    { operation_id: "extra", command_type: "basic_care.enable", plant_id: plantId, selected_plant_ids: [] },
+  ]) {
+    const before = calls.length;
+    const response = await request(body);
+    assertEquals(response.status, 400);
+    assertEquals((await response.json()).error.code, "VALIDATION_ERROR");
+    assertEquals(calls.length, before);
+  }
+  const before = calls.length;
+  const invalidJson = await handleBasicCareCommand(new Request("https://fixture.invalid/basic-care", {
+    method: "POST", body: "{",
+  }), fake, ownerId);
+  assertEquals(invalidJson.status, 400);
+  assertEquals((await invalidJson.json()).error.code, "VALIDATION_ERROR");
+  assertEquals(calls.length, before);
+  for (const operation_id of ["rpc-failure", "rpc-empty"]) {
+    const response = await request({
+      operation_id, command_type: "basic_care.enable", plant_id: plantId,
+    });
+    assertEquals(response.status, 400);
+    assertEquals((await response.json()).error.code, "VALIDATION_ERROR");
+  }
+  assertEquals(receipts.size, 2);
 });

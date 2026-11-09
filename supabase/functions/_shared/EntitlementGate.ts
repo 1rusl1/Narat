@@ -1,6 +1,6 @@
 // supabase/functions/_shared/EntitlementGate.ts
 // T020: EntitlementGate separating canReadExistingPlan from canGenerateFullPlan,
-// paid access (active/grace with verified date including offer_kind=trial), Free slots (1..3),
+// paid access (active/grace with verified date including offer_kind=trial), no-history Free care,
 // and first-aid control. Exhausting 100 monthly analyses never blocks non-scan paid rights.
 // Safety/applicability is independent of subscription state. SQL T018 remains authoritative for task INSERTs.
 
@@ -42,7 +42,6 @@ export interface BasicCareMembershipSnapshot {
   ownerId: string;
   plantId: string;
   enabled: boolean;
-  freeSlot: number | null;
   deletedAt: string | null;
 }
 
@@ -187,7 +186,8 @@ export class EntitlementGate {
 
   /**
    * Basic care schedule is eligible when the plant has an enabled membership AND
-   * either the owner has verified paid access OR the membership occupies Free slot 1..3.
+   * either the owner has verified paid access OR has no subscription history.
+   * The no-history snapshot is subscriptionState=none AND offerKind=none.
    * Authoritative INSERT enforcement remains in SQL (T018 can_owner_schedule_rule).
    */
   static canScheduleBasicCare(
@@ -209,15 +209,14 @@ export class EntitlementGate {
       return true;
     }
     return (
-      typeof membership.freeSlot === "number" &&
-      membership.freeSlot >= 1 &&
-      membership.freeSlot <= 3
+      entitlement.subscriptionState === "none" &&
+      entitlement.offerKind === "none"
     );
   }
 
   /**
    * First-aid control task is eligible once per (owner, plant, originAnalysisId) without requiring
-   * paid access or a Free slot, provided the first action was recorded and the protocol defines a control interval.
+   * paid access, provided the first action was recorded and the protocol defines a control interval.
    */
   static canScheduleFirstAidControl(
     entitlement: EntitlementSnapshot,

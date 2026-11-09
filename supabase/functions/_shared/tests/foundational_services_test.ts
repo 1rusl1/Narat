@@ -13,7 +13,7 @@ import {
   validateCatalogueSkeletonCardContract,
 } from "../../../../catalogue/import.ts";
 
-Deno.test("T020: EntitlementGate separates canReadExistingPlan from canGenerateFullPlan and honors verified trial & Free slots", () => {
+Deno.test("T020: EntitlementGate separates canReadExistingPlan from canGenerateFullPlan and honors verified trial & no-history Free care", () => {
   const now = new Date("2026-11-05T12:00:00Z");
 
   const activeTrialEntitlement: EntitlementSnapshot = {
@@ -76,35 +76,51 @@ Deno.test("T020: EntitlementGate separates canReadExistingPlan from canGenerateF
   assertEquals(readExpiredChem.chemicalExpired, true);
   assertEquals(readExpiredChem.reason, "chemical_revalidation_required");
 
-  // Basic care Free slots 1..3 work without subscription, slot null requires subscription
-  assertEquals(
-    EntitlementGate.canScheduleBasicCare(
-      expiredEntitlement,
-      {
-        ownerId: expiredEntitlement.ownerId,
-        plantId: existingPlan.plantId,
-        enabled: true,
-        freeSlot: 2,
-        deletedAt: null,
-      },
-      now,
-    ),
-    true,
-  );
-  assertEquals(
-    EntitlementGate.canScheduleBasicCare(
-      expiredEntitlement,
-      {
-        ownerId: expiredEntitlement.ownerId,
-        plantId: existingPlan.plantId,
-        enabled: true,
-        freeSlot: null,
-        deletedAt: null,
-      },
-      now,
-    ),
-    false,
-  );
+  const membership = {
+    ownerId: activeTrialEntitlement.ownerId,
+    plantId: existingPlan.plantId,
+    enabled: true,
+    deletedAt: null,
+  };
+  const free: EntitlementSnapshot = {
+    ...expiredEntitlement, subscriptionState: "none", offerKind: "none",
+    validUntil: null, trialEndAt: null, verifiedAt: null,
+  };
+  assertEquals(EntitlementGate.canScheduleBasicCare(free, membership, now), true);
+  assertEquals(EntitlementGate.canScheduleBasicCare(activeTrialEntitlement, membership, now), true);
+  // No positional selection: all enabled memberships qualify, even in a legacy large collection.
+  for (let i = 0; i < 5; i++) {
+    assertEquals(EntitlementGate.canScheduleBasicCare(free, {
+      ...membership, plantId: `plant-${i}`,
+    }, now), true);
+  }
+  const denied: EntitlementSnapshot[] = [
+    expiredEntitlement,
+    { ...activeTrialEntitlement, subscriptionState: "revoked" },
+    { ...activeTrialEntitlement, subscriptionState: "billing_retry" },
+    { ...activeTrialEntitlement, subscriptionState: "grace", validUntil: now.toISOString() },
+    { ...activeTrialEntitlement, validUntil: "2026-11-01T00:00:00Z" },
+    { ...activeTrialEntitlement, verifiedAt: null },
+    { ...free, offerKind: "paid" },
+    { ...free, accountState: "deleting" },
+  ];
+  for (const entitlement of denied) {
+    // An old wire slot cannot restore rights after expiry/revocation.
+    const legacyMembership = { ...membership, freeSlot: 1 };
+    assertEquals(EntitlementGate.canScheduleBasicCare(entitlement, legacyMembership, now), false);
+  }
+  assertEquals(EntitlementGate.canScheduleBasicCare({
+    ...activeTrialEntitlement, subscriptionState: "grace",
+  }, membership, now), true);
+  for (const invalid of [
+    null,
+    { ...membership, ownerId: "other-owner" },
+    { ...membership, enabled: false },
+    { ...membership, deletedAt: now.toISOString() },
+  ]) {
+    assertEquals(EntitlementGate.canScheduleBasicCare(free, invalid, now), false);
+    assertEquals(EntitlementGate.canScheduleBasicCare(activeTrialEntitlement, invalid, now), false);
+  }
 });
 
 Deno.test("T019 & T128: plants-api router and POST /notifications/claim validate report period_key and dedup", async () => {
