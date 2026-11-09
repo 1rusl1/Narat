@@ -45,6 +45,22 @@ public enum CatalogueSaveResult: Sendable, Equatable {
     case collectionLimitNotEnqueued(CollectionCapacity)
 }
 
+/// The minimal canonical SQL plants projection, never reconstructed from create input.
+struct CatalogueCardSummary: Decodable, Sendable, Equatable {
+    let id: UUID
+    let speciesSlug: String
+    let personalName: String?
+    let revision: Int
+    let careRevision: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, revision
+        case speciesSlug = "plant_id"
+        case personalName = "personal_name"
+        case careRevision = "care_revision"
+    }
+}
+
 struct CollectionCapacitySnapshot: Sendable {
     let plantCount: Int
     let entitlement: SyncWireEntitlementDTO?
@@ -131,6 +147,46 @@ public struct CollectionRepository: Sendable {
             case .absent, .collectionLimitNotEnqueued:
                 throw CatalogueCreateAcknowledgementError.missingQueuedOperation
             }
+        }
+    }
+
+    /// Details are independent of create success. Only the original durable journal
+    /// identity permits a canonical refresh, with no outbox drain or lease recapture.
+    func catalogueCard(
+        confirmation: CatalogueCreateConfirmationSnapshot,
+        envelope: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> CatalogueCardSummary {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        guard confirmation.ownerId == context.ownerId,
+              confirmation.operationId == envelope.operationId,
+              confirmation.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+            throw SyncWireValidationError.invalidSession
+        }
+        let journal = try await store.catalogueCreateJournal(
+            envelope, mode: .checkOnly, context: context, authority: apiClient.syncAuthority
+        )
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        guard case let .confirmed(durable) = journal, durable == confirmation else {
+            throw CatalogueCreateAcknowledgementError.missingQueuedOperation
+        }
+
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        _ = try await syncEngine.performFullRefresh(context: context)
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        let plants = try await store.activeSyncedEntities(ownerId: context.ownerId, entityType: "plants")
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            guard let entity = plants.first(where: { $0.id == confirmation.receipt.plantId }) else {
+                throw SyncWireValidationError.invalidPage
+            }
+            let summary = try JSONDecoder().decode(
+                CatalogueCardSummary.self, from: Data(entity.payloadJSON.utf8)
+            )
+            guard summary.id == entity.id,
+                  !summary.speciesSlug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  summary.revision > 0, summary.careRevision > 0 else {
+                throw SyncWireValidationError.invalidPage
+            }
+            return summary
         }
     }
 

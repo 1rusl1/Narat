@@ -17,6 +17,13 @@ enum CatalogueSaveState: Sendable, Equatable {
     case unavailable(CatalogueSaveUnavailable)
 }
 
+enum CatalogueCardState: Sendable, Equatable {
+    case idle
+    case loading
+    case loaded(CatalogueCardSummary)
+    case unavailable
+}
+
 @MainActor
 enum CatalogueSaveRestoration {
     case absent
@@ -41,6 +48,21 @@ final class CatalogueSaveModel {
     private var phase: CatalogueSaveState = .ready
     private var cancelled = false
     @ObservationIgnored private var work: Task<Void, Never>?
+    private var detailsPhase: CatalogueCardState = .idle
+    @ObservationIgnored private var detailsTask: Task<Void, Never>?
+
+    /// Idle retained models redact details immediately after logout, switch or ABA.
+    var cardState: CatalogueCardState {
+        let value = detailsPhase
+        guard isAccessible else { return .unavailable }
+        guard case .saved = state else { return .idle }
+        return value
+    }
+
+    var cardSummary: CatalogueCardSummary? {
+        guard case let .loaded(summary) = cardState else { return nil }
+        return summary
+    }
 
     // Access is checked as well as publication: an idle old model also redacts after ABA.
     var state: CatalogueSaveState {
@@ -221,10 +243,49 @@ final class CatalogueSaveModel {
         work = nil
     }
 
+    /// Explicit initial read or retry. Details failure never rewrites durable save truth.
+    func loadCard() async {
+        guard detailsTask == nil, case let .saved(confirmation) = state else { return }
+        if Task.isCancelled { cancel(); return }
+        let task = Task { await self.performCardLoad(confirmation) }
+        detailsTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if Task.isCancelled { cancel() }
+        detailsTask = nil
+    }
+
+    private func performCardLoad(_ confirmation: CatalogueCreateConfirmationSnapshot) async {
+        do {
+            try publish { detailsPhase = .loading }
+            let summary = try await repository.catalogueCard(
+                confirmation: confirmation, envelope: frozenEnvelope, context: context
+            )
+            try validateAuthority()
+            guard case let .saved(current) = state, current == confirmation else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            try publish { detailsPhase = .loaded(summary) }
+        } catch {
+            if Task.isCancelled {
+                cancel()
+            } else {
+                // Includes service cancellation, absent/deleted/malformed data and disk failure.
+                // The guarded getters redact invalid authority; .saved remains durable truth.
+                detailsPhase = .unavailable
+            }
+        }
+    }
+
     /// Invalidate this facade permanently, preserving its durable input and any queue entry.
     func cancel() {
         cancelled = true
         work?.cancel()
+        detailsTask?.cancel()
+        detailsPhase = .unavailable
         phase = .unavailable(.cancelled)
     }
 

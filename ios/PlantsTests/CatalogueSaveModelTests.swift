@@ -228,6 +228,425 @@ final class CatalogueSaveModelTests: XCTestCase {
         XCTAssertNil(model.pendingAPIError)
     }
 
+    private var cardID: UUID {
+        UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+    }
+
+    private var canonicalCardData: [String: Any] {
+        ["id": cardID.uuidString, "plant_id": "server-reclassified-fern",
+         "personal_name": " Canonical fern ", "revision": 7, "care_revision": 4]
+    }
+
+    /// Minimal actual 202611090004 plants projection, without unrelated nullable fields.
+    private func cardPage(
+        data: [String: Any]? = nil, entityId: UUID? = nil,
+        missing: Bool = false, deleted: Bool = false,
+        timestamp: String = "2026-11-03T09:00:02.123456+00:00"
+    ) throws -> Data {
+        var body = try XCTUnwrap(JSONSerialization.jsonObject(with: page()) as? [String: Any])
+        body["until"] = timestamp
+        body["next_since"] = timestamp
+        let change: [String: Any] = [
+            "entity_type": "plants", "id": (entityId ?? cardID).uuidString,
+            "updated_at": timestamp, "deleted_at": deleted ? timestamp as Any : NSNull(),
+            "data": deleted ? NSNull() : (data ?? canonicalCardData) as Any
+        ]
+        body["changes"] = missing ? [] : [change]
+        return try json(body)
+    }
+
+    private func assertCanonicalCard(_ model: CatalogueSaveModel, name: String? = " Canonical fern ") {
+        let expected = CatalogueCardSummary(
+            id: cardID, speciesSlug: "server-reclassified-fern",
+            personalName: name, revision: 7, careRevision: 4
+        )
+        XCTAssertEqual(model.cardState, .loaded(expected))
+        XCTAssertEqual(model.cardSummary, expected)
+    }
+
+    @MainActor
+    private final class CardObserverReadings {
+        var states: [CatalogueCardState] = []
+        var summaries: [CatalogueCardSummary?] = []
+        var saves: [CatalogueSaveState] = []
+
+        func read(_ model: CatalogueSaveModel) {
+            states.append(model.cardState)
+            summaries.append(model.cardSummary)
+            saves.append(model.state)
+        }
+    }
+
+    func testCardRequiresDurableSaveAndReadsExactCanonicalUUIDNameSpeciesAndRevisions() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = SaveModelTransport([
+            .http("GET", 200, try page()), .http("POST", 200, try receipt()),
+            .http("GET", 200, try cardPage())
+        ])
+        let stack = try await stack(url, transport)
+        let flow = UUID(), operation = UUID()
+        let model = try await model(stack, flow: flow, operation: operation)
+        await model.loadCard()
+        XCTAssertEqual(model.cardState, .idle)
+        XCTAssertNil(model.cardSummary)
+        let before = await transport.captured()
+        XCTAssertTrue(before.isEmpty)
+        await model.save()
+        let confirmation = try saved(model)
+        XCTAssertEqual(model.cardState, .idle)
+        XCTAssertNil(model.cardSummary)
+        let beforeRead = try await stack.store.currentWatermarkRaw(ownerId: owner)
+        XCTAssertEqual(beforeRead, "2026-11-03T09:00:00.123456+00:00")
+        XCTAssertNotEqual(beforeRead, confirmation.receipt.watermarkRaw)
+        await model.loadCard()
+        assertCanonicalCard(model)
+        XCTAssertEqual(try saved(model), confirmation)
+        await model.save()
+        let reopened = try await self.stack(url, SaveModelTransport([]))
+        let entities = try await reopened.store.activeSyncedEntities(ownerId: owner, entityType: "plants")
+        let watermark = try await reopened.store.currentWatermarkRaw(ownerId: owner)
+        let diskReceipt = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+        XCTAssertEqual(entities.map(\.id), [confirmation.receipt.plantId])
+        let data = try JSONDecoder().decode(CatalogueCardSummary.self, from: Data(XCTUnwrap(entities.first).payloadJSON.utf8))
+        XCTAssertEqual(data, model.cardSummary)
+        XCTAssertEqual(watermark, "2026-11-03T09:00:02.123456+00:00")
+        XCTAssertEqual(diskReceipt, confirmation)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET"])
+        let query = URLComponents(url: try XCTUnwrap(requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertFalse(query.contains { ["since", "owner_id", "user_id"].contains($0.name) })
+    }
+
+    func testCardGETFailureClearsOldSummaryKeepsSavedAndExplicitRetryDoesNotCreateAgain() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var renamed = canonicalCardData
+        renamed["personal_name"] = " Server renamed "
+        let transport = SaveModelTransport([
+            .http("GET", 200, try page()), .http("POST", 200, try receipt()),
+            .http("GET", 200, try cardPage()), .http("GET", 503, Data()),
+            .http("GET", 200, try cardPage(data: renamed))
+        ])
+        let stack = try await stack(url, transport)
+        let model = try await model(stack, flow: UUID(), operation: UUID())
+        await model.save()
+        let confirmation = try saved(model)
+        await model.loadCard()
+        assertCanonicalCard(model)
+        let watermark = try await stack.store.currentWatermarkRaw(ownerId: owner)
+        await model.loadCard()
+        XCTAssertEqual(model.cardState, .unavailable)
+        XCTAssertNil(model.cardSummary)
+        XCTAssertEqual(try saved(model), confirmation)
+        let afterFailure = try await stack.store.currentWatermarkRaw(ownerId: owner)
+        XCTAssertEqual(afterFailure, watermark)
+        await model.save()
+        await model.loadCard()
+        assertCanonicalCard(model, name: " Server renamed ")
+        XCTAssertEqual(try saved(model), confirmation)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET", "GET", "GET"])
+    }
+
+    func testCardMissingDeletedAndMalformedCanonicalMatchesRemainSavedAndRetryWithoutPOST() async throws {
+        for mode in 0..<10 {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            var malformed = canonicalCardData
+            switch mode {
+            case 2: malformed["id"] = other.uuidString
+            case 3: malformed["id"] = "not-a-uuid"
+            case 4: malformed["plant_id"] = NSNull()
+            case 5: malformed["revision"] = "7"
+            case 7: malformed.removeValue(forKey: "id")
+            case 8: malformed["personal_name"] = 42
+            case 9: malformed.removeValue(forKey: "care_revision")
+            default: break
+            }
+            let invalidPage = try cardPage(
+                data: malformed, entityId: mode == 1 ? other : nil,
+                missing: mode == 0, deleted: mode == 6
+            )
+            var nullable = canonicalCardData
+            nullable["personal_name"] = NSNull()
+            let transport = SaveModelTransport([
+                .http("GET", 200, try page()), .http("POST", 200, try receipt()),
+                .http("GET", 200, invalidPage), .http("GET", 200, try cardPage(data: nullable))
+            ])
+            let stack = try await stack(url, transport)
+            let operation = UUID()
+            let model = try await model(stack, flow: UUID(), operation: operation)
+            await model.save()
+            let confirmation = try saved(model)
+            await model.loadCard()
+            XCTAssertEqual(model.cardState, .unavailable, "mode \(mode)")
+            XCTAssertNil(model.cardSummary)
+            XCTAssertEqual(try saved(model), confirmation)
+            let reopened = try await self.stack(url, SaveModelTransport([]))
+            let diskReceipt = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+            XCTAssertEqual(diskReceipt, confirmation)
+            await model.save()
+            await model.loadCard()
+            assertCanonicalCard(model, name: nil)
+            XCTAssertEqual(try saved(model), confirmation)
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET", "GET"])
+        }
+    }
+
+    func testCardRestoresSameDurableReceiptAfterDiskRestartThenReadsThroughNewBoundStack() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let flow = UUID(), operation = UUID()
+        let confirmation: CatalogueCreateConfirmationSnapshot
+        let checkpoint: CatalogueInputCheckpointSnapshot
+        do {
+            let transport = SaveModelTransport([
+                .http("GET", 200, try page()), .http("POST", 200, try receipt())
+            ])
+            let stack = try await stack(url, transport)
+            let model = try await model(stack, flow: flow, operation: operation)
+            await model.save()
+            confirmation = try saved(model)
+            checkpoint = try XCTUnwrap(model.checkpoint)
+        }
+        let transport = SaveModelTransport([.http("GET", 200, try cardPage())])
+        let reopened = try await stack(url, transport, session: refreshedSession)
+        let model = try restored(await restoration(reopened, flow: flow, snapshot: refreshedSession))
+        XCTAssertEqual(try saved(model), confirmation)
+        XCTAssertEqual(model.checkpoint, checkpoint)
+        XCTAssertEqual(model.cardState, .idle)
+        let before = await transport.captured()
+        XCTAssertTrue(before.isEmpty)
+        await model.loadCard()
+        assertCanonicalCard(model)
+        XCTAssertEqual(try saved(model), confirmation)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET"])
+        XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer model-refreshed")
+        let queue = try await reopened.store.pendingOutboxEntries(for: owner)
+        XCTAssertTrue(queue.isEmpty)
+    }
+
+    func testCardReadOnlyCanonicalPublicationFailurePreservesRestoredSavedAndDiskCheckpoint() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let flow = UUID(), operation = UUID()
+        let confirmation: CatalogueCreateConfirmationSnapshot
+        do {
+            let stack = try await stack(url, SaveModelTransport([
+                .http("GET", 200, try page()), .http("POST", 200, try receipt())
+            ]))
+            let model = try await model(stack, flow: flow, operation: operation)
+            await model.save()
+            confirmation = try saved(model)
+        }
+        let transport = SaveModelTransport([.http("GET", 200, try cardPage())])
+        do {
+            let readOnly = try await stack(url, transport, allowsSave: false)
+            let model = try restored(await restoration(readOnly, flow: flow))
+            await model.loadCard()
+            XCTAssertEqual(try saved(model), confirmation)
+            XCTAssertEqual(model.cardState, .unavailable)
+            XCTAssertNil(model.cardSummary)
+        }
+        let reopened = try await stack(url, SaveModelTransport([]))
+        let watermark = try await reopened.store.currentWatermarkRaw(ownerId: owner)
+        let entities = try await reopened.store.activeSyncedEntities(ownerId: owner, entityType: "plants")
+        let diskReceipt = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+        XCTAssertEqual(watermark, "2026-11-03T09:00:00.123456+00:00")
+        XCTAssertTrue(entities.isEmpty)
+        XCTAssertEqual(diskReceipt, confirmation)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET"])
+    }
+
+    func testCardSuspendedGETSwitchABALogoutAndCancellationRedactWithoutDiskOrPOSTMutation() async throws {
+        for mode in 0..<5 {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            var changed = canonicalCardData
+            changed["personal_name"] = " Must never publish "
+            let transport = SaveModelTransport([
+                .http("GET", 200, try page()), .http("POST", 200, try receipt()),
+                .http("GET", 200, try cardPage()),
+                .http("GET", 200, try cardPage(data: changed, timestamp: "2026-11-03T09:00:03.123456+00:00"))
+            ], suspendAt: 3)
+            let stack = try await stack(url, transport)
+            let flow = UUID(), operation = UUID()
+            let model = try await model(stack, flow: flow, operation: operation)
+            await model.save()
+            let confirmation = try saved(model)
+            await model.loadCard()
+            assertCanonicalCard(model)
+            let original = try await diskCheckpoint(stack, flow: flow)
+            let entities = try await stack.store.activeSyncedEntities(ownerId: owner, entityType: "plants")
+            let watermark = try await stack.store.currentWatermarkRaw(ownerId: owner)
+            let loading = Task { await model.loadCard() }
+            await transport.waitForSuspension()
+            XCTAssertEqual(model.cardState, .loading)
+            XCTAssertNil(model.cardSummary)
+            XCTAssertEqual(try saved(model), confirmation)
+            if mode < 2 {
+                await stack.api.bindSyncSession(otherSession)
+                if mode == 1 { await stack.api.bindSyncSession(session) }
+            } else if mode == 2 {
+                await stack.api.bindSyncSession(nil)
+            } else if mode == 3 {
+                model.cancel()
+            } else {
+                loading.cancel()
+            }
+            if mode < 4 {
+                assertRedacted(model, reason: mode == 3 ? .cancelled : .sessionChanged)
+                XCTAssertEqual(model.cardState, .unavailable)
+                XCTAssertNil(model.cardSummary)
+            }
+            await transport.resume()
+            await loading.value
+            assertRedacted(model, reason: mode >= 3 ? .cancelled : .sessionChanged)
+            XCTAssertEqual(model.cardState, .unavailable)
+            XCTAssertNil(model.cardSummary)
+            await model.loadCard()
+            await model.save()
+            let reopened = try await self.stack(url, SaveModelTransport([]))
+            let after = try await diskCheckpoint(reopened, flow: flow)
+            let afterEntities = try await reopened.store.activeSyncedEntities(ownerId: owner, entityType: "plants")
+            let afterWatermark = try await reopened.store.currentWatermarkRaw(ownerId: owner)
+            let diskReceipt = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+            let queue = try await reopened.store.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(after, original)
+            XCTAssertEqual(afterEntities.map(\.payloadJSON), entities.map(\.payloadJSON))
+            XCTAssertEqual(afterEntities.map(\.id), entities.map(\.id))
+            XCTAssertEqual(afterWatermark, watermark)
+            XCTAssertEqual(diskReceipt, confirmation)
+            XCTAssertTrue(queue.isEmpty)
+            let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET", "GET"])
+            XCTAssertTrue(requests.allSatisfy {
+                $0.value(forHTTPHeaderField: "Authorization") == "Bearer model-a"
+            })
+        }
+    }
+
+    func testCardDuplicateLoadWhileGETSuspendedSendsOneRefreshAndKeepsDurableSaved() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = SaveModelTransport([
+            .http("GET", 200, try page()), .http("POST", 200, try receipt()),
+            .http("GET", 200, try cardPage())
+        ], suspendAt: 2)
+        let stack = try await stack(url, transport)
+        let model = try await model(stack, flow: UUID(), operation: UUID())
+        await model.save()
+        let confirmation = try saved(model)
+        let loading = Task { await model.loadCard() }
+        await transport.waitForSuspension()
+        await model.loadCard()
+        await model.save()
+        XCTAssertEqual(model.cardState, .loading)
+        XCTAssertNil(model.cardSummary)
+        XCTAssertEqual(try saved(model), confirmation)
+        await transport.resume()
+        await loading.value
+        assertCanonicalCard(model)
+        XCTAssertEqual(try saved(model), confirmation)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET"])
+        await stack.api.bindSyncSession(otherSession)
+        await stack.api.bindSyncSession(session)
+        assertRedacted(model, reason: .sessionChanged)
+        XCTAssertEqual(model.cardState, .unavailable)
+        XCTAssertNil(model.cardSummary)
+    }
+
+    func testCardLoadingObservationRereadsAndInvalidatesBeforeAnyDetailsGETWithoutDeadlock() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = SaveModelTransport([
+            .http("GET", 200, try page()), .http("POST", 200, try receipt())
+        ])
+        let stack = try await stack(url, transport)
+        let operation = UUID()
+        let model = try await model(stack, flow: UUID(), operation: operation)
+        await model.save()
+        let confirmation = try saved(model)
+        let readings = CardObserverReadings()
+        let authority = stack.api.syncAuthority
+        withObservationTracking {
+            _ = model.cardState
+            _ = model.cardSummary
+        } onChange: {
+            MainActor.assumeIsolated {
+                readings.read(model)
+                authority.invalidate()
+                readings.read(model)
+            }
+        }
+        await model.loadCard()
+        XCTAssertEqual(readings.states, [.idle, .unavailable])
+        XCTAssertEqual(readings.summaries, [nil, nil])
+        XCTAssertEqual(readings.saves, [.saved(confirmation), .unavailable(.sessionChanged)])
+        assertRedacted(model, reason: .sessionChanged)
+        XCTAssertNil(model.cardSummary)
+        let reopened = try await self.stack(url, SaveModelTransport([]))
+        let diskReceipt = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+        let watermark = try await reopened.store.currentWatermarkRaw(ownerId: owner)
+        XCTAssertEqual(diskReceipt, confirmation)
+        XCTAssertEqual(watermark, "2026-11-03T09:00:00.123456+00:00")
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+    }
+
+    func testCardLoadedObservationRereadsAndInvalidatesWithoutPublishingOldOwnerSummary() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = SaveModelTransport([
+            .http("GET", 200, try page()), .http("POST", 200, try receipt()),
+            .http("GET", 200, try cardPage())
+        ], suspendAt: 2)
+        let stack = try await stack(url, transport)
+        let flow = UUID(), operation = UUID()
+        let model = try await model(stack, flow: flow, operation: operation)
+        await model.save()
+        let confirmation = try saved(model)
+        let checkpoint = model.checkpoint
+        let loading = Task { await model.loadCard() }
+        await transport.waitForSuspension()
+        let readings = CardObserverReadings()
+        let authority = stack.api.syncAuthority
+        withObservationTracking {
+            _ = model.cardState
+            _ = model.cardSummary
+        } onChange: {
+            MainActor.assumeIsolated {
+                readings.read(model)
+                authority.invalidate()
+                readings.read(model)
+            }
+        }
+        await transport.resume()
+        await loading.value
+        XCTAssertEqual(readings.states, [.loading, .unavailable])
+        XCTAssertEqual(readings.summaries, [nil, nil])
+        XCTAssertEqual(readings.saves, [.saved(confirmation), .unavailable(.sessionChanged)])
+        assertRedacted(model, reason: .sessionChanged)
+        XCTAssertEqual(model.cardState, .unavailable)
+        XCTAssertNil(model.cardSummary)
+        await model.loadCard()
+        let reopened = try await self.stack(url, SaveModelTransport([]))
+        let diskReceipt = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+        let diskInput = try await diskCheckpoint(reopened, flow: flow)
+        let watermark = try await reopened.store.currentWatermarkRaw(ownerId: owner)
+        XCTAssertEqual(diskReceipt, confirmation)
+        XCTAssertEqual(diskInput, checkpoint)
+        // The GET committed before this synchronous publication callback revoked its lease.
+        XCTAssertEqual(watermark, "2026-11-03T09:00:02.123456+00:00")
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET"])
+    }
+
     func testGuestCheckpointsBeforeSignInWithoutRequestsOrQueueAndRestoresOnlyOwnFlow() async throws {
         let url = try diskURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
