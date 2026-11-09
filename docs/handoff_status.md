@@ -375,8 +375,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t162-client-create-receipt-recovery: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t162-client-create-receipt-recovery](validation/automation/tasks/t162-client-create-receipt-recovery.md).
+parallel-backend-t163-registration-anchors: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-backend-t163-registration-anchors](validation/automation/tasks/parallel-backend-t163-registration-anchors.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
