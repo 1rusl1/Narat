@@ -298,7 +298,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t162-create-http-adapter: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t162-create-http-adapter](validation/automation/tasks/t162-create-http-adapter.md).
+t162-client-create-receipt-recovery: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t162-client-create-receipt-recovery](validation/automation/tasks/t162-client-create-receipt-recovery.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
