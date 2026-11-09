@@ -52,42 +52,25 @@ function conditionProfile() {
   const content = {
     title: "Synthetic condition",
     summary: "Synthetic fixture; not advice",
-    recovery_check_tip: "Synthetic observation",
-    photo_angle_hint: "Synthetic photo hint",
   };
   return {
-    schema_version: "1.0",
+    schema_version: "2.0",
     kb_release_id: "88888888-8888-4888-8888-888888888888",
     record_version: 1,
     provenance: provenance("/visual_markers"),
     condition_id: "overwatering",
-    category: "abiotic",
     host_scope: {
       plant_ids: ["synthetic_plant"], families: [], general_houseplants: false,
     },
     visual_markers: ["synthetic_marker"],
-    required_check_ids: [],
     contraindication_check_ids: [],
-    abiotic_priority: "default_first",
-    first_help_step_id: "synthetic_step",
-    treatment_plan: {
-      is_contagious: null,
-      urgency: "unknown",
-      duration_weeks: null,
-      steps: [{
-        step_id: "synthetic_step", step_order: 1, phase: "monitoring",
-        action_code: "observe", purpose: "observation", start_offset_days: 0,
-        interval_days: 0, repeat_count: 1, active_ingredients: [], eco_alternative: null,
-        application_selection: "one_verified_option", local_products_pl: [],
-        product_evidence_ids: [], prerequisite_check_ids: [], contraindication_check_ids: [],
-        action_en: "Synthetic observation only", action_pl: "Wyłącznie fikcyjna obserwacja",
-      }],
-    },
-    recovery_check: {
-      check_offset_days: 1,
-      comparison_trait_ids: ["synthetic_trait"],
-      worsening_symptom_ids: ["synthetic_symptom"],
-    },
+    first_help_action_id: "synthetic_action",
+    actions: [{
+      action_id: "synthetic_action", action_code: "observe", purpose: "observation",
+      next_check_interval_days: null,
+      prerequisite_check_ids: [], contraindication_check_ids: [],
+      action_en: "Synthetic observation only", action_pl: "Wyłącznie fikcyjna obserwacja",
+    }],
     condition_content_i18n: { en: content, pl: { ...content } },
   };
 }

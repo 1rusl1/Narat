@@ -7,20 +7,16 @@
     "record_version",
     "provenance",
     "condition_id",
-    "category",
     "host_scope",
     "visual_markers",
-    "required_check_ids",
     "contraindication_check_ids",
-    "abiotic_priority",
-    "first_help_step_id",
-    "treatment_plan",
-    "recovery_check",
-    "condition_content_i18n"
+    "condition_content_i18n",
+    "first_help_action_id",
+    "actions"
   ],
   "properties": {
     "schema_version": {
-      "const": "1.0"
+      "const": "2.0"
     },
     "kb_release_id": {
       "type": "string",
@@ -225,16 +221,6 @@
         "suspected_viral_disease"
       ]
     },
-    "category": {
-      "type": "string",
-      "enum": [
-        "abiotic",
-        "pest",
-        "disease",
-        "syndrome",
-        "physiological"
-      ]
-    },
     "host_scope": {
       "type": "object",
       "additionalProperties": false,
@@ -276,15 +262,6 @@
       "minItems": 1,
       "uniqueItems": true
     },
-    "required_check_ids": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "pattern": "^[a-z][a-z0-9_]*$"
-      },
-      "minItems": 0,
-      "uniqueItems": true
-    },
     "contraindication_check_ids": {
       "type": "array",
       "items": {
@@ -293,281 +270,6 @@
       },
       "minItems": 0,
       "uniqueItems": true
-    },
-    "abiotic_priority": {
-      "type": "string",
-      "enum": [
-        "default_first",
-        "specific_evidence_required",
-        "neutral"
-      ]
-    },
-    "first_help_step_id": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*$"
-    },
-    "treatment_plan": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "is_contagious",
-        "urgency",
-        "duration_weeks",
-        "steps"
-      ],
-      "properties": {
-        "is_contagious": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "urgency": {
-          "type": "string",
-          "enum": [
-            "low",
-            "medium",
-            "high",
-            "unknown"
-          ]
-        },
-        "duration_weeks": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 52
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "steps": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "step_id",
-              "step_order",
-              "phase",
-              "action_code",
-              "purpose",
-              "start_offset_days",
-              "interval_days",
-              "repeat_count",
-              "active_ingredients",
-              "eco_alternative",
-              "application_selection",
-              "local_products_pl",
-              "product_evidence_ids",
-              "prerequisite_check_ids",
-              "contraindication_check_ids",
-              "action_pl",
-              "action_en"
-            ],
-            "properties": {
-              "step_id": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]*$"
-              },
-              "step_order": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 100
-              },
-              "phase": {
-                "type": "string",
-                "enum": [
-                  "immediate_isolation",
-                  "mechanical_wash",
-                  "treatment_application",
-                  "adjust_environment",
-                  "substrate_correction",
-                  "sanitation",
-                  "monitoring",
-                  "recovery_check"
-                ]
-              },
-              "action_code": {
-                "type": "string",
-                "enum": [
-                  "check_soil",
-                  "inspect_roots",
-                  "inspect_leaves",
-                  "observe",
-                  "water",
-                  "fertilize",
-                  "repot",
-                  "prune",
-                  "isolate",
-                  "wash_pests",
-                  "treat_pests",
-                  "adjust_light",
-                  "adjust_humidity",
-                  "check_up"
-                ]
-              },
-              "purpose": {
-                "type": "string",
-                "enum": [
-                  "diagnostic_check",
-                  "routine_care",
-                  "humidity_management",
-                  "pest_removal",
-                  "treatment",
-                  "observation"
-                ]
-              },
-              "start_offset_days": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 365
-              },
-              "interval_days": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 365
-              },
-              "repeat_count": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 52
-              },
-              "active_ingredients": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "minItems": 0,
-                "uniqueItems": true
-              },
-              "eco_alternative": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "application_selection": {
-                "const": "one_verified_option"
-              },
-              "local_products_pl": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "minItems": 0,
-                "uniqueItems": true
-              },
-              "product_evidence_ids": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "minItems": 0,
-                "uniqueItems": true
-              },
-              "prerequisite_check_ids": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "minItems": 0,
-                "uniqueItems": true
-              },
-              "contraindication_check_ids": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9_]*$"
-                },
-                "minItems": 0,
-                "uniqueItems": true
-              },
-              "action_pl": {
-                "type": "string",
-                "minLength": 1
-              },
-              "action_en": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "description": "interval_days is repeat spacing, repeat_count is TOTAL occurrences including the first. start_offset_days is measured from explicit treatment start. Ingredients/eco alternative are alternatives, not a tank mix; only one verified option may be selected. Brand names require corresponding active product evidence.",
-            "allOf": [
-              {
-                "if": {
-                  "properties": {
-                    "repeat_count": {
-                      "minimum": 2
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "interval_days": {
-                      "minimum": 1
-                    }
-                  }
-                },
-                "else": {
-                  "properties": {
-                    "interval_days": {
-                      "const": 0
-                    }
-                  }
-                }
-              }
-            ]
-          },
-          "minItems": 1,
-          "maxItems": 100
-        }
-      }
-    },
-    "recovery_check": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "check_offset_days",
-        "comparison_trait_ids",
-        "worsening_symptom_ids"
-      ],
-      "properties": {
-        "check_offset_days": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 90
-        },
-        "comparison_trait_ids": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
-        "worsening_symptom_ids": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9_]*$"
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        }
-      }
     },
     "condition_content_i18n": {
       "type": "object",
@@ -582,9 +284,7 @@
           "additionalProperties": false,
           "required": [
             "title",
-            "summary",
-            "recovery_check_tip",
-            "photo_angle_hint"
+            "summary"
           ],
           "properties": {
             "title": {
@@ -592,14 +292,6 @@
               "minLength": 1
             },
             "summary": {
-              "type": "string",
-              "minLength": 1
-            },
-            "recovery_check_tip": {
-              "type": "string",
-              "minLength": 1
-            },
-            "photo_angle_hint": {
               "type": "string",
               "minLength": 1
             }
@@ -610,9 +302,7 @@
           "additionalProperties": false,
           "required": [
             "title",
-            "summary",
-            "recovery_check_tip",
-            "photo_angle_hint"
+            "summary"
           ],
           "properties": {
             "title": {
@@ -622,69 +312,115 @@
             "summary": {
               "type": "string",
               "minLength": 1
-            },
-            "recovery_check_tip": {
-              "type": "string",
-              "minLength": 1
-            },
-            "photo_angle_hint": {
-              "type": "string",
-              "minLength": 1
             }
           }
         }
       }
-    }
-  },
-  "description": "Canonical ConditionProfile from the complete owner prompt. An enriched published record, not an approval of the numeric or chemical examples. Cross-field references, evidence, schedule horizon, alternative compatibility and PL label checks require semantic validation.",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:plants:condition-profile:1.0",
-  "title": "ConditionProfile Golden Record",
-  "$defs": {
-    "condition_id": {
+    },
+    "first_help_action_id": {
       "type": "string",
-      "enum": [
-        "overwatering",
-        "underwatering",
-        "poor_drainage",
-        "root_rot",
-        "low_light",
-        "sunburn",
-        "cold_stress",
-        "heat_stress",
-        "low_humidity",
-        "fertilizer_burn",
-        "nutrient_deficiency",
-        "salt_buildup",
-        "nitrogen_deficiency",
-        "iron_chlorosis",
-        "potassium_deficiency",
-        "magnesium_deficiency",
-        "ph_imbalance",
-        "root_bound",
-        "transplant_shock",
-        "acclimation_stress",
-        "edema",
-        "mechanical_damage",
-        "chemical_phytotoxicity",
-        "natural_leaf_senescence",
-        "thrips_infestation",
-        "spider_mites",
-        "mealybugs",
-        "scale_insects",
-        "aphids",
-        "whiteflies",
-        "fungus_gnats",
-        "broad_mites",
-        "powdery_mildew",
-        "grey_mould",
-        "fungal_leaf_spot",
-        "bacterial_leaf_spot",
-        "bacterial_soft_rot",
-        "crown_rot",
-        "sooty_mould",
-        "suspected_viral_disease"
-      ]
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action_id",
+          "action_code",
+          "purpose",
+          "prerequisite_check_ids",
+          "contraindication_check_ids",
+          "action_pl",
+          "action_en",
+          "next_check_interval_days"
+        ],
+        "properties": {
+          "action_code": {
+            "type": "string",
+            "enum": [
+              "check_soil",
+              "inspect_roots",
+              "inspect_leaves",
+              "observe",
+              "water",
+              "fertilize",
+              "repot",
+              "prune",
+              "isolate",
+              "wash_pests",
+              "treat_pests",
+              "adjust_light",
+              "adjust_humidity",
+              "check_up"
+            ]
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "diagnostic_check",
+              "routine_care",
+              "humidity_management",
+              "pest_removal",
+              "treatment",
+              "observation"
+            ]
+          },
+          "prerequisite_check_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          },
+          "contraindication_check_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          },
+          "action_pl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action_en": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "next_check_interval_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 90
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_ingredients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          }
+        }
+      }
     }
   }
 }

@@ -11,6 +11,7 @@ import {
   PublishedReleaseCatalog,
   ValidationOutcome,
   VisionClassification30,
+  validateConditionProfileSemantics,
 } from "./KnowledgeTypes.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -166,6 +167,12 @@ export class AnalysisValidator {
               errors.push(
                 `Candidate condition_id '${cand.condition_id}' is not published in KB release '${catalog.kbReleaseId}'.`,
               );
+            } else if (
+              !validateConditionProfileSemantics(profile).valid ||
+              profile.condition_id !== cand.condition_id ||
+              profile.kb_release_id !== catalog.kbReleaseId
+            ) {
+              errors.push(`Candidate '${cand.condition_id}' has no valid compact profile in the pinned release.`);
             } else {
               for (const marker of profile.visual_markers) {
                 allowedVisualMarkers.add(marker);

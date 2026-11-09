@@ -1,0 +1,802 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:plants:plant-profile:1.0",
+  "title": "PlantProfile Golden Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kb_release_id",
+    "record_version",
+    "provenance",
+    "plant_id",
+    "taxonomy",
+    "safety",
+    "care_algorithm_params",
+    "common_vulnerabilities",
+    "care_content_i18n"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "kb_release_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "record_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_documents",
+        "field_evidence",
+        "validation"
+      ],
+      "properties": {
+        "source_documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source_id",
+              "url",
+              "retrieved_at",
+              "content_hash",
+              "use_basis",
+              "allowed_for"
+            ],
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "donor_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "independence_group": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "retrieved_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "content_hash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "use_basis": {
+                "type": "string",
+                "minLength": 1
+              },
+              "allowed_for": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "commercial_storage",
+                    "automated_collection",
+                    "llm_processing",
+                    "derived_records"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 4,
+                "uniqueItems": true
+              }
+            }
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "field_evidence": {
+          "type": "object",
+          "minProperties": 1,
+          "patternProperties": {
+            "^/": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source_id",
+                  "locator",
+                  "scope"
+                ],
+                "properties": {
+                  "source_id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "locator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "scope": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "validated_at",
+            "unresolved_conflicts"
+          ],
+          "properties": {
+            "method": {
+              "enum": [
+                "manual_review",
+                "multi_source_rules"
+              ]
+            },
+            "synthesis_model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "prompt_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "guardrail_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "validated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "unresolved_conflicts": {
+              "type": "array",
+              "maxItems": 0,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "plant_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "taxonomy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scientific_name",
+        "synonyms",
+        "family",
+        "common_names"
+      ],
+      "properties": {
+        "scientific_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "common_names": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "en",
+            "pl"
+          ],
+          "properties": {
+            "en": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "pl": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "is_toxic_to_pets",
+        "toxin_type",
+        "severity",
+        "pet_specific",
+        "unknown_reason_code"
+      ],
+      "properties": {
+        "is_toxic_to_pets": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "toxin_type": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "moderate",
+            "high",
+            "unknown"
+          ]
+        },
+        "pet_specific": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cat",
+            "dog"
+          ],
+          "properties": {
+            "cat": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "source_ids"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "toxic",
+                    "non_toxic",
+                    "unknown"
+                  ]
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                }
+              }
+            },
+            "dog": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "source_ids"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "toxic",
+                    "non_toxic",
+                    "unknown"
+                  ]
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                }
+              }
+            }
+          }
+        },
+        "unknown_reason_code": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "care_algorithm_params": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "watering_strategy",
+        "dry_depth_cm",
+        "base_watering_interval_days",
+        "environment_modifiers",
+        "watering_schedule_policy",
+        "light_requirements",
+        "soil_preset",
+        "fertilizing"
+      ],
+      "properties": {
+        "watering_strategy": {
+          "type": "string",
+          "enum": [
+            "top_inch_dry",
+            "top_third_dry",
+            "full_dry",
+            "reservoir_check",
+            "unknown"
+          ]
+        },
+        "dry_depth_cm": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "base_watering_interval_days": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summer",
+            "winter"
+          ],
+          "properties": {
+            "summer": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 365
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "winter": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 365
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "environment_modifiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "low_light_multiplier",
+            "terracotta_pot_multiplier",
+            "heating_season_multiplier"
+          ],
+          "properties": {
+            "low_light_multiplier": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "terracotta_pot_multiplier": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "heating_season_multiplier": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "watering_schedule_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "locality",
+            "summer_months",
+            "winter_months",
+            "min_check_interval_days",
+            "max_check_interval_days",
+            "unknown_conditions_protocol_id"
+          ],
+          "properties": {
+            "locality": {
+              "const": "PL"
+            },
+            "summer_months": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "minItems": 1,
+              "maxItems": 11,
+              "uniqueItems": true
+            },
+            "winter_months": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "minItems": 1,
+              "maxItems": 11,
+              "uniqueItems": true
+            },
+            "min_check_interval_days": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 365
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "max_check_interval_days": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 365
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unknown_conditions_protocol_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
+          }
+        },
+        "light_requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ideal_fc_range",
+            "min_survival_fc",
+            "direct_sun_tolerance"
+          ],
+          "properties": {
+            "ideal_fc_range": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "min_survival_fc": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "direct_sun_tolerance": {
+              "type": "string",
+              "enum": [
+                "none",
+                "morning_only",
+                "acclimated",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "soil_preset": {
+          "type": "string",
+          "enum": [
+            "chunky_aroid_mix",
+            "succulent_mineral_mix",
+            "semi_hydro_pon",
+            "moisture_retentive_mix"
+          ]
+        },
+        "fertilizing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "active_months",
+            "frequency_days",
+            "recommended_npk"
+          ],
+          "properties": {
+            "active_months": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "minItems": 0,
+              "maxItems": 12,
+              "uniqueItems": true
+            },
+            "frequency_days": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 365
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recommended_npk": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "common_vulnerabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "overwatering",
+          "underwatering",
+          "poor_drainage",
+          "root_rot",
+          "low_light",
+          "sunburn",
+          "cold_stress",
+          "heat_stress",
+          "low_humidity",
+          "fertilizer_burn",
+          "nutrient_deficiency",
+          "salt_buildup",
+          "nitrogen_deficiency",
+          "iron_chlorosis",
+          "potassium_deficiency",
+          "magnesium_deficiency",
+          "ph_imbalance",
+          "root_bound",
+          "transplant_shock",
+          "acclimation_stress",
+          "edema",
+          "mechanical_damage",
+          "chemical_phytotoxicity",
+          "natural_leaf_senescence",
+          "thrips_infestation",
+          "spider_mites",
+          "mealybugs",
+          "scale_insects",
+          "aphids",
+          "whiteflies",
+          "fungus_gnats",
+          "broad_mites",
+          "powdery_mildew",
+          "grey_mould",
+          "fungal_leaf_spot",
+          "bacterial_leaf_spot",
+          "bacterial_soft_rot",
+          "crown_rot",
+          "sooty_mould",
+          "suspected_viral_disease"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 40,
+      "uniqueItems": true
+    },
+    "care_content_i18n": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "en",
+        "pl"
+      ],
+      "properties": {
+        "en": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "watering_tip",
+            "soil_recipe",
+            "light_tip",
+            "fertilizing_tip",
+            "safety_note"
+          ],
+          "properties": {
+            "watering_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "soil_recipe": {
+              "type": "string",
+              "minLength": 1
+            },
+            "light_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fertilizing_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "safety_note": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "pl": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "watering_tip",
+            "soil_recipe",
+            "light_tip",
+            "fertilizing_tip",
+            "safety_note"
+          ],
+          "properties": {
+            "watering_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "soil_recipe": {
+              "type": "string",
+              "minLength": 1
+            },
+            "light_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fertilizing_tip": {
+              "type": "string",
+              "minLength": 1
+            },
+            "safety_note": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "description": "Canonical Golden Record. Numeric values require field evidence; null is unknown, not a model-generated default. Cross-field and source-independence checks are mandatory outside JSON Schema.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "care_algorithm_params": {
+            "properties": {
+              "soil_preset": {
+                "const": "semi_hydro_pon"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "care_algorithm_params": {
+            "properties": {
+              "watering_strategy": {
+                "const": "reservoir_check"
+              },
+              "dry_depth_cm": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import {
   CanonicalConditionId,
   CanonicalConditionProfile,
   PublishedReleaseCatalog,
+  ProfileProvenance,
   VisionClassification30,
   validateConditionProfileSemantics,
 } from "../KnowledgeTypes.ts";
@@ -34,11 +35,92 @@ import { ApiHttpError, RequestContext } from "../http.ts";
 const KB_RELEASE_ID = "88888888-8888-4888-8888-888888888888";
 const SIGNING_SECRET = "test-signing-secret-32-bytes-minimum-key";
 
+function makeFixtureProvenance(): ProfileProvenance {
+  return {
+    source_documents: ["one", "two", "three"].map((id): ProfileProvenance["source_documents"][number] => ({
+      source_id: `fixture_${id}`, donor_id: `donor_${id}`, independence_group: `group_${id}`,
+      url: `https://example.com/${id}`, retrieved_at: "2026-11-09T00:00:00Z",
+      content_hash: "a".repeat(64), use_basis: "Synthetic regression fixture",
+      allowed_for: [
+        "commercial_storage", "automated_collection", "llm_processing", "derived_records",
+      ],
+    })),
+    field_evidence: {
+      "/visual_markers": [{
+        source_id: "fixture_one", locator: "fixture", scope: "regression only",
+      }],
+    },
+    validation: {
+      method: "multi_source_rules", synthesis_model: "fixture", prompt_version: "fixture",
+      guardrail_version: "fixture", validated_at: "2026-11-09T00:00:00Z",
+      unresolved_conflicts: [],
+    },
+  };
+}
+
 function makeSampleCatalog(): PublishedReleaseCatalog {
   const overwateringProfile: CanonicalConditionProfile = {
+    schema_version: "2.0",
+    kb_release_id: KB_RELEASE_ID,
+    record_version: 1,
+    provenance: makeFixtureProvenance(),
+    condition_id: "overwatering",
+    host_scope: {
+      plant_ids: ["monstera_deliciosa"],
+      families: ["Araceae"],
+      general_houseplants: true,
+    },
+    visual_markers: ["yellowing_lower_leaves", "wet_heavy_substrate"],
+    contraindication_check_ids: [],
+    first_help_action_id: "hold_water",
+    actions: [{
+      action_id: "hold_water",
+      action_code: "check_soil",
+      purpose: "diagnostic_check",
+      prerequisite_check_ids: [],
+      contraindication_check_ids: [],
+      next_check_interval_days: 7,
+      action_pl: "Wstrzymaj podlewanie i sprawdź odpływ wody z doniczki.",
+      action_en: "Hold off on watering and check pot drainage.",
+    }],
+    condition_content_i18n: {
+      pl: {
+        title: "Przelanie (nadmiar wody)",
+        summary: "Korzenie mają ograniczony dostęp do tlenu wskutek zbyt mokrego podłoża.",
+      },
+      en: {
+        title: "Overwatering",
+        summary: "Roots have restricted oxygen access due to overly wet soil.",
+      },
+    },
+  };
+
+  const rootRotProfile: CanonicalConditionProfile = {
+    ...structuredClone(overwateringProfile),
+    condition_id: "root_rot",
+    visual_markers: ["mushy_black_roots", "stem_base_blackening", "yellowing_lower_leaves"],
+  };
+
+  const conditionProfiles = new Map<CanonicalConditionId, CanonicalConditionProfile>([
+    ["overwatering", overwateringProfile],
+    ["root_rot", rootRotProfile],
+  ]);
+
+  return {
+    kbReleaseId: KB_RELEASE_ID,
+    plantIds: new Set(["monstera_deliciosa", "epipremnum_aureum"]),
+    genusIds: new Set(["monstera", "epipremnum"]),
+    conditionProfiles,
+  };
+}
+
+// Raw v1 fixture: never reinterpret or convert it into a compact recommendation.
+function makeLegacyConditionProfile() {
+  return {
     schema_version: "1.0",
     kb_release_id: KB_RELEASE_ID,
     record_version: 1,
+    provenance: makeFixtureProvenance(),
     condition_id: "overwatering",
     category: "abiotic",
     host_scope: {
@@ -97,24 +179,6 @@ function makeSampleCatalog(): PublishedReleaseCatalog {
       },
     },
   };
-
-  const rootRotProfile: CanonicalConditionProfile = {
-    ...structuredClone(overwateringProfile),
-    condition_id: "root_rot",
-    visual_markers: ["mushy_black_roots", "stem_base_blackening", "yellowing_lower_leaves"],
-  };
-
-  const conditionProfiles = new Map<CanonicalConditionId, CanonicalConditionProfile>([
-    ["overwatering", overwateringProfile],
-    ["root_rot", rootRotProfile],
-  ]);
-
-  return {
-    kbReleaseId: KB_RELEASE_ID,
-    plantIds: new Set(["monstera_deliciosa", "epipremnum_aureum"]),
-    genusIds: new Set(["monstera", "epipremnum"]),
-    conditionProfiles,
-  };
 }
 
 // Publication schema is loaded from disk; no network or new dependencies.
@@ -138,30 +202,8 @@ const validateProfileSchema = profileAjv.compile(JSON.parse(Deno.readTextFileSyn
 ))));
 
 // Synthetic evidence satisfies the unchanged legacy provenance contract.
-function makePublishedProfile() {
-  return {
-    ...structuredClone(makeSampleCatalog().conditionProfiles.get("overwatering")!),
-    provenance: {
-      source_documents: ["one", "two", "three"].map((id) => ({
-        source_id: `fixture_${id}`, donor_id: `donor_${id}`, independence_group: `group_${id}`,
-        url: `https://example.com/${id}`, retrieved_at: "2026-11-09T00:00:00Z",
-        content_hash: "a".repeat(64), use_basis: "Synthetic regression fixture",
-        allowed_for: [
-          "commercial_storage", "automated_collection", "llm_processing", "derived_records",
-        ],
-      })),
-      field_evidence: {
-        "/visual_markers": [{
-          source_id: "fixture_one", locator: "fixture", scope: "regression only",
-        }],
-      },
-      validation: {
-        method: "multi_source_rules", synthesis_model: "fixture", prompt_version: "fixture",
-        guardrail_version: "fixture", validated_at: "2026-11-09T00:00:00Z",
-        unresolved_conflicts: [],
-      },
-    },
-  };
+function makePublishedProfile(): CanonicalConditionProfile {
+  return structuredClone(makeSampleCatalog().conditionProfiles.get("overwatering")!);
 }
 
 Deno.test("T157 — publication accepts no bank and rejects the removed property", () => {
@@ -176,7 +218,7 @@ Deno.test("T157 — publication accepts no bank and rejects the removed property
     error.params.additionalProperty === "diagnostic_disambiguation"));
 });
 
-Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/PL", async () => {
+Deno.test("T157 — removed bank cannot enter new compact recommendations in EN/PL", async () => {
   const profile = makePublishedProfile();
   // Invalid even under old semantics: historical content must not be interpreted.
   const historical = {
@@ -189,7 +231,7 @@ Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/P
       }],
     },
   };
-  assertEquals(validateConditionProfileSemantics(historical), { valid: true, errors: [] });
+  assertEquals(validateConditionProfileSemantics(historical).valid, false);
   for (const locale of ["en", "pl"] as const) {
     for (const confidence of [0.1, 0.79, 0.8, 0.9]) {
       const catalog = makeSampleCatalog();
@@ -217,13 +259,14 @@ Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/P
       const clean = await ProtocolResolver.resolvePreliminaryProjection(params);
       catalog.conditionProfiles.set("overwatering", historical);
       const restored = await ProtocolResolver.resolvePreliminaryProjection(params);
-      assertEquals(restored, clean);
+      assertNoPublishedAction(restored);
+      assertEquals((await verifyAnalysisReceipt(restored.analysis_receipt, SIGNING_SECRET)).valid, true);
       assertEquals(clean.selected_condition_id, "overwatering");
       assertEquals(clean.plan_availability, "available");
       assertEquals(clean.control_interval_days, 7);
       assertEquals(clean.first_action_title, profile.condition_content_i18n[locale].title);
-      const step = profile.treatment_plan.steps[0];
-      assertEquals(clean.first_action_summary, locale === "en" ? step.action_en : step.action_pl);
+      const action = profile.actions[0];
+      assertEquals(clean.first_action_summary, locale === "en" ? action.action_en : action.action_pl);
       assertEquals("decision_state" in clean, false);
       for (const key of ["diagnostic_disambiguation", "clarifying_questions", "questions"]) {
         assertEquals(key in restored, false);
@@ -234,40 +277,181 @@ Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/P
   }
 });
 
-Deno.test("T157 — existing semantic and schema restrictions survive bank removal", () => {
+Deno.test("T157 — compact action IDs, nullable intervals and EN/PL are validated", () => {
   const duplicate = makePublishedProfile();
-  duplicate.treatment_plan.steps.push(structuredClone(duplicate.treatment_plan.steps[0]));
+  duplicate.actions.push(structuredClone(duplicate.actions[0]));
   const duplicateResult = validateConditionProfileSemantics(duplicate);
   assertEquals(duplicateResult.valid, false);
-  assert(duplicateResult.errors.some((error) => error.includes("Duplicate step_id")));
+  assert(duplicateResult.errors.some((error) => error.includes("Duplicate action_id")));
 
   const dangling = makePublishedProfile();
-  dangling.first_help_step_id = "missing_step";
+  dangling.first_help_action_id = "missing_action";
   const danglingResult = validateConditionProfileSemantics(dangling);
   assertEquals(danglingResult.valid, false);
-  assert(danglingResult.errors.some((error) => error.includes("does not reference any step")));
+  assert(danglingResult.errors.some((error) => error.includes("does not reference any action")));
 
-  for (const [repeat, interval] of [[0, 0], [53, 1], [1, 1], [2, 0]]) {
+  for (const interval of [null, 1, 90]) {
+    const valid = makePublishedProfile();
+    valid.actions[0].next_check_interval_days = interval;
+    assertEquals(validateProfileSchema(valid), true);
+    assertEquals(validateConditionProfileSemantics(valid).valid, true);
+  }
+  for (const interval of [0, -1, 91, 1.5, NaN, Infinity, "7", undefined]) {
     const invalid = makePublishedProfile();
-    Object.assign(invalid.treatment_plan.steps[0], { repeat_count: repeat, interval_days: interval });
+    Object.assign(invalid.actions[0], { next_check_interval_days: interval });
     assertEquals(validateProfileSchema(invalid), false);
-    const result = validateConditionProfileSemantics(invalid);
-    assertEquals(result.valid, false);
-    assert(result.errors.some((error) => error.includes("repeat_count")));
+    assertEquals(validateConditionProfileSemantics(invalid).valid, false);
   }
   for (const language of ["action_en", "action_pl"] as const) {
     const invalid = makePublishedProfile();
-    invalid.treatment_plan.steps[0][language] = "";
+    invalid.actions[0][language] = "";
     assertEquals(validateProfileSchema(invalid), false);
     const result = validateConditionProfileSemantics(invalid);
     assertEquals(result.valid, false);
-    assert(result.errors.some((error) => error.includes("missing PL or EN action text")));
+    assert(result.errors.some((error) => error.includes(language)));
   }
   const restricted = makePublishedProfile();
   restricted.host_scope.general_houseplants = false;
   assertEquals(ProtocolResolver.isConditionHostCompatible(restricted, { plantId: "other" }), false);
   assertEquals(ProtocolResolver.isConditionHostCompatible(restricted, { plantId: "monstera_deliciosa" }), true);
   assertEquals(ProtocolResolver.isConditionHostCompatible(restricted, { plantId: null, family: "Araceae" }), true);
+});
+
+Deno.test("T157 — compact schema rejects timeline, recipe and unknown fields", () => {
+  const cases: Array<[string[], string]> = [
+    ...["category", "abiotic_priority", "required_check_ids", "first_help_step_id",
+      "treatment_plan", "recovery_check", "diagnostic_disambiguation"].map((key): [string[], string] =>
+      [[], key]),
+    ...["step_id", "step_order", "phase", "start_offset_days", "interval_days", "repeat_count",
+      "duration_weeks", "eco_alternative", "application_selection", "local_products_pl",
+      "product_evidence_ids", "dose", "recipe"].map((key): [string[], string] => [["actions", "0"], key]),
+    ...["en", "pl"].flatMap((locale) =>
+      ["recovery_check_tip", "photo_angle_hint"].map((key): [string[], string] =>
+        [["condition_content_i18n", locale], key])),
+  ];
+  for (const [path, key] of cases) {
+    const profile = makePublishedProfile();
+    let target = profile as unknown as Record<string, unknown>;
+    for (const part of path) target = target[part] as Record<string, unknown>;
+    target[key] = "removed";
+    assertEquals(validateProfileSchema(profile), false, key);
+    assertEquals(validateConditionProfileSemantics(profile).valid, false, key);
+  }
+});
+
+Deno.test("T157 — compact IDs, prerequisites, contraindications and nonblank locale content", () => {
+  for (const id of ["", "Bad-ID", "not an id"]) {
+    for (const field of ["action_id", "prerequisite_check_ids", "contraindication_check_ids"]) {
+      const profile = makePublishedProfile();
+      Object.assign(profile.actions[0], { [field]: field === "action_id" ? id : [id] });
+      assertEquals(validateProfileSchema(profile), false);
+      assertEquals(validateConditionProfileSemantics(profile).valid, false);
+    }
+    const profile = makePublishedProfile();
+    profile.first_help_action_id = id;
+    assertEquals(validateProfileSchema(profile), false);
+    assertEquals(validateConditionProfileSemantics(profile).valid, false);
+  }
+  for (const field of ["prerequisite_check_ids", "contraindication_check_ids"]) {
+    const profile = makePublishedProfile();
+    Object.assign(profile.actions[0], { [field]: ["check_one", "check_one"] });
+    assertEquals(validateProfileSchema(profile), false);
+    assertEquals(validateConditionProfileSemantics(profile).valid, false);
+  }
+  for (const locale of ["en", "pl"] as const) {
+    for (const text of ["", " \n\t"]) {
+      for (const field of ["title", "summary"] as const) {
+        const profile = makePublishedProfile();
+        profile.condition_content_i18n[locale][field] = text;
+        assertEquals(validateConditionProfileSemantics(profile).valid, false);
+      }
+      const profile = makePublishedProfile();
+      profile.actions[0][locale === "en" ? "action_en" : "action_pl"] = text;
+      assertEquals(validateConditionProfileSemantics(profile).valid, false);
+    }
+  }
+});
+
+Deno.test("T157 — only the named first help supplies text and a nullable check interval", async () => {
+  for (const locale of ["en", "pl"] as const) {
+    for (const interval of [null, 1, 90]) {
+      const catalog = makeSampleCatalog();
+      const profile = catalog.conditionProfiles.get("overwatering")!;
+      const selected = profile.actions[0];
+      selected.next_check_interval_days = interval;
+      profile.actions.unshift({
+        ...structuredClone(selected), action_id: "other_action",
+        action_en: "Other published action", action_pl: "Inne opublikowane działanie",
+        next_check_interval_days: 11,
+      });
+      assertEquals(validateProfileSchema(profile), true);
+      assertEquals(validateConditionProfileSemantics(profile).valid, true);
+      const result = await ProtocolResolver.resolvePreliminaryProjection({
+        analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(),
+        classification: classificationFixture("diagnosis", locale), catalog, signingSecret: SIGNING_SECRET,
+      });
+      assertEquals(result.plan_availability, "available");
+      assertEquals(result.first_action_summary, locale === "en" ? selected.action_en : selected.action_pl);
+      assertEquals(result.control_interval_days, interval);
+      assertEquals((await verifyAnalysisReceipt(result.analysis_receipt, SIGNING_SECRET)).valid, true);
+
+      // Another valid action must not substitute for a dangling first-help reference.
+      profile.first_help_action_id = "missing_action";
+      const unresolved = await ProtocolResolver.resolvePreliminaryProjection({
+        analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(),
+        classification: classificationFixture("diagnosis", locale), catalog, signingSecret: SIGNING_SECRET,
+      });
+      assertNoPublishedAction(unresolved);
+    }
+  }
+});
+
+Deno.test("T157 — malformed published profiles cannot crash classification validation", () => {
+  for (const malformed of [
+    null, {}, { schema_version: "2.0" },
+    { ...makePublishedProfile(), visual_markers: null },
+    { ...makePublishedProfile(), actions: [null] },
+    { ...makePublishedProfile(), host_scope: null },
+    { ...makePublishedProfile(), condition_content_i18n: {} },
+  ]) {
+    assertEquals(validateConditionProfileSemantics(malformed).valid, false);
+    const catalog = makeSampleCatalog();
+    catalog.conditionProfiles.set("overwatering", malformed as unknown as CanonicalConditionProfile);
+    const result = AnalysisValidator.validate(classificationFixture("diagnosis", "en"), catalog);
+    assertEquals(result.valid, false);
+    assertEquals(result.shouldConsumeQuota, false);
+  }
+});
+
+Deno.test("T157 — immutable v1 schema and raw profile remain readable, rejected for new advice", async () => {
+  const bytes = Deno.readFileSync(new URL(
+    "../../../../specs/001-plants-ios-mvp/contracts/legacy/condition-profile.v1.schema.json",
+    import.meta.url,
+  ));
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  assertEquals(hash, "e0e0843d48f8e104f43b71dd75ca0c1b6a0a766a515ba3be89fa96c0c4021d8f");
+  const validateLegacy = profileAjv.compile(JSON.parse(new TextDecoder().decode(bytes)));
+  const raw = makeLegacyConditionProfile();
+  const snapshot = JSON.stringify(raw);
+  assertEquals(validateLegacy(raw), true, JSON.stringify(validateLegacy.errors));
+  assertEquals(validateProfileSchema(raw), false);
+  assertEquals(validateConditionProfileSemantics(raw).valid, false);
+  for (const locale of ["en", "pl"] as const) {
+    const catalog = makeSampleCatalog();
+    catalog.conditionProfiles.set("overwatering", raw as unknown as CanonicalConditionProfile);
+    const classification = classificationFixture("diagnosis", locale);
+    const validation = AnalysisValidator.validate(classification, catalog);
+    assertEquals(validation.valid, false);
+    assertEquals(validation.shouldConsumeQuota, false);
+    const result = await ProtocolResolver.resolvePreliminaryProjection({
+      analysisId: crypto.randomUUID(), jobId: crypto.randomUUID(), classification,
+      catalog, signingSecret: SIGNING_SECRET,
+    });
+    assertNoPublishedAction(result);
+    assertEquals((await verifyAnalysisReceipt(result.analysis_receipt, SIGNING_SECRET)).valid, true);
+    assertEquals(JSON.stringify(raw), snapshot);
+  }
 });
 
 Deno.test("T029.1 — Positive validation across identification and diagnosis modes", () => {
@@ -851,8 +1035,10 @@ Deno.test("T157 — missing publication, unknown host and inapplicable first hel
   for (const locale of ["en", "pl"] as const) {
     for (const scenario of [
       "host_mismatch", "unknown_host", "unknown_condition", "unpublished",
-      "wrong_release", "blocked", "profile_contra", "step_contra",
-      "unconfirmed_prerequisite", "missing_first_help", "no_steps", "missing_en", "missing_pl",
+      "wrong_release", "blocked", "profile_contra", "action_contra",
+      "unconfirmed_prerequisite", "missing_first_help", "no_actions", "missing_en", "missing_pl",
+      "legacy_v1", "wrong_version", "missing_actions", "malformed_action", "invalid_interval",
+      "malformed_host", "malformed_content", "malformed_checks", "duplicate_actions", "wrong_condition",
     ]) {
       const classification = classificationFixture("diagnosis", locale);
       const catalog = makeSampleCatalog();
@@ -887,24 +1073,55 @@ Deno.test("T157 — missing publication, unknown host and inapplicable first hel
           profile.contraindication_check_ids = ["unsafe_here"];
           hostContext.activeContraindicationIds = ["unsafe_here"];
           break;
-        case "step_contra":
-          profile.treatment_plan.steps[0].contraindication_check_ids = ["unsafe_here"];
+        case "action_contra":
+          profile.actions[0].contraindication_check_ids = ["unsafe_here"];
           hostContext.activeContraindicationIds = ["unsafe_here"];
           break;
         case "unconfirmed_prerequisite":
-          profile.treatment_plan.steps[0].prerequisite_check_ids = ["unconfirmed_check"];
+          profile.actions[0].prerequisite_check_ids = ["unconfirmed_check"];
           break;
         case "missing_first_help":
-          profile.first_help_step_id = "missing";
+          profile.first_help_action_id = "missing";
           break;
-        case "no_steps":
-          profile.treatment_plan.steps = [];
+        case "no_actions":
+          profile.actions = [];
+          break;
+        case "legacy_v1":
+          catalog.conditionProfiles.set("overwatering",
+            makeLegacyConditionProfile() as unknown as CanonicalConditionProfile);
+          break;
+        case "wrong_version":
+          Object.assign(profile, { schema_version: "3.0" });
+          break;
+        case "missing_actions":
+          Object.assign(profile, { actions: undefined });
+          break;
+        case "malformed_action":
+          Object.assign(profile, { actions: [null] });
+          break;
+        case "invalid_interval":
+          profile.actions[0].next_check_interval_days = 0;
+          break;
+        case "malformed_host":
+          Object.assign(profile, { host_scope: null });
+          break;
+        case "malformed_content":
+          Object.assign(profile, { condition_content_i18n: {} });
+          break;
+        case "malformed_checks":
+          Object.assign(profile.actions[0], { prerequisite_check_ids: null });
+          break;
+        case "duplicate_actions":
+          profile.actions.push(structuredClone(profile.actions[0]));
+          break;
+        case "wrong_condition":
+          profile.condition_id = "root_rot";
           break;
         case "missing_en":
-          profile.treatment_plan.steps[0].action_en = "";
+          profile.actions[0].action_en = "";
           break;
         case "missing_pl":
-          profile.treatment_plan.steps[0].action_pl = "";
+          profile.actions[0].action_pl = "";
           break;
       }
       const result = await ProtocolResolver.resolvePreliminaryProjection({
@@ -937,7 +1154,7 @@ Deno.test("T157 — published general and family host applicability remains avai
       assertEquals(result.selected_condition_id, "overwatering");
       assertEquals(result.plan_availability, "available");
       assertEquals(result.first_action_summary, locale === "en"
-        ? profile.treatment_plan.steps[0].action_en : profile.treatment_plan.steps[0].action_pl);
+        ? profile.actions[0].action_en : profile.actions[0].action_pl);
     }
   }
 });
@@ -1150,15 +1367,23 @@ Deno.test("T157 — legacy signature and historical GET survive without reclassi
   assertEquals(verified, { valid: true, payload });
   const tampered = btoa(JSON.stringify({ ...payload, mode: "diagnosis" })) + "." + receipt.split(".")[1];
   assertEquals((await verifyAnalysisReceipt(tampered, SIGNING_SECRET)).valid, false);
-  const classification = classificationFixture();
-  const projection = await ProtocolResolver.resolvePreliminaryProjection({
-    analysisId: payload.analysis_id, jobId: crypto.randomUUID(), classification,
-    catalog: makeSampleCatalog(), signingSecret: SIGNING_SECRET,
-  });
+  const rawProfile = makeLegacyConditionProfile();
+  const snapshot = JSON.stringify(rawProfile);
+  const savedResult = {
+    analysis_id: payload.analysis_id, job_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    kb_release_id: KB_RELEASE_ID, mode: "follow_up" as const, locale: "en" as const,
+    identification_status: "identified" as const, plant_id: payload.plant_id, genus_id: "monstera",
+    diagnosis_status: "problem_detected" as const, selected_condition_id: "overwatering" as const,
+    candidates: [{ condition_id: "overwatering" as const, rank: 1 as const, confidence: 0.9 }],
+    visual_markers: ["yellowing_lower_leaves"], evidence_basis: ["yellowing_lower_leaves"],
+    limitations: [], first_action_title: "Historical first help",
+    first_action_summary: rawProfile.treatment_plan.steps[0].action_en, control_interval_days: 7,
+    plan_availability: "available" as const, analysis_receipt: receipt,
+    raw_condition_profile: rawProfile,
+  };
   const historical: AnalysisJobStatusResponse = {
-    job_id: projection.job_id, mode: "follow_up", status: "succeeded",
-    quota_kind: "paid_monthly", quota_state: "consumed",
-    result: { ...projection, mode: "follow_up", analysis_receipt: receipt },
+    job_id: savedResult.job_id, mode: "follow_up", status: "succeeded",
+    quota_kind: "paid_monthly", quota_state: "consumed", result: savedResult,
   };
   const ctx: RequestContext = {
     ownerId: crypto.randomUUID(), installationCredential: null, isAnonymous: false,
@@ -1174,7 +1399,11 @@ Deno.test("T157 — legacy signature and historical GET survive without reclassi
         return historical;
       },
     });
-  assertEquals(await response.json(), historical);
+  const restored = await response.json();
+  assertEquals(restored, historical);
+  assertEquals(JSON.stringify(restored.result.raw_condition_profile), snapshot);
+  assertEquals(await verifyAnalysisReceipt(restored.result.analysis_receipt, SIGNING_SECRET),
+    { valid: true, payload });
 });
 
 Deno.test("T157 — runtime legacy worker job finalizes once without provider or budget", async () => {

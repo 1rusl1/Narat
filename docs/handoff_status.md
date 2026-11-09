@@ -74,6 +74,14 @@ Run `t157-sql-mode-20261109-01` — **COMPLETED / Verified and published**, ко
 
 Manifest validate — PASS, 2 последовательные задачи: `t157-compact-condition-profile` → `t157-compact-plant-profile`. Schema/TS/resolver/fixtures меняются совместно; canonical AI schema/квоты/SQL/пользовательские данные/Swift этим этапом не меняются. Целевые tests/gates ещё не запускались, T157 не закрыта. Run-id `t157-compact-20261109-01` после сохранения чистого Git. Старые hash gates вопросников/evidence относятся к принятым историческим срезам и не являются воротами новой2.0 schema.
 
+### Восстановление компактных профилей
+
+Исходный run `t157-compact-20261109-01` остановлен: первый Developer ответ содержал copy100% metadata (controller не поддерживает copy), второй истёк по CLI timeout900с. Controller патч не применил; T1 WAITING, T2 PENDING, приёмки нет.
+
+Управляющий процесс сохранил обе текущие v1 схемы в legacy побайтово, сверил с закреплёнными SHA. Из первого готового candidate удалён только copy-header блок архивного файла; остальные6 schema/TS/test файлов применены без логических изменений после git apply --check/numstat/scope. `t157_compact_profile_gate.py condition` — PASS; **109 Deno tests PASS**; это подготовленный кандидат, Review/QA ещё нужны. Коммерческие данные/история/SQL/Swift не менялись.
+
+Новый manifest `tasks.t157-compact-recovery.json`, run-id `t157-compact-20261109-02`: read-only полнотекстовая приёмка текущего Condition2 кода с обязательными checks → затем изменение только Plant2/tests. Legacy файлы исключены из записи; запрещены copy/rename headers. Исходный run -01 не переписывается и не объявляется завершённым.
+
 ## Точный следующий шаг
 
 Продолжить **T157 компактные карточки**: составить минимальный согласованный schema/TS формат действий сейчас и следующей проверки вместо обязательных `treatment_plan.steps`, repeat_count/start_offset/phase и полного `care_algorithm_params`. Подготовить следующий manifest с совместным обновлением schema, KnowledgeTypes/semantic validator, ProtocolResolver и fixtures; исходные результаты/планы читать без переписывания/автоматической конвертации в новые рекомендации. После приёмки этого контракта — T158/T159/T160 с отдельными forward migrations и clean/upgrade проверками. Текущие PASS не закрывают всю T157 или живой фото→уход маршрут.

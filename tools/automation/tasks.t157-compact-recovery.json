@@ -1,0 +1,105 @@
+{
+  "tasks": [
+    {
+      "id": "t157-compact-condition-profile",
+      "description": "Read-only независимая приёмка текущего компактного ConditionProfile2 кандидата. Первый Developer подготовил код, но исходный run -01 остановлен: copy-header rejection, затем CLI timeout. Управляющий процесс удалил только metadata copy100% архивного блока, сохранил обе v1 копии побайтово и применил остальные6 файлов исходного candidate без семантических правок. Exact schema gate и109 Deno tests PASS вручную. Проверить реализацию целиком; пустой diff нового run не означает готовность. Исходный полный diff доступен в docs/validation/automation/runs/orchestrator-t157-compact-20261109-01/t157-compact-condition-profile/recovered-candidate.patch. Это не закрытие всей T157.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "high",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+        "specs/001-plants-ios-mvp/contracts/legacy/condition-profile.v1.schema.json",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/ProtocolResolver.ts",
+        "supabase/functions/_shared/AnalysisValidator.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "supabase/functions/_shared/tests/profile_evidence_test.ts",
+        "specs/001-plants-ios-mvp/contracts/compact-profiles.md",
+        "specs/001-plants-ios-mvp/spec.md",
+        "tools/automation/t157_compact_profile_gate.py",
+        "specs/001-plants-ios-mvp/contracts/legacy/condition-profile.v1.schema.json",
+        "specs/001-plants-ios-mvp/contracts/legacy/plant-profile.v1.schema.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only: никакие файлы не менять. Прочитать целиком текущие6 schema/TS/resolver/test файлов и сопоставить с исходным candidate/diff; требуется полноценная проверка функциональных AC, не формальная приёмка наличия файлов/empty diff.",
+        "Обе v1 копии уже сохранены в legacy побайтово и защищены hash gate. Condition schema должна точно совпадать с expected_condition()/action_schema(). Историю и raw signed results не конвертировать.",
+        "В KnowledgeTypes заменить TreatmentStep/treatment_plan/recovery_check на компактные действия и first_help_action_id, schema_version 2.0. Семантика проверяет version, ID/уникальные actions, точную first-help ссылку, EN/PL nonblank, prerequisite/contra IDs и null либо целочисленный применимый interval1..90. Удалить checks repeat_count/phase/order/продуктов вместе со снятыми полями. Canonical condition vocabulary и AI classification schema в этом срезе не менять.",
+        "Resolver использует только указанное first-help действие v2. До обращения к v2 fields проверять версию/валидность, чтобы legacy v1 или malformed profile не вызвал crash и не стал новой рекомендацией. Нет произвольного fallback на первый action, нет интервала по умолчанию. Сохранить single-candidate/host/same release/contra/prerequisite safeguards предыдущего среза, signed receipts и saveable unknown. При null interval отдавать null control_interval_days. Не выводить диагноз/выполненный уход из наличия action.",
+        "Обновить фактические Deno fixture builders и schema/semantic/resolver assertions для2.0; сохранить coverage прав/языков/неопределённости/исторических подписей. Новые tests: один простой action без timeline и без доз/рецептов валиден, другой action с другим interval не подменяет first-help; duplicate/dangling/blank/invalid interval/new banned fields отвергаются; null не даёт фиктивного срока; legacy v1 preserved unchanged/readable as raw snapshot, rejected for new advice, no crash. Старые fixtures profiles можно пересобрать, но не удалять unrelated assertions и не skip.",
+        "В profile_evidence_test менять только condition builder/нужные assertions: plant schema до зависимой задачи остаётся v1. Все существующие provenance negative cases должны сохраниться. Снятые repeat-count tests заменить осмысленными проверками nullable next-check/ID/EN-PL, не универсальным успехом. Сохранение истории проверять реальным verify/read данных, а не пустым объектом.",
+        "Читать релевантные фрагменты через rg/sed, не перечитывать весь handoff/логи; цель patch, обязательные commands выполняет controller. Mandatory deno-tests/deno-check/gate/diff; fixtures не закрывают целую T157 или live AI."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Точный compact ConditionProfile2, immutable v1 snapshot, TS/validator/resolver согласованы без timeline machinery.",
+          "checks": [
+            "t157-compact-condition",
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Deno behavioral/schema tests подтверждают first-help ID/interval/null/host/contra/unknown, отрицательные случаи, EN-PL/provenance и безопасную старую историю без нового выполнения v1.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    },
+    {
+      "id": "t157-compact-plant-profile",
+      "description": "Зависимый срез: минимальный PlantProfile2 для одного независимого действия или safety факта без полного care_algorithm_params/taxonomy/рецепта. История и отдельный каталог сохраняются.",
+      "depends_on": [
+        "t157-compact-condition-profile"
+      ],
+      "risk": "medium",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/plant-profile.schema.json",
+        "specs/001-plants-ios-mvp/contracts/legacy/plant-profile.v1.schema.json",
+        "supabase/functions/_shared/tests/profile_evidence_test.ts",
+        "specs/001-plants-ios-mvp/contracts/compact-profiles.md",
+        "specs/001-plants-ios-mvp/spec.md",
+        "tools/automation/t157_compact_profile_gate.py",
+        "specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+        "specs/001-plants-ios-mvp/contracts/legacy/plant-profile.v1.schema.json",
+        "specs/001-plants-ios-mvp/contracts/legacy/condition-profile.v1.schema.json"
+      ],
+      "write_files": [
+        "specs/001-plants-ios-mvp/contracts/plant-profile.schema.json",
+        "supabase/functions/_shared/tests/profile_evidence_test.ts"
+      ],
+      "constraints": [
+        "Только write_files (active plant schema и evidence tests). Обе legacy v1 копии уже сохранены/защищены hash gate; их НЕ менять и не включать в patch. Новый active PlantProfile2 строго expected_plant() gate, actions формат общий с Condition2. Только обычный unified text diff: никаких copy/rename/similarity/binary headers; для генерации Git diff использовать --no-renames, не --find-copies. Не трогать данные/SQL/TS/client/gates/config/tasks.",
+        "Обновить plant builder в profile_evidence_test на новый минимальный v2, сохранив condition2 tests и все provenance отрицательные случаи. Проверить: одна применимая check action валидна без full algorithm/taxonomy/soil/fertilizing; safety-only с actions=[] допустим, но не создаёт care readiness; actions=[] без safety отвергается. Unknown cat/dog не non-toxic. Старые1.0 snapshots не мутируются/автоматически не превращаются в новые рекомендации.",
+        "Добавить AJV tests обоих v2 форматов: banned timeline/recipe/modifiers/full-algorithm поля отвергаются, nullable check интервал не становится числом, old-version publication rejected, отсутствующая EN/PL/права/проверка/conflicts не обходятся. Не утверждать агрономическую достоверность synthetic fixtures; нет live calls/new pipeline. Все Deno tests проходят без skip."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Точный compact PlantProfile2 с общим action форматом и optional independent safety, immutable v1, без mandatory full-profile полей.",
+          "checks": [
+            "t157-compact-plant",
+            "t157-compact-condition",
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Реальные AJV/Deno tests принимают partial action/safety-only и отвергают empty/invalid/banned/old-version карточки при сохранённой provenance защите.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

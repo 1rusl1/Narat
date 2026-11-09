@@ -1,7 +1,9 @@
 // supabase/functions/_shared/KnowledgeTypes.ts
 // T120: Canonical types and semantic validators for ConditionProfile and Vision Classification 3.0.
 // Enforces the closed 40 condition IDs (including nutrient_deficiency), top-2 candidates,
-// confidence in [0,1], visual_markers membership, EN/PL steps, and finite repeats.
+// confidence in [0,1], visual_markers membership, and compact EN/PL actions.
+
+import Ajv2020Import from "ajv/dist/2020";
 
 export const CANONICAL_CONDITION_IDS = [
   "overwatering",
@@ -95,18 +97,8 @@ export interface VisionClassification30 {
   visual_markers: string[];
 }
 
-export interface TreatmentStep {
-  step_id: string;
-  step_order: number;
-  phase:
-    | "immediate_isolation"
-    | "mechanical_wash"
-    | "treatment_application"
-    | "adjust_environment"
-    | "substrate_correction"
-    | "sanitation"
-    | "monitoring"
-    | "recovery_check";
+export interface ProfileAction {
+  action_id: string;
   action_code:
     | "check_soil"
     | "inspect_roots"
@@ -129,59 +121,61 @@ export interface TreatmentStep {
     | "pest_removal"
     | "treatment"
     | "observation";
-  start_offset_days: number;
-  interval_days: number;
-  repeat_count: number;
-  active_ingredients: string[];
-  eco_alternative: string | null;
-  application_selection: "one_verified_option";
-  local_products_pl: string[];
-  product_evidence_ids: string[];
+  next_check_interval_days: number | null;
+  active_ingredients?: string[];
   prerequisite_check_ids: string[];
   contraindication_check_ids: string[];
   action_pl: string;
   action_en: string;
 }
 
+export interface ProfileProvenance {
+  source_documents: Array<{
+    source_id: string;
+    donor_id?: string;
+    independence_group?: string;
+    url: string;
+    retrieved_at: string;
+    content_hash: string;
+    use_basis: string;
+    allowed_for: Array<
+      "commercial_storage" | "automated_collection" | "llm_processing" | "derived_records"
+    >;
+  }>;
+  field_evidence: Record<string, Array<{ source_id: string; locator: string; scope: string }>>;
+  validation: {
+    method: "manual_review" | "multi_source_rules";
+    synthesis_model?: string;
+    prompt_version?: string;
+    guardrail_version?: string;
+    validated_at: string;
+    unresolved_conflicts: string[];
+  };
+}
+
 export interface CanonicalConditionProfile {
-  schema_version: "1.0";
+  schema_version: "2.0";
   kb_release_id: string;
   record_version: number;
+  provenance: ProfileProvenance;
   condition_id: CanonicalConditionId;
-  category: "abiotic" | "pest" | "disease" | "syndrome" | "physiological";
   host_scope: {
     plant_ids: string[];
     families: string[];
     general_houseplants: boolean;
   };
   visual_markers: string[];
-  required_check_ids: string[];
   contraindication_check_ids: string[];
-  abiotic_priority: "default_first" | "specific_evidence_required" | "neutral";
-  first_help_step_id: string;
-  treatment_plan: {
-    is_contagious: boolean | null;
-    urgency: "low" | "medium" | "high" | "unknown";
-    duration_weeks: number | null;
-    steps: TreatmentStep[];
-  };
-  recovery_check: {
-    check_offset_days: number;
-    comparison_trait_ids: string[];
-    worsening_symptom_ids: string[];
-  };
+  first_help_action_id: string;
+  actions: ProfileAction[];
   condition_content_i18n: {
     en: {
       title: string;
       summary: string;
-      recovery_check_tip: string;
-      photo_angle_hint: string;
     };
     pl: {
       title: string;
       summary: string;
-      recovery_check_tip: string;
-      photo_angle_hint: string;
     };
   };
 }
@@ -199,51 +193,60 @@ export interface ValidationOutcome {
   isNonBillablePhotoOrOutOfScope: boolean;
 }
 
+// Use the publication schema at the runtime boundary too: legacy/malformed records
+// must fail before the resolver reads compact fields. No v1 conversion is performed.
+const Ajv2020 = (Ajv2020Import as unknown as { default?: typeof Ajv2020Import.default }).default ??
+  (Ajv2020Import as unknown as typeof Ajv2020Import.default);
+const conditionAjv = new Ajv2020({ allErrors: true, strict: false });
+conditionAjv.addFormat("uuid", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+conditionAjv.addFormat("uri", (value: string) => {
+  try {
+    return Boolean(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+});
+conditionAjv.addFormat("date-time", (value: string) =>
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value) &&
+  Number.isFinite(Date.parse(value)));
+const validatePublishedCondition = conditionAjv.compile(JSON.parse(Deno.readTextFileSync(new URL(
+  "../../../specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+  import.meta.url,
+))));
+
 export function validateConditionProfileSemantics(
-  profile: CanonicalConditionProfile,
+  raw: unknown,
 ): { valid: boolean; errors: string[] } {
+  if (!validatePublishedCondition(raw)) {
+    return {
+      valid: false,
+      errors: (validatePublishedCondition.errors ?? []).map((error) =>
+        `${error.instancePath || "/"}: ${error.message ?? "schema violation"}`
+      ),
+    };
+  }
+  const profile = raw as CanonicalConditionProfile;
   const errors: string[] = [];
-
-  if (!CANONICAL_CONDITION_ID_SET.has(profile.condition_id)) {
-    errors.push(`Unknown condition_id '${profile.condition_id}'.`);
-  }
-
-  if (!profile.visual_markers || profile.visual_markers.length === 0) {
-    errors.push(`Condition '${profile.condition_id}' must define at least 1 visual_marker.`);
-  }
-
-  const stepIds = new Set<string>();
-  for (const step of profile.treatment_plan.steps) {
-    if (stepIds.has(step.step_id)) {
-      errors.push(`Duplicate step_id '${step.step_id}' in '${profile.condition_id}'.`);
+  const actionIds = new Set<string>();
+  for (const action of profile.actions) {
+    if (actionIds.has(action.action_id)) {
+      errors.push(`Duplicate action_id '${action.action_id}' in '${profile.condition_id}'.`);
     }
-    stepIds.add(step.step_id);
-
-    if (step.repeat_count < 1 || step.repeat_count > 52) {
-      errors.push(`Step '${step.step_id}' repeat_count must be finite in 1..52.`);
-    }
-    if (step.repeat_count === 1 && step.interval_days !== 0) {
-      errors.push(`Step '${step.step_id}' with repeat_count=1 must have interval_days=0.`);
-    }
-    if (step.repeat_count >= 2 && step.interval_days < 1) {
-      errors.push(`Step '${step.step_id}' with repeat_count>=2 must have interval_days>=1.`);
-    }
-    if (!step.action_pl.trim() || !step.action_en.trim()) {
-      errors.push(`Step '${step.step_id}' is missing PL or EN action text.`);
-    }
-    if (
-      step.local_products_pl.length > 0 &&
-      step.product_evidence_ids.length === 0
-    ) {
-      errors.push(`Step '${step.step_id}' has local_products_pl without product_evidence_ids.`);
+    actionIds.add(action.action_id);
+    if (!action.action_pl.trim() || !action.action_en.trim()) {
+      errors.push(`Action '${action.action_id}' is missing PL or EN action text.`);
     }
   }
-
-  if (!stepIds.has(profile.first_help_step_id)) {
+  if (!actionIds.has(profile.first_help_action_id)) {
     errors.push(
-      `first_help_step_id '${profile.first_help_step_id}' does not reference any step in treatment_plan.steps.`,
+      `first_help_action_id '${profile.first_help_action_id}' does not reference any action.`,
     );
   }
-
+  for (const locale of ["en", "pl"] as const) {
+    const content = profile.condition_content_i18n[locale];
+    if (!content.title.trim() || !content.summary.trim()) {
+      errors.push(`Condition '${profile.condition_id}' is missing ${locale} title or summary.`);
+    }
+  }
   return { valid: errors.length === 0, errors };
 }

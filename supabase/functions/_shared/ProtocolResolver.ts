@@ -9,6 +9,7 @@ import {
   CanonicalConditionProfile,
   PublishedReleaseCatalog,
   VisionClassification30,
+  validateConditionProfileSemantics,
 } from "./KnowledgeTypes.ts";
 
 export interface PlantHostContext {
@@ -149,6 +150,7 @@ export class ProtocolResolver {
     profile: CanonicalConditionProfile,
     host: PlantHostContext,
   ): boolean {
+    if (!validateConditionProfileSemantics(profile).valid) return false;
     if (host.blockedConditionIds?.has(profile.condition_id)) {
       return false;
     }
@@ -324,26 +326,26 @@ export class ProtocolResolver {
       ? catalog.conditionProfiles.get(candidate.condition_id) ?? null
       : null;
     const hostCompatible = profile !== null &&
+      ProtocolResolver.isConditionHostCompatible(profile, host) &&
       profile.condition_id === candidate?.condition_id &&
-      profile.kb_release_id === catalog.kbReleaseId &&
-      ProtocolResolver.isConditionHostCompatible(profile, host);
-    // Use only the published first-help entry point, never an arbitrary treatment step.
+      profile.kb_release_id === catalog.kbReleaseId;
+    // Host compatibility validates v2 before any compact fields are accessed.
+    // Use only the published first-help entry point, never an arbitrary action.
     // Unconfirmed prerequisites cannot be inferred from a classification score.
     const activeContras = new Set(host.activeContraindicationIds ?? []);
-    const firstHelpStep = hostCompatible && profile
-      ? profile.treatment_plan.steps.find((step) =>
-        step.step_id === profile.first_help_step_id &&
-        step.prerequisite_check_ids.length === 0 &&
-        !step.contraindication_check_ids.some((id) => activeContras.has(id)) &&
-        step.action_en.trim().length > 0 && step.action_pl.trim().length > 0
+    const firstHelpAction = hostCompatible && profile
+      ? profile.actions.find((action) =>
+        action.action_id === profile.first_help_action_id &&
+        action.prerequisite_check_ids.length === 0 &&
+        !action.contraindication_check_ids.some((id) => activeContras.has(id))
       )
       : undefined;
 
-    if (profile && firstHelpStep) {
+    if (profile && firstHelpAction) {
       const localizedContent = profile.condition_content_i18n[locale];
       const firstActionText = locale === "pl"
-        ? firstHelpStep.action_pl
-        : firstHelpStep.action_en;
+        ? firstHelpAction.action_pl
+        : firstHelpAction.action_en;
 
       const receipt = await signAnalysisReceipt(
         {
@@ -375,7 +377,7 @@ export class ProtocolResolver {
         limitations: [...classification.limitations],
         first_action_title: localizedContent.title,
         first_action_summary: firstActionText,
-        control_interval_days: profile.recovery_check.check_offset_days,
+        control_interval_days: firstHelpAction.next_check_interval_days,
         plan_availability: "available",
         analysis_receipt: receipt,
       };
