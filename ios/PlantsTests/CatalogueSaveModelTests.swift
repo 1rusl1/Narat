@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import XCTest
 import SwiftData
 @testable import Plants
@@ -89,6 +90,19 @@ final class CatalogueSaveModelTests: XCTestCase {
     }
     private var refreshedSession: NativeAuthSession {
         NativeAuthSession(userId: owner, accessToken: "model-refreshed", expiresAt: .distantFuture)
+    }
+
+    @MainActor
+    private final class ObserverReadings {
+        var states: [CatalogueSaveState] = []
+        var inputs: [CatalogueInput?] = []
+        var checkpoints: [CatalogueInputCheckpointSnapshot?] = []
+
+        func read(_ model: CatalogueSaveModel) {
+            states.append(model.state)
+            inputs.append(model.input)
+            checkpoints.append(model.checkpoint)
+        }
     }
 
     private struct Stack {
@@ -596,6 +610,161 @@ final class CatalogueSaveModelTests: XCTestCase {
                 await model.save()
             }
             let requests = await transport.captured()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+        }
+    }
+
+    func testSynchronousObserverInvalidatesBeforeSaveWritesAndPreservesExistingDiskInput() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = SaveModelTransport([])
+        let stack = try await stack(url, transport)
+        let retainedFlow = UUID()
+        let context = try await stack.api.captureSyncContext(ownerId: owner)
+        let retained = try await stack.store.checkpointCatalogueInput(
+            input, flowId: retainedFlow, operationId: UUID(),
+            context: context, authority: stack.api.syncAuthority
+        )
+        let flow = UUID(), operation = UUID()
+        let model = try await model(stack, flow: flow, operation: operation)
+        let readings = ObserverReadings()
+        let authority = stack.api.syncAuthority
+        withObservationTracking {
+            _ = model.state
+            _ = model.input
+            _ = model.checkpoint
+        } onChange: {
+            MainActor.assumeIsolated {
+                readings.read(model)
+                authority.invalidate()
+                readings.read(model)
+            }
+        }
+
+        await model.save()
+        XCTAssertEqual(readings.states, [.ready, .unavailable(.sessionChanged)])
+        XCTAssertEqual(readings.inputs, [input, nil])
+        XCTAssertEqual(readings.checkpoints, [nil, nil])
+        assertRedacted(model, reason: .sessionChanged)
+        await model.save()
+
+        let reopened = try await self.stack(url, transport)
+        let retainedAfter = try await diskCheckpoint(reopened, flow: retainedFlow)
+        let attempted = try await diskCheckpoint(reopened, flow: flow)
+        let queue = try await reopened.store.pendingOutboxEntries(for: owner)
+        let confirmation = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+        let disk = ModelContext(try container(url))
+        let records = try disk.fetch(FetchDescriptor<CatalogueInputCheckpointRecord>())
+        let requests = await transport.captured()
+        XCTAssertEqual(retainedAfter, retained)
+        XCTAssertNil(attempted)
+        XCTAssertEqual(records.count, 1)
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertNil(confirmation)
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testSynchronousCheckpointObserverInvalidatesBeforeRegisteredPathWithoutLosingCommittedInput() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let transport = SaveModelTransport([])
+        let stack = try await stack(url, transport)
+        let flow = UUID(), operation = UUID()
+        let model = try await model(stack, flow: flow, operation: operation)
+        let envelope = try XCTUnwrap(model.envelope)
+        let readings = ObserverReadings()
+        let authority = stack.api.syncAuthority
+        // Track only checkpoint: busy must complete before this callback runs.
+        withObservationTracking {
+            _ = model.checkpoint
+        } onChange: {
+            MainActor.assumeIsolated {
+                readings.read(model)
+                authority.invalidate()
+                readings.read(model)
+            }
+        }
+
+        await model.save()
+        XCTAssertEqual(readings.states, [.busy, .unavailable(.sessionChanged)])
+        XCTAssertEqual(readings.inputs, [input, nil])
+        XCTAssertEqual(readings.checkpoints, [nil, nil])
+        assertRedacted(model, reason: .sessionChanged)
+
+        let reopened = try await self.stack(url, transport)
+        let diskInput = try await diskCheckpoint(reopened, flow: flow)
+        let committed = try XCTUnwrap(diskInput)
+        XCTAssertEqual(committed.envelope, envelope)
+        await model.save()
+        let afterRetry = try await diskCheckpoint(reopened, flow: flow)
+        let queue = try await reopened.store.pendingOutboxEntries(for: owner)
+        let confirmation = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+        let requests = await transport.captured()
+        XCTAssertEqual(afterRetry, committed)
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertNil(confirmation)
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testSynchronousResultObserverInvalidatesWithoutExposingSavedOrPendingAndPreservesJournal() async throws {
+        for success in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let successfulReceipt = try receipt()
+            let failure = try json([
+                "error": ["code": "COLLECTION_LIMIT_REACHED", "message": "Limit", "retryable": false]
+            ])
+            let response = success ? successfulReceipt : failure
+            let transport = SaveModelTransport([
+                .http("GET", 200, try page(2)), .http("POST", success ? 200 : 409, response)
+            ], suspendAt: 1)
+            let stack = try await stack(url, transport)
+            let flow = UUID(), operation = UUID()
+            let model = try await model(stack, flow: flow, operation: operation)
+            let saving = Task { await model.save() }
+            await transport.waitForSuspension()
+            let original = try XCTUnwrap(model.checkpoint)
+            let readings = ObserverReadings()
+            let authority = stack.api.syncAuthority
+            withObservationTracking {
+                _ = model.state
+                _ = model.input
+                _ = model.checkpoint
+            } onChange: {
+                MainActor.assumeIsolated {
+                    readings.read(model)
+                    authority.invalidate()
+                    readings.read(model)
+                }
+            }
+
+            await transport.resume()
+            await saving.value
+            XCTAssertEqual(readings.states, [.busy, .unavailable(.sessionChanged)])
+            XCTAssertEqual(readings.inputs, [input, nil])
+            XCTAssertEqual(readings.checkpoints, [original, nil])
+            assertRedacted(model, reason: .sessionChanged)
+            await model.save()
+
+            let reopened = try await self.stack(url, transport)
+            let checkpoint = try await diskCheckpoint(reopened, flow: flow)
+            let queue = try await reopened.store.pendingOutboxEntries(for: owner)
+            let confirmation = try await reopened.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+            let requests = await transport.captured()
+            XCTAssertEqual(checkpoint, original)
+            if success {
+                XCTAssertTrue(queue.isEmpty)
+                XCTAssertEqual(confirmation?.operationId, operation)
+                XCTAssertEqual(confirmation?.payloadJSON, original.envelope.payloadJSON)
+                XCTAssertEqual(confirmation?.receipt, try JSONDecoder().decode(PlantCreateReceiptDTO.self, from: response))
+            } else {
+                let entry = try XCTUnwrap(queue.first)
+                XCTAssertEqual(queue.count, 1)
+                XCTAssertEqual(entry.operationId, operation)
+                XCTAssertEqual(entry.payloadJSON, original.envelope.payloadJSON)
+                XCTAssertEqual(entry.lastAPIError, try JSONDecoder().decode(APIErrorResponse.self, from: response))
+                XCTAssertNil(confirmation)
+            }
             XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
         }
     }

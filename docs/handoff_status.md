@@ -709,7 +709,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-catalogue-input-compile-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-catalogue-input-compile-repair](validation/automation/tasks/parallel-ios-catalogue-input-compile-repair.md).
+parallel-ios-catalogue-model-observation-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-catalogue-model-observation-repair](validation/automation/tasks/parallel-ios-catalogue-model-observation-repair.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

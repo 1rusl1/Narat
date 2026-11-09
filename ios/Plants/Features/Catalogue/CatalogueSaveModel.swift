@@ -204,31 +204,40 @@ final class CatalogueSaveModel {
         phase = .unavailable(.cancelled)
     }
 
-    private func withAuthority<T>(_ action: () throws -> T) throws -> T {
+    private func validateAuthority() throws {
         guard !cancelled else { throw CancellationError() }
-        return try apiClient.syncAuthority.withBoundValid(context, action)
+        try apiClient.syncAuthority.withBoundValid(context) {}
+    }
+
+    /// Observation calls observers synchronously. Release the authority lock before
+    /// mutation so callbacks can reread this model, invalidate its session or cancel.
+    /// Recheck afterwards: a callback may have revoked authority before returning.
+    private func publish(_ mutation: () -> Void) throws {
+        try validateAuthority()
+        mutation()
+        try validateAuthority()
     }
 
     private func performSave() async {
         do {
-            try withAuthority { phase = .busy }
+            try publish { phase = .busy }
             if frozenCheckpoint == nil {
                 let checkpoint = try await store.checkpointCatalogueInput(
                     frozenInput, flowId: flowId, operationId: frozenEnvelope.operationId,
                     context: context, authority: apiClient.syncAuthority
                 )
-                try withAuthority { frozenCheckpoint = checkpoint }
+                try publish { frozenCheckpoint = checkpoint }
             }
             // The SDK's explicit anonymous snapshot guards the registered path.
             if isAnonymous {
-                try withAuthority { phase = .signInRequired }
+                try publish { phase = .signInRequired }
                 return
             }
-            try withAuthority {}
+            try validateAuthority()
             let result = try await repository.saveCatalogueCreate(
                 envelope: frozenEnvelope, context: context
             )
-            try withAuthority {
+            try publish {
                 switch result {
                 case .signInRequired: phase = .signInRequired
                 case let .saved(confirmation): phase = .saved(confirmation)
