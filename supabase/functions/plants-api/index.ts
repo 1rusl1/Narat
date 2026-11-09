@@ -35,7 +35,7 @@ import {
   handleCreateAnalysisJob,
   handleGetAnalysisJob,
 } from "./analysis.ts";
-import { handleGetSync } from "./collection.ts";
+import { handleGetSync, handlePlantCreate } from "./collection.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
 // a real client with a mocked transport without reading credentials or using the network.
@@ -297,7 +297,7 @@ export interface ProductionSyncOptions {
 }
 
 // Keep the bare handler's T152 fallback. Only the deployed composition enables
-// sync, and explicit delegates still take precedence. No command adapter here.
+// sync/catalogue create, and explicit delegates still take precedence.
 export function createProductionPlantsApiHandler(
   deps: PlantsApiDependencies = {},
   options: ProductionSyncOptions = {},
@@ -316,6 +316,8 @@ export function createProductionPlantsApiHandler(
     ...deps,
     handleSync: deps.handleSync ??
       ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),
+    handleCommand: deps.handleCommand ??
+      ((req, ctx) => handlePlantCreate(req, ctx, syncClient)),
   });
 }
 

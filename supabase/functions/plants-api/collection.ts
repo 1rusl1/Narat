@@ -1,4 +1,4 @@
-// T162: server-only GET /sync. SQL owns the projection and pagination.
+// T162: server-only sync/catalogue create. SQL owns projections and receipts.
 import { type SupabaseClient } from "@supabase/supabase-js";
 import {
   ApiHttpError,
@@ -198,5 +198,157 @@ export async function handleGetSync(
     throw unavailable(ctx);
   }
   if (!canonicalPage(result.data)) throw unavailable(ctx);
+  return jsonResponse(result.data);
+}
+
+// Catalogue create is the only production command in this slice. Validation
+// never rewrites the payload: PostgreSQL owns hashing, receipts and retries.
+const commandKeys = new Set(["operation_id", "command_name", "payload_json", "plant_id"]);
+const conditionValues: Record<string, readonly string[]> = {
+  light_level: ["low", "medium", "bright_indirect", "direct_sun", "unknown"],
+  light_code: ["low", "medium", "bright_indirect", "direct_sun", "unknown"],
+  light_source: ["manual", "unknown"],
+  watering_habit: ["several_weekly", "weekly", "less_often", "frequent", "moderate", "sparse", "unknown"],
+  watering_code: ["several_weekly", "weekly", "less_often", "frequent", "moderate", "sparse", "unknown"],
+  last_watered: ["yes", "no", "within_7_days", "over_7_days", "unknown"],
+  drainage_code: ["yes", "no", "within_7_days", "over_7_days", "unknown"],
+  pot_type: ["terracotta", "plastic", "glazed_ceramic", "standard_drainage", "other", "unknown"],
+};
+
+function commandError(ctx: RequestContext, kind: "invalid" | "conflict" | "cap" | "unavailable") {
+  const messages = {
+    invalid: ["Invalid catalogue creation command.", "Nieprawidłowe polecenie dodania rośliny z katalogu."],
+    conflict: ["Operation conflicts with an existing request.", "Operacja jest sprzeczna z istniejącym żądaniem."],
+    cap: ["Your collection has reached its plant limit.", "Osiągnięto limit roślin w kolekcji."],
+    unavailable: ["Saving is temporarily unavailable. Please try again later.", "Zapisywanie jest tymczasowo niedostępne. Spróbuj ponownie później."],
+  };
+  return new ApiHttpError(
+    kind === "invalid" ? 400 : kind === "unavailable" ? 503 : 409,
+    kind === "invalid" ? "VALIDATION_ERROR" : kind === "cap"
+      ? "COLLECTION_LIMIT_REACHED" : kind === "conflict" ? "CONFLICT" : "INTERNAL_ERROR",
+    messages[kind][ctx.locale === "pl" ? 1 : 0],
+    kind === "unavailable",
+  );
+}
+
+function commandForbidden(ctx: RequestContext): ApiHttpError {
+  return new ApiHttpError(
+    403, "FORBIDDEN",
+    ctx.locale === "pl"
+      ? "Wymagane jest aktywne, stałe konto."
+      : "An active permanent account is required.",
+  );
+}
+
+function catalogueFields(value: unknown, kind: "payload" | "conditions" | "overrides"): boolean {
+  if (!record(value)) return false;
+  for (const [key, field] of Object.entries(value)) {
+    if (Object.hasOwn(conditionValues, key) && kind !== "payload") {
+      if (field !== null && (typeof field !== "string" || !conditionValues[key].includes(field))) return false;
+    } else if (key === "light_confirmed" && kind !== "payload") {
+      if (field !== null && typeof field !== "boolean") return false;
+    } else if (kind !== "conditions" && ["plant_id", "personal_name", "display_name"].includes(key)) {
+      if (field !== null && (typeof field !== "string" || (key === "plant_id" && !field.trim()))) return false;
+    } else if (kind !== "conditions" && key === "taxon_id") {
+      if (field !== null && (typeof field !== "string" || !uuid.test(field))) return false;
+    } else if (kind === "payload" && key === "origin_flow_id") {
+      if (field !== null && (typeof field !== "string" || !uuid.test(field))) return false;
+    } else if (kind === "payload" && key === "photo_id") {
+      // SQL does not verify main_photo_id ownership on insert. Keep catalogue
+      // creation without media until attachment has an authoritative guard.
+      if (field !== null) return false;
+    } else if (kind === "payload" && key === "creation_source") {
+      if (field !== "catalogue") return false;
+    } else if (kind === "payload" && key === "creation_intent") {
+      if (field !== "care" && field !== "problem") return false;
+    } else if (kind === "payload" && key === "add_method") {
+      if (field !== "catalogue") return false;
+    } else if (kind === "payload" && (key === "conditions" || key === "overrides")) {
+      if (!catalogueFields(field, key)) return false;
+    } else {
+      // Includes owner injection, draft/fallback, rooms, camera and season inputs.
+      return false;
+    }
+  }
+  return true;
+}
+
+function canonicalCreate(value: unknown): value is Record<string, unknown> {
+  return record(value) &&
+    typeof value.plant_id === "string" && uuid.test(value.plant_id) &&
+    Number.isSafeInteger(value.care_revision) && Number(value.care_revision) >= 1 &&
+    typeof value.context_state === "string" && value.context_state.length > 0 &&
+    typeof value.next_available_step === "string" && value.next_available_step.length > 0 &&
+    typeof value.plan_availability === "string" && value.plan_availability.length > 0 &&
+    timestamp(value.watermark) !== null;
+}
+
+export async function handlePlantCreate(
+  req: Request,
+  ctx: RequestContext,
+  clientFactory: SyncClientFactory,
+): Promise<Response> {
+  const ownerId = requireActiveOwner(ctx);
+  if (ctx.isAnonymous) throw commandForbidden(ctx);
+  if ([...new URL(req.url).searchParams.keys()].length) throw commandError(ctx, "invalid");
+  let body: unknown;
+  let payload: unknown;
+  try {
+    body = await req.json();
+    if (!record(body) || typeof body.payload_json !== "string") throw new Error();
+    payload = JSON.parse(body.payload_json);
+  } catch {
+    throw commandError(ctx, "invalid");
+  }
+  if (
+    !record(body) || Object.keys(body).some((key) => !commandKeys.has(key)) ||
+    typeof body.operation_id !== "string" || !uuid.test(body.operation_id) ||
+    body.command_name !== "plant.create" ||
+    (body.plant_id !== undefined && body.plant_id !== null) ||
+    !record(payload) || payload.creation_source !== "catalogue" ||
+    !catalogueFields(payload, "payload")
+  ) throw commandError(ctx, "invalid");
+  const overrides = record(payload.overrides) ? payload.overrides : {};
+  if (![payload.plant_id, payload.taxon_id, overrides.plant_id, overrides.taxon_id]
+    .some((value) => typeof value === "string" && value.length > 0)) {
+    throw commandError(ctx, "invalid");
+  }
+  const header = req.headers.get("x-operation-id");
+  if (header !== null) {
+    if (!uuid.test(header.trim())) throw commandError(ctx, "invalid");
+    if (header.trim().toLowerCase() !== body.operation_id.toLowerCase()) {
+      throw commandError(ctx, "conflict");
+    }
+  }
+
+  let result: unknown;
+  try {
+    const client = clientFactory();
+    if (!client) throw commandError(ctx, "unavailable");
+    result = await client.rpc("execute_plant_create_command", {
+      p_owner_id: ownerId,
+      p_operation_id: body.operation_id,
+      p_payload: payload,
+    });
+  } catch {
+    throw commandError(ctx, "unavailable");
+  }
+  if (!record(result)) throw commandError(ctx, "unavailable");
+  if (result.error) {
+    if (!record(result.error)) throw commandError(ctx, "unavailable");
+    const { code, message } = result.error;
+    if (
+      (code === "42501" && (message === "account_not_active" || message === "owner_forbidden")) ||
+      (code === "P0002" && message === "owner_profile_not_found")
+    ) throw commandForbidden(ctx);
+    if (code === "P0001" && message === "COLLECTION_LIMIT_REACHED") throw commandError(ctx, "cap");
+    if (code === "23505" || message === "operation_payload_mismatch") throw commandError(ctx, "conflict");
+    if (
+      (typeof code === "string" && ["22007", "22008", "22023", "22P02", "23502", "23503", "23514"].includes(code)) ||
+      (code === "P0002" && message === "taxon_not_published")
+    ) throw commandError(ctx, "invalid");
+    throw commandError(ctx, "unavailable");
+  }
+  if (!canonicalCreate(result.data)) throw commandError(ctx, "unavailable");
   return jsonResponse(result.data);
 }

@@ -278,7 +278,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t162-sync-http-adapter: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t162-sync-http-adapter](validation/automation/tasks/t162-sync-http-adapter.md).
+t162-create-http-adapter: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t162-create-http-adapter](validation/automation/tasks/t162-create-http-adapter.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

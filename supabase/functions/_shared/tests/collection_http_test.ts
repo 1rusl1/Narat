@@ -94,7 +94,8 @@ function fixture(options: FixtureOptions = {}) {
       body = Object.hasOwn(options, "profile") ? options.profile : [{
         account_state: "active", anonymous: options.anonymous ?? false,
       }];
-    } else if (path === "/rest/v1/rpc/fetch_sync_delta") {
+    } else if (path === "/rest/v1/rpc/fetch_sync_delta" ||
+      path === "/rest/v1/rpc/execute_plant_create_command") {
       if (options.throwRpc) throw new Error(rawFailure);
       status = options.rpcStatus ?? 200;
       if (options.rawRpcText !== undefined) {
@@ -103,7 +104,8 @@ function fixture(options: FixtureOptions = {}) {
       const parameters = await req.json();
       body = options.rpc
         ? options.rpc(parameters)
-        : Object.hasOwn(options, "rpcBody") ? options.rpcBody : page();
+        : Object.hasOwn(options, "rpcBody") ? options.rpcBody
+        : path.endsWith("/execute_plant_create_command") ? createReceipt() : page();
     } else {
       throw new Error("Unexpected fixture URL: " + req.url);
     }
@@ -398,7 +400,7 @@ Deno.test("T162 production HTTP: lazy missing/invalid service configuration fail
   assertEquals(f.envCalls, 0);
 });
 
-Deno.test("T162 composition: bare T152 fallback, unchanged command and explicit delegates", async () => {
+Deno.test("T162 composition: bare T152 sync/command fallback and explicit sync delegate", async () => {
   for (const locale of ["en", "pl"] as const) {
     const f = fixture();
     const bare = createPlantsApiHandler(f.deps);
@@ -409,7 +411,7 @@ Deno.test("T162 composition: bare T152 fallback, unchanged command and explicit 
       method: "POST", headers: { authorization: "Bearer session-a", "x-client-locale": locale },
       body: "{",
     });
-    const commandResponse = await f.handler(req);
+    const commandResponse = await bare(req);
     assertEquals(commandResponse.status, 503);
     assertEquals(await commandResponse.json(), { error: {
       code: "INTERNAL_ERROR", retryable: true,
@@ -438,5 +440,321 @@ Deno.test("T162 composition: bare T152 fallback, unchanged command and explicit 
   assertStrictEquals(await handler(original), expected);
   assertEquals(await expected.text(), "explicit delegate");
   assertEquals(calls, 1);
+  assertEquals(f.rpcRequests.length, 0);
+});
+
+const operation = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const otherOperation = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const taxon = "33333333-3333-4333-8333-333333333333";
+
+function createPayload(overrides: Record<string, unknown> = {}) {
+  return { creation_source: "catalogue", plant_id: "fixture_collection_cap", ...overrides };
+}
+
+// Exact execute_plant_create_command JSONB projection after retire_rooms.
+// This is SQL-shaped fixture data, not an execution of the SQL function.
+function createReceipt(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    plant_id: ownerB, care_revision: 1, context_state: "current",
+    next_available_step: "enable_basic_care",
+    paid_action: "generate_full_routine_plan",
+    plan_availability: "available", watermark: until, ...overrides,
+  };
+}
+
+function commandEnvelope(payload: unknown = createPayload(), overrides: Record<string, unknown> = {}) {
+  return {
+    operation_id: operation, command_name: "plant.create",
+    payload_json: JSON.stringify(payload), ...overrides,
+  };
+}
+
+function commandRequest(
+  body: unknown = commandEnvelope(),
+  locale: Locale = "en",
+  token: string | null = "session-a",
+  header: string | null = operation,
+  suffix = "",
+  prefix = "",
+) {
+  const headers = new Headers({
+    "content-type": "application/json", "x-client-locale": locale, "x-owner-id": ownerB,
+  });
+  if (token !== null) headers.set("authorization", "Bearer " + token);
+  if (header !== null) headers.set("x-operation-id", header);
+  return new Request("https://api.example.test" + prefix + "/commands" + suffix, {
+    method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+
+function commandEnvelopeError(
+  status: number, locale: Locale, code = status === 403 ? "FORBIDDEN"
+    : status === 400 ? "VALIDATION_ERROR" : status === 409 ? "CONFLICT" : "INTERNAL_ERROR",
+) {
+  const messages: Record<string, [string, string]> = {
+    VALIDATION_ERROR: ["Invalid catalogue creation command.", "Nieprawidłowe polecenie dodania rośliny z katalogu."],
+    FORBIDDEN: ["An active permanent account is required.", "Wymagane jest aktywne, stałe konto."],
+    CONFLICT: ["Operation conflicts with an existing request.", "Operacja jest sprzeczna z istniejącym żądaniem."],
+    COLLECTION_LIMIT_REACHED: ["Your collection has reached its plant limit.", "Osiągnięto limit roślin w kolekcji."],
+    INTERNAL_ERROR: ["Saving is temporarily unavailable. Please try again later.", "Zapisywanie jest tymczasowo niedostępne. Spróbuj ponownie później."],
+  };
+  return { error: { code, message: messages[code][locale === "pl" ? 1 : 0], retryable: status === 503 } };
+}
+
+Deno.test("T162 catalogue production: exact RPC, SQL receipt and same operation retry without photo/questions", async () => {
+  for (const prefix of ["", "/plants-api", "/functions/v1/plants-api"]) {
+    for (const locale of ["en", "pl"] as const) {
+      const f = fixture();
+      const input = commandEnvelope();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await f.handler(commandRequest(input, locale, "session-a", operation, "", prefix));
+        assertEquals(response.status, 200);
+        assertEquals(await response.json(), createReceipt());
+        assertEquals(response.headers.get("access-control-allow-origin"), "*");
+      }
+      assertEquals(f.requests.map((req) => new URL(req.url).pathname), [
+        "/auth/v1/user", "/rest/v1/profiles", "/rest/v1/rpc/execute_plant_create_command",
+        "/auth/v1/user", "/rest/v1/profiles", "/rest/v1/rpc/execute_plant_create_command",
+      ]);
+      assertEquals(f.rpcRequests.length, 2);
+      for (const rpc of f.rpcRequests) {
+        assertEquals(rpc.url, backend + "/rest/v1/rpc/execute_plant_create_command");
+        assertEquals(rpc.method, "POST");
+        assertEquals(rpc.headers.get("authorization"), "Bearer " + serviceKey);
+        assertEquals(rpc.headers.get("apikey"), serviceKey);
+        assertEquals(await rpc.json(), {
+          p_owner_id: ownerA, p_operation_id: operation, p_payload: createPayload(),
+        });
+      }
+    }
+  }
+});
+
+Deno.test("T162 catalogue production: preserve SQL inputs, optional header and null paid_action", async () => {
+  const payload = createPayload({
+    plant_id: null, taxon_id: taxon, personal_name: "  Żółta roślina  ",
+    display_name: null, origin_flow_id: otherOperation, photo_id: null,
+    creation_intent: "care", add_method: "catalogue",
+    conditions: { light_level: "medium", light_source: "manual", light_confirmed: true },
+    overrides: { display_name: "Fern", watering_habit: "weekly" },
+  });
+  const receipt = createReceipt({
+    next_available_step: "view_plant", plan_availability: "care_profile_unavailable", paid_action: null,
+  });
+  const f = fixture({ rpcBody: receipt });
+  const response = await f.handler(commandRequest(commandEnvelope(payload, {
+    operation_id: operation.toUpperCase(), plant_id: null,
+  }), "pl", "session-a", null));
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), receipt);
+  assertEquals(await f.rpcRequests[0].json(), {
+    p_owner_id: ownerA, p_operation_id: operation.toUpperCase(), p_payload: payload,
+  });
+  const matching = await f.handler(commandRequest(commandEnvelope(payload), "en", "session-a", operation.toUpperCase()));
+  assertEquals(matching.status, 200);
+  assertEquals(await matching.json(), receipt);
+});
+
+Deno.test("T162 catalogue production: A/B/A owner isolation, then canonical sync projection", async () => {
+  const projection = (id: string) => page({ changes: [{
+    entity_type: "plants", id, updated_at: until, deleted_at: null,
+    data: {
+      id, origin_flow_id: null, creation_intent: "care", add_method: "catalogue",
+      personal_name: "Fern", display_name: "Fern", taxon_id: taxon,
+      plant_id: "fixture_collection_cap", cultivar_label: null, main_photo_id: null,
+      current_condition_snapshot_id: null, origin_draft_id: null,
+      creation_source: "catalogue", revision: 1, care_revision: 1, created_at: until,
+    },
+  }] });
+  const f = fixture({
+    rpc: (params) => "p_payload" in params
+      ? createReceipt({ plant_id: params.p_owner_id })
+      : projection(String(params.p_owner_id)),
+  });
+  for (const [token, owner] of [["session-a", ownerA], ["session-b", ownerB], ["session-a", ownerA]]) {
+    const created = await f.handler(commandRequest(commandEnvelope(createPayload({ taxon_id: taxon, display_name: "Fern" })), "en", token));
+    assertEquals(created.status, 200);
+    assertEquals(await created.json(), createReceipt({ plant_id: owner }));
+    const synced = await f.handler(request(query({ since }), "en", token));
+    assertEquals(synced.status, 200);
+    assertEquals(await synced.json(), projection(owner));
+  }
+  assertEquals(await Promise.all(f.rpcRequests.map(async (req) => (await req.json()).p_owner_id)),
+    [ownerA, ownerA, ownerB, ownerB, ownerA, ownerA]);
+  const profiles = f.requests.filter((req) => new URL(req.url).pathname.endsWith("/profiles"));
+  assertEquals(profiles.map((req) => new URL(req.url).searchParams.get("id")),
+    [ownerA, ownerA, ownerB, ownerB, ownerA, ownerA].map((owner) => "eq." + owner));
+});
+
+Deno.test("T162 catalogue production: invalid envelope/payload/query never reaches privileged RPC", async () => {
+  const invalid = [
+    "{", "null", "[]",
+    commandEnvelope(createPayload(), { operation_id: "bad" }),
+    commandEnvelope(createPayload(), { operation_id: null }),
+    commandEnvelope(createPayload(), { payload_json: {} }),
+    commandEnvelope(createPayload(), { payload_json: "{" }),
+    commandEnvelope(createPayload(), { payload_json: "null" }),
+    commandEnvelope(createPayload(), { payload_json: "[]" }),
+    commandEnvelope(createPayload(), { owner_id: ownerB }),
+    commandEnvelope(createPayload(), { p_owner_id: ownerB }),
+    commandEnvelope(createPayload(), { plant_id: ownerB }),
+    ...["plant.edit", "free_care.select", "room.create", "photo.set_main", "unknown"]
+      .map((command_name) => commandEnvelope(createPayload(), { command_name })),
+    ...[
+      {}, { creation_source: "catalogue" }, createPayload({ creation_source: "local_fallback" }),
+      createPayload({ creation_source: "guest_claim" }), createPayload({ creation_source: "identification" }),
+      createPayload({ taxon_id: "invalid" }), createPayload({ photo_id: "invalid" }),
+      createPayload({ photo_id: ownerB }),
+      createPayload({ origin_flow_id: 123 }), createPayload({ plant_id: [] }),
+      createPayload({ personal_name: {} }), createPayload({ add_method: "scan" }),
+      createPayload({ conditions: null }), createPayload({ conditions: [] }),
+      createPayload({ overrides: "invalid" }), createPayload({ conditions: { light_confirmed: "true" } }),
+      createPayload({ conditions: { light_source: "camera_estimate" } }),
+      createPayload({ conditions: { season_override: "summer" } }),
+      ...["owner", "owner_id", "p_owner_id", "user_id", "room_id", "new_room_name",
+        "create_room_name", "origin_draft_id", "analysis_receipt", "plan_availability",
+        "camera_estimate", "season_override"].map((key) => createPayload({ [key]: ownerB })),
+      ...["conditions", "overrides"].flatMap((key) =>
+        ["owner_id", "p_owner_id", "user_id", "room_id", "season_override"].map((field) =>
+          createPayload({ [key]: { [field]: ownerB } }))),
+    ].map((payload) => commandEnvelope(payload)),
+  ];
+  for (const locale of ["en", "pl"] as const) {
+    const f = fixture();
+    for (const body of invalid) {
+      const response = await f.handler(commandRequest(body, locale));
+      assertEquals(response.status, 400, JSON.stringify(body));
+      assertEquals(await response.json(), commandEnvelopeError(400, locale));
+    }
+    for (const header of ["invalid", ""]) {
+      const response = await f.handler(commandRequest(commandEnvelope(), locale, "session-a", header));
+      assertEquals(response.status, 400);
+      assertEquals(await response.json(), commandEnvelopeError(400, locale));
+    }
+    for (const suffix of ["?owner_id=" + ownerB, "?p_owner_id=" + ownerB, "?unknown=1"]) {
+      const response = await f.handler(commandRequest(commandEnvelope(), locale, "session-a", operation, suffix));
+      assertEquals(response.status, 400);
+      assertEquals(await response.json(), commandEnvelopeError(400, locale));
+    }
+    const conflict = await f.handler(commandRequest(commandEnvelope(), locale, "session-a", otherOperation));
+    assertEquals(conflict.status, 409);
+    assertEquals(await conflict.json(), commandEnvelopeError(409, locale));
+    assertEquals(f.rpcRequests.length, 0);
+    assertEquals(f.envCalls, 0);
+  }
+});
+
+Deno.test("T162 catalogue production: SQL cap/conflicts/owner/validation/transient errors sanitized EN/PL", async () => {
+  const failures: { code: string; message: string; status: number; apiCode?: string }[] = [
+    { code: "P0001", message: "COLLECTION_LIMIT_REACHED", status: 409, apiCode: "COLLECTION_LIMIT_REACHED" },
+    { code: "23505", message: "operation_payload_mismatch", status: 409, apiCode: "CONFLICT" },
+    { code: "23505", message: rawFailure, status: 409, apiCode: "CONFLICT" },
+    { code: "P0002", message: "owner_profile_not_found", status: 403 },
+    { code: "42501", message: "account_not_active", status: 403 },
+    { code: "42501", message: "owner_forbidden", status: 403 },
+    { code: "P0002", message: "taxon_not_published", status: 400 },
+    ...["22023", "22P02", "23503", "23514"].map((code) => ({ code, message: rawFailure, status: 400 })),
+    ...["40001", "40P01", "08006", "XX000", "P0001", "42501", "P0002"]
+      .map((code) => ({ code, message: rawFailure, status: 503 })),
+  ];
+  for (const locale of ["en", "pl"] as const) {
+    for (const failure of failures) {
+      const f = fixture({ rpcStatus: 400, rpcBody: {
+        code: failure.code, message: failure.message, details: rawFailure, hint: rawFailure,
+      } });
+      const response = await f.handler(commandRequest(commandEnvelope(), locale));
+      assertEquals(response.status, failure.status);
+      assertEquals(await response.json(), commandEnvelopeError(failure.status, locale, failure.apiCode));
+      assertEquals(f.rpcRequests.length, 1);
+    }
+  }
+});
+
+Deno.test("T162 catalogue production: null/malformed SQL receipts and transport errors fail closed", async () => {
+  const malformed: unknown[] = [null, [], "private", {}, ...[
+    ["plant_id", "invalid"], ["care_revision", "1"], ["care_revision", 0],
+    ["context_state", null], ["next_available_step", {}], ["plan_availability", false],
+    ["watermark", "invalid"],
+  ].map(([key, value]) => createReceipt({ [String(key)]: value }))];
+  for (const key of ["plant_id", "care_revision", "context_state", "next_available_step", "plan_availability", "watermark"]) {
+    const missing = createReceipt();
+    delete missing[key];
+    malformed.push(missing);
+  }
+  for (const locale of ["en", "pl"] as const) {
+    for (const options of [
+      ...malformed.map((rpcBody) => ({ rpcBody })),
+      { rawRpcText: rawFailure }, { throwRpc: true },
+    ]) {
+      const f = fixture(options);
+      const response = await f.handler(commandRequest(commandEnvelope(), locale));
+      assertEquals(response.status, 503);
+      assertEquals(await response.json(), commandEnvelopeError(503, locale));
+      assertEquals(f.rpcRequests.length, 1);
+    }
+  }
+});
+
+Deno.test("T162 catalogue production: permanent active owner required before parsing/config/RPC", async () => {
+  const cases = [
+    { options: {}, token: null, status: 401 },
+    { options: { authStatus: 401 }, token: "session-a", status: 401 },
+    { options: { anonymous: true }, token: "session-a", status: 403 },
+    { options: { profile: [] }, token: "session-a", status: 403 },
+    { options: { profile: [{ account_state: "deleting", anonymous: false }] }, token: "session-a", status: 403 },
+    { options: { throwProfile: true }, token: "session-a", status: 503 },
+  ];
+  for (const locale of ["en", "pl"] as const) {
+    for (const denied of cases) {
+      const f = fixture(denied.options);
+      const response = await f.handler(commandRequest("{", locale, denied.token));
+      assertEquals(response.status, denied.status);
+      const body = await response.json();
+      assertEquals(body.error.code, denied.status === 401 ? "UNAUTHORIZED" : denied.status === 403 ? "FORBIDDEN" : "INTERNAL_ERROR");
+      assertEquals(body.error.retryable, denied.status === 503);
+      assertEquals(JSON.stringify(body).includes(rawFailure), false);
+      assertEquals(f.rpcRequests.length, 0);
+      assertEquals(f.envCalls, 0);
+    }
+  }
+});
+
+Deno.test("T162 catalogue production: missing/invalid service config is lazy and returns 503", async () => {
+  for (const config of [
+    {}, { SUPABASE_URL: backend }, { SUPABASE_SERVICE_ROLE_KEY: serviceKey },
+    { SUPABASE_URL: " ", SUPABASE_SERVICE_ROLE_KEY: serviceKey },
+    { SUPABASE_URL: "invalid-url", SUPABASE_SERVICE_ROLE_KEY: serviceKey },
+    { SUPABASE_URL: backend, SUPABASE_SERVICE_ROLE_KEY: " " },
+  ]) {
+    for (const locale of ["en", "pl"] as const) {
+      const f = fixture({ config });
+      assertEquals(f.envCalls, 0);
+      const response = await f.handler(commandRequest(commandEnvelope(), locale));
+      assertEquals(response.status, 503);
+      assertEquals(await response.json(), commandEnvelopeError(503, locale));
+      assertEquals(f.rpcRequests.length, 0);
+    }
+  }
+});
+
+Deno.test("T162 catalogue composition: explicit command delegate wins without consuming body or config", async () => {
+  const f = fixture();
+  const original = commandRequest("{");
+  const expected = new Response("explicit command", { status: 202 });
+  let calls = 0;
+  const handler = createProductionPlantsApiHandler({
+    ...f.deps,
+    handleCommand: async (req, ctx) => {
+      calls++;
+      assertStrictEquals(req, original);
+      assertEquals(ctx.ownerId, ownerA);
+      assertEquals(req.bodyUsed, false);
+      return expected;
+    },
+  }, { env: () => { throw new Error("must remain lazy"); } });
+  assertStrictEquals(await handler(original), expected);
+  assertEquals(await expected.text(), "explicit command");
+  assertEquals(calls, 1);
+  assertEquals(original.bodyUsed, false);
   assertEquals(f.rpcRequests.length, 0);
 });

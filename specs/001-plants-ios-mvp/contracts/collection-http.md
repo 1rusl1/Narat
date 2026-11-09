@@ -1,13 +1,13 @@
-# Collection HTTP — GET /sync (T019/T162, узкий срез)
+# Collection HTTP — catalogue plant.create и GET /sync (T019/T044/T162, узкий срез)
 
 Production entry point: Deno.serve(createProductionPlantsApiHandler()).
 Поддержаны существующие пути /sync, /plants-api/sync и /functions/v1/plants-api/sync;
 новый /v1 prefix этим срезом не добавляется. Bare createPlantsApiHandler()
 сохраняет T152: sync/commands без явно переданного handler возвращают 503.
 Явные delegates и остальные endpoints сохраняют поведение. Production factory
-подключает только sync; POST /commands (включая plant.create) остаётся unavailable.
+подключает sync и только catalogue plant.create. Остальные commands не включены.
 
-## Доступ и запрос
+## GET /sync: доступ и запрос
 
 Существующая проверка Supabase Auth → active profile выполняется до query/RPC.
 Постоянный и anonymous active owner допускаются. p_owner_id берётся только
@@ -88,5 +88,111 @@ SyncCursorDTO не хранит since/until, а клиент должен сох
 страницами. Клиентский JSONDecoder использует .iso8601; поддержку SQL timestamps
 с дробными секундами/offset и точность watermark ещё необходимо адаптировать
 и проверить. HTTP query names уже совпадают со Swift; response совместимость
-не заявляется. SwiftData/outbox, UI, command/create, live sync и полный T019/T162
+не заявляется. SwiftData/outbox, UI, live sync и полные T019/T044/T149/T162
 остаются открытыми; миграции/клиент этим срезом не меняются.
+
+## POST /commands: catalogue plant.create
+
+Те же три prefix, что у /sync; новый /v1 не вводится. Существующий Auth/profile
+resolver сохранён. Требуется permanent active owner: нет сессии → 401;
+anonymous либо неактивный/отсутствующий profile → 403 до разбора команды/RPC.
+Sync по-прежнему допускает active anonymous owner; positive guest claim не включён.
+
+Canonical Swift CommandEnvelopeDTO wire — operation_id, command_name,
+payload_json. payload_json — **строка**, внутри которой закодирован JSON object,
+не вложенный JSON object, не command_type/payload. Минимальный запрос без фото/опроса:
+
+```json
+{
+  "operation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "command_name": "plant.create",
+  "payload_json": "{\"creation_source\":\"catalogue\",\"plant_id\":\"fixture_collection_cap\"}"
+}
+```
+
+operation_id — UUID. Если X-Operation-Id передан, он тоже должен быть UUID
+и совпадать с operation_id без учёта регистра; несовпадение → 409 CONFLICT.
+Header не заменяет обязательный operation_id. Envelope plant_id для create
+может отсутствовать или быть null (опциональный Swift target); непустой target
+отклоняется. Неизвестные envelope поля и любые query параметры → 400.
+
+Payload требует creation_source="catalogue" и species selector plant_id
+(строковый slug каталога) либо taxon_id (UUID), в том числе в overrides.
+Это не UUID нового экземпляра: экземпляр создаёт SQL.
+Допустимые optional поля: personal_name/display_name (string|null),
+taxon_id/plant_id, origin_flow_id (UUID|null), photo_id (только null),
+creation_intent ("care"|"problem"), add_method ("catalogue"), conditions, overrides.
+Фото не требуется. Ненулевой photo_id отклоняется до RPC: текущий SQL не проверяет
+owner main_photo_id при INSERT; attachment требует отдельной authoritative проверки.
+conditions/overrides — объекты; overrides дополнительно допускает species/names.
+Условия — существующие SQL light_level/light_code, light_source ("manual"|"unknown"),
+light_confirmed (boolean), watering_habit/watering_code, last_watered/drainage_code,
+pot_type; nullable значения сохраняются. Коды соответствуют существующим SQL CHECK.
+Ввод camera_estimate и season_override не включён; историческая sync data сохраняется.
+Пустые conditions/overrides допустимы. Семантические ограничения SQL остаются
+authoritative. Owner/user/p_owner_id, rooms, origin_draft_id/analysis_receipt,
+local_fallback/guest/identification source, клиентский plan_availability и
+неизвестные поля запрещены на всех принимаемых уровнях до RPC.
+Unsupported/retired команды → 400, без вызова другого RPC.
+
+Production factory лениво создаёт server-only service-role client из
+SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY и вызывает ровно:
+
+```text
+POST /rest/v1/rpc/execute_plant_create_command
+{ p_owner_id: authenticatedContext.ownerId, p_operation_id: envelope.operation_id,
+  p_payload: JSON.parse(envelope.payload_json) }
+```
+
+p_now не задаётся. После валидации payload передаётся без добавления defaults,
+переименования, удаления null, trimming значений или вычисления hash. SQL владеет
+лимитом/транзакцией/hash/receipt. Повтор отправляет те же operation/payload в SQL;
+adapter не создаёт receipt/replay флаг/plant/watermark.
+
+HTTP 200 — исходный canonical JSONB receipt из execute_plant_create_command
+(202611090002_retire_rooms.sql), например:
+
+```json
+{
+  "plant_id": "22222222-2222-4222-8222-222222222222",
+  "care_revision": 1,
+  "context_state": "current",
+  "next_available_step": "enable_basic_care",
+  "paid_action": "generate_full_routine_plan",
+  "plan_availability": "available",
+  "watermark": "2026-11-03T09:00:00.999999+00:00"
+}
+```
+
+SQL может вернуть другой next_available_step/plan_availability и paid_action=null.
+Required validation: plant_id UUID, care_revision положительное safe integer,
+context_state/next_available_step/plan_availability непустые строки,
+watermark корректный SQL timestamp. Все поля сохраняются losslessly.
+Null/unexpected result → 503; пустой успех не подставляется.
+
+COLLECTION_LIMIT_REACHED (P0001) → HTTP 409 COLLECTION_LIMIT_REACHED,
+retryable=false; это отдельный collection cap, не QUOTA_EXHAUSTED анализа.
+23505 / operation_payload_mismatch → 409 CONFLICT; header mismatch также 409.
+owner_profile_not_found (P0002), account_not_active/owner_forbidden (42501) → 403.
+taxon_not_published (P0002), SQL parameter/constraint codes
+22007/22008/22023/22P02/23502/23503/23514 → 400 VALIDATION_ERROR.
+Прочие SQL/transport/config ошибки, включая serialization/deadlock, → 503
+INTERNAL_ERROR, retryable=true; повтор сохраняет operation/payload.
+Все сообщения EN/PL общие: raw error/details/hint и service credentials не возвращаются.
+Lookup/retry/cap порядок остаётся текущим SQL; HTTP fixtures не заменяют DB gate.
+
+## Клиентская адаптация и проверки
+
+CommandResponseDTO сейчас требует status/operation_id/replayed, отсутствующие в SQL
+receipt. Нельзя объявлять текущий Swift save совместимым или добавлять эти поля
+в Edge как фиктивное подтверждение. Следующий клиентский шаг: отдельный DTO реального
+create receipt, безопасное подтверждение outbox по успешному SQL ответу, mapping
+COLLECTION_LIMIT_REACHED с сохранением ввода, затем save UI и проверка клиента.
+Требуется также описанная выше адаптация SyncPageDTO/cursor/SQL timestamps.
+
+collection_http_test.ts расширен без удаления sync assertions: production composition
+с mocked HTTP transport, exact create/retry RPC args/receipt, cap/conflict/errors,
+owner isolation, permanent-owner boundary, validation, config и explicit delegates.
+Это fixtures; отдельно контроллер запускает неизменённый SQL cap/history/retry/
+concurrency gate в изолированном PostgreSQL. Live, guest claim, UI, клиентский
+save/outbox и полный объём T019/T044/T149/T162 этим срезом не принимаются.
