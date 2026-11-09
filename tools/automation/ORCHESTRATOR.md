@@ -4,6 +4,10 @@ Python 3.11+, stdlib, текущая авторизация Codex CLI. Конф�
 `tools/automation/orchestrator.config.json`. Аудит и результаты:
 `docs/validation/automation/orchestrator-optimization-2026-11-08.md`.
 
+Два параллельных управляющих чата: [план A/B](../../docs/parallel/README.md).
+Нужны отдельные worktree и branch-specific `--config`: default config публикует в main.
+Lock checkout не защищает общий Simulator между worktree; UI gates выполняет только A.
+
 ## Начало работы
 
 Подготовьте manifest по `tasks.example.json`, с **явными** критериями, зависимостями,
