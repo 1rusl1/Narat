@@ -52,6 +52,7 @@ final class CatalogueSaveModel {
         return value
     }
 
+    var isCancelled: Bool { cancelled }
     var input: CatalogueInput? { isAccessible ? frozenInput : nil }
     var envelope: CommandEnvelopeDTO? { isAccessible ? frozenEnvelope : nil }
     var checkpoint: CatalogueInputCheckpointSnapshot? {
@@ -182,6 +183,29 @@ final class CatalogueSaveModel {
         let personal_name: String?
     }
 
+    /// A native continuation must originate from this connection's current guest lease.
+    func isGuest(of store: LocalStore, apiClient: PlantsAPIClient, session: NativeAuthSession) -> Bool {
+        self.store === store && self.apiClient === apiClient &&
+            context.session == session && isAnonymous && isAccessible
+    }
+
+    /// Always replay the durable checkpoint under the ORIGINAL lease, including when cached.
+    /// No Observation callbacks run under LocalStore's authority lock.
+    @discardableResult
+    func checkpointInput() async throws -> CatalogueInputCheckpointSnapshot {
+        try validateAuthority()
+        let checkpoint = try await store.checkpointCatalogueInput(
+            frozenInput, flowId: flowId, operationId: frozenEnvelope.operationId,
+            context: context, authority: apiClient.syncAuthority
+        )
+        guard checkpoint.envelope.operationId == frozenEnvelope.operationId,
+              checkpoint.envelope.payloadJSON.utf8.elementsEqual(frozenEnvelope.payloadJSON.utf8) else {
+            throw CatalogueSaveUnavailable.storageOrServiceUnavailable
+        }
+        try publish { frozenCheckpoint = checkpoint }
+        return checkpoint
+    }
+
     /// Duplicate taps join no new operation and cannot turn busy into success.
     func save() async {
         guard work == nil, !cancelled else { return }
@@ -222,11 +246,7 @@ final class CatalogueSaveModel {
         do {
             try publish { phase = .busy }
             if frozenCheckpoint == nil {
-                let checkpoint = try await store.checkpointCatalogueInput(
-                    frozenInput, flowId: flowId, operationId: frozenEnvelope.operationId,
-                    context: context, authority: apiClient.syncAuthority
-                )
-                try publish { frozenCheckpoint = checkpoint }
+                try await checkpointInput()
             }
             // The SDK's explicit anonymous snapshot guards the registered path.
             if isAnonymous {

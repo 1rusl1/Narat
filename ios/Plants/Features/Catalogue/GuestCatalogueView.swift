@@ -1,10 +1,25 @@
 import Foundation
 import Supabase
 import SwiftUI
+import UIKit
 
 enum CatalogueConnectionUnavailable: Error, Sendable, Equatable {
     case configurationMissing
     case storageUnavailable
+}
+
+enum CatalogueNativeRetention: Sendable, Equatable {
+    case cancelled
+    case authenticationFailed(NativeAuthFailure)
+}
+
+/// Success carries the actual model state; sign-in alone is never a saved result.
+@MainActor
+enum CatalogueNativeOutcome: Sendable {
+    case busy
+    case inputRetained(CatalogueSaveModel, CatalogueNativeRetention)
+    case continued(CatalogueSaveModel)
+    case unavailable(CatalogueSaveUnavailable)
 }
 
 /// Carries the original SDK event epoch, including same-token refresh and ABA.
@@ -19,6 +34,7 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
     private let lock = NSLock()
     private var value: UInt64 = 0
     private var hasEstablishedSession: Bool
+    private var signedInEpoch: UInt64?
 
     init(hasEstablishedSession: Bool = false) {
         self.hasEstablishedSession = hasEstablishedSession
@@ -30,9 +46,17 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
         lock.withLock { !hasEstablishedSession && value == epoch }
     }
 
-    func invalidate(_ authority: SyncSessionAuthority, session: Session? = nil) {
+    // Pinned SDK 2.55.6 _signIn updates storage then synchronously emits ONE signedIn.
+    func permitsNativeSignIn(after epoch: UInt64) -> Bool {
+        lock.withLock { value == epoch &+ 1 && signedInEpoch == value }
+    }
+
+    func invalidate(
+        _ authority: SyncSessionAuthority, session: Session? = nil, event: AuthChangeEvent? = nil
+    ) {
         lock.withLock {
             value &+= 1
+            signedInEpoch = event == .signedIn ? value : nil
             // Monotonic for this connection, including anonymous and expired sessions.
             if session != nil { hasEstablishedSession = true }
             authority.invalidate()
@@ -56,6 +80,11 @@ final class CatalogueConnection {
     @ObservationIgnored private var binding: Task<Void, Error>?
     @ObservationIgnored private var boundSnapshot: CatalogueSDKSnapshot?
     @ObservationIgnored private var boundEpoch: UInt64?
+    @ObservationIgnored private let nativeAuth: NativeAuthService?
+    @ObservationIgnored private let resumeDefaults: UserDefaults
+    @ObservationIgnored private var nativeFlow: UUID?
+
+    var nativeAuthState: NativeAuthState? { nativeAuth?.state }
 
     /// Configuration/disk errors remain stable for this connection; never use a memory fallback.
     convenience init(
@@ -85,7 +114,9 @@ final class CatalogueConnection {
     init(
         client: SupabaseClient, configuration: NativeAuthConfiguration, store: LocalStore,
         transport: any PlantsAPITransport = URLSessionAPITransport(),
-        clientLocale: String = "pl"
+        clientLocale: String = "pl",
+        identityProvider: (any NativeIdentityProviding)? = nil,
+        resumeDefaults: UserDefaults = .standard
     ) {
         // Seed before initial-session delivery can delete storage and swallow its refresh error.
         sdkEpoch = CatalogueSDKEpoch(hasEstablishedSession: client.auth.currentSession != nil)
@@ -100,12 +131,20 @@ final class CatalogueConnection {
         syncEngine = engine
         repository = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
         unavailable = nil
+        self.resumeDefaults = resumeDefaults
+        if let identityProvider {
+            nativeAuth = NativeAuthService(
+                identityProvider: identityProvider, exchange: SupabaseAuthExchange(client: client)
+            )
+        } else {
+            nativeAuth = configuration.makeService(client: client)
+        }
         let epoch = sdkEpoch
         let authority = api.syncAuthority
         observer = Task { [weak self] in
-            let registration = await client.auth.onAuthStateChange { [weak self] _, session in
+            let registration = await client.auth.onAuthStateChange { [weak self] event, session in
                 // Record session history and invalidate before any MainActor publication/bind.
-                epoch.invalidate(authority, session: session)
+                epoch.invalidate(authority, session: session, event: event)
                 Task { @MainActor [weak self] in
                     await self?.observeCurrentSession()
                 }
@@ -122,6 +161,8 @@ final class CatalogueConnection {
         syncEngine = nil
         repository = nil
         self.unavailable = unavailable
+        nativeAuth = nil
+        resumeDefaults = .standard
         sdkEpoch = CatalogueSDKEpoch()
     }
 
@@ -164,12 +205,16 @@ final class CatalogueConnection {
 
     private func validate(_ expected: CatalogueSDKSnapshot) throws {
         try Task.checkCancellation()
+        guard isCurrent(expected) else { throw CatalogueSaveUnavailable.sessionChanged }
+    }
+
+    /// Also usable after committed exchange when the original caller was cancelled.
+    private func isCurrent(_ expected: CatalogueSDKSnapshot) -> Bool {
         guard let client, sdkEpoch.read() == expected.epoch,
               let current = client.auth.currentSession, !current.isExpired,
               Self.snapshot(current, epoch: expected.epoch) == expected,
-              sdkEpoch.read() == expected.epoch else {
-            throw CatalogueSaveUnavailable.sessionChanged
-        }
+              sdkEpoch.read() == expected.epoch else { return false }
+        return true
     }
 
     private func validateBinding(_ expected: CatalogueSDKSnapshot?, epoch: UInt64) throws {
@@ -281,6 +326,111 @@ final class CatalogueConnection {
         try validate(expected)
         guard model.input == input else { throw CatalogueSaveUnavailable.sessionChanged }
         return model
+    }
+
+    private func resumeKey(_ owner: UUID) -> String {
+        "catalogue.native.flow." + owner.uuidString.lowercased()
+    }
+
+    /// Owner-scoped metadata only. Payload and receipt remain exclusively in SQLite.
+    func resumableFlow(expected: CatalogueSDKSnapshot) throws -> UUID? {
+        try validate(expected)
+        guard !expected.isAnonymous else { return nil }
+        let flow = resumeDefaults.string(forKey: resumeKey(expected.session.userId)).flatMap(UUID.init(uuidString:))
+        try validate(expected)
+        return flow
+    }
+
+    /// Explicit user intent only. The auth observer never invokes this continuation.
+    func signInAndSave(
+        _ original: CatalogueSaveModel, with provider: NativeAuthProvider,
+        presenting: UIViewController
+    ) async -> CatalogueNativeOutcome {
+        guard nativeFlow == nil else { return .busy }
+        guard let nativeAuth, let store, let apiClient else {
+            return .unavailable(.storageOrServiceUnavailable)
+        }
+        let intent = UUID()
+        nativeFlow = intent
+        defer { nativeFlow = nil }
+        do {
+            let preparedSDK = try await sessionSnapshot()
+            guard original.isGuest(of: store, apiClient: apiClient, session: preparedSDK.session),
+                  preparedSDK.isAnonymous else {
+                return .unavailable(.sessionChanged)
+            }
+            // Capture ONLY the selected immutable input while its original facade is accessible.
+            var prepared: (input: CatalogueInput, checkpoint: CatalogueInputCheckpointSnapshot)?
+            let result = await nativeAuth.signIn(
+                with: provider, presenting: presenting,
+                validateBeforeExchange: {
+                    try self.validate(preparedSDK)
+                    if original.isCancelled { throw CancellationError() }
+                    guard self.nativeFlow == intent else { throw CatalogueSaveUnavailable.sessionChanged }
+                },
+                prepareForSessionChange: {
+                    try self.validate(preparedSDK)
+                    guard let input = original.input else { throw CatalogueSaveUnavailable.sessionChanged }
+                    let checkpoint = try await original.checkpointInput()
+                    try self.validate(preparedSDK)
+                    prepared = (input, checkpoint)
+                }
+            )
+            guard let result else {
+                guard isCurrent(preparedSDK) else { return .unavailable(.sessionChanged) }
+                guard prepared != nil else {
+                    return .unavailable(Task.isCancelled ? .cancelled : .storageOrServiceUnavailable)
+                }
+                if case .cancelled = nativeAuth.state { return .inputRetained(original, .cancelled) }
+                if case let .failed(reason) = nativeAuth.state {
+                    return .inputRetained(original, .authenticationFailed(reason))
+                }
+                return .unavailable(.storageOrServiceUnavailable)
+            }
+            guard let prepared else { return .unavailable(.storageOrServiceUnavailable) }
+
+            // Finite local reconciliation survives caller cancellation AFTER SDK commit.
+            // It never sends plants HTTP and never repairs or rolls back SDK identity.
+            let reconciliation = Task { @MainActor () async throws -> (CatalogueSaveModel, CatalogueSDKSnapshot) in
+                guard self.nativeFlow == intent,
+                      self.sdkEpoch.permitsNativeSignIn(after: preparedSDK.epoch),
+                      let current = self.client?.auth.currentSession, !current.user.isAnonymous else {
+                    throw CatalogueSaveUnavailable.sessionChanged
+                }
+                let expected = Self.snapshot(current, epoch: preparedSDK.epoch &+ 1)
+                guard expected.session == result.session else { throw CatalogueSaveUnavailable.sessionChanged }
+                try self.validate(expected)
+                let model = try await self.makeModel(
+                    input: prepared.input, flowId: prepared.checkpoint.flowId,
+                    operationId: prepared.checkpoint.operationId, expected: expected
+                )
+                let checkpoint = try await model.checkpointInput()
+                guard checkpoint.envelope.operationId == prepared.checkpoint.operationId,
+                      checkpoint.envelope.payloadJSON.utf8.elementsEqual(prepared.checkpoint.envelope.payloadJSON.utf8),
+                      self.nativeFlow == intent else { throw CatalogueSaveUnavailable.sessionChanged }
+                try self.validate(expected)
+                self.resumeDefaults.set(checkpoint.flowId.uuidString, forKey: self.resumeKey(expected.session.userId))
+                try self.validate(expected)
+                return (model, expected)
+            }
+            let (model, expected) = try await reconciliation.value
+            guard nativeFlow == intent, isCurrent(expected) else { return .unavailable(.sessionChanged) }
+            // A cancelled caller may explicitly retry later via the guarded flow pointer.
+            guard !Task.isCancelled, !original.isCancelled else { return .inputRetained(model, .cancelled) }
+            await model.save()
+            guard isCurrent(expected) else { return .unavailable(.sessionChanged) }
+            if Task.isCancelled || original.isCancelled { return .inputRetained(model, .cancelled) }
+            return .continued(model)
+        } catch is CancellationError {
+            return .unavailable(.cancelled)
+        } catch SyncWireValidationError.invalidSession {
+            return .unavailable(.sessionChanged)
+        } catch {
+            if error as? CatalogueSaveUnavailable == .sessionChanged {
+                return .unavailable(.sessionChanged)
+            }
+            return .unavailable(.storageOrServiceUnavailable)
+        }
     }
 
     /// Same-owner, explicit-flow restoration. No plants HTTP or operation generation.
