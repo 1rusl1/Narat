@@ -3,6 +3,7 @@
 // and deterministic backend projection (ProtocolResolver).
 
 import { assert, assertEquals } from "@std/assert";
+import Ajv2020Import from "ajv/dist/2020";
 import { AnalysisValidator } from "../AnalysisValidator.ts";
 import {
   CanonicalConditionId,
@@ -37,18 +38,6 @@ function makeSampleCatalog(): PublishedReleaseCatalog {
       general_houseplants: true,
     },
     visual_markers: ["yellowing_lower_leaves", "wet_heavy_substrate"],
-    diagnostic_disambiguation: {
-      often_confused_with: ["root_rot", "underwatering"],
-      clarifying_questions: [
-        {
-          question_id: "q_soil_wet",
-          text_pl: "Czy podłoże na głębokości 3–4 cm jest stale mokre?",
-          text_en: "Is the soil at 3–4 cm depth constantly wet?",
-          yes_weights_towards: "overwatering",
-          no_weights_towards: "underwatering",
-        },
-      ],
-    },
     required_check_ids: ["check_soil_moisture"],
     contraindication_check_ids: [],
     abiotic_priority: "default_first",
@@ -119,6 +108,158 @@ function makeSampleCatalog(): PublishedReleaseCatalog {
     knownTraitIds: new Set(["leaf_turgor_recovery", "yellowing_progression"]),
   };
 }
+
+// Publication schema is loaded from disk; no network or new dependencies.
+const Ajv2020 = (Ajv2020Import as unknown as { default?: typeof Ajv2020Import.default }).default ??
+  (Ajv2020Import as unknown as typeof Ajv2020Import.default);
+const profileAjv = new Ajv2020({ allErrors: true, strict: false });
+profileAjv.addFormat("uuid", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+profileAjv.addFormat("uri", (value: string) => {
+  try {
+    return Boolean(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+});
+profileAjv.addFormat("date-time", (value: string) =>
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value) &&
+  Number.isFinite(Date.parse(value)));
+const validateProfileSchema = profileAjv.compile(JSON.parse(Deno.readTextFileSync(new URL(
+  "../../../../specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
+  import.meta.url,
+))));
+
+// Synthetic evidence satisfies the unchanged legacy provenance contract.
+function makePublishedProfile() {
+  return {
+    ...structuredClone(makeSampleCatalog().conditionProfiles.get("overwatering")!),
+    provenance: {
+      source_documents: ["one", "two", "three"].map((id) => ({
+        source_id: `fixture_${id}`, donor_id: `donor_${id}`, independence_group: `group_${id}`,
+        url: `https://example.com/${id}`, retrieved_at: "2026-11-09T00:00:00Z",
+        content_hash: "a".repeat(64), use_basis: "Synthetic regression fixture",
+        allowed_for: [
+          "commercial_storage", "automated_collection", "llm_processing", "derived_records",
+        ],
+      })),
+      field_evidence: {
+        "/visual_markers": [{
+          source_id: "fixture_one", locator: "fixture", scope: "regression only",
+        }],
+      },
+      validation: {
+        method: "multi_source_rules", synthesis_model: "fixture", prompt_version: "fixture",
+        guardrail_version: "fixture", validated_at: "2026-11-09T00:00:00Z",
+        unresolved_conflicts: [],
+      },
+    },
+  };
+}
+
+Deno.test("T157 — publication accepts no bank and rejects the removed property", () => {
+  const profile = makePublishedProfile();
+  assertEquals("diagnostic_disambiguation" in profile, false);
+  assertEquals(validateProfileSchema(profile), true, JSON.stringify(validateProfileSchema.errors));
+  assertEquals(validateConditionProfileSemantics(profile), { valid: true, errors: [] });
+  const withBank = { ...profile, diagnostic_disambiguation: { clarifying_questions: [] } };
+  assertEquals(validateProfileSchema(withBank), false);
+  assert(validateProfileSchema.errors?.some((error) =>
+    error.keyword === "additionalProperties" &&
+    error.params.additionalProperty === "diagnostic_disambiguation"));
+});
+
+Deno.test("T157 — historical bank is ignored by semantics and resolver in EN/PL", async () => {
+  const profile = makePublishedProfile();
+  // Invalid even under old semantics: historical content must not be interpreted.
+  const historical = {
+    ...structuredClone(profile),
+    diagnostic_disambiguation: {
+      often_confused_with: ["overwatering"],
+      clarifying_questions: [{
+        question_id: "obsolete_question", text_en: "OBSOLETE?", text_pl: "NIEAKTUALNE?",
+        yes_weights_towards: "overwatering", no_weights_towards: "overwatering",
+      }],
+    },
+  };
+  assertEquals(validateConditionProfileSemantics(historical), { valid: true, errors: [] });
+  for (const locale of ["en", "pl"] as const) {
+    for (const confidence of [0.9, 0.6]) {
+      const catalog = makeSampleCatalog();
+      const validated = AnalysisValidator.validate({
+        schema_version: "3.0", kb_release_id: KB_RELEASE_ID, mode: "diagnosis", locale,
+        image_quality: "usable",
+        identification: {
+          status: "identified", plant_id: "monstera_deliciosa", genus_id: "monstera",
+        },
+        diagnosis: {
+          status: "problem_detected",
+          candidates: [{ condition_id: "overwatering", rank: 1, confidence }],
+        },
+        limitations: [], comparison: null, visual_markers: ["yellowing_lower_leaves"],
+      }, catalog);
+      assertEquals(validated.valid, true, validated.errors.join("; "));
+      assert(validated.classification);
+      const params = {
+        analysisId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        jobId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        classification: validated.classification,
+        catalog, signingSecret: SIGNING_SECRET, issuedAt: "2026-11-09T00:00:00Z",
+      };
+      catalog.conditionProfiles.set("overwatering", profile);
+      const clean = await ProtocolResolver.resolvePreliminaryProjection(params);
+      catalog.conditionProfiles.set("overwatering", historical);
+      const restored = await ProtocolResolver.resolvePreliminaryProjection(params);
+      assertEquals(restored, clean);
+      assertEquals(clean.decision_state, confidence === 0.9 ? "resolved" : "pending");
+      assertEquals(clean.plan_availability, confidence === 0.9 ? "available" : "diagnosis_unresolved");
+      if (confidence === 0.9) {
+        const step = profile.treatment_plan.steps[0];
+        assertEquals(clean.first_action_summary, locale === "en" ? step.action_en : step.action_pl);
+      }
+      for (const key of ["diagnostic_disambiguation", "clarifying_questions", "questions"]) {
+        assertEquals(key in restored, false);
+      }
+      assertEquals(JSON.stringify(restored).includes("OBSOLETE?"), false);
+      assertEquals(JSON.stringify(restored).includes("NIEAKTUALNE?"), false);
+    }
+  }
+});
+
+Deno.test("T157 — existing semantic and schema restrictions survive bank removal", () => {
+  const duplicate = makePublishedProfile();
+  duplicate.treatment_plan.steps.push(structuredClone(duplicate.treatment_plan.steps[0]));
+  const duplicateResult = validateConditionProfileSemantics(duplicate);
+  assertEquals(duplicateResult.valid, false);
+  assert(duplicateResult.errors.some((error) => error.includes("Duplicate step_id")));
+
+  const dangling = makePublishedProfile();
+  dangling.first_help_step_id = "missing_step";
+  const danglingResult = validateConditionProfileSemantics(dangling);
+  assertEquals(danglingResult.valid, false);
+  assert(danglingResult.errors.some((error) => error.includes("does not reference any step")));
+
+  for (const [repeat, interval] of [[0, 0], [53, 1], [1, 1], [2, 0]]) {
+    const invalid = makePublishedProfile();
+    Object.assign(invalid.treatment_plan.steps[0], { repeat_count: repeat, interval_days: interval });
+    assertEquals(validateProfileSchema(invalid), false);
+    const result = validateConditionProfileSemantics(invalid);
+    assertEquals(result.valid, false);
+    assert(result.errors.some((error) => error.includes("repeat_count")));
+  }
+  for (const language of ["action_en", "action_pl"] as const) {
+    const invalid = makePublishedProfile();
+    invalid.treatment_plan.steps[0][language] = "";
+    assertEquals(validateProfileSchema(invalid), false);
+    const result = validateConditionProfileSemantics(invalid);
+    assertEquals(result.valid, false);
+    assert(result.errors.some((error) => error.includes("missing PL or EN action text")));
+  }
+  const restricted = makePublishedProfile();
+  restricted.host_scope.general_houseplants = false;
+  assertEquals(ProtocolResolver.isConditionHostCompatible(restricted, { plantId: "other" }), false);
+  assertEquals(ProtocolResolver.isConditionHostCompatible(restricted, { plantId: "monstera_deliciosa" }), true);
+  assertEquals(ProtocolResolver.isConditionHostCompatible(restricted, { plantId: null, family: "Araceae" }), true);
+});
 
 Deno.test("T029.1 — Positive validation across identification, diagnosis, and follow_up modes", () => {
   const catalog = makeSampleCatalog();

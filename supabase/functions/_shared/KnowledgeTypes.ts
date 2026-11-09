@@ -1,7 +1,7 @@
 // supabase/functions/_shared/KnowledgeTypes.ts
 // T120: Canonical types and semantic validators for ConditionProfile and Vision Classification 3.0.
 // Enforces the closed 40 condition IDs (including nutrient_deficiency), top-2 candidates,
-// confidence in [0,1], visual_markers membership, clarifying questions, EN/PL steps, and finite repeats.
+// confidence in [0,1], visual_markers membership, EN/PL steps, and finite repeats.
 
 export const CANONICAL_CONDITION_IDS = [
   "overwatering",
@@ -107,14 +107,6 @@ export interface VisionClassification30 {
   visual_markers: string[];
 }
 
-export interface ClarifyingQuestion {
-  question_id: string;
-  text_pl: string;
-  text_en: string;
-  yes_weights_towards: CanonicalConditionId;
-  no_weights_towards: CanonicalConditionId;
-}
-
 export interface TreatmentStep {
   step_id: string;
   step_order: number;
@@ -175,10 +167,6 @@ export interface CanonicalConditionProfile {
     general_houseplants: boolean;
   };
   visual_markers: string[];
-  diagnostic_disambiguation: {
-    often_confused_with: CanonicalConditionId[];
-    clarifying_questions: ClarifyingQuestion[];
-  };
   required_check_ids: string[];
   contraindication_check_ids: string[];
   abiotic_priority: "default_first" | "specific_evidence_required" | "neutral";
@@ -268,34 +256,6 @@ export function validateConditionProfileSemantics(
     errors.push(
       `first_help_step_id '${profile.first_help_step_id}' does not reference any step in treatment_plan.steps.`,
     );
-  }
-
-  const confusedSet = new Set(profile.diagnostic_disambiguation.often_confused_with);
-  if (confusedSet.has(profile.condition_id)) {
-    errors.push(`Condition '${profile.condition_id}' cannot list itself in often_confused_with.`);
-  }
-
-  for (const q of profile.diagnostic_disambiguation.clarifying_questions) {
-    if (!q.text_pl.trim() || !q.text_en.trim()) {
-      errors.push(`Question '${q.question_id}' is missing PL or EN text.`);
-    }
-    if (q.yes_weights_towards === q.no_weights_towards) {
-      errors.push(
-        `Question '${q.question_id}' cannot weight yes and no towards the same condition '${q.yes_weights_towards}'.`,
-      );
-    }
-    const validTargets = new Set<CanonicalConditionId>([
-      profile.condition_id,
-      ...profile.diagnostic_disambiguation.often_confused_with,
-    ]);
-    if (
-      !validTargets.has(q.yes_weights_towards) ||
-      !validTargets.has(q.no_weights_towards)
-    ) {
-      errors.push(
-        `Question '${q.question_id}' targets must belong to {${profile.condition_id}} U often_confused_with.`,
-      );
-    }
   }
 
   return { valid: errors.length === 0, errors };
