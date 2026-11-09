@@ -32,15 +32,19 @@
 - Swift/TypeScript/SQL runtime и машинные JSON Schema **ещё содержат старые механизмы**; документация не объявляет их обновлёнными. Они явно отделены от цели в `contracts/README.md` и открытых T157–T160. T148/T155 не закрыты. Историческая T152 сохраняет только ранее проверенные границы отсутствия фиктивных успехов.
 - Публичный eval требует до запуска конкретной выборки/достаточности T118; малые ранние прогоны не доказывают цели точности. EN/PL ASO — черновик до редакторской/визуальной приёмки и реализации.
 
-## Запуск очистки через оркестратор
+## Очистка через оркестратор: первый срез принят
 
-Пользователь разрешил поручить очистку оркестратору. Подготовлен `tools/automation/tasks.t157-cleanup.json`: первый срез OLD-01/T157, только ConditionProfile schema, KnowledgeTypes и analysis_result_test. Отдельный `t157_question_contract_gate.py` проверяет точный допустимый semantic diff схемы и удаление банка из типов; конфигурация добавляет этот static gate. Существующие Deno tests/check, Reviewer и QA обязательны. Миграции/деплой/Swift и другие механизмы этим срезом не меняются; T157 остаётся открытой до полного объёма.
+Run `t157-questions-20261109-01`, manifest `tools/automation/tasks.t157-cleanup.json`: **COMPLETED / Verified and published**, 1 Developer → 1 Reviewer → 1 QA, без повторных вызовов. Коммит `f15e6c6` создан контроллером и успешно отправлен в origin/main; state подтверждает публикацию. Подготовка manifest/gate/config была сохранена и отправлена коммитом `555a7a6`.
 
-Подготовка: manifest validate — PASS, 1 задача, без вызова моделей; 89 automation unit tests — PASS на fixtures. Новые продуктовые проверки ещё не выполнены. Запуск планируется с run-id `t157-questions-20261109-01` после сохранения чистого Git. Следующий шаг — выполнить run, дождаться результата Developer/checks/Reviewer/QA/push; при остановке сохранить точный статус/логи и причину, не объявлять срез принятым.
+**Реализовано:** из `contracts/condition-profile.schema.json` удалены только required/property диагностического банка; из `KnowledgeTypes.ts` — ClarifyingQuestion, поле и semantic checks вопросов; обновлён `analysis_result_test.ts`. Новые карточки без банка проходят, поле в новой публикации отвергается schema, исторический extra field безопасно игнорируется semantic validator/resolver EN/PL. Остальные schema ограничения сохранены точным semantic hash gate. Данные/применённые SQL/Swift/деплой не затронуты.
+
+**Проверки:** 39 Deno tests — PASS (fixtures, без skips); deno-check — PASS; точный `t157-question-contract` — PASS; whitespace — PASS; 89 automation tests — PASS (fixtures). Reviewer и QA подтвердили все критерии. Живой AI/БД/клиентский сценарий не проверялся. [Отчёт среза](validation/automation/tasks/t157-question-bank-cleanup.md), runtime state/logs — `docs/validation/automation/runs/orchestrator-t157-questions-20261109-01/` (исключены из Git).
+
+**Ограничение:** принята только часть OLD-01/T157; follow_up, scores/routing, полный профиль/источники, treatment timeline, Swift DTO и прочие остатки T158–T160 ещё требуют очистки. T157 и T155 не закрыты; новые checkbox не добавлены. Успешный пилот подтверждает пригодность оркестратора для ограниченных срезов с точными файлами/проверками, а не автоматическую безопасность любой миграции.
 
 ## Точный следующий шаг
 
-Начать **T157**: сопоставить `contracts/{ai-result,condition-profile,plant-profile}.schema.json`, `supabase/functions/_shared/{KnowledgeTypes,AnalysisValidator,ProtocolResolver}.ts` и `ios/Plants/Data/Remote/APIModels.swift`; определить текущий/целевой компактный контракт identification/diagnosis + действий/следующей проверки, затем согласованно изменить потребителей/фикстуры с сохранением старой истории. После этого принимать реальный фото→результат срез, не считать JSON-файл готовым сценарием.
+Продолжить **T157** следующим согласованным срезом оркестратора: составить список потребителей `follow_up`/comparison в `ai-result.schema.json`, `KnowledgeTypes.ts`, validator/adapter/worker/API и Swift DTO; подготовить manifest с синхронным удалением нового режима, обычной diagnosis для повторного фото, безопасным чтением истории и Deno/iOS regression checks. Не удалять режим только из schema при оставшихся writers. После этого очистить score routing и компактные карточки, затем T158/T159/T160 с forward migrations и отдельными clean/upgrade проверками. Весь объём нельзя принимать по текущему question-bank пилоту.
 
 T148 остаётся на прежней остановке до запуска следующего pipeline-среза; фактические дефекты имён/переводов/медиа перечислены в обновлённом `tools/automation/tasks.t148-pipeline.json` и [архиве handoff](archive/handoff_status_before_simplification_2026-11-09.md). Полная редакционная приёмка отдельна; минимум охвата снят, сохранность 606 карточек проверяется.
 
@@ -53,7 +57,7 @@ T148 остаётся на прежней остановке до запуска
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 137 активных задач: 13 отмечены (12 исторических + T156 документ), 124 открыты; 23 снятых. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Тарифы/expiry не изменены.
-- Следующий технический срез T157; T148 может продолжать независимую редактуру без ложного completed. Применённые миграции не переписывать.
+- T157 question-bank срез опубликован: f15e6c6, run t157-questions-20261109-01 COMPLETED. Остальная T157 и T158–T160 открыты; следующий manifest — согласованное удаление follow_up/comparison с Deno/iOS проверками. T148 независима; применённые миграции не переписывать.
 - Handoff/tasks/Git изменяет только управляющий процесс. Fixtures ≠ live; снятый объём не выполнение. Субагенты не запускаются без отдельного разрешения.
 <!-- /orchestrator:project-state -->
 
