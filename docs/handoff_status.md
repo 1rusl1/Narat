@@ -278,7 +278,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t019-auth-profile-fail-closed: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t019-auth-profile-fail-closed](validation/automation/tasks/t019-auth-profile-fail-closed.md).
+t162-sync-http-adapter: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t162-sync-http-adapter](validation/automation/tasks/t162-sync-http-adapter.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

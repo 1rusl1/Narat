@@ -35,6 +35,7 @@ import {
   handleCreateAnalysisJob,
   handleGetAnalysisJob,
 } from "./analysis.ts";
+import { handleGetSync } from "./collection.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
 // a real client with a mocked transport without reading credentials or using the network.
@@ -290,6 +291,34 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
   };
 }
 
+export interface ProductionSyncOptions {
+  env?: (name: string) => string | undefined;
+  fetch?: typeof fetch;
+}
+
+// Keep the bare handler's T152 fallback. Only the deployed composition enables
+// sync, and explicit delegates still take precedence. No command adapter here.
+export function createProductionPlantsApiHandler(
+  deps: PlantsApiDependencies = {},
+  options: ProductionSyncOptions = {},
+) {
+  const syncClient = (): SupabaseClient | null => {
+    const env = options.env ?? ((name: string) => Deno.env.get(name));
+    const url = env("SUPABASE_URL")?.trim();
+    const key = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+    if (!url || !key) return null;
+    return createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: options.fetch },
+    });
+  };
+  return createPlantsApiHandler({
+    ...deps,
+    handleSync: deps.handleSync ??
+      ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),
+  });
+}
+
 if (import.meta.main) {
-  Deno.serve(createPlantsApiHandler());
+  Deno.serve(createProductionPlantsApiHandler());
 }
