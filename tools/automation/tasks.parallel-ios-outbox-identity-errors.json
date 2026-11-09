@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-outbox-identity-errors",
+      "description": "Small durable-journal prerequisite: harden existing generic operation identity and persist real typed API failure metadata without changing schema or dispatch/save flow. No catalogue input/repository/save/UI yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files with small exact unified diff. No new files/project/tools/config/handoff/tasks/AGENTS/backend/contracts/deploy/live writes/calls. Accepted wire/store/typedreceipt/engine22bc1a6 and current capacity prerequisite must retain behavior; no extra framework or new schema. This packet only existing enqueue identity plus typed error persistence; do not implement input/new journal methods/save/UI.",
+        "BASELINE DEFECT: LocalStore.enqueueCommand globally finds operationId but blindly returns queued snapshot for any caller owner/plant/command/payload. Fail closed on mismatching owner, plantId, commandName OR payloadJSON. Never expose foreign queued record in returned error/snapshot. Exact same replay returns original committed snapshot (sequence/createdAt/retry/lastError unchanged); rejected changed payload/owner must not rewrite or enqueue another record, allocate sequence or mutate any other owner. Use small typed Sendable Equatable error. Preserve valid existing public API and legacy tests. Payload bytes stay frozen exactly (do not normalize existing strings).",
+        "OutboxEntrySnapshot should expose a small computed public typed APIErrorResponse? projection of lastError only when it strictly decodes stored APIErrorResponse JSON. No schema change; existing lastError legacy arbitrary text remains readable and returns nil typed error. No substring classification of COLLECTION_LIMIT_REACHED/QUOTA/auth; genuine typed error code/message/retryable preserved exactly. Do not change saved input, operation or retry count semantics.",
+        "SyncEngine send-failure path currently String(describing:error). If actual error is APIErrorResponse, encode JSON via existing Codable to lastError (do not transform into substring/business decision). Non-API errors retain backward compatible diagnostic string, typed projection nil. Cancellation/session-change still throw before failure mutation; disk ACK failure remains separate and leaves retry metadata unchanged. No tokens/HTTP headers in new serialized fields, no added logging. Generic legacy APIs remain valid.",
+        "Add at least five focused meaningful tests in already-target CollectionRepositoryTests (current72+minimum5=>77 actual tests, no skips). Actual temporary on-disk LocalStore and reopen for enqueue exact replay, foreign owner, same owner changed plant/command/payload, no mutation/sequence drift across failed attempts. Actual APIClient->SyncEngine->disk for typed409 COLLECTION_LIMIT_REACHED false, typed503 INTERNAL_ERROR true and restart projection retaining code/message/retryable and same input; prove legacy text even containing code does not become typed. Keep all existing72 tests, ABA/cancel/readonly ACK tests meaningful. No fake production fallbacks. Build/unit/Simulator and high-risk independent Reviewer/QA required; fixtures not live/save acceptance."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Operation identity cannot cross owners or mutate frozen queued command; actual API errors persist typed through real engine/disk restart with legacy strings compatible. All old72 + >=5 meaningful new actual tests>=77/no skips/build/Simulator and independent Review/QA. Save/input/UI/parents still open.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
