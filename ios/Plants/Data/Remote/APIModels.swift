@@ -106,32 +106,6 @@ public struct ClaimOverridesDTO: Codable, Sendable, Equatable {
     }
 }
 
-public struct RecoveryCheckDTO: Codable, Sendable, Equatable {
-    public let intervalDays: Int
-    public let nextCheckDate: String?
-    public let comparisonTraits: [String]
-    public let photoAngleHint: String?
-
-    public init(
-        intervalDays: Int,
-        nextCheckDate: String? = nil,
-        comparisonTraits: [String],
-        photoAngleHint: String? = nil
-    ) {
-        self.intervalDays = intervalDays
-        self.nextCheckDate = nextCheckDate
-        self.comparisonTraits = comparisonTraits
-        self.photoAngleHint = photoAngleHint
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case intervalDays = "interval_days"
-        case nextCheckDate = "next_check_date"
-        case comparisonTraits = "comparison_traits"
-        case photoAngleHint = "photo_angle_hint"
-    }
-}
-
 public struct AnalysisReceiptDTO: Codable, Sendable, Equatable {
     public let analysisId: UUID
     public let kbReleaseId: UUID
@@ -171,84 +145,6 @@ public struct AnalysisReceiptDTO: Codable, Sendable, Equatable {
         case decisionRevision = "decision_revision"
         case issuedAt = "issued_at"
         case signature
-    }
-}
-
-// MARK: - ConditionProfile, Diagnostic Refinement & Treatment Steps (FR-061..064)
-
-public struct TreatmentStepDTO: Codable, Sendable, Equatable {
-    public let stepCode: String
-    public let phase: String
-    public let title: String
-    public let instructions: String
-    public let intervalDays: Int
-    public let maxRepeats: Int
-
-    public init(
-        stepCode: String,
-        phase: String,
-        title: String,
-        instructions: String,
-        intervalDays: Int,
-        maxRepeats: Int
-    ) {
-        self.stepCode = stepCode
-        self.phase = phase
-        self.title = title
-        self.instructions = instructions
-        self.intervalDays = intervalDays
-        self.maxRepeats = maxRepeats
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case stepCode = "step_code"
-        case phase
-        case title
-        case instructions
-        case intervalDays = "interval_days"
-        case maxRepeats = "max_repeats"
-    }
-}
-
-public struct ConditionProfileDTO: Codable, Sendable, Equatable {
-    public let conditionId: String
-    public let kbReleaseId: UUID
-    public let category: String
-    public let localizedName: String
-    public let visualMarkers: [String]
-    public let firstAidSteps: [String]
-    public let controlIntervalDays: Int?
-    public let treatmentSteps: [TreatmentStepDTO]
-
-    public init(
-        conditionId: String,
-        kbReleaseId: UUID,
-        category: String,
-        localizedName: String,
-        visualMarkers: [String],
-        firstAidSteps: [String],
-        controlIntervalDays: Int?,
-        treatmentSteps: [TreatmentStepDTO]
-    ) {
-        self.conditionId = conditionId
-        self.kbReleaseId = kbReleaseId
-        self.category = category
-        self.localizedName = localizedName
-        self.visualMarkers = visualMarkers
-        self.firstAidSteps = firstAidSteps
-        self.controlIntervalDays = controlIntervalDays
-        self.treatmentSteps = treatmentSteps
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case conditionId = "condition_id"
-        case kbReleaseId = "kb_release_id"
-        case category
-        case localizedName = "localized_name"
-        case visualMarkers = "visual_markers"
-        case firstAidSteps = "first_aid_steps"
-        case controlIntervalDays = "control_interval_days"
-        case treatmentSteps = "treatment_steps"
     }
 }
 

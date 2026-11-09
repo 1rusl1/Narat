@@ -106,7 +106,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t157-compact-plant-profile: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t157-compact-plant-profile](validation/automation/tasks/t157-compact-plant-profile.md).
+t157-unused-swift-profile-dto: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [t157-unused-swift-profile-dto](validation/automation/tasks/t157-unused-swift-profile-dto.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
