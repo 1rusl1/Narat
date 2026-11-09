@@ -5,6 +5,19 @@
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Повторные интеграционные проверки iOS-пакетов — 10 ноября
+
+Проверен конечный принятый код `1d88434` (runtime98b2010), объединяющий ранее принятые engine ACK22bc1a6 → capacity/outbox/journal/repository/input/model/SDK/native0a9f2ea → DEBUGfixture98b2010. `git fetch origin` подтвердил main=`72bcccc`, он уже ancestor iOS; `HEAD..origin/main` пуст. Diff к main по `supabase`, `.github`, KB/catalogue/contracts пуст: новых B SQL008–012/непринятых данных нет. История B005–007 из прежнего merge сохранена. Рабочее дерево чистое, модели оркестратора не активны.
+
+**Реальные gates на этом же источнике — PASS:**
+- `parallel_backend_quota_gate.py --accounting --legacy-guard --cap-regression`: clean и seeded-upgrade — по55anchor+49ledger+131cap/care pgTAP, по12 boundary/leap/timezone случаев;4 реальных owner-lock retry/distinct-create гонки, по одному plant/receipt, все preexisting public rows byte-equal. Это private PG17 fixtures; старый shared `t161 --slots` equality runner не заявляется пройденным.
+- Deno**336 PASS/0failed**, deno-check exit0; automation**115 tests/OK**,40.558s. Ожидаемые negative-fixture сообщения FAIL/timeout в stdout не являются ошибкой suites (exit0/OK).
+- Xcode build/welcome/**158 PlantsTests PASS/0failed/0skipped**,155sourceXCTest+3SwiftTesting; `parallel-integration-ios-20261110-01/{summary.json,unit-result.stdout.log,source-test-coverage.json}`. Simulator `parallel-integration-sim-20261110-01` welcome/care-navigation PASS.
+
+Логи `validation/automation/runs/parallel-integration-20261110-01/{sql,deno-tests,deno-check,automation,ios,simulator}.log`. Runtime/contracts/tools SHA256 **f7cdd858b21a4e4926b40ff7c9aa65878ba035bf4e224191f0e6daf56ca4807c**,1488tracked files, before/after совпали. Source при проверках не изменён; далее меняются только handoff/tasks docs. Это local/fixture integration, не backend deploy, live providers/StoreKit, rendered catalogue save UI или полный T162/T149/Auth. Tasks14checked/137open неизменны.
+
+**Точный следующий шаг:** сохранить эту проверенную сводку commit/push iOS → отдельный чистый integration checkout fast-forward на этот commit, сверить тот же fingerprint → обычный `git push origin HEAD:main`, без force; зафиксировать результат публикации. Затем узкий guarded server-instance card readback на исходном model lease, после него реальные EN/PL views/16XCUITests/Release fixture exclusion. B permissions ожидаются в её чате; её HEAD4333509 не включён.
+
 ## DEBUG catalogue UI fixture принят; интеграция iOS в main
 
 Run `parallel-ios-catalogue-ui-fixtures-20261110-02` — **COMPLETED / Verified and published**, **98b2010** отправлен в origin/codex/plants-ios; checkpointe4d3aa8 опубликован. 1Developer/1Reviewer/1QA, canonical repair без дополнительных попыток. Принят ВЕСЬ DEBUG-кандидат, а не только delta: `CatalogueUIFixtures.swift` и `CatalogueUIFixtureTests.swift`. Explicit namespace UUID factory, isolated actual SDK/custom URLSession/URLProtocol/scoped fake-session storage, existing connection/native exchange/model/repository/engine/SQLite. Durable mock server ledger сохраняет точное body/operation/receipt/server UUID/inventory до lost response; replay после recreate при cap3 возвращает одну квитанцию без второго insert. Unknown URLs блокируются. Никаких app root/view launch branches ещё нет.
