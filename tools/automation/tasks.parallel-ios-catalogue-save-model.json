@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-save-model",
+      "description": "Owner-fixed observable catalogue save model over accepted input checkpoint/repository, for upcoming SwiftUI views. No Supabase SDK/native provider/views/UI fixture in this packet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files ordinary exact contextual diff. Both new files will be skeletons ALREADY in app/unit Xcode Sources before evidence, controller handles pbxproj. No new files/project/config/tools/handoff/tasks/AGENTS/backend/contracts/deploy/live. Existing accepted repository193a704/input checkpointf53227b/109actual tests preserved. This is a SMALL model/data state facade for forthcoming UI, no views/Supabase/native identity provider/dependency factory/debug fixtures yet. No second outbox/store/engine. CLI read-only shell may reject heredoc tempfiles; use temp-free python3 -c/difflib for complete diff if needed.",
+        "Create internal @MainActor @Observable CatalogueSaveModel (Foundation+Observation sufficient). Inject existing LocalStore/PlantsAPIClient/CollectionRepository, caller-supplied flowUUID+operationUUID+CatalogueInput and explicit actual SDK NativeAuthSession/isAnonymous snapshot. Require truly BOUND same API session matching snapshot, capture ONE original SyncSessionLease per model; model NEVER rebinds API to its old captured token. Owner/session model scope immutable, old model cannot retarget after A->B->A/refresh. New model/restore under new real SDK context will be factory/UI responsibility later; no synthetic auth or default owner/permanent flag.",
+        "Model retains frozen input/envelope/checkpoint and exposes small typed observable state (ready/busy/signInRequired/pending exactsnapshot/saved exactconfirmation/newcapnotqueued/unavailable-or-sessionchanged). Save durably checkpoints input BEFORE signInRequired/provider stage (provider not implemented here), guest caches localinput with zero GET/POST/queue. Registered save uses accepted repository/engine path and durable confirmation only; busy/duplicate taps cannot manufacture success. Do not turn errors/flushcount/cachefilepresence into saved. Error copy/raw SQL/network/token/userdata not logged or surfaced as UI diagnostic; keep typed pending API error from accepted snapshot for later UI mapping.",
+        "Critical original-context composition: current public repository.saveCatalogueCreate(session:) captures lease at call time, insufficient for an OLD model after ABA. Extract small INTERNAL saveCatalogueCreate(envelope:context:) overload reusing SAME existing body, public method keeps all behavior and SDK anonymous guard/explicitsession equality. Model validates original bound context before awaits, passes same context into checkpoint and internal save, validates again before publishing observable result. No new persistence/journal business code or payload validators. Internal helper requires bound valid context and derives owner from context. SDK guest check remains explicit BEFORE calling registered path.",
+        "Provide meaningful same-owner disk restart restoration for explicit owner+flow only: read actual checkpoint/journal under newly captured bound session, recover original op/frozenpayload and input without generating new IDs, issuing requests or crossing owners. A small private decoder for already validated minimal checkpoint payload is allowed; retain exact persisted envelope for send rather than reserialize on restore. A missing checkpoint is explicit absent; corrupt/mismatch unavailable, no fake defaults. No all-owner lookup or automatic cache/outbox/receipt migration on login. User-selected NEW input/flow gets explicit new model from caller later; do not silently alter pending payload.",
+        "Old model after auth switch/ABA/signout/cancel must not expose oldowner pending/saved/input to new UI or publish stale results. Guard observable access/result with original authority (e.g. state/input access redacts invalid lease, or equivalent deterministic invalidation API plus tests), do not merely catch at HTTP boundary. Owner change never copies commands/receipt. Restoring sameowner after token refresh/restart creates a new valid model with same operation/payload and may resume on explicit save. No automatic send on restore, no native provider/SDK assumptions. Cancellation/disk failure preserve existing local checkpoint/queue; readOnly ACK errors unavailable/pending, never saved without receipt.",
+        "Add>=6 actual meaningful new XCTest in already-target new CatalogueSaveModelTests (all109old+new total>=115/no skips). Actual APIClient->model->acceptedrepository/engine->temporarySQLite/reopen: guest checkpoint/no requests, registered successful typed receipt/state, committed+lost response pending+restore samebody/op/receipt, cap precheck and server409 typedpending, failedpreflight/readonly/no fakesuccess, A/B/ABA before action and during suspended request redacts oldowner input/state with disk preservation, duplicate save/busy/cancel. Tests use real existing model/repo/store, scripted transport only, no fake production fallback. Controller executes build/unit/Simulator and independent highrisk Review/QA. No renderedUI/nativeAuth/live/fullT162 acceptance."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Owner-fixed observable model checkpoints local input and drives accepted save/restore with original bound lease, durable exact receipt success, guest/cap/error/pending/ABA/cancel states proven through actual repository/engine/SQLite. All109old+>=6new => >=115 actual tests/no skips/build/Simulator, independent highrisk Review/QA; views/nativeAuth/live/parents open.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
