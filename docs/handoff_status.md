@@ -1,6 +1,47 @@
 # Narat — текущий статус и передача работы
 
 
+## B — reserve принят141d548; finalize/bind разделены после run04 timeout
+
+**Факт принятия008:** `141d548` опубликован в origin/codex/plants-backend,
+1 Developer/1 Reviewer/1 QA; clean/upgrade по78 reserve+55 anchor+49 ledger pgTAP,
+12UTC cases, четыре20-real-connection races (distinct/same operation), один reserve,
+replay без нового расхода;336Deno/115automation/typecheck/diff PASS. Код включает
+контроллерские исправления из d5e6c5d, независимая приёмка выполнена заново.
+Отчёт `docs/validation/automation/tasks/parallel-backend-t163-reserve-recovery.md`.
+Это не settlement;99consumed в reserve-only — historical fixtures, не99finalize.
+
+**Run04 остановлен:** combined settlement Developer вызван1раз, timeout900s,
+answer/patch отсутствуют. Статус WAITING, миграция009 не создана. State/logs в
+ignored `docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-04/`
+сохранены. Run04 не resume после изменения config/manifest. Ни один полный
+99actual admit/finalize +6x20 gate ещё не объявлен PASS.
+
+**Подготовка run05:** новый узкий `tasks.parallel-backend-quota-settle-bind.json`
+(2tasks):009 только finalize/release →010 только installation bind. Оба —
+Developer/Reviewer/QA high-risk; внешние accepted SHA constraints, depends_on
+только внутри manifest. Контракт monthly-access.md согласован с010.
+Controller gate добавил `--bind`, проверку обязательного010 и реальные pgTAP
+binding tests; full gate теперь также повторяет все78 reserve regression.
+В default full gate сохранены99настоящих admit/finalize +6раундов20одновременно
+наблюдаемых соединений, technical failure/replay/terminalOnce; --reserve их не заменяет.
+Check `parallel-backend-quota-bind` argv `python3 tools/automation/parallel_backend_quota_gate.py --bind`,
+unit/fixture/300s. Config hash `5df700479dc274b65fb61fd76c836251c09594d04ebd0ff122a98010dbd96f49`;
+routing/retry/budgets/defaultconfig неизменны, publish только origin/codex/plants-backend.
+Validate2/developer context/help/diff PASS. Full finalize/bind gates до реализации
+не выполнялись; их наличие не означает продуктовой готовности.
+
+**Следующий шаг:** commit/push подготовки и clean-tree
+`parallel-backend-quota-sql-20261109-05` с явным branch --config. Сначала одна
+bounded finalize RPC безbind, затем отдельныйbind. После принятых009/010 —
+B2 authoritative access snapshot/production HTTP adapters/ENPL fixtures.
+Prod worker/job adapters пока injection-only, нельзя выдавать фиктивный202;
+full T163/T036/client/live остаются открыты. Swift B не редактировала/не запускала.
+A сообщила accepted durable ACK22bc1a6 (64Swift); main по последней согласованной
+интеграции72bcccc, уже подхвачен междуB runs. Новые A commits — после опубликованного
+интеграционногоSHA и только междуruns. Истории handoff сохранены, checkbox B не меняла.
+
+
 ## B — run03: guard принят; reserve-кандидат восстановлен, run04 следующий
 
 **Принято/опубликовано:** `a04794c` (guard007, 1 Developer/1 Reviewer/1 QA).
@@ -656,3 +697,5 @@ parallel-backend-t163-reserve-recovery: проверки и Review/QA пройд
 Отчёт: [parallel-backend-t163-reserve-recovery](validation/automation/tasks/parallel-backend-t163-reserve-recovery.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
+
+Run05 preparation regression: `python3 tools/automation/parallel_backend_quota_gate.py --reserve` — PASS clean/upgrade55+49+78pgTAP/12UTC/four20-connectionraces, `/tmp/narat-b163-finalize-prep-reserve.log`. Это не settlement acceptance.

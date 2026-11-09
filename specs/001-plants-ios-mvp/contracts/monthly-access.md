@@ -30,7 +30,8 @@ Forward migrations: `202611090005_registration_quotas.sql` (anchor/окна),
 `202611090006_registration_ledger.sql` (перенос учёта), затем
 `202611090007_registration_state_guard.sql` (legacy permanent не может стать guest),
 `202611090008_quota_reservation.sql` (reserve),
-`202611090009_quota_settlement.sql` (finalize/bind). До последнего среза
+`202611090009_quota_settlement.sql` (finalize/release),
+`202611090010_installation_quota_bind.sql` (binding). До последнего среза
 старый admission не считается заменённым; выкатывать их вместе после приёмки.
 
 `account_quota_anchors(owner_id,registered_at,source)` — отдельный внутренний
