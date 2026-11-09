@@ -70,7 +70,12 @@ def main():
         assert not re.search(r'#\s*(?:SKIP|TODO)\b', result, re.I), 'No skip/TODO'
         path_out = work / (db + path.stem + '.tap')
         path_out.write_text(result + '\n')
-        command(['prove', '--exec', 'cat', str(path_out)])
+        try:
+            command(['prove', '--exec', 'cat', str(path_out)])
+        except RuntimeError as error:
+            diagnostics = '\n'.join(line for line in result.splitlines()
+                                    if line.startswith(('not ok', '#')))
+            raise RuntimeError(str(error) + '\nTAP diagnostics:\n' + diagnostics[-5000:]) from error
         print(f'PASS {db}: {path.name}, {len(assertions)} pgTAP assertions', flush=True)
 
     def snapshot(db):

@@ -1,5 +1,58 @@
 # Narat — текущий статус и передача работы
 
+
+## B — run03: guard принят; reserve-кандидат восстановлен, run04 следующий
+
+**Принято/опубликовано:** `a04794c` (guard007, 1 Developer/1 Reviewer/1 QA).
+Команда `python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard --cap-regression`:
+clean/upgrade по55 anchor +131 T161 pgTAP,12UTC cases, четыре реальные owner-lock
+гонки, все preexisting public rows сохранены;336Deno/115automation/typecheck/diff
+PASS. Точный отчёт: `docs/validation/automation/tasks/parallel-backend-t163-legacy-state-guard.md`.
+Ограниченный accepted пакет005/006/007 разрешён A для интеграции, без deploy и
+без закрытия T163/T164/T036. Ранее найденный permanent legacy NULL-anchor flip закрыт.
+
+**Точка остановки run03:** reserve вернул патч только008+test, но fingerprint
+имел74 символа вместо ожидаемых64 (дублирование подстроки). Provider правильно
+отклонил ответ: WAITING/cli_error, settlement PENDING. Исходные answer/state/metrics
+не менялись и не выданы за принятие. Raw answer SHA256
+`de0ac185a94bff6a88cace5b273c460bed3089d11c625cb6852d3398d829a897`.
+Путь: ignored `docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-03/parallel-backend-t163-reserve/call-1-developer/answer.json`.
+
+**Восстановлен кандидат, ещё не принят независимо:** scope/git apply --numstat/
+--check подтвердили только `202611090008_quota_reservation.sql` и
+`registration_reservation.test.sql`. Контроллер исправил синтаксис PL/pgSQL BEGIN;
+и ошибочное ожидание теста B: его fixture уже содержит два расхода; теперь
+проверяется **admitted=true и remaining=0**, отказ не может дать ложный PASS.
+В controller gate добавлена печать failing TAP diagnostics до удаления temp DB.
+Другие функции/миграции005–007 не переписывались.
+
+Реальный `python3 tools/automation/parallel_backend_quota_gate.py --reserve`:
+**PASS** clean/upgrade по78 reserve +55 anchor +49 ledger pgTAP,12UTC cases,
+четыре раунда по20 одновременно наблюдаемым PostgreSQL соединениям (distinct/same
+job), один reserve и replay без нового ledger. Лог `/tmp/narat-b163-reserve-recovery-v4.log`.
+Это reserve-only с99 историческими consumed fixtures, **не settlement и не полная
+T163**. До исправлений честные FAIL сохранены в `/tmp/narat-b163-reserve-recovery{,-v2,-v3}.log`.
+Deno для008 ещё впереди в независимом run04; предыдущие результаты не подменяют его.
+
+**Интеграция между runs:** после завершения run03 выполнен обычный FF merge
+`72bcccc` из опубликованной A main; untracked reserve-кандидаты сохранены.
+A проверила итоговый `947d602`/docs72bcccc:55Swift/0skip/build/welcome/Simulator,
+336Deno/typecheck,115automation и clean/upgrade55+49+131pgTAP/12UTC/4races,
+fingerprint63025c67bcf86dec2b30d6a4da4b53192aa0313a00bc1c698ad80b3a972a4ae8 стабилен.
+Это evidence A; B Swift/Simulator не запускала и Swift вручную не редактировала.
+UI/Auth wiring/durable ACK/repository/save и полныеT162/T163/T164/T036/live открыты.
+
+**Следующий шаг:** candidate checkpoint commit/push, затем новый
+`parallel-backend-quota-sql-20261109-04` с
+`tools/automation/tasks.parallel-backend-quota-reserve-recovery.json` (2tasks):
+независимые Developer/Reviewer/QA для конкретного008 →settlement009. Validate2,
+developer context и diff-check PASS; новый config не нужен, прежний branch config
+SHA256 `59ed00ee3315c8db379677e7aa0ef1558cc7b9be590b64f626d9cf3f043e31ff`, publish
+только origin/codex/plants-backend. Run03 не resume; исходный malformed ответ не
+исправлять. После009 — полный99actual admit/finalize +6x20 gate и отдельный B2 API.
+Auth/Supabase/Storage/provider/StoreKit live не запускались; продовые job/worker
+adapters пока не подключены. Продуктовые checkbox B не закрывала.
+
 **Обновлено 2026-11-09.** A приняла sync transport7cb5893, engine/disk643622b и durable receipt store09e9b3a (55 Swift tests/Simulator/Review/QA). Между runs объединяется принятый B prerequisite a04794c: anchors005/ledger006/guard007; объединённые SQL/Deno/115automation/55Swift/Simulator gates PASS, интеграция опубликована в origin/main 947d602; следующий engine durable ACK. Engine ACK/repository/UI-save, полные квоты/API и live не приняты; продуктовые checkbox14/151.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
@@ -580,6 +633,8 @@ T148 остаётся на прежней остановке до запуска
 
 <!-- orchestrator:project-state -->
 ## Project State
+
+- B latest: accepted guard007 a04794c; main72bcccc integrated by ordinary FF between runs. Run03 reserve WAITING due malformed74-char fingerprint; raw answer preserved. Candidate008 recovered with SQL BEGIN fix and meaningful fixture B assert; reserve-only clean/upgrade78+55+49pgTAP/four20-connection races PASS, not independently accepted. Next run04 candidate review→settlement009; fullquota/API/client/live stillopen.
 
 - Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN/PL; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
