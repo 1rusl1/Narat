@@ -467,8 +467,8 @@ extension CollectionWireTests {
             "2026-11-03T24:00:00Z", "2026-11-03T09:00:60Z", "2026-11-03T09:00:00.1234567Z",
             "2026-11-03T09:00:00+16:00", "2026-11-03T09:00:00+00:60", "2026-11-03T09:00:00Z\n"
         ]
-        var requests: [(String?, String?, SyncWireCursorDTO?, Int)] = invalidDates.flatMap {
-            [($0, nil, nil, 200), (nil, $0, nil, 200)]
+        var requests: [(String?, String?, SyncWireCursorDTO?, Int)] = invalidDates.flatMap { raw -> [(String?, String?, SyncWireCursorDTO?, Int)] in
+            [(raw, nil, nil, 200), (nil, raw, nil, 200)]
         }
         requests += [(syncUntil, syncSince, nil, 200), (nil, nil, nil, 0), (nil, nil, nil, 501)]
         for (time, entity, end, start) in [
