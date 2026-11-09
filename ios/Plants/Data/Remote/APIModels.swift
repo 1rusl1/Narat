@@ -349,3 +349,99 @@ public struct CommandResponseDTO: Codable, Sendable, Equatable {
         case watermark
     }
 }
+
+// MARK: - Authoritative catalogue create receipt (collection-http.md)
+
+/// The raw SQL boundary must be retained: Date cannot represent every microsecond exactly.
+public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
+    public let plantId: UUID
+    public let careRevision: Int
+    public let contextState: String
+    public let nextAvailableStep: String
+    /// compute_next_available_step currently returns TEXT or SQL NULL.
+    public let paidAction: String?
+    public let planAvailability: String
+    public let watermark: Date
+    public let watermarkRaw: String
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case careRevision = "care_revision"
+        case contextState = "context_state"
+        case nextAvailableStep = "next_available_step"
+        case paidAction = "paid_action"
+        case planAvailability = "plan_availability"
+        case watermark
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        plantId = try values.decode(UUID.self, forKey: .plantId)
+        careRevision = try values.decode(Int.self, forKey: .careRevision)
+        contextState = try values.decode(String.self, forKey: .contextState)
+        nextAvailableStep = try values.decode(String.self, forKey: .nextAvailableStep)
+        paidAction = try values.decodeIfPresent(String.self, forKey: .paidAction)
+        planAvailability = try values.decode(String.self, forKey: .planAvailability)
+        watermarkRaw = try values.decode(String.self, forKey: .watermark)
+        guard (1...9_007_199_254_740_991).contains(careRevision),
+              !contextState.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !nextAvailableStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !planAvailability.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let date = SQLTimestamp.date(from: watermarkRaw) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath, debugDescription: "Invalid catalogue create receipt"
+            ))
+        }
+        watermark = date
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(plantId, forKey: .plantId)
+        try values.encode(careRevision, forKey: .careRevision)
+        try values.encode(contextState, forKey: .contextState)
+        try values.encode(nextAvailableStep, forKey: .nextAvailableStep)
+        try values.encodeIfPresent(paidAction, forKey: .paidAction)
+        try values.encode(planAvailability, forKey: .planAvailability)
+        try values.encode(watermarkRaw, forKey: .watermark)
+    }
+}
+
+/// Strict SQL ISO timestamps, independent of JSONDecoder's legacy date strategy.
+enum SQLTimestamp {
+    static func date(from value: String) -> Date? {
+        let pattern = #"^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,6}))?(Z|[+-][0-9]{2}:[0-9]{2})$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
+              match.range.length == value.utf16.count else { return nil }
+        func group(_ index: Int) -> String? {
+            guard let range = Range(match.range(at: index), in: value) else { return nil }
+            return String(value[range])
+        }
+        guard let year = group(1).flatMap(Int.init), year > 0,
+              let month = group(2).flatMap(Int.init), (1...12).contains(month),
+              let day = group(3).flatMap(Int.init), (1...31).contains(day),
+              let hour = group(4).flatMap(Int.init), (0...23).contains(hour),
+              let minute = group(5).flatMap(Int.init), (0...59).contains(minute),
+              let second = group(6).flatMap(Int.init), (0...59).contains(second),
+              let zone = group(8) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(
+            year: year, month: month, day: day, hour: hour, minute: minute, second: second
+        )
+        guard let whole = calendar.date(from: components) else { return nil }
+        let checked = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: whole)
+        guard checked.year == year, checked.month == month, checked.day == day,
+              checked.hour == hour, checked.minute == minute, checked.second == second else { return nil }
+        var offset = 0
+        if zone != "Z" {
+            let parts = zone.dropFirst().split(separator: ":")
+            guard parts.count == 2, let hours = Int(parts[0]), hours <= 15,
+                  let minutes = Int(parts[1]), minutes <= 59 else { return nil }
+            offset = (hours * 3600 + minutes * 60) * (zone.first == "-" ? -1 : 1)
+        }
+        let fraction = group(7).flatMap { Double("0." + $0) } ?? 0
+        return whole.addingTimeInterval(fraction - Double(offset))
+    }
+}

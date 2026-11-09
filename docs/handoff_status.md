@@ -5,6 +5,12 @@
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Client wire run-01 остановлен после замечания Review
+
+`t162-client-wire-20261109-01`: первый кандидат применён, но НЕ принят. Reviewer выявил, что новый `CollectionWireTests.swift` отсутствовал в Sources pbxproj: build/unit PASS покрывал только прежние 29 тестов. Developer repair был начат контроллером автоматически, затем управляющий процесс штатно прервал run (exit130), чтобы исправить controller-owned target membership; ни одна задача не опубликована. Кандидат APIModels/PlantsAPIClient/CollectionWireTests сохранён без объявления готовым.
+
+Контроллер выполнил `xcodegen generate --spec ios/project.yml --project ios/`: pbxproj включает новый test file (+4 строки). Подготовлен `tasks.t162-client-wire-recovery.json`: read-only полная приёмка кандидата после свежих checks с минимум 35 реальными tests, затем sync task. Следующий шаг: validate/context/diff-check, checkpoint commit/push (не acceptance), новый run `t162-client-wire-20261109-02`; прежние 29-test evidence не использовать для приёмки новых AC. Live/полный save/UI/T162 не приняты. Для будущих новых Swift-файлов controller обязан актуализировать target membership до доказательств tests.
+
 ## Продолжение T162: клиентский wire prerequisite
 
 По команде владельца «вперед» подготовлены два зависимых пакета `tools/automation/tasks.t162-client-wire.json`: typed create receipt/API с точными timestamp и затем canonical sync→существующий engine/store с disk checkpoints/owner isolation/legacy decode. Runtime ещё не изменён; tools config прежний. Сохранение через UI требует этих предпосылок и остаётся следующим отдельным пакетом, полный T162 не закрывается. Проверки подготовки: validate/context/diff-check выполняются перед запуском; build/unit/Simulator и независимые Review/QA — во время run. Live/guest/deploy не включены. Следующий шаг: commit/push подготовки, run `t162-client-wire-20261109-01`, наблюдать до результата, затем repository/save/card и UI gates.

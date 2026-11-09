@@ -1,0 +1,87 @@
+{
+  "tasks": [
+    {
+      "id": "t162-client-create-receipt-recovery",
+      "description": "Независимая read-only приёмка полного текущего кандидата typed create receipt после controller XcodeGen: предыдущий run не принят, новые тесты теперь включены в target. Читать полные implementation/test файлы несмотря на пустой diff.",
+      "risk": "medium",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Only write_files and ordinary unified diff. No tools/config/handoff/tasks/AGENTS/backend/migrations/deploy/live calls. Read constitution/current spec and collection-http.md. Preserve existing tests, historical cache decoding, public initializers where possible; no secrets or fake production successes. Do not add another sync/outbox framework. No skipped/empty tests. Controller runs real build/unit/Simulator before independent acceptance.",
+        "Add typed PlantCreateReceiptDTO matching actual required plant_id, care_revision, context_state, next_available_step, plan_availability, watermark and optional paid_action (which may be string or structured existing SQL value: inspect actual SQL). Validate required fields/types/UUID/positive revision/nonempty states. No status/operation_id/replayed invented from HTTP200. Retain legacy CommandResponseDTO and sendCommand behavior until outbox integration is explicitly adapted.",
+        "Add explicit client method sendCatalogueCreate using existing CommandEnvelopeDTO/transport/request builder. Require plant.create and canonical catalogue payload, no owner or client UUID substitution. Return authoritative receipt, propagate existing APIErrorResponse including COLLECTION_LIMIT_REACHED/conflict/503, no retry operation regeneration. Never acknowledge an outbox entry in this layer. No demo endpoints/token defaults beyond existing config.",
+        "Use robust SQL ISO timestamp decoding with fractional seconds up to six and offsets; existing Foundation Date .iso8601 default may reject SQL fractions. Preserve exact watermark string alongside parsed Date where needed, do not silently round/reencode server boundary. Keep other API decoding behavior compatible. Shared timestamp helper allowed in APIModels.swift only.",
+        "Create meaningful CollectionWireTests with PlantsAPITransport mock: exact URL/method/headers/body and operation_id stable across failed response/retry; real canonical receipt including SQL fractional timestamp, null/string paid_action and unknown harmless keys; invalid/null/malformed required fields rejected; cap/conflict/auth/503 propagate with no fabricated confirmation. Existing legacy tests must still pass. Fixture transport is not live SQL/server/UI acceptance.",
+        "Recovery READ ONLY: inspect full current candidate APIModels/PlantsAPIClient/CollectionWireTests and project target membership, not just empty diff. Require all six CollectionWireTests actually run alongside old 29 tests (35 total minimum, no skips). Missing target membership was found by prior Review; controller regenerated pbxproj. No source writes, no acceptance from old 29-test run. Existing constraints describe candidate requirements, not permission to modify code."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Typed create API correctly decodes canonical SQL receipt/timestamps and rejects invalid success, preserves operation/payload on retry, propagates errors. Meaningful unit tests and existing persistence regressions pass. Build and Simulator baseline pass; no client save/UI claim.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "t162-client-sync-wire",
+      "description": "Узкий клиентский T162 prerequisite: canonical SQL sync wire→existing store/engine, legacy cache compatible, owner explicit, точные SQL cursors/watermarks. Без save UI.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [
+        "t162-client-create-receipt-recovery"
+      ],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "supabase/migrations/202611090004_retire_free_slots.sql"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Only write_files and ordinary unified diff. No tools/config/handoff/tasks/AGENTS/backend/migrations/deploy/live calls. Read constitution/current spec and collection-http.md. Preserve existing tests, historical cache decoding, public initializers where possible; no secrets or fake production successes. Do not add another sync/outbox framework. No skipped/empty tests. Controller runs real build/unit/Simulator before independent acceptance.",
+        "Adapt production fetchSyncPage/pullDelta to canonical SQL until/has_more/last_cursor/next_since/profile/entitlement/changes with nested data or tombstone data=null; no server owner_id/items/limit invented. Owner for storing must come explicitly from authenticated caller context, never response fallback/random/default UUID. Preserve old DTO initializers and old disk/cache/fixture JSON compatibility; separate wire DTO plus mapping is acceptable if small. Retired slots/rooms not required in new profile; no forced old field defaults to revive behavior.",
+        "Preserve exact SQL timestamp strings at request/pagination/checkpoint boundary (microseconds) including last_cursor and until, since/next_since across disk restart. Existing Date-only checkpoint cannot safely round microseconds: add backward compatible optional raw checkpoint value and use it when present, legacy Date fallback only for old caches. Avoid rewriting historical values on load. Existing public Date APIs may remain as compatibility views. No millisecond Date reserialization for current SQL cursor/window. Handle SQL timezone offsets.",
+        "Use existing SyncEngine/LocalStore/outbox: stage complete pages, fixed until, stable cursor, preserve tombstones and opaque nested data as JSON. On failed/malformed page keep old cache and checkpoint/outbox. Validate has_more requires complete advancing cursor and coherent window to avoid loops or dropping changes. Reject response owner mismatch for legacy responses; for canonical response associate only explicit caller owner. Owner switch during request must not apply A data to B or send A queued action with B token; capture/validate session context/version in API client as necessary. No implicit anonymous-to-permanent transfer.",
+        "Include actual canonical profile/entitlement projection in adapted page rather than discarding it. Preserve reading historical generic entities but do not create new removed entities. Plan/report cleanup remains separate; do not change unrelated business lifecycle.",
+        "Extend CollectionWireTests with real SQL JSON pages: nested data/tombstones, empty page/profile/entitlement, fractions/offsets, two pages and exact outgoing cursor/until, malformed page/no progress, network failure mid pagination with unchanged disk store, next_since exact checkpoint through disk restart and next request, legacy page/cache decode and A/B isolation/session switch. Tests must exercise actual APIClient+SyncEngine+disk LocalStore where persistence is asserted; static string assertions or fixtures only decoding do not prove disk path. Retain first task tests. Full T162/UI/live still open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Canonical sync is consumed by real existing engine/store, preserving exact SQL boundaries through pagination and disk checkpoint/restart, tombstones and profile; failed/malformed page is atomic, outbox retained, A/B session isolation and legacy caches verified by meaningful tests.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

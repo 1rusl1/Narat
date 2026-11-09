@@ -110,6 +110,21 @@ public actor PlantsAPIClient {
         return try await execute(request, as: CommandResponseDTO.self)
     }
 
+    /// Returns only the SQL receipt. Outbox acknowledgement belongs to the sync layer.
+    public func sendCatalogueCreate(_ envelope: CommandEnvelopeDTO) async throws -> PlantCreateReceiptDTO {
+        try CatalogueCreateWire.validate(envelope)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let body = try encoder.encode(envelope)
+        let request = try buildRequest(
+            path: "commands",
+            method: "POST",
+            operationId: envelope.operationId,
+            body: body
+        )
+        return try await execute(request, as: PlantCreateReceiptDTO.self)
+    }
+
     public func fetchSyncPage(
         since: Date?,
         until: Date?,
@@ -150,5 +165,74 @@ public actor PlantsAPIClient {
             throw URLError(.badServerResponse)
         }
         return try decoder.decode(T.self, from: data)
+    }
+}
+
+public enum CatalogueCreateValidationError: Error, Sendable {
+    case invalidCommand
+    case invalidPayload
+}
+
+// Validate the catalogue subset without rewriting the caller's persisted payload.
+private enum CatalogueCreateWire {
+    private static let conditionValues: [String: Set<String>] = [
+        "light_level": ["low", "medium", "bright_indirect", "direct_sun", "unknown"],
+        "light_code": ["low", "medium", "bright_indirect", "direct_sun", "unknown"],
+        "light_source": ["manual", "unknown"],
+        "watering_habit": ["several_weekly", "weekly", "less_often", "frequent", "moderate", "sparse", "unknown"],
+        "watering_code": ["several_weekly", "weekly", "less_often", "frequent", "moderate", "sparse", "unknown"],
+        "last_watered": ["yes", "no", "within_7_days", "over_7_days", "unknown"],
+        "drainage_code": ["yes", "no", "within_7_days", "over_7_days", "unknown"],
+        "pot_type": ["terracotta", "plastic", "glazed_ceramic", "standard_drainage", "other", "unknown"]
+    ]
+
+    static func validate(_ envelope: CommandEnvelopeDTO) throws {
+        guard envelope.commandName == "plant.create", envelope.plantId == nil else {
+            throw CatalogueCreateValidationError.invalidCommand
+        }
+        guard let data = envelope.payloadJSON.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              payload["creation_source"] as? String == "catalogue",
+              fields(payload, kind: "payload") else {
+            throw CatalogueCreateValidationError.invalidPayload
+        }
+        let overrides = payload["overrides"] as? [String: Any] ?? [:]
+        guard [payload["plant_id"], payload["taxon_id"], overrides["plant_id"], overrides["taxon_id"]]
+            .contains(where: { ($0 as? String)?.isEmpty == false }) else {
+            throw CatalogueCreateValidationError.invalidPayload
+        }
+    }
+
+    private static func fields(_ object: [String: Any], kind: String) -> Bool {
+        for (key, value) in object {
+            let isNull = value is NSNull
+            if kind != "payload", let allowed = conditionValues[key] {
+                guard isNull || (value as? String).map(allowed.contains) == true else { return false }
+            } else if kind != "payload", key == "light_confirmed" {
+                // NSNumber bridges numeric 0/1 to Bool; accept only JSON booleans.
+                guard isNull || (value as? NSNumber).map({ String(cString: $0.objCType) == "c" }) == true else {
+                    return false
+                }
+            } else if kind != "conditions", ["plant_id", "personal_name", "display_name"].contains(key) {
+                guard isNull || (value as? String).map({
+                    key != "plant_id" || !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }) == true else { return false }
+            } else if kind != "conditions", key == "taxon_id" {
+                guard isNull || (value as? String).flatMap(UUID.init(uuidString:)) != nil else { return false }
+            } else if kind == "payload", key == "origin_flow_id" {
+                guard isNull || (value as? String).flatMap(UUID.init(uuidString:)) != nil else { return false }
+            } else if kind == "payload", key == "photo_id" {
+                guard isNull else { return false }
+            } else if kind == "payload", ["creation_source", "add_method"].contains(key) {
+                guard value as? String == "catalogue" else { return false }
+            } else if kind == "payload", key == "creation_intent" {
+                guard let intent = value as? String, ["care", "problem"].contains(intent) else { return false }
+            } else if kind == "payload", ["conditions", "overrides"].contains(key) {
+                guard let nested = value as? [String: Any], fields(nested, kind: key) else { return false }
+            } else {
+                return false
+            }
+        }
+        return true
     }
 }
