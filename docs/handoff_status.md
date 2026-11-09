@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-09.** Через оркестратор приняты и опубликованы компактные Condition2/Plant2 и удаление трёх неиспользуемых Swift DTO. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Это завершённый этап сокращения scope, не реализация нового runtime.
+**Обновлено 2026-11-09.** Принят и опубликован room-срез T158: SQL room retirement/плоский sync и TS/Swift overrides без комнат. Ранее приняты компактные Condition2/Plant2 и удаление трёх неиспользуемых Swift DTO. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Документальное сокращение scope завершено; принятые runtime-срезы и ограничения перечислены ниже.
 
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -88,7 +88,7 @@ Run `t157-swift-profiles-20261109-01`, manifest `tasks.t157-swift-profiles.json`
 
 **Файлы подготовки/фиксации:** `tools/automation/{tasks.t157-swift-profiles.json,t157_swift_profile_gate.py,orchestrator.config.json}`; `contracts/README.md`, `tasks.md`, этот handoff и отчёт контроллера. Подготовка `8dac563` опубликована; финальная сводка сохраняется отдельным commit/push. T157/T155 открыты, продуктовые checkbox не менялись.
 
-## Подготовка T158: комнаты
+## Подготовка T158: комнаты (история этапа)
 
 Прослежены зависимости: room CRUD SQL, plant.create, guest prepare/commit, owner_sync_entries, TS/Swift claim overrides. Подготовлены `contracts/room-retirement.md`, `tools/automation/tasks.t158-rooms.json` (SQL → клиент), `t158_rooms_gate.py` и config check. Таблицы/связи/исторические receipts сохраняются, новые room inputs явно отвергаются; sync плоский. Free slots/collection cap/квоты/expiry — отдельные следующие срезы.
 
@@ -100,15 +100,29 @@ Run `t157-swift-profiles-20261109-01`, manifest `tasks.t157-swift-profiles.json`
 
 Run `t158-rooms-20261109-01`: Developer CLI завершился timeout900с без answer/патча; SQL task WAITING, клиент PENDING. Runtime/данные этим вызовом не менялись, приёмки нет. Исходные state/logs сохранены, запуск не переписан.
 
-Управляющий процесс материализовал `202611090002_retire_rooms.sql` точно через `t158_rooms_gate.py --print-migration` и подготовил `rooms_upgrade.seed.sql`/`rooms_retirement.test.sql`: реальные два owner/legacy rooms/plant links/photo/snapshot/расход/receipts и66 pgTAP assertions. **PASS**: clean PostgreSQL17 —66; seeded upgrade —66, snapshot всех public rows до/после совпал; два реальных concurrent retries дождались owner lock, по одному plant/receipt. Все временные кластеры удалены. Первая sandbox-попытка initdb не смогла создать shared memory; повтор с разрешением системного запуска прошёл. Это локальные fixtures, не live deployment и не полный guest claim.
+Управляющий процесс материализовал `202611090002_retire_rooms.sql` точно через `t158_rooms_gate.py --print-migration` и подготовил `rooms_upgrade.seed.sql`/`rooms_retirement.test.sql`: реальные два owner/legacy rooms/plant links/photo/snapshot/расход/receipts и 66 pgTAP assertions. **PASS**: clean PostgreSQL17 — 66; seeded upgrade — 66, snapshot всех public rows до/после совпал; два реальных concurrent retries дождались owner lock, по одному plant/receipt. Все временные кластеры удалены. Первая sandbox-попытка initdb не смогла создать shared memory; повтор с разрешением системного запуска прошёл. Это локальные fixtures, не live deployment и не полный guest claim.
 
-Кандидат не принят до независимых Review/QA. Новый `tasks.t158-rooms-recovery.json`, run `t158-rooms-20261109-02`: read-only полнотекстовая SQL приёмка с повторными trusted checks → затем исходный клиентский срез. Продуктовые checkbox не менялись. После сохранения чистого Git запустить эту очередь; при finding исправление только отдельным проверяемым шагом.
+На checkpoint fbd7e18 кандидат ожидал независимых Review/QA. Новый `tasks.t158-rooms-recovery.json`, run `t158-rooms-20261109-02`: read-only полнотекстовая SQL приёмка с повторными trusted checks → затем исходный клиентский срез. Продуктовые checkbox не менялись. После сохранения чистого Git запустить эту очередь; при finding исправление только отдельным проверяемым шагом.
+
+## T158: комнаты удалены из активного контракта
+
+Run `t158-rooms-20261109-02` — обе задачи **COMPLETED / Verified and published**. SQL принят `b80a74e` (read-only полный Review/QA кандидата); клиент принят `0d8d4ee`. Все коммиты отправлены в origin/main. По одному Reviewer/QA на задачу. Клиент: первый diff не применился из-за формата, второй Developer пересобрал его; только после этого проверки/приёмка. Исходный run-01 остаётся WAITING по timeout, не объявляется завершённым.
+
+**Реализовано:** новые room CRUD и room-поля отвергаются; существующий точный receipt возвращается без нового room side effect. В plant.create/guest SQL удалены комнатные insert/link/response; в sync нет rooms/plant.room_id. TS/Swift claim writers не содержат комнат. HTTP prepare отклоняет room aliases до RPC без мутации; Swift читает старый JSON из SwiftData, сохраняет прочие поля и при повторной записи не возвращает room keys. Таблицы/старые связи/фото/расход/receipts/generic cache/outbox сохранены.
+
+**Изменённые файлы:** `supabase/migrations/202611090002_retire_rooms.sql`; `supabase/tests/{rooms_upgrade.seed.sql,rooms_retirement.test.sql}`; `supabase/functions/plants-api/claims.ts`, `_shared/tests/claim_transfer_test.ts`; `ios/Plants/Data/Remote/APIModels.swift`, `ios/PlantsTests/SyncPersistenceTests.swift`; `tools/automation/{t158_rooms_gate.py,tasks.t158-rooms.json,tasks.t158-rooms-recovery.json,orchestrator.config.json}`; `contracts/{room-retirement.md,README.md}`, `tasks.md`, этот handoff и два отчёта контроллера. Применённые SQL не изменены.
+
+**Реальные проверки:** clean PostgreSQL17 — **66 pgTAP PASS**, seeded upgrade — **66 PASS**, snapshot всех public rows до/после совпал. Два настоящих concurrent retry дождались owner lock, по одному plant/receipt; RLS A/B, pagination, media metadata и private-key exclusion проверены. SQL-срез: 257 Deno/89 automation tests PASS; итог клиента: **259 Deno PASS**, deno-check/diff-check PASS; iOS build/welcome PASS, **28 PlantsTests PASS, 0 skipped**, Simulator smoke welcome/care-navigation PASS. [SQL отчёт](validation/automation/tasks/t158-room-sql-retirement.md), [клиент](validation/automation/tasks/t158-room-client-retirement.md).
+
+**Документальные проверки финальной сводки:** локальные ссылки обновлённых документов PASS; diff-check PASS; tasks сохраняет 13 отмеченных и 124 открытых. Git diff к началу этапа показывает в migrations только новый room SQL, без изменений применённых файлов.
+
+**Ограничения:** это изолированные fixtures/auth stubs и local UI, без live Supabase/AI/StoreKit; новая миграция не применялась к staging/production. Старый положительный guest claim несовместим с таблицами/API и не принят — T159/T042/T019. Старый `supabase/tests/guest_claim.test.sql` содержит снятые room/fallback assertions и baseline gaps: не использовался для текущей приёмки, должен быть переписан вместе с T159, без удаления покрытия proof/media/receipts. Исторические generic room sync/outbox tests намеренно сохранены для чтения прежних данных. Free slots/новый collection cap/периоды/expiry ещё не менялись. T158/T155 и продуктовые checkbox остаются открытыми.
 
 ## Точный следующий шаг
 
-Перейти к ограниченному срезу **T158: плоская коллекция вместо room CRUD/Free places**. Сначала проследить реальные SQL/RPC/API/Swift consumers и составить manifest совместимого изменения; исторические комнаты/владельцев/фото/расход не удалять. Для forward migration обязательны clean/seeded upgrade PostgreSQL17/pgTAP и concurrent/retry/owner проверки; для API/iOS — Deno/PlantsTests/Simulator. Месячные правила/expiry вынести в следующий отдельный срез T158, не смешивать с удалением комнат. T159/T160 идут после соответствующих зависимостей.
+Следующий ограниченный manifest **T158: убрать Free-места и free_care.select, заменить их атомарным collection count<3 для Free / unlimited для действующего paid**. Проследить `BasicCareService.ts`, `EntitlementGate.ts`, SQL basic_care/compute_next_available_step/schedule/create writers, sync/profile projections и Swift FreeSelection/membership DTO. Исторические memberships/flags/расход не удалять. Согласовать все writers и owner-lock admission; clean/upgrade + concurrent/retry/A-B, Deno и iOS обязательны. Автоматический выбор трёх после paid expiry не возвращать; остановка ухода после expiry и месячные периоды — отдельные согласованные срезы T158. Не закрывать parent по одному RPC/build.
 
-T157 остаётся частичной: новые карточки требуют редакционной публикации и проверки интеграции с собранным клиентом/worker; текущие synthetic fixtures не подтверждают live provider/пользовательский маршрут. Нельзя закрыть T155/T157 одним build или по наличию schema2. Старые пользовательские snapshots не конвертировать в новые советы автоматически.
+T157 остаётся частичной: новые карточки требуют редакционной публикации и итоговой интеграции. T159 восстановит guest proof/семь дней/cleanup/media и заменит устаревшие assertions; T160 — простой уход. Текущие fixtures не подтверждают live фото→уход маршрут.
 
 T148 остаётся на прежней остановке до запуска следующего pipeline-среза; фактические дефекты имён/переводов/медиа перечислены в обновлённом `tools/automation/tasks.t148-pipeline.json` и [архиве handoff](archive/handoff_status_before_simplification_2026-11-09.md). Полная редакционная приёмка отдельна; минимум охвата снят, сохранность 606 карточек проверяется.
 
@@ -121,7 +135,7 @@ T148 остаётся на прежней остановке до запуска
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 137 активных задач: 13 отмечены (12 исторических + T156 документ), 124 открыты; 23 снятых. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Тарифы/expiry не изменены.
-- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по 50 pgTAP PASS, history unchanged. Компактные Condition2/Plant2 e7d2d7b/eb40f28 опубликованы: 257 Deno PASS. Три неиспользуемые Swift DTO удалены в 93d77bc: 27 PlantsTests/build/welcome/Simulator PASS. Исходный rooms run-01 WAITING по timeout без patch. Подготовлен tested SQL candidate: clean/upgrade по66 pgTAP + real owner-lock retry PASS; Review/QA ещё нужны. Запустить tasks.t158-rooms-recovery.json/run-02: read-only SQL acceptance → TS/Swift overrides; Free places/cap/квоты отдельно. PostgreSQL17/pgTAP доступен. Guest claim baseline несовместим с таблицами/API: не объявлять положительный перенос проверенным, исправление T159. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
+- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по 50 pgTAP PASS, history unchanged. Компактные Condition2/Plant2 e7d2d7b/eb40f28 опубликованы: 257 Deno PASS. Три неиспользуемые Swift DTO удалены в 93d77bc: 27 PlantsTests/build/welcome/Simulator PASS. Rooms run-02 COMPLETED: SQL b80a74e и клиент 0d8d4ee опубликованы; clean/upgrade по 66 pgTAP + real owner-lock retry, 259 Deno, 28 PlantsTests/build/welcome/Simulator PASS. Run-01 WAITING по timeout без patch сохранён. Следующий срез T158 — убрать Free slots/free_care.select и атомарно ограничить коллекцию count<3 для Free; месячные периоды/expiry отдельно. PostgreSQL17/pgTAP доступен. Guest claim baseline несовместим с таблицами/API: не объявлять положительный перенос проверенным, исправление T159. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
 - Handoff/tasks/Git изменяет только управляющий процесс. Fixtures ≠ live; снятый объём не выполнение. Субагенты не запускаются без отдельного разрешения.
 <!-- /orchestrator:project-state -->
 
@@ -130,5 +144,5 @@ T148 остаётся на прежней остановке до запуска
 
 t158-room-client-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
 Отчёт: [t158-room-client-retirement](validation/automation/tasks/t158-room-client-retirement.md).
-Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
+Продуктовые checkbox не менялись автоматически. Следующий шаг — T158 Free-места и атомарный лимит коллекции.
 <!-- /orchestrator:task-summary -->
