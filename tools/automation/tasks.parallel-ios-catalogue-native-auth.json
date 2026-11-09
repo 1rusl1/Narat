@@ -1,0 +1,51 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-native-auth",
+      "description": "Explicit current catalogue input -> native provider -> SAME SDK verified permanent session -> durable input/save continuation; no new rendered views or debug app fixtures yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthConfiguration.swift",
+        "ios/Plants/Integrations/Auth/SupabaseAuthExchange.swift",
+        "ios/Plants/Integrations/Auth/NativeIdentityProvider.swift",
+        "ios/PlantsTests/NativeAuthTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files small exact contextual diff; no newfiles/project/tools/config/handoff/tasks/AGENTS/backend/contracts/deploy/live. Accepted SDK 68d3e46/model8ba18e1/inputf53227b plus all137actual tests retained. This packet ONLY native catalogue continuation/tested helper, no SwiftUI save/card views/debug fixture yet. Existing catalogue/default unavailable/SDKhistory/source observer remain correct. Temp-free Python-c diff if needed. Existing SDK tests fixtures/harness in CatalogueConnectionTests may be extended for reuse, no new targetneeded.",
+        "Default native service must be NativeAuthConfiguration.makeService(client:SAME existing connection.client), retain real NativeIdentityProvider/SupabaseAuthExchange on that client. Source may store validated configuration/service once; injection initializer can accept fake NativeIdentityProviding for tests, constructing real SupabaseAuthExchange(SAMEclient). Never instantiate secondSDK/anonymous identity, fake provider success in production, derive permanent flag from role, synthesize owner/receipt. Typed MainActor outcome/currentflow busy guard prevents overlapping provider flows; use actual SDK account truth, no raw errors/tokens/codes in UI/state/logs/LocalStore/UserDefaults.",
+        "User save intent is explicit current GUEST catalogue model/selectedinput. NativeAuthService prepare closure must actually checkpoint/replay immutable input under ORIGINAL model boundlease BEFORE provider.credentials. Add small model checkpointInput()async throws helper using accepted LocalStore/checkpoint+publish(no lock callbacks), preserving allflow/op/payload bytes; do not merely trust cached in-memory snapshot. Capture only userchosen input/envelope/checkpoint while originalmodel accessible before auth changes redact it. Disk/preparation error means provider NEVER opens; native provider cancel/failure retains exact durableinput and guestSDK truth, no create POST. Do not make server guestdraft/proof/TTL/claim or move any oldowner queue/receipt.",
+        "Provider/SDK race: preserve NativeAuthService public behavior and trailing-closure callers, but add OPTIONAL default no-op validateBeforeExchange (before required prepareForSessionChange parameter to preserve old trailingclosure binding) if needed. Execute it AFTER credentials+Task cancellation check and BEFORE Supabase exchange. Catalogue validates original prepared SDK snapshot/epoch there; unrelated account change during provider must abort before exchange. After actual exchange require real currentSDK !isAnonymous and exact NativeSignInResult.session, unchanged intendedflow and permitted SDKevent sequence (one intended signedIn; reject unrelatedC duringexchange even if SDK ends atB). Existing SDK epoch metadata can validate preparedEpoch+1 for pinned SDK signInWithIdToken, inspect primary SDK source; do not infer from result alone or auto switchback oldSDK/token.",
+        "Only after verified current permanent result explicitly make NEW owner-fixed model for ONLY captured userchosen input, same original flow/op/frozenpayload, through accepted sourcefactory/currentSDKsnapshot. Commit newowner localinput before continuing automatic save from SAME original userintent; existing targetowner queues may resume by accepted engine, otherowner/guest queues/receipts/history never copied/claimed/mutated. Generic auth observer alone must still sendzero commands/copyzero data. Native identity change with sameUUID still uses new SDKgeneration/permanent flag; source oldmodel immutable/redacts. Returned saved only actual durable typedreceipt/model state, not signin or count; cap/servererror remains typed pending/input preserved.",
+        "Cancellation after exchange committed must keep NativeAuthService truthful (reports signedIn/currentSDK) and must NOT automatically dispatch create when caller cancelled. A bounded UNSTRUCTURED task may reconcile VERIFIED currentSDK and commit only choseninput checkpoint under newowner original context even if caller cancelled; then original caller checks Task.isCancelled BEFORE model.save. No background HTTPcreate after cancellation, no reset SDK toguest. Input-retained outcome/metadata enables explicit retry with same op/payload. If SDK changed again, failclosed and do not expose oldmodel/input. Processkill during provider/owner transition is separate gate, do not claim unless actually tested.",
+        "Add small resume metadata ONLY if needed for UI/restart: owner-scoped flowUUID pointer in injectable UserDefaults is allowed (neverpayload/credentials); write only after actual checkpointcommit and currentSDK validation. Expose guarded read for CURRENT SDK owner+flow, never scan otherowners. Native handler/cache finalization must retain pointer for successful/cancelled-after-committed login; standard metadata store isolated UserDefaults suite in tests. SQLite remains actual payload/receipt storage, no duplicate persistence framework or TTL.",
+        "Extend existing CatalogueConnectionTests with >=6 meaningful actual tests (all137old+>=6=>143/no skips). Fake IDENTITY provider only; actual NativeAuthService+SupabaseAuthExchange+same realSDK/URLProtocol/SQLite. Cover checkpoint exists on disk BEFORE provider/cancel retains it; actual readonlySQLite prep failure providercalls0; native success actualSDKpermanent exact samebody/op one durable receipt/newowner no movingotherqueues; provider/exchangefailure and invalid result keep input/no false success; realSDK ownerchanges duringprovider and exchange prevent wrongcontinuation; committed exchange + callercancel currentSDKtruth/inputcheckpoint retained/no createPOST until explicit retry; nativebusy no duplicates if useful. Retain oldNativeAuthTests/default API semantics and allSDK/modeltests; meaningful source/log checks/build/Simulator/highrisk Reviewer/QA required. This is local SDK/provider fixture, NOT live Apple/Google/Auth or renderedUI/fullT162/T149."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Real native service on SAME SDK checkpoints exact guest input before credentials and continues only verified current permanent intent, preserving input on cancellation/errors and refusing stale/mismatched SDK transitions/otherowner queue transfer; cancelled-after-commit never auto creates. All137old+>=6new =>143 actual tests/no skips/build/Simulator/independent highrisk Review/QA. Views/live/parents open.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
