@@ -5,6 +5,12 @@
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## T162 run-01: тайм-аут без патча; уменьшен следующий срез
+
+`t162-foundation-20261109-01` — WAITING, Developer 1: CLI timeout900s, answer.json отсутствует, патч не применён. Product checks/Review/QA не запускались, готовность не подтверждена. Исходные evidence сохраняются; старую очередь не resume с изменённым контрактом.
+
+Подготовлен меньший manifest `tools/automation/tasks.t019-auth-profile.json`: только fail-closed auth/profile и реальные HTTP fixtures с mocked Supabase transport. Новый check в config; исходный foundation manifest сохранён для дальнейшего разбиения adapters. Следующий шаг: validate/context/diff-check, commit/push и отдельный run `t019-auth-profile-20261109-01`. Затем command/sync и клиент; T019/T162 и продуктовые checkbox открыты. Live не запускался.
+
 ## Подготовка запуска T162 foundation — 9 ноября 2026
 
 Владелец поручил реализацию через оркестратор. Подготовлен ограниченный серверный manifest `tools/automation/tasks.t162-foundation.json`: production plant.create/catalogue и sync adapters, fail-closed auth/profile, cap/error mapping и meaningful HTTP fixtures. Новый check `t162-collection-http` в config; SQL regression использует существующий настоящий PostgreSQL cap gate. Изменены manifest/config/handoff; продуктовые checkbox не менялись. Это первый фундамент T019/T044/T162, без клиентского UI, guest claim, live/deploy и без закрытия родительских задач.

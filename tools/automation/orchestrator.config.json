@@ -460,6 +460,21 @@
       "stage": "unit",
       "mode": "fixture",
       "timeout": 120
+    },
+    "t019-auth-profile": {
+      "argv": [
+        "deno",
+        "test",
+        "--config",
+        "supabase/functions/deno.json",
+        "--allow-env",
+        "--allow-read",
+        "--allow-net=127.0.0.1,localhost",
+        "supabase/functions/_shared/tests/auth_profile_test.ts"
+      ],
+      "stage": "unit",
+      "mode": "fixture",
+      "timeout": 120
     }
   },
   "publish": {

@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t019-auth-profile-fail-closed",
+      "description": "Малый prerequisite T019/T162: закрыть fail-open defaultResolveRequestContext при отсутствующем/ошибочном profile; отдельно от command/sync и client save.",
+      "risk": "high",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/http.ts",
+        "supabase/functions/_shared/tests/persistence_unavailable_test.ts"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/tests/auth_profile_test.ts"
+      ],
+      "constraints": [
+        "Only listed write_files, normal unified git patch; no tools/config/docs/handoff/tasks/SQL/client/deploy. Read applicable constitution/spec. No live calls/credentials. No other agents. Existing API explicit dependencies, routes and T152 safety fallback must remain unchanged.",
+        "Only fix defaultResolveRequestContext profile authentication. Existing code ignores profile lookup error and defaults missing profile.account_state to active: remove that fail-open. No/malformed bearer must not reach privileged handlers. Invalid token =>401. For valid user, lookup error =>503 INTERNAL_ERROR retryable with generic EN/PL message (no raw SQL/network secret); missing profile or invalid state =>403 FORBIDDEN, deleting/deleted =>403. Active real profile continues with authoritative user ID and anonymous status. Do not accept body/query owner. Preserve health/OPTIONS bypass. Do not build command/sync adapters yet.",
+        "Add small exported dependency injection seam for auth client/fetch if required to test actual default resolver, but production uses real createClient and environment config. Do not weaken guards, change factory default into synthetic success or introduce generic auth framework.",
+        "Meaningful auth_profile_test.ts uses mocked Supabase transport/client to exercise actual default resolver through HTTP router, not replacement resolveRequestContext. Test profile errors/missing/unknown/deleting/deleted and invalid bearer cannot call supplied handleCommand/handleSync; active genuine profile yields authoritative ID to handler and valid anonymous flag. EN/PL generic errors; health/OPTIONS require no network. Tests must not skip or access real services. Existing full Deno suite remains passing. Report fixture scope, not live auth/save readiness."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Actual default auth/profile resolution rejects missing/error/invalid/deleting/deleted profiles and invalid tokens before commands/sync; valid active identity remains usable. Meaningful mocked transport HTTP tests pass without live calls.",
+          "checks": [
+            "t019-auth-profile",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Deno typecheck and diff-check pass, no command/sync or unrelated API behavior changes.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
