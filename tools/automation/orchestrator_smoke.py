@@ -34,7 +34,8 @@ def main():
         try:
             for index, tid in enumerate(("smoke-one", "smoke-one", "smoke-two")):
                 reply = {"task_id": tid, "fingerprint": "connectivity-only", "status": "PASS",
-                         "summary": "CLI smoke only", "patch": "", "decisions": [], "findings": [], "criteria": []}
+                         "summary": "CLI smoke only", "patch": "", "decisions": [], "findings": [], "criteria": [],
+                         "finding_complexity": "low"}
                 prompt = ("Only a CLI connectivity/session smoke, not a development stage. "
                           "Use no tools, do not read or change files, update handoff/tasks or run Git. "
                           "Return exactly this JSON: " + json.dumps(reply))

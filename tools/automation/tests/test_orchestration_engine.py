@@ -81,6 +81,7 @@ class EngineTests(unittest.TestCase):
         subprocess.run(["git", "init", "--bare", str(self.remote)], check=True, capture_output=True)
         git(self.root, "remote", "add", "origin", str(self.remote))
         self.config = copy.deepcopy(CONFIG)
+        self.config["acceptance"]["combined_levels"] = []  # Keep coverage of the split path below.
         self.config["checks"] = {
             "diff-check": {"argv": ["git", "diff", "--check"], "stage": "static", "mode": "local", "timeout": 10},
             "unit": {"argv": [sys.executable, "-c", "print('fixture tests PASS')"], "stage": "unit", "mode": "fixture", "timeout": 10},
@@ -139,6 +140,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("budget exhausted", engine.state.data["tasks"]["one"]["reason"])
 
     def test_qa_cannot_accept_missing_evidence(self):
+        self.config["retry"]["max_qa_cycles"] = 2
         def no_evidence(result, call, root):
             result["reply"]["criteria"] = []
         provider = FakeProvider([{}, {}, no_evidence, {}, {}, no_evidence])
@@ -173,9 +175,9 @@ class EngineTests(unittest.TestCase):
         self.assertEqual([(c["role"], c["provider"], c["model"]) for c in provider.calls], [
             ("developer", "codex", "gpt-6.1-sol"),
             ("developer", "agy", "gemini-3.8-flash-high"),
-            ("reviewer", "codex", "gpt-6-astra"),
-            ("reviewer", "agy", "gemini-4-argon-medium"),
-            ("qa", "codex", "gpt-6-astra"),
+            ("reviewer", "codex", "gpt-6.1-sol"),
+            ("reviewer", "agy", "gemini-3.8-flash-high"),
+            ("qa", "codex", "gpt-6.1-sol"),
         ])
         self.assertIsNone(provider.calls[1]["session"])
         self.assertIsNone(provider.calls[3]["session"])
@@ -409,6 +411,126 @@ class EngineTests(unittest.TestCase):
         engine = self.engine(provider, [self.task, task("two")])
         self.assertEqual(engine.execute(), {"one": "WAITING", "two": "PENDING"})
         self.assertEqual(len(provider.calls), 3)
+
+    def test_simple_task_runs_all_checks_then_one_combined_acceptance(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        def accept(result, call, root):
+            record = engine.state.data["tasks"]["one"]
+            self.assertEqual(set(record["checks"]), {"diff-check", "unit", "ui"})
+            self.assertTrue(all(c["status"] == "PASS" for c in record["checks"].values()))
+            self.assertIn("ONE combined Review/QA", call["prompt"])
+        provider = FakeProvider([patch_response(), accept])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual([c["role"] for c in provider.calls], ["developer", "acceptance"])
+        self.assertEqual(provider.calls[-1]["model"], "gpt-6.1-sol")
+        self.assertEqual(self.engine(FakeProvider()).execute(resume=True)["one"], "COMPLETED")
+
+    def test_combined_acceptance_cannot_skip_ui_evidence(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        self.task["write_files"] = []
+        def missing_ui(result, call, root):
+            result["reply"]["criteria"][1]["evidence"] = []
+        engine = self.engine(FakeProvider([missing_ui]))
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertFalse((self.root / "docs/validation/automation/tasks/one.md").exists())
+
+    def test_combined_acceptance_limit_falls_back_without_an_extra_qa_role(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        provider = FakeProvider([{}, {"status": "FAIL", "category": "limit", "error": "quota"}, {}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual([(c["role"], c["provider"]) for c in provider.calls],
+                         [("developer", "codex"), ("acceptance", "codex"), ("acceptance", "agy")])
+        self.assertIsNone(provider.calls[-1]["session"])
+        self.assertEqual(engine.state.data["tasks"]["one"]["calls"][-1]["retry"], 1)
+
+    def test_readonly_simple_task_checks_then_one_acceptance(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        self.task["write_files"] = []
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
+        self.assertEqual([c["role"] for c in provider.calls], ["acceptance"])
+
+    def test_combined_pending_push_resumes_without_new_models(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        git(self.root, "remote", "set-url", "origin", str(self.base / "missing.git"))
+        engine = self.engine(FakeProvider())
+        self.assertEqual(engine.execute()["one"], "WAITING")
+        self.assertEqual(engine.state.data["tasks"]["one"]["phase"], "publish")
+        git(self.root, "remote", "set-url", "origin", str(self.remote))
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute(resume=True)["one"], "COMPLETED")
+        self.assertEqual(provider.calls, [])
+
+    def test_failed_qa_check_prevents_combined_model_acceptance(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        self.config["checks"]["ui"]["argv"] = [sys.executable, "-c", "raise SystemExit(1)"]
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute()["one"], "BLOCKED")
+        self.assertTrue(all(call["role"] == "developer" for call in provider.calls))
+
+    def test_high_risk_keeps_separate_astra_review_and_qa(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        self.task["risk"] = "high"
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
+        self.assertEqual([(c["role"], c["model"]) for c in provider.calls], [
+            ("developer", "gpt-6.1-sol"), ("reviewer", "gpt-6-astra"), ("qa", "gpt-6-astra")])
+
+    def test_task_complexity_alone_uses_sol_for_split_acceptance(self):
+        self.task["complexity"] = "high"
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
+        self.assertTrue(all(c["model"] == "gpt-6.1-sol" for c in provider.calls))
+
+    def test_complex_finding_escalates_next_acceptance_to_fresh_astra(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        def complex_finding(result, call, root):
+            fail_response("Ambiguous data loss")(result, call, root)
+            result["reply"]["finding_complexity"] = "high"
+        provider = FakeProvider([patch_response(), complex_finding,
+                                 patch_response("after\n", "fixed\n"), {}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual(provider.calls[-1]["model"], "gpt-6-astra")
+        self.assertIsNone(provider.calls[-1]["session"])
+        self.assertIn('"acceptance_criteria"', provider.calls[-1]["prompt"])
+        self.assertIn("-before", provider.calls[-1]["prompt"])
+        self.assertEqual([c["role"] for c in provider.calls], ["developer", "acceptance", "developer", "acceptance"])
+
+    def test_repeated_findings_escalate_without_resetting_budget(self):
+        self.config["acceptance"]["combined_levels"] = ["low"]
+        provider = FakeProvider([{}, fail_response("first"), {}, fail_response("second"), {}, {}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual([c["model"] for c in provider.calls if c["role"] == "acceptance"],
+                         ["gpt-6.1-sol", "gpt-6.1-sol", "gpt-6-astra"])
+        self.assertEqual(engine.state.data["tasks"]["one"]["counts"]["acceptance"], 3)
+
+    def test_real_resume_sends_only_delta_and_errors_for_developer_and_reviewer(self):
+        provider = FakeProvider([patch_response(), fail_response("repair this"),
+                                 patch_response("after\n", "fixed\n"), {}, {}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        for call in provider.calls[2:4]:
+            payload = json.loads(call["prompt"].split("\n", 1)[1].split("\nFull task diff:", 1)[0])
+            self.assertTrue(payload["resume_delta"])
+            for field in ("acceptance_criteria", "constraints", "architecture", "project_state", "dependency_decisions"):
+                self.assertNotIn(field, payload)
+            self.assertIn("repair this", payload["errors"])
+        self.assertLess(len(provider.calls[2]["prompt"]), len(provider.calls[0]["prompt"]))
+        self.assertNotIn("-before", provider.calls[3]["prompt"])
+
+    def test_scope_evidence_is_required_even_when_not_in_criteria(self):
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        record = engine.state.data["tasks"]["one"]
+        record["fingerprint"] = "tree"
+        record["checks"] = {name: {"status": "PASS", "fingerprint": "tree"} for name in ("unit", "ui")}
+        reply = {"status": "PASS", "findings": [], "criteria": [
+            {"id": c["id"], "status": "PASS", "evidence": c["checks"]} for c in self.task["acceptance_criteria"]]}
+        self.assertFalse(engine.accepts(self.task, record, reply, "acceptance"))
 
 
 if __name__ == "__main__":

@@ -41,16 +41,16 @@
       "low": {
         "provider": "codex",
         "models": [
-          "codex:gpt-6-astra",
-          "agy:gemini-4-argon-medium"
+          "codex:gpt-6.1-sol",
+          "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
       },
       "medium": {
         "provider": "codex",
         "models": [
-          "codex:gpt-6-astra",
-          "agy:gemini-4-argon-medium"
+          "codex:gpt-6.1-sol",
+          "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
       },
@@ -67,16 +67,42 @@
       "low": {
         "provider": "codex",
         "models": [
-          "codex:gpt-6-astra",
-          "agy:gemini-4-argon-medium"
+          "codex:gpt-6.1-sol",
+          "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
       },
       "medium": {
         "provider": "codex",
         "models": [
+          "codex:gpt-6.1-sol",
+          "agy:gemini-3.8-flash-high"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "high": {
+        "provider": "codex",
+        "models": [
           "codex:gpt-6-astra",
-          "agy:gemini-4-argon-medium"
+          "agy:gemini-4-argon-high"
+        ],
+        "reasoning_effort": "high"
+      }
+    },
+    "acceptance": {
+      "low": {
+        "provider": "codex",
+        "models": [
+          "codex:gpt-6.1-sol",
+          "agy:gemini-3.8-flash-high"
+        ],
+        "reasoning_effort": "medium"
+      },
+      "medium": {
+        "provider": "codex",
+        "models": [
+          "codex:gpt-6.1-sol",
+          "agy:gemini-3.8-flash-high"
         ],
         "reasoning_effort": "medium"
       },
@@ -92,9 +118,10 @@
   },
   "retry": {
     "max_developer_attempts": 3,
-    "max_review_cycles": 2,
-    "max_qa_cycles": 2,
-    "max_same_failure": 2
+    "max_review_cycles": 3,
+    "max_qa_cycles": 3,
+    "max_same_failure": 2,
+    "max_acceptance_cycles": 3
   },
   "sessions": {
     "policy": "reuse_within_task",
@@ -396,5 +423,11 @@
     "enabled": true,
     "remote": "origin",
     "branch": "main"
+  },
+  "acceptance": {
+    "combined_levels": [
+      "low"
+    ],
+    "escalate_after_failures": 2
   }
 }

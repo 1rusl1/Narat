@@ -2,7 +2,6 @@
 """Explicit task manifests → isolated CLI agents → verification → durable acceptance."""
 
 import argparse
-from collections import defaultdict
 import json
 from pathlib import Path
 import re
@@ -13,28 +12,13 @@ import sys
 from doctor import ROOT, RUNS, BUNDLED_CODEX, exclusive_run
 from orchestration.context import make_packet, validate
 from orchestration.engine import Engine
+from orchestration.metrics import compare_reports, metrics_report
 from orchestration.provider import Agy, BUNDLED_AGY, Codex, MultiProvider
 from orchestration.storage import State
 
 
 def metrics(directory):
-    data = json.loads((directory / "state.json").read_text())
-    groups = defaultdict(lambda: {"calls": 0, "retries": 0, "prompt_bytes": 0,
-                                 "reported_tokens_by_call": [],
-                                 "unknown_usage_calls": 0, "elapsed_seconds": 0})
-    for tid, record in data["tasks"].items():
-        for call in record["calls"]:
-            prov = call.get("provider", "codex")
-            group = groups[f"{tid}/{call['agent']}/{prov}:{call['model']}"]
-            group["calls"] += 1
-            group["retries"] += int(call["retry"] > 0)
-            group["prompt_bytes"] += call["prompt_bytes"]
-            group["elapsed_seconds"] += call.get("elapsed_seconds") or 0
-            group["unknown_usage_calls"] += int(any(call.get(k) is None for k in ("input_tokens", "output_tokens", "cached_input_tokens")))
-            group["reported_tokens_by_call"].append({"id": call["id"],
-                **{key: call.get(key) for key in ("input_tokens", "output_tokens", "cached_input_tokens")},
-                "scope": call.get("usage_scope", "unspecified")})
-    return {"groups": dict(groups), "note": "Raw CLI counters are not summed: resumed sessions may report cumulative usage. Unknown is not zero. Subscription quota is not inferred from tokens."}
+    return metrics_report(json.loads((directory / "state.json").read_text()))
 
 
 def main():
@@ -43,14 +27,17 @@ def main():
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--config", type=Path, default=Path(__file__).with_name("orchestrator.config.json"))
     parser.add_argument("--run-id", default="queue")
+    parser.add_argument("--compare-run-id", action="append", default=[], help="Compare metrics for matching quality contracts")
     parser.add_argument("--task")
-    parser.add_argument("--role", choices=("developer", "reviewer", "qa"), default="developer")
+    parser.add_argument("--role", choices=("developer", "reviewer", "qa", "acceptance"), default="developer")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--codex", default=shutil.which("codex") or str(BUNDLED_CODEX))
     parser.add_argument("--agy", default=shutil.which("agy") or str(BUNDLED_AGY))
     args = parser.parse_args()
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", args.run_id):
+    if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", rid) for rid in [args.run_id, *args.compare_run_id]):
         parser.error("Invalid run ID")
+    if args.compare_run_id and args.command != "metrics":
+        parser.error("--compare-run-id is only supported for metrics")
     directory = RUNS / ("orchestrator-" + args.run_id)
     if not directory.resolve().is_relative_to(RUNS.resolve()):
         parser.error("Run path escapes evidence directory")
@@ -64,7 +51,16 @@ def main():
                               for tid, r in data["tasks"].items()}, indent=2, ensure_ascii=False))
             return 0
         if args.command == "metrics":
-            print(json.dumps(metrics(directory), indent=2, ensure_ascii=False))
+            report = metrics(directory)
+            if args.compare_run_id:
+                reports = {args.run_id: report}
+                for rid in args.compare_run_id:
+                    other = RUNS / ("orchestrator-" + rid)
+                    if not other.resolve().is_relative_to(RUNS.resolve()):
+                        raise ValueError("Comparison run path escapes evidence directory")
+                    reports[rid] = metrics(other)
+                report = compare_reports(reports)
+            print(json.dumps(report, indent=2, ensure_ascii=False))
             return 0
         if args.manifest is None:
             parser.error("--manifest is required")

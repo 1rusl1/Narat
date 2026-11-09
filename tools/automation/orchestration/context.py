@@ -103,6 +103,15 @@ def validate(config, tasks, root):
     for key in ("max_developer_attempts", "max_review_cycles", "max_qa_cycles", "max_same_failure"):
         if type(config["retry"][key]) is not int or config["retry"][key] < 1:
             raise ValueError(f"Invalid retry budget: {key}")
+    acceptance = config.get("acceptance", {})
+    if (not isinstance(acceptance.get("combined_levels", []), list)
+            or any(x != "low" for x in acceptance.get("combined_levels", []))
+            or type(acceptance.get("escalate_after_failures", 2)) is not int
+            or acceptance.get("escalate_after_failures", 2) < 1):
+        raise ValueError("Only simple low-risk tasks may combine Review/QA")
+    if acceptance.get("combined_levels"):
+        if type(config["retry"].get("max_acceptance_cycles")) is not int or config["retry"]["max_acceptance_cycles"] < 1:
+            raise ValueError("Combined acceptance needs a retry budget")
     if config["sessions"]["policy"] not in ("fresh", "reuse_within_task"):
         raise ValueError("Unknown session policy")
     for key in ("max_turns", "max_estimated_tokens", "max_input_tokens"):
@@ -111,7 +120,7 @@ def validate(config, tasks, root):
     for key in ("diff_chars", "error_chars", "max_discovered_files"):
         if type(config["context"][key]) is not int or config["context"][key] < 1:
             raise ValueError(f"Invalid context limit: {key}")
-    for role in ("developer", "reviewer", "qa"):
+    for role in ("developer", "reviewer", "qa", *(["acceptance"] if acceptance.get("combined_levels") else [])):
         for level in LEVELS:
             route = config["roles"][role][level]
             if "provider" in route and route["provider"] not in PROVIDERS:
@@ -171,6 +180,17 @@ def validate(config, tasks, root):
 
 def level(task):
     return max((task["risk"], task["complexity"]), key=LEVELS.get)
+
+
+def combined_acceptance(config, task):
+    return level(task) in config.get("acceptance", {}).get("combined_levels", [])
+
+
+def route_level(task, record, role):
+    if role == "developer":
+        return level(task)
+    # Task complexity alone does not require the expensive acceptance model.
+    return "high" if task["risk"] == "high" or record.get("acceptance_escalated") else "low"
 
 
 def selected_checks(config, task):
@@ -241,6 +261,7 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
         "test output explanations or scope limitations (put those in decisions). status=PASS requires "
         "findings=[] exactly; otherwise use FAIL/BLOCKED. Expected negative-test FAIL messages followed "
         "by unittest OK are not defects. "
+        "Always include finding_complexity (low/medium/high); use low when there are no findings. "
         "Echo task_id and fingerprint exactly. ")
     if role == "developer":
         instructions += (
@@ -260,7 +281,9 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
             "Patch must be empty. Evaluate only the task's explicit acceptance scope; no broader repository "
             "audit without a relevant risk. Inspect saved check logs before deciding evidence is unavailable. "
             "Return each criterion exactly once; evidence entries must be exact check IDs from the packet, "
-            "not descriptions or file paths. Never infer live acceptance from fixtures. ")
+            "not descriptions or file paths. Never infer live acceptance from fixtures. "
+            "For FAIL set finding_complexity=high for ambiguous cross-component, security or "
+            "data-loss defects needing expert review; routine fixes are low/medium. ")
         if role == "reviewer":
             instructions += (
                 "Inspect diff, requirements, regressions, architecture, state/error handling, performance and "
@@ -269,7 +292,34 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
                 "after your review: assess their implementation now, leaving execution to QA. Missing future "
                 "QA check results alone do not block review. PASS requires all current pre-review checks.\n")
         else:
+            if role == "acceptance":
+                instructions += (
+                    "You perform ONE combined Review/QA acceptance. Inspect the full task diff, requirements, "
+                    "regressions, architecture, state/error handling, performance and security within scope, "
+                    "AND verify saved test/UI evidence. All checks already ran. Read full_diff_path if truncated. ")
             instructions += (
                 "Inspect real evidence paths, including screenshots where relevant. PASS requires all criteria "
                 "explicitly PASS and all required check IDs as evidence. If unable to verify, return BLOCKED.\n")
     return instructions + json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def make_delta_packet(config, task, record, role, previous, current, delta, diff_path):
+    """A real session resume inherits its contract; send only changed state and errors."""
+    old_checks = previous.get("checks", {})
+    checks = {name: {k: v for k, v in result.items() if k in (
+        "status", "exit_code", "mode", "stdout", "stderr", "error", "evidence_directory")}
+        for name, result in record.get("checks", {}).items() if result != old_checks.get(name)}
+    payload = {"task_id": task["id"], "role": role, "fingerprint": record["fingerprint"],
+               "resume_delta": True,
+               "changed_files": [p for p in sorted(current.keys() | previous["files"].keys())
+                                 if current.get(p) != previous["files"].get(p)],
+               "diff": delta[:config["context"]["diff_chars"]],
+               "diff_truncated": len(delta) > config["context"]["diff_chars"],
+               "full_diff_path": str(diff_path), "checks": checks,
+               "errors": record.get("feedback", []),
+               "changes": record.get("summary", {}) if record.get("summary", {}) != previous.get("summary", {}) else {}}
+    return ("Continue the same task and role under the original acceptance criteria, constraints and output schema. "
+            "This packet contains only changes and unresolved errors since your previous turn. "
+            "Verify earlier findings against this delta; inspect the full task diff if a new risk requires it. "
+            "Echo the NEW fingerprint exactly. Return only the required JSON.\n" +
+            json.dumps(payload, ensure_ascii=False, indent=2))

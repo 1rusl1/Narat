@@ -24,6 +24,7 @@ commit/push в origin/main. Сначала сохраните текущую р�
 python3 tools/automation/orchestrator.py run --manifest /absolute/path/tasks.json --run-id work-001
 python3 tools/automation/orchestrator.py status --run-id work-001
 python3 tools/automation/orchestrator.py metrics --run-id work-001
+python3 tools/automation/orchestrator.py metrics --run-id work-001 --compare-run-id work-002
 python3 tools/automation/orchestrator.py run --manifest /absolute/path/tasks.json --run-id work-001 --resume
 ```
 
@@ -34,7 +35,13 @@ Manifest/config должны совпадать с сохранённым хеш
 
 ## Исполнение и доказательства
 
-`Developer → static/build/unit → Reviewer → QA checks → QA → публикация`.
+Для простых задач (`risk=low`, `complexity=low`):
+`Developer → static/build/unit → QA checks → одна совмещённая приёмка Review/QA → публикация`.
+Остальные задачи: `Developer → static/build/unit → Reviewer → QA checks → QA → публикация`.
+Совмещённая роль `acceptance` проверяет и код/регрессии, и фактические доказательства
+каждого критерия. Объединение не отменяет ни одного scope/AC gate и не позволяет
+принять задачу до UI/QA checks. Политика — `acceptance.combined_levels: [low]`;
+значения medium/high запрещены. Для старого split-пути задайте пустой список.
 В `verification` закреплены `owner: developer`, `before_review: [static, build, unit]`,
 `on_failure: repair_with_developer`. Developer управляет циклом подготовки и
 исправлений; контроллер исполняет команды от его имени, сохраняет exit code и логи.
@@ -44,7 +51,7 @@ PASS Developer означает готовность патча к тестам;
 шаге Developer само по себе не является BLOCKED.
 
 Для задач с пустым `write_files` действует `read_only_tasks: checks_first`:
-контроллер запускает проверки сразу, затем Review/QA, без лишнего Developer-вызова.
+контроллер запускает проверки сразу, затем выбранную приёмку, без Developer-вызова.
 Если такие проверки падают, задача BLOCKED: разрешённых файлов для исправления нет.
 
 Проверки выбираются по максимальному риску/сложности, scope и criteria.
@@ -78,11 +85,18 @@ Reviewer/QA обязаны вернуть все criteria и check IDs; неиз
 решения только явных dependencies и краткие результаты проверок. Поиск — `rg`,
 область manifest и diff. Дополнительные файлы доступны для самостоятельного чтения.
 
-Reviewer получает diff, полные criteria, результаты checks и ограничения.
-Повторное ревью low/medium получает delta с предыдущего review и прежние findings;
-полный diff доступен на диске. High risk всегда получает полный diff. Длинный
-diff в prompt ограничен `context.diff_chars`, с явным признаком обрезания и путём
-к полному файлу. Критерии/ограничения не обрезаются. История handoff не включается.
+Новая сессия Reviewer/QA/acceptance получает diff, полные criteria, результаты
+checks и ограничения. При настоящем resume той же задачи/роли/модели передаются
+только изменения файлов с прошлого вызова этой роли, новые/изменённые результаты
+checks, изменения краткого summary и ошибки. Criteria, architecture, Project State
+и dependency context повторно не пересылаются: они остаются в сессии. Ответ обязан
+повторить новый fingerprint. Полный task diff доступен по пути на диске.
+
+При смене модели, lost session, неизвестном результате после прерывания или
+compaction передаётся полный контракт: дельта допустима только для известной
+продолжаемой сессии. Высокий риск и эскалация получают полный diff в новой сессии.
+Длинный diff ограничен `context.diff_chars`, с признаком обрезания и путём к полному
+файлу; критерии в полном пакете не обрезаются. История handoff не включается.
 
 `sessions.policy`: `fresh` (ephemeral каждый вызов) или `reuse_within_task`
 (явный ID, только та же задача/роль/модель). Пороги `max_turns`,
@@ -118,14 +132,16 @@ State записывается атомарно с fsync; budget списыва�
 reset/clean/stash/force push отсутствуют. Сторонние изменения вызывают остановку.
 
 Статусы: PENDING, RUNNING, WAITING, BLOCKED, COMPLETED. COMPLETED требует
-проверок, Review, QA и успешного push. При `publish.enabled=false` результат
+проверок, выбранной приёмки Review/QA и успешного push. При `publish.enabled=false` результат
 остаётся WAITING. Неуспешная публикация останавливает очередь; причина в state.
 Проверенный отчёт/сводка handoff сохраняются с указателем на состояние публикации.
 
 ## Retry, маршрутизация, квоты
 
-По умолчанию: Developer ≤3, Review ≤2, QA ≤2 CLI-вызовов на задачу, включая
-ошибки транспорта/fallback. Одинаковая ошибка на неизменённых файлах дважды
+По умолчанию: Developer ≤3, Review ≤3, QA ≤3, совмещённая acceptance ≤3
+попыток на задачу. Ошибки транспорта расходуют budget. Разрешённый fallback при
+limit/unavailable не расходует дополнительную логическую попытку, но каждый
+фактический CLI-вызов остаётся в метриках расхода и retries. Одинаковая ошибка на неизменённых файлах дважды
 даёт BLOCKED. Бюджеты настраиваются; исчерпание не означает acceptance.
 Независимая задача может продолжиться только при чистом дереве; грязная
 незавершённая работа сохраняется и останавливает переход к изменениям другой задачи.
@@ -136,8 +152,17 @@ reset/clean/stash/force push отсутствуют. Сторонние изме
 `"codex:gpt-6.1-sol"`, `"agy:gemini-4-argon-low"`, `"agy:gemini-3.8-flash-high"`),
 обычным именем модели (тогда берётся `provider` уровня) или объектом
 `{"provider": "...", "model": "...", "reasoning_effort": "..."}`.
-Используется максимум сложности и риска. Названия моделей находятся только
-в конфигурации, а не в логике routing. Поддержаны адаптеры `codex` (ChatGPT Codex CLI)
+Developer и выбор checks используют максимум сложности и риска. Обычная приёмка
+использует Sol (`gpt-6.1-sol`, fallback `gemini-3.8-flash-high`); высокая сложность
+задачи сама по себе не включает Astra. Высокий риск (`risk=high`) или сложные
+замечания включают high route: Astra (`gpt-6-astra`, fallback `gemini-4-argon-high`).
+Ответ агента содержит `finding_complexity: low|medium|high`; high — для неоднозначных
+межкомпонентных, security/data-loss дефектов (без замечаний — low). Старые ответы
+без поля читаются совместимо. Также эскалация происходит после
+двух отказов приёмки (`acceptance.escalate_after_failures`), если не исчерпан budget
+и не сработал no-progress guard. Эскалация не сбрасывает budget, действует на все
+следующие роли приёмки задачи и создаёт новую сессию при смене модели. Названия
+моделей находятся только в конфигурации, а не в логике routing. Поддержаны адаптеры `codex` (ChatGPT Codex CLI)
 и `agy` (Gemini.app / Antigravity local hub `agentapi` с read-only профилем `research`);
 другие providers отклоняются до запуска. При переключении на fallback-модель
 с другим именем или провайдером создаётся новая сессия с сохранением структурированного
@@ -158,14 +183,28 @@ stdout/stderr и diff. Метрики — идемпотентная проек�
 без двойного учёта после crash. Команды успешных checks представлены именем,
 exit/status/временем и путями; ошибка — ограниченным excerpt с полным логом на диске.
 
-Наблюдайте task/agent/model/provider, calls, retries, review cycles, prompt_bytes,
-elapsed_seconds, task status, measured input/output/cached_input_tokens, unknown
-usage и reported quota. `estimated_prompt_tokens` хранится отдельно, с методом.
-`reported_tokens_by_call` показывает сырые счётчики, unknown_usage_calls —
-вызовы с неполной статистикой. Токены между вызовами не суммируются: на живом
-resume CLI сообщил накопительные значения, а область счётчика не гарантирована
-в JSONL-контракте. Эти значения не объявляются точным расходом отдельного turn.
-Токены не переводятся в процент пятичасового лимита подписки.
+`metrics` показывает `tasks`, `overall` и `quality_cohorts`: полные затраты и
+`per_accepted_task`. Знаменатель — только COMPLETED (проверки, приёмка и push).
+Числитель включает все вызовы, repairs/retries/fallbacks, прерванные попытки и
+непринятую работу, а также сохранённую историю времени checks. Если принятых задач
+нет, удельный расход `null`. Время прерванного вызова без результата и полная
+история checks старого state тоже не выдаются за нулевые/точные значения.
+
+`quality_contract` фиксирует описание задачи, критерии/режимы доказательств,
+ограничения, файлы, архитектуру, risk/complexity и фактические спецификации checks;
+выбор модели/число ролей в него не входят. `--compare-run-id` (можно несколько)
+сопоставляет только совпадающие контракты. Смешанный overall не доказывает экономию
+при одинаковом качестве. Совпадение контракта не заменяет продуктовую приёмку;
+fixture и live проверки остаются отдельными.
+
+Сырые input/output/cached_input_tokens сохранены в `reported_tokens_by_call`.
+Точные суммы допустимы только для явно гарантированного адаптером `per_turn` либо
+`session_cumulative` (последний счётчик каждой сессии, без двойного учёта resume).
+Текущие Codex/Agy адаптеры не гарантируют область CLI-счётчика: токеновый расход
+на принятую задачу остаётся `null`. Для сравнения доступны фактические calls,
+retries, prompt_bytes и время; `estimated_prompt_tokens` — отдельная эвристика
+UTF-8 bytes/4. Неизвестное не заменяется нулём, токены не переводятся в деньги
+или процент лимита подписки. Живую экономию нужно измерить отдельно.
 
 ## Проверка
 

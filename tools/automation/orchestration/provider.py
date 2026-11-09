@@ -135,18 +135,24 @@ REPLY_SCHEMA = {
         "summary": {"type": "string"}, "patch": {"type": "string"},
         "decisions": {"type": "array", "items": {"type": "string"}},
         "findings": {"type": "array", "description": "Only actionable unresolved defects. Must be [] for PASS; put informational notes in decisions.", "items": {"type": "string"}},
+        "finding_complexity": {"type": "string", "enum": ["low", "medium", "high"]},
         "criteria": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
             "properties": {"id": {"type": "string"},
                            "status": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
                            "evidence": {"type": "array", "items": {"type": "string"}}},
             "required": ["id", "status", "evidence"]}}},
-    "required": ["task_id", "fingerprint", "status", "summary", "patch", "decisions", "findings", "criteria"]}
+    "required": ["task_id", "fingerprint", "status", "summary", "patch", "decisions", "findings", "criteria", "finding_complexity"]}
 
 
 def validate_reply(reply, task, fingerprint):
-    if not isinstance(reply, dict) or set(reply) != set(REPLY_SCHEMA["required"]):
+    # Accept archived responses without the new hint; new CLI schemas require every property.
+    required = set(REPLY_SCHEMA["required"]) - {"finding_complexity"}
+    if (not isinstance(reply, dict) or not required <= set(reply)
+            or not set(reply) <= set(REPLY_SCHEMA["properties"])):
         raise ValueError("Invalid reply fields")
+    if "finding_complexity" in reply and reply["finding_complexity"] not in ("low", "medium", "high"):
+        raise ValueError("Invalid finding complexity")
     if reply["task_id"] != task["id"] or reply["fingerprint"] != fingerprint:
         raise ValueError("Stale response or wrong task")
     if reply["status"] not in ("PASS", "FAIL", "BLOCKED"):

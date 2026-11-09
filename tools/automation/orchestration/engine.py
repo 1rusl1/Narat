@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 import time
 
-from .context import (SUMMARY_START, SUMMARY_END, level, make_packet, route_models, selected_checks)
+from .context import (SUMMARY_START, SUMMARY_END, combined_acceptance, make_delta_packet,
+                      make_packet, route_level, route_models, selected_checks)
 from .process import error_excerpt, run
 from .repository import (apply_patch, changed_paths, contents, diff, fingerprint, git, manifest, require_clean)
 from .storage import State, atomic_json, atomic_text, checkpoint, digest
@@ -24,11 +25,14 @@ class Engine:
         for tid, record in self.state.data["tasks"].items():
             for call in record["calls"]:
                 metrics.append(json.dumps({**call, "task_id": tid, "task_status": record["status"],
-                                          "review_cycles": record["counts"].get("reviewer", 0)}, ensure_ascii=False))
+                                          "review_cycles": record["counts"].get("reviewer", 0),
+                                          "acceptance_cycles": record["counts"].get("acceptance", 0),
+                                          "quality_contract": record.get("quality_contract")}, ensure_ascii=False))
         atomic_text(self.directory / "metrics.jsonl", "\n".join(metrics) + ("\n" if metrics else ""))
 
     def budget(self, role):
-        key = {"developer": "max_developer_attempts", "reviewer": "max_review_cycles", "qa": "max_qa_cycles"}[role]
+        key = {"developer": "max_developer_attempts", "reviewer": "max_review_cycles", "qa": "max_qa_cycles",
+               "acceptance": "max_acceptance_cycles"}[role]
         return self.config["retry"][key]
 
     def stop(self, record, status, reason):
@@ -82,6 +86,11 @@ class Engine:
                               baseline_manifest=manifest(self.root),
                               base_head=git(self.root, "rev-parse", "HEAD").decode().strip(),
                               fingerprint=fingerprint(self.root))
+                record["quality_contract"] = digest({
+                    "description": task["description"], "criteria": task["acceptance_criteria"],
+                    "constraints": task["constraints"], "risk": task["risk"], "complexity": task["complexity"],
+                    "architecture": self.config["architecture"], "files": task["files"], "write_files": task["write_files"],
+                    "checks": {name: self.config["checks"][name] for name in selected_checks(self.config, task)}})
                 if not task["write_files"]:
                     record.update(phase="checks", summary={
                         "summary": "Read-only task: controller runs checks before independent Review/QA.",
@@ -155,14 +164,14 @@ class Engine:
             phase = record["phase"]
             if phase == "checks":
                 if self.checks(task, record, qa=False):
-                    record["phase"] = "reviewer"
+                    record["phase"] = "qa_checks" if combined_acceptance(self.config, task) else "reviewer"
                 elif record["status"] == "RUNNING":
                     record["phase"] = "developer"
                 self.save()
                 continue
             if phase == "qa_checks":
                 if self.checks(task, record, qa=True):
-                    record["phase"] = "qa"
+                    record["phase"] = "acceptance" if combined_acceptance(self.config, task) else "qa"
                 elif record["status"] == "RUNNING":
                     record["phase"] = "developer"
                 self.save()
@@ -209,6 +218,10 @@ class Engine:
                 if not task["write_files"]:
                     self.stop(record, "BLOCKED", "; ".join(reply["findings"]) or "Read-only acceptance failed; no writable files for repair")
                     return
+                record["acceptance_failures"] = record.get("acceptance_failures", 0) + 1
+                if (reply.get("finding_complexity") == "high" or record["acceptance_failures"] >=
+                        self.config.get("acceptance", {}).get("escalate_after_failures", 2)):
+                    record["acceptance_escalated"] = True
                 self.failure(task, record, reply["findings"] or ["Incomplete criteria/evidence; cannot accept"])
                 record["phase"] = "developer"
                 self.save()
@@ -220,6 +233,13 @@ class Engine:
     def accepts(self, task, record, reply, role):
         if reply["status"] != "PASS" or reply["findings"]:
             return False
+        # Scope checks are mandatory even when no individual criterion lists them.
+        for name in selected_checks(self.config, task):
+            if role == "reviewer" and self.config["checks"][name]["stage"] == "qa":
+                continue
+            check = record["checks"].get(name, {})
+            if check.get("status") != "PASS" or check.get("fingerprint") != record["fingerprint"]:
+                return False
         criteria = {criterion["id"]: criterion for criterion in reply["criteria"]}
         if len(criteria) != len(reply["criteria"]) or set(criteria) != {c["id"] for c in task["acceptance_criteria"]}:
             return False
@@ -230,6 +250,8 @@ class Engine:
             if role == "reviewer":
                 required = [name for name in required if self.config["checks"][name]["stage"] != "qa"]
             if report["status"] != "PASS" or not set(required) <= set(report["evidence"]):
+                return False
+            if not set(report["evidence"]) <= set(selected_checks(self.config, task)):
                 return False
             for name in required:
                 check = record["checks"].get(name, {})
@@ -275,6 +297,7 @@ class Engine:
                     [Path(result["stdout"]), Path(result["stderr"])], self.config["context"]["error_chars"]) or "Check failed"
             record["checks"][name] = summary
             summary["owner"] = "qa" if qa else self.config["verification"]["owner"]
+            record.setdefault("check_runs", []).append(dict(summary))
             self.save()
             if summary["status"] != "PASS":
                 if not task["write_files"]:
@@ -296,9 +319,13 @@ class Engine:
         if not self.state.reserve(task["id"], role, self.budget(role)):
             self.save()
             return None
-        route = self.config["roles"][role][level(task)]
+        routing_level = route_level(task, record, role)
+        route = self.config["roles"][role][routing_level]
         candidates = route_models(route)
-        model_index = record.setdefault("model_indices", {}).get(role, 0)
+        route_key = role + ":" + routing_level
+        indices = record.setdefault("model_indices", {})
+        legacy_index = indices.get(role, 0) if not record.get("acceptance_escalated") else 0
+        model_index = indices.get(route_key, legacy_index)
         selected = candidates[model_index]
         model = selected["model"]
         provider_name = selected["provider"]
@@ -307,16 +334,19 @@ class Engine:
         policy = self.config["sessions"]
         current = contents(self.root, task["write_files"])
         full_diff = diff(record["baseline"], current)
-        base = record.get("review_baseline") if role == "reviewer" and level(task) != "high" else None
-        review_diff = diff(base, current) if base is not None else full_diff
         task_dir = self.directory / task["id"]
         task_dir.mkdir(parents=True, exist_ok=True)
         atomic_text(task_dir / "task.patch", full_diff)
-        atomic_text(task_dir / "review.patch", review_diff)
         deps = [{"task_id": tid, "decisions": self.state.data["tasks"][tid]["summary"].get("decisions", [])}
                 for tid in task["depends_on"]]
-        prompt = make_packet(self.root, self.config, task, record, role, review_diff,
-                             task_dir / "review.patch", deps)
+        full_prompt = make_packet(self.root, self.config, task, record, role, full_diff,
+                                  task_dir / "task.patch", deps)
+        prompt = full_prompt
+        if previous and previous.get("snapshot"):
+            delta = diff(previous["snapshot"]["files"], current)
+            delta_path = task_dir / f"resume-{len(record['calls']) + 1}.patch"
+            atomic_text(delta_path, delta)
+            prompt = make_delta_packet(self.config, task, record, role, previous["snapshot"], current, delta, delta_path)
         prompt += f"\nFull task diff: {task_dir / 'task.patch'}\n"
         estimate = (len(prompt.encode()) + 3) // 4
         reason = None
@@ -332,15 +362,19 @@ class Engine:
         if reason:
             self.compact(task, record, role, reason)
             previous = None
+            prompt = full_prompt
+            prompt += f"\nFull task diff: {task_dir / 'task.patch'}\n"
+            estimate = (len(prompt.encode()) + 3) // 4
         seq = len(record["calls"]) + 1
         call_dir = task_dir / f"call-{seq}-{role}"
         call = {"id": f"{task['id']}:{seq}", "agent": role, "model": model, "provider": provider_name,
-                "status": "STARTED", "retry": record["counts"][role] - 1,
+                "status": "STARTED", "retry": sum(c["agent"] == role for c in record["calls"]),
                 "prompt_bytes": len(prompt.encode()), "estimated_prompt_tokens": estimate,
                 "estimate_method": "UTF-8 bytes / 4; heuristic, not measured context",
                 "input_tokens": None, "output_tokens": None, "cached_input_tokens": None,
                 "usage_source": "unknown", "quota": None, "elapsed_seconds": None,
                 "usage_scope": "CLI-reported counters; per-turn/session scope not guaranteed",
+                "routing_level": routing_level, "prompt_kind": "delta" if previous and previous.get("snapshot") else "full",
                 "resumed_session": previous["id"] if previous else None}
         record["calls"].append(call)
         record["inflight"] = {"kind": "agent", "role": role, "directory": str(call_dir)}
@@ -358,6 +392,8 @@ class Engine:
         call.update(status=result["status"], elapsed_seconds=result.get("elapsed_seconds"),
                     quota=result.get("quota"), **{k: usage.get(k) for k in ("input_tokens", "output_tokens", "cached_input_tokens")})
         call["usage_source"] = "cli_reported" if any(usage.get(k) is not None for k in ("input_tokens", "output_tokens", "cached_input_tokens")) else "unknown"
+        call["usage_scope"] = result.get("usage_scope", call["usage_scope"])
+        call["session_id"] = result.get("session_id") or (previous["id"] if previous else None)
         if fingerprint(self.root) != record["fingerprint"]:
             self.stop(record, "BLOCKED", "Read-only agent or external process modified files")
             return None
@@ -366,7 +402,7 @@ class Engine:
             call["error_category"] = category
             if category in ("limit", "unavailable") and model_index + 1 < len(candidates):
                 self.compact(task, record, role, category)
-                record["model_indices"][role] = model_index + 1
+                record["model_indices"][route_key] = model_index + 1
                 record["counts"][role] = max(0, record["counts"].get(role, 1) - 1)
                 self.save()
                 return None
@@ -382,9 +418,9 @@ class Engine:
             record["sessions"][role] = {"id": sid, "model": model, "provider": provider_name,
                                        "turns": (previous["turns"] if previous else 0) + 1,
                                        "estimated_tokens": (previous["estimated_tokens"] if previous else 0) + estimate,
-                                       "last_input_tokens": usage.get("input_tokens") or 0}
-        if role == "reviewer":
-            record["review_baseline"] = current
+                                       "last_input_tokens": usage.get("input_tokens") or 0,
+                                       "snapshot": {"files": current, "checks": json.loads(json.dumps(record["checks"])),
+                                                    "summary": dict(record.get("summary", {}))}}
         self.save()
         return result["reply"]
 
@@ -394,7 +430,9 @@ class Engine:
             if not record.get("publication"):
                 if fingerprint(self.root) != record["fingerprint"]:
                     raise ValueError("Files changed after QA")
-                if not record.get("qa_result") or not self.accepts(task, record, record["qa_result"], "qa"):
+                acceptance_role = "acceptance" if combined_acceptance(self.config, task) else "qa"
+                result = record.get(acceptance_role + "_result")
+                if not result or not self.accepts(task, record, result, acceptance_role):
                     raise ValueError("Missing verified QA acceptance")
                 allowed = set(task["write_files"])
                 if not set(changed_paths(self.root)) <= allowed:

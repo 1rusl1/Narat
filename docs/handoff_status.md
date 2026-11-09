@@ -1,9 +1,25 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-09.** Принят и опубликован room-срез T158: SQL room retirement/плоский sync и TS/Swift overrides без комнат. Ранее приняты компактные Condition2/Plant2 и удаление трёх неиспользуемых Swift DTO. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Документальное сокращение scope завершено; принятые runtime-срезы и ограничения перечислены ниже.
+**Обновлено 2026-11-09.** Применена оптимизация оркестратора: совмещённая приёмка простых задач, Sol/Astra по риску и замечаниям, delta-resume и расход на принятую задачу; 115 automation tests PASS на fixtures. Живая экономия пока не измерена. Принят и опубликован room-срез T158: SQL room retirement/плоский sync и TS/Swift overrides без комнат. Ранее приняты компактные Condition2/Plant2 и удаление трёх неиспользуемых Swift DTO. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Документальное сокращение scope завершено; принятые runtime-срезы и ограничения перечислены ниже.
 
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Оптимизация оркестратора — 2026-11-09
+
+**Выполнено:** для `risk=low/complexity=low` включён путь Developer → все автоматические проверки (включая QA/UI) → одна независимая совмещённая Review/QA (`acceptance`). Остальные задачи сохраняют раздельную приёмку. Обычная приёмка — Sol с существующим разрешённым Flash fallback; высокий риск, `finding_complexity=high` или два отказа приёмки включают Astra/high route. Эскалация не сбрасывает бюджеты; no-progress guard сохранён. Для приёмки предусмотрено до трёх попыток, чтобы после повторных замечаний оставалась попытка эксперта. Scope/AC checks и актуальный fingerprint обязательны при публикации.
+
+**Resume:** только для известной той же сессии/роли/модели передаются delta файлов с предыдущего вызова, изменённые результаты checks, summary и ошибки. Criteria/architecture/Project State не дублируются. Смена модели, compaction, lost session и неизвестный результат прерывания требуют полного контракта/диффа в новой сессии. Новый `finding_complexity` включён в полную JSON schema и connectivity smoke; чтение старых ответов сохранено.
+
+**Расход:** `metrics` считает все фактические вызовы, повторы, fallback и непринятую работу на число COMPLETED задач; хранится история check runs. Ноль принятых задач, неизвестное время и неоднозначная область токенового счётчика дают `null`. `--compare-run-id` сопоставляет только одинаковые `quality_contract` (задача, scope/criteria/evidence modes, constraints, architecture и команды checks); выбор моделей/число ролей не меняет контракт. Старые records без контракта не объединяются для сравнения. Текущие CLI не гарантируют per-turn/cumulative scope: точный токеновый расход/денежная экономия не заявлены.
+
+**Изменённые файлы:** `tools/automation/orchestration/{context,engine,provider,metrics}.py`, `tools/automation/{orchestrator.py,orchestrator.config.json,orchestrator_smoke.py,ORCHESTRATOR.md}`, `tools/automation/tests/test_orchestration_{context,engine,provider,metrics}.py`, этот handoff. `specs/001-plants-ios-mvp/tasks.md` не изменён: это инфраструктурный этап, продуктовые сценарии/checkbox им не принимаются.
+
+**Реально запущенные проверки:** финальный `python3 -m unittest discover -s tools/automation/tests -q` — **115 tests PASS / OK** (fixtures, fake CLI, реальные subprocess checks и временные Git/bare origin). В том числе оба пути приёмки, repair до приёмки, обязательные UI/scope evidence, Sol→Astra/fallback, budgets/no-progress, delta-resume, crash recovery/commit/push, подсчёт всех попыток, unknown/cumulative counters и CLI сравнения. Программный `validate` всех **14** `tasks*.json` — PASS; `context --role acceptance` — PASS (полные criteria и новая schema instruction). `metrics --run-id t158-rooms-20261109-02` — PASS как read-only проекция существующего state: две COMPLETED задачи, неизвестный токеновый расход сохранён. `git diff --check` — PASS.
+
+**Живые интеграции/ограничения:** новые вызовы Codex/Agy, backend/AI/БД, iOS/Simulator и реальная продуктовая очередь не запускались. Чтение старого state не является новой живой приёмкой. Экономия и одинаковое фактическое качество нового маршрута ещё не измерены; fixture PASS не доказывает их. Изменённый config требует нового run-id; старые незавершённые runs нельзя resume с новым config hash.
+
+**Точный следующий шаг:** для замера подготовить две изолированные одинаковые исходные копии и одинаковый ограниченный scope/AC/checks: старый split (`combined_levels: []`) и новый combined, с новыми run-id; после приёмки обоих сравнить `metrics --run-id <split> --compare-run-id <combined>`, отдельно учитывая live/fixture режимы и unknown usage. Следующий продуктовый этап остаётся подготовкой manifest/gate T161 перед T158 collection cap; T155/T157–T160 и T161–T174 этим этапом не закрыты.
 
 ## Выполнено
 
@@ -167,13 +183,12 @@ T148 остаётся на прежней остановке до запуска
 - 151 задача: 13 отмечены (12 исторических + T156 документ), 138 открыты; 23 снятых. Из открытых T172–T174 — отдельные необязательные комнаты; пакеты T161–T174 описаны в orchestrator-cleanup-tasks.md, executable manifests/gates готовятся перед запуском. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Тарифы/expiry не изменены.
 - T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по 50 pgTAP PASS, history unchanged. Компактные Condition2/Plant2 e7d2d7b/eb40f28 опубликованы: 257 Deno PASS. Три неиспользуемые Swift DTO удалены в 93d77bc: 27 PlantsTests/build/welcome/Simulator PASS. Rooms run-02 COMPLETED: SQL b80a74e и клиент 0d8d4ee опубликованы; clean/upgrade по 66 pgTAP + real owner-lock retry, 259 Deno, 28 PlantsTests/build/welcome/Simulator PASS. Run-01 WAITING по timeout без patch сохранён. Следующий срез T158 — убрать Free slots/free_care.select и атомарно ограничить коллекцию count<3 для Free; месячные периоды/expiry отдельно. PostgreSQL17/pgTAP доступен. Guest claim baseline несовместим с таблицами/API: не объявлять положительный перенос проверенным, исправление T159. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
+- Оркестратор: простые low/low задачи проходят все checks и одну совмещённую Review/QA на Sol; высокий риск/сложные или повторные замечания — Astra. Resume известной сессии передаёт delta/errors; свежая сессия — полный контракт. Metrics включает все повторы на COMPLETED и сравнивает только одинаковый quality_contract. 115 automation fixtures PASS; live экономия не измерена. Для нового config нужен новый run-id.
 - Handoff/tasks/Git изменяет только управляющий процесс. Fixtures ≠ live; снятый объём не выполнение. Субагенты не запускаются без отдельного разрешения.
 <!-- /orchestrator:project-state -->
 
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t158-room-client-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [t158-room-client-retirement](validation/automation/tasks/t158-room-client-retirement.md).
-Продуктовые checkbox не менялись автоматически. Следующий шаг — T158 Free-места и атомарный лимит коллекции.
+Оптимизация оркестратора: combined Review/QA для low/low, Sol/Astra escalation, delta-resume и метрики на принятую задачу реализованы. 115 automation tests PASS; все 14 manifests валидны; новое context и чтение старых metrics PASS. Живые модели/продуктовый run не запускались; экономия не измерена. Продуктовые checkbox не менялись. Следующий инфраструктурный шаг — сопоставимый split/combined замер в изолированных копиях; продуктовый — manifest/gate T161.
 <!-- /orchestrator:task-summary -->

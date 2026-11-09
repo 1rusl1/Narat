@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from orchestration.context import (PROJECT_START, PROJECT_END, make_packet, route_models, safe_path,
-                                   selected_checks, validate, level)
+                                   selected_checks, validate, level, combined_acceptance, route_level)
 from orchestration.storage import State, checkpoint
 
 CONFIG = json.loads((Path(__file__).resolve().parents[1] / "orchestrator.config.json").read_text())
@@ -78,6 +78,32 @@ class ContextTests(unittest.TestCase):
     def test_risk_can_only_increase_model_level(self):
         self.task.update(risk="high", complexity="low")
         self.assertEqual(level(self.task), "high")
+
+    def test_only_simple_tasks_combine_acceptance(self):
+        self.assertTrue(combined_acceptance(self.config, self.task))
+        for key in ("risk", "complexity"):
+            altered = {**self.task, key: "medium"}
+            self.assertFalse(combined_acceptance(self.config, altered))
+        self.config["acceptance"]["combined_levels"] = ["high"]
+        with self.assertRaises(ValueError):
+            validate(self.config, [self.task], self.root)
+
+    def test_acceptance_routing_uses_risk_and_escalation(self):
+        self.task["complexity"] = "high"
+        self.assertEqual(route_level(self.task, self.record, "developer"), "high")
+        self.assertEqual(route_level(self.task, self.record, "qa"), "low")
+        self.record["acceptance_escalated"] = True
+        self.assertEqual(route_level(self.task, self.record, "qa"), "high")
+
+    def test_combined_acceptance_budget_and_escalation_are_validated(self):
+        for key, value in (("escalate_after_failures", 0), ("escalate_after_failures", True)):
+            config = copy.deepcopy(self.config)
+            config["acceptance"][key] = value
+            with self.assertRaises(ValueError):
+                validate(config, [self.task], self.root)
+        self.config["retry"]["max_acceptance_cycles"] = 0
+        with self.assertRaises(ValueError):
+            validate(self.config, [self.task], self.root)
 
     def test_ios_scope_cannot_drop_required_gates(self):
         self.task["write_files"] = ["ios/file.swift"]

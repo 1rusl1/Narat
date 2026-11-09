@@ -99,6 +99,16 @@ print(json.dumps({"type":"turn.completed", "usage":{"input_tokens":12,"output_to
                                ("timeout", "timeout"), ("unexpected exit", "cli_error")):
             self.assertEqual(classify(text), category)
 
+    def test_optional_complex_finding_is_validated_without_breaking_old_replies(self):
+        reply = {"task_id": "one", "fingerprint": "hash", "status": "FAIL", "summary": "needs expert",
+                 "patch": "", "decisions": [], "findings": ["Ambiguous cross-component failure"], "criteria": []}
+        self.assertEqual(validate_reply(reply, task(), "hash"), reply)
+        reply["finding_complexity"] = "high"
+        self.assertEqual(validate_reply(reply, task(), "hash")["finding_complexity"], "high")
+        reply["finding_complexity"] = "unknown"
+        with self.assertRaises(ValueError):
+            validate_reply(reply, task(), "hash")
+
     def test_stale_response_is_rejected(self):
         reply = {"task_id": "two", "fingerprint": "old", "status": "PASS", "summary": "", "patch": "",
                  "decisions": [], "findings": [], "criteria": []}
