@@ -38,6 +38,24 @@ public final class LocalOutboxRecord {
     }
 }
 
+/// Local association only: the receipt remains the server's authoritative DTO.
+@Model
+public final class CatalogueCreateConfirmationRecord {
+    @Attribute(.unique) public var compositeKey: String
+    public var ownerId: UUID
+    public var operationId: UUID
+    public var payloadJSON: String
+    public var receiptJSON: String
+
+    public init(ownerId: UUID, operationId: UUID, payloadJSON: String, receiptJSON: String) {
+        self.compositeKey = "\(ownerId.uuidString.lowercased()):\(operationId.uuidString.lowercased())"
+        self.ownerId = ownerId
+        self.operationId = operationId
+        self.payloadJSON = payloadJSON
+        self.receiptJSON = receiptJSON
+    }
+}
+
 @Model
 public final class GuestDraftCacheRecord {
     @Attribute(.unique) public var draftId: UUID
@@ -197,6 +215,20 @@ public struct OutboxEntrySnapshot: Codable, Sendable, Equatable {
     }
 }
 
+public struct CatalogueCreateConfirmationSnapshot: Sendable, Equatable {
+    public let ownerId: UUID
+    public let operationId: UUID
+    public let payloadJSON: String
+    public let receipt: PlantCreateReceiptDTO
+}
+
+enum CatalogueCreateAcknowledgementError: Error, Sendable, Equatable {
+    case invalidCommand
+    case missingQueuedOperation
+    case queuedCommandMismatch
+    case confirmationConflict
+}
+
 public struct GuestDraftCacheSnapshot: Codable, Sendable, Equatable {
     public var draftId: UUID
     public var flowState: AddFlowState
@@ -235,6 +267,7 @@ public actor LocalStore {
     ) throws -> ModelContainer {
         let schema = Schema([
             LocalOutboxRecord.self,
+            CatalogueCreateConfirmationRecord.self,
             GuestDraftCacheRecord.self,
             SyncedEntityRecord.self,
             SyncCheckpointRecord.self
@@ -330,6 +363,88 @@ public actor LocalStore {
                 lastError: $0.lastError,
                 createdAt: $0.createdAt
             )
+        }
+    }
+
+    /// Reads committed storage, including immediately after an isolated acknowledgement.
+    public func catalogueCreateConfirmation(
+        ownerId: UUID, operationId: UUID
+    ) throws -> CatalogueCreateConfirmationSnapshot? {
+        let context = makeSyncContext()
+        let descriptor = FetchDescriptor<CatalogueCreateConfirmationRecord>(
+            predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+        )
+        guard let record = try context.fetch(descriptor).first else { return nil }
+        return CatalogueCreateConfirmationSnapshot(
+            ownerId: record.ownerId, operationId: record.operationId, payloadJSON: record.payloadJSON,
+            receipt: try JSONDecoder().decode(PlantCreateReceiptDTO.self, from: Data(record.receiptJSON.utf8))
+        )
+    }
+
+    /// Receipt insertion and deletion of the original command share one disk save.
+    /// A receipt watermark is deliberately never published as a sync checkpoint.
+    func acknowledgeCatalogueCreate(
+        _ envelope: CommandEnvelopeDTO, receipt: PlantCreateReceiptDTO,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withValid(context) {
+            guard context.session != nil else { throw SyncWireValidationError.invalidSession }
+            guard envelope.commandName == "plant.create", envelope.plantId == nil else {
+                throw CatalogueCreateAcknowledgementError.invalidCommand
+            }
+            let ownerId = context.ownerId
+            let operationId = envelope.operationId
+            let modelContext = makeSyncContext()
+            do {
+                let confirmations = FetchDescriptor<CatalogueCreateConfirmationRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+                )
+                let prior = try modelContext.fetch(confirmations).first
+                if let prior {
+                    let originalReceipt = try JSONDecoder().decode(
+                        PlantCreateReceiptDTO.self, from: Data(prior.receiptJSON.utf8)
+                    )
+                    guard prior.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8),
+                          originalReceipt == receipt,
+                          originalReceipt.contextState.utf8.elementsEqual(receipt.contextState.utf8),
+                          originalReceipt.nextAvailableStep.utf8.elementsEqual(receipt.nextAvailableStep.utf8),
+                          originalReceipt.planAvailability.utf8.elementsEqual(receipt.planAvailability.utf8),
+                          originalReceipt.paidAction.map({ Data($0.utf8) }) ==
+                            receipt.paidAction.map({ Data($0.utf8) }) else {
+                        throw CatalogueCreateAcknowledgementError.confirmationConflict
+                    }
+                }
+
+                let commands = FetchDescriptor<LocalOutboxRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+                )
+                guard let queued = try modelContext.fetch(commands).first else {
+                    // A missing command is safe only when durable evidence proves exact replay.
+                    guard prior != nil else {
+                        throw CatalogueCreateAcknowledgementError.missingQueuedOperation
+                    }
+                    return
+                }
+                guard queued.ownerId == ownerId else { throw SyncWireValidationError.invalidSession }
+                guard queued.commandName == envelope.commandName,
+                      queued.plantId == envelope.plantId,
+                      queued.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                    throw CatalogueCreateAcknowledgementError.queuedCommandMismatch
+                }
+                if prior == nil {
+                    let receiptJSON = String(decoding: try JSONEncoder().encode(receipt), as: UTF8.self)
+                    modelContext.insert(CatalogueCreateConfirmationRecord(
+                        ownerId: ownerId, operationId: operationId,
+                        payloadJSON: envelope.payloadJSON, receiptJSON: receiptJSON
+                    ))
+                }
+                modelContext.delete(queued)
+                try Task.checkCancellation()
+                try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                throw error
+            }
         }
     }
 

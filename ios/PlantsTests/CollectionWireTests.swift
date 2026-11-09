@@ -695,7 +695,8 @@ extension CollectionWireTests {
     private func diskContainer(_ url: URL, allowsSave: Bool = true) throws -> ModelContainer {
         let schema = Schema([
             LocalOutboxRecord.self, GuestDraftCacheRecord.self,
-            SyncedEntityRecord.self, SyncCheckpointRecord.self
+            SyncedEntityRecord.self, SyncCheckpointRecord.self,
+            CatalogueCreateConfirmationRecord.self
         ])
         return try ModelContainer(for: schema, configurations: [
             ModelConfiguration(schema: schema, url: url, allowsSave: allowsSave)
@@ -1203,5 +1204,457 @@ extension CollectionWireTests {
         let pendingB = try await reopened.pendingOutboxEntries(for: otherSyncOwner)
         XCTAssertTrue(pendingA.isEmpty)
         XCTAssertEqual(pendingB, [outbox[1]])
+    }
+}
+
+extension CollectionWireTests {
+    private func createCommand(operationId: UUID = UUID()) -> CommandEnvelopeDTO {
+        CommandEnvelopeDTO(
+            operationId: operationId, commandName: "plant.create",
+            payloadJSON: #"{ "creation_source":"catalogue", "plant_id":"fixture_collection_cap", "display_name":"żółty", "photo_id":null }"#
+        )
+    }
+
+    private func decodedCreateReceipt(_ changes: [String: Any] = [:]) throws -> PlantCreateReceiptDTO {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(receiptJSON().utf8)) as? [String: Any])
+        object.merge(changes) { _, replacement in replacement }
+        return try JSONDecoder().decode(
+            PlantCreateReceiptDTO.self, from: JSONSerialization.data(withJSONObject: object)
+        )
+    }
+
+    @MainActor
+    private func queueCreate(
+        _ command: CommandEnvelopeDTO, ownerId: UUID, in store: LocalStore
+    ) async throws -> OutboxEntrySnapshot {
+        try await store.enqueueCommand(
+            operationId: command.operationId, ownerId: ownerId, plantId: command.plantId,
+            commandName: command.commandName, payloadJSON: command.payloadJSON
+        )
+    }
+
+    @MainActor
+    private func assertCreateStillPending(
+        _ url: URL, store: LocalStore, outbox: [OutboxEntrySnapshot], create: OutboxEntrySnapshot
+    ) async throws {
+        for inspected in [store, LocalStore(modelContainer: try diskContainer(url))] {
+            for (index, owner) in [syncOwner, otherSyncOwner].enumerated() {
+                let pending = try await inspected.pendingOutboxEntries(for: owner)
+                let confirmation = try await inspected.catalogueCreateConfirmation(
+                    ownerId: owner, operationId: create.operationId
+                )
+                XCTAssertEqual(pending, [outbox[index]] + (index == 0 ? [create] : []))
+                XCTAssertNil(confirmation)
+            }
+        }
+        try await assertSeedUnchanged(url, outbox: outbox, extraA: [create])
+    }
+
+    @MainActor
+    func testCreateAcknowledgementCommitsReceiptAndOnlyOriginalCommandAcrossReopen() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let command = createCommand()
+        let receipt = try decodedCreateReceipt()
+        let api = client(CatalogueTransport([]))
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let create = try await queueCreate(command, ownerId: syncOwner, in: store)
+        let oldProfile = try await store.syncedProfile(ownerId: syncOwner)
+        let oldRights = try await store.syncedEntitlement(ownerId: syncOwner)
+        let oldItems = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+        try await assertCreateStillPending(url, store: store, outbox: outbox, create: create)
+
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receipt, context: lease, authority: api.syncAuthority
+        )
+        for inspected in [store, LocalStore(modelContainer: try diskContainer(url))] {
+            let value = try await inspected.catalogueCreateConfirmation(
+                ownerId: syncOwner, operationId: command.operationId
+            )
+            let saved = try XCTUnwrap(value)
+            XCTAssertEqual(saved.ownerId, syncOwner)
+            XCTAssertEqual(saved.operationId, command.operationId)
+            XCTAssertTrue(saved.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8))
+            XCTAssertEqual(saved.receipt, receipt)
+            XCTAssertEqual(saved.receipt.plantId, serverPlantId)
+            XCTAssertEqual(saved.receipt.careRevision, 1)
+            XCTAssertEqual(saved.receipt.contextState, "current")
+            XCTAssertEqual(saved.receipt.nextAvailableStep, "enable_basic_care")
+            XCTAssertEqual(saved.receipt.paidAction, "generate_full_routine_plan")
+            XCTAssertEqual(saved.receipt.planAvailability, "available")
+            XCTAssertEqual(saved.receipt.watermarkRaw, timestamp)
+            // Exact replay succeeds even after the queued command has disappeared.
+            try await inspected.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: lease, authority: api.syncAuthority
+            )
+            let afterReplay = try await inspected.catalogueCreateConfirmation(
+                ownerId: syncOwner, operationId: command.operationId
+            )
+            let pending = try await inspected.pendingOutboxEntries(for: syncOwner)
+            let raw = try await inspected.currentWatermarkRaw(ownerId: syncOwner)
+            let date = try await inspected.currentWatermark(ownerId: syncOwner)
+            let profile = try await inspected.syncedProfile(ownerId: syncOwner)
+            let rights = try await inspected.syncedEntitlement(ownerId: syncOwner)
+            let items = try await inspected.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+            XCTAssertEqual(afterReplay, saved)
+            XCTAssertEqual(pending, [outbox[0]])
+            XCTAssertEqual(raw, syncSince)
+            XCTAssertEqual(date, SQLTimestamp.date(from: syncSince))
+            XCTAssertEqual(profile, oldProfile)
+            XCTAssertEqual(rights, oldRights)
+            XCTAssertEqual(items, oldItems)
+        }
+        try await assertSeedUnchanged(url, outbox: outbox)
+    }
+
+    @MainActor
+    func testCreateAcknowledgementRejectsQueueMismatchAndEveryReceiptConflict() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let command = createCommand()
+        let create = try await queueCreate(command, ownerId: syncOwner, in: store)
+        let wrongTarget = try await store.enqueueCommand(
+            ownerId: syncOwner, plantId: serverPlantId, commandName: "plant.create",
+            payloadJSON: command.payloadJSON
+        )
+        let receipt = try decodedCreateReceipt()
+        let api = client(CatalogueTransport([]))
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let invalid: [(CommandEnvelopeDTO, CatalogueCreateAcknowledgementError)] = [
+            (CommandEnvelopeDTO(operationId: command.operationId, commandName: "care.record",
+                                payloadJSON: command.payloadJSON), .invalidCommand),
+            (CommandEnvelopeDTO(operationId: command.operationId, commandName: "plant.create",
+                                plantId: serverPlantId, payloadJSON: command.payloadJSON), .invalidCommand),
+            (CommandEnvelopeDTO(operationId: command.operationId, commandName: "plant.create",
+                                payloadJSON: command.payloadJSON + " "), .queuedCommandMismatch),
+            (createCommand(operationId: operationId), .queuedCommandMismatch),
+            (createCommand(operationId: wrongTarget.operationId), .queuedCommandMismatch),
+            (createCommand(), .missingQueuedOperation)
+        ]
+        for (attempt, expected) in invalid {
+            do {
+                try await store.acknowledgeCatalogueCreate(
+                    attempt, receipt: receipt, context: lease, authority: api.syncAuthority
+                )
+                XCTFail("A different or missing queued command must not be acknowledged")
+            } catch let error as CatalogueCreateAcknowledgementError {
+                XCTAssertEqual(error, expected)
+            }
+            let confirmation = try await store.catalogueCreateConfirmation(
+                ownerId: syncOwner, operationId: attempt.operationId
+            )
+            XCTAssertNil(confirmation)
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(pending, [outbox[0], create, wrongTarget])
+        }
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receipt, context: lease, authority: api.syncAuthority
+        )
+        let original = try await store.catalogueCreateConfirmation(
+            ownerId: syncOwner, operationId: command.operationId
+        )
+        XCTAssertNotNil(original)
+        // Swift String equality normalizes Unicode; association metadata must compare bytes.
+        let decomposed = command.payloadJSON.replacingOccurrences(of: "ż", with: "z\u{307}")
+        XCTAssertEqual(decomposed, command.payloadJSON)
+        XCTAssertFalse(decomposed.utf8.elementsEqual(command.payloadJSON.utf8))
+        for payload in [command.payloadJSON + " ", decomposed] {
+            do {
+                try await store.acknowledgeCatalogueCreate(
+                    CommandEnvelopeDTO(operationId: command.operationId, commandName: "plant.create",
+                                       payloadJSON: payload),
+                    receipt: receipt, context: lease, authority: api.syncAuthority
+                )
+                XCTFail("Changed original payload must conflict after removal")
+            } catch CatalogueCreateAcknowledgementError.confirmationConflict {}
+        }
+        let changes: [[String: Any]] = [
+            ["plant_id": otherSyncOwner.uuidString], ["care_revision": 2],
+            ["context_state": "stale"], ["next_available_step": "review_conditions"],
+            ["paid_action": NSNull()], ["plan_availability": "unavailable"],
+            // Same instant, different exact SQL spelling is still a different receipt.
+            ["watermark": "2026-11-03T11:00:00.999999+02:00"]
+        ]
+        for change in changes {
+            do {
+                try await store.acknowledgeCatalogueCreate(
+                    command, receipt: decodedCreateReceipt(change), context: lease, authority: api.syncAuthority
+                )
+                XCTFail("A different server receipt must not overwrite confirmation")
+            } catch CatalogueCreateAcknowledgementError.confirmationConflict {}
+        }
+        for inspected in [store, LocalStore(modelContainer: try diskContainer(url))] {
+            let saved = try await inspected.catalogueCreateConfirmation(
+                ownerId: syncOwner, operationId: command.operationId
+            )
+            let pending = try await inspected.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(saved, original)
+            XCTAssertEqual(pending, [outbox[0], wrongTarget])
+        }
+        try await assertSeedUnchanged(url, outbox: outbox, extraA: [wrongTarget])
+    }
+
+    @MainActor
+    func testCreateConfirmationOwnerNamespacesPermitSameOperationWithoutCrossAcknowledgement() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let command = createCommand()
+        let create = try await queueCreate(command, ownerId: syncOwner, in: store)
+        let receiptA = try decodedCreateReceipt()
+        let api = client(CatalogueTransport([]))
+        let sessionB = NativeAuthSession(
+            userId: otherSyncOwner, accessToken: "owner-b-token", expiresAt: .distantFuture
+        )
+        await api.bindSyncSession(sessionB)
+        let leaseB = try await api.captureSyncContext(ownerId: otherSyncOwner)
+        do {
+            try await store.acknowledgeCatalogueCreate(
+                command, receipt: receiptA, context: leaseB, authority: api.syncAuthority
+            )
+            XCTFail("B must not acknowledge A's queue")
+        } catch CatalogueCreateAcknowledgementError.missingQueuedOperation {}
+        try await assertCreateStillPending(url, store: store, outbox: outbox, create: create)
+
+        await api.bindSyncSession(syncSession)
+        let leaseA = try await api.captureSyncContext(ownerId: syncOwner)
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receiptA, context: leaseA, authority: api.syncAuthority
+        )
+        await api.bindSyncSession(sessionB)
+        let currentB = try await api.captureSyncContext(ownerId: otherSyncOwner)
+        let hidden = try await store.catalogueCreateConfirmation(
+            ownerId: otherSyncOwner, operationId: command.operationId
+        )
+        XCTAssertNil(hidden)
+        do {
+            try await store.acknowledgeCatalogueCreate(
+                command, receipt: receiptA, context: currentB, authority: api.syncAuthority
+            )
+            XCTFail("A's receipt cannot prove a missing B operation")
+        } catch CatalogueCreateAcknowledgementError.missingQueuedOperation {}
+        // Keep the historical global outbox uniqueness, then reuse its freed UUID for B.
+        let queuedB = try await queueCreate(command, ownerId: otherSyncOwner, in: store)
+        XCTAssertEqual(queuedB.ownerId, otherSyncOwner)
+        let replayAPI = client(CatalogueTransport([]))
+        await replayAPI.bindSyncSession(syncSession)
+        let replayLease = try await replayAPI.captureSyncContext(ownerId: syncOwner)
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receiptA, context: replayLease, authority: replayAPI.syncAuthority
+        )
+        let stillPendingB = try await store.pendingOutboxEntries(for: otherSyncOwner)
+        let stillHiddenB = try await store.catalogueCreateConfirmation(
+            ownerId: otherSyncOwner, operationId: command.operationId
+        )
+        XCTAssertEqual(stillPendingB, [outbox[1], queuedB])
+        XCTAssertNil(stillHiddenB)
+        let receiptB = try decodedCreateReceipt([
+            "plant_id": otherSyncOwner.uuidString, "paid_action": NSNull(),
+            "context_state": "needs_review", "plan_availability": "unavailable"
+        ])
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receiptB, context: currentB, authority: api.syncAuthority
+        )
+        for inspected in [store, LocalStore(modelContainer: try diskContainer(url))] {
+            for (owner, expected) in [(syncOwner, receiptA), (otherSyncOwner, receiptB)] {
+                let value = try await inspected.catalogueCreateConfirmation(
+                    ownerId: owner, operationId: command.operationId
+                )
+                let saved = try XCTUnwrap(value)
+                XCTAssertEqual(saved.ownerId, owner)
+                XCTAssertEqual(saved.operationId, command.operationId)
+                XCTAssertEqual(saved.receipt, expected)
+                XCTAssertTrue(saved.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8))
+            }
+        }
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receiptB, context: currentB, authority: api.syncAuthority
+        )
+        do {
+            try await store.acknowledgeCatalogueCreate(
+                command, receipt: receiptA, context: currentB, authority: api.syncAuthority
+            )
+            XCTFail("B replay cannot replace its receipt with A's receipt")
+        } catch CatalogueCreateAcknowledgementError.confirmationConflict {}
+        await api.bindSyncSession(syncSession)
+        let currentA = try await api.captureSyncContext(ownerId: syncOwner)
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receiptA, context: currentA, authority: api.syncAuthority
+        )
+        try await assertSeedUnchanged(url, outbox: outbox)
+    }
+
+    @MainActor
+    func testCreateAcknowledgementRejectsStaleABALeaseAnonymousContextAndCancellation() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let command = createCommand()
+        let create = try await queueCreate(command, ownerId: syncOwner, in: store)
+        let receipt = try decodedCreateReceipt()
+        let api = client(CatalogueTransport([]))
+        await api.bindSyncSession(syncSession)
+        let stale = try await api.captureSyncContext(ownerId: syncOwner)
+        await api.bindSyncSession(NativeAuthSession(
+            userId: otherSyncOwner, accessToken: "owner-b-token", expiresAt: .distantFuture
+        ))
+        await api.bindSyncSession(syncSession)
+        do {
+            try await store.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: stale, authority: api.syncAuthority
+            )
+            XCTFail("Returning to A must not revive a captured lease")
+        } catch SyncWireValidationError.invalidSession {}
+        try await assertCreateStillPending(url, store: store, outbox: outbox, create: create)
+
+        let anonymousAPI = client(CatalogueTransport([]))
+        let anonymous = try await anonymousAPI.captureSyncContext(ownerId: syncOwner)
+        do {
+            try await store.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: anonymous, authority: anonymousAPI.syncAuthority
+            )
+            XCTFail("Legacy anonymous sync context must not authorize create confirmation")
+        } catch SyncWireValidationError.invalidSession {}
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        // Inherits MainActor: cancel before yielding so the store receives a cancelled task.
+        let cancelled = Task {
+            try await store.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: lease, authority: api.syncAuthority
+            )
+        }
+        cancelled.cancel()
+        do {
+            try await cancelled.value
+            XCTFail("A cancelled acknowledgement must not publish")
+        } catch is CancellationError {}
+        try await assertCreateStillPending(url, store: store, outbox: outbox, create: create)
+        // The unchanged original operation remains retryable with a current lease.
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receipt, context: lease, authority: api.syncAuthority
+        )
+        try await assertSeedUnchanged(url, outbox: outbox)
+    }
+
+    @MainActor
+    func testCreateAcknowledgementReadOnlySQLiteSaveRetainsQueueAndReceiptThenRetries() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let command = createCommand()
+        let receipt = try decodedCreateReceipt(["paid_action": NSNull()])
+        let create: OutboxEntrySnapshot
+        do {
+            let writable = LocalStore(modelContainer: try diskContainer(url))
+            create = try await queueCreate(command, ownerId: syncOwner, in: writable)
+        }
+        let api = client(CatalogueTransport([]))
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+            try await assertCreateStillPending(url, store: store, outbox: outbox, create: create)
+            for _ in 0..<2 {
+                do {
+                    try await store.acknowledgeCatalogueCreate(
+                        command, receipt: receipt, context: lease, authority: api.syncAuthority
+                    )
+                    XCTFail("Read-only SQLite must reject the atomic save")
+                } catch {
+                    let failure = error as NSError
+                    XCTAssertEqual(failure.domain, NSCocoaErrorDomain)
+                    XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+                }
+                // Check this actor and a separate disk container after each actual failed save.
+                try await assertCreateStillPending(url, store: store, outbox: outbox, create: create)
+            }
+        }
+        do {
+            let retry = LocalStore(modelContainer: try diskContainer(url))
+            try await retry.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: lease, authority: api.syncAuthority
+            )
+            try await retry.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: lease, authority: api.syncAuthority
+            )
+            let saved = try await retry.catalogueCreateConfirmation(
+                ownerId: syncOwner, operationId: command.operationId
+            )
+            XCTAssertEqual(saved?.receipt, receipt)
+        }
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let saved = try await reopened.catalogueCreateConfirmation(
+            ownerId: syncOwner, operationId: command.operationId
+        )
+        XCTAssertEqual(saved?.receipt, receipt)
+        XCTAssertNil(saved?.receipt.paidAction)
+        XCTAssertEqual(saved?.receipt.watermarkRaw, timestamp)
+        XCTAssertTrue(saved?.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8) == true)
+        try await assertSeedUnchanged(url, outbox: outbox)
+    }
+
+    @MainActor
+    func testCreateConfirmationSchemaPreservesHistoricalDiskQueueAndCache() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = createCommand()
+        let oldDate = SQLTimestamp.date(from: "2026-11-03T08:00:00Z")!
+        let historical = SyncItemDTO(
+            entityType: "room", id: serverPlantId, updatedAt: oldDate,
+            payloadJSON: #"{"name":"historical","unknown":{"kept":true}}"#
+        )
+        let queued: OutboxEntrySnapshot
+        do {
+            // The pre-confirmation production schema, on a real SQLite file.
+            let schema = Schema([
+                LocalOutboxRecord.self, GuestDraftCacheRecord.self,
+                SyncedEntityRecord.self, SyncCheckpointRecord.self
+            ])
+            let container = try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url)
+            ])
+            let oldStore = LocalStore(modelContainer: container)
+            queued = try await queueCreate(command, ownerId: syncOwner, in: oldStore)
+            try await oldStore.applySyncedItems([historical], ownerId: syncOwner)
+            try await oldStore.updateWatermark(ownerId: syncOwner, watermark: oldDate)
+        }
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        let before = try await store.catalogueCreateConfirmation(
+            ownerId: syncOwner, operationId: command.operationId
+        )
+        XCTAssertEqual(pending, [queued])
+        XCTAssertNil(before)
+        let api = client(CatalogueTransport([]))
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let receipt = try decodedCreateReceipt()
+        try await store.acknowledgeCatalogueCreate(
+            command, receipt: receipt, context: lease, authority: api.syncAuthority
+        )
+        let container = try diskContainer(url)
+        let reopened = LocalStore(modelContainer: container)
+        let retained = try await reopened.activeSyncedEntities(ownerId: syncOwner, entityType: "room")
+        let date = try await reopened.currentWatermark(ownerId: syncOwner)
+        let raw = try await reopened.currentWatermarkRaw(ownerId: syncOwner)
+        let after = try await reopened.pendingOutboxEntries(for: syncOwner)
+        let saved = try await reopened.catalogueCreateConfirmation(
+            ownerId: syncOwner, operationId: command.operationId
+        )
+        let checkpoint = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<SyncCheckpointRecord>()).first)
+        XCTAssertEqual(retained, [historical])
+        XCTAssertEqual(date, oldDate)
+        XCTAssertEqual(raw, "2026-11-03T08:00:00.000Z")
+        XCTAssertNil(checkpoint.watermarkRaw)
+        XCTAssertTrue(after.isEmpty)
+        XCTAssertEqual(saved?.receipt, receipt)
+        XCTAssertTrue(saved?.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8) == true)
     }
 }
