@@ -1,0 +1,128 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-t163-registration-ledger",
+      "description": "T163 B1a: immutable permanent registration anchor, UTC windows and conservative exactly-once legacy monthly ledger import; no new admission yet.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/monthly-access.md",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202610200006_billing.sql",
+        "supabase/migrations/202610200007_analysis_quota.sql",
+        "supabase/migrations/202610200012_quota_operations.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/migrations/202611090001_analysis_mode_guard.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/tests/registration_quotas.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/tests/registration_quotas.test.sql"
+      ],
+      "constraints": [
+        "Only exact write_files. Do not change applied migrations, tools/automation, handoff, tasks.md, collection-http.md, Swift, auth/cap/sync. No network/deploy/prod cleanup. Read FR-005/017/065 and monthly-access.md. External accepted T161 b5f2c8f/01ba170/eb58c03, auth 9551807 and sync c26a4e0 are constraints not manifest dependencies.",
+        "Return unified ordinary git patch with complete new text files; Developer PASS means patch ready. All acceptance checks run by controller. High risk separate Developer/Reviewer/QA. Fixtures not live. Full T163 waits A/T036; no parent checkbox changes.",
+        "Preserve all original public rows/counters/owners/history/receipts/lease fields byte-for-byte during forward migrations. Only add internal tables/indexes/functions and new triggers; no ALTER destructive data rewrites. All new definer functions pin search_path and revoke PUBLIC/anon/authenticated; service_role only. New private tables RLS enabled, no client grants except owner-scoped read if needed later. Preserve provider budget/collection cap; no refresh from purchase/restore/claim.",
+        "Implement only first accounting slice in 005, keep SQL bounded. Interface required by trusted gate: account_quota_anchors(owner_id uuid PK FK profiles cascade, registered_at timestamptz nullable, source text); account_quota_usage(job_id uuid PK FK analysis_jobs cascade, owner_id uuid FK profiles cascade, period_start/end timestamptz, quota_state reserved/consumed/released, legacy_quota_id nullable FK monthly_quotas); quota_legacy_reconciliation(monthly_quota_id PK FK monthly_quotas, unallocated_consumed integer, unallocated_reserved integer, requires_review boolean). Extra columns okay. Exactly one monthly usage per job, both Free and paid share usage. No table named by quotas count must be deleted.",
+        "Replace compute_paid_quota_window signature with UTC arithmetic from original anchor (not recursive previous-month clamp), independent session TZ, 29/30/31/leap exact boundaries. Account anchors for legacy profiles start NULL/source unresolved, never purchase or anonymous creation. New permanent INSERT uses trusted profiles.created_at; anonymous->permanent uses clock_timestamp, not original guest date. New anonymous cannot get monthly anchor. New private service set_registration_quota_anchor(uuid,timestamptz,text) requires nonempty evidence, active permanent owner, immutable after first set; same date retry no-op. Trigger must reject future mutation/deletion/reversion permitting refill, no spoof client anchor.",
+        "reconcile_registration_quota(uuid) under active owner lock: for monthly jobs (including historical follow_up) map created_at reserve instant to window from verified registered_at. INSERT usage once ON CONFLICT no changes for terminal states. Never include starter or plan. Preserve original monthly_quota_id, job states/leases, all old tables. For each legacy quota record aggregate leftover=max(0,stored consumed/reserved - attributable job states), and flag contradictions/unmappable jobs explicitly. Unknown anchor stays unresolved, never silently use current time or zero unknown consumption. Re-import must be idempotent and cannot reset released/consumed jobs. First migration may import only after explicit verified anchor; second slice will block any intersecting unresolved history. Replace purchase ownership trigger ensure_profile_quota_anchor with no anchor mutation; keep original profiles.quota_anchor_at historical value unchanged.",
+        "Write meaningful pgTAP BEGIN/plan/finish/ROLLBACK current-schema tests: new permanent insert, guest conversion, immutable anchor retry/conflict; binding/purchase cannot refill; window clamp rebound leap/TZ; legacy known jobs imported once preserving owners/pointers, residual counters and missing history, private privileges/RLS. Do not use obsolete status/completed_at/installation_id columns or mock production functions. Trusted gate seeds genuine historical current-schema rows and snapshots them. Existing unrelated quota_admission.test.sql is obsolete schema; replacement in second slice, not here."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Clean/seeded upgrade, 12 UTC boundary cases, legacy known/residual import and original rows retained; meaningful developer pgTAP.",
+          "checks": [
+            "parallel-backend-quota-accounting"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Backend fixtures unaffected, no live claim.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Typecheck and diff clean.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "parallel-backend-t163-atomic-admission",
+      "description": "T163 B1b: shared Free3/paid100 atomic monthly/starter admission, exactly-once settlement, retry and unresolved history guards.",
+      "depends_on": [
+        "parallel-backend-t163-registration-ledger"
+      ],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/monthly-access.md",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202610200006_billing.sql",
+        "supabase/migrations/202610200007_analysis_quota.sql",
+        "supabase/migrations/202610200012_quota_operations.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/migrations/202611090001_analysis_mode_guard.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/migrations/202611090006_quota_admission.sql",
+        "supabase/tests/registration_admission.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090006_quota_admission.sql",
+        "supabase/tests/registration_admission.test.sql"
+      ],
+      "constraints": [
+        "Only exact write_files. Do not change applied migrations, tools/automation, handoff, tasks.md, collection-http.md, Swift, auth/cap/sync. No network/deploy/prod cleanup. Read FR-005/017/065 and monthly-access.md. External accepted T161 b5f2c8f/01ba170/eb58c03, auth 9551807 and sync c26a4e0 are constraints not manifest dependencies.",
+        "Return unified ordinary git patch with complete new text files; Developer PASS means patch ready. All acceptance checks run by controller. High risk separate Developer/Reviewer/QA. Fixtures not live. Full T163 waits A/T036; no parent checkbox changes.",
+        "Preserve all original public rows/counters/owners/history/receipts/lease fields byte-for-byte during forward migrations. Only add internal tables/indexes/functions and new triggers; no ALTER destructive data rewrites. All new definer functions pin search_path and revoke PUBLIC/anon/authenticated; service_role only. New private tables RLS enabled, no client grants except owner-scoped read if needed later. Preserve provider budget/collection cap; no refresh from purchase/restore/claim.",
+        "Only 006 + regression suite. Use accepted 005 schema/functions; no huge rewrite unrelated jobs/media/guest claims. Replace existing signatures admit_analysis_quota(text,uuid,uuid,uuid,timestamptz), finalize_analysis_quota(uuid,text,boolean,timestamptz), bind_installation_to_owner(uuid,uuid,timestamptz) if needed for actual column names. Actual jobs: owner_id NOT NULL, quota_installation_id not installation_id; state not status; no completed_at; actual installation_access linked_owner_ids no bound_owner_id. New follow_up/null/plan admission rejected. History follow_up terminal settlement still allowed.",
+        "Admission requires existing queued/running owner job with mode/owner match. New callers insert job with quota_kind none/quota_state not_applicable before admission, same transaction. Persist original quota kind/state/installation in job atomically. Same job replay reserved returns admitted true without reserve, consumed terminal returns original settled state/no new analysis, released terminal remains released/no new reserve. Same operation must unique owner operation via existing schema. Invalid/missing/mismatched jobs or installation rejected, anonymous owner requires valid installation; installation bound to different owner fails closed. Missing/inactive owner fail closed. No implicit creation of paid anchor from entitlement.",
+        "Lock order profiles->installation->job/usage->legacy quota; acquire actual owner update to avoid RR snapshot bypass (reuse advance_owner_watermark carefully). Shared count usage reserved+consumed current registration window; Free3 paid100, active verified trial/grace as has_verified_paid_access, expired no paid. Free unused starter mode first; paid exhausted must never fallback. Missing registration anchor monthly returns admitted false reason quota_registration_required; intersecting legacy period with leftover counts/requires_review returns quota_history_unresolved. Monthly response period_start/end UTC, remaining_after_reserve, quota_kind and registration_quota_id optional; monthly_quota_id may null for new canonical usage. Preserve original pointers for legacy jobs.",
+        "finalize verifies valid outcome succeeded/failed/timed_out (NULL/unknown raises), never treat arbitrary invalid as failure; lock owner then installation/job. success non-billable=false consumes, technical failure/explicit nonbillable releases once; unknown itself billed (nonbillable input flag separate). Update real job state/usage and legacy monthly counter once for imported old reservation. Settle against original reserved window even across month/tariff/expiry; no re-anchoring. Repeated terminal finalize/admit does not mutate terminal ledger. Consume starter marker OR across profile/install, release pointer only matching job; binding ORs consumed and preserves active leases/retry without new rights. No provider_daily_budget change.",
+        "Write current-schema regression pgTAP covering mode/state/owner A-B validation, Free immediate3 (no first success wait), shared trial->paid->expiry->restore spend, 100 cap/no starter fallback, two starters and failure release, canonical replay/terminal, exact old reservation settle across boundary, RLS/privileges; no mocks/skips. Trusted gate observes 20 real connections blocked at owner lock, 99 actual admitted+finalized scans then one slot; distinct + same job + failure rounds in both clean/upgrade. Ensure aggregate old spend cannot be reset by reconcile."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Clean/seeded upgrade/accounting plus six 20-real-connection races, finalization/replay, independent meaningful pgTAP.",
+          "checks": [
+            "parallel-backend-quota-admission"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Full Deno fixtures remain green.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Typecheck and diff clean; API/client/live still separate.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

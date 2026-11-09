@@ -1,6 +1,34 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-09.** Подготовлены задания двух параллельных Worktree-сессий: A — iOS/интеграция, B — сервер/данные; все 137 открытых ID распределены, запуск ещё не выполнялся. Завершена очередь из четырёх принятых срезов; также опубликован узкий T168 client light-estimator cleanup (29 Swift tests/build/Simulator PASS, combined acceptance). Принят и опубликован серверный пакет T161: cap Free=3, retirement slots и согласованный TS/API; проверки PostgreSQL/Deno и независимая приёмка пройдены, live/client отдельно. Применена оптимизация оркестратора: совмещённая приёмка простых задач, Sol/Astra по риску и замечаниям, delta-resume и расход на принятую задачу; 115 automation tests PASS на fixtures. Живая экономия пока не измерена. Принят и опубликован room-срез T158: SQL room retirement/плоский sync и TS/Swift overrides без комнат. Ранее приняты компактные Condition2/Plant2 и удаление трёх неиспользуемых Swift DTO. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Документальное сокращение scope завершено; принятые runtime-срезы и ограничения перечислены ниже.
+**Обновлено 2026-11-09.** B запущена в отдельном worktree/ветке codex/plants-backend от 4bbd35a; подготовлены контракт T163 и два SQL-среза с отдельным trusted PG17 gate. Реальная приёмка этих SQL ещё впереди; T163/T036 открыты. A независимо ведёт клиентский sync; collection-http.md стабилен.
+
+## B / T163 — подготовка registration quota, 2026-11-09
+
+**Выполнено:** `contracts/monthly-access.md` фиксирует registration UTC anchor,
+короткие месяцы, shared Free3/paid100, стартеры и перенос consumed/reserved/unknown.
+Новый controller-owned `tools/automation/parallel_backend_quota_gate.py`: отдельный
+PG17 clean/upgrade, retained rows, pgTAP и 20 настоящих соединений под наблюдаемым
+owner lock. `tasks.parallel-backend-quota-sql.json` содержит два bounded SQL-пакета
+005 accounting →006 admission; runtime SQL пока не реализован. Default config,
+collection wire, Swift/tasks не менялись. Branch config игнорируется; hash/check
+argv/mode/timeout и routing — [отчёт подготовки](validation/automation/parallel-backend-quota-preparation-2026-11-09.md).
+
+**Реальные проверки:** validate (2 tasks), developer context и diff-check PASS;
+115 automation fixture tests / OK (`/tmp/narat-b163-automation.log`).
+Отрицательный контроль старого SQL — ожидаемый exit1: Free после первого запроса
+remaining=0 вместо2 и calendar window; это не продуктовая приёмка. PG17 работает
+с разрешённым локальным запуском вне sandbox shared-memory restriction.
+
+**Ограничения:** legacy дата permanent регистрации неизвестна; отдельный service
+verified import, без молчаливой покупки/guest created_at в роли anchor. Вопрос
+владельцу отправлен. Full T163 ждёт API B2 + клиента A/T036; live Supabase/Auth/
+Storage/provider/StoreKit и iOS не проверялись. 20-connection code подготовлен,
+успешное прохождение ещё не заявлено. Продуктовые checkbox без изменений.
+
+**Следующий шаг:** после commit/push подготовки запустить новый
+`parallel-backend-quota-sql-20261109-01` через branch-specific --config, принять
+оба SQL-среза реальными gates/Reviewer/QA, затем отдельно подготовить API.
+
 
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
