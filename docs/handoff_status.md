@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-09.** После согласования аудита последовательно приняты и опубликованы четыре дополнительных технических среза T157 через оркестратор: follow_up, score/DTO, manual evidence и SQL mode guard. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Это завершённый этап сокращения scope, не реализация нового runtime.
+**Обновлено 2026-11-09.** Через оркестратор дополнительно приняты и опубликованы компактные Condition2/Plant2; подготовлено удаление трёх неиспользуемых Swift DTO. Точная приёмка и оставшаяся работа — ниже. Владелец принял рекомендации аудита. Спецификация и связанные действующие документы приведены к пути **распознавание → диагностика → рекомендации → уход**. Конституция 5.0.0. Это завершённый этап сокращения scope, не реализация нового runtime.
 
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -68,23 +68,25 @@ Run `t157-sql-mode-20261109-01` — **COMPLETED / Verified and published**, ко
 
 **Итог последовательности:** a97ff20 → 31a465f → e2a446d → bd481a9, все COMPLETED и опубликованы. T157/T155 и T158–T160 остаются открыты: обязательный полный профиль/timeline, новая collection/quota/expiry модель, report/product/guest остатки и простой уход ещё не завершены. Число checkbox не менялось; приёмка срезов не равна готовности пользовательского фото→уход сценария.
 
-## Следующая очередь T157: компактные профили
+## Компактные профили приняты
 
-Подготовлены `contracts/compact-profiles.md`, `tools/automation/tasks.t157-compact-profiles.json`, независимый `t157_compact_profile_gate.py` и два config checks. Формат2: независимые действия вместо лечебных фаз/повторов, first_help_action_id, nullable проверенный next-check interval; PlantProfile2 без полного алгоритма, с optional independent safety. V1 snapshots сохраняются побайтово в legacy и не исполняются как новый профиль. Срок1..90 — прежняя техническая граница, не универсальный таймер.
+Подготовка `bd929b1`: `contracts/compact-profiles.md`, manifest `tasks.t157-compact-profiles.json`, gate `t157_compact_profile_gate.py`, config. Condition2 содержит независимые действия/first_help_action_id/nullable следующую проверку вместо фаз/повторов; Plant2 — действия или safety-факт вместо полного care_algorithm_params/taxonomy/рецепта. Права/происхождение/ручная проверка/EN-PL сохранены. Срок1..90 — прежняя техническая граница, не универсальный таймер.
 
-Manifest validate — PASS, 2 последовательные задачи: `t157-compact-condition-profile` → `t157-compact-plant-profile`. Schema/TS/resolver/fixtures меняются совместно; canonical AI schema/квоты/SQL/пользовательские данные/Swift этим этапом не меняются. Целевые tests/gates ещё не запускались, T157 не закрыта. Run-id `t157-compact-20261109-01` после сохранения чистого Git. Старые hash gates вопросников/evidence относятся к принятым историческим срезам и не являются воротами новой2.0 schema.
+Run `t157-compact-20261109-01` остановился без применения: copy100% metadata первого ответа не поддерживается, второй Developer истёк по timeout900с. T1 WAITING, T2 PENDING — этот запуск не принят. Управляющий процесс побайтово сохранил обе v1 схемы в `contracts/legacy/`, сверил SHA и нормализовал только copy-header готового candidate; остальные6 schema/TS/test файлов применены после git apply --check/numstat. Checkpoint `adf7130`: 109 Deno PASS, condition gate PASS, независимая приёмка ещё ожидалась.
 
-### Восстановление компактных профилей
+Восстановительный manifest `tasks.t157-compact-recovery.json`, run `t157-compact-20261109-02` — **COMPLETED / Verified and published**. Read-only Review/QA полного Condition2 кода приняты в `e7d2d7b`; зависимый Plant2 в `eb40f28`. По одному Reviewer/QA на задачу, Plant2 — один Developer; repairs не потребовались. Все коммиты отправлены в origin/main.
 
-Исходный run `t157-compact-20261109-01` остановлен: первый Developer ответ содержал copy100% metadata (controller не поддерживает copy), второй истёк по CLI timeout900с. Controller патч не применил; T1 WAITING, T2 PENDING, приёмки нет.
+**Изменённые файлы:** `contracts/{condition-profile.schema.json,plant-profile.schema.json,legacy/*.v1.schema.json,compact-profiles.md}`; `KnowledgeTypes.ts`, `ProtocolResolver.ts`, `AnalysisValidator.ts`; `analysis_result_test.ts`, `profile_evidence_test.ts`; gates/manifests/config, отчёты и handoff. Новый формат валидируется до обращения к полям; v1/повреждённый профиль не исполняется как новый совет; first-help выбирается только по явной ссылке с проверкой условий, без fallback. Исторические данные/подписи/SQL/Swift этим срезом не переписывались.
 
-Управляющий процесс сохранил обе текущие v1 схемы в legacy побайтово, сверил с закреплёнными SHA. Из первого готового candidate удалён только copy-header блок архивного файла; остальные6 schema/TS/test файлов применены без логических изменений после git apply --check/numstat/scope. `t157_compact_profile_gate.py condition` — PASS; **109 Deno tests PASS**; это подготовленный кандидат, Review/QA ещё нужны. Коммерческие данные/история/SQL/Swift не менялись.
+**Реально выполненные проверки:** Condition2 — 109 Deno tests PASS; итог Plant2 — **257 Deno tests PASS**, deno-check, оба точных schema gate, diff-check и89 automation tests PASS. Это synthetic fixtures/local static, не агрономическая приёмка, не live provider/БД. Отчёты: [Condition2](validation/automation/tasks/t157-compact-condition-profile.md), [Plant2](validation/automation/tasks/t157-compact-plant-profile.md). T157/T155 не закрыты; checkbox не менялись.
 
-Новый manifest `tasks.t157-compact-recovery.json`, run-id `t157-compact-20261109-02`: read-only полнотекстовая приёмка текущего Condition2 кода с обязательными checks → затем изменение только Plant2/tests. Legacy файлы исключены из записи; запрещены copy/rename headers. Исходный run -01 не переписывается и не объявляется завершённым.
+## Подготовлен следующий Swift-срез
+
+Поиск ссылок показал только определения/внутреннюю ссылку трёх старых DTO в `APIModels.swift`: `RecoveryCheckDTO`, `TreatmentStepDTO`, `ConditionProfileDTO`. Manifest `tasks.t157-swift-profiles.json` разрешает менять только этот файл; `t157_swift_profile_gate.py` проверяет точное удаление и отсутствие references, сохраняя прочие сериализуемые поля. Config дополнен одним check. Manifest validate — PASS; целевые iOS checks и удаление ещё не выполнены.
 
 ## Точный следующий шаг
 
-Продолжить **T157 компактные карточки**: составить минимальный согласованный schema/TS формат действий сейчас и следующей проверки вместо обязательных `treatment_plan.steps`, repeat_count/start_offset/phase и полного `care_algorithm_params`. Подготовить следующий manifest с совместным обновлением schema, KnowledgeTypes/semantic validator, ProtocolResolver и fixtures; исходные результаты/планы читать без переписывания/автоматической конвертации в новые рекомендации. После приёмки этого контракта — T158/T159/T160 с отдельными forward migrations и clean/upgrade проверками. Текущие PASS не закрывают всю T157 или живой фото→уход маршрут.
+Запустить `tasks.t157-swift-profiles.json`, run `t157-swift-profiles-20261109-01`: удалить три неиспользуемые DTO через Developer → настоящий iOS build/welcome/PlantsTests → Reviewer → Simulator smoke → QA → commit/push. Не добавлять заменяющие private KB DTO и не менять историю/outbox/локальные данные. После принятия — отдельно согласовывать T158/T159/T160 и clean/upgrade переходы. Карточки требуют реальной публикации/интеграции; текущие PASS не закрывают живой фото→уход маршрут.
 
 T148 остаётся на прежней остановке до запуска следующего pipeline-среза; фактические дефекты имён/переводов/медиа перечислены в обновлённом `tools/automation/tasks.t148-pipeline.json` и [архиве handoff](archive/handoff_status_before_simplification_2026-11-09.md). Полная редакционная приёмка отдельна; минимум охвата снят, сохранность 606 карточек проверяется.
 
@@ -97,7 +99,7 @@ T148 остаётся на прежней остановке до запуска
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 137 активных задач: 13 отмечены (12 исторических + T156 документ), 124 открыты; 23 снятых. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Тарифы/expiry не изменены.
-- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по50 pgTAP PASS, history unchanged. Следующий срез — компактные action/check карточки вместо обязательного полного профиля/timeline; PostgreSQL17/pgTAP доступен. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
+- T157 question-bank f15e6c6 и follow_up a97ff20 опубликованы (COMPLETED). Score/DTO 31a465f и evidence e2a446d опубликованы. SQL mode guard bd481a9 опубликован: clean/upgrade по50 pgTAP PASS, history unchanged. Компактные Condition2/Plant2 e7d2d7b/eb40f28 опубликованы:257 Deno PASS. Следующий срез — три неиспользуемые Swift DTO через tasks.t157-swift-profiles.json; PostgreSQL17/pgTAP доступен. Остальная T157/T158–T160 открыта; T148 независима. Применённые миграции не переписывать.
 - Handoff/tasks/Git изменяет только управляющий процесс. Fixtures ≠ live; снятый объём не выполнение. Субагенты не запускаются без отдельного разрешения.
 <!-- /orchestrator:project-state -->
 

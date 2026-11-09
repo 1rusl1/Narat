@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "t157-unused-swift-profile-dto",
+      "description": "После принятых Condition/Plant2 удалить три неиспользуемые Swift DTO, которые ещё описывают полный профиль/лечебные фазы/сравнение. Никакой загрузки private Golden Records на клиент вместо них не добавлять; сохраняется существующая проекция результата и сырая история.",
+      "depends_on": [],
+      "risk": "medium",
+      "complexity": "low",
+      "files": [
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "tools/automation/t157_swift_profile_gate.py",
+        "specs/001-plants-ios-mvp/contracts/compact-profiles.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/APIModels.swift"
+      ],
+      "constraints": [
+        "Удалить только полные определения RecoveryCheckDTO, TreatmentStepDTO, ConditionProfileDTO и пустой устаревший MARK ConditionProfile/Diagnostic Refinement/Treatment Steps. Проверить отсутствие внешних references в ios. Другие DTO/fields/язык/сериализация без изменений; exact semantic hash gate исключает расширение scope (пустые строки несущественны).",
+        "Новые DTO/камеры/recipe/timeline/поля на замену не нужны: canonical KB серверная, UI получает проекцию. Сохранить AnalysisReceiptDTO, raw history/fullBody JSON, outbox/owner cache и контекст; не мигрировать/сбрасывать локальные данные. Не удалять ProgressReportDTO/rooms/camera types здесь — это отдельные следующие срезы.",
+        "Все новые/изменённые patches только обычный text unified diff без copy/rename metadata. Никаких тривиальных тестов наличия класса или новых зеркальных тестов: достаточны существующий реальный PlantsTests target, build/welcome и Simulator smoke. При найденном реальном consumer вне write_files вернуть конкретную зависимость, не обходить проверки."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Удалены только три мёртвых DTO и старый marker; нет references, другие serialized DTO fields сохранены.",
+          "checks": [
+            "t157-swift-profile-dto",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Настоящие iOS build/welcome/unit и Simulator smoke проходят без skip и регрессии owner/history/outbox; это local, не live AI/DB.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

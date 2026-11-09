@@ -372,6 +372,15 @@
       "stage": "static",
       "mode": "local",
       "timeout": 30
+    },
+    "t157-swift-profile-dto": {
+      "argv": [
+        "python3",
+        "tools/automation/t157_swift_profile_gate.py"
+      ],
+      "stage": "static",
+      "mode": "local",
+      "timeout": 30
     }
   },
   "publish": {
