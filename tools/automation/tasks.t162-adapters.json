@@ -1,0 +1,126 @@
+{
+  "tasks": [
+    {
+      "id": "t162-sync-http-adapter",
+      "description": "Узкий фундамент T019/T162: production GET /sync через fetch_sync_delta. Auth prerequisite 9551807 уже принят. Только sync, без command/create/UI/live.",
+      "risk": "high",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/http.ts",
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/migrations/202610200010_command_protocol.sql",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "specs/001-plants-ios-mvp/contracts/api.md",
+        "specs/001-plants-ios-mvp/contracts/sync.md",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/collection.ts",
+        "supabase/functions/_shared/http.ts",
+        "supabase/functions/_shared/tests/collection_http_test.ts",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "constraints": [
+        "Only write_files; ordinary unified patch. No migrations/tools/config/handoff/tasks/client/deploy/live calls or secrets. Read constitution/spec. Auth/profile fix 9551807 must be preserved unchanged except dependency wiring; existing endpoints and explicit injected handlers keep behavior.",
+        "Implement only GET /sync in collection.ts and explicit production factory in index.ts used by Deno.serve. Keep bare createPlantsApiHandler() safe/unavailable for T152 tests. Factory wires real server-only Supabase RPC client; lazy config validation missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY =>503 with generic EN/PL error. Do not change command route: unavailable until next slice. Small injectable client/fetch seam allows tests with actual Supabase client and mocked transport, no generic framework.",
+        "Use fetch_sync_delta with p_owner_id from authenticated active context only. Never accept owner query/body. Validate since/until real ISO dates, coherent window, limit integer 1..500, complete cursor triplet cursor_updated_at/cursor_entity_type/cursor_id matching existing Swift query. Reject invalid/partial/duplicate/spoofed parameters before RPC; pass null for absent values. Auth/profile guards precede privileged RPC.",
+        "Read latest SQL function. Return authoritative raw canonical SQL sync projection including profile/entitlement/items, until/has_more/last_cursor/next_since losslessly. Preserve tombstones/cursor/watermarks. No invented data/cursor or Swift DTO-compatible fiction. Null/malformed RPC data/errors fail closed 503; owner forbidden maps403, invalid params400. Do not leak raw errors/credentials. Document exact SQL wire response and outstanding Swift DTO adaptation in collection-http.md.",
+        "Implement meaningful collection_http_test.ts: production factory through HTTP with real Supabase client mocked transport (not replacement resolver alone), exact RPC URL/body/auth header and canonical result; multi-page/tombstone/since/until/cursor propagation, malformed/null RPC, SQL/network errors sanitized EN/PL; invalid query no RPC; no owner spoof, A/B owner context isolation; missing config failure; auth guards and existing T152 fallbacks unchanged. No skipped tests. Review/QA inspect assertions. Fixtures do not prove live sync or DB execution.",
+        "Full T019/T162 stay open. No plant.create adapter in this slice. Record exact scoped limitations in decisions and contract."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Production sync composition uses real RPC adapter; canonical result, pagination/tombstones, validation, owner isolation and safe failures verified by meaningful mocked transport HTTP tests. Existing command fallback and auth remain unchanged.",
+          "checks": [
+            "t162-collection-http",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Entry point typechecks and whitespace passes; exact canonical sync wire/Swift limitations documented.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "t162-create-http-adapter",
+      "description": "Узкий фундамент T019/T044/T162: production plant.create каталога поверх принятого sync/auth; настоящий SQL RPC, cap mapping/retry и HTTP fixtures. Без UI/guest/live.",
+      "risk": "high",
+      "complexity": "low",
+      "depends_on": [
+        "t162-sync-http-adapter"
+      ],
+      "files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/http.ts",
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/migrations/202610200010_command_protocol.sql",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "specs/001-plants-ios-mvp/contracts/api.md",
+        "specs/001-plants-ios-mvp/contracts/sync.md",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/collection.ts",
+        "supabase/functions/_shared/http.ts",
+        "supabase/functions/_shared/tests/collection_http_test.ts",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "constraints": [
+        "Only write_files. No migrations, tools/config/handoff/tasks changes, deployment, credentials in code/logs, real network or live integration. Read constitution/spec. Preserve other endpoints and explicit dependency injection safety tests. Ordinary unified diff only.",
+        "Build a small collection.ts RPC adapter and HTTP handlers, production factory wiring used explicitly in Deno.serve. Keep createPlantsApiHandler() without explicit dependencies safe/unavailable so existing T152 safety fixtures stay meaningful. Production factory actually supplies command/sync handlers with server-only service role client; lazily validate SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY; missing config fails 503, never fake success. Dependency injection supports mocked RPC/fetch for fixture tests, production uses actual Supabase RPC. No new generic service framework.",
+        "Preserve accepted default auth/profile resolver. Authenticated context owner is authoritative; body/query owner injection denied. Catalogue plant.create requires permanent active owner, anonymous denied before RPC. Preserve sync adapter/factory from dependency; extend factory with real command handler. No service role on client.",
+        "Use canonical current Swift envelope operation_id/command_name/payload_json (JSON object encoded as string) and document precisely. Require valid UUID and matching X-Operation-Id if supplied, object payload with catalogue creation_source only; reject owner injection and unsupported/retired commands before RPC. Do not enable draft/guest fallback, rooms, new camera_estimate/season inputs. Do not require photo or care questionnaire for catalogue create. Respect existing catalogue SQL fields and pass payload unchanged after validation; no client-side payload hash or operation receipts fabrication.",
+        "Call execute_plant_create_command(p_owner_id,p_operation_id,p_payload) and fetch_sync_delta with authoritative context owner and validated since/until/complete cursor/limit 1..500. Read actual latest SQL projection and preserve its canonical receipt/sync shape losslessly; do not guess Swift compatibility. Document canonical response and outstanding client DTO adaptation explicitly. Replay uses same operation/payload SQL result; uniqueness/payload conflicts map 409. No adapter-generated fake replay flag/plant/watermark. Null/unexpected RPC results must fail, not synthesize empty success. Preserve dependency sync implementation; do not rewrite it. For command canonical SQL result validate required plant_id/care_revision/context_state/next_available_step/plan_availability/watermark types before returning; preserve other fields losslessly.",
+        "Map COLLECTION_LIMIT_REACHED to explicit HTTP409 COLLECTION_LIMIT_REACHED nonretryable, separate from analysis quota; auth/owner boundaries 401/403; validation 400, operation mismatch 409, transient RPC failures 503 retryable. Never expose SQL internals/service credentials/raw errors to clients. EN/PL error messages. Preserve SQL authoritative cap/retry/history semantics.",
+        "Create meaningful collection_http_test.ts covering production factory wiring with mocked transport (not only direct handlers), canonical RPC request args, exact returned real fixture data, successful create and same retry, cap/error mapping, null/error results, owner spoofing denied, invalid UUID/JSON/unknown command/header mismatch, sync pagination/cursor/tombstones/watermarks, invalid query no RPC, A/B context isolation and auth/profile guards. No skipped tests. Reviewer must examine actual assertions and production wiring; fake SQL RPC fixtures do not prove live DB or positive guest claim. Existing cap SQL gate separately regression checks unchanged SQL. Extend existing collection_http_test.ts without removing sync assertions; tests must use authoritative SQL fixture shape and canonical catalogue inputs. No need to retest auth internals already accepted; test command authorization boundary.",
+        "Full T162/T019/T044/T149 stay open: no client save UI or live acceptance in this slice. collection-http.md records canonical request/response, limitations and client next step without changing old contracts."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Production command/sync factory uses real server RPC and fails closed on auth/config/owner errors; canonical create/retry/cap/conflict and sync projections verified by meaningful HTTP fixtures including production composition. No fabricated success or SQL detail leaks.",
+          "checks": [
+            "t162-collection-http",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Unchanged SQL collection cap/history/retry/concurrency regression gate passes in isolated PostgreSQL; no migrations modified, no live or guest acceptance claimed.",
+          "checks": [
+            "t161-collection-cap"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Deno entrypoint typecheck and whitespace pass; canonical HTTP contract documented and client/live limitations explicit.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

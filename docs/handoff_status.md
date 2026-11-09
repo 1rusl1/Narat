@@ -5,6 +5,10 @@
 **Workspace:** `/Users/ruslansabirov/Documents/ChatGPT/Plants`, ветка `main`.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
 
+## Продолжение T162: два узких HTTP-пакета
+
+По команде владельца «Продолжаем» подготовлен `tools/automation/tasks.t162-adapters.json`: сначала production sync/RPC/валидация/fixtures и точный wire contract, затем зависимый catalogue plant.create/cap/error/retry. Auth prerequisite 9551807 сохраняется. Используются существующие checks без изменения config; для create также настоящий PostgreSQL cap regression. Изменены manifest и handoff; runtime и checkbox пока не менялись. Live/клиент/guest/deploy вне среза. Следующий шаг: validate/context/diff-check, commit/push подготовки, run `t162-adapters-20261109-01` и наблюдение до приёмки/публикации или фактической остановки. Старые timeout runs не resume.
+
 ## Принят первый prerequisite T019/T162 — 9 ноября 2026
 
 Оркестратор `t019-auth-profile-20261109-01` завершён **COMPLETED / Verified and published**; runtime commit `9551807` отправлен в origin/main. Developer 1, независимые Reviewer 1 и QA 1, без repairs. Устранён fail-open default auth resolver: missing/invalid/deleting/deleted profile не становится active; ошибка чтения profile даёт generic EN/PL 503 без raw DB error. Auth seam использует настоящий Supabase client с mocked transport только в тестах; штатная авторизация остаётся настоящей.
