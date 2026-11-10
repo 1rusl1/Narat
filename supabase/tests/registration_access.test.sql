@@ -96,5 +96,85 @@ SELECT is((public.get_analysis_access_snapshot(pg_temp.access_id(5),NULL,'2026-1
 SELECT ok(NOT has_function_privilege('anon','public.get_analysis_access_snapshot(uuid,text,timestamp with time zone)','EXECUTE'),'anon cannot spoof owner');
 SELECT ok(NOT has_function_privilege('authenticated','public.get_analysis_access_snapshot(uuid,text,timestamp with time zone)','EXECUTE'),'JWTclient cannot spoof clock');
 SELECT ok(has_function_privilege('service_role','public.get_analysis_access_snapshot(uuid,text,timestamp with time zone)','EXECUTE'),'service snapshot executable');
+-- Independent fixtures cover paths that a successful monthly read cannot prove.
+SET LOCAL TIME ZONE 'UTC';
+INSERT INTO public.profiles(id,anonymous,created_at,starter_identification_consumed,starter_diagnosis_consumed)
+VALUES(pg_temp.access_id(6),false,'2026-10-31 10:20:00.123456Z',false,false),
+      (pg_temp.access_id(7),false,'2026-10-31 10:20:00.123456Z',true,true),
+      (pg_temp.access_id(8),false,'2024-01-31 10:20:00.123456Z',true,true),
+      (pg_temp.access_id(9),false,'2026-10-31 10:20:00.123456Z',false,false),
+      (pg_temp.access_id(10),true,'2026-10-01',false,false);
+INSERT INTO public.entitlements(owner_id,product_id,state,offer_kind,valid_until)
+VALUES(pg_temp.access_id(6),'app.narat.plants.pro.yearly','active','paid','2026-12-01'),
+      (pg_temp.access_id(2),'app.narat.plants.pro.yearly','active','paid','2026-12-01');
+INSERT INTO public.analysis_jobs(id,owner_id,flow_id,intent,add_method,mode,kb_release_id,prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,state,created_at)
+SELECT pg_temp.access_id(i),pg_temp.access_id(6),pg_temp.access_id(i),'problem','scan',
+       CASE WHEN i%2=0 THEN 'diagnosis' ELSE 'identification' END,
+       pg_temp.access_id(100),'fixture',pg_temp.access_id(i),'hash-'||i,'en',
+       CASE WHEN i<6051 THEN 'free_monthly' ELSE 'paid_monthly' END,
+       'consumed','succeeded','2026-11-01'
+FROM generate_series(6001,6100) i;
+INSERT INTO public.analysis_jobs(id,owner_id,flow_id,intent,add_method,mode,kb_release_id,prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,created_at)
+SELECT pg_temp.access_id(i),pg_temp.access_id(o),pg_temp.access_id(i),'problem','scan',m,
+       pg_temp.access_id(100),'fixture',pg_temp.access_id(i),'hash-'||i,'en','none','not_applicable',t::timestamptz
+FROM (VALUES(6101,6,'identification','2026-11-01'),(202,2,'identification','2026-11-01'),
+            (701,7,'diagnosis','2020-01-01'),(702,7,'diagnosis','2026-11-01'),
+            (801,8,'diagnosis','2024-02-01'),(901,9,'identification','2026-11-01'),
+            (1001,10,'identification','2026-11-01'),(1002,10,'identification','2026-11-01')) f(i,o,m,t);
+INSERT INTO snapshots VALUES('paid_exhausted',public.get_analysis_access_snapshot(pg_temp.access_id(6),NULL,'2026-11-15'));
+SELECT is((SELECT value->'monthly'->>'consumed' FROM snapshots WHERE label='paid_exhausted'),'100','old Free and paid charges share one pool');
+SELECT is((SELECT value->'starter'->>'identification_remaining' FROM snapshots WHERE label='paid_exhausted'),'1','paid exhaustion leaves unused starter intact');
+SELECT is((SELECT value->'modes'->'identification'->>'reason' FROM snapshots WHERE label='paid_exhausted'),'paid_monthly_exhausted','paid exhaustion never falls back to starter');
+SELECT is((SELECT value->'modes'->'diagnosis'->>'remaining' FROM snapshots WHERE label='paid_exhausted'),'0','both paid modes share exhausted pool');
+SELECT is(public.admit_analysis_quota('identification',pg_temp.access_id(6),NULL,pg_temp.access_id(6101),'2026-11-15')->>'reason','paid_monthly_exhausted','fresh actual008 ID agrees with exhausted paid snapshot');
+INSERT INTO snapshots VALUES('paid_unknown',public.get_analysis_access_snapshot(pg_temp.access_id(2),NULL,'2026-11-15'));
+SELECT is((SELECT value->'monthly'->>'quota_kind' FROM snapshots WHERE label='paid_unknown'),'paid_monthly','unknown registration retains verified paid kind');
+SELECT is((SELECT value->'monthly'->'limit' FROM snapshots WHERE label='paid_unknown'),'null'::jsonb,'unknown paid limit remains null');
+SELECT is((SELECT value->'modes'->'identification'->>'limit' FROM snapshots WHERE label='paid_unknown'),'100','denied paid mode retains known mode limit');
+SELECT is((SELECT value->'modes'->'identification'->>'reason' FROM snapshots WHERE label='paid_unknown'),'quota_registration_required','paid cannot use starter to bypass unknown registration');
+SELECT is(public.admit_analysis_quota('identification',pg_temp.access_id(2),NULL,pg_temp.access_id(202),'2026-11-15')->>'reason','quota_registration_required','fresh actual008 paid ID also denies unknown registration');
+
+-- Truly unmappable history is global even without any monthly_quotas row.
+UPDATE public.analysis_jobs SET quota_kind='paid_monthly',quota_state='consumed',state='succeeded' WHERE id=pg_temp.access_id(701);
+INSERT INTO snapshots VALUES('unmappable',public.get_analysis_access_snapshot(pg_temp.access_id(7),NULL,'2026-11-15'));
+SELECT is((SELECT value->'monthly'->>'status' FROM snapshots WHERE label='unmappable'),'history_unresolved','pre-registration monthly job fails closed globally');
+SELECT is((SELECT value->'monthly'->'remaining' FROM snapshots WHERE label='unmappable'),'null'::jsonb,'unmappable history has no fabricated remaining');
+SELECT is(public.admit_analysis_quota('diagnosis',pg_temp.access_id(7),NULL,pg_temp.access_id(702),'2026-11-15')->>'reason','quota_history_unresolved','fresh actual008 agrees on globally unmappable history');
+
+INSERT INTO snapshots VALUES('future',public.get_analysis_access_snapshot(pg_temp.access_id(8),NULL,'2024-01-30'));
+SELECT is((SELECT value->'monthly'->>'status' FROM snapshots WHERE label='future'),'registration_required','future anchor cannot open monthly access');
+SELECT is((SELECT value->'monthly'->'period_end' FROM snapshots WHERE label='future'),'null'::jsonb,'future anchor has no fabricated reset');
+SELECT is(public.admit_analysis_quota('diagnosis',pg_temp.access_id(8),NULL,pg_temp.access_id(801),'2024-01-30')->>'reason','quota_registration_required','actual008 agrees before registration');
+INSERT INTO snapshots VALUES('leap_before',public.get_analysis_access_snapshot(pg_temp.access_id(8),NULL,'2024-02-29 10:20:00.123455Z')),
+                            ('leap_at',public.get_analysis_access_snapshot(pg_temp.access_id(8),NULL,'2024-02-29 10:20:00.123456Z'));
+SELECT is((SELECT (value->'monthly'->>'period_start')::timestamptz FROM snapshots WHERE label='leap_before'),'2024-01-31 10:20:00.123456Z'::timestamptz,'one microsecond before leap boundary stays in old window');
+SELECT is((SELECT (value->'monthly'->>'period_start')::timestamptz FROM snapshots WHERE label='leap_at'),'2024-02-29 10:20:00.123456Z'::timestamptz,'exact leap boundary starts new window');
+SELECT is((SELECT (value->'monthly'->>'period_end')::timestamptz FROM snapshots WHERE label='leap_at'),'2024-03-31 10:20:00.123456Z'::timestamptz,'leap clamp rebounds to original day31');
+SELECT ok((public.admit_analysis_quota('diagnosis',pg_temp.access_id(8),NULL,pg_temp.access_id(801),'2024-02-29 10:20:00.123456Z')->>'admitted')::boolean,'actual008 admits at snapshot leap boundary');
+SELECT is(public.get_analysis_access_snapshot(pg_temp.access_id(8),NULL,'2024-02-29 10:20:00.123456Z')->'monthly'->>'remaining','2','leap snapshot counts actual reservation in new window');
+
+-- A copied guest pointer must normalize through GET, including account-only GET.
+SELECT public.register_installation_access(repeat('b',64),pg_temp.access_id(10),'2026-11-15');
+SELECT is(public.admit_analysis_quota('identification',pg_temp.access_id(10),(SELECT id FROM public.installation_access WHERE credential_hash=repeat('b',64)),pg_temp.access_id(1001),'2026-11-15')->>'quota_kind','starter_identification','actual guest ID uses independent starter');
+SELECT public.bind_installation_credential((SELECT id FROM public.installation_access WHERE credential_hash=repeat('b',64)),pg_temp.access_id(9),repeat('b',64),'2026-11-15');
+INSERT INTO snapshots VALUES('copied_live',public.get_analysis_access_snapshot(pg_temp.access_id(9),NULL,'2026-11-15'));
+SELECT is((SELECT value->'modes'->'identification'->>'reason' FROM snapshots WHERE label='copied_live'),'starter_in_progress','account-only GET retains live copied starter');
+SELECT is((SELECT value->'modes'->'identification'->>'inProgressJobId' FROM snapshots WHERE label='copied_live'),pg_temp.access_id(1001)::text,'copied blocking job identity retained');
+SELECT is(public.admit_analysis_quota('identification',pg_temp.access_id(9),NULL,pg_temp.access_id(901),'2026-11-15')->>'reason','starter_in_progress','actual008 agrees with copied blocking pointer');
+SELECT public.finalize_analysis_quota(pg_temp.access_id(1001),'succeeded',true,'2026-11-15');
+INSERT INTO snapshots VALUES('copied_released',public.get_analysis_access_snapshot(pg_temp.access_id(9),NULL,'2026-11-15'));
+SELECT is((SELECT value->'modes'->'identification'->>'allowed' FROM snapshots WHERE label='copied_released'),'true','GET alone clears terminal copied pointer');
+SELECT is((SELECT value->'starter'->'identification_in_progress_job_id' FROM snapshots WHERE label='copied_released'),'null'::jsonb,'GET rereads repaired profile for starter metadata');
+SELECT is(public.admit_analysis_quota('identification',pg_temp.access_id(9),NULL,pg_temp.access_id(901),'2026-11-15')->>'quota_kind','starter_identification','fresh actual008 uses released Free ID starter');
+SELECT public.finalize_analysis_quota(pg_temp.access_id(901),'succeeded',false,'2026-11-15');
+SELECT is(public.get_analysis_access_snapshot(pg_temp.access_id(9),repeat('b',64),'2026-11-15')->'modes'->'identification'->>'activeQuotaKind','free_monthly','Free ID moves to monthly after successful starter');
+INSERT INTO snapshots VALUES('guest_spent',public.get_analysis_access_snapshot(pg_temp.access_id(10),repeat('b',64),'2026-11-15'));
+SELECT is((SELECT value->'modes'->'identification'->>'reason' FROM snapshots WHERE label='guest_spent'),'starter_exhausted','shared installation cannot refill guest starter');
+SELECT is((SELECT value->'modes'->'diagnosis'->>'allowed' FROM snapshots WHERE label='guest_spent'),'true','guest diagnosis remains independent after ID success');
+SELECT is(public.admit_analysis_quota('identification',pg_temp.access_id(10),(SELECT id FROM public.installation_access WHERE credential_hash=repeat('b',64)),pg_temp.access_id(1002),'2026-11-15')->>'reason','starter_exhausted','fresh actual008 guest agrees with exhausted snapshot');
+SELECT is((SELECT (value->'modes') - 'identification' - 'diagnosis' FROM snapshots WHERE label='guest_spent'),'{}'::jsonb,'snapshot contains only the two supported modes');
+SELECT ok(NOT (SELECT pg_temp.access_id(1)=ANY(linked_owner_ids) FROM public.installation_access WHERE credential_hash=repeat('e',64)),'rejected GET never links a foreign owner');
+SELECT ok(NOT has_table_privilege('service_role','public.account_quota_usage','INSERT,UPDATE,DELETE'),'service cannot directly reserve or charge ledger');
+SELECT ok(NOT has_function_privilege('service_role','public.merge_installation_starters(uuid,uuid,timestamp with time zone)','EXECUTE'),'snapshot normalization helper remains private');
 SELECT * FROM finish();
 ROLLBACK;
