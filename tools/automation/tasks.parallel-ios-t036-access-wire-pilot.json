@@ -1,0 +1,59 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-t036-access-wire-pilot",
+      "description": "One bounded T036 canonical monthly-access decode/transport scenario using accepted SQL/wire6d689b7: preserve owner/sharedmonthly/nullableunknown/camelCase modes/rawtimestamps and fetch through real existing PlantsAPIClient with captured bound auth. No repository/UI/billing/liveGET activation. Exactly one throughput pilot task; terminal or timeout stops the lane.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "specs/001-plants-ios-mvp/contracts/monthly-access-http.md",
+        "specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "evidence_files": [
+        "specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json"
+      ],
+      "constraints": [
+        "Only implement this ONE canonical decode/transport scenario in the3existing allowed Swift files. Preserve old catalogue/sync/receipt behavior, tests and target membership. No repository/UI/billing/installation register-bind writes/SDK activation/serverTS/SQL/contracts/CI/helpers/manifests/config/gates/handoff/tasks/Git changes. No new Swift files or classes outside CollectionWireTests: all new test methods belong to that class or its extension because source coverage uses file stem. Controller owns writes/verification. Return a normal unifiedpatch with diffheaders at column1. Read targeted ranges with rg rather than entire huge tests/handoff.",
+        "Use exact agreed6d689b7 monthly-access-http.md and7nullablefixture cases, SQL005–012 accepted B prerequisite only. Add separate canonical Decodable Sendable/Equatable DTOs as needed; current AnalysisAccessState/StarterAccess localforecast/Date are not the envelope. Require owner_id,is_guest,starter,monthly,modes identification/diagnosis; explicit snakecase envelope/starter/monthly and camelCase modekeys. Unknown additive fields may be ignored. Missing/null/malformed required identity/envelope/status/mode/kind/counts/timestamps must throw, never empty/default-success/starterfallback. Existing legacy DTOs unchanged.",
+        "One shared monthly pool, not mode-pools. monthly.limit/consumed/reserved/remaining nullable: registration_required/history_unresolved have nil for all4; guest not_applicable monthly fieldsnil. Keep registered_at/period bounds nullable exactly bystatus; history_unresolved may have known registration/period but no counts. Ready requires free_monthly/paid_monthly limit3/100,nonnegative integer consumed/reserved,remaining=max(0,limit-consumed-reserved) with overflow-safe validation. Consumed may exceed current limit after paidexpiry (fixture7/3remaining0), do not refill/rejectit. Preserve authoritative modeallowed/remaining/limit/reason/inProgress fields, independentunusedstarter may remain allowed with monthlyunknown. Paidexhausted must not gain localstarterfallback. Do not invent businessdate/period/admission rules or provideruptime.",
+        "All timestamps remain exact raw RFC3339 strings incl fractions and validUTCoffsets, validated using existing SQLTimestamp helper; no Date roundtrip/loss/recomputedreset. Distinguish unknownnil counts from zero; do not derive monthlylimit from mode.limit. Known modes and activeQuotaKind correspond to documented identification/diagnosis and starter/free/paid; reject malformed mode key-label mismatch or unsupportedstatus/kind. Validate basic consistency without assuming all denied modes are monthlyexhaustion (starter_in_progress isvalid). Explicit responseowner validation against expected capturedowner.",
+        "Add one real PlantsAPIClient GET analysis/access transport method using existing PlantsAPITransport/execute/buildRequest/error mapping, expectedHTTP200 only. No requestbody,owner/time query,mutation,automaticretry,job/reservecreation or localforecast. Capture/validate existing bound SyncSessionLease/SyncSessionAuthority and sessiontoken beforedispatch, then revalidate afterawait beforepublishing; unboundlegacy bearer-only context,stalelease,signout/refresh,A→B→A,cancellation/owner mismatch failclosed. Never use a changed bearer/currentowner to validate old response or hold authoritylock across await. Do not introduce second authframework or alter existing authority semantics.",
+        "NativeAuthSession currently has userId/accessToken/expiresAt and NO anonymousflag. If requestkind is needed, accept explicit expectedguest/permanent metadata at the new transport boundary and validate response.is_guest; do not parseJWT, invent authstate or modify NativeAuthSession. GuestJWT+nonblankinstallationcredential required, missingguestcredential fails beforeHTTP; permanent account-only access permits no credential. Use the captured token and current captured installation header/locale from same actor turn; EN/PL existing locale setter unaffected. Local transport kind is not independent proof of serveridentity; responseowner/kind must match expected scope. API401/403/503/network/invalid200/cancel propagate safely, no fallback/rebind. This uncalledtransport does not activate production GET or claimlive.",
+        "Meaningful tests through actual APIClient + mocktransport: decode all7exact canonical fixturecases (embed JSON; Simulator cannot read hostrepo paths), assert sharedpool/nullableunknown/paidexpiry/no-refill/rawfractionalboundaries/modechoices/owner. Add malformed requiredfields/nulls/modekeys/unknownkind-status/timestamp/bounds/counts/overflow/inconsistentreadyremaining and additivefield tests. Assert actual GET URL/method/noquerybody/noowner override/capturedAuthorization/installation/ENPL; guestmissingcredential0requests/permanentnocredential; stable explicitretry after503;401/403/network/cancel; 201/204/malformed200/foreignowner rejected. Suspend real transport to prove signout/refresh/A→B andABA invalidation, noreturnedforeign/old snapshot. Reuse existing fixture patterns/helpers, do not fake SDK/server success or rewrite184old tests.",
+        "Run selected existing local diff-check, actualall-source ios-tests build/welcome/184existing+newunitmethods with0failed/skipped/expectedfailures, then simulator-smoke and independent highriskAstraReviewQA. Successfulbuild alone isnot scenarioacceptance; sourcecoverage mustexecute everytestmethod. No18ENPLUI/Release/SQL/Deno/automation/CI/fullintegration reruns for this narrowunchangedserver/clienttransportpacket. Fixtures are not liveAuth/GET/Supabase/provider/StoreKitproof. ParentT036/T163 staysopen; exactlyone task/run; terminal/timeout ends pilot withnoexternalrepair/newrun/mainpromotion.",
+        "Engine25a5830/cf5a6b1 transferred as A20f49b6; acceptedBwire6d689b7 merged4ab2b60. Fresh pilotrunID parallel-ios-t036-access-wire-pilot-20261110-01; prior interruptedruns neverresume. Ownignoredconfig changesONLYcontext max_discovered_files6/read_chars16000 andpreflight, preserveschecks/providers/budgets/agent_timeout900/publishorigin/codex/plants-ios. Developer routecomplexitymedium→Solmedium; riskhigh remains independentAstraReviewQA. Do not change criteria/risk/quality to obtainPASS. No newagents or externalservers."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Canonical read DTO plus real APIClient transport correctly consumes7nullableagreedfixtures, exact rawtimestamps/owners/sharedpool and rejects malformed/foreign/successfulwrongstatus without changing184existingunit scenarios; actual newbehavior tests execute.",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Actualcapturedlease/token/guestcredential/permanentnocredential/error/retry/cancel/A-B-ABA transport fixtures failclosed and preserve existing iOS build/welcome/Simulator; independent highriskReviewQA no unresolvedfindings. No UI/repository/liveGET/productparentcompletionclaim.",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
