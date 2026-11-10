@@ -1489,11 +1489,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-backend-t163-access-snapshot-sql: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-backend-t163-access-snapshot-sql](validation/automation/tasks/parallel-backend-t163-access-snapshot-sql.md).
-
-parallel-ios-fixture-ci-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-fixture-ci-acceptance](validation/automation/tasks/parallel-ios-fixture-ci-acceptance.md).
+parallel-backend-t163-access-http-pilot: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-backend-t163-access-http-pilot](validation/automation/tasks/parallel-backend-t163-access-http-pilot.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
