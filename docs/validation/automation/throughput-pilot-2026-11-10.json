@@ -1,0 +1,718 @@
+{
+  "collected_utc": "2026-11-10T20:24:36.471368+00:00",
+  "engine_commit": "25a5830",
+  "subscription_usage_attribution": null,
+  "baseline": {
+    "source": "read-only run/state/process snapshots before pilot",
+    "pilot_instruction_sent_utc": "2026-11-10T19:59:55Z",
+    "baseline_runs": [
+      {
+        "lane": "A",
+        "run": "orchestrator-parallel-ios-sync-transport-20261109-01",
+        "task_id": "parallel-ios-sync-transport",
+        "status": "WAITING",
+        "quality_contract": "fdd4c74aada33600ab3d7ab7196a7024cdd71c0ae19d31b3d419d5e34fe4cb03",
+        "calls": [
+          {
+            "agent": "developer",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": null,
+            "status": "PASS",
+            "elapsed_seconds": 503.746,
+            "retry": 0,
+            "error_category": null,
+            "routing_level": "medium",
+            "prompt_kind": "full",
+            "session_id": "01a1c150-e480-7481-9015-13bf5fe06034",
+            "resumed_session": null,
+            "id": "parallel-ios-sync-transport:1",
+            "process_observation": {
+              "status": "PASS",
+              "exit_code": 0,
+              "elapsed_seconds": 503.746,
+              "error": null
+            }
+          },
+          {
+            "agent": "developer",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": null,
+            "status": "PASS",
+            "elapsed_seconds": 475.298,
+            "retry": 1,
+            "error_category": null,
+            "routing_level": "medium",
+            "prompt_kind": "full",
+            "session_id": "01a1c158-961e-79d3-a481-e223d6d546bc",
+            "resumed_session": null,
+            "id": "parallel-ios-sync-transport:2",
+            "process_observation": {
+              "status": "PASS",
+              "exit_code": 0,
+              "elapsed_seconds": 475.298,
+              "error": null
+            }
+          },
+          {
+            "agent": "developer",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": null,
+            "status": "STARTED",
+            "elapsed_seconds": null,
+            "retry": 2,
+            "error_category": null,
+            "routing_level": "medium",
+            "prompt_kind": "full",
+            "session_id": null,
+            "resumed_session": null,
+            "id": "parallel-ios-sync-transport:3",
+            "process_observation": {
+              "status": "FAIL",
+              "exit_code": null,
+              "elapsed_seconds": 95.448,
+              "error": "interrupted"
+            }
+          }
+        ],
+        "checks": []
+      },
+      {
+        "lane": "A",
+        "run": "orchestrator-parallel-ios-sync-transport-20261109-02",
+        "task_id": "parallel-ios-sync-transport-recovery",
+        "status": "BLOCKED",
+        "quality_contract": "8eca58a8cbf8d5b7b670c83a8c16dd9ddd68b032b13dcff66210ffc32c2aacbd",
+        "calls": [],
+        "checks": [
+          {
+            "name": "diff-check",
+            "status": "PASS",
+            "elapsed_seconds": 0.021,
+            "mode": "local"
+          },
+          {
+            "name": "deno-tests",
+            "status": "PASS",
+            "elapsed_seconds": 3.007,
+            "mode": "fixture"
+          },
+          {
+            "name": "ios-tests",
+            "status": "FAIL",
+            "elapsed_seconds": 38.001,
+            "mode": "local"
+          }
+        ]
+      },
+      {
+        "lane": "A",
+        "run": "orchestrator-parallel-ios-sync-transport-20261109-03",
+        "task_id": "parallel-ios-sync-transport-compile-repair",
+        "status": "COMPLETED",
+        "quality_contract": "c5457bd299e77896bcd40d7501cbdff9684f2db743ed6b3e4d5326bb9eac7a2e",
+        "calls": [
+          {
+            "agent": "developer",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": null,
+            "status": "PASS",
+            "elapsed_seconds": 48.141,
+            "retry": 0,
+            "error_category": null,
+            "routing_level": "medium",
+            "prompt_kind": "full",
+            "session_id": "01a1c164-7c61-7461-82cc-46cc5926fe5d",
+            "resumed_session": null,
+            "id": "parallel-ios-sync-transport-compile-repair:1",
+            "process_observation": {
+              "status": "PASS",
+              "exit_code": 0,
+              "elapsed_seconds": 48.141,
+              "error": null
+            }
+          },
+          {
+            "agent": "reviewer",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": null,
+            "status": "PASS",
+            "elapsed_seconds": 62.761,
+            "retry": 0,
+            "error_category": null,
+            "routing_level": "low",
+            "prompt_kind": "full",
+            "session_id": "01a1c165-f220-7ca3-a3b2-c00175b00984",
+            "resumed_session": null,
+            "id": "parallel-ios-sync-transport-compile-repair:2",
+            "process_observation": {
+              "status": "PASS",
+              "exit_code": 0,
+              "elapsed_seconds": 62.761,
+              "error": null
+            }
+          },
+          {
+            "agent": "qa",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": null,
+            "status": "PASS",
+            "elapsed_seconds": 66.201,
+            "retry": 0,
+            "error_category": null,
+            "routing_level": "low",
+            "prompt_kind": "full",
+            "session_id": "01a1c167-4e01-7260-b44d-ad1a97fd2db3",
+            "resumed_session": null,
+            "id": "parallel-ios-sync-transport-compile-repair:3",
+            "process_observation": {
+              "status": "PASS",
+              "exit_code": 0,
+              "elapsed_seconds": 66.201,
+              "error": null
+            }
+          }
+        ],
+        "checks": [
+          {
+            "name": "diff-check",
+            "status": "PASS",
+            "elapsed_seconds": 0.023,
+            "mode": "local"
+          },
+          {
+            "name": "deno-tests",
+            "status": "PASS",
+            "elapsed_seconds": 1.885,
+            "mode": "fixture"
+          },
+          {
+            "name": "ios-tests",
+            "status": "PASS",
+            "elapsed_seconds": 44.222,
+            "mode": "local"
+          },
+          {
+            "name": "simulator-smoke",
+            "status": "PASS",
+            "elapsed_seconds": 25.405,
+            "mode": "local"
+          }
+        ]
+      },
+      {
+        "lane": "B",
+        "run": "orchestrator-parallel-backend-quota-access-http-20261110-08",
+        "task_id": "parallel-backend-t163-access-http",
+        "status": "WAITING",
+        "quality_contract": "90557079f2a7c4b00241dd29413734937c73bea6898adcc3dfecb03c58904862",
+        "calls": [
+          {
+            "agent": "developer",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": null,
+            "status": "PASS",
+            "elapsed_seconds": 68.111,
+            "retry": 0,
+            "error_category": null,
+            "routing_level": "high",
+            "prompt_kind": "full",
+            "session_id": "01a1c3b6-f24e-70f3-bb6d-4c76a20d729f",
+            "resumed_session": null,
+            "id": "parallel-backend-t163-access-http:1",
+            "process_observation": {
+              "status": "PASS",
+              "exit_code": 0,
+              "elapsed_seconds": 68.111,
+              "error": null
+            }
+          },
+          {
+            "agent": "reviewer",
+            "model": "gpt-6-astra",
+            "reasoning_effort": null,
+            "status": "PASS",
+            "elapsed_seconds": 77.672,
+            "retry": 0,
+            "error_category": null,
+            "routing_level": "high",
+            "prompt_kind": "full",
+            "session_id": "01a1c3b9-1738-7eb2-8e1c-6b236b1d49fc",
+            "resumed_session": null,
+            "id": "parallel-backend-t163-access-http:2",
+            "process_observation": {
+              "status": "PASS",
+              "exit_code": 0,
+              "elapsed_seconds": 77.672,
+              "error": null
+            }
+          },
+          {
+            "agent": "qa",
+            "model": "gpt-6-astra",
+            "reasoning_effort": null,
+            "status": "STARTED",
+            "elapsed_seconds": null,
+            "retry": 0,
+            "error_category": null,
+            "routing_level": "high",
+            "prompt_kind": "full",
+            "session_id": null,
+            "resumed_session": null,
+            "id": "parallel-backend-t163-access-http:3",
+            "process_observation": {
+              "status": "FAIL",
+              "exit_code": null,
+              "elapsed_seconds": 28.559,
+              "error": "interrupted"
+            }
+          }
+        ],
+        "checks": [
+          {
+            "name": "deno-check",
+            "status": "PASS",
+            "elapsed_seconds": 0.831,
+            "mode": "local"
+          },
+          {
+            "name": "diff-check",
+            "status": "PASS",
+            "elapsed_seconds": 0.02,
+            "mode": "local"
+          },
+          {
+            "name": "automation-tests",
+            "status": "PASS",
+            "elapsed_seconds": 38.781,
+            "mode": "fixture"
+          },
+          {
+            "name": "deno-tests",
+            "status": "PASS",
+            "elapsed_seconds": 2.826,
+            "mode": "fixture"
+          },
+          {
+            "name": "parallel-backend-access-http",
+            "status": "PASS",
+            "elapsed_seconds": 0.831,
+            "mode": "fixture"
+          },
+          {
+            "name": "parallel-backend-cap-regression",
+            "status": "PASS",
+            "elapsed_seconds": 6.056,
+            "mode": "fixture"
+          },
+          {
+            "name": "parallel-backend-quota-access",
+            "status": "PASS",
+            "elapsed_seconds": 20.279,
+            "mode": "fixture"
+          }
+        ]
+      }
+    ]
+  },
+  "integrity": {
+    "A": {
+      "engine_matches_25a5830": true,
+      "ci_untouched": true,
+      "run_id": "parallel-ios-t036-access-wire-pilot-20261110-01"
+    },
+    "B": {
+      "engine_matches_25a5830": true,
+      "ci_untouched": true,
+      "run_id": "parallel-backend-access-http-pilot-20261110-01"
+    }
+  },
+  "lanes": {
+    "A": {
+      "run_id": "parallel-ios-t036-access-wire-pilot-20261110-01",
+      "task_id": "parallel-ios-t036-access-wire-pilot",
+      "status": "COMPLETED",
+      "phase": "done",
+      "quality_contract": "85e2f9441290fdbaccf431938759c1831fef76be94135d8db6d6e0270b8311f2",
+      "accepted_commit": "e04103f41518f524d82fca9e099edf14a6a931c6",
+      "reason": "Verified and published",
+      "counts": {
+        "developer": 1,
+        "reviewer": 1,
+        "qa": 1
+      },
+      "summary": {
+        "model_calls": 3,
+        "calls_by_role": {
+          "developer": 1,
+          "reviewer": 1,
+          "qa": 1
+        },
+        "repeated_model_calls": 0,
+        "model_timeout_calls": 0,
+        "check_timeouts": 0,
+        "model_elapsed_seconds": 813.634,
+        "known_model_elapsed_seconds": 813.634,
+        "check_elapsed_seconds": 114.201,
+        "check_runs": 3,
+        "failure_events": 0,
+        "resumed_sessions": 0,
+        "prep_observed_seconds": 441.566,
+        "runtime_wall_seconds": 935.649,
+        "observed_receipt_to_run_end_seconds": 1377.158,
+        "runtime_other_seconds": 7.814,
+        "controller_turn_wall_seconds": 1902.765,
+        "post_runtime_to_final_report_publish_seconds": 488.842
+      },
+      "calls": [
+        {
+          "id": "parallel-ios-t036-access-wire-pilot:1",
+          "agent": "developer",
+          "model": "gpt-6.1-sol",
+          "reasoning_effort": "medium",
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "elapsed_seconds": 630.584,
+          "prompt_bytes": 21179,
+          "prompt_kind": "full",
+          "session_id": "01a1c712-c95a-7a53-a868-ebbea9e703cb",
+          "resumed_session": null,
+          "reply_status": "PASS",
+          "findings_count": 0,
+          "tool_commands": 10,
+          "tool_output_chars": 88429
+        },
+        {
+          "id": "parallel-ios-t036-access-wire-pilot:2",
+          "agent": "reviewer",
+          "model": "gpt-6-astra",
+          "reasoning_effort": "high",
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "elapsed_seconds": 81.336,
+          "prompt_bytes": 40161,
+          "prompt_kind": "full",
+          "session_id": "01a1c71d-cb80-7d53-9419-cbce5d56c5d8",
+          "resumed_session": null,
+          "reply_status": "PASS",
+          "findings_count": 0,
+          "tool_commands": 16,
+          "tool_output_chars": 114852
+        },
+        {
+          "id": "parallel-ios-t036-access-wire-pilot:3",
+          "agent": "qa",
+          "model": "gpt-6-astra",
+          "reasoning_effort": "high",
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "elapsed_seconds": 101.714,
+          "prompt_bytes": 40665,
+          "prompt_kind": "full",
+          "session_id": "01a1c71f-6d95-74d0-93e7-d8e521c53342",
+          "resumed_session": null,
+          "reply_status": "PASS",
+          "findings_count": 0,
+          "tool_commands": 16,
+          "tool_output_chars": 381047
+        }
+      ],
+      "checks": [
+        {
+          "name": "diff-check",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 0.024,
+          "mode": "local",
+          "error": null
+        },
+        {
+          "name": "ios-tests",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 89.339,
+          "mode": "local",
+          "error": null
+        },
+        {
+          "name": "simulator-smoke",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 24.838,
+          "mode": "local",
+          "error": null
+        }
+      ],
+      "timing": {
+        "received_observed_utc": "2026-11-10T20:00:17Z",
+        "run_id": "parallel-ios-t036-access-wire-pilot-20261110-01",
+        "initial_head": "2aafbdd946212a089be05f4f8fce1e5babbd7091",
+        "authorization": "Exactly one product task; terminal/timeout then stop; no CI/main promotion/config changes beyond authorized context/preflight transfer",
+        "engine_source_commit": "25a5830ca5447a3b25e7abd37350759e3e0841f3",
+        "engine_transferred_merge": "20f49b6",
+        "prerequisite_merge": "4ab2b60",
+        "engine_package_sha256": "7f5f41e41e537612319aa9b702a3d3cfc4a6bde1eca032f3ee36591f4ab1ff2f",
+        "config_sha256": "6bd5008b1fa38b96938a9f82a6eb14d92e309006743fe2db7d27b1bcee88a523",
+        "config": "docs/validation/automation/runs/parallel-ios-t036-pilot.config.json",
+        "manifest": "tools/automation/tasks.parallel-ios-t036-access-wire-pilot.json",
+        "task_id": "parallel-ios-t036-access-wire-pilot",
+        "preflight": "PASSactual5SwiftSources7inputsfixture",
+        "checks": [
+          "diff-check",
+          "ios-tests",
+          "simulator-smoke"
+        ],
+        "transfer_config_gates_ready_utc": "2026-11-10T20:07:38.566Z",
+        "prep_completed_utc": "2026-11-10T20:07:38.566Z",
+        "pilot_preparation_head": "62800b0bda78fc0674a39ea4c82c92718e0e6c90",
+        "run_start_utc": "2026-11-10T20:07:38.582Z",
+        "wrapper_pid": 75324,
+        "orchestrator_pid": 75332,
+        "run_end_publication_utc": "2026-11-10T20:23:14.158Z",
+        "runtime_wall_seconds": 935.649,
+        "controller_exit_code": 0,
+        "report_handoff_commit": "7011daf7a0690e2d0903b525a911d7637b02cd0f",
+        "report_push_completed_observed_utc": "2026-11-10T20:30:16.415Z"
+      },
+      "raw_directory": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01",
+      "head": "f343f837ab7cf32c254fb11d50b0e9fedee7dca4",
+      "exactly_one_new_runtime_directory": [
+        "orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01"
+      ],
+      "checkboxes_unchanged": true,
+      "thread_snapshot": {
+        "thread": {
+          "id": "01a1c14d-187a-7d91-ac6d-62ae00ec6104",
+          "hostId": "local",
+          "status": {
+            "type": "idle"
+          }
+        },
+        "latestTurn": {
+          "id": "01a1c70b-e42c-7052-b8df-07b3fce70f53",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1794340807,
+          "completedAt": 1794342710,
+          "durationMs": 1902765
+        },
+        "cursor": "18f9af0a-3368-41d2-8371-c0da090ac192:62"
+      },
+      "final_report_commit": "f343f837ab7cf32c254fb11d50b0e9fedee7dca4",
+      "post_runtime_reporting": {
+        "first_report_commit": "7011daf7a0690e2d0903b525a911d7637b02cd0f",
+        "first_report_push_completed_observed_utc": "2026-11-10T20:30:16.415Z",
+        "reporting_after_runtime_seconds": 422.257,
+        "total_first_observation_to_first_report_publication_seconds": 1799.415,
+        "scope": "Controller report/JSON/handoff/doc checks/commitpush after terminal, not additional model/product runtime. This confirmation is subsequent metadata."
+      },
+      "final_report_publish_utc": "2026-11-10T20:31:23Z"
+    },
+    "B": {
+      "run_id": "parallel-backend-access-http-pilot-20261110-01",
+      "task_id": "parallel-backend-t163-access-http-pilot",
+      "status": "COMPLETED",
+      "phase": "done",
+      "quality_contract": "5eb586012da3411ff4a3838f7f066cb5656d6903855d5b589e3efa9c533161f4",
+      "accepted_commit": "88a8ea87de6b3ef2d41c1d66f4eb038835638609",
+      "reason": "Verified and published",
+      "counts": {
+        "reviewer": 1,
+        "qa": 1
+      },
+      "summary": {
+        "model_calls": 2,
+        "calls_by_role": {
+          "reviewer": 1,
+          "qa": 1
+        },
+        "repeated_model_calls": 0,
+        "model_timeout_calls": 0,
+        "check_timeouts": 0,
+        "model_elapsed_seconds": 167.64,
+        "known_model_elapsed_seconds": 167.64,
+        "check_elapsed_seconds": 74.12,
+        "check_runs": 7,
+        "failure_events": 0,
+        "resumed_sessions": 0,
+        "prep_observed_seconds": 322.843,
+        "runtime_wall_seconds": 249.722,
+        "observed_receipt_to_run_end_seconds": 572.582,
+        "runtime_other_seconds": 7.962,
+        "controller_turn_wall_seconds": 1030.9,
+        "post_runtime_to_final_report_publish_seconds": 350.923
+      },
+      "calls": [
+        {
+          "id": "parallel-backend-t163-access-http-pilot:1",
+          "agent": "reviewer",
+          "model": "gpt-6-astra",
+          "reasoning_effort": "high",
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "elapsed_seconds": 93.515,
+          "prompt_bytes": 26142,
+          "prompt_kind": "full",
+          "session_id": "01a1c712-52be-7e91-8c58-5cacc2676865",
+          "resumed_session": null,
+          "reply_status": "PASS",
+          "findings_count": 0,
+          "tool_commands": 17,
+          "tool_output_chars": 161502
+        },
+        {
+          "id": "parallel-backend-t163-access-http-pilot:2",
+          "agent": "qa",
+          "model": "gpt-6-astra",
+          "reasoning_effort": "high",
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "elapsed_seconds": 74.125,
+          "prompt_bytes": 25854,
+          "prompt_kind": "full",
+          "session_id": "01a1c713-c17d-7b33-8d1d-464b5f558b41",
+          "resumed_session": null,
+          "reply_status": "PASS",
+          "findings_count": 0,
+          "tool_commands": 18,
+          "tool_output_chars": 114630
+        }
+      ],
+      "checks": [
+        {
+          "name": "deno-check",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 0.138,
+          "mode": "local",
+          "error": null
+        },
+        {
+          "name": "diff-check",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 0.023,
+          "mode": "local",
+          "error": null
+        },
+        {
+          "name": "automation-tests",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 47.151,
+          "mode": "fixture",
+          "error": null
+        },
+        {
+          "name": "deno-tests",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 1.822,
+          "mode": "fixture",
+          "error": null
+        },
+        {
+          "name": "parallel-backend-access-http",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 0.194,
+          "mode": "fixture",
+          "error": null
+        },
+        {
+          "name": "parallel-backend-cap-regression",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 5.773,
+          "mode": "fixture",
+          "error": null
+        },
+        {
+          "name": "parallel-backend-quota-access",
+          "status": "PASS",
+          "exit_code": 0,
+          "elapsed_seconds": 19.019,
+          "mode": "fixture",
+          "error": null
+        }
+      ],
+      "timing": {
+        "task_received_utc": "2026-11-10T20:00:29Z",
+        "requested_engine_commit": "25a5830ca5447a3b25e7abd37350759e3e0841f3",
+        "requested_run_id": "parallel-backend-access-http-pilot-20261110-01",
+        "prep_initial_head": "a1e78c3",
+        "run_count": 1,
+        "engine_merge_commit": "2d1b374de8bc2eec5cd20f09be375fc4ac7015dd",
+        "engine_source_fingerprint": "3e69b5df091a1786e5765c85f75584be817d1bacdb5a47ee44d519d8623a1bd1",
+        "engine_source_files": [
+          "tools/automation/orchestration/__init__.py",
+          "tools/automation/orchestration/context.py",
+          "tools/automation/orchestration/engine.py",
+          "tools/automation/orchestration/metrics.py",
+          "tools/automation/orchestration/preflight.py",
+          "tools/automation/orchestration/process.py",
+          "tools/automation/orchestration/provider.py",
+          "tools/automation/orchestration/repository.py",
+          "tools/automation/orchestration/storage.py",
+          "tools/automation/orchestrator.py"
+        ],
+        "config_sha256": "0a7d0752cfa4a36d65c8cf0c7df630cb641adfdeabfb272bdf33e1bde608d632",
+        "prep_checks_completed_utc": "2026-11-10T20:04:39Z",
+        "prep_published_utc": "2026-11-10T20:05:51.843Z",
+        "prep_commit": "e4473b98bd8e402c983dbd1821cd6fc6b1e5900b",
+        "run_start_utc": "2026-11-10T20:05:51.859Z",
+        "run_end_utc": "2026-11-10T20:10:01.582Z",
+        "runtime_monotonic_seconds": 249.722,
+        "run_exit_code": 0,
+        "report_published_utc": "2026-11-10T20:15:52.505Z",
+        "report_commit": "123c12305db3915b998a1748143682ab16ef1d66"
+      },
+      "raw_directory": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01",
+      "head": "123c12305db3915b998a1748143682ab16ef1d66",
+      "exactly_one_new_runtime_directory": [
+        "orchestrator-parallel-backend-access-http-pilot-20261110-01"
+      ],
+      "checkboxes_unchanged": true,
+      "thread_snapshot": {
+        "thread": {
+          "id": "01a1c14d-2b1b-7673-83c4-c95f6fe7f7c1",
+          "hostId": "local",
+          "status": {
+            "type": "idle"
+          }
+        },
+        "latestTurn": {
+          "id": "01a1c70b-d22e-7660-b215-3afe16e6d3ca",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1794340803,
+          "completedAt": 1794341833,
+          "durationMs": 1030900
+        },
+        "cursor": "5f985244-a120-44ea-8a53-1d6598f363f3:39"
+      },
+      "final_report_commit": "123c12305db3915b998a1748143682ab16ef1d66",
+      "final_report_publish_utc": "2026-11-10T20:15:52.505Z"
+    }
+  },
+  "conclusions": {
+    "causal_speedup_established": false,
+    "matching_quality_contracts": [],
+    "both_completed_first_attempt": true,
+    "new_timeouts": 0,
+    "second_runs_started": false,
+    "ci_changed": false,
+    "parent_tasks_closed": false,
+    "remaining_work": "A repository/UI for T036; B credential installation/bind HTTP; combined/live acceptance separately; resume only on new owner instruction"
+  },
+  "origin_refs_verified": {
+    "main": "5d15123e1271f93e7575433d4a09f7f04612e64a",
+    "codex/plants-ios": "f343f837ab7cf32c254fb11d50b0e9fedee7dca4",
+    "codex/plants-backend": "123c12305db3915b998a1748143682ab16ef1d66"
+  },
+  "finished_utc": "2026-11-10T20:32:43.592725+00:00"
+}

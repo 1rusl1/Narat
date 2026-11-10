@@ -1,5 +1,54 @@
 # Narat — текущий статус и передача работы
 
+## Один пилот A/B выполнен; оба снова остановлены — 10 ноября 2026
+
+По прямой команде владельца engine25a5830 перенесён обычными merge в A/B, context6/
+read16000/preflight добавлены в собственные configs без смены providers/checks/budgets/
+publish branches. В каждой сессии запущен **ровно один** следующий product task,
+оба **COMPLETED / exit0**. Не было второго run, external repair, CI-работы,
+main promotion, deploy/live. Подробные замеры/границы сравнения:
+[пилот](validation/automation/throughput-pilot-2026-11-10.md),
+[JSON](validation/automation/throughput-pilot-2026-11-10.json).
+
+**A:** accepted e04103f, T036 DTO/realAPIClient transport в трёх Swift-файлах,
+без repository/UI/billing и полного T036. Подготовка441.566s, runtime935.649s;
+Developer Sol medium630.584s, Astra high Review81.336s/QA101.714s,
+checks114.201s. Diff/build/welcome/191unit (184+7,0skip/expectedfailure)/Simulator
+и независимые Review/QA PASS. **B:** accepted88a8ea8, read-only snapshot GET access,
+исходникa151427 не менялся; prep322.843s, runtime249.722s, Dev0,
+Astra high Review93.515s/QA74.125s, checks74.120s. HTTP39/Deno336/automation147/
+typecheck/diff/SQL511 clean+upgrade/12UTC/99actual+6x20/cap55+131+4races PASS.
+У обеих repeats/repair/re-review/timeout0. B final docs123c123; A final docsf343f83. Оба чата idle, деревья чистые.
+Полное время turns A1902.765s/B1030.900s; после runtime до final report push
+A488.842s/B350.923s. Подготовка и отчётность отделены от runtime.
+
+**Что изменилось здесь:** два сводных артефакта пилота (.md/.json), README двух
+сессий и этот handoff. Продуктовый код остаётся в опубликованных ветках A/B;
+в root/main автоматически не объединён. Tasks checkbox не менялись:15done/136open,
+T006/T036/T163 и live parents открыты. Runtime/source/task reports A/B сохранены.
+
+**Проверки этого этапа:** read-only state/calls/process/timing, ровно1newruntime
+на lane относительно предыдущего аудита; source engine/defaultconfig A/B точно
+25a5830; CI diff обеих веток пуст; все151checkbox A/B совпали с их initial HEAD.
+JSON sums/5model replies/10checks PASS, repeat checks0, quality_contract baseline
+разные; Markdown local links/diff-check PASS. origin refs подтверждены: iOSf343f83,
+backend123c123, main5d15123 без изменения. Staged whitespace проверяется перед commit. Здесь новые product suites не запускались;
+реальные локальные проверки дочерних run перечислены выше. Все интеграционные
+результаты относятся к fixtures/privatePG/mock transport, не live Auth/Storage/AI/
+StoreKit и не готовности полного пользовательского пути.
+
+**Вывод/ограничения:** оба пакета прошли с первой попытки, лишний Dev B устранён;
+причинное ускорение не установлено. A всё ещё10:31Developer; подготовка/отчётность
+существенны. B Reviewer93.515s медленнее старого77.672s; baselineQA прервана,
+quality_contract разные. Процент экономии/квоты не вычислялся. Подробности старых
+попыток сохранены отдельно от raw state; elapsed=null не переписывался.
+
+**Точный следующий шаг:** оценить опубликованные измерения с владельцем.
+Обе очереди остановлены; никаких следующих пакетов/CI/main merge без новой команды.
+Следующая продуктовая работа: A repository/UI T036 по принятому wire; B installation/
+bind HTTP и последующая общая/live приёмка. Сами задачи пока не закрывать.
+
+
 ## Engine/config ускорены; A/B остаются остановленными — 10 ноября 2026
 
 По прямой команде владельца реализованы изменения общего engine/config, выполнены
@@ -1097,7 +1146,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в A/B ещё не перенесён. Запуск НЕ разрешён, CI отложена.
+- Пилот25a5830 перенесён в A/B и завершён по1task: A e04103f DTO/transport, B88a8ea8 GET snapshot;191Swift/HTTP39/Deno336/automation147/SQL511/ReviewQA PASS по своим scope;runtime935.649/249.722s,repeats/timeouts0. Обе очереди снова на паузе, main/CI/live не менялись. См. throughput-pilot-2026-11-10.md.
+- История до переноса: Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в A/B ещё не перенесён. Запуск НЕ разрешён, CI отложена.
 
 - ПРИОРИТЕТ 2026-11-10: владелец остановил A/B перед сменой конфигурации. Новые runs/repair/review/интеграции не запускать до прямой команды возобновления. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
 
