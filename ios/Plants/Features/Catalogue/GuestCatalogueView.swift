@@ -561,7 +561,9 @@ struct GuestCatalogueView: View {
     let back: () -> Void
     @State private var cards: [SpeciesCard] = []
     @State private var selected: SpeciesCard?
-    @State private var ownerKey: String?
+    @State private var selectionLocked = false
+    @State private var resumedSpecies: String?
+    @State private var bootstrapped = false
     @State private var query = ""
     @State private var loading = true
     @State private var failed = false
@@ -569,75 +571,137 @@ struct GuestCatalogueView: View {
 
     var body: some View {
         VStack {
-            if loading {
+            // Keep the same save child mounted while localized public data is refetched.
+            if let card = selected {
+                ScrollView {
+                    CatalogueSaveView(
+                        connection: connection, speciesSlug: card.id,
+                        displayName: card.display_name, scientificName: card.scientific_name,
+                        polish: polish, selectionLocked: $selectionLocked
+                    ) {
+                        speciesDetails(card)
+                    }
+                    .id(card.id)
+                    .padding()
+                }
+                if loading { ProgressView() }
+                if failed { catalogueError }
+                Button(polish ? "Wybierz inny gatunek" : "Choose another species") {
+                    if let owner = connection.snapshot?.session.userId {
+                        UserDefaults.standard.removeObject(forKey: selectionKey(owner))
+                    }
+                    resumedSpecies = nil
+                    selected = nil
+                }
+                .disabled(selectionLocked)
+                .accessibilityIdentifier("catalogue.change")
+            } else if loading {
                 ProgressView()
             } else if failed {
-                Text(polish ? "Nie udało się pobrać katalogu." : "Couldn’t load the catalogue.")
-                    .accessibilityIdentifier("catalogue.error")
-                Button(polish ? "Spróbuj ponownie" : "Try again") { retry += 1 }
-            } else if let card = selected {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(card.display_name).font(.title)
-                        Text(card.scientific_name).italic()
-                            .accessibilityIdentifier("catalogue.selected.scientific")
-                        if let photo = card.hero_image, let url = photo.download_url {
-                            AsyncImage(url: url) { image in
-                                image.resizable().scaledToFit()
-                            } placeholder: { Color.clear }
-                            .frame(maxHeight: 240)
-                            if let source = photo.source_page, let credit = photo.attribution {
-                                Link(credit, destination: source).font(.caption)
-                            }
-                        }
-                        if let description = card.description {
-                            Text(description.text)
-                            if let source = description.source_url {
-                                Link(description.attribution ?? (polish ? "Źródło" : "Source"), destination: source)
-                                    .font(.caption)
-                            }
-                        }
-                    }.padding()
-                }
-                Button(polish ? "Wybierz inny gatunek" : "Choose another species") {
-                    if let ownerKey { UserDefaults.standard.removeObject(forKey: ownerKey) }
-                    selected = nil
-                }.accessibilityIdentifier("catalogue.change")
+                catalogueError
             } else {
                 TextField(polish ? "Szukaj gatunku" : "Search species", text: $query)
                     .textFieldStyle(.roundedBorder).padding(.horizontal)
-                List(cards.filter { query.isEmpty || ($0.scientific_name + " " + $0.display_name).localizedStandardContains(query) }) { card in
+                    .accessibilityIdentifier("catalogue.search")
+                List(cards.filter {
+                    query.isEmpty || ($0.scientific_name + " " + $0.display_name).localizedStandardContains(query)
+                }) { card in
                     Button {
-                        if let ownerKey { UserDefaults.standard.set(card.id, forKey: ownerKey) }
+                        if let owner = connection.snapshot?.session.userId {
+                            UserDefaults.standard.set(card.id, forKey: selectionKey(owner))
+                        }
                         selected = card
                     } label: {
                         VStack(alignment: .leading) {
                             Text(card.display_name)
                             Text(card.scientific_name).font(.caption)
                         }
-                    }.accessibilityIdentifier("catalogue.species." + card.id)
+                    }
+                    .accessibilityIdentifier("catalogue.species." + card.id)
                 }
             }
             Button(polish ? "Wstecz" : "Back", action: back)
                 .accessibilityIdentifier("catalogue.back")
         }
-        .task(id: "\(polish)-\(retry)") {
-            loading = true
-            failed = false
-            do {
-                let owner = try await connection.sessionOwner()
-                guard let client = connection.client else { throw NativeAuthFailure.configurationMissing }
-                let page: SpeciesPage = try await client.rpc("search_catalogue_species", params: ["p_locale": polish ? "pl" : "en"]).execute().value
-                try Task.checkCancellation()
-                let key = "catalogue.selection." + owner.uuidString
-                ownerKey = key
-                cards = page.items
-                selected = cards.first { $0.id == UserDefaults.standard.string(forKey: key) }
-            } catch {
-                if Task.isCancelled { return }
-                failed = true
-            }
-            loading = false
+        .task(id: "\(polish)-\(retry)") { await loadCatalogue() }
+    }
+
+    private var catalogueError: some View {
+        VStack {
+            Text(polish ? "Nie udało się pobrać katalogu." : "Couldn’t load the catalogue.")
+                .accessibilityIdentifier("catalogue.error")
+            Button(polish ? "Spróbuj ponownie" : "Try again") { retry += 1 }
+                .accessibilityIdentifier("catalogue.retry")
         }
+    }
+
+    @ViewBuilder
+    private func speciesDetails(_ card: SpeciesCard) -> some View {
+        if let photo = card.hero_image, let url = photo.download_url {
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFit()
+            } placeholder: { Color.clear }
+            .frame(maxHeight: 240)
+            if let source = photo.source_page, let credit = photo.attribution {
+                Link(credit, destination: source).font(.caption)
+            }
+        }
+        if let description = card.description {
+            Text(description.text)
+            if let source = description.source_url {
+                Link(description.attribution ?? (polish ? "Źródło" : "Source"), destination: source)
+                    .font(.caption)
+            }
+        }
+    }
+
+    private func selectionKey(_ owner: UUID) -> String {
+        "catalogue.selection." + owner.uuidString
+    }
+
+    @MainActor
+    private func loadCatalogue() async {
+        loading = true
+        failed = false
+        do {
+            if !bootstrapped {
+                _ = try await connection.sessionOwner()
+                let expected = try await connection.sessionSnapshot()
+                if let flow = try connection.resumableFlow(expected: expected) {
+                    switch await connection.restoreModel(
+                        ownerId: expected.session.userId, flowId: flow, expected: expected
+                    ) {
+                    case let .restored(model):
+                        guard connection.snapshot == expected, let input = model.input else {
+                            throw CatalogueSaveUnavailable.sessionChanged
+                        }
+                        resumedSpecies = input.speciesSlug
+                    case .absent: break
+                    case let .unavailable(reason): throw reason
+                    }
+                }
+                try Task.checkCancellation()
+                guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
+                bootstrapped = true
+            }
+            try await connection.updateClientLocale(polish ? "pl" : "en")
+            guard let client = connection.client else { throw NativeAuthFailure.configurationMissing }
+            let page: SpeciesPage = try await client.rpc(
+                "search_catalogue_species", params: ["p_locale": polish ? "pl" : "en"]
+            ).execute().value
+            try Task.checkCancellation()
+            cards = page.items
+            // A permanent owner's restored flow wins even without a public preference.
+            let preferred = selected?.id ?? resumedSpecies ?? connection.snapshot.flatMap {
+                UserDefaults.standard.string(forKey: selectionKey($0.session.userId))
+            }
+            if let matching = cards.first(where: { $0.id == preferred }) {
+                selected = matching
+            }
+        } catch {
+            if Task.isCancelled { return }
+            failed = true
+        }
+        loading = false
     }
 }
