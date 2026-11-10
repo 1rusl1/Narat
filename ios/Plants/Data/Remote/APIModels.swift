@@ -35,6 +35,31 @@ public struct ProfileDTO: Codable, Sendable, Equatable {
         self.updatedAt = updatedAt
     }
 
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        accountState = try values.decode(String.self, forKey: .accountState)
+        anonymous = try values.decode(Bool.self, forKey: .anonymous)
+        preferredLocale = try values.decode(String.self, forKey: .preferredLocale)
+        reminderHourLocal = try values.decode(Int.self, forKey: .reminderHourLocal)
+        freeSelectionExplicit = try values.decodeIfPresent(Bool.self, forKey: .freeSelectionExplicit) ?? false
+        trialReminderOptIn = try values.decode(Bool.self, forKey: .trialReminderOptIn)
+        monthlyReportOptIn = try values.decode(Bool.self, forKey: .monthlyReportOptIn)
+        updatedAt = try values.decode(Date.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(accountState, forKey: .accountState)
+        try values.encode(anonymous, forKey: .anonymous)
+        try values.encode(preferredLocale, forKey: .preferredLocale)
+        try values.encode(reminderHourLocal, forKey: .reminderHourLocal)
+        try values.encode(trialReminderOptIn, forKey: .trialReminderOptIn)
+        try values.encode(monthlyReportOptIn, forKey: .monthlyReportOptIn)
+        try values.encode(updatedAt, forKey: .updatedAt)
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case accountState = "account_state"

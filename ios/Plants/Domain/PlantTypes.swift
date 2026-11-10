@@ -183,6 +183,18 @@ public enum NextAvailableStep: String, Codable, Sendable, CaseIterable, Equatabl
     case generatePlan = "generate_plan"
     case openPlan = "open_plan"
     case viewPlant = "view_plant"
+
+    /// Historical selectors remain readable, but cannot become new typed actions.
+    public func encode(to encoder: any Encoder) throws {
+        guard self != .selectFreePlants else {
+            throw EncodingError.invalidValue(self, .init(
+                codingPath: encoder.codingPath,
+                debugDescription: "select_free_plants is retired"
+            ))
+        }
+        var value = encoder.singleValueContainer()
+        try value.encode(rawValue)
+    }
 }
 
 public enum PaidActionKind: String, Codable, Sendable, CaseIterable, Equatable {
@@ -410,7 +422,7 @@ public struct RequestedAction: Codable, Sendable, Equatable {
 
 // MARK: - Basic Care Membership, First Aid Followup, and Observations (FR-023, FR-066, FR-067)
 
-public struct FreeSelection: Codable, Sendable, Equatable {
+public struct FreeSelection: Decodable, Sendable, Equatable {
     public let selectedPlantIds: [UUID]
     public let selectionRevision: Int
     public let explicitSelection: Bool
@@ -467,6 +479,30 @@ public struct BasicCareMembership: Codable, Sendable, Equatable, Identifiable {
         self.selectionRevision = selectionRevision
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        ownerId = try values.decode(UUID.self, forKey: .ownerId)
+        plantId = try values.decode(UUID.self, forKey: .plantId)
+        enabled = try values.decode(Bool.self, forKey: .enabled)
+        enabledAt = try values.decode(Date.self, forKey: .enabledAt)
+        freeSlot = try values.decodeIfPresent(Int.self, forKey: .freeSlot)
+        selectionRevision = try values.decodeIfPresent(Int.self, forKey: .selectionRevision) ?? 0
+        updatedAt = try values.decode(Date.self, forKey: .updatedAt)
+        deletedAt = try values.decodeIfPresent(Date.self, forKey: .deletedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(ownerId, forKey: .ownerId)
+        try values.encode(plantId, forKey: .plantId)
+        try values.encode(enabled, forKey: .enabled)
+        try values.encode(enabledAt, forKey: .enabledAt)
+        try values.encode(updatedAt, forKey: .updatedAt)
+        try values.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }
 
     enum CodingKeys: String, CodingKey {
