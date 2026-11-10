@@ -42,15 +42,6 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
 
     func read() -> UInt64 { lock.withLock { value } }
 
-    /// Order explicit flow metadata publication against SDK callback invalidation.
-    func withCurrent<T>(epoch: UInt64, _ body: () throws -> T) throws -> T {
-        try lock.withLock {
-            try Task.checkCancellation()
-            guard value == epoch else { throw CatalogueSaveUnavailable.sessionChanged }
-            return try body()
-        }
-    }
-
     func allowsAnonymousSignup(at epoch: UInt64) -> Bool {
         lock.withLock { !hasEstablishedSession && value == epoch }
     }
@@ -341,31 +332,43 @@ final class CatalogueConnection {
         "catalogue.native.flow." + owner.uuidString.lowercased()
     }
 
+    private func validate(_ model: CatalogueSaveModel, expected: CatalogueSDKSnapshot) throws {
+        guard let store, let apiClient else { throw unavailable ?? .storageUnavailable }
+        try validate(expected)
+        try model.validateScope(
+            of: store, apiClient: apiClient, session: expected.session,
+            isAnonymous: expected.isAnonymous
+        )
+        try validate(expected)
+    }
+
     /// Explicit checkpoint under the model's ORIGINAL lease; no sends or owner transfer.
     @discardableResult
     func rememberModel(
         _ model: CatalogueSaveModel, expected: CatalogueSDKSnapshot
     ) async throws -> CatalogueInputCheckpointSnapshot {
-        guard let store, let apiClient else { throw unavailable ?? .storageUnavailable }
-        try validate(expected)
-        try model.withScope(
-            of: store, apiClient: apiClient, session: expected.session,
-            isAnonymous: expected.isAnonymous
-        ) {}
+        try validate(model, expected: expected)
         let checkpoint = try await model.checkpointInput()
-        try validate(expected)
+        try validate(model, expected: expected)
         guard checkpoint.ownerId == expected.session.userId else {
             throw CatalogueSaveUnavailable.sessionChanged
         }
-        try sdkEpoch.withCurrent(epoch: expected.epoch) {
-            try model.withScope(
-                of: store, apiClient: apiClient, session: expected.session,
-                isAnonymous: expected.isAnonymous
-            ) {
-                resumeDefaults.set(checkpoint.flowId.uuidString, forKey: resumeKey(checkpoint.ownerId))
+        let key = resumeKey(checkpoint.ownerId)
+        let previous = resumeDefaults.string(forKey: key)
+        let pointer = checkpoint.flowId.uuidString
+        try validate(model, expected: expected)
+        // UserDefaults KVO is synchronous: publication and rollback must hold neither lock.
+        resumeDefaults.set(pointer, forKey: key)
+        do {
+            try validate(model, expected: expected)
+        } catch {
+            // A callback may revoke this lease or publish a newer flow. Undo only our pointer.
+            if resumeDefaults.string(forKey: key) == pointer {
+                if let previous { resumeDefaults.set(previous, forKey: key) }
+                else { resumeDefaults.removeObject(forKey: key) }
             }
+            throw error
         }
-        try validate(expected)
         return checkpoint
     }
 
@@ -376,16 +379,21 @@ final class CatalogueConnection {
     ) throws -> Bool {
         try validate(expected)
         guard ownerId == expected.session.userId else { throw CatalogueSaveUnavailable.sessionChanged }
-        let removed = try sdkEpoch.withCurrent(epoch: expected.epoch) {
-            let key = resumeKey(ownerId)
-            guard resumeDefaults.string(forKey: key).flatMap(UUID.init(uuidString:)) == expectedFlowId else {
-                return false
-            }
-            resumeDefaults.removeObject(forKey: key)
-            return true
-        }
+        let key = resumeKey(ownerId)
+        let previous = resumeDefaults.string(forKey: key)
+        guard previous.flatMap(UUID.init(uuidString:)) == expectedFlowId else { return false }
         try validate(expected)
-        return removed
+        resumeDefaults.removeObject(forKey: key)
+        do {
+            try validate(expected)
+        } catch {
+            // Restore only the absence this call published; preserve any callback's newer flow.
+            if resumeDefaults.object(forKey: key) == nil, let previous {
+                resumeDefaults.set(previous, forKey: key)
+            }
+            throw error
+        }
+        return true
     }
 
     /// Language is header metadata and must never revoke a model's original lease.

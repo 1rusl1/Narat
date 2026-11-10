@@ -206,22 +206,21 @@ final class CatalogueSaveModel {
     }
 
     /// Exact connection scope plus the ORIGINAL bound lease, not merely an equal owner.
-    /// The body must not mutate Observation state while the authority lock is held.
-    func withScope<T>(
+    /// Validation never runs caller code under the authority lock.
+    func validateScope(
         of store: LocalStore, apiClient: PlantsAPIClient, session: NativeAuthSession,
-        isAnonymous: Bool, _ body: () throws -> T
-    ) throws -> T {
+        isAnonymous: Bool
+    ) throws {
         guard self.store === store, self.apiClient === apiClient,
               context.session == session, self.isAnonymous == isAnonymous else {
             throw CatalogueSaveUnavailable.sessionChanged
         }
-        guard !cancelled else { throw CancellationError() }
-        return try apiClient.syncAuthority.withBoundValid(context, body)
+        try validateAuthority()
     }
 
     /// A native continuation must originate from this connection's current guest lease.
     func isGuest(of store: LocalStore, apiClient: PlantsAPIClient, session: NativeAuthSession) -> Bool {
-        (try? withScope(of: store, apiClient: apiClient, session: session, isAnonymous: true) { true }) == true
+        (try? validateScope(of: store, apiClient: apiClient, session: session, isAnonymous: true)) != nil
     }
 
     /// Always replay the durable checkpoint under the ORIGINAL lease, including when cached.

@@ -28,6 +28,24 @@ private final class ConnectionIdentityProvider: NativeIdentityProviding {
     }
 }
 
+/// These callbacks run synchronously inside a MainActor UserDefaults write.
+@MainActor
+private final class ConnectionDefaultsObserver: NSObject {
+    private let onChange: @MainActor () -> Void
+
+    init(_ onChange: @escaping @MainActor () -> Void) {
+        self.onChange = onChange
+        super.init()
+    }
+
+    nonisolated override func observeValue(
+        forKeyPath keyPath: String?, of object: Any?,
+        change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?
+    ) {
+        MainActor.assumeIsolated { onChange() }
+    }
+}
+
 private final class ConnectionCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var action: (@Sendable () -> Void)?
@@ -388,6 +406,177 @@ final class CatalogueConnectionTests: XCTestCase {
             transport: URLSessionAPITransport(session: h.http), identityProvider: h.identity,
             resumeDefaults: try XCTUnwrap(UserDefaults(suiteName: h.defaultsSuite))
         )
+    }
+
+    func testRememberDefaultsKVOReentersConnectionAndOriginalModelAfterDiskCommit() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let flow = UUID(), operation = UUID(), foreignFlow = UUID()
+        let model = try await guestModel(h, flow: flow, operation: operation)
+        let expected = try await h.connection.sessionSnapshot()
+        let key = resumeKey(owner)
+        h.defaults.set(foreignFlow.uuidString, forKey: resumeKey(other))
+        let requests = h.fixture.captured.count
+        var callbacks = 0
+        var returned = false
+        let observer = ConnectionDefaultsObserver {
+            callbacks += 1
+            XCTAssertFalse(returned)
+            XCTAssertTrue(Thread.isMainThread)
+            XCTAssertEqual(h.connection.snapshot, expected)
+            XCTAssertEqual(try h.connection.resumableFlow(expected: expected), flow)
+            XCTAssertEqual(model.state, .ready)
+            XCTAssertEqual(model.input, self.input)
+            XCTAssertEqual(model.envelope, try self.input.makeEnvelope(operationId: operation))
+            XCTAssertEqual(model.checkpoint?.flowId, flow)
+            XCTAssertEqual(try self.diskInput(h, owner: self.owner, flow: flow), model.checkpoint)
+        }
+        h.defaults.addObserver(observer, forKeyPath: key, options: .new, context: nil)
+        defer { h.defaults.removeObserver(observer, forKeyPath: key) }
+        let checkpoint = try await h.connection.rememberModel(model, expected: expected)
+        returned = true
+        XCTAssertGreaterThan(callbacks, 0)
+        XCTAssertEqual(try h.connection.resumableFlow(expected: expected), flow)
+        XCTAssertEqual(model.checkpoint, checkpoint)
+        XCTAssertEqual(h.defaults.string(forKey: resumeKey(other)), foreignFlow.uuidString)
+        let queue = try await h.store.pendingOutboxEntries(for: owner)
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertEqual(h.fixture.captured.count, requests)
+        XCTAssertEqual(h.identity.calls, 0)
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testRememberDefaultsKVORevokesOriginalLeaseAndConditionallyRollsBackOnlyOwnPointer() async throws {
+        // Exercise absent/previous pointers, a newer callback publication, and model cancellation.
+        for mode in 0..<4 {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner)
+            try await h.signIn()
+            let expected = try await h.connection.sessionSnapshot()
+            let api = try XCTUnwrap(h.connection.apiClient)
+            let flow = UUID(), operation = UUID(), previous = UUID(), newer = UUID(), foreignFlow = UUID()
+            let model = try await h.connection.makeModel(
+                input: input, flowId: flow, operationId: operation, expected: expected
+            )
+            let checkpoint = try await model.checkpointInput()
+            try plants(h, commandFailure: .networkConnectionLost)
+            await model.save()
+            guard case .pending = model.state else { return XCTFail("Keep a real pending operation") }
+            let queue = try await h.store.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(queue.count, 1)
+            let profile = try await h.store.syncedProfile(ownerId: owner)
+            let watermark = try await h.store.currentWatermarkRaw(ownerId: owner)
+            let key = resumeKey(owner)
+            if mode != 0 { h.defaults.set(previous.uuidString, forKey: key) }
+            h.defaults.set(foreignFlow.uuidString, forKey: resumeKey(other))
+            let requests = h.fixture.captured.count
+            var handled = false
+            var callbacks = 0
+            var returned = false
+            let observer = ConnectionDefaultsObserver {
+                callbacks += 1
+                XCTAssertFalse(returned)
+                XCTAssertTrue(Thread.isMainThread)
+                // Rollback and a newer pointer also notify synchronously.
+                guard !handled else { return }
+                handled = true
+                XCTAssertEqual(h.connection.snapshot, expected)
+                XCTAssertEqual(try h.connection.resumableFlow(expected: expected), flow)
+                if mode == 2 { h.defaults.set(newer.uuidString, forKey: key) }
+                if mode == 3 {
+                    model.cancel()
+                    XCTAssertEqual(model.state, .unavailable(.cancelled))
+                    XCTAssertNil(model.input)
+                    XCTAssertNil(model.checkpoint)
+                } else {
+                    api.syncAuthority.invalidate()
+                    self.assertRedacted(model)
+                }
+                // SDK truth remains readable even when the original model lease is revoked.
+                XCTAssertEqual(h.connection.snapshot, expected)
+                XCTAssertNoThrow(try h.connection.resumableFlow(expected: expected))
+            }
+            h.defaults.addObserver(observer, forKeyPath: key, options: .new, context: nil)
+            defer { h.defaults.removeObserver(observer, forKeyPath: key) }
+            do {
+                try await h.connection.rememberModel(model, expected: expected)
+                XCTFail("Synchronous preference callbacks revoked the original intent")
+            } catch {
+                if mode == 3 { XCTAssertTrue(error is CancellationError) }
+                else if case SyncWireValidationError.invalidSession = error {}
+                else { XCTFail("Expected rejection of the original bound lease") }
+            }
+            returned = true
+            XCTAssertGreaterThan(callbacks, 0)
+            let retained: UUID? = mode == 0 ? nil : (mode == 2 ? newer : previous)
+            XCTAssertEqual(try h.connection.resumableFlow(expected: expected), retained)
+            XCTAssertEqual(h.defaults.string(forKey: resumeKey(other)), foreignFlow.uuidString)
+            XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
+            let afterQueue = try await h.store.pendingOutboxEntries(for: owner)
+            let afterProfile = try await h.store.syncedProfile(ownerId: owner)
+            let afterWatermark = try await h.store.currentWatermarkRaw(ownerId: owner)
+            let receipt = try await h.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+            XCTAssertEqual(afterQueue, queue)
+            XCTAssertEqual(afterProfile, profile)
+            XCTAssertEqual(afterWatermark, watermark)
+            XCTAssertNil(receipt)
+            XCTAssertEqual(h.fixture.captured.count, requests)
+            XCTAssertEqual(h.identity.calls, 0)
+            assertClosed(h)
+        }
+    }
+
+    func testForgetDefaultsKVOSynchronouslyReentersSourceAndPreservesOtherOrNewerPointers() async throws {
+        for publishNewer in [false, true] {
+            let h = try Harness()
+            defer { h.close() }
+            let flow = UUID(), newer = UUID(), foreignFlow = UUID()
+            let model = try await guestModel(h, flow: flow, operation: UUID())
+            let expected = try await h.connection.sessionSnapshot()
+            let checkpoint = try await h.connection.rememberModel(model, expected: expected)
+            let key = resumeKey(owner)
+            h.defaults.set(foreignFlow.uuidString, forKey: resumeKey(other))
+            let requests = h.fixture.captured.count
+            var handled = false
+            var callbacks = 0
+            var returned = false
+            let observer = ConnectionDefaultsObserver {
+                callbacks += 1
+                XCTAssertFalse(returned)
+                XCTAssertTrue(Thread.isMainThread)
+                guard !handled else { return }
+                handled = true
+                XCTAssertEqual(h.connection.snapshot, expected)
+                XCTAssertNil(try h.connection.resumableFlow(expected: expected))
+                XCTAssertEqual(model.state, .ready)
+                XCTAssertEqual(model.input, self.input)
+                XCTAssertEqual(model.checkpoint, checkpoint)
+                if publishNewer { h.defaults.set(newer.uuidString, forKey: key) }
+            }
+            h.defaults.addObserver(observer, forKeyPath: key, options: .new, context: nil)
+            defer { h.defaults.removeObserver(observer, forKeyPath: key) }
+            XCTAssertFalse(try h.connection.forgetResumableFlow(
+                ownerId: owner, expectedFlowId: UUID(), expected: expected
+            ))
+            XCTAssertEqual(callbacks, 0)
+            XCTAssertTrue(try h.connection.forgetResumableFlow(
+                ownerId: owner, expectedFlowId: flow, expected: expected
+            ))
+            returned = true
+            XCTAssertGreaterThan(callbacks, 0)
+            XCTAssertEqual(try h.connection.resumableFlow(expected: expected), publishNewer ? newer : nil)
+            XCTAssertEqual(h.defaults.string(forKey: resumeKey(other)), foreignFlow.uuidString)
+            XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
+            let queue = try await h.store.pendingOutboxEntries(for: owner)
+            XCTAssertTrue(queue.isEmpty)
+            XCTAssertEqual(h.fixture.captured.count, requests)
+            XCTAssertEqual(h.identity.calls, 0)
+            assertNoPlants(h)
+            assertClosed(h)
+        }
     }
 
     func testGuestRememberPublishesAfterDiskCommitAndRestartsAfterProviderCancellation() async throws {
