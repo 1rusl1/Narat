@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-binding-kvo-repair",
+      "description": "Repair actual synchronous UserDefaults KVO reentrancy in recovered FULL UI binding candidate: no preference callbacks under SDK epoch or authority NSLock; complete original scope acceptance.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsTests/NativeAuthTests.swift",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift"
+      ],
+      "constraints": [
+        "Only fourallowed existing files exactsmallcontextdiff, no targets/tools/config/handoff/tasks/backend/contracts/live/views/debugfactory changes. Accepted card17d70f8/native0a9f2ea/SDK68d3e46/fixture98b2010 and all167actual tests preserved. This packet small prerequisite helpers forforthcoming actualSwiftUI, no new model/framework or businessrules. Every diff --git headercolumn1 including second/third, noleadingSPACE; generateexactdiff againstactualcurrentfiles.",
+        "Current Connection.resumableFlow excludesanonymous and onlynative success writespointer, so guestnativecancel+restart and normal registeredpending UIcannotdiscover durableinput. Add small explicit async remember/checkpoint method taking currentCatalogueSaveModel AND expectedactualSDKsnapshot. Require model bound to SAMEstore/API/session/isAnonymous and accessible originallease, not merely equalowner. Generalize existing model isGuest helper via smallinternal exactscope predicate ifneeded, keeping acceptednativebehavior. Actuallycheckpoint/replay model inputunderORIGINALlease BEFORE metadata; require snapshot.owner samecheckpointowner and validate SDKepoch before/afterawait and metadata publication. Reuse existingowner-scoped UserDefaults flowUUIDkey/resumeDefaults, neverpayload/token/newstate table/allowner scan. CurrentSDKvalid owner only; never genericAuthobserver auto-copy/call. Foreignmodel even sameownerotherstore/API/session, staleA/B/ABA,cancel or diskerror mustnotpublishpointer orsendcommands.",
+        "ResumableFlow guardedcurrentSDK mayreturn guest ORpermanent ownpointer. explicitcurrentowner restore via existingrestoreModel returns SAMEflow/op/payload andjournal state, noHTTP/noUUIDregen/noautoNative provider. Add conditional explicitforget helper owner+expectedflow+SDKsnapshot removing ONLY matchingpointer (notrecords/outbox/receipts, nototherflow/owner). User willinvoke onexplicitnewunsentintent later, neverautomaticaccountchange. Preserve nativecommittedcancel metadata/currentSDKtruth and allnativehelpertests. No readexpiredidentity/accountrecovery framework ordeletedguestfallback.",
+        "Current default clientLocalepl remainsstale afterENselection. Add small actor method validating en/pl and updates ONLY locale header metadata; noauth/token/installation/context replacement, no syncAuthorityinvalidate. Do NOTcall existing updateContext forlanguage change: itrevokes modelswhileSourceboundEpochcachecouldskiprebinding. Expose source helper (optionalexpectedSDK guard) forviews tosetlocale; source + tests actual API GET/POST headers en/pl, same model/originallease and frozenpendingoperation remainvalid. Invalidlocale failclosed without mutation, preserve old APIpublicmethods. No synthauth/defaultUUID/secondSDK.",
+        "Add>=6meaningful actualSDK/URLProtocol/model/repository/engine/SQLite tests (all167old+>=6=>173/no skips): guest checkpoint->provider cancel->source+disk recreate sameSDKowner pointer restore sameop/body zeroPOST; normal permanent remember->pending/lostresponse restart discover/retryexact; pointer write onlyafteractualdiskcommit/readOnlyfailure nochange/provider0; foreignsameownerstore/API/lease and A/B/ABA/cancel rejection preservesownerkeys; explicitforget matchingflowonly+otherowner unchanged; EN/PL actual requestheaders and noauthleaseinvalidation/pendingopregen includinginvalidlocale. Existing ConnectionTests fixtures canextend; boundedfocused no screenshots/rendered/liveclaim. Trusted alltests/build/Simulator+independenthighriskReviewer/QA. Original167retained, processkillDURINGnative transition/offlinetokenexpiry remainseparategates.",
+        "RECOVERY FULL CANDIDATE: old run parallel-ios-catalogue-ui-binding-20261110-01 WAITING timeout900s/noanswer.json, CLI readonly sandboxwarning preserved(notautoapprovalrejection). ControllerplannedSIGINT afterfinding but processalreadyended, psfound[] NOsignal sent. Latest immutable rawstdout item18model/item19API/item20Connection/item22tests recovered EXACTchunksconcatenated, noheader/code normalization,33161bytes SHA2ee981d59517b5458343843dd5c452f7a6b7431da0740835d8950566018229d1; trustedscope/apply/whitespacePASS. Initialsafetyassert detectednewitem22 beforeanyapply; pickedlatesttestpatch (Developercorrected requiredAPIbaseURL), neverolditem21. Currentfullcandidate4files548add/15del includes9newtests, all167old+9=176; no build/176tests/ReviewQA yet. ReviewWHOLEcandidate since17d70f8, notjustrepairdelta. APIlocale11lines alreadycandidate, readonlyforthisrepair. No views/fixtures/backend/config edits; oldrunlogs/stateimmutable.",
+        "ACTUAL ROOT FINDING: new rememberModel runs resumeDefaults.set inside sdkEpoch.withCurrent NSLock then model.withScope authority.withBoundValid NSLock; forgetResumableFlow runs removeObject inside sdkEpochlock. Real macOSFoundation KVOprobe /tmp/narat-userdefaults-lock-probe.swift and ignored runs/parallel-ios-kvo-probe-20261110-01/{probe.swift,stdout.log,stderr.log} executedSwiftwithtemporaryrandomsuite, prints KVO_CALLBACK insideSet=true main=true lockHeld=true; SET_RETURNED callbacks=1. A synchronous key observer reading connection.snapshot/resumableFlow/model.state/input/checkpoint or invalidating SAME authority reenters locks/deadlocks. Probe usedtryLock(nointentionaldeadlock), didnotrun actualmodel/Simulator; actualregressionsrequired. DoNOTclaimcurrenttestscoverthis or holdotherlock/recursiveNSLock tohideit.",
+        "Fix by NO arbitrary callback-producing code inside SDKepoch/authority locks: UserDefaults.set/remove/rollback andtheirKVOcallbacks MUST runoutsideALLsuchlocks. Prefer small scopeVALIDATION method (store/API/session/flag/originallease) withoutgeneric callerbody, remove withCurrent wrapper ifonlyusedforprefs. Validateoriginalmodel+expectedSDK immediatelybefore/afterawait andbefore/aftermetadata mutation. Ifcallback invalidatesoriginallease/SDK duringpublication, failclosed and conditionalrestorepreviousOWNpointer onlyifstilltheflowthiscallwrote; doNOTdeleteoverwritenewerflow/otherowner orSQLite/queue/receipt. KeepmetadataUUIDonly, nooverengineeringnewpersistencelayer/locks/fakeSDKevents. Exact race-before-publication stillnopointer, originalcheckpointpreserved. Retainnativehelpercurrenttruth andall9candidate tests.",
+        "Add>=3 meaningful actualcurrentconnection/model UserDefaults key KVOregressions (167old+9candidate+>=3=>179actual/no skips): remember callback synchronouslyrereads snapshot/resumableFlow/model.state/input/checkpoint returnsnohang andretainscorrectpointer/zeroHTTP; remembercallback invalidates SAME api.syncAuthority thenrereads guardedmodel, methodrejects/conditionalpreviouspointerrollback, cache/queue unchanged; forget/remove callback synchronouslyreads Source andreturns, onlymatchingpointerremoved/otherowner preserved. Useactual UserDefaults suite+NSObject addObserver/observeValue with smallMainActor.assumeIsolated callbackbecause SourcewritesonMainActor; nosemaphore/blockingwait/fakegetter/probe-onlyunit. Callbackonceguard forrollbacknotification ifneeded; no NSLockheldcallbacks. ExistingAPI/metadatadisk/restart/native tests allretained. Trusted build/all179+sourcecoverage/Simulator+highriskReviewerQA inspectFULL4filecandidate plusrepair, notonlynewdiff. No renderedUI/live/fullparent completion."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Explicit samecurrentowner checkpoint->UUIDmetadata discovers guest/permanent exactflow afterrestart without sends/ownertransfer, and ENPL HTTP locale changes preserveauthlease/frozenoperation; all167old+>=6=>173actualtests/no skips/build/Simulator/highriskReviewerQA. No views/live/fullparents. FULL recovered candidate acceptance requires all179actualtests and real UserDefaults KVO callback reentry/authority invalidation regressions; no callbacks under SDKepoch/authority locks.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

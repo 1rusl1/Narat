@@ -137,6 +137,17 @@ public actor PlantsAPIClient {
         self.bearerToken = bearerToken
     }
 
+    public enum LocaleError: Error, Sendable, Equatable {
+        case unsupportedLocale
+    }
+
+    /// Header metadata only: retain credentials, bound authority and in-flight operations.
+    public func updateClientLocale(_ locale: String) throws {
+        try Task.checkCancellation()
+        guard locale == "en" || locale == "pl" else { throw LocaleError.unsupportedLocale }
+        clientLocale = locale
+    }
+
     public func updateContext(
         installationCredential: String?,
         clientLocale: String,

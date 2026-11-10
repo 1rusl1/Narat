@@ -47,6 +47,7 @@ private final class ConnectionHTTPFixture: @unchecked Sendable {
         var status = 200
         var suspend = false
         var query: String? = nil
+        var failure: URLError.Code? = nil
     }
     private let lock = NSLock()
     private var replies: [Reply] = []
@@ -117,6 +118,10 @@ private final class ConnectionURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         fixture.accept(request) { [self] reply in
+            if let failure = reply?.failure {
+                client?.urlProtocol(self, didFailWithError: URLError(failure))
+                return
+            }
             guard let reply, let url = request.url,
                   let response = HTTPURLResponse(
                     url: url, statusCode: reply.status, httpVersion: nil,
@@ -136,6 +141,13 @@ private final class ConnectionURLProtocol: URLProtocol, @unchecked Sendable {
 private extension PlantsAPIClient {
     /// Deterministically hold a real actor hop while a factory keeps its original epoch.
     func holdConnectionTest(started: DispatchSemaphore, release: DispatchSemaphore) {
+        started.signal()
+        _ = release.wait(timeout: .now() + 5)
+    }
+}
+
+private extension LocalStore {
+    func holdCheckpointTest(started: DispatchSemaphore, release: DispatchSemaphore) {
         started.signal()
         _ = release.wait(timeout: .now() + 5)
     }
@@ -260,18 +272,21 @@ final class CatalogueConnectionTests: XCTestCase {
 
     private func plants(
         _ h: Harness, suspendGET: Bool = false, suspendPOST: Bool = false,
-        commandStatus: Int = 200, commandError: Data? = nil
+        commandStatus: Int = 200, commandError: Data? = nil,
+        includeGET: Bool = true, commandFailure: URLError.Code? = nil
     ) throws {
         let timestamp = "2026-11-03T09:00:00.123456+00:00"
-        h.fixture.append(.init(
-            method: "GET", path: "/functions/v1/plants-api/sync",
-            data: try json([
-                "until": timestamp, "has_more": false, "last_cursor": NSNull(),
-                "next_since": timestamp, "entitlement": NSNull(), "changes": [],
-                "profile": ["preferred_locale": "pl", "reminder_hour_local": 9,
-                            "report_notifications_enabled": true, "trial_reminder_enabled": false]
-            ]), suspend: suspendGET, query: "limit=200"
-        ))
+        if includeGET {
+            h.fixture.append(.init(
+                method: "GET", path: "/functions/v1/plants-api/sync",
+                data: try json([
+                    "until": timestamp, "has_more": false, "last_cursor": NSNull(),
+                    "next_since": timestamp, "entitlement": NSNull(), "changes": [],
+                    "profile": ["preferred_locale": "pl", "reminder_hour_local": 9,
+                                "report_notifications_enabled": true, "trial_reminder_enabled": false]
+                ]), suspend: suspendGET, query: "limit=200"
+            ))
+        }
         h.fixture.append(.init(
             method: "POST", path: "/functions/v1/plants-api/commands",
             data: try commandError ?? json([
@@ -279,7 +294,7 @@ final class CatalogueConnectionTests: XCTestCase {
                 "context_state": "current", "next_available_step": "enable_basic_care",
                 "paid_action": NSNull(), "plan_availability": "available",
                 "watermark": "2026-11-03T09:00:01.123456+00:00"
-            ]), status: commandStatus, suspend: suspendPOST
+            ]), status: commandStatus, suspend: suspendPOST, failure: commandFailure
         ))
     }
 
@@ -343,6 +358,438 @@ final class CatalogueConnectionTests: XCTestCase {
 
     private func assertNoPlants(_ h: Harness) {
         XCTAssertFalse(h.fixture.captured.contains { $0.url?.path.contains("/plants-api/") == true })
+    }
+
+    private func resumeKey(_ owner: UUID) -> String {
+        "catalogue.native.flow." + owner.uuidString.lowercased()
+    }
+
+    private func metadata(_ h: Harness) -> NSDictionary {
+        NSDictionary(dictionary: h.defaults.persistentDomain(forName: h.defaultsSuite) ?? [:])
+    }
+
+    private func backgroundConnection(_ h: Harness) async -> CatalogueConnection {
+        // A ModelActor created on MainActor may use the main queue. Hold only a worker store.
+        let container = h.store.modelContainer
+        let store = await Task.detached { LocalStore(modelContainer: container) }.value
+        return CatalogueConnection(
+            client: h.client, configuration: h.configuration, store: store,
+            transport: URLSessionAPITransport(session: h.http), identityProvider: h.identity,
+            resumeDefaults: h.defaults
+        )
+    }
+
+    private func reopenedConnection(_ h: Harness) throws -> CatalogueConnection {
+        let store = LocalStore(modelContainer: try Harness.container(
+            h.directory.appendingPathComponent("connection.sqlite")
+        ))
+        return CatalogueConnection(
+            client: h.client, configuration: h.configuration, store: store,
+            transport: URLSessionAPITransport(session: h.http), identityProvider: h.identity,
+            resumeDefaults: try XCTUnwrap(UserDefaults(suiteName: h.defaultsSuite))
+        )
+    }
+
+    func testGuestRememberPublishesAfterDiskCommitAndRestartsAfterProviderCancellation() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let flow = UUID(), operation = UUID()
+        await h.ready()
+        try auth(h, owner: owner, anonymous: true)
+        try await h.signIn()
+        let source = await backgroundConnection(h)
+        let expected = try await source.sessionSnapshot()
+        let model = try await source.makeModel(
+            input: input, flowId: flow, operationId: operation, expected: expected
+        )
+        let store = try XCTUnwrap(source.store)
+        let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let hold = Task.detached { await store.holdCheckpointTest(started: started, release: release) }
+        XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
+        var remembering: Task<CatalogueInputCheckpointSnapshot, Error>?
+        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+            remembering = Task {
+                entered.resume()
+                return try await source.rememberModel(model, expected: expected)
+            }
+        }
+        XCTAssertNil(try source.resumableFlow(expected: expected))
+        XCTAssertNil(try diskInput(h, owner: owner, flow: flow))
+        release.signal()
+        await hold.value
+        let task = try XCTUnwrap(remembering)
+        let checkpoint = try await task.value
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
+        XCTAssertEqual(try source.resumableFlow(expected: expected), flow)
+        h.identity.result = .failure(CancellationError())
+        let result = await source.signInAndSave(model, with: .apple, presenting: UIViewController())
+        guard case .inputRetained(_, .cancelled) = result else { return XCTFail("Keep guest intent") }
+        let count = h.fixture.captured.count
+        let restarted = try reopenedConnection(h)
+        let current = try await restarted.sessionSnapshot()
+        XCTAssertTrue(current.isAnonymous)
+        XCTAssertEqual(current.session, expected.session)
+        XCTAssertEqual(try restarted.resumableFlow(expected: current), flow)
+        guard case let .restored(restored) = await restarted.restoreModel(
+            ownerId: owner, flowId: flow, expected: current
+        ) else { return XCTFail("Discover the guest's own durable flow") }
+        XCTAssertEqual(restored.checkpoint, checkpoint)
+        XCTAssertEqual(restored.envelope, try input.makeEnvelope(operationId: operation))
+        XCTAssertEqual(restored.input, input)
+        XCTAssertEqual(restored.state, .signInRequired)
+        XCTAssertEqual(h.fixture.captured.count, count)
+        XCTAssertEqual(h.identity.calls, 1)
+        let queue = try await h.store.pendingOutboxEntries(for: owner)
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertEqual(metadata(h), NSDictionary(dictionary: [resumeKey(owner): flow.uuidString]))
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testPermanentRememberDiscoversLostResponseAndRetriesExactBodyAfterDiskRestart() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        await h.ready()
+        try auth(h, owner: owner)
+        try await h.signIn()
+        let expected = try await h.connection.sessionSnapshot()
+        let flow = UUID(), operation = UUID()
+        let model = try await h.connection.makeModel(
+            input: input, flowId: flow, operationId: operation, expected: expected
+        )
+        let checkpoint = try await h.connection.rememberModel(model, expected: expected)
+        XCTAssertEqual(model.state, .ready)
+        assertNoPlants(h)
+        try plants(h, commandFailure: .networkConnectionLost)
+        await model.save()
+        guard case let .pending(pending) = model.state else { return XCTFail("Lost response stays pending") }
+        let count = h.fixture.captured.count
+        let restarted = try reopenedConnection(h)
+        let current = try await restarted.sessionSnapshot()
+        XCTAssertFalse(current.isAnonymous)
+        XCTAssertEqual(try restarted.resumableFlow(expected: current), flow)
+        guard case let .restored(restored) = await restarted.restoreModel(
+            ownerId: owner, flowId: flow, expected: current
+        ) else { return XCTFail("Discover the permanent owner's pending flow") }
+        XCTAssertEqual(restored.state, .pending(pending))
+        XCTAssertEqual(restored.input, input)
+        XCTAssertEqual(restored.checkpoint, checkpoint)
+        XCTAssertEqual(h.fixture.captured.count, count)
+        try plants(h, includeGET: false)
+        await restored.save()
+        guard case let .saved(receipt) = restored.state else { return XCTFail("Retry requires durable receipt") }
+        XCTAssertEqual(receipt.operationId, operation)
+        XCTAssertEqual(receipt.payloadJSON, checkpoint.envelope.payloadJSON)
+        let posts = h.fixture.captured.filter { $0.url?.path.hasSuffix("/commands") == true }
+        XCTAssertEqual(posts.count, 2)
+        XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+        XCTAssertEqual(posts.first?.value(forHTTPHeaderField: "X-Operation-Id"), operation.uuidString.lowercased())
+        XCTAssertEqual(posts.last?.value(forHTTPHeaderField: "X-Operation-Id"), operation.uuidString.lowercased())
+        XCTAssertEqual(h.identity.calls, 0)
+        assertClosed(h)
+    }
+
+    func testRememberReadOnlyDiskPreservesBothOwnerPointersAndNeverOpensProvider() async throws {
+        let h = try Harness(allowsSave: false)
+        defer { h.close() }
+        let flow = UUID()
+        let model = try await guestModel(h, flow: flow, operation: UUID())
+        let expected = try await h.connection.sessionSnapshot()
+        h.defaults.set(UUID().uuidString, forKey: resumeKey(owner))
+        h.defaults.set(UUID().uuidString, forKey: resumeKey(other))
+        let before = metadata(h)
+        do {
+            try await h.connection.rememberModel(model, expected: expected)
+            XCTFail("No pointer without a committed checkpoint")
+        } catch {}
+        XCTAssertEqual(metadata(h), before)
+        XCTAssertNil(try diskInput(h, owner: owner, flow: flow))
+        let result = await h.connection.signInAndSave(model, with: .apple, presenting: UIViewController())
+        assertUnavailable(result, .storageOrServiceUnavailable)
+        XCTAssertEqual(metadata(h), before)
+        XCTAssertEqual(h.identity.calls, 0)
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testRememberReplaysCachedCheckpointBeforeReplacingMetadata() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let flow = UUID()
+        let model = try await guestModel(h, flow: flow, operation: UUID())
+        await model.save()
+        XCTAssertNotNil(model.checkpoint)
+        let expected = try await h.connection.sessionSnapshot()
+        h.defaults.set(UUID().uuidString, forKey: resumeKey(owner))
+        let before = metadata(h)
+        let disk = ModelContext(h.store.modelContainer)
+        let record = try XCTUnwrap(try disk.fetch(FetchDescriptor<CatalogueInputCheckpointRecord>()).first)
+        record.payloadJSON = "{}"
+        try disk.save()
+        do {
+            try await h.connection.rememberModel(model, expected: expected)
+            XCTFail("Cached input is not proof of a valid disk checkpoint")
+        } catch {}
+        XCTAssertEqual(metadata(h), before)
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: flow)?.envelope.payloadJSON, "{}")
+        XCTAssertEqual(h.identity.calls, 0)
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testRememberRejectsSameOwnerForeignStoreAPIAnonymitySessionLeaseAndCancellation() async throws {
+        for mode in 0..<7 {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner, anonymous: true)
+            try await h.signIn()
+            let expected = try await h.connection.sessionSnapshot()
+            let api = try XCTUnwrap(h.connection.apiClient)
+            var candidateStore = h.store
+            var candidateAPI = api
+            var candidateSession = expected.session
+            if mode == 0 {
+                candidateStore = LocalStore(modelContainer: try Harness.container(
+                    h.directory.appendingPathComponent("foreign.sqlite")
+                ))
+            } else if mode == 1 {
+                candidateAPI = PlantsAPIClient(
+                    baseURL: h.configuration.supabaseURL.appendingPathComponent("functions/v1/plants-api"),
+                    transport: URLSessionAPITransport(session: h.http)
+                )
+                await candidateAPI.bindSyncSession(expected.session)
+            } else if mode == 4 {
+                candidateSession = NativeAuthSession(
+                    userId: owner, accessToken: "fixture-other-session", expiresAt: expected.session.expiresAt
+                )
+                await api.bindSyncSession(candidateSession)
+            }
+            let flow = UUID()
+            let model = try await CatalogueSaveModel(
+                store: candidateStore, apiClient: candidateAPI,
+                repository: CollectionRepository(
+                    store: candidateStore, apiClient: candidateAPI,
+                    syncEngine: SyncEngine(store: candidateStore, apiClient: candidateAPI)
+                ), flowId: flow, operationId: UUID(), input: input,
+                session: candidateSession, isAnonymous: mode != 2
+            )
+            if mode == 3 { await api.bindSyncSession(expected.session) }
+            if mode == 5 { model.cancel() }
+            h.defaults.set(UUID().uuidString, forKey: resumeKey(owner))
+            h.defaults.set(UUID().uuidString, forKey: resumeKey(other))
+            let before = metadata(h)
+            let remembering = Task { try await h.connection.rememberModel(model, expected: expected) }
+            if mode == 6 { remembering.cancel() }
+            do { _ = try await remembering.value; XCTFail("Exact original scope is required: \(mode)") }
+            catch {}
+            XCTAssertEqual(metadata(h), before)
+            XCTAssertNil(try diskInput(h, owner: owner, flow: flow))
+            XCTAssertEqual(h.identity.calls, 0)
+            assertNoPlants(h)
+            assertClosed(h)
+        }
+    }
+
+    func testRememberSuspendedOnDiskRejectsSwitchABASameTokenRefreshAndCancellation() async throws {
+        for mode in 0..<5 {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner, anonymous: true)
+            try await h.signIn()
+            let source = await backgroundConnection(h)
+            let expected = try await source.sessionSnapshot()
+            let model = try await source.makeModel(
+                input: input, flowId: UUID(), operationId: UUID(), expected: expected
+            )
+            h.defaults.set(UUID().uuidString, forKey: resumeKey(owner))
+            h.defaults.set(UUID().uuidString, forKey: resumeKey(other))
+            let before = metadata(h)
+            let store = try XCTUnwrap(source.store)
+            let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+            defer { release.signal() }
+            let hold = Task.detached { await store.holdCheckpointTest(started: started, release: release) }
+            XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
+            var remembering: Task<CatalogueInputCheckpointSnapshot, Error>?
+            await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+                remembering = Task {
+                    entered.resume()
+                    return try await source.rememberModel(model, expected: expected)
+                }
+            }
+            let task = try XCTUnwrap(remembering)
+            if mode < 2 {
+                try auth(h, owner: other, token: "fixture-b")
+                try await h.signIn()
+                if mode == 1 {
+                    try auth(h, owner: owner, anonymous: true)
+                    try await h.signIn()
+                }
+            } else if mode == 2 {
+                try auth(h, owner: owner, anonymous: true, refresh: true)
+                _ = try await h.client.auth.refreshSession()
+            } else if mode == 3 {
+                task.cancel()
+            } else {
+                model.cancel()
+            }
+            XCTAssertEqual(metadata(h), before)
+            release.signal()
+            await hold.value
+            do { _ = try await task.value; XCTFail("Revoked intent must not publish metadata: \(mode)") }
+            catch {}
+            XCTAssertEqual(metadata(h), before)
+            if mode < 3 {
+                XCTAssertThrowsError(try source.resumableFlow(expected: expected))
+                XCTAssertThrowsError(try source.forgetResumableFlow(
+                    ownerId: owner, expectedFlowId: UUID(), expected: expected
+                ))
+            }
+            XCTAssertEqual(h.identity.calls, 0)
+            assertNoPlants(h)
+            assertClosed(h)
+        }
+    }
+
+    func testExplicitForgetMatchesOwnerAndFlowAndPreservesPendingRecordsAndReceipts() async throws {
+        for pending in [true, false] {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner)
+            try await h.signIn()
+            let expected = try await h.connection.sessionSnapshot()
+            let flow = UUID(), operation = UUID(), foreignFlow = UUID()
+            let model = try await h.connection.makeModel(
+                input: input, flowId: flow, operationId: operation, expected: expected
+            )
+            let checkpoint = try await h.connection.rememberModel(model, expected: expected)
+            try plants(h, commandFailure: pending ? .networkConnectionLost : nil)
+            await model.save()
+            if pending {
+                guard case .pending = model.state else { return XCTFail("Pending fixture") }
+            } else {
+                guard case .saved = model.state else { return XCTFail("Receipt fixture") }
+            }
+            h.defaults.set(foreignFlow.uuidString, forKey: resumeKey(other))
+            let queue = try await h.store.pendingOutboxEntries(for: owner)
+            let receipt = try await h.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+            XCTAssertFalse(try h.connection.forgetResumableFlow(
+                ownerId: owner, expectedFlowId: UUID(), expected: expected
+            ))
+            XCTAssertThrowsError(try h.connection.forgetResumableFlow(
+                ownerId: other, expectedFlowId: foreignFlow, expected: expected
+            ))
+            XCTAssertEqual(try h.connection.resumableFlow(expected: expected), flow)
+            XCTAssertTrue(try h.connection.forgetResumableFlow(
+                ownerId: owner, expectedFlowId: flow, expected: expected
+            ))
+            XCTAssertNil(try h.connection.resumableFlow(expected: expected))
+            XCTAssertFalse(try h.connection.forgetResumableFlow(
+                ownerId: owner, expectedFlowId: flow, expected: expected
+            ))
+            XCTAssertEqual(h.defaults.string(forKey: resumeKey(other)), foreignFlow.uuidString)
+            XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
+            let afterQueue = try await h.store.pendingOutboxEntries(for: owner)
+            let afterReceipt = try await h.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+            XCTAssertEqual(afterQueue, queue)
+            XCTAssertEqual(afterReceipt, receipt)
+            let newFlow = UUID()
+            let newModel = try await h.connection.makeModel(
+                input: input, flowId: newFlow, operationId: UUID(), expected: expected
+            )
+            try await h.connection.rememberModel(newModel, expected: expected)
+            XCTAssertFalse(try h.connection.forgetResumableFlow(
+                ownerId: owner, expectedFlowId: flow, expected: expected
+            ))
+            XCTAssertEqual(try h.connection.resumableFlow(expected: expected), newFlow)
+            XCTAssertEqual(h.defaults.string(forKey: resumeKey(other)), foreignFlow.uuidString)
+            XCTAssertEqual(h.identity.calls, 0)
+            assertClosed(h)
+        }
+    }
+
+    func testSourceLocaleUpdatesRealGETPOSTHeadersWithoutRevokingModelOrFrozenPendingOperation() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        await h.ready()
+        try auth(h, owner: owner)
+        try await h.signIn()
+        let expected = try await h.connection.sessionSnapshot()
+        let api = try XCTUnwrap(h.connection.apiClient)
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let flow = UUID(), operation = UUID()
+        let model = try await h.connection.makeModel(
+            input: input, flowId: flow, operationId: operation, expected: expected
+        )
+        let checkpoint = try await h.connection.rememberModel(model, expected: expected)
+        for locale in ["en", "pl"] {
+            try await h.connection.updateClientLocale(locale)
+            try plants(h, commandFailure: .networkConnectionLost)
+            if locale == "pl" { _ = try await api.fetchSyncWirePage(session: expected.session) }
+            await model.save()
+            guard case .pending = model.state else { return XCTFail("Same original model stays usable") }
+            XCTAssertEqual(model.input, input)
+            XCTAssertEqual(model.envelope, checkpoint.envelope)
+            XCTAssertEqual(model.checkpoint, checkpoint)
+            try api.syncAuthority.withBoundValid(lease) {}
+        }
+        let pending = model.state
+        for locale in ["de", "", "EN", "pl "] {
+            do { try await h.connection.updateClientLocale(locale); XCTFail("Reject unsupported locale") }
+            catch { XCTAssertEqual(error as? PlantsAPIClient.LocaleError, .unsupportedLocale) }
+            XCTAssertEqual(model.state, pending)
+            XCTAssertEqual(model.envelope, checkpoint.envelope)
+        }
+        let after = try await h.connection.sessionSnapshot()
+        let afterLease = try await api.captureSyncContext(ownerId: owner)
+        XCTAssertEqual(after, expected)
+        XCTAssertEqual(afterLease.generation, lease.generation)
+        XCTAssertEqual(afterLease.session, lease.session)
+        try plants(h, includeGET: false)
+        await model.save()
+        guard case let .saved(receipt) = model.state else { return XCTFail("Original lease retries successfully") }
+        XCTAssertEqual(receipt.operationId, operation)
+        let requests = h.fixture.captured.filter { $0.url?.path.contains("/plants-api/") == true }
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET", "POST", "POST"])
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "X-Client-Locale") }, ["en", "en", "pl", "pl", "pl"])
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-a" })
+        let posts = requests.filter { $0.httpMethod == "POST" }
+        XCTAssertTrue(posts.allSatisfy { $0.httpBody == posts.first?.httpBody })
+        XCTAssertTrue(posts.allSatisfy { $0.value(forHTTPHeaderField: "X-Operation-Id") == operation.uuidString.lowercased() })
+        XCTAssertEqual(h.identity.calls, 0)
+        assertClosed(h)
+    }
+
+    func testAPILocaleMethodPreservesInstallationAndBoundAuthorizationOnActualRequests() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        await h.ready()
+        try auth(h, owner: owner)
+        try await h.signIn()
+        let expected = try await h.connection.sessionSnapshot()
+        let api = PlantsAPIClient(
+            baseURL: h.configuration.supabaseURL.appendingPathComponent("functions/v1/plants-api"),
+            transport: URLSessionAPITransport(session: h.http), installationCredential: "fixture-installation"
+        )
+        await api.bindSyncSession(expected.session)
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let envelope = try input.makeEnvelope(operationId: UUID())
+        for locale in ["en", "pl"] {
+            try await api.updateClientLocale(locale)
+            try plants(h)
+            _ = try await api.fetchSyncWirePage(session: expected.session)
+            _ = try await api.sendOutboxCommand(envelope, context: lease)
+        }
+        let requests = h.fixture.captured.filter { $0.url?.path.contains("/plants-api/") == true }
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET", "POST"])
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "X-Client-Locale") }, ["en", "en", "pl", "pl"])
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-a" })
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Installation-Credential") == "fixture-installation" })
+        try api.syncAuthority.withBoundValid(lease) {}
+        assertClosed(h)
     }
 
     func testNativeProviderOpensOnlyAfterExactDiskCheckpointAndCancellationRetainsGuest() async throws {

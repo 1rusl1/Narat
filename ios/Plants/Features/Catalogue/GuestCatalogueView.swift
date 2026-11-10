@@ -42,6 +42,15 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
 
     func read() -> UInt64 { lock.withLock { value } }
 
+    /// Order explicit flow metadata publication against SDK callback invalidation.
+    func withCurrent<T>(epoch: UInt64, _ body: () throws -> T) throws -> T {
+        try lock.withLock {
+            try Task.checkCancellation()
+            guard value == epoch else { throw CatalogueSaveUnavailable.sessionChanged }
+            return try body()
+        }
+    }
+
     func allowsAnonymousSignup(at epoch: UInt64) -> Bool {
         lock.withLock { !hasEstablishedSession && value == epoch }
     }
@@ -332,10 +341,63 @@ final class CatalogueConnection {
         "catalogue.native.flow." + owner.uuidString.lowercased()
     }
 
-    /// Owner-scoped metadata only. Payload and receipt remain exclusively in SQLite.
+    /// Explicit checkpoint under the model's ORIGINAL lease; no sends or owner transfer.
+    @discardableResult
+    func rememberModel(
+        _ model: CatalogueSaveModel, expected: CatalogueSDKSnapshot
+    ) async throws -> CatalogueInputCheckpointSnapshot {
+        guard let store, let apiClient else { throw unavailable ?? .storageUnavailable }
+        try validate(expected)
+        try model.withScope(
+            of: store, apiClient: apiClient, session: expected.session,
+            isAnonymous: expected.isAnonymous
+        ) {}
+        let checkpoint = try await model.checkpointInput()
+        try validate(expected)
+        guard checkpoint.ownerId == expected.session.userId else {
+            throw CatalogueSaveUnavailable.sessionChanged
+        }
+        try sdkEpoch.withCurrent(epoch: expected.epoch) {
+            try model.withScope(
+                of: store, apiClient: apiClient, session: expected.session,
+                isAnonymous: expected.isAnonymous
+            ) {
+                resumeDefaults.set(checkpoint.flowId.uuidString, forKey: resumeKey(checkpoint.ownerId))
+            }
+        }
+        try validate(expected)
+        return checkpoint
+    }
+
+    /// Explicit new intent may forget ONLY the matching pointer, never durable records.
+    @discardableResult
+    func forgetResumableFlow(
+        ownerId: UUID, expectedFlowId: UUID, expected: CatalogueSDKSnapshot
+    ) throws -> Bool {
+        try validate(expected)
+        guard ownerId == expected.session.userId else { throw CatalogueSaveUnavailable.sessionChanged }
+        let removed = try sdkEpoch.withCurrent(epoch: expected.epoch) {
+            let key = resumeKey(ownerId)
+            guard resumeDefaults.string(forKey: key).flatMap(UUID.init(uuidString:)) == expectedFlowId else {
+                return false
+            }
+            resumeDefaults.removeObject(forKey: key)
+            return true
+        }
+        try validate(expected)
+        return removed
+    }
+
+    /// Language is header metadata and must never revoke a model's original lease.
+    func updateClientLocale(_ locale: String) async throws {
+        guard let apiClient else { throw unavailable ?? .configurationMissing }
+        try await apiClient.updateClientLocale(locale)
+    }
+
+    /// Current-owner metadata only, for guests and permanent users alike.
+    /// Payload and receipt remain exclusively in SQLite.
     func resumableFlow(expected: CatalogueSDKSnapshot) throws -> UUID? {
         try validate(expected)
-        guard !expected.isAnonymous else { return nil }
         let flow = resumeDefaults.string(forKey: resumeKey(expected.session.userId)).flatMap(UUID.init(uuidString:))
         try validate(expected)
         return flow
