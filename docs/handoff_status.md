@@ -1,6 +1,24 @@
 # Narat — текущий статус и передача работы
 
 
+## B2 — разрешение получено, начинается независимый run07 (2026-11-10)
+
+Владелец явно разрешил Developer/Reviewer/QA с передачей кода настроенным провайдерам,
+commit/push только origin/codex/plants-backend и передачу технических отчётов в A.
+Предыдущие approval rejection сохранены как история; блокировка разрешением снята.
+A передан merge-ready **только bc6a879/runtime a367d0b (SQL005–010)**; tip4333509 с
+SQL11/12 остаётся кандидатом. Запрошено подтверждение additive access wire; collection
+wire не меняется. Последняя известная main72bcccc уже в B, активный HEAD не обновлять.
+
+Дерево перед подготовкой чистое, config SHA256
+`7b9b9b38d11cdc0227599a9b0b301c25472040280803cbc24394fd40c234e904` совпал.
+Новый run `parallel-backend-quota-api-sql-20261110-07`, manifest
+`tools/automation/tasks.parallel-backend-quota-api.json`, явный branch --config.
+После сохранения handoff: validate/context → запуск011, затем012; старые runs не resume.
+Фактические локальные checks кандидата475pgTAP/Deno336/automation115 описаны ниже;
+новый run ещё не acceptance. После принятых SQL — HTTP production adapters и
+строгие transport fixtures, затем A/T036/live; продуктовые checkbox остаются открытыми.
+
 ## B2 — SQL11/12 локально проверены; независимый workflow заблокирован approval
 
 **Фактическая точка:** B1 принятый runtime a367d0b/сводка bc6a879, кандидат011 и
