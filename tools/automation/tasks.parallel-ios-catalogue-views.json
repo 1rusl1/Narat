@@ -1,0 +1,59 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-views",
+      "description": "Implement three actual EN/PL SwiftUI catalogue save/card/native views over accepted179-test stack; compile/source/Release candidate acceptance only, full16 rendered UI tests follow separately.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Integrations/Auth/NativeIdentityProvider.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/Plants/App/LanguageStore.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "tools/automation/parallel_ios_catalogue_ui_gate.py",
+        "tools/automation/parallel_ios_catalogue_release_gate.py"
+      ],
+      "write_files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift"
+      ],
+      "constraints": [
+        "NARROWED AFTERTIMEOUT: priorparallel-ios-catalogue-save-ui-20261110-01 WAITING900s/noanswer.json/NOfullpatchorpreview, runtimeunchanged(onlypreviouscontrollertargetprep). Noimplementationready,noSource/UItestsaccepted. Originalfullmanifest/logs/stateimmutable, donotresume withnewcontract. ThispacketONLY3appviews files, NOnewXCUITestimplementation. No attempts/budgets/routing changed; complexitymedium reflectsremovingtestauthorship andUIharnessscope, riskHIGHretained. CurrentappnewSaveViewstillimportSwiftUIONLY, notexistingimplementation. Keepallviewbehaviorcontractsbelow, butfullactual16caseacceptanceFOLLOWUPrequiredbeforemain/productcheckbox. Test/gates arecontrollerprotected.",
+        "Onlyallowed3appfiles smallordinarydiff; every diff --git startscolumn1(noSPACE). New SaveView imports-only skeleton controllerincludedappSources BEFOREevidence; UITestimports-onlytargetprepisreservednextpacket, doNOTedititnow. No targets/tools/config/testsotherfiles/handoff/tasks/AGENTS/backend/contracts/live. Accepted binding9b86251/card17d70f8/native0a9f2ea/SDK68d3e46/fixture98b2010/all179oldunit retained. Use actualaccepted helperAPIs after reading, not parallel framework/store/engine/businessrules. Existingwelcome/care/problem unavailablebaseline andoldintentroute unchanged untilT170separate. No oldconditions questionnaire/camera/season/slots/rooms/analysisclaim/caregeneration requiredforcatalogue save.",
+        "GuestCatalogue selectedpublishedspecies adds real minimal optionalpersonalname/savepanel using new CatalogueSaveView. Existingpublicspecies info/scientific/source attribution/selection/back preserved. Allproductcopy EN/PL consistently, existinglanguagepicker updateslive; PlantsAPI X-Client-Locale usesaccepted smalllocalehelper, never updateContext/rebindoldtoken justforlanguage. Preserve selectedform duringcatalogue localizedrefetch, avoidremovingchild losinginput merelybecause languagechanged. Defaultunconfigured app stillcatalogue.error/back, no fake success or livefallback.",
+        "Form owner scope MUSTfollow actualConnection SDKsnapshot/epoch, no placeholder UUID/permanent defaults. Mutableunsaved personalname percurrentowner; genericSDKchange clears/hides oldprivateform/model/status, nevercopies selectedprivateinput/receipt intoB orauto sends. Render saved/pending/card exclusively through guarded model getters; do notpass rawcaptured receipt/private summary to unguarded destination. Whileintentionalnative runs, preventconcurrent snapshotstartup restore/model replacement frombreakingreconciliation, and hideoldform onceoriginalscope invalid. Adopt ONLYhelperreturned verifiedmodel ifstillcurrent; unrelatedtransition returnsunavailable/clear. Noauthobserver automaticnewcreate.",
+        "ExplicitSave createsONEflow/op/inputactionmodel and freezes envelope; checkpoint/remember throughaccepted currentowner helper beforeguestprovider/network. Restore onlycurrentowner pointer+actualSQLite usingexistingfactory (guest ORpermanent), preserves SAMEflow/op/payload and showsstate withoutHTTPcreate/provider. Pending/busy fields locked, repeat taps/busy join no newIDs. Optionalunsent userediting starts explicitnewintent/model/op andconditionalforgetoldpointer; nevermodifyqueued/confirmed payload orregenop merelyonerror/retry/locale. Invalidinput keepsuserform, nofalsecached/savedclaim. No rawSQL/network/token/error diagnostics shown.",
+        "GuestSave .signInRequired presents ENPL Apple/Google actions using REALconnection.signInAndSave/provider/currentimmutablemodel; real UIViewControllerRepresentable/window presenter foractualNativeIdentityProvider (nofakeUIViewController inproduction/no separateSDK). Fakeprovider onlyinexplicitDEBUGfactory. Providercancel/failure retainschoseninput and offers retry/back; nativecancelstatus visible, originalinput discoverable afterappterminate/relaunch withoutprovider orcreate. Committedexchange/callercancel preservesSDKtruth/metadata and noautoPOST peracceptedhelper; canceltask whenleaving view withoutdeletingcache/queue/receipt. No serverguestproof/claim/fallback invented.",
+        "RegisteredSave drivesacceptedmodel.save and onlyactualdurablereceipt meanssaved. Showtypedprecheckcap(Free3/zeroPOST), actualserver409and503/pending withinputpreserved and explicitsameoperationretry, no count-based/fake success. Newsave/nonpending input can beeditedonlyasexplicitnewintent, notsilentpayloadreplacement. Use meaningful localizedlabels/accessibilityIDs; avoid exposing internalUUIDs/rawerrors/SDKmetadataasproductcopy. Back remainsavailable, duplicateprovider/savetapsdisabled whilebusy.",
+        "Saved view loads accepted guardedoriginalcontext cardreadback. Render actualserverUUIDrow/name/species (publicselectedspeciesdescription onlyifsummaryspeciesmatches), no fake plant/plan/care/job frominput orreceiptalone. Already durable.saved withGETfailure remainssaved+detailsunavailable and detailsretry only, no newcreate orreceiptwatermark checkpoint. Cardelement accessibilityidentifier maycontain actualinstanceUUIDfornonvisible teststability; do notdisplayUUIDasusercopy. Currentowner scope remainsguarded afteridle SDKchanges.",
+        "Root explicit DEBUG fixture launchmode args(--catalogue-fixture closedscenario, --catalogue-namespace validatedUUID) instantiatefactorywithoutFIRST constructingconfigured productionConnection/realSDK; initialoptional/loading state untilasyncfactory ready. Allfactoryreferences/launchbranch #ifDEBUG; absentflag orRelease createsnormalconfiguredsource. Invalidfixtureargs/factoryfailure explicitunavailable, neverfallbacklive. Retainfixturecontextacrossviewlifetime, doNOTcleanup onrelaunch; eachUITestfreshnamespace(UUID), sameexactnamespace/scenario across appterminate/relaunch =>realpersistentSDK/SQLite/serverledger. Noresetneeded newUUIDnaturallyfresh; no addedfakecredentials outsideDEBUG/no images/network.",
+        "Current boundedVIEW packet checks: diff/build/all179oldunit(no skips)/123automation/baselineSimulator + isolatedReleasebuildfixturemarkersabsent; independenthighriskReviewerQA inspectcomplete3fileUI source/scope/defaultflow preservation. Do NOTclaim fullrenderedUX/16UI acceptance yet: nextpacketimplementsactual16XCUITests andindependentlyacceptsWHOLEviewcandidate withscreenshots. No new UITests/otherfile edits inthispacket. Existing testfile importskeleton stayspreparedtarget; UIgate notrun before16methods implemented. Live/fullT162/T149/Auth/offlinetokenexpiry remainopen. Developerdoesnotruncontrollerchecks, returncompletepatchreadyforbuild.",
+        "No debug HUD/counter labels/syntheticproductsuccessbuttons/clipboardbridges inUI. Use actual model operation/serverinstance UUID in NONVISIBLEaccessibilityidentifier whenneeded toassertrestartidentity; normalcopy onlyusermeaningful name/status. Existing real model+fixtureunit tests provideexactbody/ledgercount/no duplicate/no spurioussignup proof; forthcomingseparate16UIcaseswillexerciseactualrenderedflow+restart+readonlyinput/localecopy andsameIDs throughthatstack; exposesemanticstableaccessibilityIDsnow. ClearlyseparateUIstateproof fromunitnetworkcounterproof, neverclaimlive.",
+        "Parent catalogue bootstrap mustresolve CURRENTowner resumableFlow->actualownrestoredinput speciesSlug andselectmatchingpublishedcard, evenifUserDefaults publicselectionkeyfornewpermanentownerabsent afternativeA->B. Merelyrestoringchild onlyaftermanualspeciesselection isinsufficient. Future16UIcases will terminate/relaunch native success SAMEfixture namespace andmustauto-open SAMEsavedservercard/sameUUID withoutre-login/newSave; implementthisrealresume behaviornow. Preserve privateowner scope; publicspeciesselectionmaypersist butaccountpreferencewritesmustuse actualcurrentSDKowner notcachedguestownerKey. DuringnativeSDK transition/locale RPCrefetch donotunmountactiveSaveView orcancelselectedintent automatically; keepselectedpubliccard visible/loadinginline, hideprivateoldformthroughguardedmodel/snapshot untilverifiedadoption. Genericowner/epochchange clears privatefields, no transfer/noautosend; nativeintent handling separately asalreadyrequired."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "ThreeactualENPL views useacceptedSource/model/repo/nativehelpers, preservecurrentowner/frozeninput/receipttruth/defaultwelcome andDEBUGfixtureisolation; all179unit/build/123automation/baselineSimulator/actualReleaseexclusion/sourcehighriskReviewerQA. Thisisimplementationcandidate ONLY, full16renderedUI+screenshots/wholecandidateacceptance next; no productcheckbox/live/T162complete.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke",
+            "parallel-ios-catalogue-release"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
