@@ -1,5 +1,39 @@
 # Narat — текущий статус и передача работы
 
+## Пауза A/B и аудит скорости — 10 ноября 2026
+
+Владелец отменил предложенное переключение очередей и прямо поручил остановить
+оба оркестратора перед изменением конфигурации. Команда остановки передана в
+Plants A и Plants B; оба управляющих чата её получили. A сообщила, что текущий
+CLI-run уже завершён; B останавливает активный access HTTP run. Остановка подтверждена: повторный process inventory не обнаружил orchestrator,
+model CLI, ios_gate/doctor/parallel checks, xcodebuild/xctest или Deno test процессов.
+A run ci-b1-sql-acceptance — COMPLETED/done; B access-http run08 — WAITING/qa,
+«Interrupted; child group stopped; resume explicitly». Полной HTTP-приёмки B нет. Автоматическое
+возобновление запрещено до новой команды владельца; конфигурация не изменена.
+GitHub Actions/дальнейшая CI-работа отложены, T006 остаётся открытой и не блокирует
+MVP; локальные проверки сохраняются.
+
+**Сделано:** аудит сохранённых state двух worktree: 42 A/7 B runs, 100/33 модельных
+вызова, около361/135 модельных минут; Developer около82% суммарного модельного
+времени. Восемь900s timeout — около120мин. Точные ограничения измерений и
+предложения: [отчёт](validation/automation/throughput-audit-2026-11-10.md).
+Счётчики CLI не позволяют пересчитать это в проценты подписочного лимита.
+
+**Изменены:** новый отчёт throughput-audit-2026-11-10.md и JSON-агрегат,
+docs/parallel/README.md (пауза), tasks.md (T006 отложена
+без изменения checkbox), этот handoff. Это отдельная ветка
+codex/development-throughput-audit от опубликованной main5d15123; текущие изменения
+A/B сюда не переносились. Новый снимок не заменяет их локальные task reports.
+**Проверки:** чтение state/metrics, live wait_threads snapshots, process inventory;
+Markdown local links/JSON parse/diff-check — PASS; все151 checkbox совпадают с
+HEAD (15done/136open). Новые product
+suites, model calls и живые Auth/AI/Storage/StoreKit не запускались.
+
+**Ограничения:** предложения ещё не применены; отчёт сохраняется отдельным
+коммитом в origin/codex/development-throughput-audit, без публикации в main. **Точный следующий шаг:** сохранить pause checkpoints в A/B; затем согласовать
+изменения конфигурации. До этого не запускать новые manifests/runs.
+
+
 **Обновлено 2026-11-10.** T162 полностью принята в local/fixture scope и опубликована в main (`546880a`). CI-конфигурация принята отдельно: `45f7bec`, все 7 checks и независимые Review/QA PASS. Source fingerprint до/после совпал. T006 остаётся открытой до результата облачного CI. Выполнены 15 из 151 задач, открыты 136. CI опубликована обычным push в main (`8107152`); следующий шаг — наблюдение GitHub Actions при доступе к аккаунту.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
@@ -997,6 +1031,8 @@ T148 остаётся на прежней остановке до запуска
 
 <!-- orchestrator:project-state -->
 ## Project State
+
+- ПРИОРИТЕТ 2026-11-10: владелец остановил A/B перед сменой конфигурации. Новые runs/repair/review/интеграции не запускать до прямой команды возобновления. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
 
 - Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN/PL; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.

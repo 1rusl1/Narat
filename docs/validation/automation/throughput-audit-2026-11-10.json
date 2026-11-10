@@ -1,0 +1,139 @@
+{
+  "scope": "parallel A/B run state snapshot collected during active work, before requested stop on 2026-11-10 Europe/Moscow",
+  "quota_percent_attribution": null,
+  "wall_clock_duration": null,
+  "lanes": {
+    "A": {
+      "root": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants",
+      "summary": {
+        "runs": 42,
+        "task_attempt_statuses": {
+          "COMPLETED": 23,
+          "WAITING": 9,
+          "BLOCKED": 10
+        },
+        "calls": 100,
+        "model_seconds": 21664.985,
+        "check_seconds": 6127.73,
+        "roles": {
+          "developer": {
+            "calls": 48,
+            "seconds": 17349.217,
+            "failed_calls": 9
+          },
+          "qa": {
+            "calls": 24,
+            "seconds": 1948.78,
+            "failed_calls": 0
+          },
+          "reviewer": {
+            "calls": 28,
+            "seconds": 2366.988,
+            "failed_calls": 1
+          }
+        },
+        "timeout_calls": 5,
+        "timeout_seconds": 4500.125,
+        "failed_calls": 10,
+        "failed_call_seconds": 4579.916,
+        "combined_acceptance_calls": 0,
+        "delta_resume_calls": 0,
+        "ci_calls": 8,
+        "handoff_bytes": 317005
+      },
+      "run_directories": [
+        "orchestrator-parallel-ios-b1-integration-20261110-01",
+        "orchestrator-parallel-ios-catalogue-ack-ui-repair-20261110-01",
+        "orchestrator-parallel-ios-catalogue-capacity-20261109-01",
+        "orchestrator-parallel-ios-catalogue-capacity-20261109-02",
+        "orchestrator-parallel-ios-catalogue-card-readback-20261110-01",
+        "orchestrator-parallel-ios-catalogue-input-checkpoint-20261109-01",
+        "orchestrator-parallel-ios-catalogue-input-checkpoint-20261110-02",
+        "orchestrator-parallel-ios-catalogue-journal-20261109-01",
+        "orchestrator-parallel-ios-catalogue-native-auth-20261110-01",
+        "orchestrator-parallel-ios-catalogue-native-auth-20261110-02",
+        "orchestrator-parallel-ios-catalogue-rendered-ui-20261110-01",
+        "orchestrator-parallel-ios-catalogue-repository-20261109-01",
+        "orchestrator-parallel-ios-catalogue-save-20261109-01",
+        "orchestrator-parallel-ios-catalogue-save-model-20261110-01",
+        "orchestrator-parallel-ios-catalogue-save-model-20261110-02",
+        "orchestrator-parallel-ios-catalogue-save-ui-20261110-01",
+        "orchestrator-parallel-ios-catalogue-sdk-session-20261110-01",
+        "orchestrator-parallel-ios-catalogue-sdk-session-20261110-02",
+        "orchestrator-parallel-ios-catalogue-ui-binding-20261110-01",
+        "orchestrator-parallel-ios-catalogue-ui-binding-20261110-02",
+        "orchestrator-parallel-ios-catalogue-ui-binding-20261110-03",
+        "orchestrator-parallel-ios-catalogue-ui-binding-20261110-04",
+        "orchestrator-parallel-ios-catalogue-ui-fixtures-20261110-01",
+        "orchestrator-parallel-ios-catalogue-ui-fixtures-20261110-02",
+        "orchestrator-parallel-ios-catalogue-views-20261110-01",
+        "orchestrator-parallel-ios-ci-b1-sql-20261110-01",
+        "orchestrator-parallel-ios-ci-b1-sql-acceptance-20261110-01",
+        "orchestrator-parallel-ios-create-receipt-engine-20261109-01",
+        "orchestrator-parallel-ios-create-receipt-store-20261109-01",
+        "orchestrator-parallel-ios-fixture-ci-20261110-01",
+        "orchestrator-parallel-ios-fixture-ci-acceptance-20261110-01",
+        "orchestrator-parallel-ios-outbox-identity-errors-20261109-01",
+        "orchestrator-parallel-ios-retire-slot-writers-20261110-01",
+        "orchestrator-parallel-ios-sync-store-20261109-01",
+        "orchestrator-parallel-ios-sync-store-20261109-02",
+        "orchestrator-parallel-ios-sync-store-20261109-03",
+        "orchestrator-parallel-ios-sync-store-20261109-04",
+        "orchestrator-parallel-ios-sync-transport-20261109-01",
+        "orchestrator-parallel-ios-sync-transport-20261109-02",
+        "orchestrator-parallel-ios-sync-transport-20261109-03",
+        "orchestrator-parallel-ios-t162-final-acceptance-20261110-01",
+        "orchestrator-parallel-ios-t162-final-audit-20261110-01"
+      ]
+    },
+    "B": {
+      "root": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants",
+      "summary": {
+        "runs": 7,
+        "task_attempt_statuses": {
+          "RUNNING": 1,
+          "COMPLETED": 8,
+          "WAITING": 4,
+          "PENDING": 2
+        },
+        "calls": 33,
+        "model_seconds": 8110.07,
+        "check_seconds": 629.238,
+        "roles": {
+          "developer": {
+            "calls": 16,
+            "seconds": 7160.578,
+            "failed_calls": 4
+          },
+          "qa": {
+            "calls": 8,
+            "seconds": 412.612,
+            "failed_calls": 0
+          },
+          "reviewer": {
+            "calls": 9,
+            "seconds": 536.88,
+            "failed_calls": 0
+          }
+        },
+        "timeout_calls": 3,
+        "timeout_seconds": 2700.069,
+        "failed_calls": 4,
+        "failed_call_seconds": 3483.483,
+        "combined_acceptance_calls": 0,
+        "delta_resume_calls": 0,
+        "ci_calls": 0,
+        "handoff_bytes": 322981
+      },
+      "run_directories": [
+        "orchestrator-parallel-backend-quota-access-http-20261110-08",
+        "orchestrator-parallel-backend-quota-api-sql-20261110-07",
+        "orchestrator-parallel-backend-quota-sql-20261109-01",
+        "orchestrator-parallel-backend-quota-sql-20261109-02",
+        "orchestrator-parallel-backend-quota-sql-20261109-03",
+        "orchestrator-parallel-backend-quota-sql-20261109-04",
+        "orchestrator-parallel-backend-quota-sql-20261109-05"
+      ]
+    }
+  }
+}
