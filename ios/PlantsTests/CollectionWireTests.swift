@@ -2,6 +2,420 @@ import XCTest
 import SwiftData
 @testable import Plants
 
+extension CollectionWireTests {
+    /// Exact agreed wire6d689b7 responses, embedded for Simulator execution.
+    private var accessFixtures: [(name: String, json: String)] {
+        [
+            ("free_starter_and_shared_month", #"{"owner_id":"16380000-0000-4000-8000-000000000001","is_guest":false,"starter":{"identification_remaining":1,"diagnosis_remaining":0,"identification_in_progress_job_id":null,"diagnosis_in_progress_job_id":null,"first_starter_success_at":"2026-11-01T10:20:00.123456Z"},"monthly":{"quota_kind":"free_monthly","registered_at":"2026-10-31T10:20:00.123456Z","period_start":"2026-10-31T10:20:00.123456Z","period_end":"2026-11-30T10:20:00.123456Z","limit":3,"consumed":2,"reserved":0,"remaining":1,"status":"ready"},"modes":{"identification":{"mode":"identification","allowed":true,"activeQuotaKind":"starter_identification","remaining":1,"limit":1,"inProgressJobId":null,"nextResetAt":null},"diagnosis":{"mode":"diagnosis","allowed":true,"activeQuotaKind":"free_monthly","remaining":1,"limit":3,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z"}}}"#),
+            ("trial_or_paid_same_spend", #"{"owner_id":"16380000-0000-4000-8000-000000000001","is_guest":false,"starter":{"identification_remaining":1,"diagnosis_remaining":0,"identification_in_progress_job_id":null,"diagnosis_in_progress_job_id":null,"first_starter_success_at":"2026-11-01T10:20:00.123456Z"},"monthly":{"quota_kind":"paid_monthly","registered_at":"2026-10-31T10:20:00.123456Z","period_start":"2026-10-31T10:20:00.123456Z","period_end":"2026-11-30T10:20:00.123456Z","limit":100,"consumed":2,"reserved":0,"remaining":98,"status":"ready"},"modes":{"identification":{"mode":"identification","allowed":true,"activeQuotaKind":"paid_monthly","remaining":98,"limit":100,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z"},"diagnosis":{"mode":"diagnosis","allowed":true,"activeQuotaKind":"paid_monthly","remaining":98,"limit":100,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z"}}}"#),
+            ("expired_paid_no_refill", #"{"owner_id":"16380000-0000-4000-8000-000000000001","is_guest":false,"starter":{"identification_remaining":0,"diagnosis_remaining":0,"identification_in_progress_job_id":null,"diagnosis_in_progress_job_id":null,"first_starter_success_at":"2026-11-01T10:20:00.123456Z"},"monthly":{"quota_kind":"free_monthly","registered_at":"2026-10-31T10:20:00.123456Z","period_start":"2026-10-31T10:20:00.123456Z","period_end":"2026-11-30T10:20:00.123456Z","limit":3,"consumed":7,"reserved":0,"remaining":0,"status":"ready"},"modes":{"identification":{"mode":"identification","allowed":false,"activeQuotaKind":"free_monthly","remaining":0,"limit":3,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z","reason":"free_monthly_exhausted"},"diagnosis":{"mode":"diagnosis","allowed":false,"activeQuotaKind":"free_monthly","remaining":0,"limit":3,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z","reason":"free_monthly_exhausted"}}}"#),
+            ("legacy_unknown_starter_still_available", #"{"owner_id":"16380000-0000-4000-8000-000000000001","is_guest":false,"starter":{"identification_remaining":1,"diagnosis_remaining":0,"identification_in_progress_job_id":null,"diagnosis_in_progress_job_id":null,"first_starter_success_at":"2026-11-01T10:20:00.123456Z"},"monthly":{"quota_kind":"free_monthly","registered_at":null,"period_start":null,"period_end":null,"limit":null,"consumed":null,"reserved":null,"remaining":null,"status":"registration_required"},"modes":{"identification":{"mode":"identification","allowed":true,"activeQuotaKind":"starter_identification","remaining":1,"limit":1,"inProgressJobId":null,"nextResetAt":null},"diagnosis":{"mode":"diagnosis","allowed":false,"activeQuotaKind":"free_monthly","remaining":0,"limit":3,"inProgressJobId":null,"nextResetAt":null,"reason":"quota_registration_required"}}}"#),
+            ("legacy_spend_unresolved", #"{"owner_id":"16380000-0000-4000-8000-000000000001","is_guest":false,"starter":{"identification_remaining":1,"diagnosis_remaining":0,"identification_in_progress_job_id":null,"diagnosis_in_progress_job_id":null,"first_starter_success_at":"2026-11-01T10:20:00.123456Z"},"monthly":{"quota_kind":"free_monthly","registered_at":"2026-10-31T10:20:00.123456Z","period_start":"2026-10-31T10:20:00.123456Z","period_end":"2026-11-30T10:20:00.123456Z","limit":null,"consumed":null,"reserved":null,"remaining":null,"status":"history_unresolved"},"modes":{"identification":{"mode":"identification","allowed":true,"activeQuotaKind":"starter_identification","remaining":1,"limit":1,"inProgressJobId":null,"nextResetAt":null},"diagnosis":{"mode":"diagnosis","allowed":false,"activeQuotaKind":"free_monthly","remaining":0,"limit":3,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z","reason":"quota_history_unresolved"}}}"#),
+            ("guest_two_independent_starters", #"{"owner_id":"16380000-0000-4000-8000-000000000001","is_guest":true,"starter":{"identification_remaining":1,"diagnosis_remaining":1,"identification_in_progress_job_id":null,"diagnosis_in_progress_job_id":null,"first_starter_success_at":null},"monthly":{"quota_kind":null,"registered_at":null,"period_start":null,"period_end":null,"limit":null,"consumed":null,"reserved":null,"remaining":null,"status":"not_applicable"},"modes":{"identification":{"mode":"identification","allowed":true,"activeQuotaKind":"starter_identification","remaining":1,"limit":1,"inProgressJobId":null,"nextResetAt":null},"diagnosis":{"mode":"diagnosis","allowed":true,"activeQuotaKind":"starter_diagnosis","remaining":1,"limit":1,"inProgressJobId":null,"nextResetAt":null}}}"#),
+            ("paid_exhausted_no_starter_fallback", #"{"owner_id":"16380000-0000-4000-8000-000000000001","is_guest":false,"starter":{"identification_remaining":1,"diagnosis_remaining":0,"identification_in_progress_job_id":null,"diagnosis_in_progress_job_id":null,"first_starter_success_at":"2026-11-01T10:20:00.123456Z"},"monthly":{"quota_kind":"paid_monthly","registered_at":"2026-10-31T10:20:00.123456Z","period_start":"2026-10-31T10:20:00.123456Z","period_end":"2026-11-30T10:20:00.123456Z","limit":100,"consumed":100,"reserved":0,"remaining":0,"status":"ready"},"modes":{"identification":{"mode":"identification","allowed":false,"activeQuotaKind":"paid_monthly","remaining":0,"limit":100,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z","reason":"paid_monthly_exhausted"},"diagnosis":{"mode":"diagnosis","allowed":false,"activeQuotaKind":"paid_monthly","remaining":0,"limit":100,"inProgressJobId":null,"nextResetAt":"2026-11-30T10:20:00.123456Z","reason":"paid_monthly_exhausted"}}}"#)
+        ]
+    }
+
+    private var accessOwner: UUID { UUID(uuidString: "16380000-0000-4000-8000-000000000001")! }
+    private var accessSession: NativeAuthSession {
+        NativeAuthSession(userId: accessOwner, accessToken: "captured-access-token", expiresAt: .distantFuture)
+    }
+
+    private func accessObject(_ index: Int = 0) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(accessFixtures[index].json.utf8)) as? [String: Any])
+    }
+
+    private func decodeAccess(_ object: [String: Any]) throws -> AnalysisAccessWireDTO {
+        try JSONDecoder().decode(AnalysisAccessWireDTO.self, from: Data(syncJSON(object).utf8))
+    }
+
+    private func setAccessValue(_ object: inout [String: Any], path: [String], value: Any?) {
+        let key = path[0]
+        if path.count == 1 {
+            object[key] = value
+        } else {
+            var child = object[key] as! [String: Any]
+            setAccessValue(&child, path: Array(path.dropFirst()), value: value)
+            object[key] = child
+        }
+    }
+
+    func testAccessSevenCanonicalFixturesThroughRealBoundTransport() async throws {
+        let limits: [Int?] = [3, 100, 3, nil, nil, nil, 100]
+        let consumed: [Int?] = [2, 2, 7, nil, nil, nil, 100]
+        let reserved: [Int?] = [0, 0, 0, nil, nil, nil, 0]
+        let remaining: [Int?] = [1, 98, 0, nil, nil, nil, 0]
+        let statuses: [AnalysisAccessWireDTO.Status] = [
+            .ready, .ready, .ready, .registrationRequired, .historyUnresolved, .notApplicable, .ready
+        ]
+        let identificationKinds: [AnalysisAccessWireDTO.QuotaKind] = [
+            .starterIdentification, .paidMonthly, .freeMonthly, .starterIdentification,
+            .starterIdentification, .starterIdentification, .paidMonthly
+        ]
+        for (index, fixture) in accessFixtures.enumerated() {
+            let direct = try JSONDecoder().decode(AnalysisAccessWireDTO.self, from: Data(fixture.json.utf8))
+            let transport = CatalogueTransport([.http(200, fixture.json)])
+            let api = client(transport)
+            await api.bindSyncSession(accessSession)
+            let context = try await api.captureSyncContext(ownerId: accessOwner)
+            let snapshot = try await api.fetchAnalysisAccess(context: context, expectedGuest: index == 5)
+            XCTAssertEqual(snapshot, direct, fixture.name)
+            XCTAssertEqual(snapshot.ownerId, accessOwner)
+            XCTAssertEqual(snapshot.isGuest, index == 5)
+            XCTAssertEqual(snapshot.monthly.status, statuses[index])
+            XCTAssertEqual(snapshot.monthly.limit, limits[index])
+            XCTAssertEqual(snapshot.monthly.consumed, consumed[index])
+            XCTAssertEqual(snapshot.monthly.reserved, reserved[index])
+            XCTAssertEqual(snapshot.monthly.remaining, remaining[index])
+            XCTAssertEqual(snapshot.modes["identification"]?.activeQuotaKind, identificationKinds[index])
+            XCTAssertEqual(snapshot.modes["identification"]?.allowed, ![2, 6].contains(index))
+            XCTAssertEqual(snapshot.modes["diagnosis"]?.allowed, [0, 1, 5].contains(index))
+            XCTAssertEqual(snapshot.starter.identificationRemaining, index == 2 ? 0 : 1)
+            XCTAssertEqual(snapshot.starter.diagnosisRemaining, index == 5 ? 1 : 0)
+            XCTAssertNil(snapshot.starter.identificationInProgressJobId)
+            XCTAssertNil(snapshot.starter.diagnosisInProgressJobId)
+            XCTAssertEqual(snapshot.starter.firstStarterSuccessAt, index == 5 ? nil : "2026-11-01T10:20:00.123456Z")
+            let knownPeriod = ![3, 5].contains(index)
+            XCTAssertEqual(snapshot.monthly.registeredAt, knownPeriod ? "2026-10-31T10:20:00.123456Z" : nil)
+            XCTAssertEqual(snapshot.monthly.periodStart, knownPeriod ? "2026-10-31T10:20:00.123456Z" : nil)
+            XCTAssertEqual(snapshot.monthly.periodEnd, knownPeriod ? "2026-11-30T10:20:00.123456Z" : nil)
+            if index == 1 || index == 2 || index == 6 {
+                // Both modes read the same monthly pool, including consumed > current limit.
+                XCTAssertEqual(snapshot.modes["identification"]?.remaining, remaining[index])
+                XCTAssertEqual(snapshot.modes["diagnosis"]?.remaining, remaining[index])
+                XCTAssertEqual(snapshot.modes["diagnosis"]?.limit, limits[index])
+            }
+            if index == 3 || index == 4 {
+                XCTAssertNil(snapshot.monthly.remaining)
+                XCTAssertEqual(snapshot.modes["diagnosis"]?.remaining, 0)
+                XCTAssertEqual(snapshot.modes["diagnosis"]?.limit, 3)
+                XCTAssertEqual(snapshot.modes["diagnosis"]?.reason,
+                               index == 3 ? .registrationRequired : .historyUnresolved)
+            }
+            if index == 6 {
+                XCTAssertEqual(snapshot.starter.identificationRemaining, 1)
+                XCTAssertEqual(snapshot.modes["identification"]?.reason, .paidMonthlyExhausted)
+                XCTAssertFalse(try XCTUnwrap(snapshot.modes["identification"]).allowed)
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+            let request = try XCTUnwrap(requests.first)
+            XCTAssertEqual(request.url?.absoluteString, "https://example.invalid/functions/v1/plants-api/analysis/access")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertNil(request.url?.query)
+            XCTAssertNil(request.httpBody)
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Operation-Id"))
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer captured-access-token")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Installation-Credential"), "fixture-installation")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Locale"), "en")
+        }
+    }
+
+    func testAccessRequiredKeysNullsAndMalformedValuesFailClosed() throws {
+        let required: [[String]] = [
+            ["owner_id"], ["is_guest"], ["starter"], ["monthly"], ["modes"],
+            ["starter", "identification_remaining"], ["starter", "diagnosis_remaining"],
+            ["monthly", "status"], ["modes", "identification"], ["modes", "diagnosis"]
+        ] + ["mode", "allowed", "activeQuotaKind", "remaining", "limit"].map { ["modes", "identification", $0] }
+        let nullable: [[String]] = [
+            ["starter", "identification_in_progress_job_id"], ["starter", "diagnosis_in_progress_job_id"],
+            ["starter", "first_starter_success_at"]
+        ] + ["quota_kind", "registered_at", "period_start", "period_end", "limit", "consumed", "reserved", "remaining"]
+            .map { ["monthly", $0] }
+          + ["inProgressJobId", "nextResetAt"].map { ["modes", "identification", $0] }
+        for path in required + nullable {
+            var object = try accessObject()
+            setAccessValue(&object, path: path, value: nil)
+            XCTAssertThrowsError(try decodeAccess(object), "Missing \(path)")
+        }
+        for path in required {
+            var object = try accessObject()
+            setAccessValue(&object, path: path, value: NSNull())
+            XCTAssertThrowsError(try decodeAccess(object), "Null \(path)")
+        }
+        // Ready fields are nullable on the wire only in the explicitly unknown states.
+        for key in ["quota_kind", "registered_at", "period_start", "period_end", "limit", "consumed", "reserved", "remaining"] {
+            var object = try accessObject()
+            setAccessValue(&object, path: ["monthly", key], value: NSNull())
+            XCTAssertThrowsError(try decodeAccess(object), key)
+        }
+        let invalid: [([String], Any)] = [
+            (["owner_id"], "foreign-not-a-uuid"), (["is_guest"], "false"),
+            (["monthly", "status"], "unknown"), (["monthly", "quota_kind"], "starter_identification"),
+            (["monthly", "quota_kind"], "unknown"), (["monthly", "registered_at"], "2026-02-30T00:00:00Z"),
+            (["monthly", "period_start"], "2026-11-30T10:20:00.123456Z"),
+            (["monthly", "period_end"], "2026-10-30T10:20:00.123456Z"),
+            (["monthly", "consumed"], -1), (["monthly", "reserved"], -1),
+            (["monthly", "remaining"], 2), (["monthly", "limit"], 100),
+            (["monthly", "consumed"], 1.5), (["monthly", "reserved"], NSNumber(value: UInt64.max)),
+            (["starter", "identification_remaining"], 2), (["starter", "diagnosis_remaining"], -1),
+            (["starter", "first_starter_success_at"], "2026-11-01"),
+            (["starter", "identification_in_progress_job_id"], "bad-job"),
+            (["modes", "identification", "mode"], "diagnosis"),
+            (["modes", "identification", "activeQuotaKind"], "unknown"),
+            (["modes", "identification", "activeQuotaKind"], "starter_diagnosis"),
+            (["modes", "identification", "remaining"], -1),
+            (["modes", "identification", "remaining"], 2),
+            (["modes", "identification", "remaining"], 0),
+            (["modes", "identification", "allowed"], 1),
+            (["modes", "identification", "inProgressJobId"], "not-a-uuid"),
+            (["modes", "identification", "nextResetAt"], "2026-11-30T10:20:00Z"),
+            (["modes", "diagnosis", "remaining"], 2),
+            (["modes", "diagnosis", "nextResetAt"], "2026-11-30T10:20:00.123457Z")
+        ]
+        for (path, value) in invalid {
+            var object = try accessObject()
+            setAccessValue(&object, path: path, value: value)
+            XCTAssertThrowsError(try decodeAccess(object), "\(path): \(value)")
+        }
+        var renamed = try accessObject()
+        var modes = renamed["modes"] as! [String: Any]
+        modes["care"] = modes.removeValue(forKey: "diagnosis")
+        renamed["modes"] = modes
+        XCTAssertThrowsError(try decodeAccess(renamed))
+        for index in [3, 4, 5] {
+            var object = try accessObject(index)
+            setAccessValue(&object, path: ["monthly", "limit"], value: 0)
+            XCTAssertThrowsError(try decodeAccess(object))
+        }
+        var guestMismatch = try accessObject(5)
+        guestMismatch["is_guest"] = false
+        XCTAssertThrowsError(try decodeAccess(guestMismatch))
+    }
+
+    func testAccessRawBoundariesAdditiveFieldsInProgressAndOverflowSafeCounts() throws {
+        for offset in ["Z", "+02:30", "-03:30"] {
+            var object = try accessObject()
+            let start = "2026-11-01T10:20:00.000001\(offset)"
+            let end = "2026-11-01T10:20:00.000002\(offset)"
+            setAccessValue(&object, path: ["monthly", "registered_at"], value: start)
+            setAccessValue(&object, path: ["monthly", "period_start"], value: start)
+            setAccessValue(&object, path: ["monthly", "period_end"], value: end)
+            setAccessValue(&object, path: ["modes", "diagnosis", "nextResetAt"], value: end)
+            setAccessValue(&object, path: ["starter", "first_starter_success_at"], value: start)
+            let decoded = try decodeAccess(object)
+            XCTAssertEqual(decoded.monthly.registeredAt, start)
+            XCTAssertEqual(decoded.monthly.periodStart, start)
+            XCTAssertEqual(decoded.monthly.periodEnd, end)
+            XCTAssertEqual(decoded.starter.firstStarterSuccessAt, start)
+            XCTAssertEqual(decoded.modes["diagnosis"]?.nextResetAt, end)
+            for path in [["future"], ["starter", "future"], ["monthly", "future"], ["modes", "diagnosis", "future"]] {
+                setAccessValue(&object, path: path, value: ["additive": true])
+            }
+            XCTAssertEqual(try decodeAccess(object), decoded)
+        }
+        var inProgress = try accessObject(5)
+        let job = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        setAccessValue(&inProgress, path: ["starter", "identification_in_progress_job_id"], value: job)
+        setAccessValue(&inProgress, path: ["modes", "identification", "allowed"], value: false)
+        setAccessValue(&inProgress, path: ["modes", "identification", "inProgressJobId"], value: job)
+        setAccessValue(&inProgress, path: ["modes", "identification", "reason"], value: "starter_in_progress")
+        let denied = try decodeAccess(inProgress)
+        XCTAssertEqual(denied.modes["identification"]?.reason, .starterInProgress)
+        XCTAssertEqual(denied.modes["identification"]?.inProgressJobId, UUID(uuidString: job))
+        XCTAssertEqual(denied.modes["identification"]?.remaining, 1)
+        var huge = try accessObject(2)
+        setAccessValue(&huge, path: ["monthly", "consumed"], value: Int.max)
+        setAccessValue(&huge, path: ["monthly", "reserved"], value: Int.max)
+        let saturated = try decodeAccess(huge)
+        XCTAssertEqual(saturated.monthly.remaining, 0)
+        XCTAssertEqual(saturated.monthly.consumed, Int.max)
+        XCTAssertEqual(saturated.monthly.reserved, Int.max)
+    }
+
+    func testAccessGuestCredentialPermanentAccountAndENPLHeaders() async throws {
+        let credentials: [String?] = [nil, "", " \n "]
+        for credential in credentials {
+            let transport = CatalogueTransport([])
+            let api = PlantsAPIClient(transport: transport, installationCredential: credential)
+            await api.bindSyncSession(accessSession)
+            let lease = try await api.captureSyncContext(ownerId: accessOwner)
+            do {
+                _ = try await api.fetchAnalysisAccess(context: lease, expectedGuest: true)
+                XCTFail("Guest must provide an installation credential")
+            } catch AnalysisAccessWireError.missingInstallationCredential {}
+            let requests = await transport.capturedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+        let transport = CatalogueTransport([.http(200, accessFixtures[0].json), .http(200, accessFixtures[0].json)])
+        let api = PlantsAPIClient(transport: transport, installationCredential: nil, clientLocale: "en")
+        await api.bindSyncSession(accessSession)
+        let lease = try await api.captureSyncContext(ownerId: accessOwner)
+        _ = try await api.fetchAnalysisAccess(context: lease, expectedGuest: false)
+        try await api.updateClientLocale("pl")
+        _ = try await api.fetchAnalysisAccess(context: lease, expectedGuest: false)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "X-Client-Locale") }, ["en", "pl"])
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Installation-Credential") == nil })
+    }
+
+    func testAccessExplicitRetryErrorsWrongSuccessAndForeignScope() async throws {
+        let error = #"{"error":{"code":"INTERNAL_ERROR","message":"Try again","retryable":true}}"#
+        let transport = CatalogueTransport([.http(503, error), .http(200, accessFixtures[0].json)])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let lease = try await api.captureSyncContext(ownerId: accessOwner)
+        do {
+            _ = try await api.fetchAnalysisAccess(context: lease, expectedGuest: false)
+            XCTFail("503 must propagate")
+        } catch let failure as APIErrorResponse {
+            XCTAssertEqual(failure.error.code, "INTERNAL_ERROR")
+            XCTAssertTrue(failure.error.retryable)
+        }
+        let beforeRetry = await transport.capturedRequests()
+        XCTAssertEqual(beforeRetry.count, 1)
+        _ = try await api.fetchAnalysisAccess(context: lease, expectedGuest: false)
+        let afterRetry = await transport.capturedRequests()
+        XCTAssertEqual(afterRetry.count, 2)
+        XCTAssertEqual(afterRetry.first, afterRetry.last)
+        for (status, code) in [(401, "UNAUTHORIZED"), (403, "FORBIDDEN")] {
+            let json = #"{"error":{"code":"__CODE__","message":"Denied","retryable":false}}"#
+                .replacingOccurrences(of: "__CODE__", with: code)
+            let mock = CatalogueTransport([.http(status, json)])
+            let failingAPI = client(mock)
+            await failingAPI.bindSyncSession(accessSession)
+            let context = try await failingAPI.captureSyncContext(ownerId: accessOwner)
+            do {
+                _ = try await failingAPI.fetchAnalysisAccess(context: context, expectedGuest: false)
+                XCTFail("Auth errors must propagate")
+            } catch let failure as APIErrorResponse { XCTAssertEqual(failure.error.code, code) }
+            let requests = await mock.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+        }
+        for reply in [CatalogueTransport.Reply.network, .cancelled, .urlCancelled] {
+            let mock = CatalogueTransport([reply])
+            let failingAPI = client(mock)
+            await failingAPI.bindSyncSession(accessSession)
+            let context = try await failingAPI.captureSyncContext(ownerId: accessOwner)
+            do {
+                _ = try await failingAPI.fetchAnalysisAccess(context: context, expectedGuest: false)
+                XCTFail("Transport errors must propagate")
+            } catch is CancellationError {
+                if case .cancelled = reply {} else { XCTFail("Wrong cancellation") }
+            } catch let failure as URLError {
+                if case .network = reply { XCTAssertEqual(failure.code, .networkConnectionLost) }
+                else { XCTAssertEqual(failure.code, .cancelled) }
+            }
+            let requests = await mock.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+        }
+        var foreign = try accessObject()
+        foreign["owner_id"] = otherSyncOwner.uuidString
+        let invalidReplies: [(Int, String)] = [
+            (201, accessFixtures[0].json), (204, accessFixtures[0].json),
+            (200, "{}"), (200, "null"), (200, "invalid-json"),
+            (200, try syncJSON(foreign)), (200, accessFixtures[5].json)
+        ]
+        for (status, json) in invalidReplies {
+            let mock = CatalogueTransport([.http(status, json)])
+            let failingAPI = client(mock)
+            await failingAPI.bindSyncSession(accessSession)
+            let context = try await failingAPI.captureSyncContext(ownerId: accessOwner)
+            do {
+                _ = try await failingAPI.fetchAnalysisAccess(context: context, expectedGuest: false)
+                XCTFail("Wrong success or foreign scope must be rejected")
+            } catch {}
+            let requests = await mock.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+        }
+        let wrongGuest = client(CatalogueTransport([.http(200, accessFixtures[0].json)]))
+        await wrongGuest.bindSyncSession(accessSession)
+        let guestLease = try await wrongGuest.captureSyncContext(ownerId: accessOwner)
+        do {
+            _ = try await wrongGuest.fetchAnalysisAccess(context: guestLease, expectedGuest: true)
+            XCTFail("Permanent response cannot satisfy guest scope")
+        } catch AnalysisAccessWireError.identityMismatch {}
+    }
+
+    func testAccessUnboundForeignStaleAndInvalidSessionsNeverDispatch() async throws {
+        let transport = CatalogueTransport([])
+        let api = client(transport)
+        let explicitSessions: [NativeAuthSession?] = [nil, accessSession]
+        for explicit in explicitSessions {
+            let legacy = try api.syncAuthority.capture(ownerId: accessOwner, explicitSession: explicit)
+            do {
+                _ = try await api.fetchAnalysisAccess(context: legacy, expectedGuest: false)
+                XCTFail("Legacy bearer-only/explicit context is not bound proof")
+            } catch SyncWireValidationError.invalidSession {}
+        }
+        await api.bindSyncSession(accessSession)
+        let lease = try await api.captureSyncContext(ownerId: accessOwner)
+        let otherAPI = client(transport)
+        await otherAPI.bindSyncSession(accessSession)
+        do {
+            _ = try await otherAPI.fetchAnalysisAccess(context: lease, expectedGuest: false)
+            XCTFail("A lease from another authority is invalid")
+        } catch SyncWireValidationError.invalidSession {}
+        await api.bindSyncSession(accessSession)
+        do {
+            _ = try await api.fetchAnalysisAccess(context: lease, expectedGuest: false)
+            XCTFail("Even rebinding the same session invalidates old leases")
+        } catch SyncWireValidationError.invalidSession {}
+        for session in [
+            NativeAuthSession(userId: accessOwner, accessToken: "", expiresAt: .distantFuture),
+            NativeAuthSession(userId: accessOwner, accessToken: "expired", expiresAt: .distantPast),
+            NativeAuthSession(userId: otherSyncOwner, accessToken: "foreign", expiresAt: .distantFuture)
+        ] {
+            await api.bindSyncSession(session)
+            do {
+                _ = try await api.captureSyncContext(ownerId: accessOwner)
+                XCTFail("Invalid session cannot be captured")
+            } catch SyncWireValidationError.invalidSession {}
+        }
+        await api.bindSyncSession(nil)
+        do {
+            _ = try await api.captureSyncContext(ownerId: accessOwner)
+            XCTFail("Signed-out authority cannot be captured")
+        } catch SyncWireValidationError.invalidSession {}
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testAccessSuspendedSignoutRefreshABABACancelAndLocaleCapture() async throws {
+        for action in 0...6 {
+            let transport = SuspendedCollectionTransport(accessFixtures[0].json)
+            let api = client(transport)
+            let session = accessSession
+            await api.bindSyncSession(session)
+            let lease = try await api.captureSyncContext(ownerId: accessOwner)
+            let operation = Task { try await api.fetchAnalysisAccess(context: lease, expectedGuest: false) }
+            await transport.waitForRequest()
+            switch action {
+            case 0: await api.bindSyncSession(nil)
+            case 1:
+                await api.bindSyncSession(NativeAuthSession(
+                    userId: accessOwner, accessToken: "refreshed-token", expiresAt: .distantFuture
+                ))
+            case 2, 3:
+                await api.bindSyncSession(NativeAuthSession(
+                    userId: otherSyncOwner, accessToken: "owner-b-token", expiresAt: .distantFuture
+                ))
+                if action == 3 { await api.bindSyncSession(session) }
+            case 4:
+                await api.updateContext(installationCredential: "changed", clientLocale: "pl", bearerToken: "changed")
+            case 5: operation.cancel()
+            default: try await api.updateClientLocale("pl")
+            }
+            await transport.resume()
+            do {
+                let snapshot = try await operation.value
+                XCTAssertEqual(action, 6, "Stale/cancelled snapshots must never publish")
+                XCTAssertEqual(snapshot.ownerId, accessOwner)
+            } catch is CancellationError {
+                XCTAssertEqual(action, 5)
+            } catch SyncWireValidationError.invalidSession {
+                XCTAssertLessThan(action, 5)
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer captured-access-token")
+            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "X-Installation-Credential"), "fixture-installation")
+            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "X-Client-Locale"), "en")
+        }
+    }
+}
+
 private actor CatalogueTransport: PlantsAPITransport {
     enum Reply: Sendable {
         case http(Int, String)

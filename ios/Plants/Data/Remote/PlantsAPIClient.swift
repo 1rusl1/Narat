@@ -216,6 +216,34 @@ public actor PlantsAPIClient {
         return result
     }
 
+    /// Read-only wire boundary; callers must supply a lease from the bound session.
+    /// Guest/permanent metadata is explicit because NativeAuthSession has no anonymous flag.
+    func fetchAnalysisAccess(
+        context: SyncSessionLease, expectedGuest: Bool
+    ) async throws -> AnalysisAccessWireDTO {
+        let session = try syncAuthority.withBoundValid(context) {
+            guard let session = context.session else { throw SyncWireValidationError.invalidSession }
+            return session
+        }
+        if expectedGuest {
+            guard let credential = installationCredential,
+                  !credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AnalysisAccessWireError.missingInstallationCredential
+            }
+        }
+        var request = try buildRequest(path: "analysis/access", method: "GET")
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        let snapshot = try await execute(request, as: AnalysisAccessWireDTO.self, expectedStatus: 200)
+        // Validate the captured generation, including cancellation and A -> B -> A,
+        // before exposing a snapshot. Never consult a replacement bearer or owner.
+        return try syncAuthority.withBoundValid(context) {
+            guard snapshot.ownerId == context.ownerId, snapshot.isGuest == expectedGuest else {
+                throw AnalysisAccessWireError.identityMismatch
+            }
+            return snapshot
+        }
+    }
+
     public func buildRequest(
         path: String,
         method: String,

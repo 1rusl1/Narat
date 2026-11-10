@@ -1,5 +1,250 @@
 import Foundation
 
+// MARK: - Canonical monthly access read wire (not the local forecast)
+
+enum AnalysisAccessWireError: Error, Sendable {
+    case invalidSnapshot
+    case identityMismatch
+    case missingInstallationCredential
+}
+
+/// Raw server timestamps and nullable unknown counts are deliberately retained.
+struct AnalysisAccessWireDTO: Decodable, Sendable, Equatable {
+    enum QuotaKind: String, Decodable, Sendable {
+        case starterIdentification = "starter_identification"
+        case starterDiagnosis = "starter_diagnosis"
+        case freeMonthly = "free_monthly"
+        case paidMonthly = "paid_monthly"
+
+        var limit: Int {
+            switch self {
+            case .starterIdentification, .starterDiagnosis: 1
+            case .freeMonthly: 3
+            case .paidMonthly: 100
+            }
+        }
+    }
+
+    enum Status: String, Decodable, Sendable {
+        case ready
+        case registrationRequired = "registration_required"
+        case historyUnresolved = "history_unresolved"
+        case notApplicable = "not_applicable"
+    }
+
+    enum AnalysisMode: String, Decodable, Sendable {
+        case identification, diagnosis
+    }
+
+    enum Reason: String, Decodable, Sendable {
+        case starterInProgress = "starter_in_progress"
+        case starterExhausted = "starter_exhausted"
+        case freeMonthlyExhausted = "free_monthly_exhausted"
+        case paidMonthlyExhausted = "paid_monthly_exhausted"
+        case registrationRequired = "quota_registration_required"
+        case historyUnresolved = "quota_history_unresolved"
+    }
+
+    struct Starter: Decodable, Sendable, Equatable {
+        let identificationRemaining: Int
+        let diagnosisRemaining: Int
+        let identificationInProgressJobId: UUID?
+        let diagnosisInProgressJobId: UUID?
+        let firstStarterSuccessAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case identificationRemaining = "identification_remaining"
+            case diagnosisRemaining = "diagnosis_remaining"
+            case identificationInProgressJobId = "identification_in_progress_job_id"
+            case diagnosisInProgressJobId = "diagnosis_in_progress_job_id"
+            case firstStarterSuccessAt = "first_starter_success_at"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            identificationRemaining = try c.decode(Int.self, forKey: .identificationRemaining)
+            diagnosisRemaining = try c.decode(Int.self, forKey: .diagnosisRemaining)
+            // decode(Optional.self) requires the key, while permitting an explicit null.
+            identificationInProgressJobId = try c.decode(UUID?.self, forKey: .identificationInProgressJobId)
+            diagnosisInProgressJobId = try c.decode(UUID?.self, forKey: .diagnosisInProgressJobId)
+            firstStarterSuccessAt = try c.decode(String?.self, forKey: .firstStarterSuccessAt)
+            guard (0...1).contains(identificationRemaining),
+                  (0...1).contains(diagnosisRemaining),
+                  Self.validTimestamp(firstStarterSuccessAt) else {
+                throw AnalysisAccessWireError.invalidSnapshot
+            }
+        }
+
+        fileprivate static func validTimestamp(_ raw: String?) -> Bool {
+            raw == nil || SQLTimestamp.microseconds(from: raw!) != nil
+        }
+    }
+
+    struct Monthly: Decodable, Sendable, Equatable {
+        let quotaKind: QuotaKind?
+        let registeredAt: String?
+        let periodStart: String?
+        let periodEnd: String?
+        let limit: Int?
+        let consumed: Int?
+        let reserved: Int?
+        let remaining: Int?
+        let status: Status
+
+        enum CodingKeys: String, CodingKey {
+            case quotaKind = "quota_kind"
+            case registeredAt = "registered_at"
+            case periodStart = "period_start"
+            case periodEnd = "period_end"
+            case limit, consumed, reserved, remaining, status
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            quotaKind = try c.decode(QuotaKind?.self, forKey: .quotaKind)
+            registeredAt = try c.decode(String?.self, forKey: .registeredAt)
+            periodStart = try c.decode(String?.self, forKey: .periodStart)
+            periodEnd = try c.decode(String?.self, forKey: .periodEnd)
+            limit = try c.decode(Int?.self, forKey: .limit)
+            consumed = try c.decode(Int?.self, forKey: .consumed)
+            reserved = try c.decode(Int?.self, forKey: .reserved)
+            remaining = try c.decode(Int?.self, forKey: .remaining)
+            status = try c.decode(Status.self, forKey: .status)
+            guard [registeredAt, periodStart, periodEnd].allSatisfy(Starter.validTimestamp),
+                  (periodStart == nil) == (periodEnd == nil) else {
+                throw AnalysisAccessWireError.invalidSnapshot
+            }
+            if let start = periodStart, let end = periodEnd {
+                guard SQLTimestamp.microseconds(from: start)! < SQLTimestamp.microseconds(from: end)! else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            }
+            if status == .notApplicable {
+                guard quotaKind == nil, registeredAt == nil, periodStart == nil, periodEnd == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            } else {
+                guard quotaKind == .freeMonthly || quotaKind == .paidMonthly else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            }
+            if status == .ready {
+                guard registeredAt != nil, periodStart != nil, periodEnd != nil,
+                      let limit, limit == quotaKind?.limit,
+                      let consumed, consumed >= 0, let reserved, reserved >= 0,
+                      let remaining, remaining >= 0 else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+                // Saturating subtraction avoids overflow even after a paid-to-free downgrade.
+                let unconsumed = consumed >= limit ? 0 : limit - consumed
+                let available = reserved >= unconsumed ? 0 : unconsumed - reserved
+                guard remaining == available else { throw AnalysisAccessWireError.invalidSnapshot }
+            } else {
+                guard limit == nil, consumed == nil, reserved == nil, remaining == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+                if status == .registrationRequired {
+                    guard registeredAt == nil, periodStart == nil, periodEnd == nil else {
+                        throw AnalysisAccessWireError.invalidSnapshot
+                    }
+                }
+            }
+        }
+    }
+
+    struct Mode: Decodable, Sendable, Equatable {
+        let mode: AnalysisMode
+        let allowed: Bool
+        let activeQuotaKind: QuotaKind
+        let remaining: Int
+        let limit: Int
+        let inProgressJobId: UUID?
+        let nextResetAt: String?
+        let reason: Reason?
+
+        // These keys intentionally stay camelCase.
+        enum CodingKeys: String, CodingKey {
+            case mode, allowed, activeQuotaKind, remaining, limit, inProgressJobId, nextResetAt, reason
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            mode = try c.decode(AnalysisMode.self, forKey: .mode)
+            allowed = try c.decode(Bool.self, forKey: .allowed)
+            activeQuotaKind = try c.decode(QuotaKind.self, forKey: .activeQuotaKind)
+            remaining = try c.decode(Int.self, forKey: .remaining)
+            limit = try c.decode(Int.self, forKey: .limit)
+            inProgressJobId = try c.decode(UUID?.self, forKey: .inProgressJobId)
+            nextResetAt = try c.decode(String?.self, forKey: .nextResetAt)
+            reason = try c.decodeIfPresent(Reason.self, forKey: .reason)
+            guard limit == activeQuotaKind.limit, (0...limit).contains(remaining),
+                  Starter.validTimestamp(nextResetAt),
+                  !allowed || (remaining > 0 && inProgressJobId == nil && reason == nil) else {
+                throw AnalysisAccessWireError.invalidSnapshot
+            }
+            switch activeQuotaKind {
+            case .starterIdentification:
+                guard mode == .identification, nextResetAt == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            case .starterDiagnosis:
+                guard mode == .diagnosis, nextResetAt == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            case .freeMonthly, .paidMonthly: break
+            }
+        }
+    }
+
+    let ownerId: UUID
+    let isGuest: Bool
+    let starter: Starter
+    let monthly: Monthly
+    let modes: [String: Mode]
+
+    enum CodingKeys: String, CodingKey {
+        case ownerId = "owner_id"
+        case isGuest = "is_guest"
+        case starter, monthly, modes
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ownerId = try c.decode(UUID.self, forKey: .ownerId)
+        isGuest = try c.decode(Bool.self, forKey: .isGuest)
+        starter = try c.decode(Starter.self, forKey: .starter)
+        monthly = try c.decode(Monthly.self, forKey: .monthly)
+        modes = try c.decode([String: Mode].self, forKey: .modes)
+        guard isGuest == (monthly.status == .notApplicable),
+              Set(modes.keys) == Set(["identification", "diagnosis"]) else {
+            throw AnalysisAccessWireError.invalidSnapshot
+        }
+        for (key, mode) in modes {
+            guard mode.mode.rawValue == key else { throw AnalysisAccessWireError.invalidSnapshot }
+            switch mode.activeQuotaKind {
+            case .starterIdentification, .starterDiagnosis:
+                guard monthly.quotaKind != .paidMonthly else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            case .freeMonthly, .paidMonthly:
+                guard !isGuest, mode.activeQuotaKind == monthly.quotaKind,
+                      SyncWireRules.sameTime(mode.nextResetAt, monthly.periodEnd) else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+                if monthly.status == .ready {
+                    guard mode.remaining == monthly.remaining, mode.limit == monthly.limit else {
+                        throw AnalysisAccessWireError.invalidSnapshot
+                    }
+                } else {
+                    guard !mode.allowed, mode.remaining == 0 else {
+                        throw AnalysisAccessWireError.invalidSnapshot
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Profile & Overrides DTOs (FR-035, FR-046..048)
 
 public struct ProfileDTO: Codable, Sendable, Equatable {

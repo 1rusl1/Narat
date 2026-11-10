@@ -1545,7 +1545,7 @@ adapters пока не подключены. Продуктовые checkbox B �
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-ci-b1-sql-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-ci-b1-sql-acceptance](validation/automation/tasks/parallel-ios-ci-b1-sql-acceptance.md).
+parallel-ios-t036-access-wire-pilot: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-t036-access-wire-pilot](validation/automation/tasks/parallel-ios-t036-access-wire-pilot.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
