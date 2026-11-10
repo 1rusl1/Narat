@@ -1,9 +1,21 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-10.** Main5d15123 содержит принятые T162 и локальную CI-конфигурацию; cloudCI/T006 открыт. Получено разрешение B, согласован additive access wire. Между runs объединён только merge-ready bc6a879 (SQL005–010); новая интеграционная приёмка ещё впереди. SQL11/12 исключены.15/151done,136open.
+**Обновлено 2026-11-10.** B1 SQL005–010 интеграция принята в A6a83f0e:184Swift/384pgTAP+235cap/6x20/336Deno/123automation/Simulator/ReviewQA PASS. Расширяется CI-adapter для последовательного исполнения обоих принятых SQL suites; main пока5d15123, promotion после отдельной CI-приёмки. SQL11/12 исключены. CloudCI/T006 и T036/T163/live открыты,15done/136open.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## B1 интеграция принята; CI расширяется на весь принятый SQL-пакет
+
+Run `parallel-ios-b1-integration-20261110-01` — **COMPLETED / Verified and published**, commit **6a83f0e940626e00122db7c7d6de73c055690418** в origin/codex/plants-ios. Без Developer;1 high-risk Reviewer/1 QA — PASS. [Отчёт](validation/automation/tasks/parallel-ios-b1-integration.md). Merge43bc566 содержит только разрешённый bc6a879/runtimea367d0b, SQL11/12 исключены. Source fingerprint до/после **bb967bcf33a6a32b911aaaf6146c7039e396626c1e1f2247778dfc699e1744ca /1520 files** совпал; engine403bf4231b65d9203c04b932fbf3e2f20aaaba185fd197b02be7921adee2575a.
+
+**Реально повторены на combined source — PASS:**184 PlantsTests (181XCTest+3SwiftTesting),0fail/skip/expectedFailure, build/welcome/all source methods (`q-5092666f9153905b16f9f2fd`);Simulator (`q-63a92e7a1d59a6dc2e97b6df`), QA просмотрела оба снимка;336Deno/123automation/frozen API+worker typecheck/diff. SQL --bind: clean/upgrade по384pgTAP,12UTC cases,retainedrows;6раундов20 одновременно наблюдаемых owner-lock waiting connections с99 actual admit/finalize перед каждым, exact replay/nonbillable/pointers. Portable CI cap/legacy adapter отдельно235pgTAP clean/upgrade/4realcapraces PASS.18UI/Release не повторялись: iOS source/gates прежние, их T162 evidence сохранено отдельно. ПолныеT036/T163/live/deploy не приняты.
+
+**Новый CI шаг, только ПОСЛЕ завершения integration run:** controller-owned `parallel_ios_ci_sql_gate.py` теперь последовательно вызывает неизменный accepted gate дважды: прежний --accounting/legacyguard/cap, затем --bind. Это закрывает gap: прежняя CI-команда исполняла только235 cap/legacy assertions, теперь должна исполнять также384bind/6x20. PG17/pgTAP проверки, failfast и finally argv restoration сохранены; каждый бизнес-suite создаёт свой privatecluster и cleanup. Workflow/SQL/assertions/iOS не меняются. Новый `tasks.parallel-ios-ci-b1-sql.json` READONLY, без Developer; actual portableSQL + YAML/Bash/diff/336Deno/123automation, независимые Review/QA. Config прежний CIacceptance SHA11402e73be3c5133239e0b139312aaff218ffa756ec90d525dd9ab91c784e437, routing/budgets/publishA неизменны.
+
+**Уточнение B, ещё не новый merge-ready:** в двух старых draft fixtures monthly.limit3 для registration_required/history_unresolved будет исправлено B на NULL; mode.limit3/100 и denied remaining0 независимы. A согласовала nullable monthly.limit, старое3 не обязательное правило. DTO-only draft пока в/tmp, активный integration source ради сообщения не менялся. B SQL11 принята у B, SQL12 ещё вrun07; до полной точной передачи их не брать. Endpoint пока не operational.
+
+**Проверки подготовки PASS:** py_compile нового helper, manifest VALID(1), полный Reviewer context просмотрен; helper SHA256 `e2187850e2b0a629b0510ebcd4b887a0169819e98b7c1430afc15a25ed4c5124`. Фактическое последовательное SQL выполнение ещё впереди. **Точный следующий шаг:** diff-check → commit/push A → clean `parallel-ios-ci-b1-sql-20261110-01`. Только при полном PASS — combined B1+CI ordinary main promotion из отдельного чистого checkout с итоговым source fingerprint, передать B новыйmainSHA. Main пока5d15123. Затем canonical DTO/T036 по окончательно принятому wire/fixtures; cloudCI/T006 ждёт доступ к GitHub.15/151/136open без новых checkbox.
 
 ## B разрешена владельцем; объединён только merge-ready SQL005–010
 
@@ -1107,7 +1119,7 @@ adapters пока не подключены. Продуктовые checkbox B �
 <!-- orchestrator:project-state -->
 ## Project State
 
-- B authorization10November confirmed directly; accepted bc6a879/runtimea367d0b SQL005–010 объединён для нового bounded A integration; SQL11/12/tip4333509 excluded. Wire proposal согласован для нового canonical DTO; T036/productionAPI/live open. B permission block снят, отказы — история.
+- B authorization10November confirmed directly; accepted bc6a879/runtimea367d0b SQL005–010 integrated/verified6a83f0e (184Swift/384+235pgTAP/6x20/Deno336/automation123/Simulator/ReviewQA); CI adapter расширяется до обоихsuites доmainpromotion. SQL11/12/tip4333509 excluded. Wire proposal согласован для нового canonical DTO; T036/productionAPI/live open. B permission block снят, отказы — история.
 
 - Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN/PL; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.

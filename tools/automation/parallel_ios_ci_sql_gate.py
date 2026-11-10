@@ -32,8 +32,15 @@ def main(argv=None):
     accepted.PGTAP = pgtap
     original_argv = sys.argv
     try:
-        sys.argv = [str(Path(accepted.__file__)), '--accounting', '--legacy-guard', '--cap-regression']
-        return accepted.main()
+        for arguments in (
+            ['--accounting', '--legacy-guard', '--cap-regression'],
+            ['--bind'],
+        ):
+            sys.argv = [str(Path(accepted.__file__)), *arguments]
+            result = accepted.main()
+            if result:
+                return result
+        return 0
     finally:
         sys.argv = original_argv
 
