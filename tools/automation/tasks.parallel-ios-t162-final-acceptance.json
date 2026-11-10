@@ -1,0 +1,74 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-t162-final-acceptance",
+      "description": "Read-only final acceptance of the complete original T162 scope after accepted SQLite ACK/pointer repair 91349a1, with all integration gates on the final fingerprint before main promotion.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "tools/automation/parallel_ios_sync_gate.py",
+        "tools/automation/parallel_ios_catalogue_ui_gate.py",
+        "tools/automation/parallel_ios_catalogue_release_gate.py",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/orchestrator-cleanup-tasks.md",
+        "supabase/migrations/202611090003_collection_cap.sql",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift"
+      ],
+      "write_files": [],
+      "constraints": [
+        "READ ONLY. No Developer implementation is needed. Inspect the complete current source and existing accepted evidence, then the fresh controller results. Do not edit code, manifests, config, Git, handoff or tasks. Do not access the B worktree, merge unaccepted B008-012 or infer approval for B. Current accepted source includes canonical transport/disk, journal/input/model/SDK/native helpers, guarded card, full views dbd3b14 and slot retirement0016576 and SQLite ACK/pointer repair 91349a1. SQL T161 and B005-007 are already accepted prerequisites in this branch; no new server diff is proposed.",
+        "The prior final audit parallel-ios-t162-final-audit-20261110-01 was BLOCKED at Reviewer1: storageOrServiceUnavailable after SQLite ACK error unlocked catalogue.change, which could delete the only pointer while outbox still held pending. Explicitly verify this finding is fixed across unavailable/restore failure/mismatching old flow/new-intent replacement, with actual journal reads before replacement. Check the real read-only SQLite fixture regression, both ACK UI methods, restart/back navigation, exact POST body/server receipt/one server UUID, and writable durable recovery. The old audit remains immutable; do not resume or overwrite it. No final T162/product/main claim exists yet.",
+        "Evaluate the entire original T162 package in orchestrator-cleanup-tasks.md, not merely the last diff: no new typed FreeSelection/slot/profile-flag/retired-selector writes; historical JSON remains readable with unrelated values and persisted bytes preserved. Raw historical receipts and generic legacy pending payloads are intentionally retained and may replay exactly; physical SQLite revision columns are not active selection writers. Do not demand their deletion or silently alter their data.",
+        "Confirm real preflight cap before enqueue, server409/503 pending versus durable saved truth, immutable operation and input, readonly pending UI, explicit retry, same server card after process restart, Paid above3 and a second instance of the SAME species with a different server UUID. UI must not show a Free-trio selector. Current-owner and original-lease isolation, ordinary SDK A/B/ABA/cancel redaction and verified explicit native continuation are backed by the real SDK/SQLite unit tests and guarded view source. Use actual named unit/UI tests and saved logs, not file presence or compilation alone.",
+        "Trusted integration checks must all pass on this exact final fingerprint: retain all 184 actual unit tests with no skips; source coverage must include every XCTest method; all18 exact named EN/PL UI cases, including testACKFailureRestartEnglish and testACKFailureRestartPolish, no failures/skips/expectedFailures, screenshots; actual isolated Release build with no fixture markers;123 automation;336 Deno fixtures/typecheck; private PostgreSQL17 clean+upgrade accounting/legacyguard/cap regression with old rows unchanged and real owner-lock races; baseline Simulator. Do not substitute the stale shared t161 --slots equality runner. Inspect real logs and actual result summaries. Do not rerun successful checks yourself.",
+        "This audit can accept the bounded fixture-based T162 cleanup scope, not live end-to-end parents. No live Apple/Google/Supabase/Storage/AI/StoreKit, process-kill during native transition, offline token expiry, photo/claim/care, paid-expiry or T149/T148/T159/T155 completion is claimed. Retain the old welcome/problem/care route until separate T170. Reviewer/QA do not mark task checkboxes: controller decides only after complete original scope and final accepted integration fingerprint."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "The entire original T162 client cleanup scope, including the former ACK/pointer finding, is implemented and verified: no new retired writers; compatible legacy and durable history; truthful cap/save/pending/retry/owner/restart safety. All 184 unit tests and 18 EN/PL UI tests with screenshots, isolated Release and Simulator pass on the final fingerprint. Broader and live parents stay open.",
+          "checks": [
+            "diff-check",
+            "deno-check",
+            "ios-tests",
+            "parallel-ios-catalogue-ui",
+            "parallel-ios-catalogue-release",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Existing accepted server cap/registration/legacy guard remains compatible with the final client: private PostgreSQL17 clean/upgrade, exact old row preservation and real owner-lock races;336 Deno and123 automation fixtures pass. Fixture evidence is separate from live deployment.",
+          "checks": [
+            "automation-tests",
+            "deno-tests",
+            "parallel-ios-integration-sql"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}
