@@ -1,6 +1,39 @@
 # Narat — текущий статус и передача работы
 
 
+## B2 SQL11/12 приняты независимо — 10 ноября 2026
+
+Run `parallel-backend-quota-api-sql-20261110-07` COMPLETED, оба среза опубликованы
+в origin/codex/plants-backend. SQL11 принят6df1b76 (Developer/Reviewer/QA1/1/1,
+без правок); SQL12: Developer оставил реализацию, добавил36 meaningful pgTAP
+assertions (55→91), Review/QA PASS1/1. Оба run phase done, exit0.
+Файлы011/012 и новые registration_installations/access tests, auto task reports.
+
+**Реальные проверки:** credential gate clean/upgrade420pgTAP; финальный
+`--bind --installations --access` clean/upgrade **511pgTAP** (55+49+78+89+113+36+91),
+12UTC cases, все прежние public rows byte-equal. Перед каждым из6раундов20реальных
+одновременно ожидающих соединений —99actual admit+finalize; replay/lastslot/failure/
+terminalOnce PASS. Отдельный cap regression55+131pgTAP clean/upgrade+4realraces PASS.
+Deno336/0failed, automation115/OK, deno-check/diff-check PASS в каждом срезе.
+Reports `validation/automation/tasks/parallel-backend-t163-{installation-api-sql,access-snapshot-sql}.md`;
+raw evidence в ignored run07/check dirs. Только fixtures, не live/deploy/Swift.
+
+User разрешил external model workflow и координацию A; прежние rejection сняты
+новым явным разрешением, исходная история сохранена. A согласовала additive wire,
+включая **monthly.limit=NULL при unknown**, mode.limit3/100. Обнаружены два старых
+draft fixture limit3: исправить после run, не принимать их как бизнес-правило.
+Unknown legacy date fail-closed по подтверждению владельца. Parent T163/T036/API/
+worker/live ещё открыты, checkbox B не меняла.
+
+**Следующий шаг:** сохранить этот завершённый SQL этап → обычный merge конкретной
+опубликованной A main `5d15123e1271f93e7575433d4a09f7f04612e64a` только между runs,
+объединить handoff по фактам, не запускать Swift/Simulator в B. Затем поправить2fixture
+null, подготовить production GET/strict DTO/protected transport gate и отдельный
+bounded HTTP manifest/run08; следующим срезом register/bind HTTP, затем deno check
+alias на реально существующие entrypoints. A сообщает T162 accepted local/fixture,
+184unit/18actualUI/42PNG/Release/Simulator/SQL235/Deno336/automation123; это evidence
+A, не тесты B. После merge сохранить факты и повторить затронутые B checks.
+
 ## B2 — разрешение получено, начинается независимый run07 (2026-11-10)
 
 Владелец явно разрешил Developer/Reviewer/QA с передачей кода настроенным провайдерам,
