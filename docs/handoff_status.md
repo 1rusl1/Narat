@@ -989,7 +989,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-t162-final-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-t162-final-acceptance](validation/automation/tasks/parallel-ios-t162-final-acceptance.md).
+parallel-ios-fixture-ci-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-fixture-ci-acceptance](validation/automation/tasks/parallel-ios-fixture-ci-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
