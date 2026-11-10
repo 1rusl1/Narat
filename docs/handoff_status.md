@@ -926,7 +926,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-retire-slot-writers: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-retire-slot-writers](validation/automation/tasks/parallel-ios-retire-slot-writers.md).
+parallel-ios-catalogue-ack-ui-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-catalogue-ack-ui-repair](validation/automation/tasks/parallel-ios-catalogue-ack-ui-repair.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

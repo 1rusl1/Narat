@@ -22,6 +22,8 @@ final class CatalogueSaveUITests: XCTestCase {
     @MainActor func testNativeCancellationRestartPolish() { verifyNativeCancellation(.pl) }
     @MainActor func testNativeSuccessEnglish() { verifyNativeSuccess(.en) }
     @MainActor func testNativeSuccessPolish() { verifyNativeSuccess(.pl) }
+    @MainActor func testACKFailureRestartEnglish() { verifyACKFailureRestart(.en) }
+    @MainActor func testACKFailureRestartPolish() { verifyACKFailureRestart(.pl) }
 
     private enum Language: String {
         case en, pl
@@ -332,6 +334,73 @@ final class CatalogueSaveUITests: XCTestCase {
         restart(run)
         XCTAssertEqual(assertCard(run, name: language.canonicalName), card)
         XCTAssertEqual(operation(run), originalOperation)
+    }
+
+    @MainActor
+    private func assertACKFlow(_ run: Run, unavailable: Bool) {
+        if unavailable {
+            localizedText(run, "catalogue.save.unavailable",
+                          "Save unavailable. The plant has not been confirmed saved.",
+                          "Zapis jest niedostępny. Nie potwierdzono zapisania rośliny.")
+            XCTAssertFalse(run.app.staticTexts["catalogue.save.pending"].exists)
+        } else {
+            localizedText(run, "catalogue.save.pending",
+                          "Save pending. The plant has not been confirmed saved yet.",
+                          "Oczekuje na zapis. Nie potwierdzono jeszcze zapisania rośliny.")
+            XCTAssertFalse(run.app.staticTexts["catalogue.save.unavailable"].exists)
+        }
+        localizedText(run, "catalogue.selected.scientific", "Nephrolepis exaltata", "Nephrolepis exaltata")
+        assertFrozen(run, name: "Luna")
+        XCTAssertEqual(run.app.textFields["catalogue.save.name"].placeholderValue, run.language.placeholder)
+        enabled(run.app.buttons["catalogue.save.retry"])
+        require(run.app.buttons["catalogue.change"])
+        XCTAssertFalse(run.app.buttons["catalogue.change"].isEnabled)
+        XCTAssertFalse(run.app.buttons["catalogue.save.edit"].exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.save.limit"].exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.save.serverLimit"].exists)
+        XCTAssertFalse(run.app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.card.")).firstMatch.exists)
+    }
+
+    @MainActor
+    private func verifyACKFailureRestart(_ language: Language) {
+        let run = Run("ackFailure", language)
+        defer { screenshot(run, "final"); run.app.terminate() }
+        // Setup has only checkpointed/enqueued an intent; Root restores it without a send.
+        launch(run)
+        assertACKFlow(run, unavailable: false)
+        let originalOperation = operation(run)
+        retry(run)
+        assertACKFlow(run, unavailable: true)
+        XCTAssertEqual(operation(run), originalOperation)
+        screenshot(run, "first-sqlite-ack-failure")
+
+        // Ordinary back navigation must preserve both the journal and the resume metadata.
+        tap(run, "catalogue.back", language.text("Back", "Wstecz"))
+        tap(run, "care.method.catalogue",
+            language.text("Choose species from catalogue (no photo)", "Wybierz gatunek z katalogu (bez zdjęcia)"))
+        assertACKFlow(run, unavailable: false)
+        XCTAssertEqual(operation(run), originalOperation)
+        restart(run)
+        assertACKFlow(run, unavailable: false)
+        XCTAssertEqual(operation(run), originalOperation)
+        retry(run)
+        assertACKFlow(run, unavailable: true)
+        XCTAssertEqual(operation(run), originalOperation)
+        screenshot(run, "second-sqlite-ack-failure")
+
+        // Only the two real persisted POSTs allow the next store to reopen writable.
+        restart(run)
+        assertACKFlow(run, unavailable: false)
+        XCTAssertEqual(operation(run), originalOperation)
+        retry(run)
+        let serverCard = assertCard(run, name: "Luna")
+        XCTAssertEqual(operation(run), originalOperation)
+        screenshot(run, "durable-ack-recovery")
+        restart(run)
+        XCTAssertEqual(assertCard(run, name: "Luna"), serverCard)
+        XCTAssertEqual(operation(run), originalOperation)
+        screenshot(run, "durable-card-after-restart")
     }
 
     @MainActor

@@ -6,7 +6,7 @@ import UIKit
 
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
-    case guestProviderCancel, guestProviderSuccess
+    case guestProviderCancel, guestProviderSuccess, ackFailure
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -48,9 +48,16 @@ enum CatalogueUIFixtures {
             CatalogueInputCheckpointRecord.self, GuestDraftCacheRecord.self,
             SyncedEntityRecord.self, SyncCheckpointRecord.self
         ])
-        let container = try ModelContainer(for: schema, configurations: [
-            ModelConfiguration(schema: schema, url: directory.appendingPathComponent("catalogue.sqlite"))
-        ])
+        let database = directory.appendingPathComponent("catalogue.sqlite")
+        let prepareACK = scenario == .ackFailure && !FileManager.default.fileExists(atPath: database.path)
+        func container(allowsSave: Bool) throws -> ModelContainer {
+            try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: database, allowsSave: allowsSave)
+            ])
+        }
+        // Recovery follows persisted real command attempts, never process launch counts.
+        let allowsSave = scenario != .ackFailure || prepareACK || server.snapshot.attempts.count >= 2
+        let storage = try container(allowsSave: allowsSave)
         let suite = "NaratCatalogueUIFixture." + name
         guard let defaults = UserDefaults(suiteName: suite) else {
             throw CatalogueUIFixtureError.invalidStorage
@@ -79,12 +86,15 @@ enum CatalogueUIFixtures {
             )
         )
         let identity = CatalogueFixtureIdentity(cancel: scenario == .guestProviderCancel)
-        let connection = CatalogueConnection(
-            client: client, configuration: configuration,
-            store: LocalStore(modelContainer: container),
-            transport: URLSessionAPITransport(session: http),
-            identityProvider: identity, resumeDefaults: defaults
-        )
+        func connect(_ storage: ModelContainer) -> CatalogueConnection {
+            CatalogueConnection(
+                client: client, configuration: configuration,
+                store: LocalStore(modelContainer: storage),
+                transport: URLSessionAPITransport(session: http),
+                identityProvider: identity, resumeDefaults: defaults
+            )
+        }
+        let connection = connect(storage)
         let context = CatalogueUIFixtureContext(
             namespace: name, directory: directory, suite: suite, connection: connection,
             http: http, server: server, identity: identity
@@ -97,6 +107,27 @@ enum CatalogueUIFixtures {
                 )
             }
             _ = try await connection.sessionOwner()
+            if prepareACK {
+                // Prepare exactly once through accepted APIs, with no command HTTP or
+                // manufactured model phase. Reopening must replay this same disk intent.
+                let expected = try await connection.sessionSnapshot()
+                let pending = try await connection.makeModel(
+                    input: CatalogueInput(speciesSlug: "fixture-fern", personalName: "Luna"),
+                    flowId: UUID(), operationId: UUID(), expected: expected
+                )
+                guard let api = connection.apiClient, let store = connection.store else {
+                    throw CatalogueUIFixtureError.invalidStorage
+                }
+                let lease = try await api.captureSyncContext(ownerId: expected.session.userId)
+                let checkpoint = try await connection.rememberModel(pending, expected: expected)
+                _ = try await store.catalogueCreateJournal(
+                    checkpoint.envelope, mode: .enqueue(canCreate: true),
+                    context: lease, authority: api.syncAuthority
+                )
+                // The connection handed to Root owns a genuinely read-only SQLite store.
+                context.connection = connect(try container(allowsSave: false))
+                _ = try await context.connection.sessionOwner()
+            }
             return context
         } catch {
             context.shutdown()
@@ -110,7 +141,7 @@ final class CatalogueUIFixtureContext {
     let namespace: String
     let directory: URL
     private let suite: String
-    private(set) var connection: CatalogueConnection!
+    fileprivate(set) var connection: CatalogueConnection!
     let http: URLSession
     let server: CatalogueFixtureServer
     let identity: CatalogueFixtureIdentity

@@ -29,6 +29,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @State private var previousFlow: UUID?
     @State private var notice: CatalogueViewNotice?
     @State private var restoreFailed = false
+    @State private var journalAllowsNewIntent = false
     @State private var working = false
     @State private var nativeInFlight = false
     @State private var active = false
@@ -42,11 +43,12 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private var shouldLockSelection: Bool {
-        if working || nativeInFlight { return true }
-        guard let model else { return false }
+        if working || nativeInFlight || restoreFailed || !scopeIsCurrent { return true }
+        guard let model else { return !journalAllowsNewIntent }
         switch model.state {
-        case .pending, .busy: return true
-        default: return false
+        case .pending, .busy, .unavailable: return true
+        case .saved: return false
+        case .ready, .signInRequired, .collectionLimitNotEnqueued: return !journalAllowsNewIntent
         }
     }
 
@@ -234,7 +236,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
 
     private var editButton: some View {
         Button(polish ? "Edytuj jako nowy zapis" : "Edit as a new save") { editAsNewIntent() }
-            .disabled(working)
+            .disabled(working || !journalAllowsNewIntent)
             .accessibilityIdentifier("catalogue.save.edit")
     }
 
@@ -306,6 +308,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         previousFlow = nil
         notice = nil
         restoreFailed = false
+        journalAllowsNewIntent = false
         scope = connection.snapshot
         guard let expected = scope else { working = false; return }
         working = true
@@ -322,11 +325,34 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     case let .restored(restored):
                         if restored.input?.speciesSlug == speciesSlug {
                             model = restored
+                            switch restored.state {
+                            case .ready, .collectionLimitNotEnqueued:
+                                journalAllowsNewIntent = true
+                            case .signInRequired:
+                                // Anonymous restoration does not expose its journal phase.
+                                do {
+                                    _ = try await replaceableFlow(expected: expected)
+                                    guard isCurrent(ticket, expected) else { return }
+                                    journalAllowsNewIntent = true
+                                } catch {
+                                    guard isCurrent(ticket, expected) else { return }
+                                    journalAllowsNewIntent = false
+                                }
+                            default: break
+                            }
                             await loadIfSaved(restored)
+                        } else {
+                            // An undisplayed flow still owns its pointer until its journal
+                            // proves that a different species can start safely.
+                            _ = try await replaceableFlow(expected: expected)
+                            guard isCurrent(ticket, expected) else { return }
+                            journalAllowsNewIntent = true
                         }
-                    case .absent: break
+                    case .absent: journalAllowsNewIntent = true
                     case .unavailable: restoreFailed = true
                     }
+                } else {
+                    journalAllowsNewIntent = true
                 }
             } catch {
                 if isCurrent(ticket, expected) { restoreFailed = true }
@@ -334,8 +360,42 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         }
     }
 
+    /// Restoration alone can hide queue truth (for example for anonymous owners).
+    /// Only an actual journal read may authorize replacing the current-owner pointer.
+    private func replaceableFlow(expected: CatalogueSDKSnapshot) async throws -> UUID? {
+        guard let flow = try connection.resumableFlow(expected: expected) else { return nil }
+        let result = await connection.restoreModel(
+            ownerId: expected.session.userId, flowId: flow, expected: expected
+        )
+        guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
+        switch result {
+        case .absent:
+            return flow
+        case let .restored(restored):
+            guard let envelope = restored.envelope,
+                  let store = connection.store, let api = connection.apiClient else {
+                throw CatalogueSaveUnavailable.storageOrServiceUnavailable
+            }
+            let context = try await api.captureSyncContext(ownerId: expected.session.userId)
+            guard context.session == expected.session, connection.snapshot == expected else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            let journal = try await store.catalogueCreateJournal(
+                envelope, mode: .checkOnly, context: context, authority: api.syncAuthority
+            )
+            guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
+            switch journal {
+            case .absent, .confirmed: return flow
+            case .pending, .collectionLimitNotEnqueued:
+                throw CatalogueSaveUnavailable.storageOrServiceUnavailable
+            }
+        case let .unavailable(reason):
+            throw reason
+        }
+    }
+
     private func save() {
-        guard !working, scopeIsCurrent, let expected = scope else { return }
+        guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
         nameFocused = false
         if model == nil && intent == nil {
             let input = CatalogueInput(speciesSlug: speciesSlug, personalName: name.isEmpty ? nil : name)
@@ -354,6 +414,12 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 if let model {
                     target = model
                 } else if let intent {
+                    do { _ = try await replaceableFlow(expected: expected) }
+                    catch {
+                        if isCurrent(ticket, expected) { restoreFailed = true }
+                        throw error
+                    }
+                    guard isCurrent(ticket, expected) else { return }
                     target = try await connection.makeModel(
                         input: intent.input, flowId: intent.flowId,
                         operationId: intent.operationId, expected: expected
@@ -361,11 +427,16 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 } else { return }
                 guard isCurrent(ticket, expected) else { return }
                 model = target
-                if let oldFlow = previousFlow, let intent, oldFlow != intent.flowId {
-                    _ = try connection.forgetResumableFlow(
-                        ownerId: expected.session.userId, expectedFlowId: oldFlow, expected: expected
-                    )
+                if let pointed = try connection.resumableFlow(expected: expected),
+                   pointed != target.checkpoint?.flowId {
+                    do { _ = try await replaceableFlow(expected: expected) }
+                    catch {
+                        if isCurrent(ticket, expected) { restoreFailed = true }
+                        throw error
+                    }
+                    guard isCurrent(ticket, expected) else { return }
                 }
+                // Publish the replacement pointer only after its checkpoint succeeds.
                 let checkpoint = try await connection.rememberModel(target, expected: expected)
                 guard isCurrent(ticket, expected) else { return }
                 previousFlow = checkpoint.flowId
@@ -379,28 +450,37 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func editAsNewIntent() {
-        guard !working, scopeIsCurrent, let expected = scope else { return }
+        guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
         if let model {
             switch model.state {
             case .ready, .signInRequired, .collectionLimitNotEnqueued: break
             default: return
             }
         }
-        do {
-            let editableName = model?.input?.personalName ?? intent?.input.personalName ?? name
-            if let flow = previousFlow {
-                _ = try connection.forgetResumableFlow(
-                    ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
-                )
+        let editableName = model?.input?.personalName ?? intent?.input.personalName ?? name
+        let ticket = revision
+        working = true
+        work = Task { @MainActor in
+            defer { if revision == ticket { working = false; work = nil } }
+            do {
+                let flow = try await replaceableFlow(expected: expected)
+                guard isCurrent(ticket, expected) else { return }
+                if let flow {
+                    guard try connection.forgetResumableFlow(
+                        ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
+                    ) else { throw CatalogueSaveUnavailable.sessionChanged }
+                }
+                guard isCurrent(ticket, expected) else { return }
+                model?.cancel()
+                model = nil
+                intent = nil
+                previousFlow = nil
+                name = editableName
+                notice = nil
+            } catch {
+                if isCurrent(ticket, expected) { restoreFailed = true; notice = .unavailable }
             }
-            guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
-            model?.cancel()
-            model = nil
-            intent = nil
-            previousFlow = nil
-            name = editableName
-            notice = nil
-        } catch { notice = .unavailable }
+        }
     }
 
     private func signIn(_ provider: NativeAuthProvider) {

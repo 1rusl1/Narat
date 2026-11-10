@@ -188,6 +188,150 @@ final class CatalogueUIFixtureTests: XCTestCase {
         XCTAssertEqual(third.server.snapshot.attempts.count, 2)
     }
 
+    /// Read actual SDK/SQLite restoration, including the only current-owner resume pointer.
+    private func ackPending(
+        _ h: CatalogueUIFixtureContext,
+        checkpoint expectedCheckpoint: CatalogueInputCheckpointSnapshot? = nil,
+        queue expectedQueue: [OutboxEntrySnapshot]? = nil
+    ) async throws -> CatalogueSaveModel {
+        let snapshot = try await h.connection.sessionSnapshot()
+        XCTAssertFalse(snapshot.isAnonymous)
+        let flow = try XCTUnwrap(try h.connection.resumableFlow(expected: snapshot))
+        let result = await h.connection.restoreModel(
+            ownerId: snapshot.session.userId, flowId: flow, expected: snapshot
+        )
+        guard case let .restored(model) = result, case let .pending(entry) = model.state else {
+            XCTFail("Expected the original SQLite pending flow")
+            throw CatalogueUIFixtureError.invalidStorage
+        }
+        let checkpoint = try XCTUnwrap(model.checkpoint)
+        XCTAssertEqual(checkpoint.flowId, flow)
+        XCTAssertEqual(checkpoint.ownerId, snapshot.session.userId)
+        XCTAssertEqual(model.input, CatalogueInput(speciesSlug: "fixture-fern", personalName: "Luna"))
+        XCTAssertEqual(model.envelope, checkpoint.envelope)
+        XCTAssertEqual(entry.operationId, checkpoint.operationId)
+        XCTAssertEqual(Data(entry.payloadJSON.utf8), Data(checkpoint.envelope.payloadJSON.utf8))
+        let queue = try await h.connection.store!.pendingOutboxEntries(for: snapshot.session.userId)
+        XCTAssertEqual(queue, [entry])
+        if let expectedCheckpoint { XCTAssertEqual(checkpoint, expectedCheckpoint) }
+        if let expectedQueue { XCTAssertEqual(queue, expectedQueue) }
+        let disk = ModelContext(h.connection.store!.modelContainer)
+        XCTAssertEqual(try disk.fetch(FetchDescriptor<CatalogueInputCheckpointRecord>()).count, 1)
+        XCTAssertEqual(try disk.fetch(FetchDescriptor<LocalOutboxRecord>()).count, 1)
+        XCTAssertTrue(try disk.fetch(FetchDescriptor<CatalogueCreateConfirmationRecord>()).isEmpty)
+        let confirmation = try await h.connection.store!.catalogueCreateConfirmation(
+            ownerId: snapshot.session.userId, operationId: checkpoint.operationId
+        )
+        XCTAssertNil(confirmation)
+        return model
+    }
+
+    func testRealSQLiteACKFailureRestartExactReplayAndWritableRecovery() async throws {
+        let namespace = UUID().uuidString
+        let first = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .ackFailure)
+        let original = try await ackPending(first)
+        let checkpoint = try XCTUnwrap(original.checkpoint)
+        let queue = try await first.connection.store!.pendingOutboxEntries(for: checkpoint.ownerId)
+        XCTAssertTrue(first.server.snapshot.attempts.isEmpty, "Setup must not POST a create")
+        XCTAssertTrue(first.server.snapshot.commits.isEmpty)
+        XCTAssertEqual(first.server.snapshot.plants.count, 2)
+        first.shutdown()
+
+        // Recreating an untouched namespace cannot seed another flow or clear the fault.
+        let untouched = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .ackFailure)
+        _ = try await ackPending(untouched, checkpoint: checkpoint, queue: queue)
+        XCTAssertTrue(untouched.server.snapshot.attempts.isEmpty)
+        untouched.shutdown()
+        let failing = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .ackFailure)
+        let attempt = try await ackPending(failing, checkpoint: checkpoint, queue: queue)
+        let expected = try await failing.connection.sessionSnapshot()
+        let remembered = try await failing.connection.rememberModel(attempt, expected: expected)
+        XCTAssertEqual(remembered, checkpoint)
+        await attempt.save()
+        XCTAssertEqual(attempt.state, .unavailable(.storageOrServiceUnavailable))
+        XCTAssertNil(attempt.cardSummary)
+        let committed = failing.server.snapshot
+        XCTAssertEqual(committed.attempts.count, 1)
+        XCTAssertEqual(committed.commits.count, 1)
+        XCTAssertEqual(committed.plants.count, 3)
+        let commit = try XCTUnwrap(committed.commits.values.first)
+        let body = try XCTUnwrap(committed.attempts.first?.body)
+        XCTAssertEqual(commit.envelope, checkpoint.envelope)
+        XCTAssertEqual(commit.owner, checkpoint.ownerId)
+        XCTAssertEqual(commit.body, body)
+        let receipt = try JSONDecoder().decode(PlantCreateReceiptDTO.self, from: commit.receipt)
+        XCTAssertEqual(receipt.plantId, commit.plantID)
+        _ = try await ackPending(failing, checkpoint: checkpoint, queue: queue)
+        failing.shutdown()
+
+        // Even another recreation after one real POST remains read-only.
+        let stillFaulted = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .ackFailure)
+        _ = try await ackPending(stillFaulted, checkpoint: checkpoint, queue: queue)
+        XCTAssertEqual(stillFaulted.server.snapshot.attempts.count, 1)
+        XCTAssertEqual(stillFaulted.server.snapshot.commits.count, 1)
+        stillFaulted.shutdown()
+        let replay = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .ackFailure)
+        let retry = try await ackPending(replay, checkpoint: checkpoint, queue: queue)
+        let replaySnapshot = try await replay.connection.sessionSnapshot()
+        let replayCheckpoint = try await replay.connection.rememberModel(retry, expected: replaySnapshot)
+        XCTAssertEqual(replayCheckpoint, checkpoint)
+        await retry.save()
+        XCTAssertEqual(retry.state, .unavailable(.storageOrServiceUnavailable))
+        XCTAssertNil(retry.cardSummary)
+        _ = try await ackPending(replay, checkpoint: checkpoint, queue: queue)
+        XCTAssertEqual(replay.server.snapshot.attempts.map(\.body), [body, body])
+        XCTAssertEqual(replay.server.snapshot.commits.count, 1)
+        XCTAssertEqual(replay.server.snapshot.plants.count, 3)
+        replay.shutdown()
+
+        // Two persisted HTTP attempts permit writable reopening; no automatic send occurs.
+        let recovery = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .ackFailure)
+        let pending = try await ackPending(recovery, checkpoint: checkpoint, queue: queue)
+        XCTAssertEqual(recovery.server.snapshot.attempts.count, 2)
+        let recoverySnapshot = try await recovery.connection.sessionSnapshot()
+        let recoveryCheckpoint = try await recovery.connection.rememberModel(pending, expected: recoverySnapshot)
+        XCTAssertEqual(recoveryCheckpoint, checkpoint)
+        await pending.save()
+        let confirmation = try saved(pending)
+        XCTAssertEqual(confirmation.operationId, checkpoint.operationId)
+        XCTAssertEqual(confirmation.payloadJSON, checkpoint.envelope.payloadJSON)
+        XCTAssertEqual(confirmation.receipt, receipt, "Durable ACK must retain the first server receipt")
+        XCTAssertEqual(confirmation.receipt.plantId, commit.plantID)
+        await pending.loadCard()
+        XCTAssertEqual(pending.cardSummary?.id, commit.plantID)
+        XCTAssertEqual(pending.cardSummary?.personalName, "Luna")
+        XCTAssertEqual(recovery.server.snapshot.attempts.map(\.body), [body, body, body])
+        XCTAssertEqual(recovery.server.snapshot.commits.count, 1)
+        XCTAssertEqual(recovery.server.snapshot.plants.count, 3)
+        let empty = try await recovery.connection.store!.pendingOutboxEntries(for: checkpoint.ownerId)
+        XCTAssertTrue(empty.isEmpty)
+        let disk = ModelContext(recovery.connection.store!.modelContainer)
+        XCTAssertEqual(try disk.fetch(FetchDescriptor<CatalogueCreateConfirmationRecord>()).count, 1)
+        recovery.shutdown()
+
+        let durable = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .ackFailure)
+        defer { try? durable.cleanup() }
+        let durableSnapshot = try await durable.connection.sessionSnapshot()
+        XCTAssertEqual(try durable.connection.resumableFlow(expected: durableSnapshot), checkpoint.flowId)
+        let restored = await durable.connection.restoreModel(
+            ownerId: checkpoint.ownerId, flowId: checkpoint.flowId, expected: durableSnapshot
+        )
+        guard case let .restored(savedModel) = restored else {
+            XCTFail("Expected the original durably acknowledged flow")
+            throw CatalogueUIFixtureError.invalidStorage
+        }
+        XCTAssertEqual(savedModel.checkpoint, checkpoint)
+        XCTAssertEqual(try saved(savedModel), confirmation)
+        await savedModel.loadCard()
+        XCTAssertEqual(savedModel.cardSummary?.id, commit.plantID)
+        XCTAssertEqual(durable.server.snapshot.attempts.map(\.body), [body, body, body])
+        XCTAssertEqual(durable.server.snapshot.commits.count, 1)
+        let durableDisk = ModelContext(durable.connection.store!.modelContainer)
+        XCTAssertEqual(try durableDisk.fetch(FetchDescriptor<CatalogueInputCheckpointRecord>()).count, 1)
+        XCTAssertEqual(try durableDisk.fetch(FetchDescriptor<CatalogueCreateConfirmationRecord>()).count, 1)
+        XCTAssertTrue(try durableDisk.fetch(FetchDescriptor<LocalOutboxRecord>()).isEmpty)
+    }
+
     func testGuestCancelAndNativeSuccessUseSameSDKCheckpointBeforeProviderWithoutTransfer() async throws {
         for scenario in [CatalogueUIFixtureScenario.guestProviderCancel, .guestProviderSuccess] {
             let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: scenario)
