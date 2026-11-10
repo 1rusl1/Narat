@@ -426,5 +426,12 @@
     }
   ],
   "context_rotation_model_calls": 0,
-  "report_prepared_utc": "2026-11-10T20:28:29.059Z"
+  "report_prepared_utc": "2026-11-10T20:28:29.059Z",
+  "post_runtime_reporting": {
+    "first_report_commit": "7011daf7a0690e2d0903b525a911d7637b02cd0f",
+    "first_report_push_completed_observed_utc": "2026-11-10T20:30:16.415Z",
+    "reporting_after_runtime_seconds": 422.257,
+    "total_first_observation_to_first_report_publication_seconds": 1799.415,
+    "scope": "Controller report/JSON/handoff/doc checks/commitpush after terminal, not additional model/product runtime. This confirmation is subsequent metadata."
+  }
 }
