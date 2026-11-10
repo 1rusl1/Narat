@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-retire-slot-writers",
+      "description": "Retire remaining Swift FreeSelection/free-slot encoders while keeping historical decode and exact persisted legacy rows/payloads. No collection business or UI redesign.",
+      "risk": "medium",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/SyncPersistenceTests.swift"
+      ],
+      "constraints": [
+        "Write only the three allowed existing files, with every diff header in column1. Do not change targets, tools, config, handoff, tasks, backend, contracts, schema, engine, repository or views. Accepted rendered UI dbd3b14 and all 179 unit tests must remain intact. Scope is retired Free-selection encoders only; do not change monthly reports, care, expiry, camera, seasons, rooms or photos.",
+        "FreeSelection currently has no encoding consumer. Make it a legacy Decodable-only representation, retaining historical fields and decoding. BasicCareMembership currently emits free_slot and selection_revision; ProfileDTO emits free_selection_explicit. Stop those new typed writes with small explicit encoding and backwards-compatible decoding. Missing removed fields default to nil/0/false; present historical values remain readable. Preserve all unrelated identity, preference, care, and timestamp fields, including their null/optional behavior.",
+        "NextAvailableStep.selectFreePlants is an unused legacy raw value select_free_plants. Preserve historical decode, but prevent new typed serialization of that selector. Use a small read-only legacy representation or reject encoding this one value; never map it to an invented current action. Other enum cases keep their existing behavior. PlantCreateReceiptDTO uses a server-owned raw next_available_step string: its exact historical encoding/replay must remain unchanged.",
+        "Do not rewrite or delete generic queued commands, receipts, raw JSON, SyncedEntityRecord rows, history, or the physical SyncCheckpointRecord.freeSelectionRevision field. Preserve exact legacy free_care.select payload and operation on generic replay; the server owns compatibility decisions. Canonical new catalogue create already rejects slot keys: retain that validator. Do not reset or reassign memberships or select a Free trio.",
+        "Add at least four meaningful tests in the existing SyncPersistenceTests target, retaining all 179 old tests: 183 actual total or more, no skips. Cover legacy Profile and Membership JSON with present removed values; current JSON without those keys and compatible defaults; re-encoding drops only retired keys while preserving other values; legacy FreeSelection/step decode and retired-step encoding rejection. Also use a real durable LocalStore and reopen: seeded old raw outbox/receipt/history/selection revision must remain byte-identical after reading and re-encoding the DTOs. Reuse existing fixture patterns; do not add regex or conformance-only tests.",
+        "Controller runs build/all unit tests, automation and baseline Simulator; independent Reviewer/QA inspect the complete change. Do not run controller gates yourself. Rendered UI, Release exclusion and the full T162 integration audit are repeated by the controller on the final accepted source, separately from live integrations. Do not close parent tasks in the agent answer."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "NewSwift serialization cannotwrite retiredFreeSelection/free-slot flags; historicalJSON decode andoldoutbox/cache/revision/historybytes preserved, all179old+>=4=>183actualtests/no skips/build/Simulator/ReviewQA. Canonicalreceipt/currentUI unchanged; fullT162finalauditcontrollerlater.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
