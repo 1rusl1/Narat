@@ -1,57 +1,176 @@
 name: Validate Narat MVP (CI)
 
+# Fixture configuration only; T006 also requires a verified remote run.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: validate-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash --noprofile --norc -e -o pipefail {0}
+
 jobs:
   automation:
     name: CLI orchestration contracts (fixtures)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.11'
-      - run: python3 -m unittest discover -s tools/automation/tests -q
+      - name: Run automation fixtures
+        run: |
+          mkdir -p ci-evidence/automation
+          python3 -m unittest discover -s tools/automation/tests -q 2>&1 | tee ci-evidence/automation/tests.log
+      - name: Upload automation evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: automation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence/automation/*.log
+          retention-days: 7
+          if-no-files-found: warn
 
   contracts-and-deno:
-    name: JSON Schemas & Deno Edge Tests
-    runs-on: ubuntu-latest
+    name: Deno API and worker (fixtures)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          deno-version: v2.x
-
-      - name: Run G02 & Shared Edge Tests (Fixture-based, no paid API calls)
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: v2.9.8
+      - name: Frozen typecheck of actual entrypoints
         working-directory: supabase/functions
-        run: deno task test
+        run: |
+          mkdir -p ../../ci-evidence/deno
+          deno check --frozen plants-api/index.ts analysis-worker/index.ts 2>&1 | tee ../../ci-evidence/deno/typecheck.log
+      - name: Run existing loopback-only fixture suite with frozen dependencies
+        working-directory: supabase/functions
+        run: |
+          mkdir -p ../../ci-evidence/deno
+          deno test --frozen --allow-env --allow-read --allow-net=127.0.0.1,localhost _shared/tests/ 2>&1 | tee ../../ci-evidence/deno/tests.log
+      - name: Upload Deno evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: deno-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence/deno/*.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  sql:
+    name: Private PostgreSQL 17 clean, upgrade and real races
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.11'
+      - name: Prepare PG17 and verified pgTAP 1.3.4
+        timeout-minutes: 15
+        run: |
+          mkdir -p ci-evidence/sql
+          exec > >(tee ci-evidence/sql/dependencies.log) 2>&1
+          if ! brew list --versions postgresql@17 >/dev/null 2>&1; then
+            brew install postgresql@17
+          fi
+          narat_pg_bin="$(brew --prefix postgresql@17)/bin"
+          "$narat_pg_bin/pg_config" --version
+          command -v prove
+          narat_pgtap_dir="$RUNNER_TEMP/narat-pgtap"
+          git clone --depth 1 --branch v1.3.4 https://github.com/theory/pgtap.git "$narat_pgtap_dir"
+          test "$(git -C "$narat_pgtap_dir" rev-parse 'HEAD^{commit}')" = 968eb53a33114e83042b3bdb0c664b5b80cf8bdf
+          make -C "$narat_pgtap_dir" PG_CONFIG="$narat_pg_bin/pg_config" sql/pgtap.sql
+          test -s "$narat_pgtap_dir/sql/pgtap.sql"
+          echo "NARAT_CI_PG_BIN=$narat_pg_bin" >> "$GITHUB_ENV"
+          echo "NARAT_CI_PGTAP_SQL=$narat_pgtap_dir/sql/pgtap.sql" >> "$GITHUB_ENV"
+      - name: Run accepted private SQL suite through portable adapter
+        timeout-minutes: 12
+        run: |
+          python3 -u tools/automation/parallel_ios_ci_sql_gate.py \
+            --pg-bin "$NARAT_CI_PG_BIN" --pgtap-sql "$NARAT_CI_PGTAP_SQL" \
+            2>&1 | tee ci-evidence/sql/private-pg17.log
+      - name: Upload SQL evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: sql-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence/sql/*.log
+          retention-days: 7
+          if-no-files-found: warn
 
   ios-build-and-tests:
-    name: iOS Build & Tests (PL / EN)
-    runs-on: macos-15
+    name: iOS units, actual EN/PL catalogue UI and isolated Release
+    runs-on: macos-26
+    timeout-minutes: 100
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      NARAT_CI_RUN: ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Generate Xcode Project via XcodeGen
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.11'
+      - name: Verify Xcode and select one compatible simulator
+        timeout-minutes: 5
         run: |
-          brew list xcodegen || brew install xcodegen
-          xcodegen generate --spec ios/project.yml --project ios/
-
-      - name: Build for Testing (iOS Simulator)
+          mkdir -p ci-evidence/ios docs/validation/automation/runs
+          xcodebuild -version 2>&1 | tee ci-evidence/ios/xcode.log
+          test "$(xcodebuild -version)" = $'Xcode 26.3\nBuild version 17C529'
+          python3 tools/automation/parallel_ios_ci_simulator.py \
+            --env-output "$GITHUB_ENV" --create-if-needed \
+            2>&1 | tee ci-evidence/ios/simulator.log
+      # Gates use the committed project/Package.resolved and blank live SDK settings.
+      # The UI gate executes both English and Polish cases on this same device.
+      - name: Build, welcome and every source unit test
+        timeout-minutes: 40
         run: |
-          xcodebuild -project ios/Plants.xcodeproj \
-            -scheme Plants \
-            -destination "generic/platform=iOS Simulator" \
-            build-for-testing
+          python3 -u tools/automation/parallel_ios_sync_gate.py \
+            --run-id "$NARAT_CI_RUN-sync" --simulator "$NARAT_CI_SIMULATOR" \
+            2>&1 | tee ci-evidence/ios/sync.log
+      - name: Actual EN/PL catalogue UI and PNG evidence
+        timeout-minutes: 25
+        run: |
+          python3 -u tools/automation/parallel_ios_catalogue_ui_gate.py \
+            --run-id "$NARAT_CI_RUN-ui" --simulator "$NARAT_CI_SIMULATOR" \
+            2>&1 | tee ci-evidence/ios/catalogue-ui.log
+      - name: Isolated Release and fixture exclusion
+        timeout-minutes: 22
+        run: |
+          python3 -u tools/automation/parallel_ios_catalogue_release_gate.py \
+            --run-id "$NARAT_CI_RUN-release" --simulator "$NARAT_CI_SIMULATOR" \
+            2>&1 | tee ci-evidence/ios/release.log
+      - name: Upload whitelisted iOS fixture evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ci-evidence/ios/*.log
+            docs/validation/automation/runs/ci-${{ github.run_id }}-${{ github.run_attempt }}-*/*.json
+            docs/validation/automation/runs/ci-${{ github.run_id }}-${{ github.run_attempt }}-*/*.log
+            docs/validation/automation/runs/ci-${{ github.run_id }}-${{ github.run_attempt }}-*/attachments/**/*.png
+            docs/validation/automation/runs/ci-${{ github.run_id }}-${{ github.run_attempt }}-*/failure-attachments/**/*.png
