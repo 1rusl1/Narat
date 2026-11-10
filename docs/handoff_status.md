@@ -940,7 +940,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-catalogue-ack-ui-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-catalogue-ack-ui-repair](validation/automation/tasks/parallel-ios-catalogue-ack-ui-repair.md).
+parallel-ios-t162-final-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-t162-final-acceptance](validation/automation/tasks/parallel-ios-t162-final-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
