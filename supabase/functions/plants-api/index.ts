@@ -24,6 +24,7 @@ import {
 } from "./installations.ts";
 import {
   AnalysisAccessQueryAdapter,
+  createAnalysisAccessQueryAdapter,
   handleGetAnalysisAccess,
 } from "./analysis-access.ts";
 import {
@@ -314,6 +315,7 @@ export function createProductionPlantsApiHandler(
   };
   return createPlantsApiHandler({
     ...deps,
+    analysisAccessAdapter: deps.analysisAccessAdapter ?? createAnalysisAccessQueryAdapter(syncClient),
     handleSync: deps.handleSync ??
       ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),
     handleCommand: deps.handleCommand ??

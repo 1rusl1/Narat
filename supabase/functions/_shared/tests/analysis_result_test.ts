@@ -19,7 +19,7 @@ import {
   signAnalysisReceipt,
   verifyAnalysisReceipt,
 } from "../ProtocolResolver.ts";
-import { AnalysisAccess } from "../AnalysisAccess.ts";
+import { parseAnalysisAccessSnapshot } from "../AnalysisAccess.ts";
 import { AnthropicAdapter, buildSystemPrompt } from "../AnthropicAdapter.ts";
 import { ProviderBudgetGuard } from "../ProviderBudgetGuard.ts";
 import { processSingleQueuedJob, WorkerPersistenceAdapter } from "../../analysis-worker/index.ts";
@@ -703,44 +703,20 @@ Deno.test("T116 — ProtocolResolver uses published first help, signs receipt, a
 });
 
 Deno.test("T030, T032, T033, T034 — AnalysisAccess, AnthropicAdapter, operation_receipts before quota, and worker/budget guard", async () => {
-  // 1. AnalysisAccess separates starter identification & diagnosis and blocks free_monthly in the same UTC month as first_starter_success_at
-  const accessSameMonth = AnalysisAccess.evaluateAccessSnapshot({
-    isGuestOrAnonymous: false,
-    entitlement: null,
-    starter: {
-      starterIdentificationConsumed: false,
-      starterDiagnosisConsumed: true,
-      starterIdentificationJobId: null,
-      starterDiagnosisJobId: null,
-      firstStarterSuccessAt: "2026-11-05T10:00:00Z",
-    },
-    freeMonthlyWindow: null,
-    paidMonthlyWindow: null,
-    now: new Date("2026-11-20T12:00:00Z"),
-  });
-  assertEquals(accessSameMonth.modes.identification.allowed, true);
-  assertEquals(accessSameMonth.modes.identification.activeQuotaKind, "starter_identification");
-  assertEquals(accessSameMonth.modes.diagnosis.allowed, false);
-  assertEquals(accessSameMonth.modes.diagnosis.reason, "free_monthly_starts_next_utc_month");
-  assertEquals(Object.keys(accessSameMonth.modes).sort(), ["diagnosis", "identification"]);
-
-  // Next UTC month (Dec 2026) unlocks free_monthly = 1
-  const accessNextMonth = AnalysisAccess.evaluateAccessSnapshot({
-    isGuestOrAnonymous: false,
-    entitlement: null,
-    starter: {
-      starterIdentificationConsumed: false,
-      starterDiagnosisConsumed: true,
-      starterIdentificationJobId: null,
-      starterDiagnosisJobId: null,
-      firstStarterSuccessAt: "2026-11-05T10:00:00Z",
-    },
-    freeMonthlyWindow: null,
-    paidMonthlyWindow: null,
-    now: new Date("2026-12-01T00:05:00Z"),
-  });
-  assertEquals(accessNextMonth.modes.diagnosis.allowed, true);
-  assertEquals(accessNextMonth.modes.diagnosis.activeQuotaKind, "free_monthly");
+  // Server metadata: Free3 in registration window; old Free1 is invalid.
+  const fixtures = JSON.parse(await Deno.readTextFile(new URL(
+    "../../../../specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json", import.meta.url,
+  ))).cases;
+  const source = fixtures[0].response;
+  const access = parseAnalysisAccessSnapshot(source, source.owner_id, false);
+  assert(access);
+  assertEquals(access.modes.identification.activeQuotaKind, "starter_identification");
+  assertEquals(access.modes.diagnosis.activeQuotaKind, "free_monthly");
+  assertEquals(access.monthly.limit, 3);
+  assertEquals(access.monthly.remaining, 1);
+  assertEquals(access.monthly.period_end, "2026-11-30T10:20:00.123456Z");
+  const old = structuredClone(source); old.monthly.limit = 1;
+  assertEquals(parseAnalysisAccessSnapshot(old, source.owner_id, false), null);
 
   // 2. T033: handleCreateAnalysisJob checks operation_receipts BEFORE checking quotas
   let admitQuotaCalled = false;
@@ -1462,44 +1438,32 @@ Deno.test("T157 — runtime legacy worker job finalizes once without provider or
   assertEquals(reservations, 0);
 });
 
-Deno.test("T157 — access exposes two modes for guest, starter-in-progress and paid quota", () => {
-  const starter = {
-    starterIdentificationConsumed: false, starterDiagnosisConsumed: false,
-    starterIdentificationJobId: null, starterDiagnosisJobId: null, firstStarterSuccessAt: null,
-  };
-  const params = {
-    isGuestOrAnonymous: true, entitlement: null, starter,
-    freeMonthlyWindow: null, paidMonthlyWindow: null, now: new Date("2026-11-09T00:00:00Z"),
-  };
-  const guest = AnalysisAccess.evaluateAccessSnapshot(params);
-  assertEquals(Object.keys(guest.modes).sort(), ["diagnosis", "identification"]);
-  assertEquals(guest.modes.diagnosis.allowed, true);
-  assertEquals(guest.modes.diagnosis.activeQuotaKind, "starter_diagnosis");
+Deno.test("T157 — canonical access exposes only two modes and validates starter/paid metadata", async () => {
+  const fixtures = JSON.parse(await Deno.readTextFile(new URL(
+    "../../../../specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json", import.meta.url,
+  ))).cases;
+  for (const entry of fixtures) {
+    const value = entry.response;
+    const parsed = parseAnalysisAccessSnapshot(value, value.owner_id, value.is_guest);
+    assert(parsed, entry.name);
+    assertEquals(parsed, value);
+    assertEquals(Object.keys(parsed.modes).sort(), ["diagnosis", "identification"]);
+  }
+  const pending = structuredClone(fixtures.find((x: { name: string }) => x.name === "guest_two_independent_starters").response);
   const jobId = crypto.randomUUID();
-  const pending = AnalysisAccess.evaluateAccessSnapshot({
-    ...params, starter: { ...starter, starterDiagnosisJobId: jobId },
-  });
-  assertEquals(pending.modes.diagnosis.reason, "starter_in_progress");
-  assertEquals(pending.modes.diagnosis.inProgressJobId, jobId);
-  for (const consumedCount of [0, 100]) {
-    const paid = AnalysisAccess.evaluateAccessSnapshot({
-      ...params, isGuestOrAnonymous: false,
-      entitlement: {
-        ownerId: crypto.randomUUID(), accountState: "active", subscriptionState: "active",
-        offerKind: "paid", validUntil: "2026-12-09T00:00:00Z", trialEndAt: null,
-        autoRenewEnabled: true, verifiedAt: "2026-11-09T00:00:00Z",
-      },
-      paidMonthlyWindow: {
-        id: crypto.randomUUID(), quotaKind: "paid_monthly",
-        periodStart: "2026-11-09T00:00:00Z", periodEnd: "2026-12-09T00:00:00Z",
-        limitCount: 100, consumedCount, reservedCount: 0,
-      },
-    });
-    assertEquals(Object.keys(paid.modes).sort(), ["diagnosis", "identification"]);
+  pending.starter.diagnosis_remaining = 0;
+  pending.starter.diagnosis_in_progress_job_id = jobId;
+  Object.assign(pending.modes.diagnosis, { allowed: false, remaining: 0, inProgressJobId: jobId, reason: "starter_in_progress" });
+  assert(parseAnalysisAccessSnapshot(pending, pending.owner_id, true));
+  for (const consumed of [0, 100]) {
+    const paid = structuredClone(fixtures.find((x: { name: string }) => x.name === "trial_or_paid_same_spend").response);
+    paid.monthly.consumed = consumed; paid.monthly.remaining = 100 - consumed;
     for (const mode of ["identification", "diagnosis"] as const) {
-      assertEquals(paid.modes[mode].activeQuotaKind, "paid_monthly");
-      assertEquals(paid.modes[mode].allowed, consumedCount === 0);
-      assertEquals(paid.modes[mode].remaining, 100 - consumedCount);
+      paid.modes[mode].remaining = 100 - consumed; paid.modes[mode].allowed = consumed === 0;
+      if (consumed === 100) paid.modes[mode].reason = "paid_monthly_exhausted";
+      else delete paid.modes[mode].reason;
     }
+    assert(parseAnalysisAccessSnapshot(paid, paid.owner_id, false));
+    assertEquals(paid.modes.identification.activeQuotaKind, "paid_monthly");
   }
 });

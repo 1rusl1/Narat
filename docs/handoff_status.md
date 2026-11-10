@@ -1,6 +1,32 @@
 # Narat — текущий статус и передача работы
 
 
+## B2 — подготовлен production GET кандидат, начинается run08
+
+Отдельный accepted SQL/wire checkpoint **6d689b7** опубликован и передан A.
+HTTP кандидат материализован контроллером: _shared/AnalysisAccess.ts теперь строгий
+canonical DTO/validator без Free1/calendar forecast; plants-api/analysis-access.ts
+делает один service RPC; index production composition подключает его через прежний
+lazy serviceclient; два quota-раздела analysis_result_test.ts заменены на canonical
+metadata validation, прочие SDK/receipts/worker/budget/follow_up assertions сохранены.
+Новый protected tools/automation/parallel_backend_access_test.ts содержит39actual
+production+Supabase-client/mocktransport cases, владельцы/хеш/rawmicroseconds/ENPL/
+unknown/exhaustion/legacyFree1 rejection. Только fixture transport, не live.
+
+**Реально выполнено до run:**39HTTP/0failed, прежние336Deno/0failed, validate1/
+developer context/diff-check PASS. SQL после merge511/cap и123automation уже PASS;
+все configured mandatory checks будут заново выполнены для этого полного кандидата.
+Installations HTTP ещё не активирован/не принят, jobs/worker не подключены.
+
+Новый bounded `tools/automation/tasks.parallel-backend-quota-access-http.json`
+(1high-risk task), новый run `parallel-backend-quota-access-http-20261110-08`.
+Branch config SHA256 `4a7d6fef72e8e84a568b9302bfead9c3a473ca7b0f7fd197f99191f81f3dafdb`:
+добавлены protectedHTTP checks + future deno alias check, routing/retry/budgets
+не менялись, publish только origin/codex/plants-backend. Не resume старый run07.
+Следующий шаг — commit/push candidate/preparation, clean-tree run08 с явным --config;
+после acceptance — отдельный credential installation HTTP + explicit503 unwiredjobs,
+затем исправление deno check alias. FullT163/T036/live/worker остаются открытыми.
+
 ## B2 — SQL012 b44013e и согласованный nullable wire готовы для передачи A
 
 SQL005–012 независимо приняты; обычный merge A main5d15123 сохранён93a54cf и
