@@ -7,6 +7,7 @@ import time
 from .context import (SUMMARY_START, SUMMARY_END, combined_acceptance, make_delta_packet,
                       make_packet, route_level, route_models, selected_checks)
 from .process import error_excerpt, run
+from .preflight import candidate_comparison, verify_inputs
 from .repository import (apply_patch, changed_paths, contents, diff, fingerprint, git, manifest, require_clean)
 from .storage import State, atomic_json, atomic_text, checkpoint, digest
 
@@ -50,6 +51,10 @@ class Engine:
             record = self.state.data["tasks"][task["id"]]
             if record["status"] in ("COMPLETED", "BLOCKED"):
                 continue
+            if record.get("replan_required"):
+                self.stop(record, "WAITING", "Developer timed out: revise/narrow the task or document the resolved "
+                          "cause in a new manifest/run; unchanged resume is disabled")
+                continue
             if attempted_this_run >= self.config["max_tasks_per_run"] or time.monotonic() - self.started >= self.config["max_run_seconds"]:
                 break
             if any(self.state.data["tasks"][dep]["status"] != "COMPLETED" for dep in task["depends_on"]):
@@ -64,7 +69,7 @@ class Engine:
                     record["inflight"] = None
                     record["sessions"] = {}
                     record["checks"] = {}
-                    record["phase"] = "developer"
+                    record["phase"] = "developer" if task["write_files"] else "checks"
                     for call in record["calls"]:
                         if call["status"] == "STARTED":
                             call["status"] = "INTERRUPTED_UNKNOWN_OUTCOME"
@@ -90,6 +95,8 @@ class Engine:
                     "description": task["description"], "criteria": task["acceptance_criteria"],
                     "constraints": task["constraints"], "risk": task["risk"], "complexity": task["complexity"],
                     "architecture": self.config["architecture"], "files": task["files"], "write_files": task["write_files"],
+                    "candidate_base": task.get("candidate_base"), "evidence_files": task.get("evidence_files", []),
+                    "preflight": self.config.get("preflight", {}),
                     "checks": {name: self.config["checks"][name] for name in selected_checks(self.config, task)}})
                 if not task["write_files"]:
                     record.update(phase="checks", summary={
@@ -163,6 +170,8 @@ class Engine:
                 return
             phase = record["phase"]
             if phase == "checks":
+                _, deleted_files = candidate_comparison(self.root, task, record)
+                verify_inputs(self.root, self.config, task, record, "developer", deleted_files)
                 if self.checks(task, record, qa=False):
                     record["phase"] = "qa_checks" if combined_acceptance(self.config, task) else "reviewer"
                 elif record["status"] == "RUNNING":
@@ -193,6 +202,8 @@ class Engine:
                 return
             if phase == "developer":
                 record["summary"] = {k: reply[k] for k in ("summary", "decisions", "findings")}
+                if reply.get("finding_complexity") == "high":
+                    record["developer_escalated"] = True
                 if reply["status"] != "PASS":
                     self.failure(task, record, reply["findings"] or [reply["summary"]])
                     continue
@@ -222,6 +233,8 @@ class Engine:
                 if (reply.get("finding_complexity") == "high" or record["acceptance_failures"] >=
                         self.config.get("acceptance", {}).get("escalate_after_failures", 2)):
                     record["acceptance_escalated"] = True
+                if reply.get("finding_complexity") == "high":
+                    record["developer_escalated"] = True
                 self.failure(task, record, reply["findings"] or ["Incomplete criteria/evidence; cannot accept"])
                 record["phase"] = "developer"
                 self.save()
@@ -316,6 +329,10 @@ class Engine:
         self.save()
 
     def agent(self, task, record, role):
+        candidate_diff, deleted_files = candidate_comparison(self.root, task, record)
+        verify_inputs(self.root, self.config, task, record, role, deleted_files)
+        current = contents(self.root, task["write_files"])
+        full_diff = candidate_diff if candidate_diff is not None else diff(record["baseline"], current)
         if not self.state.reserve(task["id"], role, self.budget(role)):
             self.save()
             return None
@@ -332,8 +349,6 @@ class Engine:
         effort = selected["reasoning_effort"]
         previous = record["sessions"].get(role)
         policy = self.config["sessions"]
-        current = contents(self.root, task["write_files"])
-        full_diff = diff(record["baseline"], current)
         task_dir = self.directory / task["id"]
         task_dir.mkdir(parents=True, exist_ok=True)
         atomic_text(task_dir / "task.patch", full_diff)
@@ -353,12 +368,16 @@ class Engine:
         if previous:
             if previous["model"] != model or previous.get("provider", provider_name) != provider_name or policy["policy"] == "fresh":
                 reason = "model/policy changed"
+            elif previous.get("reasoning_effort", effort) != effort:
+                reason = "reasoning effort changed"
             elif previous["turns"] >= policy["max_turns"]:
                 reason = "turn threshold / irrelevant history"
             elif previous["estimated_tokens"] + estimate >= policy["max_estimated_tokens"]:
                 reason = "estimated context threshold"
-            elif previous.get("last_input_tokens", 0) >= policy["max_input_tokens"]:
-                reason = "reported input threshold"
+            elif (previous.get("context_tokens_scope") == "current_context"
+                  and type(previous.get("context_tokens")) is int
+                  and previous["context_tokens"] >= policy["max_input_tokens"]):
+                reason = "measured context threshold"
         if reason:
             self.compact(task, record, role, reason)
             previous = None
@@ -375,6 +394,7 @@ class Engine:
                 "usage_source": "unknown", "quota": None, "elapsed_seconds": None,
                 "usage_scope": "CLI-reported counters; per-turn/session scope not guaranteed",
                 "routing_level": routing_level, "prompt_kind": "delta" if previous and previous.get("snapshot") else "full",
+                "reasoning_effort": effort,
                 "resumed_session": previous["id"] if previous else None}
         record["calls"].append(call)
         record["inflight"] = {"kind": "agent", "role": role, "directory": str(call_dir)}
@@ -411,7 +431,10 @@ class Engine:
             if category == "session_lost" and previous:
                 self.save()  # One fresh attempt, still charged to the same persisted budget.
                 return None
-            self.stop(record, "WAITING", f"CLI {category}: {result.get('error', '')}; explicit resume required")
+            if category == "timeout" and role == "developer":
+                record["replan_required"] = True
+            action = ("revised manifest/new run required" if record.get("replan_required") else "explicit resume required")
+            self.stop(record, "WAITING", f"CLI {category}: {result.get('error', '')}; {action}")
             return None
         sid = result.get("session_id")
         if sid:
@@ -419,6 +442,9 @@ class Engine:
                                        "turns": (previous["turns"] if previous else 0) + 1,
                                        "estimated_tokens": (previous["estimated_tokens"] if previous else 0) + estimate,
                                        "last_input_tokens": usage.get("input_tokens") or 0,
+                                       "reasoning_effort": effort,
+                                       "context_tokens": result.get("context_tokens"),
+                                       "context_tokens_scope": result.get("context_tokens_scope"),
                                        "snapshot": {"files": current, "checks": json.loads(json.dumps(record["checks"])),
                                                     "summary": dict(record.get("summary", {}))}}
         self.save()

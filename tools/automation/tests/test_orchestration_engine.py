@@ -27,7 +27,8 @@ class FakeProvider:
 
     def invoke(self, root, directory, task, fingerprint, prompt, model, effort, session=None, ephemeral=False, provider="codex"):
         role = json.loads(prompt.split("\n", 1)[1].split("\nFull task diff:", 1)[0])["role"]
-        call = {"role": role, "task": task["id"], "prompt": prompt, "session": session, "model": model, "provider": provider}
+        call = {"role": role, "task": task["id"], "prompt": prompt, "session": session,
+                "model": model, "provider": provider, "effort": effort}
         self.calls.append(call)
         reply = {"task_id": task["id"], "fingerprint": fingerprint, "status": "PASS", "summary": "Verified fixture",
                  "patch": "", "decisions": ["Reuse existing behavior"], "findings": [],
@@ -477,6 +478,143 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
         self.assertEqual([(c["role"], c["model"]) for c in provider.calls], [
             ("developer", "gpt-6.1-sol"), ("reviewer", "gpt-6-astra"), ("qa", "gpt-6-astra")])
+        self.assertEqual([c["effort"] for c in provider.calls], ["medium", "high", "high"])
+
+    def test_ambiguous_cli_input_count_does_not_discard_repair_session(self):
+        def large_usage(result, call, root):
+            result["usage"]["input_tokens"] = 900000
+            result["usage_scope"] = "CLI-reported counters; per-turn/session scope not guaranteed"
+            fail_response("repair once")(result, call, root)
+        provider = FakeProvider([large_usage])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual(provider.calls[1]["session"], "session-1")
+        self.assertIn('"resume_delta": true', provider.calls[1]["prompt"])
+        self.assertFalse(any(c["reason"] == "reported input threshold"
+                             for c in engine.state.data["tasks"]["one"]["compactions"]))
+
+    def test_only_explicit_measured_context_can_trigger_input_rotation(self):
+        def measured(result, call, root):
+            result.update(context_tokens=64000, context_tokens_scope="current_context")
+            fail_response("repair once")(result, call, root)
+        provider = FakeProvider([measured])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertIsNone(provider.calls[1]["session"])
+        self.assertEqual(engine.state.data["tasks"]["one"]["compactions"][0]["reason"],
+                         "measured context threshold")
+
+    def test_unqualified_context_counter_does_not_rotate(self):
+        def unqualified(result, call, root):
+            result.update(context_tokens=900000)
+            fail_response("repair once")(result, call, root)
+        provider = FakeProvider([unqualified])
+        self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
+        self.assertEqual(provider.calls[1]["session"], "session-1")
+
+    def test_estimated_context_limit_still_rotates(self):
+        self.config["sessions"]["max_estimated_tokens"] = 1
+        provider = FakeProvider([fail_response("repair once")])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertIsNone(provider.calls[1]["session"])
+        self.assertEqual(engine.state.data["tasks"]["one"]["compactions"][0]["reason"],
+                         "estimated context threshold")
+
+    def test_complex_finding_increases_developer_effort_in_fresh_session(self):
+        def complex_finding(result, call, root):
+            fail_response("Ambiguous rollback defect")(result, call, root)
+            result["reply"]["finding_complexity"] = "high"
+        provider = FakeProvider([{}, complex_finding])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual(provider.calls[0]["effort"], "medium")
+        self.assertEqual(provider.calls[2]["effort"], "high")
+        self.assertIsNone(provider.calls[2]["session"])
+
+    def test_developer_timeout_cannot_resume_unchanged_request(self):
+        provider = FakeProvider([{"status": "FAIL", "category": "timeout", "error": "timeout"}])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "WAITING")
+        self.assertEqual(len(provider.calls), 1)
+        retry = FakeProvider()
+        recovered = self.engine(retry)
+        self.assertEqual(recovered.execute(resume=True)["one"], "WAITING")
+        self.assertEqual(retry.calls, [])
+        self.assertTrue(recovered.state.data["tasks"]["one"]["replan_required"])
+        self.assertIn("new manifest/run", recovered.state.data["tasks"]["one"]["reason"])
+
+    def test_candidate_acceptance_receives_real_committed_diff_without_developer(self):
+        self.task["write_files"] = []
+        self.task["candidate_base"] = git(self.root, "rev-parse", "HEAD").decode().strip()
+        (self.root / "src/file.txt").write_text("ready candidate\n")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "candidate")
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "COMPLETED")
+        self.assertEqual([c["role"] for c in provider.calls], ["reviewer", "qa"])
+        for call in provider.calls:
+            self.assertIn("-before", call["prompt"])
+            self.assertIn("+ready candidate", call["prompt"])
+            self.assertIn('"review_scope": "candidate_diff"', call["prompt"])
+
+    def test_empty_candidate_diff_stops_before_spending_model_budget(self):
+        self.task["write_files"] = []
+        self.task["candidate_base"] = git(self.root, "rev-parse", "HEAD").decode().strip()
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(engine.state.data["tasks"]["one"]["counts"], {})
+
+    def test_candidate_cannot_hide_changed_paths_from_scope_checks(self):
+        self.task["write_files"] = []
+        self.task["candidate_base"] = git(self.root, "rev-parse", "HEAD").decode().strip()
+        (self.root / "src/unlisted.txt").write_text("changed outside declared scope\n")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "unlisted change")
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual(provider.calls, [])
+        self.assertIn("candidate diff paths missing", engine.state.data["tasks"]["one"]["reason"])
+
+    def test_candidate_diff_includes_deleted_input(self):
+        self.task["write_files"] = []
+        self.task["candidate_base"] = git(self.root, "rev-parse", "HEAD").decode().strip()
+        (self.root / "src/file.txt").unlink()
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "remove obsolete source")
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
+        self.assertIn("-before", provider.calls[0]["prompt"])
+        self.assertIn("deleted file mode", provider.calls[0]["prompt"])
+
+    def test_missing_fixture_stops_before_developer(self):
+        self.task["files"].append("src/missing-fixture.json")
+        provider = FakeProvider()
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual(provider.calls, [])
+
+    def test_missing_saved_log_stops_qa_before_model_call(self):
+        def remove_log(result, call, root):
+            (self.directory / "one/check-2-unit/stdout.log").unlink()
+        provider = FakeProvider([{}, remove_log])
+        engine = self.engine(provider)
+        self.assertEqual(engine.execute()["one"], "BLOCKED")
+        self.assertEqual([c["role"] for c in provider.calls], ["developer", "reviewer"])
+        self.assertIn("missing saved stdout", engine.state.data["tasks"]["one"]["reason"])
+
+    def test_readonly_interrupted_acceptance_never_resumes_as_developer(self):
+        self.task["write_files"] = []
+        engine = self.engine(FakeProvider([InterruptedError()]))
+        with self.assertRaises(InterruptedError):
+            engine.execute()
+        provider = FakeProvider()
+        self.assertEqual(self.engine(provider).execute(resume=True)["one"], "COMPLETED")
+        self.assertEqual([c["role"] for c in provider.calls], ["reviewer", "qa"])
 
     def test_task_complexity_alone_uses_sol_for_split_acceptance(self):
         self.task["complexity"] = "high"

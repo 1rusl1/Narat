@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from orchestration.context import (PROJECT_START, PROJECT_END, make_packet, route_models, safe_path,
-                                   selected_checks, validate, level, combined_acceptance, route_level)
+                                   selected_checks, validate, level, combined_acceptance, route_level, discover)
 from orchestration.storage import State, checkpoint
 
 CONFIG = json.loads((Path(__file__).resolve().parents[1] / "orchestrator.config.json").read_text())
@@ -94,6 +94,34 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(route_level(self.task, self.record, "qa"), "low")
         self.record["acceptance_escalated"] = True
         self.assertEqual(route_level(self.task, self.record, "qa"), "high")
+
+    def test_high_risk_does_not_inflate_developer_effort(self):
+        self.task.update(risk="high", complexity="medium")
+        self.assertEqual(route_level(self.task, self.record, "developer"), "medium")
+        for role in ("reviewer", "qa"):
+            self.assertEqual(route_level(self.task, self.record, role), "high")
+        self.record["developer_escalated"] = True
+        self.assertEqual(route_level(self.task, self.record, "developer"), "high")
+
+    def test_discovery_limit_never_truncates_explicit_paths(self):
+        self.task["files"] = [f"src/file{i}.txt" for i in range(12)]
+        self.assertEqual(discover(self.root, self.task, [], 6), self.task["files"] + self.task["write_files"])
+
+    def test_candidate_base_requires_readonly_and_full_sha(self):
+        self.task["candidate_base"] = "a" * 40
+        with self.assertRaises(ValueError):
+            validate(self.config, [self.task], self.root)
+        self.task["write_files"] = []
+        validate(self.config, [self.task], self.root)
+        for value in ("HEAD~1", "abc123", None):
+            self.task["candidate_base"] = value
+            with self.assertRaises(ValueError):
+                validate(self.config, [self.task], self.root)
+
+    def test_preflight_evidence_paths_cannot_escape(self):
+        self.task["evidence_files"] = ["../outside.json"]
+        with self.assertRaises(ValueError):
+            validate(self.config, [self.task], self.root)
 
     def test_combined_acceptance_budget_and_escalation_are_validated(self):
         for key, value in (("escalate_after_failures", 0), ("escalate_after_failures", True)):

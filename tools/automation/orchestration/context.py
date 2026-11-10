@@ -120,6 +120,24 @@ def validate(config, tasks, root):
     for key in ("diff_chars", "error_chars", "max_discovered_files"):
         if type(config["context"][key]) is not int or config["context"][key] < 1:
             raise ValueError(f"Invalid context limit: {key}")
+    read_chars = config["context"].get("read_chars", 16000)
+    if type(read_chars) is not int or read_chars < 1:
+        raise ValueError("Invalid context limit: read_chars")
+    preflight = config.get("preflight", {})
+    if not isinstance(preflight, dict):
+        raise ValueError("Invalid preflight policy")
+    if preflight:
+        if set(preflight) != {"xcode_project", "swift_targets"}:
+            raise ValueError("Preflight needs xcode_project and swift_targets")
+        safe_path(root, preflight["xcode_project"])
+        if not isinstance(preflight["swift_targets"], dict):
+            raise ValueError("Invalid Swift target map")
+        for prefix, target in preflight["swift_targets"].items():
+            if not isinstance(prefix, str):
+                raise ValueError("Invalid Swift target prefix")
+            safe_path(root, prefix.rstrip("/"))
+            if not prefix.endswith("/") or not isinstance(target, str) or not target.strip():
+                raise ValueError("Invalid Swift target map")
     for role in ("developer", "reviewer", "qa", *(["acceptance"] if acceptance.get("combined_levels") else [])):
         for level in LEVELS:
             route = config["roles"][role][level]
@@ -149,6 +167,14 @@ def validate(config, tasks, root):
             safe_path(root, name)
         for name in task["write_files"]:
             safe_path(root, name, writable=True)
+        if "candidate_base" in task:
+            if task["write_files"] or not isinstance(task["candidate_base"], str) or not re.fullmatch(r"[0-9a-f]{40}", task["candidate_base"]):
+                raise ValueError("candidate_base requires a read-only task and a full commit SHA")
+        evidence = task.get("evidence_files", [])
+        if not isinstance(evidence, list) or not all(isinstance(p, str) for p in evidence):
+            raise ValueError("evidence_files must be explicit relative file paths")
+        for name in evidence:
+            safe_path(root, name)
         criteria_ids = set()
         if not task["acceptance_criteria"]:
             raise ValueError("Acceptance criteria are required")
@@ -188,7 +214,8 @@ def combined_acceptance(config, task):
 
 def route_level(task, record, role):
     if role == "developer":
-        return level(task)
+        # Implementation effort and independent acceptance risk are different decisions.
+        return "high" if record.get("developer_escalated") else task["complexity"]
     # Task complexity alone does not require the expensive acceptance model.
     return "high" if task["risk"] == "high" or record.get("acceptance_escalated") else "low"
 
@@ -247,6 +274,11 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
                "relevant_paths": paths, "allowed_write_files": task["write_files"],
                "dependency_decisions": dependencies or [], "checkpoint": compact,
                "fingerprint": record.get("fingerprint", ""),
+               "review_scope": ("candidate_diff" if task.get("candidate_base") else
+                                "implementation_diff" if task["write_files"] else "full_snapshot"),
+               "candidate_base": task.get("candidate_base"),
+               "candidate_head": record.get("base_head"),
+               "evidence_files": task.get("evidence_files", []),
                "full_diff_path": str(diff_path) if diff_path else None,
                "diff": diff[:config["context"]["diff_chars"]],
                "diff_truncated": len(diff) > config["context"]["diff_chars"]}
@@ -256,6 +288,9 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
         "Task criteria and architecture are mandatory. You are read-only: do not change files, "
         "run Git mutations, commit, push, or update handoff/tasks. The controller owns writes. "
         "Do not launch other agents or external MCP servers. Do not rerun successful checks without cause. "
+        f"Search with rg first, then read relevant ranges (aim for at most {config['context'].get('read_chars', 16000)} "
+        "characters of command output per read). If truncated, retrieve the necessary next range; never infer "
+        "missing code. Avoid whole-file dumps and broad repository scans unless a concrete dependency requires them. "
         "Return only JSON matching the output schema. No reasoning transcripts or full command logs. "
         "findings contains ONLY actionable unresolved defects requiring correction, never observations, "
         "test output explanations or scope limitations (put those in decisions). status=PASS requires "
@@ -275,11 +310,15 @@ def make_packet(root, config, task, record, role, diff="", diff_path=None, depen
             "Use criteria=[]; the controller runs checks after applying your patch, then Reviewer and QA "
             "evaluate every criterion. Return a unified git patch, concise summary, decisions and actual "
             "implementation findings. Only allowed_write_files may be patched. BLOCKED means an actual "
-            "implementation prerequisite is unavailable.\n")
+            "implementation prerequisite is unavailable. Deliver one bounded, testable behavior; do not expand scope. "
+            "After a timeout the controller requires a revised/narrower task or an explicitly resolved cause, "
+            "not the same unchanged request.\n")
     else:
         instructions += (
             "Patch must be empty. Evaluate only the task's explicit acceptance scope; no broader repository "
             "audit without a relevant risk. Inspect saved check logs before deciding evidence is unavailable. "
+            "For candidate_diff inspect the actual base-to-head diff at full_diff_path. For full_snapshot, "
+            "evaluate the named behavior in current files; an empty patch cannot prove change minimality. "
             "Return each criterion exactly once; evidence entries must be exact check IDs from the packet, "
             "not descriptions or file paths. Never infer live acceptance from fixtures. "
             "For FAIL set finding_complexity=high for ambiguous cross-component, security or "

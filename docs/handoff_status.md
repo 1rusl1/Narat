@@ -1,5 +1,70 @@
 # Narat — текущий статус и передача работы
 
+## Engine/config ускорены; A/B остаются остановленными — 10 ноября 2026
+
+По прямой команде владельца реализованы изменения общего engine/config, выполнены
+только локальные проверки. Ветка **codex/development-throughput-audit**; main и
+рабочие деревья/config A/B не менялись. GitHub Actions/T006 по-прежнему отложены,
+новые runs/repair/Review/QA/model smoke и автоматическое возобновление не запускались.
+
+**Реализовано:**
+- Developer route по complexity, Sol medium для low/medium и high для high;
+  сложное finding включает high effort repair с новой сессией. Высокий risk по-прежнему
+  требует отдельные Astra Review/QA и все прежние scope/criteria gates.
+- discovery20→6 (явные пути не обрезаются); read_chars16000 — инструкция для rg и
+  чтения диапазонов, без принудительного усечения stdout/потери исходников.
+- usage.input_tokens больше не вызывает ротацию. Порог64000 работает только при
+  явно помеченном current_context measurement; текущие adapters его не дают.
+  reuse_within_task/3turns/эвристика24000 сохранены; смена effort создаёт fresh session.
+- После Developer timeout сохраняется replan_required; unchanged resume того же run
+  не вызывает модель. Для продолжения — пересмотренный manifest/указанная устранённая
+  причина и новый run. Timeout900 и бюджеты3/3/3 не увеличены и не уменьшены.
+- Read-only candidates без Developer, включая восстановление после прерывания.
+  candidate_base требует полный SHA предка HEAD, непустой реальный comparative diff
+  и все changed paths в files (удаления тоже поддержаны). Без base — явно snapshot
+  audit, не доказательство минимальности. Патч сохранён полностью, criteria не урезаются.
+- Preflight до quota/model: наличие inputs/evidence/сохранённых check logs;
+  настоящие Xcode fileRefs/Sources ожидаемого target, новые Swift после patch до build.
+  Неизвестные layouts не считаются готовыми. Candidate/evidence/preflight включены
+  в quality_contract; смена общего config требует нового run-id.
+
+**Файлы:** tools/automation/orchestrator.config.json,
+orchestration/{context,engine,preflight}.py,
+tests/test_orchestration_{context,engine,preflight}.py, ORCHESTRATOR.md;
+docs/parallel/README.md, throughput-audit-2026-11-10.md и этот handoff.
+
+**Фактически запущено:**
+- targeted `python3 -m unittest discover -s tools/automation/tests -p 'test_orchestration_*.py' -q`:
+ 106 tests/40.480s/OK на промежуточном срезе;
+- финальный `python3 -m unittest discover -s tools/automation/tests -q`:
+ **147 tests/48.177s/OK**, exit0. Модельные providers — scripted fixtures/fake CLI,
+ Git commit/push внутри тестов — временные репозитории и local bare origin.
+ Ожидаемые negative fixture FAIL/SKIP сообщения не являются падением suite.
+ Проверены high-risk split gates, effort escalation, delta reuse при ambiguous counters,
+ measured/turn/estimated rotation, timeout resume guard, committed candidate diff/
+ скрытые paths/deletions, missing inputs/logs, read-only interruption, Sources/wrong
+ target/одинаковые basename/cyclic groups/new file. Лог /tmp/narat-throughput-full-tests.log;
+- `orchestrator.py validate --manifest tools/automation/tasks.example.json`: VALID1,
+ без моделей; прямой read-only preflight настоящего pbxproj: все34Swift в нужных Sources PASS;
+- JSON compare с HEAD: timeout/retry/sessions/roles/required_checks/scope_checks/checks/
+ publish/acceptance unchanged; diff-check/local Markdown links/handoff markers PASS.
+ Все151 checkbox совпадают с HEAD (15done/136open), продуктовые ID не закрывались.
+ Staged whitespace проверяется перед commit; A/B wait_threads snapshot подтверждает idle.
+
+**Ограничения:** live CLI/provider/SQL/iOS unit/UI/build/Simulator/Auth/Storage/AI/StoreKit
+не запускались; ускорение и равенство качества на живой очереди пока не измерены.
+Preflight проверяет включение исходника, не доказывает выполнение тестового метода;
+прежние продуктовые gates нужны. Xcode checker поддерживает текущие явные PBX groups;
+новые synchronized layouts требуют отдельной поддержки. Ограничение read_chars —
+инструкция, а не жёсткий лимит вывода инструментов модели. Старые state/logs не правились.
+
+**Точный следующий шаг:** сохранить и отправить этот пакет в origin текущей ветки.
+Перед будущим запуском A принимает пакет, B получает ту же версию, оба переносят context/
+preflight в свои ignored configs с сохранением собственных checks и publish.branch;
+только новый run-id и по отдельной команде владельца на возобновление. Сейчас обе
+очереди остаются на паузе. Прошлые pause checkpoints: A2aafbdd/Ba1e78c3.
+
+
 ## Пауза A/B и аудит скорости — 10 ноября 2026
 
 Владелец отменил предложенное переключение очередей и прямо поручил остановить
@@ -1031,6 +1096,8 @@ T148 остаётся на прежней остановке до запуска
 
 <!-- orchestrator:project-state -->
 ## Project State
+
+- Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в A/B ещё не перенесён. Запуск НЕ разрешён, CI отложена.
 
 - ПРИОРИТЕТ 2026-11-10: владелец остановил A/B перед сменой конфигурации. Новые runs/repair/review/интеграции не запускать до прямой команды возобновления. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
 
