@@ -777,8 +777,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-backend-t163-bind-only: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-backend-t163-bind-only](validation/automation/tasks/parallel-backend-t163-bind-only.md).
+parallel-backend-t163-installation-api-sql: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-backend-t163-installation-api-sql](validation/automation/tasks/parallel-backend-t163-installation-api-sql.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
