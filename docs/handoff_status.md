@@ -1,6 +1,39 @@
 # Narat — текущий статус и передача работы
 
 
+## B GET pilot — validate/context/preflight PASS, единственный запуск следующий
+
+Подготовка и перенос начались по зафиксированному получению **20:00:29UTC**;
+inputs/config/gate preflight завершён **20:04:39UTC** (10ноября2026).
+Engine25a5830/cf5a6b1 обычным merge2d1b374 опубликован в B. Файлы GET/39protected
+HTTP/fixtures побайтно неизменны отa151427, enginecode точно25a5830.
+Новый manifest `tools/automation/tasks.parallel-backend-access-http-pilot.json`:
+**один high-risk read-only snapshot task**, write_files=[], безcandidate_base,
+без утверждения о минимальности сравнительного diff; Developer не нужен.
+
+**Подготовка фактически PASS:** validate1; Reviewer context full_snapshot/
+allowed_write_files=[]/read16000 проверен; preflight16inputs/2nonempty evidence,
+5concrete script/config paths и executable/test dirs/PG17/pgTAP существуют.
+Swift inputs отсутствуют => Sources membership N/A; configured pbxproj существует,
+Xcode/Simulator checks не назначены. АктивныхCLIоркестраторов на process snapshot0.
+7mandatorychecks неизменны: typecheck/diff/automation(current147)/Deno336/HTTP39/
+cap55+131+4races/SQL511+12UTC+99actual+6x20. Проверки ещё выполнятся внутри run;
+успех preparation не подменяет продуктовую приёмку.
+
+ConfigSHA `0a7d0752cfa4a36d65c8cf0c7df630cb641adfdeabfb272bdf33e1bde608d632`;
+изменены ТОЛЬКО context(max_discovered6/read_chars16000) иpreflight относительно
+прежнего B config; остальные checks/providers/budgets/publish равны. Engine fingerprint
+`3e69b5df091a1786e5765c85f75584be817d1bacdb5a47ee44d519d8623a1bd1` (sortedpath+NUL+
+bytes+NUL engine modules+orchestrator.py). Raw timing/preflight JSON в ignoredruns,
+[описание подготовки](validation/automation/parallel-backend-access-http-pilot-prep-2026-11-10.md).
+
+После prep commit/push из clean-tree — **ровно один**
+`parallel-backend-access-http-pilot-20261110-01` с явным backend--config, безresume.
+Wrapper запишет UTCstart/end и monotonicruntime автоматически. После terminal/
+timeout — report всехcalls/checks/повторов и сравнение с interrupted08 с оговорками,
+handoff commit/push, сообщения A/parent, снова остановка. Дополнительного пакета,
+CI/main promotion/installation HTTP/worker/alias/изменения критериев не будет.
+
 ## B — ограниченный read-only пилот GET после переноса engine25a5830
 
 Новая команда владельца: ровно один пакет, затем остановка на любом terminal
@@ -1430,13 +1463,15 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- B STOPPED by owner for configuration discussion: run08 WAITING/qa, controller26958 and QA36251 SIGINT, exit130, verified process groups empty. GET candidatea151427 not accepted; accepted SQL/wire6d689b7. Config SHA4a7d6fef unchanged. No automatic resume/new runs/repair/ReviewQA/integration/config changes until explicit owner decision. T006/cloud work deferred.
+- B CURRENT: exactly one authorized read-only fullsnapshot GETaccess pilot parallel-backend-access-http-pilot-20261110-01; noDeveloper/noimplementation, riskhigh/splitAstra, oldrun08notresume. Stop after COMPLETED/WAITING/BLOCKED/timeout. CI/T006/installationHTTP/worker/alias/mainpromotion deferred. Engine25a5830 merged2d1b374; configcontext/preflight updated only, checks/providers/budgets/backendpublish preserved.
+
+- Historical stop before newly authorized one-task pilot: run08 WAITING/qa, controller26958 and QA36251 SIGINT, exit130, verified process groups empty. GET candidatea151427 not accepted; accepted SQL/wire6d689b7. Config SHA4a7d6fef unchanged. No automatic resume/new runs/repair/ReviewQA/integration/config changes until explicit owner decision. T006/cloud work deferred.
 
 - B latest: SQL005–012 independently accepted through b44013e (011 6df1b76;012 snapshot b44013e). Run07 completed Dev/Review/QA1/1/1 each;511pgTAP clean/upgrade,99actual+6x20,cap/Deno336/automation115 PASS. HTTP production adapters/T036/live remain open. Main5d15123 merged between runs; combined B gates next. User approved model workflow/inter-chat coordination and unknown legacy date blocking.
 
-- Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в A/B ещё не перенесён. Запуск НЕ разрешён, CI отложена.
+- Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в B перенесён обычным merge2d1b374; разрешён ровно один read-only GET snapshot pilot, после terminal остановка. CI отложена.
 
-- ПРИОРИТЕТ 2026-11-10: владелец остановил A/B перед сменой конфигурации. Новые runs/repair/review/интеграции не запускать до прямой команды возобновления. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
+- ПРИОРИТЕТ 2026-11-10: новая прямая команда разрешила ровно по одному A/B продуктовому пакету с измерениями, затем снова остановиться. В B только текущийGETread-only acceptance; второйrun/пакет/main promotion запрещены. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
 
 - Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN/PL; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
