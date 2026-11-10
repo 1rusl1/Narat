@@ -34,6 +34,7 @@ struct SyncSessionLease: Sendable {
     let ownerId: UUID
     let generation: UInt64
     let session: NativeAuthSession?
+    fileprivate let authority: SyncSessionAuthority
 }
 
 /// The short synchronous critical section also covers LocalStore's save. There is no
@@ -67,7 +68,9 @@ final class SyncSessionAuthority: @unchecked Sendable {
                     throw SyncWireValidationError.invalidSession
                 }
             }
-            let lease = SyncSessionLease(ownerId: ownerId, generation: generation, session: captured)
+            let lease = SyncSessionLease(
+                ownerId: ownerId, generation: generation, session: captured, authority: self
+            )
             try validateLocked(lease)
             return lease
         }
@@ -86,12 +89,30 @@ final class SyncSessionAuthority: @unchecked Sendable {
         }
     }
 
+    /// Explicit-session capture is a transport compatibility path, not bound proof.
+    /// Check on this authority under the very lock that covers the disk action.
+    func withBoundValid<T>(_ lease: SyncSessionLease, _ body: () throws -> T) throws -> T {
+        try lock.withLock {
+            try validateLocked(lease)
+            guard canonical, session != nil, lease.authority === self else {
+                throw SyncWireValidationError.invalidSession
+            }
+            return try body()
+        }
+    }
+
     func withValid<T>(_ lease: SyncSessionLease, _ body: () throws -> T) throws -> T {
         try lock.withLock {
             try validateLocked(lease)
             return try body()
         }
     }
+}
+
+/// Only a typed canonical receipt can authorize the durable create acknowledgement.
+enum OutboxCommandResult: Sendable {
+    case generic
+    case catalogueCreate(PlantCreateReceiptDTO)
 }
 
 public actor PlantsAPIClient {
@@ -114,6 +135,17 @@ public actor PlantsAPIClient {
         self.installationCredential = installationCredential
         self.clientLocale = clientLocale
         self.bearerToken = bearerToken
+    }
+
+    public enum LocaleError: Error, Sendable, Equatable {
+        case unsupportedLocale
+    }
+
+    /// Header metadata only: retain credentials, bound authority and in-flight operations.
+    public func updateClientLocale(_ locale: String) throws {
+        try Task.checkCancellation()
+        guard locale == "en" || locale == "pl" else { throw LocaleError.unsupportedLocale }
+        clientLocale = locale
     }
 
     public func updateContext(
@@ -156,11 +188,14 @@ public actor PlantsAPIClient {
         return result
     }
 
-    func sendOutboxCommand(_ envelope: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+    func sendOutboxCommand(
+        _ envelope: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> OutboxCommandResult {
         try validateSyncContext(context)
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
+        if catalogueCreate { encoder.outputFormatting = [.sortedKeys] }
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(envelope)
         var request = try buildRequest(
@@ -170,12 +205,15 @@ public actor PlantsAPIClient {
             request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         }
         // Build and dispatch with the captured token in the same actor turn.
+        let result: OutboxCommandResult
         if catalogueCreate {
-            _ = try await execute(request, as: PlantCreateReceiptDTO.self)
+            result = .catalogueCreate(try await execute(request, as: PlantCreateReceiptDTO.self, expectedStatus: 200))
         } else {
             _ = try await execute(request, as: CommandResponseDTO.self)
+            result = .generic
         }
         try validateSyncContext(context)
+        return result
     }
 
     public func buildRequest(
@@ -272,7 +310,9 @@ public actor PlantsAPIClient {
         return try await execute(request, as: SyncPageDTO.self)
     }
 
-    private func execute<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
+    private func execute<T: Decodable>(
+        _ request: URLRequest, as type: T.Type, expectedStatus: Int? = nil
+    ) async throws -> T {
         let (data, http) = try await transport.send(request)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -281,6 +321,9 @@ public actor PlantsAPIClient {
             if let apiErr = try? decoder.decode(APIErrorResponse.self, from: data) {
                 throw apiErr
             }
+            throw URLError(.badServerResponse)
+        }
+        if let expectedStatus, http.statusCode != expectedStatus {
             throw URLError(.badServerResponse)
         }
         return try decoder.decode(T.self, from: data)
@@ -293,7 +336,7 @@ public enum CatalogueCreateValidationError: Error, Sendable {
 }
 
 // Validate the catalogue subset without rewriting the caller's persisted payload.
-private enum CatalogueCreateWire {
+enum CatalogueCreateWire {
     private static let conditionValues: [String: Set<String>] = [
         "light_level": ["low", "medium", "bright_indirect", "direct_sun", "unknown"],
         "light_code": ["low", "medium", "bright_indirect", "direct_sun", "unknown"],

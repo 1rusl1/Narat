@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-binding-notification-repair",
+      "description": "Full UI-binding candidate acceptance; real dotted-owner-key synchronous UserDefaults.didChangeNotification regressions for already recovered no-lock callback fix.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsTests/NativeAuthTests.swift",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift"
+      ],
+      "constraints": [
+        "Only fourallowed existing files exactsmallcontextdiff, no targets/tools/config/handoff/tasks/backend/contracts/live/views/debugfactory changes. Accepted card17d70f8/native0a9f2ea/SDK68d3e46/fixture98b2010 and all167actual tests preserved. This packet small prerequisite helpers forforthcoming actualSwiftUI, no new model/framework or businessrules. Every diff --git headercolumn1 including second/third, noleadingSPACE; generateexactdiff againstactualcurrentfiles.",
+        "Current Connection.resumableFlow excludesanonymous and onlynative success writespointer, so guestnativecancel+restart and normal registeredpending UIcannotdiscover durableinput. Add small explicit async remember/checkpoint method taking currentCatalogueSaveModel AND expectedactualSDKsnapshot. Require model bound to SAMEstore/API/session/isAnonymous and accessible originallease, not merely equalowner. Generalize existing model isGuest helper via smallinternal exactscope predicate ifneeded, keeping acceptednativebehavior. Actuallycheckpoint/replay model inputunderORIGINALlease BEFORE metadata; require snapshot.owner samecheckpointowner and validate SDKepoch before/afterawait and metadata publication. Reuse existingowner-scoped UserDefaults flowUUIDkey/resumeDefaults, neverpayload/token/newstate table/allowner scan. CurrentSDKvalid owner only; never genericAuthobserver auto-copy/call. Foreignmodel even sameownerotherstore/API/session, staleA/B/ABA,cancel or diskerror mustnotpublishpointer orsendcommands.",
+        "ResumableFlow guardedcurrentSDK mayreturn guest ORpermanent ownpointer. explicitcurrentowner restore via existingrestoreModel returns SAMEflow/op/payload andjournal state, noHTTP/noUUIDregen/noautoNative provider. Add conditional explicitforget helper owner+expectedflow+SDKsnapshot removing ONLY matchingpointer (notrecords/outbox/receipts, nototherflow/owner). User willinvoke onexplicitnewunsentintent later, neverautomaticaccountchange. Preserve nativecommittedcancel metadata/currentSDKtruth and allnativehelpertests. No readexpiredidentity/accountrecovery framework ordeletedguestfallback.",
+        "Current default clientLocalepl remainsstale afterENselection. Add small actor method validating en/pl and updates ONLY locale header metadata; noauth/token/installation/context replacement, no syncAuthorityinvalidate. Do NOTcall existing updateContext forlanguage change: itrevokes modelswhileSourceboundEpochcachecouldskiprebinding. Expose source helper (optionalexpectedSDK guard) forviews tosetlocale; source + tests actual API GET/POST headers en/pl, same model/originallease and frozenpendingoperation remainvalid. Invalidlocale failclosed without mutation, preserve old APIpublicmethods. No synthauth/defaultUUID/secondSDK.",
+        "Add>=6meaningful actualSDK/URLProtocol/model/repository/engine/SQLite tests (all167old+>=6=>173/no skips): guest checkpoint->provider cancel->source+disk recreate sameSDKowner pointer restore sameop/body zeroPOST; normal permanent remember->pending/lostresponse restart discover/retryexact; pointer write onlyafteractualdiskcommit/readOnlyfailure nochange/provider0; foreignsameownerstore/API/lease and A/B/ABA/cancel rejection preservesownerkeys; explicitforget matchingflowonly+otherowner unchanged; EN/PL actual requestheaders and noauthleaseinvalidation/pendingopregen includinginvalidlocale. Existing ConnectionTests fixtures canextend; boundedfocused no screenshots/rendered/liveclaim. Trusted alltests/build/Simulator+independenthighriskReviewer/QA. Original167retained, processkillDURINGnative transition/offlinetokenexpiry remainseparategates.",
+        "FULL RECOVERY: original UIbindingrun01 WAITING timeout900s/noanswer; controller recoveredexact4rawdiffchunks33161bytes SHA2ee981d59517b5458343843dd5c452f7a6b7431da0740835d8950566018229d1, candidate4files548add/15del, 9tests+167old=176UNRUN. Repairrun02 WAITING/interruptedcontrollerSIGINT90297 afterEXACT observermechanism clarified; nochecks/patchappliedbyengine. CompleteDeveloperpreview stdout item18JSON.patch17214bytes SHAd7ff4411d68b75e27f74bce37008250c1df34913b56569921b9f761a13e8423f recoveredUNCHANGED via trustedapply (Sourcevalidation+postmutationconditionalrollback/modelvalidateScope/3KVOcandidate tests). NOcandidatebuild/179test/ReviewQA yet. Preserveoldlogs/state andALL9originalbindingtests+167old; inspectFULL4filecandidate since17d70f8 notonlynewdiff. APIlocale11linesreadonlythisrepair, productionnootherfiles/fixture/view/config changes.",
+        "EXACT ACTUAL FOUNDATION FACT: UserDefaults.set callbacks are synchronous. Plain-key NSObject KVO probe prints KVO_CALLBACK insideSet=true main=true lockHeld=true. BUT literal productionownerkey containsDOTS: standard addObserver(forKeyPath:dottedKey) prints SET_RETURNED callbacks=0 (KVOtreatsdotsaspath). ControllercorrectedthisinsteadofpretendingKVOtestprovedproductionpath. ACTUALproductionkey UserDefaults.didChangeNotification via NotificationCenter observer(object:SAMEdefaults,queue:nil) prints DEFAULTS_NOTIFICATION main=true lockHeld=true BEFORESET_RETURNED. Ignored evidence runs/parallel-ios-kvo-probe-20261110-01/{probe.swift,stdout.log,dotted-kvo-probe.swift,dotted-kvo.stdout.log,notification-probe.swift,notification.stdout.log}. LocalMacFoundationprobe NOTactualiOSmodeltest. UnderoriginalsdkEpoch/authoritylocks a notificationcallback reading Source/model orinvalidatingsameauthoritywoulddeadlock; no-callback-under-lock sourcefixalreadyrecovered iscorrect/needed.",
+        "Current3newtests/ConnectionDefaultsObserver fromrun02 use literal dotted-key KVO and thusmayNOTfire; REPLACEtestobserver withACTUAL synchronous UserDefaults.didChangeNotification observation(object:injectedactualsuite,queue:nil), keepingmeaningfulactualSource/model/disk assertions and3scenarios. RenamecandidateKVOtestmethods/comments toNotification asappropriate (noneeveraccepted). DoNOTfakeNSUserDefaultsnotifications, synthesizekeybindings/getters/changeproductionmetadata key/emitcustomnotifications/KVOmanualbridges orjustcountteststubs. Use small @MainActor observerholder withNotificationCentertoken explicitstop indefer; @Sendable notificationcallback can MainActor.assumeIsolated becausetestedSourcewritesonMainActor; nopayload crossingTask/blockingwait/semaphore. PreserveSource pointerUUID/data-only semantics.",
+        "No UserDefaults.set/remove/rollback/registeredcallbacks underSDKepoch/authoritylocks; recoveredSourcevalidateScope(noarbitrarycallerbody)/prepostmodel+SDKvalidation/conditionalrollback mustremain. Actualtests: remembercallbacksync snapshot/resumableFlow/model.state/input/checkpoint reread ANDdiskalreadycommitted, returnsnohang/zeroHTTP; remembercallback invalidates SAMEapi.syncAuthority/modelcancel, methodrejectsandconditionallyrestoresONLYpreviousownpointer, preservesnewercallbackflow/otherowner/cache/queue/receipt; forget/remove callback synchronouslyreadsSource, onlymatchingpointerremoved/nohang. Existing3tests covervariants, adaptobservertoREALNotificationmechanism notweakerassertions. Expandonlyifactualfinding. All167old+9binding+>=3actualNotification=>179actual/no skips/build/Simulator/highriskReviewerQA WHOLEcandidate; noUI/live/fullparents. Necessarycompile/correctnessfixonly3allowedfiles. Headerdiffscolumn1."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Explicit samecurrentowner checkpoint->UUIDmetadata discovers guest/permanent exactflow afterrestart without sends/ownertransfer, and ENPL HTTP locale changes preserveauthlease/frozenoperation; all167old+>=6=>173actualtests/no skips/build/Simulator/highriskReviewerQA. No views/live/fullparents. Full recovery requires ALL179actualtests, >=3 real synchronous UserDefaults.didChangeNotification Source/model regressions on actualdottedownerkey, zero callbacksunderlocks, full4filecandidate ReviewerQA. PlainKVOprobe isnot claim theseactualtests pass.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-ack-ui-repair",
+      "description": "Repair the final T162 review finding: SQLite ACK failure leaves an unknown pending operation, so the UI must retain the only current-owner resume pointer and block new species intents. Prove real ACK failure/restart/recovery through DEBUG SQLite fixtures and EN/PL UI.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "tools/automation/parallel_ios_catalogue_ui_gate.py",
+        "tools/automation/parallel_ios_catalogue_release_gate.py"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CatalogueUIFixtureTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "Only four allowed existing files. Every diff header starts in column1. No project, targets, model/repository/SDK/auth helpers, backend, schema, gates, config, handoff, tasks or Git changes. Retain all183 accepted unit tests, all16 accepted UI scenarios and legacy encoder retirement0016576. Existing files are already in targets. Main is still19e6c83; do not publish main. Developer returns a patch; controller runs checks.",
+        "Final read-only audit parallel-ios-t162-final-audit-20261110-01 BLOCKED at Reviewer1 with one actionable finding, not a failed gate: all183unit/336Deno/123automation/SQL passed, then no final UI/Release/QA was run. Original manifest/state/logs immutable; this is a new bounded repair task, not a resumed changed contract. See its call-1-reviewer/answer.json. CatalogueSaveView.shouldLockSelection currently unlocks storageOrServiceUnavailable after actual SQLite ACK failure, despite outbox pending; catalogue.change then forgets the only current-owner flow pointer. Existing testReadOnlyCheckpointAndACKFailuresNeverPublishSavedAndPreserveDisk proves this exact model state and retained queue.",
+        "Conservatively lock species/new-intent selection while local journal truth is unknown, including storageOrServiceUnavailable and failed restoration. Do not delete/replace the resume pointer until actual journal verification proves starting a new intent is safe. Check mismatching restored species/previousFlow handling too: an undisplayed pending or unavailable flow must not be forgotten by a new Save. Keep fields frozen and same-operation retry available; back/cancel must preserve disk and metadata. Already confirmed saved and proven nonpending flows must still support explicit new same-species instances. Do not alter durable saved truth or weaken authority guards.",
+        "Add an explicit closed DEBUG-only ackFailure fixture scenario using REAL ModelConfiguration(allowsSave:false) SQLite ACK failure, following the existing model test pattern. Do not assign UI/model states, confirmation rows, fake success, HUDs, clipboard or synthetic product buttons. A fixture may prepare one existing pending intent through actual SDK current snapshot + accepted model checkpoint/Source.rememberModel + store.catalogueCreateJournal with the original bound lease, then reopen the same SQLite with allowsSave:false before handing its connection to Root. No manually inserted model state, no startup HTTP create, no queue/receipt copies between owners. Persist the exact flow/op/input and pointer once per fresh namespace; recreation must replay it, not reseed or overwrite it.",
+        "Use a normal personal name shared across locales, e.g. Luna. One useful deterministic DEBUG fault sequence: initial/recreated stores stay read-only until two actual POST attempts are recorded in the persistent fixture ledger; subsequent recreation reopens writable. First explicit retry commits one real server row/receipt but actual local ACK fails; restart restores the same pending operation, second explicit retry replays the exact server receipt and ACK still fails; another restart permits writable recovery, and explicit same-operation retry finally durably confirms the original server UUID. Storage-mode recovery depends on real persisted attempts, not launch counts or a product-facing switch. Preserve all original fixture scenarios and Release exclusion. You may choose an equally small real read-only fault setup if it proves the same behavior without production hooks.",
+        "Add at least one meaningful CatalogueUIFixtureTests unit regression (>=184 total) proving actual setup has zero POSTs; exact checkpoint/outbox/pointer identity; real successful server commit but failed SQLite ACK with no local confirmation; restart preserves pending input/operation and server commit count1; exact-body retry/recovery gives the original server UUID and one durable ACK without another create. Verify merely recreating the namespace does not clear the fault or overwrite pending data. Use actual accepted APIs and same SDK, not a parallel implementation or fake model state.",
+        "Add TWO real named UI methods testACKFailureRestartEnglish and testACKFailureRestartPolish, retaining the16 old methods. Same fresh namespace/scenario through all restarts. Exercise the prepared pending flow, capture operation ID, explicit retry -> unavailable storage message/no saved card/frozen Luna/disabled catalogue.change/no edit or submit; restart auto-restores same pending input/operation; repeat actual ACK failure and prove the pointer is still discoverable; writable restart plus explicit retry reaches the actual server card with the SAME operation. Capture the server UUID only once that durable card exists, then restart and assert the same card UUID. The unit fixture test separately compares this UUID with the original server commit before the failed ACK; do not expose a hidden ledger/counter bridge to the UI. Assert localized ordinary copy, no technical IDs shown. KeepAlways screenshots for failure and recovery. No skips, expected failures, fixed sleeps or early-return acceptance. Existing UI gate automatically requires every source method to pass, so now >=18 actual UI cases with screenshots; do not edit the gate.",
+        "Controller checks: diff/build/all>=184unit/no skips;123automation;all>=18actualUI/PNG;isolatedRelease/no fixture markers;baselineSimulator;independenthighriskReviewQA over the complete repair and original finding. Do not rerun controller checks in Developer. No live Apple/Google/Supabase/AI/StoreKit or full T162/T149/T155 claim. After this accepted repair, a fresh read-only final T162 integration audit must re-check the whole source; the old blocked audit remains historical."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Actual SQLite ACK failure never unlocks a new species intent or loses the only pending flow pointer. Original operation/input/server UUID survives restart and explicit retry to durable recovery; all old tests plus >=1 new unit and2realENPLUI cases pass with screenshots, Release/Simulator and independent ReviewQA.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "parallel-ios-catalogue-ui",
+            "parallel-ios-catalogue-release",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "All123 controller automation fixtures still pass; no gate/routing/config change or synthetic acceptance is introduced.",
+          "checks": [
+            "automation-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

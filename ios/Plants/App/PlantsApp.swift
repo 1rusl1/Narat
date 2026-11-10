@@ -23,7 +23,12 @@ struct RootContainerView: View {
     @Bindable var languageStore: LanguageStore
     @Bindable var analysisModel: AnalysisFlowModel
 
-    @State private var catalogue = CatalogueConnection()
+    @State private var catalogue: CatalogueConnection?
+    @State private var starting = false
+    @State private var startupFailed = false
+#if DEBUG
+    @State private var fixtureContext: CatalogueUIFixtureContext?
+#endif
 
     private var isPolish: Bool {
         languageStore.currentLocale == .pl
@@ -41,14 +46,26 @@ struct RootContainerView: View {
                 .padding(.top, 8)
                 .accessibilityIdentifier("welcome.language.picker")
 
+                if startupFailed {
+                    Text(isPolish ? "Katalog jest niedostępny." : "Catalogue unavailable.")
+                        .accessibilityIdentifier("catalogue.error")
+                }
                 switch analysisModel.router.flowState.currentStep {
                 case .selectIntent:
                     welcomeIntentSection
                 case .selectCareMethod:
                     careMethodPickerSection
                 case .selectCatalogueSpecies:
-                    GuestCatalogueView(connection: catalogue, polish: isPolish) {
-                        analysisModel.router.navigateBack()
+                    if let catalogue {
+                        GuestCatalogueView(connection: catalogue, polish: isPolish) {
+                            analysisModel.router.navigateBack()
+                        }
+                    } else {
+                        if !startupFailed { ProgressView() }
+                        Button(isPolish ? "Wstecz" : "Back") {
+                            analysisModel.router.navigateBack()
+                        }
+                        .accessibilityIdentifier("catalogue.back")
                     }
                 case .selectPhoto, .careQuestions:
                     CareQuestionsView(model: analysisModel, languageStore: languageStore)
@@ -59,7 +76,68 @@ struct RootContainerView: View {
                 }
             }
         }
-        .task { _ = try? await catalogue.sessionOwner() }
+        .task { await prepareCatalogue() }
+    }
+
+    @MainActor
+    private func prepareCatalogue() async {
+        guard !starting else { return }
+        starting = true
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        let fixtureFlags = arguments.filter {
+            $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
+        }
+        if !fixtureFlags.isEmpty {
+            func value(_ flag: String) -> String? {
+                let positions = arguments.indices.filter { arguments[$0] == flag }
+                guard positions.count == 1, let index = positions.first,
+                      arguments.indices.contains(index + 1) else { return nil }
+                return arguments[index + 1]
+            }
+            guard fixtureFlags.count == 2,
+                  Set(fixtureFlags) == Set(["--catalogue-fixture", "--catalogue-namespace"]),
+                  let name = value("--catalogue-fixture"),
+                  let scenario = CatalogueUIFixtureScenario(rawValue: name),
+                  let namespace = value("--catalogue-namespace"),
+                  let id = UUID(uuidString: namespace),
+                  id.uuidString.lowercased() == namespace.lowercased() else {
+                startupFailed = true
+                return
+            }
+            do {
+                let context = try await CatalogueUIFixtures.make(namespace: namespace, scenario: scenario)
+                fixtureContext = context
+                catalogue = context.connection
+            } catch {
+                startupFailed = true
+                return
+            }
+        } else {
+            catalogue = CatalogueConnection()
+        }
+#else
+        catalogue = CatalogueConnection()
+#endif
+        guard let catalogue else { return }
+        do {
+            _ = try await catalogue.sessionOwner()
+            guard analysisModel.router.flowState.currentStep == .selectIntent else { return }
+            let expected = try await catalogue.sessionSnapshot()
+            guard analysisModel.router.flowState.currentStep == .selectIntent,
+                  let flow = try catalogue.resumableFlow(expected: expected) else { return }
+            let result = await catalogue.restoreModel(
+                ownerId: expected.session.userId, flowId: flow, expected: expected
+            )
+            // Only an actual current-owner SQLite input resumes the existing catalogue route.
+            guard catalogue.snapshot == expected, case let .restored(model) = result,
+                  model.input != nil,
+                  analysisModel.router.flowState.currentStep == .selectIntent else { return }
+            analysisModel.router.selectIntent(.care)
+            analysisModel.router.selectCareMethod(.catalogue)
+        } catch {
+            // Preserve the default welcome and the catalogue's ordinary unavailable path.
+        }
     }
 
     private var welcomeIntentSection: some View {

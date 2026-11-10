@@ -82,6 +82,7 @@ public final class NativeAuthService {
     public func signIn(
         with provider: NativeAuthProvider,
         presenting: UIViewController,
+        validateBeforeExchange: @MainActor () async throws -> Void = {},
         prepareForSessionChange: @MainActor () async throws -> Void
     ) async -> NativeSignInResult? {
         guard !isSigningIn else { return nil }
@@ -102,6 +103,8 @@ public final class NativeAuthService {
                 throw NativeAuthFailure.invalidCredential
             }
             failure = .exchangeFailed
+            try await validateBeforeExchange()
+            try Task.checkCancellation()
             state = .exchanging
             let session = try await exchange.exchange(credentials)
             // Once Supabase has committed the session, report it even if the caller's task

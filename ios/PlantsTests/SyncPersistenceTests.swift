@@ -107,6 +107,213 @@ private actor UnavailableSyncTransport: PlantsAPITransport {
 }
 
 final class SyncPersistenceTests: XCTestCase {
+    private var legacySlotProfileJSON: String {
+        #"{"id":"11111111-1111-4111-8111-111111111111","account_state":"active","anonymous":true,"preferred_locale":"en","reminder_hour_local":17,"free_selection_explicit":true,"trial_reminder_opt_in":true,"monthly_report_opt_in":false,"updated_at":"2026-11-01T00:00:00Z"}"#
+    }
+
+    private var legacySlotMembershipJSON: String {
+        #"{"id":"22222222-2222-4222-8222-222222222222","owner_id":"11111111-1111-4111-8111-111111111111","plant_id":"33333333-3333-4333-8333-333333333333","enabled":true,"enabled_at":"2026-10-01T00:00:00Z","free_slot":2,"selection_revision":19,"updated_at":"2026-11-01T00:00:00Z","deleted_at":"2026-11-02T00:00:00Z"}"#
+    }
+
+    private func slotJSONDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    private func slotJSONEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+
+    private func slotJSONObject(_ data: Data) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    func testProfileReadsLegacyAndCurrentValuesButOnlyWritesCurrentFields() throws {
+        for retiredValue in [true, false, nil] as [Bool?] {
+            var input = try slotJSONObject(Data(legacySlotProfileJSON.utf8))
+            if let retiredValue {
+                input["free_selection_explicit"] = retiredValue
+            } else {
+                input.removeValue(forKey: "free_selection_explicit")
+            }
+            let profile = try slotJSONDecoder().decode(ProfileDTO.self,
+                from: JSONSerialization.data(withJSONObject: input))
+            XCTAssertEqual(profile.freeSelectionExplicit, retiredValue ?? false)
+            let output = try slotJSONObject(slotJSONEncoder().encode(profile))
+            input.removeValue(forKey: "free_selection_explicit")
+            XCTAssertEqual(output as NSDictionary, input as NSDictionary)
+            XCTAssertFalse(try slotJSONDecoder().decode(ProfileDTO.self,
+                from: slotJSONEncoder().encode(profile)).freeSelectionExplicit)
+        }
+        let nullJSON = legacySlotProfileJSON.replacingOccurrences(
+            of: #""free_selection_explicit":true"#, with: #""free_selection_explicit":null"#)
+        XCTAssertFalse(try slotJSONDecoder().decode(ProfileDTO.self,
+            from: Data(nullJSON.utf8)).freeSelectionExplicit)
+    }
+
+    func testMembershipReadsLegacyAndCurrentValuesButOnlyWritesCurrentFields() throws {
+        for legacy in [true, false] {
+            for deletedValue in ["present", "absent", "null"] {
+                var input = try slotJSONObject(Data(legacySlotMembershipJSON.utf8))
+                if !legacy {
+                    input.removeValue(forKey: "free_slot")
+                    input.removeValue(forKey: "selection_revision")
+                }
+                if deletedValue == "absent" { input.removeValue(forKey: "deleted_at") }
+                if deletedValue == "null" { input["deleted_at"] = NSNull() }
+                let membership = try slotJSONDecoder().decode(BasicCareMembership.self,
+                    from: JSONSerialization.data(withJSONObject: input))
+                XCTAssertEqual(membership.freeSlot, legacy ? 2 : nil)
+                XCTAssertEqual(membership.selectionRevision, legacy ? 19 : 0)
+                XCTAssertEqual(membership.deletedAt != nil, deletedValue == "present")
+                let output = try slotJSONObject(slotJSONEncoder().encode(membership))
+                input.removeValue(forKey: "free_slot")
+                input.removeValue(forKey: "selection_revision")
+                if deletedValue == "null" { input.removeValue(forKey: "deleted_at") }
+                XCTAssertEqual(output as NSDictionary, input as NSDictionary)
+                let current = try slotJSONDecoder().decode(BasicCareMembership.self,
+                    from: slotJSONEncoder().encode(membership))
+                XCTAssertNil(current.freeSlot)
+                XCTAssertEqual(current.selectionRevision, 0)
+                XCTAssertEqual(current.deletedAt, membership.deletedAt)
+            }
+        }
+        var nullInput = try slotJSONObject(Data(legacySlotMembershipJSON.utf8))
+        nullInput["free_slot"] = NSNull()
+        nullInput["selection_revision"] = NSNull()
+        let nullMembership = try slotJSONDecoder().decode(BasicCareMembership.self,
+            from: JSONSerialization.data(withJSONObject: nullInput))
+        XCTAssertNil(nullMembership.freeSlot)
+        XCTAssertEqual(nullMembership.selectionRevision, 0)
+    }
+
+    func testLegacySelectionAndStepDecodeWithoutAllowingNewRetiredStepWrites() throws {
+        let selectionJSON = #"{"selected_plant_ids":["33333333-3333-4333-8333-333333333333"],"selection_revision":19,"explicit_selection":true,"max_slots":3}"#
+        let selection = try slotJSONDecoder().decode(FreeSelection.self, from: Data(selectionJSON.utf8))
+        XCTAssertEqual(selection.selectedPlantIds, [UUID(uuidString: "33333333-3333-4333-8333-333333333333")!])
+        XCTAssertEqual(selection.selectionRevision, 19)
+        XCTAssertTrue(selection.explicitSelection)
+        XCTAssertEqual(selection.maxSlots, 3)
+        let retired = try slotJSONDecoder().decode(NextAvailableStep.self,
+            from: Data(#""select_free_plants""#.utf8))
+        XCTAssertEqual(retired, .selectFreePlants)
+        XCTAssertThrowsError(try slotJSONEncoder().encode(retired)) { error in
+            guard case EncodingError.invalidValue = error else {
+                return XCTFail("Expected retired selector encoding rejection, got \(error)")
+            }
+        }
+        for step in NextAvailableStep.allCases where step != .selectFreePlants {
+            let data = try slotJSONEncoder().encode(step)
+            XCTAssertEqual(try slotJSONDecoder().decode(String.self, from: data), step.rawValue)
+            XCTAssertEqual(try slotJSONDecoder().decode(NextAvailableStep.self, from: data), step)
+        }
+    }
+
+    @MainActor
+    func testLegacySlotDiskRowsAndGenericReplayRemainExactAfterDTOEncoding() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("legacy-slots.sqlite")
+        func container() throws -> ModelContainer {
+            let schema = Schema([
+                LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
+                CatalogueInputCheckpointRecord.self, GuestDraftCacheRecord.self,
+                SyncedEntityRecord.self, SyncCheckpointRecord.self
+            ])
+            return try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url)
+            ])
+        }
+        let owner = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        let plant = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+        let operation = UUID()
+        let receiptOperation = UUID()
+        let payload = #" { "selected_plant_ids" : ["33333333-3333-4333-8333-333333333333"], "selection_revision" : 19 } "#
+        let receiptJSON = #"{"plant_id":"33333333-3333-4333-8333-333333333333","care_revision":7,"context_state":"current","next_available_step":"select_free_plants","paid_action":null,"plan_availability":"available","watermark":"2026-11-01T00:00:00.123456Z"}"#
+        let historyJSON = #" { "selected_plant_ids" : ["33333333-3333-4333-8333-333333333333"], "selection_revision" : 19, "explicit_selection" : true, "max_slots" : 3 } "#
+        let rows = [
+            ("profile", legacySlotProfileJSON),
+            ("basic_care_membership", legacySlotMembershipJSON),
+            ("history", historyJSON)
+        ]
+        do {
+            let disk = try container()
+            let context = ModelContext(disk)
+            context.insert(LocalOutboxRecord(operationId: operation, ownerId: owner,
+                commandName: "free_care.select", payloadJSON: payload, sequenceNumber: 1))
+            context.insert(CatalogueCreateConfirmationRecord(ownerId: owner,
+                operationId: receiptOperation, payloadJSON: payload, receiptJSON: receiptJSON))
+            let checkpoint = SyncCheckpointRecord(ownerId: owner, freeSelectionRevision: 19)
+            checkpoint.syncProfileJSON = legacySlotProfileJSON
+            context.insert(checkpoint)
+            for (type, raw) in rows {
+                context.insert(SyncedEntityRecord(ownerId: owner, entityType: type,
+                    entityId: plant, updatedAt: Date(timeIntervalSince1970: 1_762_000_000),
+                    payloadJSON: raw))
+            }
+            try context.save()
+        }
+        for pass in 0..<2 {
+            let disk = try container()
+            let store = LocalStore(modelContainer: disk)
+            let pending = try await store.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(pending.count, 1)
+            let entry = try XCTUnwrap(pending.first)
+            XCTAssertEqual(entry.operationId, operation)
+            XCTAssertEqual(entry.commandName, "free_care.select")
+            XCTAssertEqual(Data(entry.payloadJSON.utf8), Data(payload.utf8))
+            for (type, raw) in rows {
+                let entities = try await store.activeSyncedEntities(ownerId: owner, entityType: type)
+                XCTAssertEqual(entities.count, 1)
+                XCTAssertEqual(Data(try XCTUnwrap(entities.first).payloadJSON.utf8), Data(raw.utf8))
+            }
+            _ = try slotJSONEncoder().encode(slotJSONDecoder().decode(
+                ProfileDTO.self, from: Data(legacySlotProfileJSON.utf8)))
+            _ = try slotJSONEncoder().encode(slotJSONDecoder().decode(
+                BasicCareMembership.self, from: Data(legacySlotMembershipJSON.utf8)))
+            let selection = try slotJSONDecoder().decode(FreeSelection.self, from: Data(historyJSON.utf8))
+            XCTAssertEqual(selection.selectionRevision, 19)
+            let receipt = try await store.catalogueCreateConfirmation(
+                ownerId: owner, operationId: receiptOperation)
+            let decodedReceipt = try XCTUnwrap(receipt)
+            let encodedReceipt = try slotJSONObject(slotJSONEncoder().encode(decodedReceipt.receipt))
+            XCTAssertEqual(encodedReceipt["next_available_step"] as? String, "select_free_plants")
+            XCTAssertEqual(encodedReceipt["watermark"] as? String, "2026-11-01T00:00:00.123456Z")
+            if pass == 0 {
+                let transport = UnavailableSyncTransport()
+                let client = PlantsAPIClient(transport: transport, installationCredential: "fixture",
+                    clientLocale: "pl", bearerToken: "fixture")
+                let engine = SyncEngine(store: store, apiClient: client)
+                let committed = try await engine.flushOutbox(for: owner)
+                XCTAssertEqual(committed, 0)
+                let bodies = await transport.commandBodies
+                XCTAssertEqual(bodies.count, 1)
+                let envelope = try slotJSONDecoder().decode(CommandEnvelopeDTO.self,
+                    from: XCTUnwrap(bodies.first))
+                XCTAssertEqual(envelope.operationId, operation)
+                XCTAssertEqual(envelope.commandName, "free_care.select")
+                XCTAssertEqual(Data(envelope.payloadJSON.utf8), Data(payload.utf8))
+            }
+            let context = ModelContext(disk)
+            let checkpoint = try XCTUnwrap(context.fetch(FetchDescriptor<SyncCheckpointRecord>()).first)
+            XCTAssertEqual(checkpoint.freeSelectionRevision, 19)
+            XCTAssertEqual(Data(try XCTUnwrap(checkpoint.syncProfileJSON).utf8),
+                Data(legacySlotProfileJSON.utf8))
+            let storedReceipt = try XCTUnwrap(context.fetch(
+                FetchDescriptor<CatalogueCreateConfirmationRecord>()).first)
+            XCTAssertEqual(Data(storedReceipt.receiptJSON.utf8), Data(receiptJSON.utf8))
+            XCTAssertEqual(Data(storedReceipt.payloadJSON.utf8), Data(payload.utf8))
+            for row in try context.fetch(FetchDescriptor<SyncedEntityRecord>()) {
+                let expected = try XCTUnwrap(rows.first { $0.0 == row.entityType }?.1)
+                XCTAssertEqual(Data(row.payloadJSON.utf8), Data(expected.utf8))
+            }
+        }
+    }
+
     func testPersistedLegacyClaimOverridesReadConditionsAndEncodeWithoutRoomKeys() async throws {
         let container = try LocalStore.makeContainer(accountScope: "t158_\(UUID())", inMemory: true)
         let draftId = UUID()

@@ -81,6 +81,7 @@ public struct EffectiveCareTaskView: Codable, Sendable, Equatable {
 public actor SyncEngine {
     private let store: LocalStore
     private let apiClient: PlantsAPIClient
+    private var drainingOwners = Set<UUID>()
     private var planHistoryByOwner: [UUID: [UUID: CachedPlanHistoryEntry]] = [:]
     private var reportCacheByOwner: [UUID: [String: ProgressReportDTO]] = [:]
 
@@ -97,8 +98,18 @@ public actor SyncEngine {
         return try await flushOutbox(for: ownerId, context: context)
     }
 
+    /// Repository composition keeps one bound lease through refresh, drain and disk read.
+    func flushOutbox(context: SyncSessionLease) async throws -> Int {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        return try await flushOutbox(for: context.ownerId, context: context)
+    }
+
     private func flushOutbox(for ownerId: UUID, context: SyncSessionLease) async throws -> Int {
+        guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
+        // Actor reentrancy must not dispatch a second copy of this owner's snapshot.
+        guard drainingOwners.insert(ownerId).inserted else { return 0 }
+        defer { drainingOwners.remove(ownerId) }
         let pending = try await store.pendingOutboxEntries(for: ownerId)
         try await apiClient.validateSyncContext(context)
         guard !pending.isEmpty else { return 0 }
@@ -123,25 +134,44 @@ public actor SyncEngine {
                 payloadJSON: entry.payloadJSON
             )
 
+            let result: OutboxCommandResult
             do {
-                try await apiClient.sendOutboxCommand(envelope, context: context)
-                try await store.finishOutboxEntry(
-                    operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
-                )
-                committedCount += 1
+                result = try await apiClient.sendOutboxCommand(envelope, context: context)
             } catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 // Cancellation/auth changes abort the drain without touching the captured queue.
                 try await apiClient.validateSyncContext(context)
+                let failure: String
+                if let apiError = error as? APIErrorResponse {
+                    failure = String(decoding: try JSONEncoder().encode(apiError), as: UTF8.self)
+                } else {
+                    failure = String(describing: error)
+                }
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority,
-                    failure: String(describing: error)
+                    failure: failure
                 )
                 if let plantId = entry.plantId {
                     blockedPlantIds.insert(plantId)
                 } else {
                     GlobalChainBlocked = true
                 }
+                continue
             }
+
+            // Disk acknowledgement failures propagate separately from send failures:
+            // do not change retry metadata or count a commit after a failed save.
+            switch result {
+            case let .catalogueCreate(receipt):
+                try await store.acknowledgeCatalogueCreate(
+                    envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
+                )
+            case .generic:
+                try await store.finishOutboxEntry(
+                    operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                )
+            }
+            committedCount += 1
         }
 
         return committedCount
@@ -277,6 +307,18 @@ public actor SyncEngine {
         let context = try await apiClient.captureSyncContext(ownerId: ownerId)
         if context.session == nil { _ = try await flushOutbox(for: ownerId, context: context) }
         return try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: true, context: context)
+    }
+
+    /// Repository preflight keeps its original lease across the entire refresh and read.
+    /// This overload never drains commands or permits legacy compatibility.
+    func performFullRefresh(context: SyncSessionLease) async throws -> Date? {
+        try await apiClient.validateSyncContext(context)
+        guard context.session != nil else { throw SyncWireValidationError.invalidSession }
+        let result = try await pullDelta(
+            for: context.ownerId, pageSize: 200, fullRefresh: true, context: context
+        )
+        try await apiClient.validateSyncContext(context)
+        return result
     }
 
     // MARK: - Pending Overlay over Synced Cache

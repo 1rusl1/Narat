@@ -1,0 +1,57 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-rendered-ui",
+      "description": "Implement and pass sixteen real EN/PL XCUITest scenarios against the complete catalogue view candidate 0bb8d21. Review the full app flow, including restart and native account transition.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Integrations/Auth/NativeIdentityProvider.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/Plants/App/LanguageStore.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "tools/automation/parallel_ios_catalogue_ui_gate.py",
+        "tools/automation/parallel_ios_catalogue_release_gate.py"
+      ],
+      "write_files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "Write only the four allowed files: the existing CatalogueSaveUITests skeleton, and necessary fixes in Root/GuestCatalogue/SaveView. Do not change helpers, SDK, repository, fixtures, project, gates, config, handoff, tasks, backend or contracts. App views 0bb8d21 were accepted only for source/build/Release; the user scenario is NOT accepted yet. This packet must independently inspect and verify the complete view implementation. Retain all179 unit tests and all existing welcome/unavailable tests. Every diff header starts in column1.",
+        "Implement the exact sixteen test methods required by parallel_ios_catalogue_ui_gate.py: eight scenarios in English and Polish. Exercise real rendered views through the explicit DEBUG fixture arguments --catalogue-fixture and --catalogue-namespace. Use one fresh UUID namespace per test, retaining the exact same namespace and scenario across terminate/relaunch. Never assign model states, receipts or invented success directly. Do not add test HUDs, clipboard bridges or fake product buttons. The accepted fixture uses the real SDK, auth exchange, model, repository, engine, SQLite and persistent server ledger.",
+        "Scenarios: Free2 save and canonical card; paid4 save; cap3 preserves input; server409 after successful preflight preserves pending input; 503 pending; committed lost response then restart, same input/operation and explicit retry to the server card; native cancellation then restart with the same guest input; native success then restart with the same permanent-owner server card/UUID, even if that owner had no public species-selection preference. Exercise both Apple and Google buttons across the native cases. Assert actual localized labels, preserved values, pending readonly state and meaningful retry behavior.",
+        "Use continueAfterFailure=false, bounded waits/expectations and stable accessibility identifiers. Do not skip, use expected failures, fixed sleeps, or return early from a failed scenario. Each test must actually execute its named scenario and locale. Attach a screenshot per case with keepAlways and a scenario-locale name. The controller checks the exact source-method set against actual passed methods and the XCTest summary, then exports PNG evidence. Use nonvisible operation/server UUID identifiers to check restart identity; never show technical IDs or raw errors as product copy.",
+        "Fix actual view defects when revealed by tests, while preserving the accepted data/auth contracts. A save is confirmed only by a durable receipt and the displayed card must use the matching canonical row. A details GET failure keeps saved truth and offers details retry without creating again. Pending retry keeps its operation and frozen payload. Normal owner/epoch changes hide and clear private form state; only the verified explicit native continuation may adopt the selected input under the new owner. Do not weaken any guard or generate a new operation on retry/error/locale change.",
+        "Catalogue bootstrap restores only the current SDK owner flow and matching species. Native or locale refresh must not unmount/cancel the active intended login automatically. Invalid DEBUG arguments fail closed, without constructing a configured production source first or falling back to live calls. All fixture references and launch branches remain DEBUG-only; the normal unconfigured app preserves the existing catalogue.error/back behavior. Use a real attached UIViewController presenter in production.",
+        "Controller gates: all179 unit tests, build,123 automation tests, baseline Simulator, the sixteen actual UI cases with screenshots, and an isolated Release build with no fixture markers. Do not run these gates yourself; return a complete patch and repair actual failures from controller logs within the normal budget. Reviewer/QA inspect the full view candidate and artifacts. Local fixture UI is not live Apple/Google/Auth/SQL/AI/StoreKit acceptance, and does not close T149/T148/T159, offline token-expiry or process-kill-during-native-transition gates.",
+        "Extend the existing FreeSave and PaidSave tests in both languages: after the first canonical card, choose another species and select the SAME species again. This is an explicit new plant intent. It must show a fresh form, not silently restore the old saved receipt. Paid can submit this second intent and must receive a DIFFERENT server instance UUID; Free2 is now at3 and a new submit must show cap. Preserve the original receipt/history and do not rewrite pending operations. Current source review notes show parent choice clearing only its public preference, so inspect/fix conditional forgetting of the current owner flow when starting this explicit new intent. Keep all sixteen required methods and screenshot the original saved card as well as final case state."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "ActualENPLrendered catalogue save/nativecancel/retry/restart/servercard behavior proven16realUIcases/no skips/screenshots plusall179oldunit/build/Simulator andReleasefixtureexclusion, independenthighriskReviewerQA. Nofakeproductsuccess/live/fullparentclaim.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke",
+            "parallel-ios-catalogue-ui",
+            "parallel-ios-catalogue-release"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

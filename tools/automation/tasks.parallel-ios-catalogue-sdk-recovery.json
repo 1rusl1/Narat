@@ -1,0 +1,54 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-sdk-auth-history-repair",
+      "description": "Fix persistent SDK session-history guard after terminal refresh cleanup; independently accept FULL unaccepted real SDK connection candidate with production initial-session and repeated-call regressions.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthConfiguration.swift",
+        "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+        "ios/Plants/Integrations/Auth/SupabaseAuthExchange.swift",
+        "ios/Plants/Integrations/Auth/NativeIdentityProvider.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files small exact contextual diff. New connection testfile is skeleton ALREADY in real unitSources before evidence; controller owns project/config/tools/handoff/tasks/AGENTS/backend/contracts. No new files/deploy/live calls/parallel framework or fake production successes. Accepted model8ba18e1 and 124 tests preserved. This packet ONLY SDK session observer/resource model factory; no provider flow, new views/card, debuglaunchfixture, changes to existing NativeAuthService/IdentityProvider/config/backend. Existing catalogue view/default unavailable path must retain behavior. CLI readonlyshell: use temp-free Python-c/difflib, no heredoc tempfiles.",
+        "Extend existing @MainActor @Observable CatalogueConnection in GuestCatalogueView.swift without moving unrelated views. Own/inject ONE SupabaseClient for catalogue RPC and actual current SDK session, ONE LocalStore/PlantsAPIClient/SyncEngine/CollectionRepository. Build plants-api URL from validated configured supabaseURL/functions/v1/plants-api (no unconfigured api.narat.app/defaultowner). Production init uses real NativeAuthConfiguration/SupabaseClient and existing durable store; configuration/disk failures stable explicit unavailable, no silent in-memory fallback. Injection constructor supports isolated real SDK fixturetests, not fake permanent session default. Future NativeAuthConfiguration.makeService(client:SAMEclient) remains available, no native provider calls in this packet.",
+        "Retain single pending sessionOwner() task so concurrent root/catalogue startup can create only one anonymous user, only AuthError.sessionMissing may trigger anonymous signup; network/auth failures must not create another owner. SDK NativeAuthSession exact user/token/expiry and isAnonymous MUST use current real session.user.isAnonymous. No synthetic fallback/refinterpretation of role/profile/UUID. Existing catalogue RPC uses SAME client and correct current session; source generic auth events never send plant.create or migrate cache/outbox/receipts.",
+        "Register real SDK auth changes once. Initial/refresh/signout/userchange/ABA invalidates oldcontexts; async MainActor observer alone may leave a stale publication gap. Small raw SDK callback can synchronously invalidate existing nonisolated api.syncAuthority and increment tiny thread-safe SDKepoch, then schedule currentSDK bind/observablestate. SDK primary onAuthStateChange is @Sendable synchronouscallback; returned AuthStateChangeListenerRegistration is Sendable/remove()sync/auto-deinit. No await under locks/recursivelocks/observation mutations under locks. Cleanup subscription invalidates oldcontexts and avoids capture cycles. Original model never rebinds its old captured token.",
+        "Model factory takes explicit user-chosen CatalogueInput/flowUUID/opUUID plus expected SDK owner/session; checks SDKepoch before/after awaits/currentSDK read/api bind/model construction so A->B->A or stale asynchronous result cannot bind/return oldmodel. Compare real SDK.currentSession (mayexpired) with .session result as needed; expiry uses realSDKdate, not invented rights. Source cache of bound snapshot must not invalidate own in-flight model on every identical read; raw actual auth events still invalidate generation. Make/restore accepted owner-fixed model only when actually bound snapshot matches actual SDK. Sameowner restore explicit owner+flow, no plants-api requests/send/newIDs; actual SDK auth refresh is separate and permitted, no otherowner lookup. No automatic cache or queue transfer on sign-in; native intended-flow continuation deferred.",
+        "Use installed pinned SDK primarysource under DerivedData/Automation/SourcePackages/checkouts/supabase-swift/Sources: SupabaseClientOptions.GlobalOptions.session supports customURLSession; AuthOptions.storage isolated AuthLocalStorage, autoRefreshTokenfalse tests; AuthClient.currentSession sync mayexpired, .session async refreshes, onAuthStateChange listener initialsessionemitted. Tests MUST use actual SDK session/events and real production resource/model/repository/engine/SQLite, URLProtocol HTTP fixtures + isolated memoryauthstorage, never live or realuserKeychain. Every unhandled fixtureURL fails closed. Do not merely manually call a fake observer as proof. No credential/token persistence/logging outside SDK default productionKeychain or isolated teststorage.",
+        "Add>=6 meaningful new XCTest in already-target CatalogueConnectionTests, all 124 prior tests retained/no skips. Cover concurrent anonymous startup oneSDKsignup; actual anonymous model caches input/no plantHTTP; permanent SDK token/model makes real production create path; realSDK signout/ownerchange/ABA with suspended GET/POST prevents ACK/oldmodeldata exposure; sameowner tokenrefresh invalidates oldmodel but exact newbound restore retains op/payload; stale awaited session/factory cannot retarget after epochchange; generic auth events causezero create/cache-transfer; missing config/disk stableunavailable. Direct SDK signInWithIdToken or SupabaseAuthExchange with FIXTURE credential can drive realSDKevents in tests; no NativeIdentityProvider UI/nativecontinuation acceptance. Fixture transport+realSQLite not live Auth. Build/unit/Simulator/highrisk independent Reviewer/QA required; renderedviews/provider/parents open.",
+        "Current accepted model init is async throws with explicit session/isAnonymous/input/flow/op, restore static enum, model.checkpoint/input/state guarded getters, save()async. Use actual accepted APIs, no need model writes. Minimum130 actual tests (all124+>=6meaningfulnew), zero skips; new testfile ALREADY imports Foundation/XCTest/SwiftData/Supabase/@testable Plants and in target. Preserve SDK default source/client/root API sessionOwner signature, no new providers or view wiring here.",
+        "REPAIR: previous instructions describe FULL existing candidate. Original SDK run01 BLOCKED retrybudget Developer3/Reviewer2: first build q-bcee0abb39c1a4043aaf61bf failed test actor-isolated api.baseURL; one test await fix passed135 actualtests q-7ee06e51f607656d5aa3c2ae. Reviewer1 highfinding initial production emitLocalSessionAsInitialSessionfalse refresh removes stored session; Developer3 added hadSessionBeforeObservation +realSDKtest, passed136 actualtests q-b9d61f9303b8ac5c1cd0404f. Reviewer2 closed initial case but found P1 below for later established sessions/repeatedcalls. No QA/acceptance/publication of SDK candidate yet; current935line diff is UNACCEPTED, not just last repair. Inspect FULL GuestCatalogueView/SDK tests/model/API/store despite checkpoint small diff. Config/routing/budgets unchanged; oldrun neverresume.",
+        "ONLY CURRENT FINDING TO FIX: hadSessionBeforeObservation fixed initializer state and per-call let hadSession are insufficient. If initial SDK empty, a session established later then terminal refresh_token_not_found/session_expired clears it; first call rejects, retry now hadSessionfalse+nilSDK+stableepoch =>newanonymoussignup. Persist monotonic session-ever-established fact for CONNECTION lifetime, seeded from real SDK currentSession BEFORE observer registration, and updated by synchronous REAL SDK callbacks for ANY nonnil session (anonymous counts too), not delayed MainActor tasks. Keep in same small threadsafe SDKepoch gate or equivalent. Never clear history merely on signout/sessionMissing/error; no automatic owner replacement after authcleanup on retry. Fresh truly never-session connection can signup once; current valid SDK session recovery/signin works normally. Do not add explicit account-reset/newAuthUI API or alternateSDK/storage. Never infer owner/permanent/date or rebind oldtoken.",
+        "Add >=ONE focused real-SDK regression function(s), loops cover BOTH cleanup codes refresh_token_not_found/session_expired for sessions established AFTER source initialization, anonymous and permanent if feasible; trigger cleanup before sessionOwner and during its first call, then call sessionOwner >=2 times, assert ZERO signup requests/ownerfabrication/no plants HTTP/cache/queue/receipt mutation. Real SDK isolated storage+URLProtocol, production initial delivery order preserved, no direct fake callback as proof. Retain existing production initial-session test +all135oldcandidate/124accepted tests =>minimum137 ACTUAL tests/no skips. Test current valid SDK recovery still works with same-owner flow/op if adding recovery assertions. Apply only SDK history guard and meaningful regression/necessary compile fixes within two writefiles; do not weaken existing behavior/tests. All original acceptance +full highrisk Reviewer/QA/Simulator afterchecks; localfixtures NOT live/nativeprovider/views/fullT162."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "One actual Supabase SDK client drives verified anonymous/session snapshots, existing resources and epoch-protected model factory; real SDK events synchronously invalidate stale owner/model contexts without auto commands/transfers. All prior 124+>=6new realSDK/HTTPfixture/SQLite tests/no skips/build/Simulator and independent highrisk Review/QA. Native provider flow/views/live/parents open. Minimum130 actual tests. Full unaccepted candidate acceptance; minimum137 actual tests (136previous+>=1 runtime terminal-auth cleanup regression); retries must never replace a previously established SDK owner.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

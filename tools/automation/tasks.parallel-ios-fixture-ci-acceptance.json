@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-fixture-ci-acceptance",
+      "description": "Read-only local acceptance of the CI workflow candidate after controller-only check-argument repair. Validate configuration and actual portable fixture dependencies; cloud execution/T006 remains unverified.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        ".github/workflows/validate.yml",
+        "tools/automation/parallel_ios_ci_sql_gate.py",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/parallel_ios_sync_gate.py",
+        "tools/automation/parallel_ios_catalogue_ui_gate.py",
+        "tools/automation/parallel_ios_catalogue_release_gate.py",
+        "tools/automation/doctor.py",
+        "supabase/functions/deno.json",
+        "tools/automation/parallel_ios_ci_simulator.py"
+      ],
+      "write_files": [],
+      "constraints": [
+        "This is a new READ-ONLY acceptance packet: no Developer and no file edits. The preceding run parallel-ios-fixture-ci-20261110-01 is preserved BLOCKED: simulator process exited0, but controller inferred a Doctor summary from a check_run_id token in its env-output path. Controller fixed ONLY that config argument in a separate config, using an explicit ephemeral path with no summary-protocol token. Do not change engine/helper or reinterpret the old FAIL as accepted. Inspect the existing workflow and helpers, run all configured real checks, then independent Reviewer/QA. No remote CI claim.",
+        "Write only the existing workflow. Do not edit app code, test/gate scripts, SQL/TS/KB/contracts, packages, config, handoff, tasks, AGENTS or Git. The controller prepares the small portable SQL dependency-path adapter before this run; it delegates unchanged business assertions to the accepted private PG17 gate. Accepted app/gates 546880a have 184 actual units and18actualENPLUI/42PNG/Release/Simulator verified; no iOS source or gate change is needed in this workflow packet.",
+        "Preserve push/main and pull_request/main triggers and ordinary cancellation of superseded runs; optional workflow_dispatch is fine. No cron, deployment, paid AI/model calls or live service credentials. Set only normal read access for repository contents. Do not use pull_request_target, add secrets, loosen network permissions, or run the model orchestrator from CI. The Deno test task already permits only loopback network; the iOS Doctor builds with blank live SDK settings and the explicit DEBUG fixtures isolate SDK/SQLite/HTTP.",
+        "Use verified official action commit pins: checkout 3d3c42e5aac5ba805825da76410c181273ba90b1(v7), setup-python 6d4fd22b20465ccc0f7354476588e8df7c9ca0e0(v7), upload-artifact cf430e030ddbb5b0abf93d22962f4752f3646cd9(v7), setup-deno 22d081ff2d3a40755e97629de92e3bcbfa7cf2ed(documented v2 branch). Those refs were resolved directly from public vendor repositories2026-11-10. Keep concise version comments. Deno2.9.8 is the actual locally tested version; Python tools require3.11+.",
+        "Deno job runs the336 existing fixture tests and frozen typecheck of the TWO actual entrypoints plants-api/index.ts and analysis-worker/index.ts. Existing deno.json task check incorrectly references missing billing-webhook/index.ts and maintenance/index.ts; do not invoke that stale alias, invent handlers, modify B-owned config or pretend those routes are tested. Record this limitation in your decisions for the controller handoff. The direct frozen typecheck of the two actual entrypoints passed locally.",
+        "SQL job uses private PostgreSQL17 and controller adapter tools/automation/parallel_ios_ci_sql_gate.py --pg-bin ACTUAL_PG17_BIN --pgtap-sql GENERATED_PGTAP_SQL. No live DB and no rewrites of business SQL/gates. Install the normal PG17 dependency if absent, using its actual installation prefix. Fetch official pgTAPv1.3.4 from theory/pgtap and verify peeled commit968eb53a33114e83042b3bdb0c664b5b80cf8bdf before building sql/pgtap.sql with that PG17 pg_config. The adapter invokes exactly accounting/legacyguard/cap-regression: clean/upgrade235assertions each, retained rows, real owner-lock races. Do not use stale shared t161 --slots equality gate or placeholders. Preserve raw SQL output and nonzero exit status.",
+        "iOS job uses a verified macOS26 runner and explicit /Applications/Xcode_26.3.app/Contents/Developer, matching local Xcode26.3 build17C529. Build the COMMITTED Xcode project and pinned packages via existing gates; do not add an unpinned XcodeGen regeneration dependency. Choose a truly available compatible iPhone17Pro simulator/runtime from actual xcrun simctl JSON (matching SDK major); never hardcode the local Simulator UUID. If creation is needed, create only an ephemeral CI device from actual available runtime/device-type identifiers. Pass the selected UUID explicitly to each gate. Keep one simulator and serial gate execution. The controller-owned parallel_ios_ci_simulator.py performs this selection: run it with --env-output \"$GITHUB_ENV\" and --create-if-needed only on the ephemeral cloud runner, then use NARAT_CI_SIMULATOR. Agents must not execute creation or workflow steps locally; the controller checks read-only selection separately.",
+        "The iOS job actually runs parallel_ios_sync_gate.py (build/welcome/all source unit methods, no skips), parallel_ios_catalogue_ui_gate.py (all18 real ENPL cases, screenshots, no skips or expected failures) and parallel_ios_catalogue_release_gate.py (actual Release/no fixture markers). All support --run-id and --simulator. Use unique short run IDs derived from the GitHub run ID/attempt, valid for existing Doctor rules. A build-for-testing step alone is insufficient. Existing UI tests themselves exercise both English and Polish; do not invent a language matrix that only compiles.",
+        "Use sensible bounded timeouts for fresh dependency/build/18UI work. Upload whitelisted fixture summaries/raw logs/PNG evidence on failure as well as success, with bounded retention and unique job/run/attempt artifact names. Do not upload credentials, auth settings, entire workspace, package caches, DerivedData or build binaries. Avoid masking check failures with pipelines or unconditional success. Quote task-specific shell variables; do not repurpose HOME or system settings.",
+        "Controller local checks cover real YAML and shell syntax, frozen API/worker typecheck,336Deno,123automation and actual portable private SQL adapter behavior. Reviewer/QA inspect the whole workflow and correspondence to accepted iOS gates/evidence. Do not run controller gates yourself. Local configuration acceptance is NOT proof the cloud runner worked. Remote GitHub account/CI logs are unverified: gh is absent and the suggested GitHub plugin was not connected; browser was logged out. Do not claim T006 complete, install/connect a plugin, change account permissions or dispatch a remote run yourself. Controller publishes ordinary code and verifies cloud execution once authorized account access exists."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "The workflow is syntactically valid and invokes actual portable SQL/Deno/unit/ENPLUI/Release checks with preserved failure/evidence semantics, pinned toolchain/dependencies and isolated fixtures. This is configuration acceptance only; remote CI/T006 remains unverified.",
+          "checks": [
+            "diff-check",
+            "parallel-ios-ci-workflow-syntax",
+            "parallel-ios-ci-typecheck",
+            "parallel-ios-ci-simulator"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Existing336Deno and123automation fixtures pass, and the prepared portable SQL adapter actually passes the accepted private PostgreSQL17 clean/upgrade/row preservation/real race suite. No business-gate logic is replaced or weakened.",
+          "checks": [
+            "automation-tests",
+            "deno-tests",
+            "parallel-ios-ci-sql"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

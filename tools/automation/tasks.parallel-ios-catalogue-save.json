@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-save",
+      "description": "Compose accepted capacity+journal+typed ACK into real catalogue repository save/resume over SAME existing engine/store. No UI or second outbox framework.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files small contextual unified diff. No new files/project/schema/backend/contracts/tools/config/handoff/tasks/AGENTS/deploy/live. Use accepted capacity2efd83a, identity-errors1eb80cc and accepted atomic journal5997c0d (89 actual tests/build/Simulator/highrisk Review/QA); do not rewrite them or duplicate validators/store methods. Preserve all legacy/public APIs and accepted actual tests. This packet ONLY repository save/resume composition. Input builder, UI/login/card/paywall/guest claim later.",
+        "Add small public Sendable result type and actual async save/resume API taking caller-supplied stable operationUUID, frozen canonical payloadJSON (or original CommandEnvelopeDTO), explicit NativeAuthSession and actual SDK isAnonymous bool. Reuse internal existing CatalogueCreateWire validator before any mutation/request. Never generate new op on retry, rewrite/normalize existing payload, infer owner/permanent identity/default token, fabricate plant or receipt. Guest result signInRequired with zero GET/POST/enqueue and input preserved by caller; malformed input explicit throw and no network/disk changes.",
+        "Capture original BOUND canonical SyncSessionLease once and require exact caller session snapshot. Preserve across initial journal lookup, capacity refresh, conditional enqueue, engine drain and final disk journal read. No recapture after ABA. Add internal context overload/helper to current capacity preflight for reuse (public method unchanged) and expose only small existing engine flush(context:) overload (current private captured path can become internal with same semantics). No second engine, no await under authority lock. Cancellation/stale owner/session at any boundary must not send with newtoken or publish/read another owner. Internal contextual drain should derive owner from context or reject independently supplied owner mismatch BEFORE requests; never drain B queue with A session.",
+        "Initial original-lease journal lookup BEFORE capacity. Existing exact confirmation returns saved original authoritative receipt/serverplantUUID without GET/POST/requeue. Existing pending skips new-create cap and resumes original operation/payload even when server collection alreadyfull after lost response. Only truly new commands require successful canonical full refresh+capacity. Atomic conditional enqueue rechecks existing pending/confirmed AFTER await and before falsecap reject, so another overlapping attempt winning last slot is not blocked. Freecount<3/paid SQL predicate from accepted capacity; server final409 remains authoritative. Failed/malformed refresh never fabricates count0 or enqueues newcommand; existing pending can resume without refresh.",
+        "Use existing SyncEngine flush under SAME original context; its returned commitcount is NEVER proof target saved (other commands/concurrent drain may yield >0/0). Final journal/confirmation read exact owner/op/payload under original authority determines result: saved only durable typed receipt; otherwise pending snapshot with persisted typed API failure or explicit cap-not-enqueued for new precheck. Network/auth503/malformed200/server409 preserve original pending payload/op/error across disk restart, no fake localsuccess. Disk ACK failure propagates and queue remains; confirmed receipt does not advance syncwatermark or invent carecache. No generic ACK bypass.",
+        "Add >=6 meaningful new already-target CollectionRepositoryTests with actual APIClient->repository->engine->SQLite/reopen, no skips. Truly new Free2/3 and paid4/cap path with exact request order and original payload; direct guest/malformed/no-bound no requests; existing confirmation replay no requests; committed-on-server+lostresponse+lastslot/restart sends SAME HTTPbody/op and returns same serverUUID/one durableconfirmation; real server409 typed metadata pending after reopen, unavailable preflight keeps old state; ABA/cancel during actual refresh and POST no false result/mutation; unrelated commitcount/concurrent drain cannot fake target success. Keep all previous accepted tests and readonly ACK coverage. No live/Auth provider/UI/card/fullparent acceptance. Current accepted prerequisites after journal will have89 actual tests; retain all89+>=6 meaningful new => minimum95 total/no skips. Include overlapping caller that inserts/ACKs SAME operation during suspended new preflight then returns falsecap; atomic journal existing result must win. Actual concurrently active drain skipping duplicate must return pending, not fake saved from count."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Real repository save/resume uses successful capacity only for new command and durable exact receipt as success; stable op/payload/restart/lostresponse/servercap/owner-session isolation all behaviorally tested through actual engine/disk; all89old+>=6new => minimum95 actual tests/no skips/build/Simulator, independent highrisk Review/QA. UI/live/parents open.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

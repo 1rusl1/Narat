@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-catalogue-journal",
+      "description": "Atomic owner/session-scoped catalogue create journal on accepted existing outbox/confirmation store. Check-only lookup and conditional enqueue; no repository orchestration or UI yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/contracts/collection-cap.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionRepositoryTests.swift"
+      ],
+      "constraints": [
+        "Only allowed write_files small contextual unified diff; no new files/schema/project/tools/config/handoff/tasks/AGENTS/backend/contracts/deploy/live. Accepted wire/store/engine/capacity/identity-errors prerequisites retain behavior. This is a small disk journal primitive only, not input builder/repository orchestration/save/UI. Do not redo DTO or accepted ACK. External ACCEPTED identity-errors1eb80cc (run01,79 actual tests/build/Simulator/highrisk Review/QA), not redo it; retain all79 and add>=6 => minimum85 actual tests.",
+        "Expose existing CatalogueCreateWire.validate internally if needed (visibility only, retain original validation) and reuse it BEFORE insert. No invented duplicate payload-validator/business normalization. Exact frozen original CommandEnvelopeDTO catalogue command plantIdnil/payload must be retained byte-for-byte; operationUUID supplied by caller. No generated plantUUID/defaultowner/rewritteninput. New journal state snapshot types small Sendable; use existing queued OutboxEntrySnapshot and CatalogueCreateConfirmationSnapshot.",
+        "Add internal session-scoped check-only journal lookup and conditional enqueue API (one method with explicit mode or two small methods acceptable). Both must use original SyncSessionLease and same SyncSessionAuthority, check cancellation/session inside short synchronous atomic disk read/write, require canonical bound nonnil session. No await under lock, no recapture, no owner explicit fallback. Use fresh isolated ModelContext; no phantom dirty state after failed save. Lookup returns absent/pending/confirmed; enqueue returns pending/confirmed or explicit collection-limit-not-enqueued when caller advisory canCreatefalse. Preserve all existing public API/legacy paths. Existing authority.capture(ownerId:explicitSession:) on never-bound client is a transport-only compatibility path, NOT sufficient bound proof. Add small withBoundValid helper on SAME existing authority if needed; validate canonical bound session inside SAME lock as disk action; leave accepted withValid/legacy behavior intact. Include unbound explicitSession lease negative case.",
+        "Within ATOMIC conditional enqueue, check existing owner+operation durable confirmation and existing globally unique outbox op BEFORE applying advisory canCreate gate. Existing exact pending/confirmed always wins even if canCreatefalse (lost response on last free place); no POST, queue insert or duplicate from confirmed replay. Conflicting owner/plant/command/UTF8payload fails closed without foreign details/snapshot and without changing disk. Exact same pending retains sequence/time/retry/typederror; confirmed uses original receipt/serverUUID, never advances syncwatermark. New command only if no existing/confirmation and canCreatetrue. Check-only/blocked paths allocate nothing and mutate nothing. No collection count/entitlement recalculation here, no promise client check authoritative.",
+        "Actual tests minimum6 new in already-target CollectionRepositoryTests plus all accepted existing tests, no skips. Exercise temporary SQLite and independent container reopen: absent/check-only and blocked empty no mutations; allowed one insert/exact repeat stable; pending and confirmed replay bypass falsecap without duplicate queue; all conflicting owner/payload/plant/command rejected and queues/receipt/otherowner/checkpoint unchanged; original lease A->B->A/cancel cannot insert/read/replay; actual SQLite save failure leaves no phantom insertion, retry works after writability restored. Use actual existing ACK to create receipt fixture (fixture not production success), real authority and existing store. No fake second store/engine, no weakened old tests. Trusted build/unit/Simulator and independent high-risk Review/QA. Full T162/save/UI/live stays open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Catalogue journal check/conditional enqueue is atomic, exact owner+operation+UTF8payload/idempotency and original session protected, existing pending/confirmation bypass falsecap, failures preserve disk. All79 existing tests plus>=6 meaningful new, minimum85 actual tests/no skips/build/Simulator, independent Reviewer/QA; no save/UI/live acceptance.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

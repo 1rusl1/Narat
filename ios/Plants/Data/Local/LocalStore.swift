@@ -56,6 +56,26 @@ public final class CatalogueCreateConfirmationRecord {
     }
 }
 
+/// Local input only: no server draft, receipt, credentials, or retention policy.
+@Model
+public final class CatalogueInputCheckpointRecord {
+    @Attribute(.unique) public var compositeKey: String
+    public var ownerId: UUID
+    public var flowId: UUID
+    public var operationId: UUID
+    public var payloadJSON: String
+    public var createdAt: Date
+
+    public init(ownerId: UUID, flowId: UUID, operationId: UUID, payloadJSON: String, createdAt: Date) {
+        self.compositeKey = "\(ownerId.uuidString.lowercased()):\(flowId.uuidString.lowercased())"
+        self.ownerId = ownerId
+        self.flowId = flowId
+        self.operationId = operationId
+        self.payloadJSON = payloadJSON
+        self.createdAt = createdAt
+    }
+}
+
 @Model
 public final class GuestDraftCacheRecord {
     @Attribute(.unique) public var draftId: UUID
@@ -192,6 +212,12 @@ public struct OutboxEntrySnapshot: Codable, Sendable, Equatable {
     public let lastError: String?
     public let createdAt: Date
 
+    /// Legacy diagnostic text is deliberately not classified as an API error.
+    public var lastAPIError: APIErrorResponse? {
+        guard let lastError else { return nil }
+        return try? JSONDecoder().decode(APIErrorResponse.self, from: Data(lastError.utf8))
+    }
+
     public init(
         operationId: UUID,
         ownerId: UUID,
@@ -215,11 +241,41 @@ public struct OutboxEntrySnapshot: Codable, Sendable, Equatable {
     }
 }
 
+public enum OutboxEnqueueError: Error, Sendable, Equatable {
+    case operationIdentityMismatch
+}
+
 public struct CatalogueCreateConfirmationSnapshot: Sendable, Equatable {
     public let ownerId: UUID
     public let operationId: UUID
     public let payloadJSON: String
     public let receipt: PlantCreateReceiptDTO
+}
+
+public struct CatalogueInputCheckpointSnapshot: Sendable, Equatable {
+    public let ownerId: UUID
+    public let flowId: UUID
+    public let envelope: CommandEnvelopeDTO
+    public let createdAt: Date
+
+    public var operationId: UUID { envelope.operationId }
+}
+
+enum CatalogueInputCheckpointError: Error, Sendable, Equatable {
+    case flowIdentityMismatch
+    case invalidStoredInput
+}
+
+enum CatalogueCreateJournalMode: Sendable {
+    case checkOnly
+    case enqueue(canCreate: Bool)
+}
+
+enum CatalogueCreateJournalState: Sendable, Equatable {
+    case absent
+    case pending(OutboxEntrySnapshot)
+    case confirmed(CatalogueCreateConfirmationSnapshot)
+    case collectionLimitNotEnqueued
 }
 
 enum CatalogueCreateAcknowledgementError: Error, Sendable, Equatable {
@@ -268,6 +324,7 @@ public actor LocalStore {
         let schema = Schema([
             LocalOutboxRecord.self,
             CatalogueCreateConfirmationRecord.self,
+            CatalogueInputCheckpointRecord.self,
             GuestDraftCacheRecord.self,
             SyncedEntityRecord.self,
             SyncCheckpointRecord.self
@@ -299,10 +356,17 @@ public actor LocalStore {
         commandName: String,
         payloadJSON: String
     ) throws -> OutboxEntrySnapshot {
+        let modelContext = makeSyncContext()
         let existingDescriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
         )
         if let existing = try modelContext.fetch(existingDescriptor).first {
+            guard existing.ownerId == ownerId,
+                  existing.plantId == plantId,
+                  existing.commandName.utf8.elementsEqual(commandName.utf8),
+                  existing.payloadJSON.utf8.elementsEqual(payloadJSON.utf8) else {
+                throw OutboxEnqueueError.operationIdentityMismatch
+            }
             return OutboxEntrySnapshot(
                 operationId: existing.operationId,
                 ownerId: existing.ownerId,
@@ -345,7 +409,216 @@ public actor LocalStore {
         )
     }
 
+    /// One session-ordered disk operation. Capacity is advisory; durable replay wins.
+    /// No transport, recapture, watermark publication, or managed models escape here.
+    func catalogueCreateJournal(
+        _ envelope: CommandEnvelopeDTO, mode: CatalogueCreateJournalMode,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CatalogueCreateJournalState {
+        try authority.withBoundValid(context) {
+            try CatalogueCreateWire.validate(envelope)
+            let ownerId = context.ownerId
+            let operationId = envelope.operationId
+            let disk = makeSyncContext()
+            do {
+                let confirmations = FetchDescriptor<CatalogueCreateConfirmationRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+                )
+                let prior = try disk.fetch(confirmations).first
+                if let prior {
+                    guard prior.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                        throw OutboxEnqueueError.operationIdentityMismatch
+                    }
+                }
+                // Global operation identity must also hold when a receipt already exists.
+                let commands = FetchDescriptor<LocalOutboxRecord>(
+                    predicate: #Predicate { $0.operationId == operationId }
+                )
+                let queued = try disk.fetch(commands).first
+                if let queued {
+                    guard queued.ownerId == ownerId, queued.plantId == envelope.plantId,
+                          queued.commandName.utf8.elementsEqual(envelope.commandName.utf8),
+                          queued.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                        throw OutboxEnqueueError.operationIdentityMismatch
+                    }
+                }
+
+                let result: CatalogueCreateJournalState
+                if let prior {
+                    result = .confirmed(CatalogueCreateConfirmationSnapshot(
+                        ownerId: prior.ownerId, operationId: prior.operationId,
+                        payloadJSON: prior.payloadJSON,
+                        receipt: try JSONDecoder().decode(
+                            PlantCreateReceiptDTO.self, from: Data(prior.receiptJSON.utf8)
+                        )
+                    ))
+                } else if let queued {
+                    result = .pending(journalSnapshot(queued))
+                } else {
+                    switch mode {
+                    case .checkOnly:
+                        result = .absent
+                    case .enqueue(canCreate: false):
+                        result = .collectionLimitNotEnqueued
+                    case .enqueue(canCreate: true):
+                        var sequence = FetchDescriptor<LocalOutboxRecord>(
+                            sortBy: [SortDescriptor(\.sequenceNumber, order: .reverse)]
+                        )
+                        sequence.fetchLimit = 1
+                        let next = (try disk.fetch(sequence).first?.sequenceNumber ?? 0) + 1
+                        let record = LocalOutboxRecord(
+                            operationId: operationId, ownerId: ownerId, plantId: envelope.plantId,
+                            commandName: envelope.commandName, payloadJSON: envelope.payloadJSON,
+                            sequenceNumber: next
+                        )
+                        disk.insert(record)
+                        try Task.checkCancellation()
+                        try disk.save()
+                        return .pending(journalSnapshot(record))
+                    }
+                }
+                try Task.checkCancellation()
+                return result
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    // All catalogue input contexts share this ordering, including distinct API authorities.
+    private static let catalogueInputLock = NSLock()
+
+    /// The original bound lease is required even for anonymous local input caching.
+    /// New unsent edits require an explicitly new flow and operation.
+    func checkpointCatalogueInput(
+        _ input: CatalogueInput, flowId: UUID, operationId: UUID,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CatalogueInputCheckpointSnapshot {
+        try authority.withBoundValid(context) {
+            Self.catalogueInputLock.lock()
+            defer { Self.catalogueInputLock.unlock() }
+            let disk = makeSyncContext()
+            do {
+                let envelope = try input.makeEnvelope(operationId: operationId)
+                let ownerId = context.ownerId
+                let descriptor = FetchDescriptor<CatalogueInputCheckpointRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.flowId == flowId }
+                )
+                if let prior = try disk.fetch(descriptor).first {
+                    let original = try catalogueInputSnapshot(prior)
+                    guard original.operationId == operationId,
+                          original.envelope.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                        throw CatalogueInputCheckpointError.flowIdentityMismatch
+                    }
+                    try validateCatalogueInputIdentity(envelope, ownerId: ownerId, disk: disk)
+                    try Task.checkCancellation()
+                    return original
+                }
+                try validateCatalogueInputIdentity(envelope, ownerId: ownerId, disk: disk)
+                let record = CatalogueInputCheckpointRecord(
+                    ownerId: ownerId, flowId: flowId, operationId: operationId,
+                    payloadJSON: envelope.payloadJSON, createdAt: Date()
+                )
+                disk.insert(record)
+                let snapshot = try catalogueInputSnapshot(record)
+                try Task.checkCancellation()
+                try disk.save()
+                return snapshot
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    func catalogueInputCheckpoint(
+        flowId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CatalogueInputCheckpointSnapshot? {
+        try authority.withBoundValid(context) {
+            Self.catalogueInputLock.lock()
+            defer { Self.catalogueInputLock.unlock() }
+            let disk = makeSyncContext()
+            do {
+                let ownerId = context.ownerId
+                let descriptor = FetchDescriptor<CatalogueInputCheckpointRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.flowId == flowId }
+                )
+                guard let record = try disk.fetch(descriptor).first else {
+                    try Task.checkCancellation()
+                    return nil
+                }
+                let snapshot = try catalogueInputSnapshot(record)
+                try validateCatalogueInputIdentity(snapshot.envelope, ownerId: ownerId, disk: disk)
+                try Task.checkCancellation()
+                return snapshot
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    private func catalogueInputSnapshot(
+        _ record: CatalogueInputCheckpointRecord
+    ) throws -> CatalogueInputCheckpointSnapshot {
+        guard record.compositeKey ==
+                "\(record.ownerId.uuidString.lowercased()):\(record.flowId.uuidString.lowercased())",
+              let payload = try? JSONSerialization.jsonObject(with: Data(record.payloadJSON.utf8)) as? [String: Any],
+              let slug = payload["plant_id"] as? String,
+              payload["creation_source"] as? String == "catalogue",
+              Set(payload.keys).isSubset(of: ["creation_source", "plant_id", "personal_name"]),
+              payload["personal_name"] == nil || payload["personal_name"] is String else {
+            throw CatalogueInputCheckpointError.invalidStoredInput
+        }
+        let envelope = try CatalogueInput(
+            speciesSlug: slug, personalName: payload["personal_name"] as? String
+        ).makeEnvelope(operationId: record.operationId)
+        guard envelope.payloadJSON.utf8.elementsEqual(record.payloadJSON.utf8) else {
+            throw CatalogueInputCheckpointError.invalidStoredInput
+        }
+        return CatalogueInputCheckpointSnapshot(
+            ownerId: record.ownerId, flowId: record.flowId, envelope: envelope, createdAt: record.createdAt
+        )
+    }
+
+    /// Match the accepted journal's global queue identity and own confirmation bytes.
+    /// No foreign record or server receipt escapes this check.
+    private func validateCatalogueInputIdentity(
+        _ envelope: CommandEnvelopeDTO, ownerId: UUID, disk: ModelContext
+    ) throws {
+        let operationId = envelope.operationId
+        let commands = FetchDescriptor<LocalOutboxRecord>(
+            predicate: #Predicate { $0.operationId == operationId }
+        )
+        if let queued = try disk.fetch(commands).first {
+            guard queued.ownerId == ownerId, queued.plantId == envelope.plantId,
+                  queued.commandName.utf8.elementsEqual(envelope.commandName.utf8),
+                  queued.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                throw OutboxEnqueueError.operationIdentityMismatch
+            }
+        }
+        let confirmations = FetchDescriptor<CatalogueCreateConfirmationRecord>(
+            predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+        )
+        if let prior = try disk.fetch(confirmations).first {
+            guard prior.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+                throw OutboxEnqueueError.operationIdentityMismatch
+            }
+        }
+    }
+
+    private func journalSnapshot(_ record: LocalOutboxRecord) -> OutboxEntrySnapshot {
+        OutboxEntrySnapshot(
+            operationId: record.operationId, ownerId: record.ownerId, plantId: record.plantId,
+            commandName: record.commandName, payloadJSON: record.payloadJSON,
+            sequenceNumber: record.sequenceNumber, retryCount: record.retryCount,
+            lastError: record.lastError, createdAt: record.createdAt
+        )
+    }
+
     public func pendingOutboxEntries(for ownerId: UUID) throws -> [OutboxEntrySnapshot] {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.ownerId == ownerId },
             sortBy: [SortDescriptor(\.sequenceNumber, order: .forward)]
@@ -449,6 +722,7 @@ public actor LocalStore {
     }
 
     public func markOutboxCommitted(operationId: UUID) throws {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
         )
@@ -459,6 +733,7 @@ public actor LocalStore {
     }
 
     public func recordOutboxFailure(operationId: UUID, errorMessage: String) throws {
+        let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
         )
@@ -598,7 +873,7 @@ public actor LocalStore {
 
     // MARK: Synced Entity & Checkpoint Operations
 
-    /// Sync models never escape an operation's context. A failed save can leave
+    /// Sync and outbox models never escape an operation's context. A failed save can leave
     /// registered SwiftData models changed even after rollback, so both writers
     /// and readers start from committed storage rather than those cached models.
     private func makeSyncContext() -> ModelContext {
@@ -727,6 +1002,7 @@ public actor LocalStore {
         failure: String? = nil
     ) throws {
         try authority.withValid(context) {
+            let modelContext = makeSyncContext()
             do {
                 let descriptor = FetchDescriptor<LocalOutboxRecord>(
                     predicate: #Predicate { $0.operationId == operationId }
@@ -739,8 +1015,12 @@ public actor LocalStore {
                     record.retryCount += 1
                     record.lastError = failure
                 } else {
+                    guard context.session == nil || record.commandName != "plant.create" else {
+                        throw CatalogueCreateAcknowledgementError.invalidCommand
+                    }
                     modelContext.delete(record)
                 }
+                try Task.checkCancellation()
                 try modelContext.save()
             } catch {
                 modelContext.rollback()
@@ -762,6 +1042,39 @@ public actor LocalStore {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: date)
+    }
+
+    /// One coherent committed read, ordered against auth changes by the same authority as publication.
+    func collectionCapacitySnapshot(
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CollectionCapacitySnapshot {
+        try authority.withValid(context) {
+            guard context.session != nil else { throw SyncWireValidationError.invalidSession }
+            let ownerId = context.ownerId
+            let modelContext = makeSyncContext()
+            let checkpoints = FetchDescriptor<SyncCheckpointRecord>(
+                predicate: #Predicate { $0.ownerId == ownerId }
+            )
+            guard let checkpoint = try modelContext.fetch(checkpoints).first,
+                  let raw = checkpoint.syncProfileJSON,
+                  let watermark = checkpoint.watermarkRaw,
+                  SQLTimestamp.microseconds(from: watermark) != nil else {
+                throw SyncWireValidationError.invalidPage
+            }
+            // A missing/malformed profile is not an empty Free collection.
+            _ = try JSONDecoder().decode(SyncWireProfileDTO.self, from: Data(raw.utf8))
+            let entitlement = try checkpoint.syncEntitlementJSON.map {
+                try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data($0.utf8))
+            }
+            let plants = FetchDescriptor<SyncedEntityRecord>(
+                predicate: #Predicate {
+                    $0.ownerId == ownerId && $0.entityType == "plants" && $0.deletedAt == nil
+                }
+            )
+            return CollectionCapacitySnapshot(
+                plantCount: try modelContext.fetchCount(plants), entitlement: entitlement
+            )
+        }
     }
 
     public func syncedProfile(ownerId: UUID) throws -> SyncWireProfileDTO? {
