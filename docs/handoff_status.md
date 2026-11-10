@@ -1,6 +1,48 @@
 # Narat — текущий статус и передача работы
 
 
+## B — ОСТАНОВЛЕНО по команде владельца, 10 ноября 2026
+
+Из родительского управляющего чата01a1c3b4-0e9e-73b2-a2cd-dbdb0e56172a получена
+явная команда владельца остановить оркестраторы для обсуждения конфигурации.
+**Новых runs/repair/Review/QA/интеграций не запускать, автоматически не возобновлять,
+конфигурацию не менять до нового решения владельца.** GitHub Actions/дальнейшая CI
+работа отложены, T006 не закрывать. FullT163/T036/live остаются открытыми.
+
+**Фактическая остановка:** active B CLI PID26958/PGID26958, дочерняя QA Codex
+PID36251/PGID36251. Обе подтверждённые process groups получили штатный SIGINT;
+exec session6891 завершилась **exit130**, вывод `WAITING: interrupted; state preserved`.
+Повторная проверка ps: PID/PGID26958/36251 и процессы их групп отсутствуют (`[]`).
+Активных дочерних model/check processes этого B run не осталось; force/reset/clean/
+ручного переписывания runstate не было.
+
+Run `parallel-backend-quota-access-http-20261110-08`, task
+`parallel-backend-t163-access-http`: **WAITING, phase qa**, counts Developer1/Reviewer1/QA1.
+Developer PASS68.111s (patch empty), Reviewer PASS77.672s; QA была STARTED и прервана,
+answer/acceptance отсутствуют. Сырой state сохраняет STARTED — не исправлять задним
+числом на PASS/FAIL. Семь фактически выполненных mandatory checks PASS: deno-check,
+diff-check, automation123, Deno336, protectedHTTP39, cap55+131/4races, SQL511 clean/
+upgrade+12UTC+99actual/6x20. Это local/fixture, не live и **не полное принятие GET**.
+Evidence `validation/automation/runs/orchestrator-parallel-backend-quota-access-http-20261110-08/`,
+QA `call-3-qa/{process.json,prompt.txt,stdout.log,stderr.log}`; исходные files сохранены.
+
+**Сохранённый source:** HEAD до остановкиa151427 (GET candidate/protected gate/manifest,
+уже в origin/codex/plants-backend), рабочее дерево было чистое. Принятый merge-ready
+пакет до GET —6d689b7: SQL005–012+b44013e/6df1b76+согласованные nullable fixtures,
+main5d15123 ранее обычным merge93a54cf, A получила точный6d689b7. Нельзя объявлять
+GET runtime изa151427 готовым или брать tip как accepted вместо6d689b7.
+Installations HTTP/newjob503/deno alias ещё не внедрены; подготовительные prototypes
+только `/tmp/narat-b2-http-prep/`, не source/acceptance. Swift B вручную не меняла,
+Simulator не запускала; продуктовые checkbox не закрывала.
+
+**Config после остановки неизменён:** ignored parallel-backend.config.json SHA256
+`4a7d6fef72e8e84a568b9302bfead9c3a473ca7b0f7fd197f99191f81f3dafdb`, publish только
+origin/codex/plants-backend. Текущая операция — handoff/docs-only commit/push своей
+ветки без новых моделей. **Точный следующий шаг:** ждать решения владельца о новой
+конфигурации и явной команды продолжить; затем проверить config/manifest/checks,
+новый run-id при смене quality contract, сохранить rawrun08 и повторить необходимую
+независимую приёмку GET. До этого никакого resume/новых стадий/merge main.
+
 ## B2 — подготовлен production GET кандидат, начинается run08
 
 Отдельный accepted SQL/wire checkpoint **6d689b7** опубликован и передан A.
@@ -1268,6 +1310,8 @@ T148 остаётся на прежней остановке до запуска
 
 <!-- orchestrator:project-state -->
 ## Project State
+
+- B STOPPED by owner for configuration discussion: run08 WAITING/qa, controller26958 and QA36251 SIGINT, exit130, verified process groups empty. GET candidatea151427 not accepted; accepted SQL/wire6d689b7. Config SHA4a7d6fef unchanged. No automatic resume/new runs/repair/ReviewQA/integration/config changes until explicit owner decision. T006/cloud work deferred.
 
 - B latest: SQL005–012 independently accepted through b44013e (011 6df1b76;012 snapshot b44013e). Run07 completed Dev/Review/QA1/1/1 each;511pgTAP clean/upgrade,99actual+6x20,cap/Deno336/automation115 PASS. HTTP production adapters/T036/live remain open. Main5d15123 merged between runs; combined B gates next. User approved model workflow/inter-chat coordination and unknown legacy date blocking.
 
