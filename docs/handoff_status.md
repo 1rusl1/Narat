@@ -1,9 +1,19 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-10. ОСТАНОВЛЕНО ПО КОМАНДЕ ВЛАДЕЛЬЦА.** Новые runs/repair/Review/QA/интеграции/main-push запрещены до отдельного возобновления после обсуждения конфигурации в родительском чате. Конфигурация не менялась. Последний A run уже завершился штатно exit0/COMPLETED6bef677; активных A model/check процессов нет, оставшийся mobilecli daemon4918 остановлен SIGINT. B1+CI опубликованы только в A, main остаётся5d15123. GitHub Actions/дальнейшая CI отложены решением владельца.15done/136open, T006 не закрыта.
+**Обновлено 2026-11-10. ОГРАНИЧЕННЫЙ ПИЛОТ — ровно один task/run.** Владелец разрешил перенос25a5830/cf5a6b1 и запуск одного T036 canonical access DTO/transport пакета, затем обязательную остановку при любом terminal/timeout. Получение задания впервые измерено **20:00:17 UTC**. CI/T006 и main promotion отложены; repository/UI/billing/live не входят. Предыдущие stop/history сохранены ниже; это не общее возобновление очереди.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Пилот throughput A: подготовка переноса и одного T036 wire пакета
+
+Родительский чат01a1c3b4 передал прямое разрешение владельца, прочитанное A: «перенесём изменения в Plants A и Plants B и запустим по одному следующему пакету… CI пока не трогаем». Допустим один новый runtime `parallel-ios-t036-access-wire-pilot-20261110-01`,один task; новый terminal/timeout завершает пилот без другого run/repair controller/mainpromotion. Внутренний repair в исходном budget разрешён, timeout требует replan и остановки. A/B/parent техническая координация разрешена.
+
+Между runs обычный merge25a5830 (ancestorcf5a6b1). Ручные конфликты только handoff/T006: текущая история/исходники A сохранены, новые audit/policy records сохранены ниже с датой; blanketours/theirs/reset/rebase/force нет. Engine/context/preflight/docs/config/tests совпадают с принятой веткой; no CI files изменения. ORCHESTRATOR.md и новый README прочитаны. Родительская приёмка147automationfixtures48.177s — evidence parent, не новый A запуск и не product proof.
+
+Следующий подготовительный шаг: сохранить merge, перенести только принятый6d689b7 SQL005–012+nullable wire (без более позднего unacceptedHTTP), затем собственный ignored config с новым context6/read16000/preflight и прежними lanechecks/providers/budgets/publishA. Scope product: только APIModels/PlantsAPIClient/CollectionWireTests; реальный transport/owner-bound exacttimestamps/nullable sharedmonthly fixtures, без repository/UI/billing/GET live. Existing Swift membership проверяется preflight до моделей. Не добавлять CI coverage/полную SQLintegrationприёмку. T036/T163/T006 остаются открыты,15/151done.
+
+UTC отметки получения/подготовки/run/end сохраняются в `/tmp/parallel-ios-throughput-pilot-timing.json` и итоговом отчёте; prep и runtime отделить, все вызовы/retries/timeouts/checks/quality_contract показать без суммы ambiguousCLI tokens/процента квоты. Точный следующий шаг после terminal — остановка и отчёт родителю, не следующий пакет.
 
 ## Остановка A перед изменением конфигурации (10 ноября)
 
@@ -1148,8 +1158,112 @@ SHA256 `59ed00ee3315c8db379677e7aa0ef1558cc7b9be590b64f626d9cf3f043e31ff`, publi
 Auth/Supabase/Storage/provider/StoreKit live не запускались; продовые job/worker
 adapters пока не подключены. Продуктовые checkbox B не закрывала.
 
+## История throughput-аудита из25a5830 (до разрешения пилота)
+
+Ниже сохранены факты родительской ветки; её прежний запрет старта заменён только разрешением ОДНОГО пилота выше.
+
+## Engine/config ускорены; A/B остаются остановленными — 10 ноября 2026
+
+По прямой команде владельца реализованы изменения общего engine/config, выполнены
+только локальные проверки. Ветка **codex/development-throughput-audit**; main и
+рабочие деревья/config A/B не менялись. GitHub Actions/T006 по-прежнему отложены,
+новые runs/repair/Review/QA/model smoke и автоматическое возобновление не запускались.
+
+**Реализовано:**
+- Developer route по complexity, Sol medium для low/medium и high для high;
+  сложное finding включает high effort repair с новой сессией. Высокий risk по-прежнему
+  требует отдельные Astra Review/QA и все прежние scope/criteria gates.
+- discovery20→6 (явные пути не обрезаются); read_chars16000 — инструкция для rg и
+  чтения диапазонов, без принудительного усечения stdout/потери исходников.
+- usage.input_tokens больше не вызывает ротацию. Порог64000 работает только при
+  явно помеченном current_context measurement; текущие adapters его не дают.
+  reuse_within_task/3turns/эвристика24000 сохранены; смена effort создаёт fresh session.
+- После Developer timeout сохраняется replan_required; unchanged resume того же run
+  не вызывает модель. Для продолжения — пересмотренный manifest/указанная устранённая
+  причина и новый run. Timeout900 и бюджеты3/3/3 не увеличены и не уменьшены.
+- Read-only candidates без Developer, включая восстановление после прерывания.
+  candidate_base требует полный SHA предка HEAD, непустой реальный comparative diff
+  и все changed paths в files (удаления тоже поддержаны). Без base — явно snapshot
+  audit, не доказательство минимальности. Патч сохранён полностью, criteria не урезаются.
+- Preflight до quota/model: наличие inputs/evidence/сохранённых check logs;
+  настоящие Xcode fileRefs/Sources ожидаемого target, новые Swift после patch до build.
+  Неизвестные layouts не считаются готовыми. Candidate/evidence/preflight включены
+  в quality_contract; смена общего config требует нового run-id.
+
+**Файлы:** tools/automation/orchestrator.config.json,
+orchestration/{context,engine,preflight}.py,
+tests/test_orchestration_{context,engine,preflight}.py, ORCHESTRATOR.md;
+docs/parallel/README.md, throughput-audit-2026-11-10.md и этот handoff.
+
+**Фактически запущено:**
+- targeted `python3 -m unittest discover -s tools/automation/tests -p 'test_orchestration_*.py' -q`:
+ 106 tests/40.480s/OK на промежуточном срезе;
+- финальный `python3 -m unittest discover -s tools/automation/tests -q`:
+ **147 tests/48.177s/OK**, exit0. Модельные providers — scripted fixtures/fake CLI,
+ Git commit/push внутри тестов — временные репозитории и local bare origin.
+ Ожидаемые negative fixture FAIL/SKIP сообщения не являются падением suite.
+ Проверены high-risk split gates, effort escalation, delta reuse при ambiguous counters,
+ measured/turn/estimated rotation, timeout resume guard, committed candidate diff/
+ скрытые paths/deletions, missing inputs/logs, read-only interruption, Sources/wrong
+ target/одинаковые basename/cyclic groups/new file. Лог /tmp/narat-throughput-full-tests.log;
+- `orchestrator.py validate --manifest tools/automation/tasks.example.json`: VALID1,
+ без моделей; прямой read-only preflight настоящего pbxproj: все34Swift в нужных Sources PASS;
+- JSON compare с HEAD: timeout/retry/sessions/roles/required_checks/scope_checks/checks/
+ publish/acceptance unchanged; diff-check/local Markdown links/handoff markers PASS.
+ Все151 checkbox совпадают с HEAD (15done/136open), продуктовые ID не закрывались.
+ Staged whitespace проверяется перед commit; A/B wait_threads snapshot подтверждает idle.
+
+**Ограничения:** live CLI/provider/SQL/iOS unit/UI/build/Simulator/Auth/Storage/AI/StoreKit
+не запускались; ускорение и равенство качества на живой очереди пока не измерены.
+Preflight проверяет включение исходника, не доказывает выполнение тестового метода;
+прежние продуктовые gates нужны. Xcode checker поддерживает текущие явные PBX groups;
+новые synchronized layouts требуют отдельной поддержки. Ограничение read_chars —
+инструкция, а не жёсткий лимит вывода инструментов модели. Старые state/logs не правились.
+
+**Точный следующий шаг:** сохранить и отправить этот пакет в origin текущей ветки.
+Перед будущим запуском A принимает пакет, B получает ту же версию, оба переносят context/
+preflight в свои ignored configs с сохранением собственных checks и publish.branch;
+только новый run-id и по отдельной команде владельца на возобновление. Сейчас обе
+очереди остаются на паузе. Прошлые pause checkpoints: A2aafbdd/Ba1e78c3.
+
+
+## Пауза A/B и аудит скорости — 10 ноября 2026
+
+Владелец отменил предложенное переключение очередей и прямо поручил остановить
+оба оркестратора перед изменением конфигурации. Команда остановки передана в
+Plants A и Plants B; оба управляющих чата её получили. A сообщила, что текущий
+CLI-run уже завершён; B останавливает активный access HTTP run. Остановка подтверждена: повторный process inventory не обнаружил orchestrator,
+model CLI, ios_gate/doctor/parallel checks, xcodebuild/xctest или Deno test процессов.
+A run ci-b1-sql-acceptance — COMPLETED/done; B access-http run08 — WAITING/qa,
+«Interrupted; child group stopped; resume explicitly». Полной HTTP-приёмки B нет. Автоматическое
+возобновление запрещено до новой команды владельца; конфигурация не изменена.
+GitHub Actions/дальнейшая CI-работа отложены, T006 остаётся открытой и не блокирует
+MVP; локальные проверки сохраняются.
+
+**Сделано:** аудит сохранённых state двух worktree: 42 A/7 B runs, 100/33 модельных
+вызова, около361/135 модельных минут; Developer около82% суммарного модельного
+времени. Восемь900s timeout — около120мин. Точные ограничения измерений и
+предложения: [отчёт](validation/automation/throughput-audit-2026-11-10.md).
+Счётчики CLI не позволяют пересчитать это в проценты подписочного лимита.
+
+**Изменены:** новый отчёт throughput-audit-2026-11-10.md и JSON-агрегат,
+docs/parallel/README.md (пауза), tasks.md (T006 отложена
+без изменения checkbox), этот handoff. Это отдельная ветка
+codex/development-throughput-audit от опубликованной main5d15123; текущие изменения
+A/B сюда не переносились. Новый снимок не заменяет их локальные task reports.
+**Проверки:** чтение state/metrics, live wait_threads snapshots, process inventory;
+Markdown local links/JSON parse/diff-check — PASS; все151 checkbox совпадают с
+HEAD (15done/136open). Новые product
+suites, model calls и живые Auth/AI/Storage/StoreKit не запускались.
+
+**Ограничения:** предложения ещё не применены; отчёт сохраняется отдельным
+коммитом в origin/codex/development-throughput-audit, без публикации в main. **Точный следующий шаг:** сохранить pause checkpoints в A/B; затем согласовать
+изменения конфигурации. До этого не запускать новые manifests/runs.
+
 <!-- orchestrator:project-state -->
 ## Project State
+
+- ПРИОРИТЕТ PILOT10Nov: только один T036 DTO/transport task/run после переноса25a5830/cf5a6b1 и точногоB6d689b7. Context6/read16000/preflight, complexity Developer routing, highriskAstra split, timeout/budget прежние. После terminal/timeout STOP, noCI/no main/no secondruntime. Получение20:00:17UTC.
 
 - B authorization10November confirmed directly; accepted bc6a879/runtimea367d0b SQL005–010 integrated/verified6a83f0e (184Swift/384+235pgTAP/6x20/Deno336/automation123/Simulator/ReviewQA); CI adapter расширяется до обоихsuites доmainpromotion. SQL11/12/tip4333509 excluded. Wire proposal согласован для нового canonical DTO; T036/productionAPI/live open. B permission block снят, отказы — история.
 

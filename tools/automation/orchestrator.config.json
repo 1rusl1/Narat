@@ -133,7 +133,8 @@
   "context": {
     "diff_chars": 16000,
     "error_chars": 3000,
-    "max_discovered_files": 20
+    "max_discovered_files": 6,
+    "read_chars": 16000
   },
   "agent_timeout": 900,
   "max_tasks_per_run": 10,
@@ -487,5 +488,13 @@
       "low"
     ],
     "escalate_after_failures": 2
+  },
+  "preflight": {
+    "xcode_project": "ios/Plants.xcodeproj/project.pbxproj",
+    "swift_targets": {
+      "ios/Plants/": "Plants",
+      "ios/PlantsTests/": "PlantsTests",
+      "ios/PlantsUITests/": "PlantsUITests"
+    }
   }
 }
