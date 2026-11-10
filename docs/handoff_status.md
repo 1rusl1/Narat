@@ -1,9 +1,23 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-10.** T162 полностью принята в local/fixture scope и опубликована в main (`546880a`). CI-конфигурация принята отдельно: `45f7bec`, все 7 checks и независимые Review/QA PASS. Source fingerprint до/после совпал. T006 остаётся открытой до результата облачного CI. Выполнены 15 из 151 задач, открыты 136. CI опубликована обычным push в main (`8107152`); следующий шаг — наблюдение GitHub Actions при доступе к аккаунту.
+**Обновлено 2026-11-10.** Main5d15123 содержит принятые T162 и локальную CI-конфигурацию; cloudCI/T006 открыт. Получено разрешение B, согласован additive access wire. Между runs объединён только merge-ready bc6a879 (SQL005–010); новая интеграционная приёмка ещё впереди. SQL11/12 исключены.15/151done,136open.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## B разрешена владельцем; объединён только merge-ready SQL005–010
+
+10 ноября прямое сообщение владельца в B подтверждает Developer/Reviewer/QA с передачей кода настроенным провайдерам, commit/push только backend и техническую координацию с A. Предыдущая блокировка разрешением снята; отказы остаются историей. A прочитала разрешение и сообщила B **main5d15123e1271f93e7575433d4a09f7f04612e64a**. B продолжает независимый run07; A её HEAD/config не меняет.
+
+Между A runs объединён **bc6a879**, runtime **a367d0b**: SQL008 reserve141d548,009 finalize42ed071,010 bind a367d0b плюс тесты/gate/reports и отдельный B2 wire proposal. SQL005–007 уже были в main. **SQL11/12 и непроверенный tip4333509 не включены.** Единственный merge conflict — handoff: актуальные факты/15-of151/история A сохранены, B-specific historical sections добавлены с явной отметкой ниже. B ProjectState/старый TaskSummary не затёрли новый A статус. Backend business source A не редактирует.
+
+**Предыдущая приёмка B (не подмена интеграционной):** --bind clean/upgrade по384pgTAP,12UTC,retained rows,6раундов20реальных waiting connections с99 actual admit/finalize перед каждым; cap/legacy55+131pgTAP/4races,336Deno/typecheck/115automation PASS. [Отчёт B](validation/automation/parallel-backend-quota-sql-acceptance-2026-11-09.md). Эти результаты пока не подтверждают новый A fingerprint.
+
+**Wire compatibility:** A прочитала `monthly-access-http.md` и все7 synthetic cases. Additive контракт согласован ДЛЯ НОВОГО canonical transport DTO: обязательный owner_id/captured owner, один shared monthly, nullable unknown/status без выдуманных counts, camelCase mode keys, guest JWT+credential, opaque fractional timestamp strings. Existing `AnalysisAccessState` — локальный forecast с иной формой, не drop-in decoder; T036 потребует DTO/transport/conversion и fail-closed repository. collection-http неизменён. Endpoint/production API пока proposal; full T163/T036/live открыты.
+
+**Новый read-only integration packet:** `tasks.parallel-ios-b1-integration.json`, без Developer; actual PG17 --bind и portable CI SQL cap/legacy adapter,336Deno/frozen API+worker typecheck,123automation,184Swift/build/welcome,Simulator; независимые high-risk Review/QA на окончательном source. UI/Release source/gates неизменны, их18UI/42PNG/Release предыдущего T162 — отдельное evidence, новый run их не заявляет повторными. Собственный ignored config отличается от CI-acceptance только добавлением bind-check; routing/budgets/publish только codex/plants-ios сохранены.
+
+**Проверки подготовки PASS:** manifest VALID(1), полный Reviewer context просмотрен; отдельный ignored config SHA256 `37ce8523a661e1ad5ebcccc5e670c347c90fd5425a443647ea76a0d2cfa7b06d`, JSON-сравнение подтвердило единственную добавленную bind-check definition. **Точный следующий шаг:** diff/merge scope → commit/push merge+handoff+manifest → clean run `parallel-ios-b1-integration-20261110-01`. После полного PASS — source fingerprint/актуальный main/clean отдельный checkout и ordinary main promotion между runs; передать B новый SHA. Product checkbox не закрывать. Cloud CI/T006 требует доступа к GitHub; клиентская подготовка T036 доступна по согласованному proposal, production включение ждёт принятого B2 endpoint.
 
 ## CI опубликована в main; точка остановки — доступ к cloud evidence
 
@@ -995,8 +1009,105 @@ T148 остаётся на прежней остановке до запуска
 
 **Git:** основной коммит `905d71e` (`docs: apply approved MVP simplification and align delivery scope`) создан и успешно отправлен в `origin/main`, push exit 0. Staged whitespace check — PASS; 17 PNG и генератор распознаны Git как переносы 100%. Эта запись подтверждённой публикации сохраняется отдельным документационным коммитом.
 
+## История B из merge-ready bc6a879 (состояния на 9 ноября)
+
+Эти B-specific записи сохранены вручную. Исторические числа/следующие шаги не заменяют актуальный статус выше и Project State; SQL11/12 сюда не входят.
+
+## B — SQL005–010 принят; следующий B2 authoritative API
+
+**Принято и опубликовано:** reserve141d548, finalize42ed071, bind a367d0b.
+Run05 COMPLETED; finalize Developer/Reviewer/QA1/1/1, bind3/2/1. Reviewer нашёл
+преждевременное списание reserved+succeeded до nonbillable finalize: исправлено,
+только quota_state consumed подтверждает расход, до settlement указатель блокирует.
+113 binding regressions приняты. Истории timeout/rejected patch сохранены.
+
+**Реально выполненные проверки:** `python3 tools/automation/parallel_backend_quota_gate.py --bind`
+PASS clean/seeded-upgrade по384 pgTAP (55anchor+49ledger+78reserve+89finalize+113bind),
+12UTC cases, preexisting public rows byte-equal. Шесть раундов по20 настоящих
+PostgreSQL соединений, одновременно ожидающих owner lock; перед каждым99 actual
+admit+finalize на synthetic jobs, last-slot/replay/technical failure/exactly once PASS.
+Отдельный `--anchors --legacy-guard --cap-regression`: clean/upgrade55+131pgTAP,
+4 реальные T161 races PASS. Deno336, automation115, deno-check/diff-check PASS.
+Старый shared t161 --slots FAIL table-key equality из-за новых таблиц: не изменён
+и не выдан за PASS. [Подробный отчёт](validation/automation/parallel-backend-quota-sql-acceptance-2026-11-09.md).
+
+**Файлы завершённого среза:** новые009/010 SQL, registration_admission/bind pgTAP,
+controller gate/manifest, task reports. Сейчас добавлены B1 сводка и B2 proposal
+`contracts/monthly-access-http.md`, canonical expected fixtures/monthly-access.json,
+уточнён monthly-access.md. Это предложение нового API, не работающий endpoint.
+
+**Ограничения:** fixtures не live Auth/Supabase/Storage/provider/StoreKit. Swift/
+Simulator B не запускала; full T163/T036/guest transfer/T153 открыты, checkbox не
+менялись. Владелец подтвердил: неизвестную legacy дату блокировать до verified Auth
+import, не угадывать по покупке/созданию guest. Production job/worker пока injection-only,
+нельзя объявлять фиктивный202. Collection wire неизменён.
+
+**Точный следующий шаг:** отдельный bounded `tasks.parallel-backend-quota-api.json`:
+сначала credential register/bind RPC и authoritative SQL snapshot, затем реальные
+production HTTP adapters/ENPL/transport fixture gates; новый run ID и явный branch
+config, publish только origin/codex/plants-backend. B1 merge-ready a367d0b передаётся
+A только как SQL prerequisite, без deploy/полного T163. A сообщила repository save/
+resume193a704 (99Swift), это evidence A. Последняя согласованная main72bcccc уже
+подхвачена B; новые integration SHA — только между B runs. Подготовку/сводку сохранить
+обычным commit/push до запуска B2.
+
+
+## B — run03: guard принят; reserve-кандидат восстановлен, run04 следующий
+
+**Принято/опубликовано:** `a04794c` (guard007, 1 Developer/1 Reviewer/1 QA).
+Команда `python3 tools/automation/parallel_backend_quota_gate.py --anchors --legacy-guard --cap-regression`:
+clean/upgrade по55 anchor +131 T161 pgTAP,12UTC cases, четыре реальные owner-lock
+гонки, все preexisting public rows сохранены;336Deno/115automation/typecheck/diff
+PASS. Точный отчёт: `docs/validation/automation/tasks/parallel-backend-t163-legacy-state-guard.md`.
+Ограниченный accepted пакет005/006/007 разрешён A для интеграции, без deploy и
+без закрытия T163/T164/T036. Ранее найденный permanent legacy NULL-anchor flip закрыт.
+
+**Точка остановки run03:** reserve вернул патч только008+test, но fingerprint
+имел74 символа вместо ожидаемых64 (дублирование подстроки). Provider правильно
+отклонил ответ: WAITING/cli_error, settlement PENDING. Исходные answer/state/metrics
+не менялись и не выданы за принятие. Raw answer SHA256
+`de0ac185a94bff6a88cace5b273c460bed3089d11c625cb6852d3398d829a897`.
+Путь: ignored `docs/validation/automation/runs/orchestrator-parallel-backend-quota-sql-20261109-03/parallel-backend-t163-reserve/call-1-developer/answer.json`.
+
+**Восстановлен кандидат, ещё не принят независимо:** scope/git apply --numstat/
+--check подтвердили только `202611090008_quota_reservation.sql` и
+`registration_reservation.test.sql`. Контроллер исправил синтаксис PL/pgSQL BEGIN;
+и ошибочное ожидание теста B: его fixture уже содержит два расхода; теперь
+проверяется **admitted=true и remaining=0**, отказ не может дать ложный PASS.
+В controller gate добавлена печать failing TAP diagnostics до удаления temp DB.
+Другие функции/миграции005–007 не переписывались.
+
+Реальный `python3 tools/automation/parallel_backend_quota_gate.py --reserve`:
+**PASS** clean/upgrade по78 reserve +55 anchor +49 ledger pgTAP,12UTC cases,
+четыре раунда по20 одновременно наблюдаемым PostgreSQL соединениям (distinct/same
+job), один reserve и replay без нового ledger. Лог `/tmp/narat-b163-reserve-recovery-v4.log`.
+Это reserve-only с99 историческими consumed fixtures, **не settlement и не полная
+T163**. До исправлений честные FAIL сохранены в `/tmp/narat-b163-reserve-recovery{,-v2,-v3}.log`.
+Deno для008 ещё впереди в независимом run04; предыдущие результаты не подменяют его.
+
+**Интеграция между runs:** после завершения run03 выполнен обычный FF merge
+`72bcccc` из опубликованной A main; untracked reserve-кандидаты сохранены.
+A проверила итоговый `947d602`/docs72bcccc:55Swift/0skip/build/welcome/Simulator,
+336Deno/typecheck,115automation и clean/upgrade55+49+131pgTAP/12UTC/4races,
+fingerprint63025c67bcf86dec2b30d6a4da4b53192aa0313a00bc1c698ad80b3a972a4ae8 стабилен.
+Это evidence A; B Swift/Simulator не запускала и Swift вручную не редактировала.
+UI/Auth wiring/durable ACK/repository/save и полныеT162/T163/T164/T036/live открыты.
+
+**Следующий шаг:** candidate checkpoint commit/push, затем новый
+`parallel-backend-quota-sql-20261109-04` с
+`tools/automation/tasks.parallel-backend-quota-reserve-recovery.json` (2tasks):
+независимые Developer/Reviewer/QA для конкретного008 →settlement009. Validate2,
+developer context и diff-check PASS; новый config не нужен, прежний branch config
+SHA256 `59ed00ee3315c8db379677e7aa0ef1558cc7b9be590b64f626d9cf3f043e31ff`, publish
+только origin/codex/plants-backend. Run03 не resume; исходный malformed ответ не
+исправлять. После009 — полный99actual admit/finalize +6x20 gate и отдельный B2 API.
+Auth/Supabase/Storage/provider/StoreKit live не запускались; продовые job/worker
+adapters пока не подключены. Продуктовые checkbox B не закрывала.
+
 <!-- orchestrator:project-state -->
 ## Project State
+
+- B authorization10November confirmed directly; accepted bc6a879/runtimea367d0b SQL005–010 объединён для нового bounded A integration; SQL11/12/tip4333509 excluded. Wire proposal согласован для нового canonical DTO; T036/productionAPI/live open. B permission block снят, отказы — история.
 
 - Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN/PL; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.

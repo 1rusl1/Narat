@@ -1,0 +1,67 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-b1-integration",
+      "description": "Read-only acceptance of bounded merge bc6a879/runtimea367d0b SQL005–010 into accepted iOS/CI main5d15123. Verify the combined source, preserved legacy rows/quota races/cap and existing client build/persistence before ordinary main promotion. No product parent closure or live/deploy claim.",
+      "risk": "high",
+      "complexity": "high",
+      "depends_on": [],
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json",
+        "specs/001-plants-ios-mvp/contracts/monthly-access-http.md",
+        "specs/001-plants-ios-mvp/contracts/monthly-access.md",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/migrations/202611090009_quota_settlement.sql",
+        "supabase/migrations/202611090010_installation_quota_bind.sql",
+        "supabase/tests/registration_admission.test.sql",
+        "supabase/tests/registration_bind.test.sql",
+        "supabase/tests/registration_reservation.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.parallel-backend-quota-reserve-recovery.json",
+        "tools/automation/tasks.parallel-backend-quota-settle-bind.json",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "tools/automation/parallel_ios_ci_sql_gate.py",
+        "tools/automation/parallel_ios_sync_gate.py"
+      ],
+      "write_files": [],
+      "constraints": [
+        "READ ONLY, no Developer. Do not modify source, manifests/config/gates/handoff/tasks/Git. Controller alone merged the explicitly accepted B SHA bc6a879. Candidate SQL11/12 at Btip4333509 are excluded; do not read or use them to satisfy this packet. Both controller lanes use own branches, no direct lane publication to main. Independent Reviewer/QA assess full combined source within this integration scope.",
+        "B accepted SQL005–010: immutable registration/legacyfailclosed/shared ledger/reserve141d548/finalize42ed071/binda367d0b. SQL005–007 were already in main. Current merge adds ONLY008–010 and tests/gate/docs proposal; no server TS, iOS runtime, collection-http or orchestration engine change. Preserve exact SQL business bytes from B and actual owner-lock concurrency, not parallel fake mocks or hand-counted fixtures. Do not close T163/T036/expiry/live parents.",
+        "Actual privatePG17 --bind must pass clean/seeded-upgrade384pgTAP each,12UTC/leap/TZ cases each, preexisting public rows byte-equal; six rounds20 separate observed connections waiting on held ownerlock with99 actual admit/finalize calls before each round. Verify lastslot/replay/distinct/samejob/nonbillable exactlyonce and pointer rules from saved raw logs and tests. Keep original failed/timedout B history and no-skips assertions. No live database/reset/deploy.",
+        "Actual portable CI SQL adapter --accounting --legacy-guard --cap-regression must still pass on combined code, proving new gate remains compatible: clean/upgrade235pgTAP each,12UTC each,4real ownerlock cap retry/distinctcreate races and retained rows. Adapter delegates unchanged assertions; do not invoke stale shared t161 --slots strict tablekey gate or misreport its known historical FAIL.",
+        "Run actual336Deno and frozen typecheck only the two existing API/worker entrypoints; deno.json check has two missing paths known to B and is not invoked. Run123automation. Existing iOS/gates unchanged from accepted T162184unit/18UI42PNG/Release/Simulator: integration requires fresh all-source184unit/build/welcome and Simulator, no skips/expectedfailures. Source-method gate must execute every method, not rely on file/target presence. Do not claim18UI or Release reran in this packet; their previous source evidence is separate. A exclusively owns Simulator32009F39-32EF-426B-A91E-31B368D6C27E; B never uses it.",
+        "Wire proposal monthly-access-http.md and7canonical fixture cases is additive and A-approved for a NEW transport DTO, not current AnalysisAccessState direct decode. Required owner_id/capturedowner, one shared monthly nullable unknown/status, mode camelCase, guestJWT+credential, preserve opaque fractional timestamp strings; collection-http unchanged. Production API/snapshot/register/bind HTTP and clientT036 are NOT made operational by this B1 SQL merge. Existing local forecast/starter defaults cannot count as authoritative quota. New endpoint implementation awaits accepted B2; no fictitious202/providerresult. Unknown legacy permanent registration monthlyfailclosed until verifiedAuthimport is owner-approved.",
+        "Handoff conflict resolved manually preserving current A15/151 state and archived B-specific sections; old B14/151 and old TaskSummary must not overwrite actual A acceptance. Read relevant source/spec and saved checks, not entire historic handoff by default. Direct human authorization in B10Nov lifted model/push/coordination block; technical interchat report sent with latest main5d15123. No account/plugin changes, no cloudCI/live/provider/StoreKit claims.",
+        "Accepted iOS source/gates and CI workflow remain unchanged. Full184unit18UI42PNG/Release were verified before merge; only affected SQL/Deno/clientunit/Simulator gates repeated now. New config differs from previous CIacceptance only by one added --bind check definition with timeout600; routing/budgets900s/target origin/codex/plants-ios unchanged. Local fixtures are not live proof. After complete verification controller compares source fingerprints and promotes ordinarily from separate clean checkout between runs."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Combined code preserves current iOS source and all184actual unit/build/welcome/persistence/owner assertions, Simulator smoke and frozenAPI/worker typecheck, no skips or expected failures. No proposal endpoint treated operational.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke",
+            "parallel-ios-ci-typecheck"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Real privatePG17 --bind clean/upgrade384pgTAP/6x20 observed connections with99actualspend and oldrows, portableCI235pgTAP/cap4races and existing336Deno/123automation pass on combined source. Independent scoped Review/QA no unresolved regressions.",
+          "checks": [
+            "parallel-ios-integration-bind",
+            "parallel-ios-ci-sql",
+            "deno-tests",
+            "automation-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

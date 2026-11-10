@@ -17,6 +17,7 @@ FIRST = '202611090005_registration_quotas.sql'
 LEDGER = '202611090006_registration_ledger.sql'
 RESERVE = '202611090008_quota_reservation.sql'
 SECOND = '202611090009_quota_settlement.sql'
+BIND = '202611090010_installation_quota_bind.sql'
 CAP_OWNER = '15800000-0000-4000-8000-000000000001'
 A = '16300000-0000-4000-8000-000000000001'
 B = '16300000-0000-4000-8000-000000000002'
@@ -35,6 +36,7 @@ def main():
     parser.add_argument('--legacy-guard', action='store_true')
     parser.add_argument('--cap-regression', action='store_true')
     parser.add_argument('--reserve', action='store_true')
+    parser.add_argument('--bind', action='store_true')
     parser.add_argument('--accounting', action='store_true')
     parser.add_argument('--baseline', action='store_true', help='Negative control; expected product rejection is NOT acceptance')
     args = parser.parse_args()
@@ -70,7 +72,12 @@ def main():
         assert not re.search(r'#\s*(?:SKIP|TODO)\b', result, re.I), 'No skip/TODO'
         path_out = work / (db + path.stem + '.tap')
         path_out.write_text(result + '\n')
-        command(['prove', '--exec', 'cat', str(path_out)])
+        try:
+            command(['prove', '--exec', 'cat', str(path_out)])
+        except RuntimeError as error:
+            diagnostics = '\n'.join(line for line in result.splitlines()
+                                    if line.startswith(('not ok', '#')))
+            raise RuntimeError(str(error) + '\nTAP diagnostics:\n' + diagnostics[-5000:]) from error
         print(f'PASS {db}: {path.name}, {len(assertions)} pgTAP assertions', flush=True)
 
     def snapshot(db):
@@ -259,7 +266,9 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
             if args.reserve:
                 assert any(m.name == RESERVE for m in selected), 'Reservation migration required'
             elif not args.accounting and not args.anchors:
-                assert any(m.name == SECOND for m in selected), 'Admission migration required'
+                assert any(m.name == SECOND for m in selected), 'Settlement migration required'
+            if args.bind:
+                assert any(m.name == BIND for m in selected), 'Binding migration required'
         for case in ('clean','upgrade'):
             sql('postgres', f'CREATE DATABASE {case};')
             sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean);")
@@ -304,7 +313,11 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
             if not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
             if not args.accounting and not args.anchors:
-                tap(case, ROOT/('supabase/tests/registration_reservation.test.sql' if args.reserve else 'supabase/tests/registration_admission.test.sql'))
+                tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
+                if not args.reserve:
+                    tap(case, ROOT/'supabase/tests/registration_admission.test.sql')
+                if args.bind:
+                    tap(case, ROOT/'supabase/tests/registration_bind.test.sql')
                 concurrency(case, same=False)
                 concurrency(case, same=True)
                 if not args.reserve:
