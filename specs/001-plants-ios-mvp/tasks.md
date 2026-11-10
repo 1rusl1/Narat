@@ -26,7 +26,7 @@
 
 - [ ] T005 Проверить новый classification contract и Apple SignedDataVerifier в точном Edge Runtime: `runtime_compatibility_test.ts`. Режимы identification/diagnosis, без AI-follow_up/вопросов/генерации советов; live provider отдельно. Зависимость: T157. Покрытие: FR-050, FR-054.
 
-- [ ] T006 Настроить CI-проверки Deno/SQL и сборку/тесты PL/EN в `.github/workflows/validate.yml` на базе фикстур (без вызова платного API на каждый PR).
+- [ ] T006 **Подготовка:** controller-owned portable PG17 adapter/read-only Simulator selector, YAML/Bash compiler и workflow-only manifest готовы к локальному run; сам workflow и cloud execution ещё не приняты. T162/base `546880a` уже полностью проверены. Настроить CI-проверки Deno/SQL и сборку/тесты PL/EN в `.github/workflows/validate.yml` на базе фикстур (без вызова платного API на каждый PR). Не закрывать до фактического cloud CI результата.
 
 - [ ] T007 Пересмотреть профили и идемпотентные квитанции в `supabase/migrations/`: дата регистрации постоянного аккаунта задаёт общий quota anchor. Удалить зависимость месячного доступа от первого starter и поля выбора тройки из активного контракта. Подготовить upgrade без потери расхода/истории; старые применённые миграции не переписывать. **Переоткрыта: требования изменены; новый объём ещё не проверен.** Покрытие: FR-005, FR-010, FR-024, FR-025, FR-035, FR-039, FR-065.
 
