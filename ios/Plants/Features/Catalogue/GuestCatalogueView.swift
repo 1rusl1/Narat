@@ -357,7 +357,7 @@ final class CatalogueConnection {
         let previous = resumeDefaults.string(forKey: key)
         let pointer = checkpoint.flowId.uuidString
         try validate(model, expected: expected)
-        // UserDefaults KVO is synchronous: publication and rollback must hold neither lock.
+        // UserDefaults notifications are synchronous: publication and rollback must hold neither lock.
         resumeDefaults.set(pointer, forKey: key)
         do {
             try validate(model, expected: expected)

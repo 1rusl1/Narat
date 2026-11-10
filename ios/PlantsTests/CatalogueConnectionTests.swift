@@ -28,21 +28,25 @@ private final class ConnectionIdentityProvider: NativeIdentityProviding {
     }
 }
 
-/// These callbacks run synchronously inside a MainActor UserDefaults write.
+/// Observe literal dotted owner-key writes synchronously on their MainActor caller.
 @MainActor
-private final class ConnectionDefaultsObserver: NSObject {
-    private let onChange: @MainActor () -> Void
+private final class ConnectionDefaultsObserver {
+    private var token: (any NSObjectProtocol)?
 
-    init(_ onChange: @escaping @MainActor () -> Void) {
-        self.onChange = onChange
-        super.init()
+    init(defaults: UserDefaults, onChange: @escaping @MainActor () throws -> Void) {
+        token = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: defaults, queue: nil
+        ) { _ in
+            MainActor.assumeIsolated {
+                do { try onChange() }
+                catch { XCTFail("Defaults notification callback failed: \(error)") }
+            }
+        }
     }
 
-    nonisolated override func observeValue(
-        forKeyPath keyPath: String?, of object: Any?,
-        change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?
-    ) {
-        MainActor.assumeIsolated { onChange() }
+    func stop() {
+        if let token { NotificationCenter.default.removeObserver(token) }
+        token = nil
     }
 }
 
@@ -165,9 +169,9 @@ private extension PlantsAPIClient {
 }
 
 private extension LocalStore {
-    func holdCheckpointTest(started: DispatchSemaphore, release: DispatchSemaphore) {
+    func holdCheckpointTest(started: DispatchSemaphore, release: DispatchSemaphore) -> Bool {
         started.signal()
-        _ = release.wait(timeout: .now() + 5)
+        return release.wait(timeout: .now() + 5) == .success
     }
 }
 
@@ -191,7 +195,7 @@ final class CatalogueConnectionTests: XCTestCase {
         let defaultsSuite = "catalogue-native-tests." + UUID().uuidString
         let defaults: UserDefaults
 
-        static func container(_ url: URL, allowsSave: Bool = true) throws -> ModelContainer {
+        nonisolated static func container(_ url: URL, allowsSave: Bool = true) throws -> ModelContainer {
             let schema = Schema([
                 LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
                 CatalogueInputCheckpointRecord.self, GuestDraftCacheRecord.self,
@@ -386,10 +390,21 @@ final class CatalogueConnectionTests: XCTestCase {
         NSDictionary(dictionary: h.defaults.persistentDomain(forName: h.defaultsSuite) ?? [:])
     }
 
-    private func backgroundConnection(_ h: Harness) async -> CatalogueConnection {
-        // A ModelActor created on MainActor may use the main queue. Hold only a worker store.
-        let container = h.store.modelContainer
-        let store = await Task.detached { LocalStore(modelContainer: container) }.value
+    private func backgroundConnection(_ h: Harness) async throws -> CatalogueConnection {
+        // Create both the container and its actor off the main queue; sharing the
+        // MainActor container can block the caller until the checkpoint gate expires.
+        let diskURL = h.directory.appendingPathComponent("connection.sqlite")
+        let store = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<LocalStore, any Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let container = try Harness.container(diskURL)
+                    continuation.resume(returning: LocalStore(modelContainer: container))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
         return CatalogueConnection(
             client: h.client, configuration: h.configuration, store: store,
             transport: URLSessionAPITransport(session: h.http), identityProvider: h.identity,
@@ -408,7 +423,7 @@ final class CatalogueConnectionTests: XCTestCase {
         )
     }
 
-    func testRememberDefaultsKVOReentersConnectionAndOriginalModelAfterDiskCommit() async throws {
+    func testRememberDefaultsNotificationReentersConnectionAndOriginalModelAfterDiskCommit() async throws {
         let h = try Harness()
         defer { h.close() }
         let flow = UUID(), operation = UUID(), foreignFlow = UUID()
@@ -419,11 +434,12 @@ final class CatalogueConnectionTests: XCTestCase {
         let requests = h.fixture.captured.count
         var callbacks = 0
         var returned = false
-        let observer = ConnectionDefaultsObserver {
+        let observer = ConnectionDefaultsObserver(defaults: h.defaults) {
             callbacks += 1
             XCTAssertFalse(returned)
             XCTAssertTrue(Thread.isMainThread)
             XCTAssertEqual(h.connection.snapshot, expected)
+            XCTAssertEqual(h.defaults.string(forKey: key), flow.uuidString)
             XCTAssertEqual(try h.connection.resumableFlow(expected: expected), flow)
             XCTAssertEqual(model.state, .ready)
             XCTAssertEqual(model.input, self.input)
@@ -431,8 +447,7 @@ final class CatalogueConnectionTests: XCTestCase {
             XCTAssertEqual(model.checkpoint?.flowId, flow)
             XCTAssertEqual(try self.diskInput(h, owner: self.owner, flow: flow), model.checkpoint)
         }
-        h.defaults.addObserver(observer, forKeyPath: key, options: .new, context: nil)
-        defer { h.defaults.removeObserver(observer, forKeyPath: key) }
+        defer { observer.stop() }
         let checkpoint = try await h.connection.rememberModel(model, expected: expected)
         returned = true
         XCTAssertGreaterThan(callbacks, 0)
@@ -447,7 +462,7 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
-    func testRememberDefaultsKVORevokesOriginalLeaseAndConditionallyRollsBackOnlyOwnPointer() async throws {
+    func testRememberDefaultsNotificationRevokesOriginalLeaseAndConditionallyRollsBackOnlyOwnPointer() async throws {
         // Exercise absent/previous pointers, a newer callback publication, and model cancellation.
         for mode in 0..<4 {
             let h = try Harness()
@@ -476,7 +491,7 @@ final class CatalogueConnectionTests: XCTestCase {
             var handled = false
             var callbacks = 0
             var returned = false
-            let observer = ConnectionDefaultsObserver {
+            let observer = ConnectionDefaultsObserver(defaults: h.defaults) {
                 callbacks += 1
                 XCTAssertFalse(returned)
                 XCTAssertTrue(Thread.isMainThread)
@@ -499,8 +514,7 @@ final class CatalogueConnectionTests: XCTestCase {
                 XCTAssertEqual(h.connection.snapshot, expected)
                 XCTAssertNoThrow(try h.connection.resumableFlow(expected: expected))
             }
-            h.defaults.addObserver(observer, forKeyPath: key, options: .new, context: nil)
-            defer { h.defaults.removeObserver(observer, forKeyPath: key) }
+            defer { observer.stop() }
             do {
                 try await h.connection.rememberModel(model, expected: expected)
                 XCTFail("Synchronous preference callbacks revoked the original intent")
@@ -529,7 +543,7 @@ final class CatalogueConnectionTests: XCTestCase {
         }
     }
 
-    func testForgetDefaultsKVOSynchronouslyReentersSourceAndPreservesOtherOrNewerPointers() async throws {
+    func testForgetDefaultsNotificationSynchronouslyReentersSourceAndPreservesOtherOrNewerPointers() async throws {
         for publishNewer in [false, true] {
             let h = try Harness()
             defer { h.close() }
@@ -543,7 +557,7 @@ final class CatalogueConnectionTests: XCTestCase {
             var handled = false
             var callbacks = 0
             var returned = false
-            let observer = ConnectionDefaultsObserver {
+            let observer = ConnectionDefaultsObserver(defaults: h.defaults) {
                 callbacks += 1
                 XCTAssertFalse(returned)
                 XCTAssertTrue(Thread.isMainThread)
@@ -556,8 +570,7 @@ final class CatalogueConnectionTests: XCTestCase {
                 XCTAssertEqual(model.checkpoint, checkpoint)
                 if publishNewer { h.defaults.set(newer.uuidString, forKey: key) }
             }
-            h.defaults.addObserver(observer, forKeyPath: key, options: .new, context: nil)
-            defer { h.defaults.removeObserver(observer, forKeyPath: key) }
+            defer { observer.stop() }
             XCTAssertFalse(try h.connection.forgetResumableFlow(
                 ownerId: owner, expectedFlowId: UUID(), expected: expected
             ))
@@ -586,7 +599,7 @@ final class CatalogueConnectionTests: XCTestCase {
         await h.ready()
         try auth(h, owner: owner, anonymous: true)
         try await h.signIn()
-        let source = await backgroundConnection(h)
+        let source = try await backgroundConnection(h)
         let expected = try await source.sessionSnapshot()
         let model = try await source.makeModel(
             input: input, flowId: flow, operationId: operation, expected: expected
@@ -606,7 +619,8 @@ final class CatalogueConnectionTests: XCTestCase {
         XCTAssertNil(try source.resumableFlow(expected: expected))
         XCTAssertNil(try diskInput(h, owner: owner, flow: flow))
         release.signal()
-        await hold.value
+        let released = await hold.value
+        XCTAssertTrue(released, "Checkpoint gate must not expire before explicit release")
         let task = try XCTUnwrap(remembering)
         let checkpoint = try await task.value
         XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
@@ -788,7 +802,7 @@ final class CatalogueConnectionTests: XCTestCase {
             await h.ready()
             try auth(h, owner: owner, anonymous: true)
             try await h.signIn()
-            let source = await backgroundConnection(h)
+            let source = try await backgroundConnection(h)
             let expected = try await source.sessionSnapshot()
             let model = try await source.makeModel(
                 input: input, flowId: UUID(), operationId: UUID(), expected: expected
@@ -826,7 +840,8 @@ final class CatalogueConnectionTests: XCTestCase {
             }
             XCTAssertEqual(metadata(h), before)
             release.signal()
-            await hold.value
+            let released = await hold.value
+            XCTAssertTrue(released, "Checkpoint gate must not expire before explicit release")
             do { _ = try await task.value; XCTFail("Revoked intent must not publish metadata: \(mode)") }
             catch {}
             XCTAssertEqual(metadata(h), before)
