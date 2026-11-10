@@ -1,9 +1,17 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-10.** T162 полностью принята в local/fixture scope и опубликована в main (`546880a`). CI-конфигурация принята отдельно: `45f7bec`, все 7 checks и независимые Review/QA PASS. Source fingerprint до/после совпал. T006 остаётся открытой до результата облачного CI. Выполнены 15 из 151 задач, открыты 136. Следующий шаг — ordinary main promotion CI из отдельного чистого checkout и наблюдение GitHub Actions при доступе к аккаунту.
+**Обновлено 2026-11-10.** T162 полностью принята в local/fixture scope и опубликована в main (`546880a`). CI-конфигурация принята отдельно: `45f7bec`, все 7 checks и независимые Review/QA PASS. Source fingerprint до/после совпал. T006 остаётся открытой до результата облачного CI. Выполнены 15 из 151 задач, открыты 136. CI опубликована обычным push в main (`8107152`); следующий шаг — наблюдение GitHub Actions при доступе к аккаунту.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## CI опубликована в main; точка остановки — доступ к cloud evidence
+
+Обычный fast-forward push из чистого `/private/tmp/narat-ios-integration-20261109-01`: **546880a → 8107152ac5dfcdb99538bae9040a2ee679eb7d96**, exit0. Remote refs main/iOS сверены после push. Принятая конфигурация45f7bec и handoff/tasks8107152 включены. Source fingerprint отдельного checkout **ebb221d176af636d42fd36846b3900c1f77c4b051c2695d90637c39ebb6038fb /1509 files** совпал с local acceptance до/после; clean status/diff-check/ancestor check PASS. Diff относительно прежнего main ограничен workflow, двумя CI helpers/manifests и документацией. Нового iOS runtime/backend/KB/contracts diff нет; исходный пользовательский checkout и B worktree не изменялись. Текущая confirmation меняет только handoff, source SHA сохраняется; она также сохраняется commit/push без force.
+
+**Фактическая точка остановки:** local CI configuration завершена, T006/cloud execution незавершена. Main push соответствует trigger, но remote run/status/logs не наблюдались — не утверждать, что GitHub Actions запустился или прошёл. GitHub plugin available, installed=false; предложение уже показано один раз. Авторизованного browser session нет, gh отсутствует. Других облачных/live результатов нет. Установка/подключение плагина и разрешения аккаунта автоматически не менялись.
+
+**Точный следующий шаг:** после подключения GitHub или входа в браузере найти workflow Validate Narat MVP (CI) для окончательного main SHA, дождаться всех4jobs (automation,Deno,SQL,iOS), проверить raw logs/ENPL PNG/исходные покрытия184unit и18UI/Release и privatePG17 clean/upgrade/races. Исправить cloud-only ошибки отдельным проверяемым этапом; только затем решить T006 checkbox. До этого15done/136open, parents/live открыты. Backend-зависимые задачи A ждут принятого B-контракта. В B автоматическая проверка разрешений отклонила новые CLI/model/push и межчатовую передачу из-за неподтверждённой авторизации; ожидающие запросы находятся в B, обхода через A нет.
 
 ## T006: локальная CI-конфигурация принята, cloud CI ещё не проверен
 
