@@ -1,6 +1,38 @@
 # Narat — текущий статус и передача работы
 
 
+## B — единственный GET pilot COMPLETED; снова ОСТАНОВЛЕНО
+
+Ровно один run `parallel-backend-access-http-pilot-20261110-01` COMPLETED/done/exit0,
+принят и опубликован **88a8ea8** в origin/codex/plants-backend. ProductionGET
+snapshot read-only acceptance: Developer0, Reviewer1PASS93.515с, QA1PASS74.125с,
+обаCodex/gpt-6-astra/high/full/fresh, retry/repair/re-review/fallback/timeout0.
+Исходники GET не менялись. Старый run08 WAITING/interrupted сохранён, не resume.
+После terminal process inventory B controller/model0. **Новых runs/пакетов/repair/
+интеграций/main promotion/CI не запускать до отдельной новой команды владельца.**
+
+**UTC10ноября2026:** receipt20:00:29; config/gatespreflight20:04:39;
+prep publish20:05:51.843; runstart20:05:51.859; runendпослеpublication20:10:01.582.
+Prep250с доpreflight/322.843с включаяprep commit/push; runtime249.722с,
+models167.640с/checks74.120с/other7.962с. Все7checksPASS:147automation,336Deno,
+39HTTP,511pgTAP clean/upgrade+12UTC+99actual+6x20,cap55+131/4races,typecheck/diff.
+Этоlocal/mock/privatePG, неdeploy/live/Swift/Simulator; fullT163/T036 остаютсяopen.
+
+Файлы пилота: обычный approvedengine merge25a5830/cf5a6b1→2d1b374, новый1task
+readonlymanifest, prep docs, auto taskreport, итоговыеreportJSON/Markdown/handoff.
+Контроллер не менял GET/fixtures/tests или criteria/risk. ConfigSHA0a7d0752cfa4a36d65c8cf0c7df630cb641adfdeabfb272bdf33e1bde608d632;
+enginefingerprint3e69b5df091a1786e5765c85f75584be817d1bacdb5a47ee44d519d8623a1bd1.
+Сохранены собственныеchecks/providers/budgets/backendpublish; толькоcontext/preflightперенесены.
+
+[Полный отчёт, всеcalls/checks/sessions/UTC иbaseline](validation/automation/parallel-backend-access-http-pilot-2026-11-10.md).
+Old08Developer68.111с исключён, но Reviewer93.515с против77.672с; oldQA прервана28.559с
+поprocess.json. Старыйполныйruntime неизвестен, qualitycontracts разные, automation123→147.
+**Причинноеускорение не доказано**, токены/процентквоты не суммировались.
+Итоговый report/handoff сохраняются отдельным docs-only checkpoint своей ветки;
+A/parent передаётся результат. **Точный следующий шаг — ждать оценки пилота и
+новой явной команды**, без автоматического продолжения. InstallationHTTP/worker/alias/CI/T006 и
+полнаяинтеграция внеэтого запуска; checkbox B не закрывала.
+
 ## B GET pilot — validate/context/preflight PASS, единственный запуск следующий
 
 Подготовка и перенос начались по зафиксированному получению **20:00:29UTC**;
@@ -1463,7 +1495,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- B CURRENT: exactly one authorized read-only fullsnapshot GETaccess pilot parallel-backend-access-http-pilot-20261110-01; noDeveloper/noimplementation, riskhigh/splitAstra, oldrun08notresume. Stop after COMPLETED/WAITING/BLOCKED/timeout. CI/T006/installationHTTP/worker/alias/mainpromotion deferred. Engine25a5830 merged2d1b374; configcontext/preflight updated only, checks/providers/budgets/backendpublish preserved.
+- B CURRENT STOPPED AFTER ONE PILOT: GETaccess read-only fullsnapshot pilot COMPLETED/published88a8ea8; Dev0/Review1/QA1, runtime249.722s/model167.640/check74.120, retry/timeout0. All39HTTP/336Deno/147auto/511SQL/cap/typechecks PASS. SourceGETunchanged; causal speedup unproven vs interrupted08/differentqualitycontract. Await explicit owner decision; NO next runs/repair/integration/mainpromotion/CI/installationHTTP/worker/alias. Engine25a5830 merged2d1b374, config0a7d0752 unchanged sincepilotstart.
 
 - Historical stop before newly authorized one-task pilot: run08 WAITING/qa, controller26958 and QA36251 SIGINT, exit130, verified process groups empty. GET candidatea151427 not accepted; accepted SQL/wire6d689b7. Config SHA4a7d6fef unchanged. No automatic resume/new runs/repair/ReviewQA/integration/config changes until explicit owner decision. T006/cloud work deferred.
 
