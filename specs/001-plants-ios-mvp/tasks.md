@@ -26,7 +26,7 @@
 
 - [ ] T005 Проверить новый classification contract и Apple SignedDataVerifier в точном Edge Runtime: `runtime_compatibility_test.ts`. Режимы identification/diagnosis, без AI-follow_up/вопросов/генерации советов; live provider отдельно. Зависимость: T157. Покрытие: FR-050, FR-054.
 
-- [ ] T006 **Частично:** workflow candidate и portable PG17/Simulator helpers подготовлены; первый local run BLOCKED из-за controller summary-protocol в env-output argv (selector exit0). Новый read-only acceptance с исправленным только аргументом, без изменения gates; конфигурация пока не принята. Настроить CI Deno/SQL/unit/EN-PL UI/Release в `.github/workflows/validate.yml` на фикстурах. T162/base `546880a` проверена; не закрывать до фактического cloud CI результата.
+- [ ] T006 **Локальная конфигурация принята:** `45f7bec`, [CI acceptance](../../docs/validation/automation/tasks/parallel-ios-fixture-ci-acceptance.md): YAML/Bash, frozen API/worker typecheck,123 automation,336 Deno,privatePG17 clean/upgrade/real races,read-only Simulator,Review/QA PASS. Workflow запускает реальные unit/EN-PL UI/Release gates, без платного API. Cloud execution/runner ещё не проверены: не закрывать до фактического GitHub Actions результата. iOS source T162 неизменен,184unit/18UI ранее приняты отдельно.
 
 - [ ] T007 Пересмотреть профили и идемпотентные квитанции в `supabase/migrations/`: дата регистрации постоянного аккаунта задаёт общий quota anchor. Удалить зависимость месячного доступа от первого starter и поля выбора тройки из активного контракта. Подготовить upgrade без потери расхода/истории; старые применённые миграции не переписывать. **Переоткрыта: требования изменены; новый объём ещё не проверен.** Покрытие: FR-005, FR-010, FR-024, FR-025, FR-035, FR-039, FR-065.
 

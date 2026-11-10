@@ -1,9 +1,26 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-10.** T162 принята полностью в предусмотренном local/fixture scope: final acceptance `532984c`, ACK/pointer repair `91349a1`. Проверенный интеграционный commit **277d97f** успешно опубликован в origin/main и origin/codex/plants-ios.184 unit,18 UI/42PNG,123 automation,336 Deno,SQL clean/upgrade/real races,Release/Simulator/Review/QA PASS; sourceSHAвобоихcheckoutсовпал.15из151задачвыполнены,136открыты. Далее — независимая T006 CI; live и backend-зависимые parents открыты.
+**Обновлено 2026-11-10.** T162 полностью принята в local/fixture scope и опубликована в main (`546880a`). CI-конфигурация принята отдельно: `45f7bec`, все 7 checks и независимые Review/QA PASS. Source fingerprint до/после совпал. T006 остаётся открытой до результата облачного CI. Выполнены 15 из 151 задач, открыты 136. Следующий шаг — ordinary main promotion CI из отдельного чистого checkout и наблюдение GitHub Actions при доступе к аккаунту.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## T006: локальная CI-конфигурация принята, cloud CI ещё не проверен
+
+Read-only run `parallel-ios-fixture-ci-acceptance-20261110-01` — **COMPLETED / Verified and published**, commit **45f7bec7378b25e250a3365e1976680ba5141ce1** в origin/codex/plants-ios. Без Developer; 1 независимый Reviewer и 1 QA — PASS, unresolved findings нет. [Отчёт](validation/automation/tasks/parallel-ios-fixture-ci-acceptance.md). Source SHA256 до/после **ebb221d176af636d42fd36846b3900c1f77c4b051c2695d90637c39ebb6038fb**,1509 tracked files; engine fingerprint `69d39f3c0932adce756e00c941074fa304eec423bb8e1c5296bcfb2d0b4c8fe3`.
+
+**Реально выполнено — все PASS:**
+- YAML mapping + синтаксис всех 9 Bash bodies, diff-check.
+- Frozen typecheck двух существующих entrypoints API/worker.
+- Read-only выбор настоящего iPhone17Pro: SDK26.2/runtime26.3, `created=false`, exit0.
+- **123 automation**,38.541s, OK; **336 Deno**,0 failed.
+- Portable adapter → прежний private PG17 suite: clean/upgrade по **235 pgTAP**, по12 UTC/leap/timezone cases,4 реальные owner-lock retry/distinct-create гонки,1 plant/receipt, прежние public rows byte-equal. Raw logs — check7 в run; бизнес SQL/assertions не менялись.
+
+**Изменённые файлы CI-этапа:** `.github/workflows/validate.yml`, два controller-owned `tools/automation/parallel_ios_ci_{sql_gate,simulator}.py`, два явных CI manifests; текущие handoff/tasks фиксируют результат. Workflow вызывает действительные automation/Deno/SQL и последовательно iOS unit/welcome,18 EN/PL UI,Release через принятые gates; action commits/Deno/Xcode закреплены, один динамически выбранный Simulator, ограниченные logs/JSON/PNG при success/failure. Приложение, iOS gates, backend SQL/TS/KB/contracts не менялись. **184 unit/18UI/42PNG/Release/Simulator** ранее приняты на точном неизменном iOS source в финальном T162 run; этот config-only run их повторно не запускал и не выдаёт за cloud evidence.
+
+**Ограничения:** принята только локальная конфигурация и fixtures. Облачный runner, установка зависимостей и ветка создания CI-device ещё не наблюдались. GitHub plugin повторно подтверждён installed=false; browserloggedout/gh отсутствует. Старый BLOCKED run сохранён; новое config исправляет только summary-protocol аргумент, не ослабляет assertions. B-owned `deno.json check` содержит два отсутствующих index paths; workflow явно проверяет только реальные API/worker, исправление alias остаётся B. Живые Auth/providers/Storage/AI/StoreKit и зависимые родители открыты. T006 [ ],15/151; B approvals не обходятся.
+
+**Точный следующий шаг:** сохранить handoff/tasks и отправить A → сверить origin/main ancestor и чистый отдельный checkout → ordinary main promotion с тем же source fingerprint → подтвердить remote refs. Затем наблюдать actual GitHub Actions и исправить возможные cloud failures; T006 закрывать только по реальному результату. Для наблюдения требуется установленный и подключённый GitHub plugin или вход в браузере. До этого cloud acceptance остаётся незавершённой.
 
 ## T006: workflow candidate сохранён; исправлен интерфейс локального check
 
