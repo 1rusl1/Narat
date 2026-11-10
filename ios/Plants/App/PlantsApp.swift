@@ -85,16 +85,19 @@ struct RootContainerView: View {
         starting = true
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains(where: {
+        let fixtureFlags = arguments.filter {
             $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
-        }) {
+        }
+        if !fixtureFlags.isEmpty {
             func value(_ flag: String) -> String? {
                 let positions = arguments.indices.filter { arguments[$0] == flag }
                 guard positions.count == 1, let index = positions.first,
                       arguments.indices.contains(index + 1) else { return nil }
                 return arguments[index + 1]
             }
-            guard let name = value("--catalogue-fixture"),
+            guard fixtureFlags.count == 2,
+                  Set(fixtureFlags) == Set(["--catalogue-fixture", "--catalogue-namespace"]),
+                  let name = value("--catalogue-fixture"),
                   let scenario = CatalogueUIFixtureScenario(rawValue: name),
                   let namespace = value("--catalogue-namespace"),
                   let id = UUID(uuidString: namespace),

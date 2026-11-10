@@ -587,11 +587,7 @@ struct GuestCatalogueView: View {
                 if loading { ProgressView() }
                 if failed { catalogueError }
                 Button(polish ? "Wybierz inny gatunek" : "Choose another species") {
-                    if let owner = connection.snapshot?.session.userId {
-                        UserDefaults.standard.removeObject(forKey: selectionKey(owner))
-                    }
-                    resumedSpecies = nil
-                    selected = nil
+                    beginNewPlantIntent()
                 }
                 .disabled(selectionLocked)
                 .accessibilityIdentifier("catalogue.change")
@@ -652,6 +648,26 @@ struct GuestCatalogueView: View {
                 Link(description.attribution ?? (polish ? "Źródło" : "Source"), destination: source)
                     .font(.caption)
             }
+        }
+    }
+
+    @MainActor
+    private func beginNewPlantIntent() {
+        guard !selectionLocked, let expected = connection.snapshot else { return }
+        do {
+            if let flow = try connection.resumableFlow(expected: expected) {
+                // Forget only this owner's current resume pointer. SQLite keeps the original
+                // checkpoint, pending command, receipt and canonical plant history intact.
+                guard try connection.forgetResumableFlow(
+                    ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
+                ) else { throw CatalogueSaveUnavailable.sessionChanged }
+            }
+            guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
+            UserDefaults.standard.removeObject(forKey: selectionKey(expected.session.userId))
+            resumedSpecies = nil
+            selected = nil
+        } catch {
+            failed = true
         }
     }
 

@@ -35,6 +35,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @State private var revision = 0
     @State private var work: Task<Void, Never>?
     @State private var presenter: UIViewController?
+    @FocusState private var nameFocused: Bool
 
     private var scopeIsCurrent: Bool {
         scope != nil && connection.snapshot == scope
@@ -145,6 +146,10 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     )
                 )
                 .textFieldStyle(.roundedBorder)
+                .focused($nameFocused)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .onSubmit { nameFocused = false }
                 .disabled(working || model != nil || intent != nil)
                 .accessibilityIdentifier("catalogue.save.name")
             }
@@ -331,6 +336,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
 
     private func save() {
         guard !working, scopeIsCurrent, let expected = scope else { return }
+        nameFocused = false
         if model == nil && intent == nil {
             let input = CatalogueInput(speciesSlug: speciesSlug, personalName: name.isEmpty ? nil : name)
             let chosen = CatalogueViewIntent(input: input, flowId: UUID(), operationId: UUID())
