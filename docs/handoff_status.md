@@ -1,6 +1,25 @@
 # Narat — текущий статус и передача работы
 
 
+## B2 — SQL012 b44013e и согласованный nullable wire готовы для передачи A
+
+SQL005–012 независимо приняты; обычный merge A main5d15123 сохранён93a54cf и
+опубликован backend. Итоговые combined gates511pgTAP/99actual+6x20/cap4races,
+Deno336/automation123/typecheck PASS (см. ниже), Swift B не запускала.
+После run исправлены **только2draftfixture monthly.limit3→NULL** для
+registration_required/history_unresolved; mode.limit3/100 сохранён. A явно
+согласовала nullable DTO/коррекцию в сообщении10ноября. Обновлён статус HTTP
+контракта: SQL005–012 принят, GET на независимой приёмке, installation HTTP далее,
+live deploy отсутствует. Сами fixtures — ожидаемые метаданные, не fallback.
+
+Файлы этого wire checkpoint: contracts/fixtures/monthly-access.json,
+monthly-access-http.md и handoff. JSON/7canonicalexamples проверены локально,
+unknown соответствует принятым SQL12 pgTAP. В рабочем дереве отдельно подготовлен
+HTTP GET кандидат, **в wire checkpoint runtime GET не включается**; его39mocktransport
+и336Deno PASS ещё не являются независимой приёмкой. Следующий шаг — отдельный
+GET preparation commit и run08 с явным branchconfig, затем installation HTTP.
+FullT163/T036/live/worker открыты, checkbox B не меняла.
+
 ## B — объединена опубликованная main5d15123 между runs
 
 Обычный merge после завершения run07. Единственный конфликт — handoff: сохранены

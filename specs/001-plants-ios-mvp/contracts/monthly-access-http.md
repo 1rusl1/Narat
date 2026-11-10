@@ -1,7 +1,8 @@
-# Access HTTP — B2 wire proposal
+# Access HTTP — agreed B2 wire
 
-2026-11-09. SQL005–010 accepted through `a367d0b`; HTTP below is a B2 proposal,
-not an enabled/live endpoint. `collection-http.md` remains unchanged.
+Agreed with A on2026-11-10. SQL005–012 accepted through `b44013e`;
+production GET is under independent acceptance; installation HTTP follows.
+No live deployment is claimed. `collection-http.md` remains unchanged.
 
 ## Requests and identity
 
@@ -31,7 +32,8 @@ shared pool**, not a pool per mode. Canonical fixture examples are in
 period_start/end, limit, consumed, reserved, remaining, status. Status is `ready`,
 `registration_required`, `history_unresolved`, or `not_applicable` (guest).
 Ready remaining=max(0,limit-consumed-reserved); limit3 or100. Legacy unknown
-counts/reset are null, never fabricated zero/3/100. Guest monthly fields are null.
+monthly.limit/consumed/reserved/remaining and unknown reset are null; mode.limit
+retains its known3/100. Never fabricate available analyses. Guest monthly fields are null.
 Timestamps are opaque RFC3339 UTC instants; preserve fractional precision and
 server boundaries, never recompute reset from local month/trial expiry.
 
