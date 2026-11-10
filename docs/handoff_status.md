@@ -1125,7 +1125,7 @@ adapters пока не подключены. Продуктовые checkbox B �
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-fixture-ci-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-fixture-ci-acceptance](validation/automation/tasks/parallel-ios-fixture-ci-acceptance.md).
+parallel-ios-b1-integration: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-b1-integration](validation/automation/tasks/parallel-ios-b1-integration.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
