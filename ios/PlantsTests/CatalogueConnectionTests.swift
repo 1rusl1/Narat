@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import XCTest
 import SwiftData
 import Supabase
@@ -168,11 +169,14 @@ private extension PlantsAPIClient {
     }
 }
 
-private extension LocalStore {
-    func holdCheckpointTest(started: DispatchSemaphore, release: DispatchSemaphore) -> Bool {
-        started.signal()
-        return release.wait(timeout: .now() + 5) == .success
-    }
+@MainActor
+private final class ConnectionCheckpointPublication {
+    let metadataBefore: NSDictionary
+    var fired = false
+    var committed: CatalogueInputCheckpointSnapshot?
+    var sdkWork: Task<Void, Error>?
+
+    init(metadataBefore: NSDictionary) { self.metadataBefore = metadataBefore }
 }
 
 @MainActor
@@ -390,28 +394,6 @@ final class CatalogueConnectionTests: XCTestCase {
         NSDictionary(dictionary: h.defaults.persistentDomain(forName: h.defaultsSuite) ?? [:])
     }
 
-    private func backgroundConnection(_ h: Harness) async throws -> CatalogueConnection {
-        // Create both the container and its actor off the main queue; sharing the
-        // MainActor container can block the caller until the checkpoint gate expires.
-        let diskURL = h.directory.appendingPathComponent("connection.sqlite")
-        let store = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<LocalStore, any Error>) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let container = try Harness.container(diskURL)
-                    continuation.resume(returning: LocalStore(modelContainer: container))
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-        return CatalogueConnection(
-            client: h.client, configuration: h.configuration, store: store,
-            transport: URLSessionAPITransport(session: h.http), identityProvider: h.identity,
-            resumeDefaults: h.defaults
-        )
-    }
-
     private func reopenedConnection(_ h: Harness) throws -> CatalogueConnection {
         let store = LocalStore(modelContainer: try Harness.container(
             h.directory.appendingPathComponent("connection.sqlite")
@@ -599,30 +581,36 @@ final class CatalogueConnectionTests: XCTestCase {
         await h.ready()
         try auth(h, owner: owner, anonymous: true)
         try await h.signIn()
-        let source = try await backgroundConnection(h)
+        let source = h.connection
         let expected = try await source.sessionSnapshot()
         let model = try await source.makeModel(
             input: input, flowId: flow, operationId: operation, expected: expected
         )
-        let store = try XCTUnwrap(source.store)
-        let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
-        defer { release.signal() }
-        let hold = Task.detached { await store.holdCheckpointTest(started: started, release: release) }
-        XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
-        var remembering: Task<CatalogueInputCheckpointSnapshot, Error>?
-        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
-            remembering = Task {
-                entered.resume()
-                return try await source.rememberModel(model, expected: expected)
-            }
-        }
         XCTAssertNil(try source.resumableFlow(expected: expected))
         XCTAssertNil(try diskInput(h, owner: owner, flow: flow))
-        release.signal()
-        let released = await hold.value
-        XCTAssertTrue(released, "Checkpoint gate must not expire before explicit release")
-        let task = try XCTUnwrap(remembering)
-        let checkpoint = try await task.value
+        XCTAssertNil(model.checkpoint)
+        var callbacks = 0
+        var returned = false
+        let observer = ConnectionDefaultsObserver(defaults: h.defaults) {
+            callbacks += 1
+            XCTAssertFalse(returned)
+            XCTAssertTrue(Thread.isMainThread)
+            XCTAssertEqual(source.snapshot, expected)
+            XCTAssertEqual(try source.resumableFlow(expected: expected), flow)
+            XCTAssertEqual(model.state, .ready)
+            XCTAssertEqual(model.input, self.input)
+            let committed = try XCTUnwrap(self.diskInput(h, owner: self.owner, flow: flow))
+            XCTAssertEqual(committed.ownerId, self.owner)
+            XCTAssertEqual(committed.flowId, flow)
+            XCTAssertEqual(committed.envelope, try self.input.makeEnvelope(operationId: operation))
+            XCTAssertEqual(model.checkpoint, committed)
+        }
+        defer { observer.stop() }
+        // The real synchronous notification must see committed SQLite before remember returns.
+        let checkpoint = try await source.rememberModel(model, expected: expected)
+        returned = true
+        observer.stop()
+        XCTAssertGreaterThan(callbacks, 0)
         XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
         XCTAssertEqual(try source.resumableFlow(expected: expected), flow)
         h.identity.result = .failure(CancellationError())
@@ -795,61 +783,129 @@ final class CatalogueConnectionTests: XCTestCase {
         }
     }
 
-    func testRememberSuspendedOnDiskRejectsSwitchABASameTokenRefreshAndCancellation() async throws {
+    func testRememberCheckpointPublicationRejectsSwitchABASameTokenRefreshAndCancellationBeforeMetadata() async throws {
         for mode in 0..<5 {
             let h = try Harness()
             defer { h.close() }
             await h.ready()
             try auth(h, owner: owner, anonymous: true)
             try await h.signIn()
-            let source = try await backgroundConnection(h)
+            let source = h.connection
             let expected = try await source.sessionSnapshot()
+            let flow = UUID(), operation = UUID()
             let model = try await source.makeModel(
-                input: input, flowId: UUID(), operationId: UUID(), expected: expected
+                input: input, flowId: flow, operationId: operation, expected: expected
             )
             h.defaults.set(UUID().uuidString, forKey: resumeKey(owner))
             h.defaults.set(UUID().uuidString, forKey: resumeKey(other))
             let before = metadata(h)
-            let store = try XCTUnwrap(source.store)
-            let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
-            defer { release.signal() }
-            let hold = Task.detached { await store.holdCheckpointTest(started: started, release: release) }
-            XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
-            var remembering: Task<CatalogueInputCheckpointSnapshot, Error>?
-            await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
-                remembering = Task {
-                    entered.resume()
-                    return try await source.rememberModel(model, expected: expected)
-                }
-            }
-            let task = try XCTUnwrap(remembering)
+            XCTAssertNil(try diskInput(h, owner: owner, flow: flow))
+            XCTAssertNil(model.checkpoint)
+            // Prepare actual SDK HTTP responses before entering the synchronous observer.
             if mode < 2 {
                 try auth(h, owner: other, token: "fixture-b")
-                try await h.signIn()
-                if mode == 1 {
-                    try auth(h, owner: owner, anonymous: true)
-                    try await h.signIn()
-                }
+                if mode == 1 { try auth(h, owner: owner, anonymous: true) }
             } else if mode == 2 {
                 try auth(h, owner: owner, anonymous: true, refresh: true)
-                _ = try await h.client.auth.refreshSession()
-            } else if mode == 3 {
-                task.cancel()
-            } else {
-                model.cancel()
             }
-            XCTAssertEqual(metadata(h), before)
-            release.signal()
-            let released = await hold.value
-            XCTAssertTrue(released, "Checkpoint gate must not expire before explicit release")
-            do { _ = try await task.value; XCTFail("Revoked intent must not publish metadata: \(mode)") }
+            let client = h.client
+            let publication = ConnectionCheckpointPublication(metadataBefore: before)
+            var metadataCallbacks = 0
+            let observer = ConnectionDefaultsObserver(defaults: h.defaults) {
+                metadataCallbacks += 1
+            }
+            defer { observer.stop() }
+            let checkpointPublication: @MainActor () throws -> Void = {
+                guard !publication.fired else { return }
+                publication.fired = true
+                XCTAssertTrue(Thread.isMainThread)
+                // Observation fires at willSet, after SQLite commit and before UUID metadata.
+                XCTAssertNil(model.checkpoint)
+                XCTAssertEqual(model.state, .ready)
+                XCTAssertEqual(model.input, self.input)
+                XCTAssertEqual(self.metadata(h), publication.metadataBefore)
+                do {
+                    let committed = try XCTUnwrap(self.diskInput(h, owner: self.owner, flow: flow))
+                    publication.committed = committed
+                    XCTAssertEqual(committed.ownerId, self.owner)
+                    XCTAssertEqual(committed.flowId, flow)
+                    XCTAssertEqual(committed.envelope, try self.input.makeEnvelope(operationId: operation))
+                } catch {
+                    XCTFail("Checkpoint publication must follow a real disk commit: \(error)")
+                }
+                if mode < 3 {
+                    let done = DispatchSemaphore(value: 0)
+                    publication.sdkWork = Task.detached {
+                        defer { done.signal() }
+                        if mode < 2 {
+                            _ = try await client.auth.signInWithIdToken(
+                                credentials: .init(provider: .apple, idToken: "FIXTURE-ONLY-ID-TOKEN")
+                            )
+                            if mode == 1 {
+                                _ = try await client.auth.signInWithIdToken(
+                                    credentials: .init(provider: .apple, idToken: "FIXTURE-ONLY-ID-TOKEN")
+                                )
+                            }
+                        } else {
+                            _ = try await client.auth.refreshSession()
+                        }
+                    }
+                    // No store/SQLite/authority lock is held here. Keep the queued MainActor
+                    // observer out until the real SDK callback has synchronously revoked the lease.
+                    XCTAssertEqual(done.wait(timeout: .now() + 5), .success)
+                    self.assertRedacted(model)
+                    XCTAssertThrowsError(try source.resumableFlow(expected: expected))
+                } else if mode == 3 {
+                    withUnsafeCurrentTask {
+                        XCTAssertNotNil($0)
+                        $0?.cancel()
+                    }
+                    XCTAssertTrue(Task.isCancelled)
+                } else {
+                    model.cancel()
+                    XCTAssertEqual(model.state, .unavailable(.cancelled))
+                }
+                XCTAssertEqual(self.metadata(h), publication.metadataBefore)
+            }
+            withObservationTracking {
+                _ = model.checkpoint
+            } onChange: {
+                MainActor.assumeIsolated {
+                    do { try checkpointPublication() }
+                    catch { XCTFail("Checkpoint publication callback failed: \(error)") }
+                }
+            }
+            let remembering = Task { try await source.rememberModel(model, expected: expected) }
+            do { _ = try await remembering.value; XCTFail("Revoked intent must not publish metadata: \(mode)") }
             catch {}
+            if let sdkWork = publication.sdkWork { try await sdkWork.value }
+            observer.stop()
+            XCTAssertTrue(publication.fired, "Must revoke inside actual checkpoint publication")
+            let committed = try XCTUnwrap(publication.committed)
+            XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), committed)
             XCTAssertEqual(metadata(h), before)
+            XCTAssertEqual(metadataCallbacks, 0, "No transient pointer publication before rejection")
+            XCTAssertNil(try diskInput(h, owner: other, flow: flow))
+            let ownQueue = try await h.store.pendingOutboxEntries(for: owner)
+            let foreignQueue = try await h.store.pendingOutboxEntries(for: other)
+            let ownReceipt = try await h.store.catalogueCreateConfirmation(ownerId: owner, operationId: operation)
+            let foreignReceipt = try await h.store.catalogueCreateConfirmation(ownerId: other, operationId: operation)
+            XCTAssertTrue(ownQueue.isEmpty)
+            XCTAssertTrue(foreignQueue.isEmpty)
+            XCTAssertNil(ownReceipt)
+            XCTAssertNil(foreignReceipt)
             if mode < 3 {
                 XCTAssertThrowsError(try source.resumableFlow(expected: expected))
                 XCTAssertThrowsError(try source.forgetResumableFlow(
                     ownerId: owner, expectedFlowId: UUID(), expected: expected
                 ))
+                let current = try await source.sessionSnapshot()
+                XCTAssertNotEqual(current, expected)
+                XCTAssertEqual(current.session.userId, mode == 0 ? other : owner)
+                if mode != 0 {
+                    XCTAssertEqual(current.session, expected.session)
+                    XCTAssertTrue(current.isAnonymous)
+                }
             }
             XCTAssertEqual(h.identity.calls, 0)
             assertNoPlants(h)

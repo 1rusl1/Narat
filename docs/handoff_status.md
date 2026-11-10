@@ -848,7 +848,7 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-catalogue-card-readback: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-ios-catalogue-card-readback](validation/automation/tasks/parallel-ios-catalogue-card-readback.md).
+parallel-ios-catalogue-binding-checkpoint-test-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
+Отчёт: [parallel-ios-catalogue-binding-checkpoint-test-repair](validation/automation/tasks/parallel-ios-catalogue-binding-checkpoint-test-repair.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
