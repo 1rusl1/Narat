@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-diagnosis-save-card",
+      "description": "Complete the signed-in staging diagnosis result \u2192 explicit plant.create \u2192 server-confirmed plant card path for an identified species. Deliver this single vertical slice for owner review.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift"
+      ],
+      "constraints": [
+        "Scope is the existing opt-in DEBUG Simulator staging analysis with a signed-in permanent account, handoff at c99200d. Reuse CatalogueConnection, CatalogueSaveView, CatalogueSaveModel and existing durable owner-bound plant.create, retry, limit and canonical card readback. Use the actual identified/current result plantId slug, never resolve from the display label or guess an unknown/genus/stale result. Existing catalogue fallback remains for those. Localize new visible strings EN/PL via existing conventions.",
+        "Present an explicit save action after the result, never auto-commit. Allow the existing optional plant name and show the existing card for the new operation only once durable server receipt and real canonical card data allow it. Confirmed receipt but missing card data retains existing saved/details retry semantics. No new API/migrations, photo attachment, diagnosis history or care logging in this slice. Preserve production default, catalogue selection/resume, unknown and provider-error routes.",
+        "The staging connection must match the permanent account used by the analysis adapter. Fail closed on anonymous/changed accounts, including while the save child is already on screen. A fresh diagnosis of a previously saved species must never mount an earlier confirmed card as its success, or accidentally repeat an earlier create. If modifying CatalogueSaveView reuse its guarded resume/pointer rules, keep stable ID for a retry of the same operation, do not steal a pointer from an unresolved existing operation, and do not clear pending receipt/outbox history. Existing catalogue resume remains available to reconcile an in-flight save. Keep no new cross-account state.",
+        "Add meaningful targeted XCTest coverage in FirstHelpUnitTests for identified eligibility and unknown/genus/stale/no-slug or cleared result. Test the fresh-vs-resume decision if factored into a small testable helper. Avoid fake success tests or optional unrelated changes. Developer is read-only; output a valid unified diff with each diff --git header at column one, or bounded diagnosis if blocked. Do not edit handoff/tasks/checks, use live services, or read ignored auth/config files. Controller runs required checks and attempts live validation separately."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Eligible signed-in result uses actual slug, existing owner-bound save and verified card, handles pending/retry and does not restore a different prior result as success. Noneligible flows retain their exit routes. Swift regression suite and Simulator welcome pass. Live stage is separately reported.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
