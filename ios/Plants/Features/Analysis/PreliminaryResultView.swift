@@ -3,10 +3,18 @@ import SwiftUI
 public struct PreliminaryResultView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
+    private var catalogueConnection: CatalogueConnection? = nil
+    @State private var saveLocked = false
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
         self.model = model
         self.languageStore = languageStore
+    }
+
+    init(model: AnalysisFlowModel, languageStore: LanguageStore, catalogueConnection: CatalogueConnection?) {
+        self.model = model
+        self.languageStore = languageStore
+        self.catalogueConnection = catalogueConnection
     }
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
@@ -41,6 +49,22 @@ public struct PreliminaryResultView: View {
                     ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
                     }
+                    if let connection = catalogueConnection,
+                       connection.snapshot?.isAnonymous == false,
+                       result.mode == .diagnosis,
+                       result.identificationStatus == .resolved,
+                       let species = result.plantId,
+                       !species.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       let label = model.speciesLabel,
+                       !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        CatalogueSaveView(
+                            connection: connection, speciesSlug: species,
+                            displayName: label, scientificName: "", polish: false,
+                            analysisSaveIdentity: result.jobId,
+                            selectionLocked: $saveLocked
+                        ) { EmptyView() }
+                        .id(result.jobId)
+                    }
                     exitButtons
                 } else {
                     AnalysisUnavailableSection(model: model, languageStore: languageStore)
@@ -63,6 +87,7 @@ public struct PreliminaryResultView: View {
             }
             .accessibilityIdentifier("analysis.catalogue.button")
         }
+        .disabled(catalogueConnection != nil && saveLocked)
         .buttonStyle(.bordered)
     }
 }

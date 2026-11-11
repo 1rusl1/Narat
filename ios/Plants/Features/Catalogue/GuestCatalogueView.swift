@@ -89,6 +89,7 @@ final class CatalogueConnection {
     /// Configuration/disk errors remain stable for this connection; never use a memory fallback.
     convenience init(
         configuration: () throws -> NativeAuthConfiguration = { try NativeAuthConfiguration() },
+        clientLocale: String = "pl",
         makeStore: () throws -> LocalStore = {
             LocalStore(modelContainer: try LocalStore.makeContainer())
         }
@@ -103,7 +104,7 @@ final class CatalogueConnection {
                     supabaseURL: configuration.supabaseURL,
                     supabaseKey: configuration.supabasePublishableKey
                 ),
-                configuration: configuration, store: store
+                configuration: configuration, store: store, clientLocale: clientLocale
             )
         } catch {
             self.init(unavailable: .configurationMissing)

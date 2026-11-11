@@ -31,6 +31,8 @@ struct RootContainerView: View {
     @State private var startupFailed = false
 #if DEBUG && targetEnvironment(simulator)
     @State private var stagingAccount: StagingAccountPresentation?
+    @State private var stagingResume: CatalogueResumeSelection?
+    @State private var stagingResumeLocked = false
 #endif
 #if DEBUG
     @State private var fixtureContext: CatalogueUIFixtureContext?
@@ -40,9 +42,18 @@ struct RootContainerView: View {
         languageStore.currentLocale == .pl
     }
 
+    private var isStagingAnalysis: Bool {
+#if DEBUG && targetEnvironment(simulator)
+        ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis")
+#else
+        false
+#endif
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
+                if !isStagingAnalysis {
                 Picker("profile.language.picker", selection: $languageStore.currentLocale) {
                     Text("Polski").tag(SupportedLocale.pl)
                     Text("English").tag(SupportedLocale.en)
@@ -51,6 +62,7 @@ struct RootContainerView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
                 .accessibilityIdentifier("welcome.language.picker")
+                }
 
                 if startupFailed {
                     Text(isPolish ? "Katalog jest niedostępny." : "Catalogue unavailable.")
@@ -63,9 +75,34 @@ struct RootContainerView: View {
                     careMethodPickerSection
                 case .selectCatalogueSpecies:
                     if let catalogue {
+#if DEBUG && targetEnvironment(simulator)
+                        if isStagingAnalysis, let resumed = stagingResume {
+                            ScrollView {
+                                CatalogueSaveView(
+                                    connection: catalogue, speciesSlug: resumed.speciesSlug,
+                                    displayName: resumed.speciesSlug, scientificName: "", polish: false,
+                                    analysisSaveIdentity: resumed.flowId,
+                                    selectionLocked: $stagingResumeLocked
+                                ) { EmptyView() }
+                                .id(resumed.flowId)
+                                .padding()
+                            }
+                            Button("Back") {
+                                stagingResume = nil
+                                analysisModel.router.navigateBack()
+                            }
+                            .disabled(stagingResumeLocked)
+                            .accessibilityIdentifier("catalogue.back")
+                        } else {
+                            GuestCatalogueView(connection: catalogue, polish: isPolish) {
+                                analysisModel.router.navigateBack()
+                            }
+                        }
+#else
                         GuestCatalogueView(connection: catalogue, polish: isPolish) {
                             analysisModel.router.navigateBack()
                         }
+#endif
                     } else {
                         if !startupFailed { ProgressView() }
                         Button(isPolish ? "Wstecz" : "Back") {
@@ -76,7 +113,10 @@ struct RootContainerView: View {
                 case .selectPhoto, .careQuestions:
                     CareQuestionsView(model: analysisModel, languageStore: languageStore)
                 case .analyzing, .preliminaryResult, .diagnosticRefinement:
-                    PreliminaryResultView(model: analysisModel, languageStore: languageStore)
+                    PreliminaryResultView(
+                        model: analysisModel, languageStore: languageStore,
+                        catalogueConnection: isStagingAnalysis ? catalogue : nil
+                    )
                 default:
                     welcomeIntentSection
                 }
@@ -88,6 +128,7 @@ struct RootContainerView: View {
             StagingAccountView(connection: account.connection) { snapshot in
                 installStagingAnalysis(connection: account.connection, owner: snapshot.session.userId)
                 stagingAccount = nil
+                Task { await restoreStagingCard(connection: account.connection) }
             }
         }
 #endif
@@ -172,7 +213,7 @@ struct RootContainerView: View {
             startupFailed = true
             return
         }
-        let connection = CatalogueConnection(configuration: { config })
+        let connection = CatalogueConnection(configuration: { config }, clientLocale: "en")
         guard connection.apiClient != nil else {
             startupFailed = true
             return
@@ -181,8 +222,32 @@ struct RootContainerView: View {
         languageStore.currentLocale = .en
         if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
             installStagingAnalysis(connection: connection, owner: snapshot.session.userId)
+            await restoreStagingCard(connection: connection)
         } else {
             stagingAccount = StagingAccountPresentation(connection: connection)
+        }
+    }
+
+    @MainActor
+    private func restoreStagingCard(connection: CatalogueConnection) async {
+        do {
+            let expected = try await connection.sessionSnapshot()
+            guard !expected.isAnonymous,
+                  analysisModel.router.flowState.currentStep == .selectIntent,
+                  let flow = try connection.resumableFlow(expected: expected) else { return }
+            let result = await connection.restoreModel(
+                ownerId: expected.session.userId, flowId: flow, expected: expected
+            )
+            guard connection.snapshot == expected, !Task.isCancelled,
+                  analysisModel.router.flowState.currentStep == .selectIntent,
+                  case let .restored(model) = result,
+                  let resumed = CatalogueResumeSelection(model) else { return }
+            // The durable flow opens directly, independent of catalogue pages or RPC failures.
+            stagingResume = resumed
+            analysisModel.router.selectIntent(.care)
+            analysisModel.router.selectCareMethod(.catalogue)
+        } catch {
+            // The catalogue can retry restoration explicitly.
         }
     }
 

@@ -11,6 +11,32 @@ private enum CatalogueViewNotice {
     case invalidInput, unavailable, sessionChanged, nativeCancelled, authenticationFailed
 }
 
+@MainActor
+struct CatalogueResumeSelection {
+    let speciesSlug: String
+    let flowId: UUID
+
+    init?(_ model: CatalogueSaveModel) {
+        guard let input = model.input, let checkpoint = model.checkpoint else { return nil }
+        speciesSlug = input.speciesSlug
+        flowId = checkpoint.flowId
+    }
+}
+
+enum CatalogueSaveIdentity {
+    static func allowsEditingAsNewSave(analysisFlow: UUID?) -> Bool {
+        analysisFlow == nil
+    }
+
+    static func canRestore(
+        selectedSpecies: String, restoredSpecies: String?,
+        analysisFlow: UUID?, restoredFlow: UUID?
+    ) -> Bool {
+        selectedSpecies == restoredSpecies &&
+            (analysisFlow == nil || analysisFlow == restoredFlow)
+    }
+}
+
 /// Private form state belongs to one actual SDK snapshot, including its event epoch.
 @MainActor
 struct CatalogueSaveView<SpeciesDetails: View>: View {
@@ -19,6 +45,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let displayName: String
     let scientificName: String
     let polish: Bool
+    var analysisSaveIdentity: UUID? = nil
     @Binding var selectionLocked: Bool
     @ViewBuilder let speciesDetails: () -> SpeciesDetails
 
@@ -234,10 +261,13 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             .accessibilityIdentifier("catalogue.save.retry")
     }
 
+    @ViewBuilder
     private var editButton: some View {
+        if CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: analysisSaveIdentity) {
         Button(polish ? "Edytuj jako nowy zapis" : "Edit as a new save") { editAsNewIntent() }
             .disabled(working || !journalAllowsNewIntent)
             .accessibilityIdentifier("catalogue.save.edit")
+        }
     }
 
     @ViewBuilder
@@ -323,7 +353,10 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     guard isCurrent(ticket, expected) else { return }
                     switch result {
                     case let .restored(restored):
-                        if restored.input?.speciesSlug == speciesSlug {
+                        if CatalogueSaveIdentity.canRestore(
+                            selectedSpecies: speciesSlug, restoredSpecies: restored.input?.speciesSlug,
+                            analysisFlow: analysisSaveIdentity, restoredFlow: restored.checkpoint?.flowId
+                        ) {
                             model = restored
                             switch restored.state {
                             case .ready, .collectionLimitNotEnqueued:
@@ -399,7 +432,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         nameFocused = false
         if model == nil && intent == nil {
             let input = CatalogueInput(speciesSlug: speciesSlug, personalName: name.isEmpty ? nil : name)
-            let chosen = CatalogueViewIntent(input: input, flowId: UUID(), operationId: UUID())
+            let chosen = CatalogueViewIntent(input: input, flowId: analysisSaveIdentity ?? UUID(), operationId: UUID())
             do { _ = try input.makeEnvelope(operationId: chosen.operationId) }
             catch { notice = .invalidInput; return }
             intent = chosen
@@ -450,6 +483,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func editAsNewIntent() {
+        // A diagnosis owns one immutable checkpoint and retries that exact save.
+        guard CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: analysisSaveIdentity) else { return }
         guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
         if let model {
             switch model.state {

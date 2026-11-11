@@ -2750,6 +2750,90 @@ extension CollectionWireTests {
 #if DEBUG && targetEnvironment(simulator)
 extension CollectionWireTests {
     @MainActor
+    func testStagingResumeLoadsExactCardWithoutCatalogueSelection() async throws {
+        let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .free2)
+        defer { try? h.cleanup() }
+        let expected = try await h.connection.sessionSnapshot()
+        let flow = UUID()
+        let model = try await h.connection.makeModel(
+            input: CatalogueInput(speciesSlug: "fixture-fern", personalName: "Diagnosis plant"),
+            flowId: flow, operationId: UUID(), expected: expected
+        )
+        _ = try await h.connection.rememberModel(model, expected: expected)
+        await model.save()
+        guard case let .saved(saved) = model.state else {
+            return XCTFail("Expected durable save")
+        }
+        let result = await h.connection.restoreModel(
+            ownerId: expected.session.userId, flowId: flow, expected: expected
+        )
+        guard case let .restored(restored) = result else {
+            return XCTFail("Expected exact restored flow")
+        }
+        let selection = try XCTUnwrap(CatalogueResumeSelection(restored))
+        let firstCataloguePage: [String] = []
+        XCTAssertFalse(firstCataloguePage.contains(selection.speciesSlug))
+        XCTAssertEqual(selection.flowId, flow)
+        XCTAssertEqual(selection.speciesSlug, "fixture-fern")
+        await restored.loadCard()
+        XCTAssertEqual(restored.cardSummary?.id, saved.receipt.plantId)
+        XCTAssertEqual(restored.cardSummary?.personalName, "Diagnosis plant")
+        XCTAssertEqual(h.server.snapshot.commits.count, 1)
+        XCTAssertEqual(h.server.snapshot.attempts.count, 1)
+    }
+
+    @MainActor
+    func testAnalysisLimitDisallowsNewCheckpointAndRetriesFrozenSave() async throws {
+        let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .cap3)
+        defer { try? h.cleanup() }
+        let expected = try await h.connection.sessionSnapshot()
+        let analysisFlow = UUID()
+        let model = try await h.connection.makeModel(
+            input: CatalogueInput(speciesSlug: "fixture-fern", personalName: "Original"),
+            flowId: analysisFlow, operationId: UUID(), expected: expected
+        )
+        _ = try await h.connection.rememberModel(model, expected: expected)
+        let envelope = try XCTUnwrap(model.envelope)
+        let checkpoint = try XCTUnwrap(model.checkpoint)
+        await model.save()
+        guard case .collectionLimitNotEnqueued = model.state else {
+            return XCTFail("Expected preflight limit")
+        }
+        XCTAssertFalse(CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: analysisFlow))
+        XCTAssertTrue(CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: nil))
+        await model.save()
+        XCTAssertEqual(model.envelope, envelope)
+        XCTAssertEqual(model.checkpoint, checkpoint)
+        XCTAssertEqual(model.input?.personalName, "Original")
+        XCTAssertTrue(h.server.snapshot.attempts.isEmpty)
+    }
+
+    @MainActor
+    func testAnalysisSaveRestoresOnlyItsExactDiagnosisFlow() {
+        let flow = UUID()
+        XCTAssertTrue(CatalogueSaveIdentity.canRestore(
+            selectedSpecies: "species", restoredSpecies: "species",
+            analysisFlow: flow, restoredFlow: flow
+        ))
+        XCTAssertFalse(CatalogueSaveIdentity.canRestore(
+            selectedSpecies: "species", restoredSpecies: "species",
+            analysisFlow: flow, restoredFlow: UUID()
+        ))
+        XCTAssertFalse(CatalogueSaveIdentity.canRestore(
+            selectedSpecies: "species", restoredSpecies: "other",
+            analysisFlow: flow, restoredFlow: flow
+        ))
+        XCTAssertFalse(CatalogueSaveIdentity.canRestore(
+            selectedSpecies: "species", restoredSpecies: "species",
+            analysisFlow: flow, restoredFlow: nil
+        ))
+        XCTAssertTrue(CatalogueSaveIdentity.canRestore(
+            selectedSpecies: "species", restoredSpecies: "species",
+            analysisFlow: nil, restoredFlow: UUID()
+        ))
+    }
+
+    @MainActor
     func testStagingAnalysisRequiresAnExplicitMatchingHTTPSHost() {
         let flag = ["--narat-staging-analysis"]
         let host = "staging.example.invalid"
