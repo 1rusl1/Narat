@@ -426,10 +426,16 @@ private actor CatalogueTransport: PlantsAPITransport {
 
     private var replies: [Reply]
     private var requests: [URLRequest] = []
+    private(set) var nonRedirectingRequests = 0
 
     init(_ replies: [Reply]) { self.replies = replies }
 
     func capturedRequests() -> [URLRequest] { requests }
+
+    func sendWithoutRedirect(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        nonRedirectingRequests += 1
+        return try await send(request)
+    }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         requests.append(request)
@@ -2571,5 +2577,136 @@ extension CollectionWireTests {
             let requests = await transport.capturedRequests()
             try assertCreateRequests(requests, command: command, count: 1)
         }
+    }
+}
+
+extension CollectionWireTests {
+    private func diagnosisTicket(url: String, photoId: UUID) -> String {
+        #"{"photo_asset_id":"\#(photoId.uuidString)","storage_bucket":"photos","storage_path":"test.jpg","signed_upload_url":"\#(url)","expires_in_seconds":60,"max_byte_size":10485760}"#
+    }
+
+    private func diagnosisJob(id: UUID, status: String, result: String = "null", errorCode: String = "null") -> String {
+        #"{"job_id":"\#(id.uuidString)","mode":"diagnosis","status":"\#(status)","quota_kind":"free_monthly","quota_state":"reserved","result":\#(result),"error_code":\#(errorCode),"error_message":null}"#
+    }
+
+    func testDiagnosisUploadAndReplaySendCanonicalWireWithBoundToken() async throws {
+        let photo = serverPlantId
+        let upload = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?token=mock"
+        let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+        let queued = diagnosisJob(id: operationId, status: "queued")
+        let transport = CatalogueTransport([
+            .http(200, diagnosisTicket(url: upload, photoId: photo)), .http(200, ready),
+            .http(200, ready), .http(202, queued), .http(200, queued),
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let context = try await api.captureSyncContext(ownerId: accessOwner)
+        let bytes = Data("abc".utf8)
+        let ticket = try await api.issueAnalysisUpload(jpeg: bytes, operationId: operationId, locale: .en, context: context)
+        try await api.uploadAnalysisJPEG(bytes, ticket: ticket, locale: .en, context: context)
+        try await api.confirmAnalysisPhoto(id: photo, locale: .en, context: context)
+        let created = try await api.createAnalysisJob(operationId: operationId, mode: .diagnosis, photoAssetId: photo, locale: .en, context: context)
+        let replay = try await api.createAnalysisJob(operationId: operationId, mode: .diagnosis, photoAssetId: photo, locale: .en, context: context)
+        XCTAssertEqual(created.jobId, replay.jobId)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "POST", "POST"])
+        XCTAssertTrue(requests.allSatisfy {
+            $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(accessSession.accessToken)"
+                && $0.value(forHTTPHeaderField: "X-Client-Locale") == "en"
+                && $0.value(forHTTPHeaderField: "X-Installation-Credential") == nil
+        })
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(requests[0].httpBody)) as? [String: Any])
+        XCTAssertEqual(body["content_sha256"] as? String, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        XCTAssertEqual(body["byte_size"] as? Int, bytes.count)
+        XCTAssertEqual(body["operation_id"] as? String, operationId.uuidString.lowercased())
+        XCTAssertEqual(body["mime_type"] as? String, "image/jpeg")
+        XCTAssertEqual(requests[1].url?.absoluteString, upload)
+        XCTAssertEqual(requests[1].httpBody, bytes)
+        let nonRedirectingRequests = await transport.nonRedirectingRequests
+        XCTAssertEqual(nonRedirectingRequests, 1)
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "Content-Type"), "image/jpeg")
+        XCTAssertEqual(requests[2].url?.lastPathComponent, "complete")
+        let jobBody = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[3].httpBody))
+        XCTAssertEqual(jobBody, ["operation_id": operationId.uuidString.lowercased(), "mode": "diagnosis",
+                                 "photo_asset_id": photo.uuidString.lowercased()])
+        let replayBody = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[4].httpBody))
+        XCTAssertEqual(jobBody, replayBody)
+        XCTAssertEqual(requests[3].httpBody, requests[4].httpBody)
+    }
+
+    func testDiagnosisRejectsSignedUploadOutsideExactAssetPath() async throws {
+        let suffix = "/functions/v1/plants-api/media/uploads/\(serverPlantId.uuidString.lowercased())"
+        let urls = [
+            "https://another.invalid\(suffix)", "http://example.invalid\(suffix)",
+            "https://example.invalid:444\(suffix)", "https://user@example.invalid\(suffix)",
+            "https://example.invalid/functions/v1/plants-api/%2e%2e/media/uploads/\(serverPlantId.uuidString)",
+            "https://example.invalid\(suffix)/extra", "https://example.invalid\(suffix)#fragment",
+        ]
+        for url in urls {
+            let transport = CatalogueTransport([.http(200, diagnosisTicket(url: url, photoId: serverPlantId))])
+            let api = client(transport)
+            await api.bindSyncSession(accessSession)
+            let context = try await api.captureSyncContext(ownerId: accessOwner)
+            do {
+                _ = try await api.issueAnalysisUpload(jpeg: Data([1]), operationId: operationId, locale: .en, context: context)
+                XCTFail("Unsafe ticket was accepted")
+            } catch AnalysisHTTPError.invalidUpload {}
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["POST"])
+        }
+    }
+
+    func testDiagnosisStatusUnknownFailureAndWrongJobRemainDistinct() async throws {
+        let id = operationId
+        let result = #"{"analysis_id":"\#(serverPlantId.uuidString)","job_id":"\#(id.uuidString)","kb_release_id":"\#(serverPlantId.uuidString)","mode":"diagnosis","identification_status":"unknown","plant_id":null,"genus_id":null,"diagnosis_status":"insufficient_data","selected_condition_id":null,"candidates":[],"visual_markers":[],"evidence_basis":[],"limitations":["Photo too unclear."],"first_action_summary":null,"control_interval_days":null,"plan_availability":"diagnosis_unresolved","analysis_receipt":"test-receipt"}"#
+        let transport = CatalogueTransport([
+            .http(200, diagnosisJob(id: id, status: "succeeded", result: result)),
+            .http(200, diagnosisJob(id: id, status: "failed", errorCode: #""PROVIDER_UNAVAILABLE""#)),
+            .http(200, diagnosisJob(id: serverPlantId, status: "running")),
+            .http(200, diagnosisJob(id: id, status: "succeeded")),
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let context = try await api.captureSyncContext(ownerId: accessOwner)
+        let succeeded = try await api.fetchAnalysisJob(id: id, mode: .diagnosis, locale: .en, context: context)
+        XCTAssertEqual(succeeded.result?.domainValue.identificationStatus, .unknown)
+        XCTAssertEqual(succeeded.result?.domainValue.diagnosisStatus, .unknown)
+        XCTAssertEqual(succeeded.result?.limitations, ["Photo too unclear."])
+        let failed = try await api.fetchAnalysisJob(id: id, mode: .diagnosis, locale: .en, context: context)
+        XCTAssertNil(failed.result)
+        XCTAssertEqual(failed.errorCode, "PROVIDER_UNAVAILABLE")
+        for _ in 0..<2 {
+            do {
+                _ = try await api.fetchAnalysisJob(id: id, mode: .diagnosis, locale: .en, context: context)
+                XCTFail("Invalid job response was accepted")
+            } catch AnalysisHTTPError.invalidResponse {}
+        }
+        await api.bindSyncSession(nil)
+        do {
+            _ = try await api.fetchAnalysisJob(id: id, mode: .diagnosis, locale: .en, context: context)
+            XCTFail("Stale request dispatched")
+        } catch SyncWireValidationError.invalidSession {}
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 4)
+        XCTAssertTrue(requests.allSatisfy { $0.httpMethod == "GET" && $0.url?.lastPathComponent == id.uuidString.lowercased() })
+    }
+}
+
+extension CollectionWireTests {
+    func testDiagnosisDropsStatusFromInvalidatedBoundSession() async throws {
+        let id = operationId
+        let transport = SuspendedCollectionTransport(diagnosisJob(id: id, status: "running"))
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let context = try await api.captureSyncContext(ownerId: accessOwner)
+        let pending = Task { try await api.fetchAnalysisJob(id: id, mode: .diagnosis, locale: .en, context: context) }
+        await transport.waitForRequest()
+        await api.bindSyncSession(nil)
+        await api.bindSyncSession(accessSession)
+        await transport.resume()
+        do {
+            _ = try await pending.value
+            XCTFail("Stale response crossed the session boundary")
+        } catch SyncWireValidationError.invalidSession {}
     }
 }

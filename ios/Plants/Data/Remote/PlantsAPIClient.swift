@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct APIErrorResponse: Codable, Sendable, Equatable, Error {
@@ -11,6 +12,13 @@ public struct APIErrorResponse: Codable, Sendable, Equatable, Error {
 
 public protocol PlantsAPITransport: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+    func sendWithoutRedirect(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+}
+
+extension PlantsAPITransport {
+    public func sendWithoutRedirect(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        throw URLError(.unsupportedURL)
+    }
 }
 
 public struct URLSessionAPITransport: PlantsAPITransport {
@@ -22,6 +30,14 @@ public struct URLSessionAPITransport: PlantsAPITransport {
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        return (data, http)
+    }
+
+    public func sendWithoutRedirect(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.data(for: request, delegate: AnalysisUploadRedirectDelegate())
         guard let http = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
@@ -460,5 +476,153 @@ extension PlantsAPIClient {
         try validateSyncContext(context)
         try page.validate(since: since, requestedUntil: until, cursor: cursor, limit: limit)
         return SyncWireResult(ownerId: session.userId, page: page)
+    }
+}
+
+private final class AnalysisUploadRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
+extension PlantsAPIClient {
+    func issueAnalysisUpload(
+        jpeg: Data, operationId: UUID, locale: SupportedLocale, context: SyncSessionLease
+    ) async throws -> AnalysisUploadTicket {
+        guard !jpeg.isEmpty, jpeg.count <= AnalysisPhotoInput.maxCloudBytes else {
+            throw AnalysisHTTPError.invalidUpload
+        }
+        let digest = SHA256.hash(data: jpeg).map { String(format: "%02x", $0) }.joined()
+        let body = try JSONSerialization.data(withJSONObject: [
+            "operation_id": operationId.uuidString.lowercased(), "mime_type": "image/jpeg",
+            "byte_size": jpeg.count, "content_sha256": digest
+        ], options: [.sortedKeys])
+        let request = try buildRequest(path: "media/upload-ticket", method: "POST", body: body)
+        let ticket: AnalysisUploadTicket = try await analysisRequest(
+            request, locale: locale, context: context, status: [200]
+        )
+        guard (0...60).contains(ticket.expiresInSeconds), ticket.maxByteSize >= jpeg.count,
+              isAnalysisUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId) else {
+            throw AnalysisHTTPError.invalidUpload
+        }
+        return ticket
+    }
+
+    func uploadAnalysisJPEG(
+        _ jpeg: Data, ticket: AnalysisUploadTicket, locale: SupportedLocale,
+        context: SyncSessionLease
+    ) async throws {
+        guard !jpeg.isEmpty, jpeg.count <= min(ticket.maxByteSize, AnalysisPhotoInput.maxCloudBytes),
+              isAnalysisUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId) else {
+            throw AnalysisHTTPError.invalidUpload
+        }
+        var request = URLRequest(url: ticket.signedUploadURL)
+        request.httpMethod = "PUT"
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jpeg
+        let photo: AnalysisUploadedPhoto = try await analysisRequest(
+            request, locale: locale, context: context, status: [200], forbidRedirects: true
+        )
+        try validateUploadedPhoto(photo, id: ticket.photoAssetId)
+    }
+
+    func confirmAnalysisPhoto(
+        id: UUID, locale: SupportedLocale, context: SyncSessionLease
+    ) async throws {
+        let body = try JSONEncoder().encode(["photo_asset_id": id.uuidString.lowercased()])
+        let request = try buildRequest(path: "media/complete", method: "POST", body: body)
+        let photo: AnalysisUploadedPhoto = try await analysisRequest(
+            request, locale: locale, context: context, status: [200]
+        )
+        try validateUploadedPhoto(photo, id: id)
+    }
+
+    func createAnalysisJob(
+        operationId: UUID, mode: AnalysisMode, photoAssetId: UUID,
+        locale: SupportedLocale, context: SyncSessionLease
+    ) async throws -> AnalysisJobWire {
+        guard mode == .diagnosis || mode == .identification else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let body = try encoder.encode([
+            "operation_id": operationId.uuidString.lowercased(), "mode": mode.rawValue,
+            "photo_asset_id": photoAssetId.uuidString.lowercased()
+        ])
+        let request = try buildRequest(path: "analysis/jobs", method: "POST", body: body)
+        let job: AnalysisJobWire = try await analysisRequest(
+            request, locale: locale, context: context, status: [200, 202]
+        )
+        try job.validate(mode: mode)
+        return job
+    }
+
+    func fetchAnalysisJob(
+        id: UUID, mode: AnalysisMode, locale: SupportedLocale, context: SyncSessionLease
+    ) async throws -> AnalysisJobWire {
+        guard mode == .diagnosis || mode == .identification else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        let request = try buildRequest(path: "analysis/jobs/\(id.uuidString.lowercased())", method: "GET")
+        let job: AnalysisJobWire = try await analysisRequest(
+            request, locale: locale, context: context, status: [200]
+        )
+        try job.validate(mode: mode, jobId: id)
+        return job
+    }
+
+    private func validateUploadedPhoto(_ photo: AnalysisUploadedPhoto, id: UUID) throws {
+        guard photo.photoAssetId == id, photo.state == "ready" else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+    }
+
+    private func analysisRequest<T: Decodable>(
+        _ input: URLRequest, locale: SupportedLocale, context: SyncSessionLease,
+        status: Set<Int>, forbidRedirects: Bool = false
+    ) async throws -> T {
+        var request = input
+        try syncAuthority.withBoundValid(context) {
+            guard let session = context.session else { throw SyncWireValidationError.invalidSession }
+            request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue(locale.rawValue, forHTTPHeaderField: "X-Client-Locale")
+            request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
+        }
+        let data: Data
+        let response: HTTPURLResponse
+        if forbidRedirects {
+            (data, response) = try await transport.sendWithoutRedirect(request)
+        } else {
+            (data, response) = try await transport.send(request)
+        }
+        try syncAuthority.withBoundValid(context) {}
+        let decoder = JSONDecoder()
+        guard status.contains(response.statusCode) else {
+            if let failure = try? decoder.decode(APIErrorResponse.self, from: data) {
+                throw failure
+            }
+            throw AnalysisHTTPError.invalidResponse
+        }
+        let decoded = try decoder.decode(T.self, from: data)
+        return try syncAuthority.withBoundValid(context) { decoded }
+    }
+
+    private func isAnalysisUploadURL(_ url: URL, photoAssetId: UUID) -> Bool {
+        guard let candidate = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let base = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              base.scheme?.lowercased() == "https", candidate.scheme?.lowercased() == "https",
+              let expectedHost = base.host?.lowercased(),
+              candidate.host?.lowercased() == expectedHost,
+              (candidate.port ?? 443) == (base.port ?? 443),
+              candidate.user == nil, candidate.password == nil, candidate.fragment == nil
+        else { return false }
+        let prefix = base.percentEncodedPath.hasSuffix("/")
+            ? base.percentEncodedPath : base.percentEncodedPath + "/"
+        return candidate.percentEncodedPath == prefix + "media/uploads/" + photoAssetId.uuidString.lowercased()
     }
 }

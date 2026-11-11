@@ -1023,3 +1023,158 @@ extension SQLTimestamp {
         return Int64(seconds.timeIntervalSince1970.rounded()) * 1_000_000 + fraction
     }
 }
+
+// MARK: - Analysis upload and job wire
+
+enum AnalysisHTTPError: Error, Equatable {
+    case invalidUpload
+    case invalidResponse
+}
+
+struct AnalysisUploadTicket: Decodable, Sendable {
+    let photoAssetId: UUID
+    let signedUploadURL: URL
+    let expiresInSeconds: Int
+    let maxByteSize: Int
+
+    enum CodingKeys: String, CodingKey {
+        case photoAssetId = "photo_asset_id"
+        case signedUploadURL = "signed_upload_url"
+        case expiresInSeconds = "expires_in_seconds"
+        case maxByteSize = "max_byte_size"
+    }
+}
+
+struct AnalysisUploadedPhoto: Decodable, Sendable {
+    let photoAssetId: UUID
+    let state: String
+
+    enum CodingKeys: String, CodingKey {
+        case photoAssetId = "photo_asset_id"
+        case state
+    }
+}
+
+struct AnalysisJobWire: Decodable, Sendable {
+    enum Status: String, Decodable, Sendable {
+        case queued, running, succeeded, failed, expired
+    }
+
+    enum QuotaState: String, Decodable, Sendable {
+        case reserved, consumed, released
+        case notRequired = "not_required"
+    }
+
+    let jobId: UUID
+    let mode: AnalysisMode
+    let status: Status
+    let quotaKind: String
+    let quotaState: QuotaState
+    let result: AnalysisProjectionWire?
+    let errorCode: String?
+    let errorMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case mode, status, result
+        case quotaKind = "quota_kind"
+        case quotaState = "quota_state"
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+    }
+
+    func validate(mode expectedMode: AnalysisMode, jobId expectedId: UUID? = nil) throws {
+        guard mode == expectedMode, expectedId == nil || expectedId == jobId else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        if status == .succeeded {
+            guard let result, result.jobId == jobId, result.mode == mode,
+                  !result.analysisReceipt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  result.identificationStatus != .identified || result.plantId?.isEmpty == false
+            else { throw AnalysisHTTPError.invalidResponse }
+        } else if result != nil {
+            throw AnalysisHTTPError.invalidResponse
+        }
+    }
+}
+
+struct AnalysisProjectionWire: Decodable, Sendable {
+    enum Identification: String, Decodable, Sendable {
+        case identified, unknown
+        case genusOnly = "genus_only"
+        case outOfScope = "out_of_scope"
+
+        var domainValue: IdentificationStatus {
+            switch self {
+            case .identified: .resolved
+            case .unknown: .unknown
+            case .genusOnly: .genusOnly
+            case .outOfScope: .outOfScope
+            }
+        }
+    }
+
+    enum Diagnosis: String, Decodable, Sendable {
+        case healthy
+        case problemDetected = "problem_detected"
+        case insufficientData = "insufficient_data"
+        case outOfScope = "out_of_scope"
+
+        var domainValue: DiagnosisStatus {
+            switch self {
+            case .healthy: .healthy
+            case .problemDetected: .conditionDetected
+            case .insufficientData: .unknown
+            case .outOfScope: .outOfScope
+            }
+        }
+    }
+
+    let analysisId: UUID
+    let jobId: UUID
+    let kbReleaseId: UUID
+    let mode: AnalysisMode
+    let identificationStatus: Identification
+    let plantId: String?
+    let genusId: String?
+    let diagnosisStatus: Diagnosis?
+    let candidates: [DiagnosisCandidate]
+    let selectedConditionId: String?
+    let visualMarkers: [String]
+    let evidenceBasis: [String]
+    let limitations: [String]
+    let firstActionSummary: String?
+    let controlIntervalDays: Int?
+    let planAvailability: PlanAvailability
+    let analysisReceipt: String
+
+    enum CodingKeys: String, CodingKey {
+        case analysisId = "analysis_id"
+        case jobId = "job_id"
+        case kbReleaseId = "kb_release_id"
+        case mode, candidates, limitations
+        case identificationStatus = "identification_status"
+        case plantId = "plant_id"
+        case genusId = "genus_id"
+        case diagnosisStatus = "diagnosis_status"
+        case selectedConditionId = "selected_condition_id"
+        case visualMarkers = "visual_markers"
+        case evidenceBasis = "evidence_basis"
+        case firstActionSummary = "first_action_summary"
+        case controlIntervalDays = "control_interval_days"
+        case planAvailability = "plan_availability"
+        case analysisReceipt = "analysis_receipt"
+    }
+
+    var domainValue: PreliminaryAnalysis {
+        PreliminaryAnalysis(
+            id: analysisId, jobId: jobId, kbReleaseId: kbReleaseId, mode: mode,
+            identificationStatus: identificationStatus.domainValue, plantId: plantId,
+            genusId: genusId, diagnosisStatus: diagnosisStatus?.domainValue,
+            candidates: candidates, selectedConditionId: selectedConditionId,
+            visualMarkers: visualMarkers, evidenceBasis: evidenceBasis, limitations: limitations,
+            firstActionSummary: firstActionSummary, controlIntervalDays: controlIntervalDays,
+            planAvailability: planAvailability, analysisReceipt: analysisReceipt
+        )
+    }
+}
