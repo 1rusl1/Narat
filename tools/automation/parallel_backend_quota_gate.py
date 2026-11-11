@@ -20,6 +20,7 @@ SECOND = '202611090009_quota_settlement.sql'
 BIND = '202611090010_installation_quota_bind.sql'
 INSTALLATIONS = '202611090011_installation_access_api.sql'
 ACCESS = '202611090012_analysis_access_snapshot.sql'
+CARE_JOURNAL = '202611110016_manual_care_journal.sql'
 CAP_OWNER = '15800000-0000-4000-8000-000000000001'
 A = '16300000-0000-4000-8000-000000000001'
 B = '16300000-0000-4000-8000-000000000002'
@@ -339,6 +340,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     f"SELECT public.upsert_catalogue_skeleton_species('{release}', $fixture${encoded}$fixture$::jsonb, true); "
                     f"SELECT public.publish_catalogue_release('{release}');")
                 tap(case, ROOT/'supabase/tests/diagnosis_jobs.test.sql')
+                if any(migration.name == CARE_JOURNAL for migration in selected):
+                    tap(case, ROOT/'supabase/tests/manual_care_journal.test.sql')
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:
