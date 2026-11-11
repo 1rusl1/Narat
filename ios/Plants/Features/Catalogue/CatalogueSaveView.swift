@@ -65,6 +65,15 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @State private var presenter: UIViewController?
     @FocusState private var nameFocused: Bool
 
+    private var showsManualWateringActions: Bool {
+#if DEBUG && targetEnvironment(simulator)
+        analysisSaveIdentity != nil && !polish
+            && ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis")
+#else
+        false
+#endif
+    }
+
     private var scopeIsCurrent: Bool {
         scope != nil && connection.snapshot == scope
     }
@@ -346,6 +355,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 ProgressView("Loading watering history…")
                     .accessibilityIdentifier("catalogue.saved.history.loading")
             case let .loaded(entries):
+                if showsManualWateringActions { wateringControls(model) }
                 if entries.isEmpty {
                     Text("No manual watering recorded.")
                         .accessibilityIdentifier("catalogue.saved.history.empty")
@@ -354,6 +364,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                         HStack {
                             Text(entry.occurredLocalDate)
                             Text(entry.state == "voided" ? "Undone" : "Active")
+                            if showsManualWateringActions, entry.state == "active",
+                               model.manualWateringState == .ready {
+                                Button("Undo") { Task { await model.undoWatering(entryId: entry.id) } }
+                                    .accessibilityIdentifier("catalogue.care.undo." + entry.id.uuidString.lowercased())
+                            }
                         }
                         .accessibilityIdentifier("catalogue.saved.history." + entry.id.uuidString.lowercased())
                     }
@@ -365,6 +380,26 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .disabled(working)
                     .accessibilityIdentifier("catalogue.saved.history.retry")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func wateringControls(_ model: CatalogueSaveModel) -> some View {
+        switch model.manualWateringState {
+        case .ready:
+            Button("Record watering") { Task { await model.recordWatering() } }
+                .accessibilityIdentifier("catalogue.care.record")
+        case .saving:
+            ProgressView("Saving watering history…")
+                .accessibilityIdentifier("catalogue.care.saving")
+        case .pending:
+            Text("Watering history change pending.")
+                .accessibilityIdentifier("catalogue.care.pending")
+            Button("Retry watering change") { Task { await model.retryManualWatering() } }
+                .accessibilityIdentifier("catalogue.care.retry")
+        case .unavailable:
+            Button("Reload watering history") { loadDetails(model) }
+                .accessibilityIdentifier("catalogue.care.refresh")
         }
     }
 
@@ -660,7 +695,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func loadIfSaved(_ model: CatalogueSaveModel) async {
-        if case .saved = model.state { await model.loadCard() }
+        if case .saved = model.state { await model.loadCard(includeManualWateringActions: showsManualWateringActions) }
     }
 
     private func loadDetails(_ target: CatalogueSaveModel) {
@@ -669,7 +704,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         working = true
         work = Task { @MainActor in
             defer { if revision == ticket { working = false; work = nil } }
-            await target.loadCard()
+            await target.loadCard(includeManualWateringActions: showsManualWateringActions)
         }
     }
 }

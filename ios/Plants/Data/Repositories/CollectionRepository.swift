@@ -210,6 +210,44 @@ public struct CollectionRepository: Sendable {
         }
     }
 
+    func pendingManualWatering(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        let pending = try await store.pendingOutboxEntries(for: context.ownerId)
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            guard let entry = pending.first(where: {
+                $0.plantId == plantId && ($0.commandName == "care.record" || $0.commandName == "care.undo")
+            }) else { return nil }
+            let command = CommandEnvelopeDTO(operationId: entry.operationId, commandName: entry.commandName,
+                                             plantId: entry.plantId, payloadJSON: entry.payloadJSON)
+            guard ManualWateringAction(envelope: command) != nil else {
+                throw OutboxEnqueueError.operationIdentityMismatch
+            }
+            return command
+        }
+    }
+
+    /// The typed receipt must be validated by the existing outbox drain before the queue item disappears.
+    func submitManualWatering(
+        _ command: CommandEnvelopeDTO, confirmation: CatalogueCreateConfirmationSnapshot,
+        context: SyncSessionLease
+    ) async throws -> Bool {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        guard confirmation.ownerId == context.ownerId,
+              command.plantId == confirmation.receipt.plantId,
+              ManualWateringAction(envelope: command) != nil,
+              try await store.catalogueCreateConfirmation(
+                  ownerId: context.ownerId, operationId: confirmation.operationId
+              ) == confirmation else {
+            throw SyncWireValidationError.invalidSession
+        }
+        try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
+        _ = try await syncEngine.flushOutbox(context: context)
+        let pending = try await store.pendingOutboxEntries(for: context.ownerId)
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            !pending.contains { $0.operationId == command.operationId }
+        }
+    }
+
     /// Read only after catalogueCard has refreshed the exact confirmed card.
     /// The full owner refresh already includes care_entries; no second HTTP request.
     func manualWateringHistory(

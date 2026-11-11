@@ -51,6 +51,77 @@ private struct PlantCareRecommendationResponse: Decodable {
     }
 }
 
+enum ManualWateringAction: Sendable, Equatable {
+    case record
+    case undo(UUID)
+
+    init?(envelope: CommandEnvelopeDTO) {
+        guard envelope.plantId != nil,
+              envelope.commandName == "care.record" || envelope.commandName == "care.undo",
+              let payload = try? JSONSerialization.jsonObject(with: Data(envelope.payloadJSON.utf8)) as? [String: String] else {
+            return nil
+        }
+        if envelope.commandName == "care.record" {
+            guard payload.count == 3, payload["action_code"] == "water",
+                  let occurredAt = payload["occurred_at"], SQLTimestamp.microseconds(from: occurredAt) != nil,
+                  let timezone = payload["timezone"], TimeZone(identifier: timezone) != nil else { return nil }
+            self = .record
+        } else {
+            guard payload.count == 1, let id = payload["entry_id"], let entryId = UUID(uuidString: id) else { return nil }
+            self = .undo(entryId)
+        }
+    }
+
+    func envelope(plantId: UUID, operationId: UUID = UUID(), now: Date = Date(),
+                  timezone: TimeZone = .current) throws -> CommandEnvelopeDTO {
+        let name: String
+        let payload: [String: String]
+        switch self {
+        case .record:
+            name = "care.record"
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            formatter.timeZone = timezone
+            payload = ["action_code": "water", "occurred_at": formatter.string(from: now), "timezone": timezone.identifier]
+        case let .undo(entryId):
+            name = "care.undo"
+            payload = ["entry_id": entryId.uuidString.lowercased()]
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        return CommandEnvelopeDTO(operationId: operationId, commandName: name, plantId: plantId,
+                                  payloadJSON: String(decoding: data, as: UTF8.self))
+    }
+}
+
+private struct ManualWateringReceipt: Decodable {
+    let plantId: UUID
+    let entryId: UUID
+    let reversalId: UUID?
+    let state: String
+    let watermark: String
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case entryId = "entry_id"
+        case reversalId = "reversal_id"
+        case state, watermark
+    }
+
+    func validate(plantId expectedPlantId: UUID?, action: ManualWateringAction) throws {
+        guard plantId == expectedPlantId, SQLTimestamp.microseconds(from: watermark) != nil else {
+            throw SyncWireValidationError.invalidPage
+        }
+        switch action {
+        case .record:
+            guard state == "active", reversalId == nil else { throw SyncWireValidationError.invalidPage }
+        case let .undo(expectedEntryId):
+            guard state == "voided", entryId == expectedEntryId, reversalId != nil else {
+                throw SyncWireValidationError.invalidPage
+            }
+        }
+    }
+}
+
 public struct APIErrorResponse: Codable, Sendable, Equatable, Error {
     public struct ErrorBody: Codable, Sendable, Equatable {
         public let code: String
@@ -259,9 +330,10 @@ public actor PlantsAPIClient {
     ) async throws -> OutboxCommandResult {
         try validateSyncContext(context)
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
+        let manualWatering = context.session == nil ? nil : ManualWateringAction(envelope: envelope)
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
-        if catalogueCreate { encoder.outputFormatting = [.sortedKeys] }
+        if catalogueCreate || manualWatering != nil { encoder.outputFormatting = [.sortedKeys] }
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(envelope)
         var request = try buildRequest(
@@ -270,10 +342,18 @@ public actor PlantsAPIClient {
         if let session = context.session {
             request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         }
+        if manualWatering != nil {
+            request.setValue("en", forHTTPHeaderField: "X-Client-Locale")
+            request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
+        }
         // Build and dispatch with the captured token in the same actor turn.
         let result: OutboxCommandResult
         if catalogueCreate {
             result = .catalogueCreate(try await execute(request, as: PlantCreateReceiptDTO.self, expectedStatus: 200))
+        } else if let manualWatering {
+            let receipt = try await execute(request, as: ManualWateringReceipt.self, expectedStatus: 200)
+            try receipt.validate(plantId: envelope.plantId, action: manualWatering)
+            result = .generic
         } else {
             _ = try await execute(request, as: CommandResponseDTO.self)
             result = .generic

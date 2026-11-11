@@ -409,6 +409,23 @@ public actor LocalStore {
         )
     }
 
+    func enqueueManualWatering(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            guard let plantId = command.plantId, ManualWateringAction(envelope: command) != nil else {
+                throw OutboxEnqueueError.operationIdentityMismatch
+            }
+            let pending = try pendingOutboxEntries(for: context.ownerId)
+            guard !pending.contains(where: {
+                $0.plantId == plantId && $0.operationId != command.operationId
+                    && ($0.commandName == "care.record" || $0.commandName == "care.undo")
+            }) else { throw OutboxEnqueueError.operationIdentityMismatch }
+            _ = try enqueueCommand(operationId: command.operationId, ownerId: context.ownerId,
+                                   plantId: plantId, commandName: command.commandName, payloadJSON: command.payloadJSON)
+        }
+    }
+
     /// One session-ordered disk operation. Capacity is advisory; durable replay wins.
     /// No transport, recapture, watermark publication, or managed models escape here.
     func catalogueCreateJournal(

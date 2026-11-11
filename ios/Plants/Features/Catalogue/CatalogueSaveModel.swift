@@ -32,6 +32,13 @@ enum CatalogueCareRecommendationState: Sendable, Equatable {
     case failed
 }
 
+enum CatalogueManualWateringState: Sendable, Equatable {
+    case unavailable
+    case ready
+    case saving
+    case pending
+}
+
 enum CatalogueCardState: Sendable, Equatable {
     case idle
     case loading
@@ -66,6 +73,8 @@ final class CatalogueSaveModel {
     private var detailsPhase: CatalogueCardState = .idle
     private var historyPhase: CatalogueWateringHistoryState = .idle
     private var recommendationPhase: CatalogueCareRecommendationState = .idle
+    private var manualWateringPhase: CatalogueManualWateringState = .unavailable
+    private var frozenWateringCommand: CommandEnvelopeDTO?
 
     var wateringHistoryState: CatalogueWateringHistoryState {
         let value = historyPhase
@@ -116,6 +125,60 @@ final class CatalogueSaveModel {
             } else {
                 try? publish { recommendationPhase = .failed }
             }
+        }
+    }
+
+    var manualWateringState: CatalogueManualWateringState {
+        guard isAccessible, !isAnonymous, cardSummary != nil else { return .unavailable }
+        return manualWateringPhase
+    }
+
+    func recordWatering() async {
+        await beginManualWatering(.record)
+    }
+
+    func undoWatering(entryId: UUID) async {
+        guard case let .loaded(entries) = wateringHistoryState,
+              entries.contains(where: { $0.id == entryId && $0.state == "active" }) else { return }
+        await beginManualWatering(.undo(entryId))
+    }
+
+    private func beginManualWatering(_ action: ManualWateringAction) async {
+        guard manualWateringState == .ready, let card = cardSummary,
+              let command = try? action.envelope(plantId: card.id) else { return }
+        await sendManualWatering(command)
+    }
+
+    func retryManualWatering() async {
+        guard manualWateringState == .pending, let command = frozenWateringCommand else { return }
+        await sendManualWatering(command)
+    }
+
+    private func sendManualWatering(_ command: CommandEnvelopeDTO) async {
+        guard !isAnonymous, case let .saved(confirmation) = state,
+              let card = cardSummary, command.plantId == card.id,
+              manualWateringPhase != .saving else { return }
+        do {
+            try publish {
+                frozenWateringCommand = command
+                manualWateringPhase = .saving
+            }
+            let confirmed = try await repository.submitManualWatering(
+                command, confirmation: confirmation, context: context
+            )
+            if !confirmed {
+                try publish { manualWateringPhase = .pending }
+                return
+            }
+            try publish { frozenWateringCommand = nil }
+            await loadCard(includeManualWateringActions: true)
+            if case .loaded = wateringHistoryState {
+                try publish { manualWateringPhase = .ready }
+            } else {
+                try publish { manualWateringPhase = .unavailable }
+            }
+        } catch {
+            try? publish { manualWateringPhase = frozenWateringCommand == nil ? .unavailable : .pending }
         }
     }
 
@@ -311,10 +374,12 @@ final class CatalogueSaveModel {
     }
 
     /// Explicit initial read or retry. Details failure never rewrites durable save truth.
-    func loadCard() async {
+    func loadCard(includeManualWateringActions: Bool = false) async {
         guard detailsTask == nil, case let .saved(confirmation) = state else { return }
         if Task.isCancelled { cancel(); return }
-        let task = Task { await self.performCardLoad(confirmation) }
+        let task = Task {
+            await self.performCardLoad(confirmation, includeManualWateringActions: includeManualWateringActions)
+        }
         detailsTask = task
         await withTaskCancellationHandler {
             await task.value
@@ -325,11 +390,14 @@ final class CatalogueSaveModel {
         detailsTask = nil
     }
 
-    private func performCardLoad(_ confirmation: CatalogueCreateConfirmationSnapshot) async {
+    private func performCardLoad(
+        _ confirmation: CatalogueCreateConfirmationSnapshot, includeManualWateringActions: Bool
+    ) async {
         do {
             try publish {
                 detailsPhase = .loading
                 historyPhase = .loading
+                if manualWateringPhase != .saving { manualWateringPhase = .unavailable }
             }
             let summary = try await repository.catalogueCard(
                 confirmation: confirmation, envelope: frozenEnvelope, context: context
@@ -347,6 +415,13 @@ final class CatalogueSaveModel {
                 throw CatalogueSaveUnavailable.sessionChanged
             }
             try publish { historyPhase = .loaded(history) }
+            if includeManualWateringActions, !isAnonymous, manualWateringPhase != .saving {
+                let queued = try await repository.pendingManualWatering(plantId: summary.id, context: context)
+                try publish {
+                    if let queued { frozenWateringCommand = queued }
+                    manualWateringPhase = frozenWateringCommand == nil ? .ready : .pending
+                }
+            }
         } catch {
             if Task.isCancelled {
                 cancel()
@@ -366,6 +441,7 @@ final class CatalogueSaveModel {
         detailsTask?.cancel()
         detailsPhase = .unavailable
         historyPhase = .unavailable
+        manualWateringPhase = .unavailable
         phase = .unavailable(.cancelled)
     }
 

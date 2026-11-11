@@ -2731,6 +2731,137 @@ extension CollectionWireTests {
 }
 
 extension CollectionWireTests {
+    @MainActor
+    func testManualWateringLostResponseRestoresFrozenWriteAndReadsUndo() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let flow = UUID()
+        let input = CatalogueInput(speciesSlug: "fixture_collection_cap", personalName: "Saved plant")
+        let create = try input.makeEnvelope(operationId: operationId)
+        let receipt = try decodedCreateReceipt()
+        let schema = Schema([
+            LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
+            CatalogueInputCheckpointRecord.self, GuestDraftCacheRecord.self,
+            SyncedEntityRecord.self, SyncCheckpointRecord.self
+        ])
+        func openStore() throws -> LocalStore {
+            LocalStore(modelContainer: try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url)
+            ]))
+        }
+        func restore(_ store: LocalStore, _ api: PlantsAPIClient) async throws -> CatalogueSaveModel {
+            let repository = CollectionRepository(
+                store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api)
+            )
+            let outcome = await CatalogueSaveModel.restore(
+                store: store, apiClient: api, repository: repository,
+                ownerId: syncOwner, flowId: flow, session: syncSession, isAnonymous: false
+            )
+            guard case let .restored(model) = outcome else { throw SyncWireValidationError.invalidPage }
+            return model
+        }
+        let entryId = UUID()
+        func page(_ state: String? = nil) throws -> String {
+            let plant: [String: Any] = [
+                "entity_type": "plants", "id": serverPlantId.uuidString,
+                "updated_at": syncUntil, "deleted_at": NSNull(),
+                "data": ["id": serverPlantId.uuidString, "plant_id": input.speciesSlug,
+                         "personal_name": "Saved plant", "revision": 1, "care_revision": 1]
+            ]
+            var rows = [plant]
+            if let state {
+                rows.insert([
+                    "entity_type": "care_entries", "id": entryId.uuidString,
+                    "updated_at": syncUntil, "deleted_at": NSNull(),
+                    "data": ["id": entryId.uuidString, "plant_id": serverPlantId.uuidString,
+                             "task_id": NSNull(), "action_code": "water", "state": state,
+                             "occurred_at": "2026-11-03T07:00:00Z", "occurred_local_date": "2026-11-03"]
+                ], at: 0)
+            }
+            var result = syncObject()
+            result["changes"] = rows
+            return try syncJSON(result)
+        }
+        func reply(plantId: UUID = UUID(), state: String, reversal: UUID? = nil) throws -> String {
+            try syncJSON([
+                "plant_id": plantId.uuidString, "entry_id": entryId.uuidString,
+                "reversal_id": reversal.map { $0.uuidString as Any } ?? NSNull(),
+                "state": state, "watermark": syncUntil
+            ])
+        }
+
+        let original: URLRequest
+        do {
+            let transport = CatalogueTransport([.http(200, try page()), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = try openStore()
+            _ = try await store.checkpointCatalogueInput(
+                input, flowId: flow, operationId: operationId, context: lease, authority: api.syncAuthority
+            )
+            _ = try await queueCreate(create, ownerId: syncOwner, in: store)
+            try await store.acknowledgeCatalogueCreate(
+                create, receipt: receipt, context: lease, authority: api.syncAuthority
+            )
+            let model = try await restore(store, api)
+            await model.loadCard(includeManualWateringActions: true)
+            XCTAssertEqual(model.manualWateringState, .ready)
+            await model.recordWatering()
+            XCTAssertEqual(model.manualWateringState, .pending)
+            XCTAssertEqual(model.wateringHistoryState, .loaded([]))
+            let captured = await transport.capturedRequests()
+            original = try XCTUnwrap(captured.last)
+            model.cancel()
+        }
+
+        let validRecord = try reply(plantId: serverPlantId, state: "active")
+        let validUndo = try reply(plantId: serverPlantId, state: "voided", reversal: UUID())
+        let transport = CatalogueTransport([
+            .http(200, try page("active")), .http(200, validRecord), .http(200, try page("active")),
+            .http(200, validUndo), .http(200, try page("voided"))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let store = try openStore()
+        let model = try await restore(store, api)
+        await model.loadCard(includeManualWateringActions: true)
+        XCTAssertEqual(model.manualWateringState, .pending)
+        await model.retryManualWatering()
+        XCTAssertEqual(model.manualWateringState, .ready)
+        guard case let .loaded(active) = model.wateringHistoryState else {
+            return XCTFail("Expected synchronized manual fact")
+        }
+        XCTAssertEqual(active.map(\.id), [entryId])
+        XCTAssertEqual(active.map(\.state), ["active"])
+        await model.undoWatering(entryId: entryId)
+        XCTAssertEqual(model.manualWateringState, .ready)
+        guard case let .loaded(voided) = model.wateringHistoryState else {
+            return XCTFail("Expected synchronized reversal")
+        }
+        XCTAssertEqual(voided.map(\.id), [entryId])
+        XCTAssertEqual(voided.map(\.state), ["voided"])
+        let posts = await transport.capturedRequests().filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(posts.count, 2)
+        let retry = try XCTUnwrap(posts.first)
+        XCTAssertEqual(retry.httpBody, original.httpBody)
+        XCTAssertEqual(retry.value(forHTTPHeaderField: "X-Operation-Id"), original.value(forHTTPHeaderField: "X-Operation-Id"))
+        let undo = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(posts.last?.httpBody))
+        XCTAssertEqual(ManualWateringAction(envelope: undo), .undo(entryId))
+        XCTAssertNotEqual(undo.operationId.uuidString.lowercased(), original.value(forHTTPHeaderField: "X-Operation-Id"))
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(pending.isEmpty)
+
+        let invalid = CatalogueTransport([.http(200, try reply(state: "voided", reversal: UUID()))])
+        let invalidAPI = client(invalid)
+        await invalidAPI.bindSyncSession(syncSession)
+        let lease = try await invalidAPI.captureSyncContext(ownerId: syncOwner)
+        do {
+            _ = try await invalidAPI.sendOutboxCommand(undo, context: lease)
+            XCTFail("Accepted an undo receipt for another plant")
+        } catch SyncWireValidationError.invalidPage {}
+    }
+
     func testCareRecommendationUsesBoundOwnerAndRejectsUnverifiedProjection() async throws {
         let plantId = serverPlantId
         let text = "Check the substrate before watering."
