@@ -9,6 +9,9 @@ SELECT throws_ok($q$SELECT public.create_diagnosis_job(
     (SELECT id FROM photo),NULL,'en',true)$q$,'P0002','PHOTO_NOT_READY','pending photo cannot start a job');
 SELECT public.mark_diagnosis_upload_ready('16300000-0000-4000-8000-000000000002',(SELECT id FROM photo),repeat('a',64));
 SELECT throws_ok($q$SELECT public.create_diagnosis_job(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000011',
+    (SELECT id FROM photo),NULL,'en',true)$q$,'23505','IDEMPOTENCY_CONFLICT','upload operation cannot create a job');
+SELECT throws_ok($q$SELECT public.create_diagnosis_job(
     '16300000-0000-4000-8000-000000000001','16310000-0000-4000-8000-000000000012',
     (SELECT id FROM photo),NULL,'en',true)$q$,'P0002','PHOTO_NOT_READY','foreign photo cannot start a job');
 SELECT throws_ok($q$SELECT public.create_diagnosis_job(

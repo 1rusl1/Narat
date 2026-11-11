@@ -18,8 +18,9 @@ const other = "be350000-0000-4000-8000-000000000002";
 const photo = "be350000-0000-4000-8000-000000000003";
 const job = "be350000-0000-4000-8000-000000000004";
 const kb = "be350000-0000-4000-8000-000000000005";
-const op = "be350000-0000-4000-8000-000000000006";
+const uploadOperation = "be350000-0000-4000-8000-000000000006";
 const lease = "be350000-0000-4000-8000-000000000007";
+const jobOperation = "be350000-0000-4000-8000-000000000008";
 const host = "https://diagnosis.example.test";
 const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 const hash = Array.from(
@@ -42,6 +43,7 @@ function fixture(
   if (!options.missingKey) variables.ANTHROPIC_API_KEY = "fixture-anthropic";
   const env = (name: string) => variables[name];
   let expired = false;
+  let ticketIssued = false;
   let ready = false, created = false, leased = false, providerStarted = false;
   let providerCalls = 0, uploads = 0;
   let stored: Uint8Array<ArrayBuffer> | null = null;
@@ -98,7 +100,9 @@ function fixture(
     switch (rpc) {
       case "create_diagnosis_upload":
         assertEquals(body.p_owner_id, owner);
+        assertEquals(body.p_operation_id, uploadOperation);
         assertEquals(body.p_content_sha256, hash);
+        ticketIssued = true;
         return Response.json(row());
       case "read_diagnosis_upload":
         return Response.json(body.p_owner_id === owner ? row() : null);
@@ -110,13 +114,20 @@ function fixture(
       case "create_diagnosis_job": {
         assertEquals(body.p_owner_id, owner);
         assertEquals(body.p_photo_asset_id, photo);
+        if (ticketIssued && body.p_operation_id === uploadOperation) {
+          return Response.json({
+            code: "23505",
+            message: "IDEMPOTENCY_CONFLICT",
+          }, { status: 409 });
+        }
+        assertEquals(body.p_operation_id, jobOperation);
+        assert(ready);
         if (!body.p_can_dispatch) {
           return Response.json({
             code: "P0001",
             message: "PROVIDER_UNAVAILABLE",
           }, { status: 400 });
         }
-        assert(ready);
         const replayed = created;
         created = true;
         return Response.json({
@@ -265,7 +276,7 @@ function fixture(
     );
   const ticket = () =>
     api("/media/upload-ticket", {
-      operation_id: op,
+      operation_id: uploadOperation,
       mime_type: "image/jpeg",
       byte_size: jpeg.length,
       content_sha256: hash,
@@ -308,7 +319,18 @@ for (const providerFailure of [false, true]) {
       (await f.api("/media/complete", { photo_asset_id: photo })).status,
       200,
     );
-    const body = { operation_id: op, mode: "diagnosis", photo_asset_id: photo };
+    const body = {
+      operation_id: jobOperation,
+      mode: "diagnosis",
+      photo_asset_id: photo,
+    };
+    const conflict = await f.api("/analysis/jobs", {
+      ...body,
+      operation_id: uploadOperation,
+    });
+    assertEquals(conflict.status, 409);
+    assertEquals((await conflict.json()).error.code, "IDEMPOTENCY_CONFLICT");
+    assertEquals(f.work.length, 0);
     const created = await f.api("/analysis/jobs", body);
     assertEquals(created.status, 202);
     assertEquals((await created.json()).job_id, job);
@@ -360,13 +382,16 @@ Deno.test("Diagnosis rejects another owner and tampered image before writing Sto
 
 Deno.test("Diagnosis missing provider credential fails closed before dispatch", async () => {
   const f = fixture({ missingKey: true });
+  const details = await (await f.ticket()).json();
+  assertEquals((await f.put(details.signed_upload_url)).status, 200);
   const response = await f.api("/analysis/jobs", {
-    operation_id: op,
+    operation_id: jobOperation,
     photo_asset_id: photo,
     mode: "diagnosis",
   });
   assertEquals(response.status, 503);
-  assertEquals(f.rpcNames, ["create_diagnosis_job"]);
+  assertEquals(f.rpcNames.at(-1), "create_diagnosis_job");
+  assertEquals(f.providerCalls(), 0);
   assertEquals(f.work.length, 0);
 });
 
