@@ -30,7 +30,7 @@ struct RootContainerView: View {
     @State private var starting = false
     @State private var startupFailed = false
 #if DEBUG && targetEnvironment(simulator)
-    @State private var stagingSignIn = false
+    @State private var stagingAccount: StagingAccountPresentation?
 #endif
 #if DEBUG
     @State private var fixtureContext: CatalogueUIFixtureContext?
@@ -84,12 +84,10 @@ struct RootContainerView: View {
         }
         .task { await prepareCatalogue() }
 #if DEBUG && targetEnvironment(simulator)
-        .sheet(isPresented: $stagingSignIn) {
-            if let catalogue {
-                StagingAccountView(connection: catalogue) { snapshot in
-                    installStagingAnalysis(connection: catalogue, owner: snapshot.session.userId)
-                    stagingSignIn = false
-                }
+        .sheet(item: $stagingAccount) { account in
+            StagingAccountView(connection: account.connection) { snapshot in
+                installStagingAnalysis(connection: account.connection, owner: snapshot.session.userId)
+                stagingAccount = nil
             }
         }
 #endif
@@ -184,7 +182,7 @@ struct RootContainerView: View {
         if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
             installStagingAnalysis(connection: connection, owner: snapshot.session.userId)
         } else {
-            stagingSignIn = true
+            stagingAccount = StagingAccountPresentation(connection: connection)
         }
     }
 
@@ -416,6 +414,11 @@ final class StagingAnalysisService: AnalysisService {
         guard activeAttempt == attempt else { throw CancellationError() }
         try api.syncAuthority.withBoundValid(lease) {}
     }
+}
+
+private struct StagingAccountPresentation: Identifiable {
+    let id = UUID()
+    let connection: CatalogueConnection
 }
 
 private struct StagingAccountView: View {
