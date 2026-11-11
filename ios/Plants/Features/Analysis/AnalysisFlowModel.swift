@@ -4,6 +4,8 @@ import Observation
 /// Immutable input retained in memory for an explicit retry of the same operation.
 public struct AnalysisServiceRequest: Sendable, Equatable {
     public let operationId: UUID
+    // Upload and job creation share the backend operation receipt namespace.
+    public let uploadOperationId = UUID()
     public let flowId: UUID
     public let mode: AnalysisMode
     public let intent: AddIntent

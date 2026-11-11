@@ -355,7 +355,7 @@ final class StagingAnalysisService: AnalysisService {
             if !progress.photoReady {
                 let jpeg = request.photo.aiVisionJPEG
                 let ticket = try await api.issueAnalysisUpload(
-                    jpeg: jpeg, operationId: request.operationId, locale: locale, context: lease
+                    jpeg: jpeg, operationId: request.uploadOperationId, locale: locale, context: lease
                 )
                 try verify(lease, attempt: attempt)
                 guard progress.photoId == nil || progress.photoId == ticket.photoAssetId else {

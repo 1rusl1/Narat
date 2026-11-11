@@ -2591,6 +2591,7 @@ extension CollectionWireTests {
 
     func testDiagnosisUploadAndReplaySendCanonicalWireWithBoundToken() async throws {
         let photo = serverPlantId
+        let uploadOperationId = UUID()
         let upload = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?token=mock"
         let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
         let queued = diagnosisJob(id: operationId, status: "queued")
@@ -2602,7 +2603,7 @@ extension CollectionWireTests {
         await api.bindSyncSession(accessSession)
         let context = try await api.captureSyncContext(ownerId: accessOwner)
         let bytes = Data("abc".utf8)
-        let ticket = try await api.issueAnalysisUpload(jpeg: bytes, operationId: operationId, locale: .en, context: context)
+        let ticket = try await api.issueAnalysisUpload(jpeg: bytes, operationId: uploadOperationId, locale: .en, context: context)
         try await api.uploadAnalysisJPEG(bytes, ticket: ticket, locale: .en, context: context)
         try await api.confirmAnalysisPhoto(id: photo, locale: .en, context: context)
         let created = try await api.createAnalysisJob(operationId: operationId, mode: .diagnosis, photoAssetId: photo, locale: .en, context: context)
@@ -2618,7 +2619,7 @@ extension CollectionWireTests {
         let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(requests[0].httpBody)) as? [String: Any])
         XCTAssertEqual(body["content_sha256"] as? String, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         XCTAssertEqual(body["byte_size"] as? Int, bytes.count)
-        XCTAssertEqual(body["operation_id"] as? String, operationId.uuidString.lowercased())
+        XCTAssertEqual(body["operation_id"] as? String, uploadOperationId.uuidString.lowercased())
         XCTAssertEqual(body["mime_type"] as? String, "image/jpeg")
         XCTAssertEqual(requests[1].url?.absoluteString, upload)
         XCTAssertEqual(requests[1].httpBody, bytes)
@@ -2763,17 +2764,18 @@ extension CollectionWireTests {
     }
 
     @MainActor
-    func testStagingAnalysisRecoversLostUploadAndJobRepliesWithOneOperation() async throws {
+    func testStagingAnalysisRecoversLostUploadAndJobRepliesWithDistinctStableOperations() async throws {
         let photo = serverPlantId
         let id = operationId
+        let jobId = UUID()
         let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
         let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
-        let result = #"{"analysis_id":"\#(photo.uuidString)","job_id":"\#(id.uuidString)","kb_release_id":"\#(photo.uuidString)","mode":"diagnosis","identification_status":"identified","plant_id":"monstera_deliciosa","genus_id":"monstera","diagnosis_status":"problem_detected","selected_condition_id":"root_rot","candidates":[{"condition_id":"root_rot","rank":1,"confidence":0.7}],"visual_markers":[],"evidence_basis":[],"limitations":[],"first_action_summary":null,"control_interval_days":null,"plan_availability":"missing_condition_profile","analysis_receipt":"test-receipt","plant_display_name":"Monstera deliciosa","condition_display_name":"Root rot"}"#
+        let result = #"{"analysis_id":"\#(photo.uuidString)","job_id":"\#(jobId.uuidString)","kb_release_id":"\#(photo.uuidString)","mode":"diagnosis","identification_status":"identified","plant_id":"monstera_deliciosa","genus_id":"monstera","diagnosis_status":"problem_detected","selected_condition_id":"root_rot","candidates":[{"condition_id":"root_rot","rank":1,"confidence":0.7}],"visual_markers":[],"evidence_basis":[],"limitations":[],"first_action_summary":null,"control_interval_days":null,"plan_availability":"missing_condition_profile","analysis_receipt":"test-receipt","plant_display_name":"Monstera deliciosa","condition_display_name":"Root rot"}"#
         let transport = CatalogueTransport([
-            .http(200, diagnosisTicket(url: url, photoId: photo)),
+            .network, .http(200, diagnosisTicket(url: url, photoId: photo)),
             .network, .http(200, ready),
-            .network, .http(200, diagnosisJob(id: id, status: "queued")),
-            .http(200, diagnosisJob(id: id, status: "succeeded", result: result)
+            .network, .http(200, diagnosisJob(id: jobId, status: "queued")),
+            .http(200, diagnosisJob(id: jobId, status: "succeeded", result: result)
                 .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"consumed""#))
         ])
         let api = client(transport)
@@ -2790,7 +2792,7 @@ extension CollectionWireTests {
             ),
             conditions: CareConditionsInput(), locale: .en
         )
-        for _ in 0..<2 {
+        for _ in 0..<3 {
             do {
                 _ = try await service.analyze(input)
                 XCTFail("Expected a lost response")
@@ -2801,12 +2803,23 @@ extension CollectionWireTests {
         let finished = try await service.analyze(input)
         XCTAssertEqual(finished.speciesLabel, "Monstera deliciosa")
         XCTAssertEqual(finished.conditionLabel, "Root rot")
-        XCTAssertEqual(finished.analysis.jobId, id)
+        XCTAssertEqual(finished.analysis.jobId, jobId)
         let requests = await transport.capturedRequests()
-        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "POST", "POST", "GET"])
-        XCTAssertEqual(requests.map { $0.url?.lastPathComponent },
-                       ["upload-ticket", photo.uuidString.lowercased(), "complete", "jobs", "jobs", id.uuidString.lowercased()])
-        XCTAssertEqual(requests[3].httpBody, requests[4].httpBody)
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "PUT", "POST", "POST", "POST", "GET"])
+        XCTAssertEqual(requests.map { $0.url?.lastPathComponent }, [
+            "upload-ticket", "upload-ticket", photo.uuidString.lowercased(), "complete",
+            "jobs", "jobs", jobId.uuidString.lowercased()
+        ])
+        guard requests.count == 7 else { return }
+        let uploadBody = try XCTUnwrap(requests[0].httpBody)
+        let upload = try XCTUnwrap(JSONSerialization.jsonObject(with: uploadBody) as? [String: Any])
+        let jobBody = try XCTUnwrap(requests[4].httpBody)
+        let job = try JSONDecoder().decode([String: String].self, from: jobBody)
+        XCTAssertEqual(upload["operation_id"] as? String, input.uploadOperationId.uuidString.lowercased())
+        XCTAssertEqual(job["operation_id"], id.uuidString.lowercased())
+        XCTAssertNotEqual(upload["operation_id"] as? String, job["operation_id"])
+        XCTAssertEqual(requests[1].httpBody, uploadBody)
+        XCTAssertEqual(requests[5].httpBody, jobBody)
     }
 }
 #endif
