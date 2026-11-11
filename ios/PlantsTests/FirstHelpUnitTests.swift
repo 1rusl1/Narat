@@ -214,4 +214,238 @@ final class FirstHelpUnitTests: XCTestCase {
         XCTAssertEqual(afterDiagnosis.diagnosisQuota.reason, "starter_exhausted")
         XCTAssertEqual(afterDiagnosis.diagnosisQuota.mode, .diagnosis)
     }
+
+    private func serviceResult(
+        mode: AnalysisMode = .diagnosis,
+        status: IdentificationStatus = .resolved,
+        labels: Bool = true
+    ) -> AnalysisServiceResult {
+        let resolved = status == .resolved
+        return AnalysisServiceResult(
+            analysis: PreliminaryAnalysis(
+                id: UUID(), jobId: UUID(), kbReleaseId: UUID(), mode: mode,
+                identificationStatus: status,
+                plantId: resolved ? "fixture-species" : nil, genusId: nil,
+                diagnosisStatus: resolved ? .conditionDetected : .unknown,
+                candidates: [], selectedConditionId: resolved ? "fixture-condition" : nil,
+                visualMarkers: [], evidenceBasis: [], limitations: ["Fixture limitation"],
+                firstActionSummary: nil, controlIntervalDays: nil,
+                analysisReceipt: ""
+            ),
+            speciesLabel: labels ? "Fixture species" : nil,
+            conditionLabel: labels ? "Fixture condition" : nil
+        )
+    }
+
+    func testInjectedServiceUsesPreparedGalleryPhotoForBothModes() async throws {
+        for intent in [AddIntent.problem, .care] {
+            let mode: AnalysisMode = intent == .problem ? .diagnosis : .identification
+            let response = serviceResult(mode: mode)
+            let service = GalleryAnalysisFixture(response: response)
+            let model = AnalysisFlowModel(service: service)
+            model.router.selectIntent(intent)
+            if intent == .care { model.router.selectCareMethod(.scan) }
+            let raw = photoFixture()
+            model.selectPhotoData(raw, locale: .pl)
+            XCTAssertEqual(model.router.flowState.currentStep, .analyzing)
+            let task = try XCTUnwrap(model.submitAnalysis(locale: .en))
+            await task.value
+
+            let request = try XCTUnwrap(service.requests.first)
+            XCTAssertEqual(service.requests.count, 1)
+            XCTAssertEqual(request.photo, try AnalysisPhotoInput().preparePhoto(from: raw))
+            XCTAssertEqual(request.flowId, model.router.flowState.flowId)
+            XCTAssertEqual(request.intent, intent)
+            XCTAssertEqual(request.mode, mode)
+            XCTAssertEqual(request.locale, .pl)
+            XCTAssertEqual(model.preliminaryResult, response.analysis)
+            XCTAssertEqual(model.speciesLabel, "Fixture species")
+            XCTAssertEqual(model.conditionLabel, mode == .diagnosis ? "Fixture condition" : nil)
+            XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
+            XCTAssertFalse(model.isAnalyzing)
+            XCTAssertNil(model.analysisError)
+            XCTAssertNil(model.accessState)
+            XCTAssertNil(model.submitAnalysis(locale: .en))
+            XCTAssertEqual(service.requests.count, 1)
+        }
+    }
+
+    func testInjectedUnknownOutOfScopeAndMissingLabelsRemainUncertain() async throws {
+        for status in [IdentificationStatus.unknown, .outOfScope, .genusOnly, .resolved] {
+            let response = serviceResult(status: status, labels: status != .resolved)
+            let model = AnalysisFlowModel(service: GalleryAnalysisFixture(response: response))
+            model.selectPhotoData(photoFixture())
+            let task = try XCTUnwrap(model.submitAnalysis(locale: .en))
+            await task.value
+            XCTAssertEqual(model.preliminaryResult, response.analysis)
+            XCTAssertNil(model.speciesLabel)
+            XCTAssertNil(model.conditionLabel)
+            XCTAssertEqual(model.preliminaryResult?.limitations, ["Fixture limitation"])
+            XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
+        }
+    }
+
+    func testExplicitRetryKeepsFrozenRequestAndOperationAfterProviderFailure() async throws {
+        let service = GalleryAnalysisFixture(response: serviceResult())
+        service.failure = AnalysisServiceFailure.retryableProvider
+        let model = AnalysisFlowModel(service: service)
+        model.selectLightLevel(.medium)
+        model.selectPhotoData(photoFixture(), locale: .pl)
+        let firstTask = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await firstTask.value
+        let original = try XCTUnwrap(model.frozenRequest)
+        XCTAssertEqual(model.analysisError, "analysis.error.provider")
+        XCTAssertNil(model.preliminaryResult)
+        XCTAssertFalse(model.isAnalyzing)
+        XCTAssertEqual(service.requests.count, 1)
+
+        model.selectLightLevel(.low)
+        model.selectWateringHabit(.frequent)
+        service.failure = nil
+        let retry = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        _ = model.submitAnalysis(locale: .en)
+        await retry.value
+        XCTAssertEqual(service.requests, [original, original])
+        XCTAssertEqual(model.currentOperationId, original.operationId)
+        XCTAssertEqual(original.locale, .pl)
+        XCTAssertEqual(original.conditions.lightLevel, .medium)
+        XCTAssertEqual(model.router.flowState.conditions.lightLevel, .low)
+        XCTAssertNotNil(model.preliminaryResult)
+    }
+
+    func testExplicitInstallationUsesExistingPreparedPhotoAndHidesUnexpectedErrors() async throws {
+        let model = AnalysisFlowModel()
+        model.router.selectIntent(.problem)
+        model.selectPhotoData(photoFixture())
+        let prepared = try XCTUnwrap(model.preparedPhoto)
+        XCTAssertEqual(model.router.flowState.currentStep, .careQuestions)
+        model.submitAnalysis(locale: .en)
+        XCTAssertEqual(model.analysisError, "analysis.error.unavailable")
+
+        let service = GalleryAnalysisFixture(response: serviceResult())
+        service.failure = NSError(
+            domain: "private-provider-token", code: 401,
+            userInfo: [NSLocalizedDescriptionKey: "secret raw failure"]
+        )
+        model.installAnalysisService(service)
+        XCTAssertEqual(model.preparedPhoto, prepared)
+        let task = try XCTUnwrap(model.submitAnalysis(locale: .pl))
+        await task.value
+        XCTAssertEqual(service.requests.first?.photo, prepared)
+        XCTAssertEqual(model.analysisError, "analysis.error.failed")
+        XCTAssertNil(model.preliminaryResult)
+        XCTAssertNil(model.speciesLabel)
+        XCTAssertNil(model.conditionLabel)
+    }
+
+    func testCancelledAndReplacedOperationsIgnoreLateServiceCompletion() async throws {
+        let response = serviceResult()
+        let service = GalleryAnalysisFixture(response: response)
+        service.suspend = true
+        let model = AnalysisFlowModel(service: service)
+        model.selectPhotoData(photoFixture())
+        let cancelled = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await service.waitForRequestCount(1)
+        let oldOperation = try XCTUnwrap(model.currentOperationId)
+        model.returnFromAnalysis()
+        service.completeNext(response)
+        await cancelled.value
+        XCTAssertNil(model.preliminaryResult)
+        XCTAssertNil(model.currentOperationId)
+        XCTAssertEqual(model.router.flowState.currentStep, .selectIntent)
+
+        model.selectPhotoData(photoFixture())
+        let replaced = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await service.waitForRequestCount(2)
+        let replacedOperation = try XCTUnwrap(model.currentOperationId)
+        XCTAssertNotEqual(replacedOperation, oldOperation)
+        model.selectPhotoData(photoFixture(), locale: .pl)
+        let current = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await service.waitForRequestCount(3)
+        let currentOperation = try XCTUnwrap(model.currentOperationId)
+        XCTAssertNotEqual(currentOperation, replacedOperation)
+        service.completeNext(response)
+        await replaced.value
+        XCTAssertTrue(model.isAnalyzing)
+        XCTAssertNil(model.preliminaryResult)
+        XCTAssertEqual(model.currentOperationId, currentOperation)
+        service.completeNext(response)
+        await current.value
+        XCTAssertEqual(model.preliminaryResult, response.analysis)
+        XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
+    }
+
+    func testFailedOrObsoletePhotoLoadCannotSubmitPreviousBytes() async throws {
+        let service = GalleryAnalysisFixture(response: serviceResult())
+        let model = AnalysisFlowModel(service: service)
+        model.selectPhotoData(photoFixture())
+        let first = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await first.value
+        model.selectPhotoData(Data([0, 1, 2]))
+        XCTAssertNil(model.preparedPhoto)
+        XCTAssertNil(model.frozenRequest)
+        XCTAssertNil(model.preliminaryResult)
+        XCTAssertNotNil(model.photoError)
+        XCTAssertEqual(model.router.flowState.currentStep, .selectPhoto)
+        XCTAssertNil(model.submitAnalysis(locale: .en))
+        XCTAssertEqual(service.requests.count, 1)
+
+        let obsolete = model.beginPhotoSelection()
+        let newest = model.beginPhotoSelection()
+        model.completePhotoSelection(photoFixture(), selectionId: obsolete, locale: .en)
+        XCTAssertNil(model.preparedPhoto)
+        model.failPhotoSelection(newest)
+        XCTAssertFalse(model.isPreparingPhoto)
+        XCTAssertNotNil(model.photoError)
+        let cancelled = model.beginPhotoSelection()
+        model.showCatalogue()
+        model.completePhotoSelection(photoFixture(), selectionId: cancelled, locale: .en)
+        XCTAssertNil(model.preparedPhoto)
+        XCTAssertEqual(model.router.flowState.currentStep, .selectCatalogueSpecies)
+        let back = model.beginPhotoSelection()
+        model.returnFromAnalysis()
+        model.completePhotoSelection(photoFixture(), selectionId: back, locale: .en)
+        XCTAssertNil(model.preparedPhoto)
+        XCTAssertEqual(model.router.flowState.currentStep, .selectIntent)
+        XCTAssertEqual(service.requests.count, 1)
+    }
+}
+
+@MainActor
+private final class GalleryAnalysisFixture: AnalysisService {
+    let response: AnalysisServiceResult
+    var failure: (any Error)?
+    var suspend = false
+    private(set) var requests: [AnalysisServiceRequest] = []
+    private var pending: [CheckedContinuation<AnalysisServiceResult, any Error>] = []
+    private var requestWaiter: CheckedContinuation<Void, Never>?
+    private var awaitedCount = 0
+
+    init(response: AnalysisServiceResult) {
+        self.response = response
+    }
+
+    func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
+        requests.append(request)
+        if requests.count >= awaitedCount {
+            requestWaiter?.resume()
+            requestWaiter = nil
+        }
+        if suspend {
+            // Deliberately ignores Task cancellation to exercise the model's generation guard.
+            return try await withCheckedThrowingContinuation { pending.append($0) }
+        }
+        if let failure { throw failure }
+        return response
+    }
+
+    func waitForRequestCount(_ count: Int) async {
+        guard requests.count < count else { return }
+        awaitedCount = count
+        await withCheckedContinuation { requestWaiter = $0 }
+    }
+
+    func completeNext(_ response: AnalysisServiceResult) {
+        pending.removeFirst().resume(returning: response)
+    }
 }

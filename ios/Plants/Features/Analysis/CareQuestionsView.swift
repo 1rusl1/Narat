@@ -1,8 +1,11 @@
 import SwiftUI
+import PhotosUI
 
 public struct CareQuestionsView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var photoLoadTask: Task<Void, Never>?
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
         self.model = model
@@ -17,7 +20,11 @@ public struct CareQuestionsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if model.router.flowState.currentStep == .selectPhoto {
-                    AnalysisUnavailableSection(model: model, languageStore: languageStore)
+                    if model.hasAnalysisService {
+                        gallerySection
+                    } else {
+                        AnalysisUnavailableSection(model: model, languageStore: languageStore)
+                    }
                 } else {
                     questionStepSection
                 }
@@ -25,6 +32,59 @@ public struct CareQuestionsView: View {
             .padding()
         }
         .navigationTitle(isPolish ? "Pierwsza pomoc" : "First Help")
+        .onChange(of: selectedPhoto) { _, item in
+            guard let item else { return }
+            selectedPhoto = nil
+            photoLoadTask?.cancel()
+            let selectionId = model.beginPhotoSelection()
+            photoLoadTask = Task { @MainActor in
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        model.failPhotoSelection(selectionId)
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                    model.completePhotoSelection(
+                        data, selectionId: selectionId,
+                        locale: languageStore.currentLocale
+                    )
+                } catch {
+                    model.failPhotoSelection(selectionId)
+                }
+            }
+        }
+        .onDisappear {
+            photoLoadTask?.cancel()
+            if model.isPreparingPhoto { model.cancelAnalysis() }
+        }
+    }
+
+    private var gallerySection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Text(isPolish ? "Wybierz zdjęcie" : "Choose photo")
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("photo.select.gallery")
+
+            if model.isPreparingPhoto {
+                ProgressView(isPolish ? "Wczytywanie zdjęcia" : "Loading photo")
+            }
+            if model.photoError != nil {
+                Text(isPolish
+                     ? "Nie można odczytać zdjęcia. Wybierz inne."
+                     : "Unable to read this photo. Choose another.")
+                    .accessibilityIdentifier("photo.error")
+            }
+            Button(isPolish ? "Wstecz" : "Back") {
+                model.returnFromAnalysis()
+            }
+            .accessibilityIdentifier("analysis.back.button")
+            Button(isPolish ? "Przejdź do katalogu" : "Open catalogue") {
+                model.showCatalogue()
+            }
+            .accessibilityIdentifier("analysis.catalogue.button")
+        }
     }
 
     private var questionStepSection: some View {
@@ -53,7 +113,7 @@ public struct CareQuestionsView: View {
 
             HStack(spacing: 12) {
                 Button {
-                    model.router.navigateBack()
+                    model.navigateBack()
                 } label: {
                     Text(isPolish ? "Wstecz" : "Back")
                         .frame(maxWidth: .infinity)
