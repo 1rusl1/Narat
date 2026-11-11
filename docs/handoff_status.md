@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## B — manual care journal verified on narat-staging, 11 November 2026
+
+The accepted backend is `cc721cee2dfaecbfcab37b2cc9714ee73dc4f1b9` in `origin/codex/plants-backend`. Migration 016, the production command router, an English wire contract and SQL/HTTP tests implement standalone `care.record` and `care.undo`. The existing PostgreSQL gate now runs `manual_care_journal.test.sql` when 016 is selected. Only 016 and the `plants-api` function were deployed on `narat-staging`.
+
+Local run `parallel-backend-care-journal-20261111-01` ended BLOCKED after three GPT-6 Luna High calls without a usable implementation, totaling 121.66 s of model time. The controller implemented the scoped candidate in `d3b84ee`. The initial SQL fixture used a catalogue instance without a required taxon and was corrected to the existing identification fixture shape. `-02` independently accepted the actual diff with English GPT-6 Astra High Reviewer and QA reports. All five gates passed, including 148 automation, 350 Deno and 25 new pgTAP assertions in each clean/upgrade database, in addition to 556 existing assertions in each database. The run took 273.07 s, including 172.49 s of model time and 91.37 s of checks.
+
+The English live probe on saved test plant `276ffeec-1522-4b42-b290-e6c07860f8d8` took 4.21 s. Record returned entry `4e9c6512-f048-4c3a-b2b9-ecc51a89ca15`. Fresh sign-in and owner `/sync` read the same active fact. Exact record replay returned the original receipt and a changed replay returned 409. Undo and exact undo replay returned reversal `fa0e5a73-ecad-4eda-98a9-9e07ef46a549`. Owner sync confirmed one voided fact and one reversal, with no schedule or plan mutations. A received the [manual care command contract](../specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md). Full T055–T056/T062–T068/T171 and iOS verification remain open.
+
+Next is the authorized Monstera recommendation slice. Staging currently has one published condition profile, zero published plant care profiles and no positive persisted diagnosis. Use the supplied single-source PlantProfile v2 for a conditional soil check, add the owner read endpoint and verify the text, provenance link and null check interval on the saved plant. Preserve the previous diagnosis release for historical jobs.
+
 ## B — plant.create verified on narat-staging, 11 November 2026
 
 The accepted fix is `b894b9fedbab656cbe191da4ec1f8195760c422f` on `origin/codex/plants-backend`. Migration `202611110015_plant_create_pgcrypto.sql` makes the existing RPC resolve `digest` in both layouts. `collection_cap.test.sql` adds hosted create, stable replay, compatibility with an existing receipt and one-instance verification. Staging dry-run listed only 015, and the SQL-only deployment applied it successfully.
