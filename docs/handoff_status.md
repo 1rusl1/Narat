@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** Собрана и запущена staging `.app` из `8b1f131`. Вход открыт, фото Monstera добавлено в Simulator. Сквозной прогон ждёт готовности staging API/worker, ключа Anthropic и входа тестового аккаунта в приложении.
+**Обновлено 2026-11-11.** Собрана и запущена staging `.app` из `8b1f131`. Вход открыт, фото Monstera добавлено в Simulator. Backend развернул API/worker и подтвердил приватную загрузку. Сквозной прогон ждёт ключа Anthropic и входа тестового аккаунта в приложении.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -18,7 +18,7 @@ xcrun simctl install 32009F39-32EF-426B-A91E-31B368D6C27E '/Users/ruslansabirov/
 xcrun simctl launch --terminate-running-process 32009F39-32EF-426B-A91E-31B368D6C27E app.narat.plants.stagingdiagnosis --narat-staging-analysis
 ```
 
-Backend принял `368d0f2` и начал обновление `narat-staging`. Готовность сервера и настройка Anthropic ещё не подтверждены. В приложении сессия тестовой учётки и путь до реального результата пока не проверены. После подтверждения API/worker и Anthropic войти через `Test account`, открыть `Diagnose a plant problem`, выбрать Monstera и затем неоднозначное фото. Зафиксировать фактические результаты обоих прогонов. T037–T039 и T153 открыты.
+Backend сообщает, что миграции, профиль Monstera, API и worker из `368d0f2` развёрнуты на `narat-staging`. На стенде проверены загрузка в приватный Storage и отказ прямого чтения. На worker отсутствует `ANTHROPIC_API_KEY`. В приложении сессия тестовой учётки и путь до реального результата пока не проверены. После настройки Anthropic войти через `Test account`, открыть `Diagnose a plant problem`, выбрать Monstera и затем неоднозначное фото. Зафиксировать фактические результаты обоих прогонов. T037–T039 и T153 открыты.
 
 ## Подключение к стенду и форма входа
 
