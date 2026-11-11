@@ -4,6 +4,8 @@ Models are scripted fixtures; no paid/live calls or Simulator acceptance are imp
 """
 
 import copy
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -15,9 +17,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from orchestration.context import PROJECT_START, PROJECT_END, SUMMARY_START, SUMMARY_END, validate
 from orchestration.engine import Engine
+from orchestration.reporting import run_summary
 from orchestration.repository import apply_patch, contents, diff, fingerprint, git
 from orchestration.storage import digest
 from test_orchestration_context import CONFIG, task
+import orchestrator
 
 
 class FakeProvider:
@@ -101,6 +105,27 @@ class EngineTests(unittest.TestCase):
         validate(self.config, tasks, self.root)
         return Engine(self.root, self.directory, self.config, tasks, provider)
 
+    def test_prepare_reports_readonly_plan_without_creating_run(self):
+        self.task["write_files"] = []
+        config_path = self.base / "config.json"
+        config_path.write_text(json.dumps(self.config))
+        manifest_path = self.base / "manifest.json"
+        manifest_path.write_text(json.dumps({"tasks": [self.task]}))
+        output = io.StringIO()
+        args = ["orchestrator.py", "prepare", "--config", str(config_path), "--manifest", str(manifest_path)]
+        with patch.object(orchestrator, "ROOT", self.root), patch.object(orchestrator, "RUNS", self.directory), \
+                patch.object(sys, "argv", args), redirect_stdout(output), redirect_stderr(io.StringIO()):
+            self.assertEqual(orchestrator.main(), 0)
+            plan = json.loads(output.getvalue())["tasks"]["one"]
+            self.assertEqual(plan["preflight"], "PASS")
+            self.assertEqual(plan["checks"], ["diff-check", "unit", "ui"])
+            self.assertEqual(set(plan["roles"]), {"reviewer", "qa"})
+            self.config["publish"]["branch"] = "other"
+            config_path.write_text(json.dumps(self.config))
+            self.assertEqual(orchestrator.main(), 2)
+        self.assertFalse(self.directory.exists())
+        self.assertEqual(git(self.root, "status", "--porcelain"), b"")
+
     def test_happy_path_checks_review_qa_commit_push_and_no_duplicate_resume(self):
         provider = FakeProvider([patch_response()])
         engine = self.engine(provider)
@@ -123,6 +148,9 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(metrics), 3)
         self.assertTrue(all(m["task_status"] == "COMPLETED" for m in metrics))
         self.assertEqual(sum(m["input_tokens"] for m in metrics), 300)
+        report = (self.root / "docs/validation/automation/tasks/one.md").read_text()
+        self.assertIn("developer 1, reviewer 1, qa 1", report)
+        self.assertIn("Модели — 0.30 с", report)
 
     def test_failed_build_blocks_reviewer_and_stops_no_progress(self):
         self.config["checks"]["unit"]["argv"] = [sys.executable, "-c", "import sys; print('file.swift:10: error broken'); sys.exit(1)"]
@@ -543,6 +571,13 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(retry.calls, [])
         self.assertTrue(recovered.state.data["tasks"]["one"]["replan_required"])
         self.assertIn("new manifest/run", recovered.state.data["tasks"]["one"]["reason"])
+        state = recovered.state.data
+        summary = run_summary(state, self.directory)
+        self.assertIn("WAITING", summary)
+        self.assertIn("тайм-ауты моделей — 1", summary)
+        self.assertIn("new manifest/run", summary)
+        self.assertEqual(len(state["invocations"]), 2)
+        self.assertTrue(all(run["elapsed_seconds"] is not None for run in state["invocations"]))
 
     def test_candidate_acceptance_receives_real_committed_diff_without_developer(self):
         self.task["write_files"] = []

@@ -10,20 +10,53 @@ import signal
 import sys
 
 from doctor import ROOT, RUNS, BUNDLED_CODEX, exclusive_run
-from orchestration.context import make_packet, validate
+from orchestration.context import (combined_acceptance, make_packet, project_state, route_level,
+                                   route_models, selected_checks, validate)
 from orchestration.engine import Engine
 from orchestration.metrics import compare_reports, metrics_report
+from orchestration.preflight import candidate_comparison, verify_inputs
 from orchestration.provider import Agy, BUNDLED_AGY, Codex, MultiProvider
-from orchestration.storage import State
+from orchestration.reporting import run_summary
+from orchestration.repository import git
 
 
 def metrics(directory):
     return metrics_report(json.loads((directory / "state.json").read_text()))
 
 
+def prepare(config, tasks, task_id):
+    project_state(ROOT)
+    branch = git(ROOT, "branch", "--show-current").decode().strip()
+    settings = config["publish"]
+    if settings["enabled"] and branch != settings["branch"]:
+        raise ValueError(f"Current branch {branch!r} differs from publish.branch {settings['branch']!r}")
+    head = git(ROOT, "rev-parse", "HEAD").decode().strip()
+    plans = {}
+    for task in tasks:
+        if task_id and task["id"] != task_id:
+            continue
+        if task["depends_on"]:
+            preflight = "deferred until dependencies complete"
+        else:
+            _, deleted_files = candidate_comparison(ROOT, task, {"base_head": head})
+            verify_inputs(ROOT, config, task, {}, "developer", deleted_files)
+            preflight = "PASS"
+        roles = ["developer"] if task["write_files"] else []
+        roles += ["acceptance"] if combined_acceptance(config, task) else ["reviewer", "qa"]
+        plans[task["id"]] = {
+            "preflight": preflight,
+            "checks": selected_checks(config, task),
+            "roles": {role: route_models(config["roles"][role][route_level(task, {}, role)])[0]
+                      for role in roles},
+        }
+    if not plans:
+        raise ValueError(f"Unknown task {task_id!r}")
+    return {"branch": branch, "head": head, "publish": settings, "tasks": plans}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("validate", "context", "run", "status", "metrics"))
+    parser.add_argument("command", choices=("prepare", "validate", "context", "run", "status", "metrics", "summary"))
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--config", type=Path, default=Path(__file__).with_name("orchestrator.config.json"))
     parser.add_argument("--run-id", default="queue")
@@ -45,6 +78,12 @@ def main():
         raise InterruptedError(f"signal {signum}")
     signal.signal(signal.SIGTERM, interrupted)
     try:
+        if args.command == "summary":
+            data = json.loads((directory / "state.json").read_text())
+            if args.task and args.task not in data["tasks"]:
+                raise ValueError(f"Unknown task {args.task!r}")
+            print(run_summary(data, directory, args.task))
+            return 0
         if args.command == "status":
             data = json.loads((directory / "state.json").read_text())
             print(json.dumps({tid: {"status": r["status"], "phase": r["phase"], "counts": r["counts"], "reason": r.get("reason")}
@@ -67,6 +106,9 @@ def main():
         config = json.loads(args.config.read_text())
         tasks = json.loads(args.manifest.read_text())["tasks"]
         validate(config, tasks, ROOT)
+        if args.command == "prepare":
+            print(json.dumps(prepare(config, tasks, args.task), indent=2, ensure_ascii=False))
+            return 0
         if args.command == "validate":
             print(f"VALID: {len(tasks)} explicit tasks; no model calls")
             return 0

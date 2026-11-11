@@ -11,22 +11,24 @@ Lock checkout не защищает общий Simulator между worktree; UI
 ## Начало работы
 
 Подготовьте manifest по `tasks.example.json`, с **явными** критериями, зависимостями,
-читаемыми и изменяемыми файлами. Пример проверяет инфраструктуру на fixtures;
-не используйте его как приёмку продукта. Проверка manifest и просмотр контекста
-не вызывают модели и не меняют проект:
+читаемыми и изменяемыми файлами. Пример проверяет инфраструктуру на fixtures.
+`prepare` за одну команду проверяет manifest, ветку публикации и входы задач,
+у которых уже есть предпосылки. В выводе указаны проверки и начальные роли моделей.
 
 ```sh
-python3 tools/automation/orchestrator.py validate --manifest tools/automation/tasks.example.json
-python3 tools/automation/orchestrator.py context --manifest tools/automation/tasks.example.json --role reviewer
+python3 tools/automation/orchestrator.py prepare --config /absolute/path/lane.json --manifest /absolute/path/tasks.json
 ```
 
 Запуск реальной очереди расходует CLI-квоту и после приёмки делает обычный
-commit/push в origin/main. Сначала сохраните текущую работу: требуется чистое
-дерево Git. Не запускайте пример случайно вместо рабочего manifest.
+commit/push в ветку из config. Сохраните новый manifest и нужные файлы локальным
+коммитом, чтобы запустить очередь с чистого дерева. Обычный push при приёмке
+отправит и этот коммит. Проверки из плана выполняет очередь. Для нового gate
+проверьте его работу при разработке самого gate.
 
 ```sh
 python3 tools/automation/orchestrator.py run --manifest /absolute/path/tasks.json --run-id work-001
 python3 tools/automation/orchestrator.py status --run-id work-001
+python3 tools/automation/orchestrator.py summary --run-id work-001
 python3 tools/automation/orchestrator.py metrics --run-id work-001
 python3 tools/automation/orchestrator.py metrics --run-id work-001 --compare-run-id work-002
 python3 tools/automation/orchestrator.py run --manifest /absolute/path/tasks.json --run-id work-001 --resume
@@ -225,6 +227,15 @@ Runtime исключён из Git: `docs/validation/automation/runs/orchestrator
 stdout/stderr и diff. Метрики — идемпотентная проекция call records в state,
 без двойного учёта после crash. Команды успешных checks представлены именем,
 exit/status/временем и путями; ошибка — ограниченным excerpt с полным логом на диске.
+
+`summary` выводит готовую Markdown-сводку из state. В ней есть результат, причина
+остановки, коммит, режимы и логи проверок, время моделей, повторы и тайм-ауты.
+Каждый вызов очереди сохраняет собственное время выполнения, включая resume.
+После успешной приёмки engine включает замеры в отчёт и короткую запись handoff
+в том же коммите. Используйте этот отчёт в итоговом ответе. При остановке готовую
+сводку можно использовать в handoff, добавив фактический следующий шаг. Отдельные
+обёртки для замера и ручные копии state в Markdown/JSON нужны только для отдельного
+исследования производительности.
 
 `metrics` показывает `tasks`, `overall` и `quality_cohorts`: полные затраты и
 `per_accepted_task`. Знаменатель — только COMPLETED (проверки, приёмка и push).

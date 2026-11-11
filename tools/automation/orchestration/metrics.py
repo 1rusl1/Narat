@@ -36,15 +36,19 @@ def token_totals(calls):
 def summarize(records):
     calls = [call for record in records for call in record["calls"]]
     accepted = sum(record["status"] == "COMPLETED" for record in records)
+    check_history_available = all("check_runs" in record or not record.get("checks") for record in records)
     values = {
         "calls": len(calls), "retries": sum(bool(call.get("retry")) for call in calls),
+        "agent_timeouts": sum(call.get("error_category") == "timeout" for call in calls),
+        "check_timeouts": (sum(check.get("error") == "timeout" for record in records
+                               for check in record.get("check_runs", [])) if check_history_available else None),
         "prompt_bytes": sum(call.get("prompt_bytes", 0) for call in calls),
         "estimated_prompt_tokens": sum(call.get("estimated_prompt_tokens", 0) for call in calls),
         "agent_elapsed_seconds": (sum(call["elapsed_seconds"] for call in calls)
                                   if all(call.get("elapsed_seconds") is not None for call in calls) else None),
         "check_elapsed_seconds": (sum(check.get("elapsed_seconds") or 0 for record in records
             for check in record.get("check_runs", []))
-            if all("check_runs" in record or not record.get("checks") for record in records) else None)}
+            if check_history_available else None)}
     tokens = token_totals(calls)
     return {"tasks": len(records), "accepted_tasks": accepted,
             "unaccepted_tasks": len(records) - accepted, "total_including_retries": {**values, **tokens},

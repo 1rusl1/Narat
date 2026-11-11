@@ -1,7 +1,15 @@
 # Narat — текущий статус и передача работы
 
 
-## B — единственный GET pilot COMPLETED; снова ОСТАНОВЛЕНО
+## B — начат тестовый путь фото → диагноз, 11 ноября 2026
+
+Получена команда владельца возобновить разработку. Перенос `8b2c637` обычным merge сохраняет обе истории handoff и branch config. Принятый GET `88a8ea8` и квоты SQL используются повторно.
+
+Проверено наличие доступа. Документированный `narat-staging` ответил HTTP 200 на `/health`. В основном checkout есть локальная конфигурация URL и publishable key. В окружении B нет тестовой сессии, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` и серверного `.env`. Порты localhost 54321/54322 отказали в соединении, Docker socket отсутствует. Первичная команда Supabase CLI упёрлась в запись telemetry за пределами worktree. Значения ключей не выводились. Для живой проверки нужен авторизованный тестовый аккаунт и серверные настройки стенда.
+
+Основному чату передан согласуемый wire upload-ticket → PUT → create → status. Следующий шаг — реализовать выдачу приватного upload ticket и завершение фото, затем атомарное задание и worker. T031/T033/T034 и сквозной сценарий открыты.
+
+## B — принятый GET pilot и прежняя остановка
 
 Ровно один run `parallel-backend-access-http-pilot-20261110-01` COMPLETED/done/exit0,
 принят и опубликован **88a8ea8** в origin/codex/plants-backend. ProductionGET
@@ -397,6 +405,82 @@ Auth/Supabase/Storage/provider/StoreKit live не запускались; про
 adapters пока не подключены. Продуктовые checkbox B не закрывала.
 
 **Обновлено 2026-11-09.** A приняла sync transport7cb5893, engine/disk643622b и durable receipt store09e9b3a (55 Swift tests/Simulator/Review/QA). Между runs объединяется принятый B prerequisite a04794c: anchors005/ledger006/guard007; объединённые SQL/Deno/115automation/55Swift/Simulator gates PASS, интеграция опубликована в origin/main 947d602; следующий engine durable ACK. Engine ACK/repository/UI-save, полные квоты/API и live не приняты; продуктовые checkbox14/151.
+
+## Подготовка и отчётность очередей — 11 ноября 2026
+
+`prepare` за одну команду проверяет manifest, ветку публикации, входы и Xcode Sources
+готовых к старту задач. Она выводит выбранные проверки и начальные роли. Branch config
+используется повторно. Новые входы сохраняются локальным коммитом, который отправляется
+вместе с принятым пакетом. Проверки пакета выполняются внутри очереди.
+
+`summary` читает сохранённый state и показывает результат, причину остановки,
+время, повторы, тайм-ауты, коммит и логи проверок. Engine записывает длительность
+каждого вызова очереди и добавляет замеры моделей и проверок в отчёт и Task Summary
+при публикации. При остановке controller использует готовую сводку и дописывает следующий шаг.
+
+Изменены `tools/automation/orchestrator.py`, `orchestration/{engine,metrics,reporting}.py`,
+`tests/test_orchestration_engine.py`, `ORCHESTRATOR.md`, `docs/parallel/{README,session-ios,session-backend}.md`
+и этот handoff. Политика обязательных проверок берётся из текущего config и manifest.
+
+Проверки. `python3 -m unittest discover -s tools/automation/tests -q` — **148 тестов PASS**
+за 45.712 с. В тестах используются фиктивные модели и локальный Git. `prepare` на
+`tasks.example.json` с конфигурацией текущей ветки — PASS, 0.119 с. `summary` на
+сохранённом пилоте B — PASS, SHA-256 исходного state совпал до и после. `git diff --check`
+и сверка checkbox — PASS, 15 из 151. Живые очереди и продуктовые интеграции для этого
+этапа не запускались. Экономию общего времени предстоит измерить на следующем пакете.
+
+Следующий шаг перед запуском A/B — перенести опубликованный коммит в обе ветки,
+использовать `prepare`, а после запуска взять время и статус из `summary`.
+
+
+## Один пилот A/B выполнен; оба снова остановлены — 10 ноября 2026
+
+По прямой команде владельца engine25a5830 перенесён обычными merge в A/B, context6/
+read16000/preflight добавлены в собственные configs без смены providers/checks/budgets/
+publish branches. В каждой сессии запущен **ровно один** следующий product task,
+оба **COMPLETED / exit0**. Не было второго run, external repair, CI-работы,
+main promotion, deploy/live. Подробные замеры/границы сравнения:
+[пилот](validation/automation/throughput-pilot-2026-11-10.md),
+[JSON](validation/automation/throughput-pilot-2026-11-10.json).
+
+**A:** accepted e04103f, T036 DTO/realAPIClient transport в трёх Swift-файлах,
+без repository/UI/billing и полного T036. Подготовка441.566s, runtime935.649s;
+Developer Sol medium630.584s, Astra high Review81.336s/QA101.714s,
+checks114.201s. Diff/build/welcome/191unit (184+7,0skip/expectedfailure)/Simulator
+и независимые Review/QA PASS. **B:** accepted88a8ea8, read-only snapshot GET access,
+исходникa151427 не менялся; prep322.843s, runtime249.722s, Dev0,
+Astra high Review93.515s/QA74.125s, checks74.120s. HTTP39/Deno336/automation147/
+typecheck/diff/SQL511 clean+upgrade/12UTC/99actual+6x20/cap55+131+4races PASS.
+У обеих repeats/repair/re-review/timeout0. B final docs123c123; A final docsf343f83. Оба чата idle, деревья чистые.
+Полное время turns A1902.765s/B1030.900s; после runtime до final report push
+A488.842s/B350.923s. Подготовка и отчётность отделены от runtime.
+
+**Что изменилось здесь:** два сводных артефакта пилота (.md/.json), README двух
+сессий и этот handoff. Продуктовый код остаётся в опубликованных ветках A/B;
+в root/main автоматически не объединён. Tasks checkbox не менялись:15done/136open,
+T006/T036/T163 и live parents открыты. Runtime/source/task reports A/B сохранены.
+
+**Проверки этого этапа:** read-only state/calls/process/timing, ровно1newruntime
+на lane относительно предыдущего аудита; source engine/defaultconfig A/B точно
+25a5830; CI diff обеих веток пуст; все151checkbox A/B совпали с их initial HEAD.
+JSON sums/5model replies/10checks PASS, repeat checks0, quality_contract baseline
+разные; Markdown local links/diff-check PASS. origin refs подтверждены: iOSf343f83,
+backend123c123, main5d15123 без изменения. Staged whitespace проверяется перед commit. Здесь новые product suites не запускались;
+реальные локальные проверки дочерних run перечислены выше. Все интеграционные
+результаты относятся к fixtures/privatePG/mock transport, не live Auth/Storage/AI/
+StoreKit и не готовности полного пользовательского пути.
+
+**Вывод/ограничения:** оба пакета прошли с первой попытки, лишний Dev B устранён;
+причинное ускорение не установлено. A всё ещё10:31Developer; подготовка/отчётность
+существенны. B Reviewer93.515s медленнее старого77.672s; baselineQA прервана,
+quality_contract разные. Процент экономии/квоты не вычислялся. Подробности старых
+попыток сохранены отдельно от raw state; elapsed=null не переписывался.
+
+**Точный следующий шаг:** оценить опубликованные измерения с владельцем.
+Обе очереди остановлены; никаких следующих пакетов/CI/main merge без новой команды.
+Следующая продуктовая работа: A repository/UI T036 по принятому wire; B installation/
+bind HTTP и последующая общая/live приёмка. Сами задачи пока не закрывать.
+
 
 ## Engine/config ускорены; A/B остаются остановленными — 10 ноября 2026
 
@@ -1495,7 +1579,12 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- B CURRENT STOPPED AFTER ONE PILOT: GETaccess read-only fullsnapshot pilot COMPLETED/published88a8ea8; Dev0/Review1/QA1, runtime249.722s/model167.640/check74.120, retry/timeout0. All39HTTP/336Deno/147auto/511SQL/cap/typechecks PASS. SourceGETunchanged; causal speedup unproven vs interrupted08/differentqualitycontract. Await explicit owner decision; NO next runs/repair/integration/mainpromotion/CI/installationHTTP/worker/alias. Engine25a5830 merged2d1b374, config0a7d0752 unchanged sincepilotstart.
+- B current (11 Nov): owner resumed photo → diagnosis test slice for an authenticated permanent test account. Reuse authoritative GET/SQL. Prepare private upload, atomic admission, leased worker and status. Staging health 200; live test session and server secrets pending. CI, production release and iOS source are outside this backend slice.
+
+- B historical GET pilot: GETaccess read-only fullsnapshot pilot COMPLETED/published88a8ea8; Dev0/Review1/QA1, runtime249.722s/model167.640/check74.120, retry/timeout0. All39HTTP/336Deno/147auto/511SQL/cap/typechecks PASS. SourceGETunchanged; causal speedup unproven vs interrupted08/differentqualitycontract. GET accepted before current diagnosis flow. Engine25a5830 merged2d1b374, config0a7d0752 unchanged sincepilotstart.
+
+- Пилот25a5830 перенесён в A/B и завершён по1task: A e04103f DTO/transport, B88a8ea8 GET snapshot;191Swift/HTTP39/Deno336/automation147/SQL511/ReviewQA PASS по своим scope;runtime935.649/249.722s,repeats/timeouts0. Обе очереди снова на паузе, main/CI/live не менялись. См. throughput-pilot-2026-11-10.md.
+- История до переноса: Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в A/B ещё не перенесён. Запуск НЕ разрешён, CI отложена.
 
 - Historical stop before newly authorized one-task pilot: run08 WAITING/qa, controller26958 and QA36251 SIGINT, exit130, verified process groups empty. GET candidatea151427 not accepted; accepted SQL/wire6d689b7. Config SHA4a7d6fef unchanged. No automatic resume/new runs/repair/ReviewQA/integration/config changes until explicit owner decision. T006/cloud work deferred.
 
