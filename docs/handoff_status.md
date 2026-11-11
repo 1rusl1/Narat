@@ -1669,8 +1669,8 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-staging-account-form: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 119.71 с, проверки — 104.73 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [parallel-ios-staging-account-form](validation/automation/tasks/parallel-ios-staging-account-form.md).
+parallel-ios-diagnosis-operation-ids: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 115.40 с, проверки — 115.26 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [parallel-ios-diagnosis-operation-ids](validation/automation/tasks/parallel-ios-diagnosis-operation-ids.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
