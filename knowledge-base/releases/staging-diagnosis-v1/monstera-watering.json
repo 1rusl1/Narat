@@ -1,0 +1,46 @@
+{
+  "schema_version": "2.0",
+  "kb_release_id": "3ed50000-0000-4000-8000-000000000011",
+  "record_version": 1,
+  "plant_id": "monstera_deliciosa",
+  "actions": [
+    {
+      "action_id": "check_monstera_mix_before_watering",
+      "action_code": "check_soil",
+      "purpose": "routine_care",
+      "prerequisite_check_ids": [],
+      "contraindication_check_ids": [],
+      "action_en": "Check the potting mix. Let it dry slightly between waterings. Once it has dried a little, water thoroughly.",
+      "action_pl": "Sprawdź podłoże. Pozwól mu lekko przeschnąć między podlewaniami. Gdy lekko przeschnie, podlej obficie.",
+      "next_check_interval_days": null
+    }
+  ],
+  "provenance": {
+    "source_documents": [
+      {
+        "source_id": "wisconsin_monstera",
+        "donor_id": "uw_madison",
+        "independence_group": "uw_madison",
+        "url": "https://hort.extension.wisc.edu/articles/monstera-deliciosa/",
+        "retrieved_at": "2026-11-11T16:40:59Z",
+        "content_hash": "a76dc595d894b4e9fdbf7f56157b758f8fc37f3f8e2e71a8a11e8474a2cf8750",
+        "use_basis": "Original wording of a manually reviewed horticultural fact for the private staging pilot, with attribution. Source text and photos are not republished.",
+        "allowed_for": ["derived_records"]
+      }
+    ],
+    "field_evidence": {
+      "/actions/0": [
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant, watering paragraph",
+          "scope": "Routine indoor care for potted Monstera deliciosa. Slight drying is a condition for watering, without a fixed interval."
+        }
+      ]
+    },
+    "validation": {
+      "method": "manual_review",
+      "validated_at": "2026-11-11T16:40:59Z",
+      "unresolved_conflicts": []
+    }
+  }
+}
