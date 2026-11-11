@@ -1,5 +1,19 @@
 # Narat — текущий статус и передача работы
 
+## Переход между этапами MVP — 11 ноября 2026
+
+Владелец разрешил A и B запускать следующий пакет критического пути сразу после
+приёмки текущего и готовности зависимостей. Инструкция передана обоим рабочим
+чатам. Обновлены `docs/parallel/README.md` и
+`specs/001-plants-ios-mvp/critical-path.md`. Снимок чатов подтвердил, что оба
+в работе. Локальная проверка документации: `git diff --check` PASS. Отметки
+задач сохранены. В этом этапе продуктовые тесты и живые интеграции не запускались.
+
+A завершает QA и живой iOS-прогон сохранения. B после серверной приёмки
+`plant.create` на staging (handoff `8f9719d`) подключает pgTAP к SQL gate,
+затем проверяет `care.record`, повтор и `care.undo` на стенде. Следующий
+клиентский пакет — запись ухода и чтение журнала после перезапуска.
+
 ## Критический путь MVP и пилот Developer — 11 ноября 2026
 
 - В `specs/001-plants-ios-mvp/critical-path.md` выделен первый живой срез:
@@ -1312,12 +1326,13 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
+- После приёмки и готовности зависимостей A/B сразу запускают следующий пакет критического пути MVP без отдельного подтверждения владельца.
 - Текущий приоритет 2026-11-11: [критический путь MVP](../specs/001-plants-ios-mvp/critical-path.md), EN без переключателя, фото → подтверждённая карточка → запись ухода. Первый пакет: результат → `plant.create` → чтение и restart. Developer: Gemini 3.8 Flash High → Luna High → Sol Low; Review/QA без изменений.
 
 - Пилот25a5830 перенесён в A/B и завершён по1task: A e04103f DTO/transport, B88a8ea8 GET snapshot;191Swift/HTTP39/Deno336/automation147/SQL511/ReviewQA PASS по своим scope;runtime935.649/249.722s,repeats/timeouts0. Обе очереди снова на паузе, main/CI/live не менялись. См. throughput-pilot-2026-11-10.md.
 - История до переноса: Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в A/B ещё не перенесён. Запуск НЕ разрешён, CI отложена.
 
-- ПРИОРИТЕТ 2026-11-10: владелец остановил A/B перед сменой конфигурации. Новые runs/repair/review/интеграции не запускать до прямой команды возобновления. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
+- История 2026-11-10: владелец остановил A/B перед сменой конфигурации. На тот момент новые runs/repair/review/интеграции ждали команды возобновления. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
 
 - Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN для MVP; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
