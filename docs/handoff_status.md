@@ -1628,8 +1628,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-backend-t163-access-http-pilot: проверки и Review/QA пройдены; публикация фиксируется в state.
-Отчёт: [parallel-backend-t163-access-http-pilot](validation/automation/tasks/parallel-backend-t163-access-http-pilot.md).
+parallel-backend-diagnosis-photo-local: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 231.69 с, проверки — 74.69 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [parallel-backend-diagnosis-photo-local](validation/automation/tasks/parallel-backend-diagnosis-photo-local.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
