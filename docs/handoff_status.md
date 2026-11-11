@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## B — public catalogue verified on narat-staging, 11 November 2026
+
+Backend `715d5fc5db8f07806f097e5932c525e28ea01792` is accepted and published in `origin/codex/plants-backend`. `plants-api/catalogue.ts` and `plants-api/index.ts` expose the existing published search and species card RPCs to the anonymous role. The HTTP fixture, manifest, [wire contract](../specs/001-plants-ios-mvp/contracts/published-catalogue-http.md) and the T045 task entry record the scope. The staging deployment updated only `plants-api`.
+
+`parallel-backend-published-catalogue-20261111-01` passed English GPT-6 Astra High Reviewer and QA, seven gates, 357 Deno, 148 automation, 27 KB and 591 pgTAP assertions in each clean/upgrade database. Models took 132.76 s and checks took 77.73 s. `supabase/tests/run_catalogue_regression.py` separately passed 38 unchanged migrations, 235 pgTAP assertions, 1212 SQL/TypeScript card comparisons and three catalogue publication races on isolated PG17. Those fixtures covered scientific fallback, including a card with no Polish common name.
+
+Live anonymous reads returned the exact canonical SQL search results for the Latin scientific name, both common-name languages and aliases. Monstera detail matched by slug and taxon UUID, with published care and original photo attribution. The release returned three species with attributed images and passed pagination, empty search, unknown-card 404 and invalid-pagination 400. The three live cards have common names in both languages. A separate authenticated recheck returned the same Monstera care advice and the previously pinned diagnosis. Missing session and missing plant remained 401 and 404.
+
+A independently accepted and published the live Monstera advice on `origin/codex/plants-ios` in `d30b91c`, documented in `a4e601d`. Review, QA, 210 Swift tests and Simulator smoke passed. The saved card displayed the staging text and source link before and after restart. The species subtitle still shows `monstera_deliciosa` after restore. A is now checking manual watering record, replay and undo in Simulator. Full care acceptance remains open. Next, obtain A's live journal results and complete T148 editorial acceptance before the full T149 catalogue-to-save integration. T045 is complete within its server search and attribution scope.
+
 ## B — Monstera care recommendation verified on narat-staging, 11 November 2026
 
 Backend `77975ccb3875758f831886cfac08d093b1ae7ece` is accepted and published in `origin/codex/plants-backend`. Migration 017 and the `plants-api` owner GET route read one published PlantProfile v2 rule for the saved plant. The release files and guarded SQL renderer stage the authored Monstera action, source URL, locator and hash of the retained evidence note. The action is a conditional check of the potting mix. The profile supplies no calendar interval. [UW–Madison Division of Extension](https://hort.extension.wisc.edu/articles/monstera-deliciosa/)

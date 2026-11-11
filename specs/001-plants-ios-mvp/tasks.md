@@ -104,7 +104,7 @@
 
 - [ ] T044 Обновить collection commands в `supabase/migrations/`: каталог без фото/опроса, плоская коллекция, owner lock count<3 Free, replay не новый экземпляр. Новые room/photo.set_main/free-slot/local-fallback команды не поддерживаются; существующие данные сохраняются. Покрытие: FR-009, FR-010, FR-011, FR-013, FR-014, FR-023, FR-048, SC-021.
 
-- [ ] T045 [US2] Реализовать поиск по каталогу (PL/EN/Latin/синонимы, научный fallback) и выдачу лицензий/авторства в `supabase/functions/plants-api/catalogue.ts`. Покрытие: FR-042, FR-043, FR-044.
+- [x] T045 [US2] Реализовать поиск по каталогу (PL/EN/Latin/синонимы, научный fallback) и выдачу лицензий/авторства в `supabase/functions/plants-api/catalogue.ts`. Принято в `715d5fc`. На staging подтверждены анонимный поиск, карточка и атрибуция трёх видов. Научный fallback проверен на SQL-фикстуре. T148 и T149 открыты. Покрытие: FR-042, FR-043, FR-044.
 
 - [ ] T046 Реализовать `CollectionRepository.swift`/`ClaimFlowModel.swift`: обычный claim действительного draft/каталог, подтверждённое сохранение/retry; expired возвращает обычный flow. Лимит до сохранения, без rooms и локального восстановления. Покрытие: FR-009, FR-010, FR-011, FR-013, FR-014, FR-046, FR-048.
 
