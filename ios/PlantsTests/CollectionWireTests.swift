@@ -2731,6 +2731,14 @@ extension CollectionWireTests {
 }
 
 extension CollectionWireTests {
+    private func manualWateringReceipt(
+        entryId: UUID, state: String, reversalId: UUID? = nil
+    ) -> [String: Any] {
+        ["plant_id": serverPlantId.uuidString, "entry_id": entryId.uuidString,
+         "reversal_id": reversalId.map { $0.uuidString as Any } ?? NSNull(),
+         "state": state, "watermark": syncUntil]
+    }
+
     @MainActor
     func testManualWateringLostResponseRestoresFrozenWriteAndReadsUndo() async throws {
         let url = try diskURL()
@@ -2782,15 +2790,8 @@ extension CollectionWireTests {
             result["changes"] = rows
             return try syncJSON(result)
         }
-        func reply(plantId: UUID = UUID(), state: String, reversal: UUID? = nil) throws -> String {
-            try syncJSON([
-                "plant_id": plantId.uuidString, "entry_id": entryId.uuidString,
-                "reversal_id": reversal.map { $0.uuidString as Any } ?? NSNull(),
-                "state": state, "watermark": syncUntil
-            ])
-        }
-
         let original: URLRequest
+        let recordId: UUID
         do {
             let transport = CatalogueTransport([.http(200, try page()), .network])
             let api = client(transport)
@@ -2807,18 +2808,43 @@ extension CollectionWireTests {
             let model = try await restore(store, api)
             await model.loadCard(includeManualWateringActions: true)
             XCTAssertEqual(model.manualWateringState, .ready)
+            let beforeTap = Date()
             await model.recordWatering()
+            let afterTap = Date()
             XCTAssertEqual(model.manualWateringState, .pending)
             XCTAssertEqual(model.wateringHistoryState, .loaded([]))
             let captured = await transport.capturedRequests()
             original = try XCTUnwrap(captured.last)
+            XCTAssertEqual(original.httpMethod, "POST")
+            XCTAssertEqual(original.url?.path, "/functions/v1/plants-api/commands")
+            XCTAssertEqual(original.value(forHTTPHeaderField: "Authorization"), "Bearer \(syncSession.accessToken)")
+            XCTAssertEqual(original.value(forHTTPHeaderField: "X-Client-Locale"), "en")
+            XCTAssertNil(original.value(forHTTPHeaderField: "X-Installation-Credential"))
+            let body = try XCTUnwrap(original.httpBody)
+            let record = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+            recordId = record.operationId
+            XCTAssertEqual(record.plantId, serverPlantId)
+            XCTAssertEqual(record.commandName, "care.record")
+            XCTAssertNotEqual(recordId, create.operationId)
+            XCTAssertEqual(original.value(forHTTPHeaderField: "X-Operation-Id"), recordId.uuidString.lowercased())
+            let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(record.payloadJSON.utf8)) as? [String: String])
+            XCTAssertEqual(Set(payload.keys), ["action_code", "occurred_at", "timezone"])
+            XCTAssertEqual(payload["action_code"], "water")
+            XCTAssertEqual(payload["timezone"], TimeZone.current.identifier)
+            let timestamp = try XCTUnwrap(payload["occurred_at"])
+            let occurredAt = try XCTUnwrap(SQLTimestamp.date(from: timestamp))
+            XCTAssertGreaterThanOrEqual(occurredAt, beforeTap.addingTimeInterval(-1))
+            XCTAssertLessThanOrEqual(occurredAt, afterTap)
+            let formatter = ISO8601DateFormatter()
+            formatter.timeZone = .current
+            XCTAssertEqual(timestamp, formatter.string(from: occurredAt))
             model.cancel()
         }
 
-        let validRecord = try reply(plantId: serverPlantId, state: "active")
-        let validUndo = try reply(plantId: serverPlantId, state: "voided", reversal: UUID())
+        let validRecord = try syncJSON(manualWateringReceipt(entryId: entryId, state: "active"))
+        let validUndo = try syncJSON(manualWateringReceipt(entryId: entryId, state: "voided", reversalId: UUID()))
         let transport = CatalogueTransport([
-            .http(200, try page("active")), .http(200, validRecord), .http(200, try page("active")),
+            .http(200, try page("active")), .http(200, validRecord), .network, .http(200, try page("active")),
             .http(200, validUndo), .http(200, try page("voided"))
         ])
         let api = client(transport)
@@ -2828,6 +2854,15 @@ extension CollectionWireTests {
         await model.loadCard(includeManualWateringActions: true)
         XCTAssertEqual(model.manualWateringState, .pending)
         await model.retryManualWatering()
+        XCTAssertEqual(model.wateringHistoryState, .unavailable)
+        XCTAssertEqual(model.manualWateringState, .unavailable)
+        guard case .saved = model.state else { return XCTFail("Refresh failure lost the saved card confirmation") }
+        let acknowledged = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(acknowledged.isEmpty)
+        await model.retryManualWatering()
+        let requestsAfterRefreshFailure = await transport.capturedRequests()
+        XCTAssertEqual(requestsAfterRefreshFailure.map(\.httpMethod), ["GET", "POST", "GET"])
+        await model.loadCard(includeManualWateringActions: true)
         XCTAssertEqual(model.manualWateringState, .ready)
         guard case let .loaded(active) = model.wateringHistoryState else {
             return XCTFail("Expected synchronized manual fact")
@@ -2847,19 +2882,104 @@ extension CollectionWireTests {
         XCTAssertEqual(retry.httpBody, original.httpBody)
         XCTAssertEqual(retry.value(forHTTPHeaderField: "X-Operation-Id"), original.value(forHTTPHeaderField: "X-Operation-Id"))
         let undo = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(posts.last?.httpBody))
-        XCTAssertEqual(ManualWateringAction(envelope: undo), .undo(entryId))
-        XCTAssertNotEqual(undo.operationId.uuidString.lowercased(), original.value(forHTTPHeaderField: "X-Operation-Id"))
+        XCTAssertEqual(undo.commandName, "care.undo")
+        XCTAssertEqual(undo.plantId, serverPlantId)
+        XCTAssertNotEqual(undo.operationId, recordId)
+        XCTAssertNotEqual(undo.operationId, create.operationId)
+        let undoPayload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(undo.payloadJSON.utf8)) as? [String: String])
+        XCTAssertEqual(undoPayload, ["entry_id": entryId.uuidString.lowercased()])
         let pending = try await store.pendingOutboxEntries(for: syncOwner)
         XCTAssertTrue(pending.isEmpty)
+    }
 
-        let invalid = CatalogueTransport([.http(200, try reply(state: "voided", reversal: UUID()))])
-        let invalidAPI = client(invalid)
-        await invalidAPI.bindSyncSession(syncSession)
-        let lease = try await invalidAPI.captureSyncContext(ownerId: syncOwner)
-        do {
-            _ = try await invalidAPI.sendOutboxCommand(undo, context: lease)
-            XCTFail("Accepted an undo receipt for another plant")
-        } catch SyncWireValidationError.invalidPage {}
+    @MainActor
+    func testManualWateringInvalidReceiptsKeepOriginalOperationOnDisk() async throws {
+        let entryId = UUID()
+        let cases: [(ManualWateringAction, String, Any)] = [
+            (.record, "state", "voided"),
+            (.record, "watermark", "invalid"),
+            (.record, "reversal_id", UUID().uuidString),
+            (.undo(entryId), "plant_id", UUID().uuidString),
+            (.undo(entryId), "entry_id", UUID().uuidString),
+            (.undo(entryId), "reversal_id", NSNull())
+        ]
+        for (action, key, value) in cases {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            var receipt: [String: Any]
+            switch action {
+            case .record: receipt = manualWateringReceipt(entryId: entryId, state: "active")
+            case .undo: receipt = manualWateringReceipt(entryId: entryId, state: "voided", reversalId: UUID())
+            }
+            receipt[key] = value
+            let transport = CatalogueTransport([.http(200, try syncJSON(receipt))])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let command = try action.envelope(plantId: serverPlantId)
+            try await store.enqueueManualWatering(command, context: lease, authority: api.syncAuthority)
+            let engine = SyncEngine(store: store, apiClient: api)
+            let committed = try await engine.flushOutbox(context: lease)
+            XCTAssertEqual(committed, 0, "Unexpected acknowledgement for \(key)")
+            let reopened = LocalStore(modelContainer: try diskContainer(url))
+            let pending = try await reopened.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(pending.count, 1)
+            let failed = try XCTUnwrap(pending.first)
+            XCTAssertEqual(failed.operationId, command.operationId)
+            XCTAssertEqual(failed.plantId, command.plantId)
+            XCTAssertEqual(failed.commandName, command.commandName)
+            XCTAssertEqual(failed.payloadJSON, command.payloadJSON)
+            XCTAssertEqual(failed.retryCount, 1)
+            XCTAssertTrue(try XCTUnwrap(failed.lastError).contains("invalidPage"))
+        }
+    }
+
+    @MainActor
+    func testManualWateringOwnerSwitchAndABARejectInFlightAcknowledgement() async throws {
+        let create = createCommand()
+        for returnToOriginal in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let seeded = try await seedEngineCreate(url, command: create)
+            let receipt = try syncJSON(manualWateringReceipt(entryId: UUID(), state: "active"))
+            let transport = SuspendedCollectionTransport(receipt)
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            try await store.acknowledgeCatalogueCreate(
+                create, receipt: decodedCreateReceipt(), context: lease, authority: api.syncAuthority
+            )
+            let saved = try await store.catalogueCreateConfirmation(ownerId: syncOwner, operationId: create.operationId)
+            let confirmation = try XCTUnwrap(saved)
+            let engine = SyncEngine(store: store, apiClient: api)
+            let repository = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+            let command = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+            let operation = Task {
+                try await repository.submitManualWatering(command, confirmation: confirmation, context: lease)
+            }
+            await transport.waitForRequest()
+            let original = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(original.map(\.operationId), [command.operationId])
+            await api.bindSyncSession(NativeAuthSession(
+                userId: otherSyncOwner, accessToken: "owner-b-token", expiresAt: .distantFuture
+            ))
+            if returnToOriginal { await api.bindSyncSession(syncSession) }
+            await transport.resume()
+            do {
+                _ = try await operation.value
+                XCTFail("The stale receipt acknowledged a manual write")
+            } catch SyncWireValidationError.invalidSession {}
+            let reopened = LocalStore(modelContainer: try diskContainer(url))
+            let pendingA = try await reopened.pendingOutboxEntries(for: syncOwner)
+            let pendingB = try await reopened.pendingOutboxEntries(for: otherSyncOwner)
+            XCTAssertEqual(pendingA, original)
+            XCTAssertEqual(pendingB, [seeded.other])
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer \(syncSession.accessToken)")
+        }
     }
 
     func testCareRecommendationUsesBoundOwnerAndRejectsUnverifiedProjection() async throws {
