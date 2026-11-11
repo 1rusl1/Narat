@@ -56,12 +56,9 @@ export async function handleCareRecommendation(
   }
   if (data?.plant_id !== plant) throw unavailable();
 
-  const cache = { "Cache-Control": "private, no-store" };
   const absent = () =>
     jsonResponse(
       { plant_id: plant, status: "unavailable", recommendation: null },
-      200,
-      cache,
     );
   const profile: unknown = data.profile;
   if (
@@ -102,7 +99,5 @@ export async function handleCareRecommendation(
         source: { url: source.url, locator: evidence.locator },
       },
     },
-    200,
-    cache,
   );
 }

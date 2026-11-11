@@ -3,6 +3,7 @@ import profile from "../../../../knowledge-base/releases/staging-monstera-care-v
   type: "json",
 };
 import { createProductionPlantsApiHandler } from "../../plants-api/index.ts";
+import { ApiHttpError } from "../http.ts";
 import { validatePublishedPlantCare } from "../KnowledgeTypes.ts";
 
 const owner = "17100000-0000-4000-8000-000000000001";
@@ -21,19 +22,26 @@ function fixture(
     row?: unknown;
     guest?: boolean;
     signedOut?: boolean;
+    authRejected?: boolean;
+    rpcUnavailable?: boolean;
     polish?: boolean;
   } = {},
 ) {
   const calls: unknown[] = [];
   const handler = createProductionPlantsApiHandler({
-    resolveRequestContext: async () => ({
-      ownerId: options.signedOut ? null : owner,
-      accountState: "active",
-      isAnonymous: options.guest ?? false,
-      locale: options.polish ? "pl" : "en",
-      installationCredential: null,
-      operationId: null,
-    }),
+    resolveRequestContext: async () => {
+      if (options.authRejected) {
+        throw new ApiHttpError(401, "UNAUTHORIZED", "Invalid session.");
+      }
+      return {
+        ownerId: options.signedOut ? null : owner,
+        accountState: "active",
+        isAnonymous: options.guest ?? false,
+        locale: options.polish ? "pl" : "en",
+        installationCredential: null,
+        operationId: null,
+      };
+    },
   }, {
     env: (name) =>
       ({ SUPABASE_URL: base, SUPABASE_SERVICE_ROLE_KEY: "fixture-key" })[name],
@@ -42,6 +50,11 @@ function fixture(
       assertEquals(req.url, base + "/rest/v1/rpc/read_plant_care_profile");
       assertEquals(req.headers.get("authorization"), "Bearer fixture-key");
       calls.push(await req.json());
+      if (options.rpcUnavailable) {
+        return Response.json({ code: "XX000", message: "Private RPC error" }, {
+          status: 500,
+        });
+      }
       return Response.json(options.row === undefined ? published : options.row);
     },
   });
@@ -106,6 +119,7 @@ Deno.test("No recommendation is substituted for missing, mismatched or unsupport
   ) {
     const response = await fixture({ row }).get();
     assertEquals(response.status, 200);
+    assertEquals(response.headers.get("cache-control"), "private, no-store");
     assertEquals(await response.json(), {
       plant_id: plant,
       status: "unavailable",
@@ -114,16 +128,24 @@ Deno.test("No recommendation is substituted for missing, mismatched or unsupport
   }
 });
 
-Deno.test("Owner recommendation hides foreign and deleted plants and rejects unsupported access", async () => {
-  assertEquals((await fixture({ row: null }).get()).status, 404);
+Deno.test("Owner recommendation errors remain private, including Auth rejection and RPC failures", async () => {
+  function assertPrivate(response: Response, status: number) {
+    assertEquals(response.status, status);
+    assertEquals(response.headers.get("cache-control"), "private, no-store");
+  }
+  assertPrivate(await fixture({ row: null }).get(), 404);
   const guest = fixture({ guest: true });
-  assertEquals((await guest.get()).status, 403);
+  assertPrivate(await guest.get(), 403);
   assertEquals(guest.calls, []);
   const signedOut = fixture({ signedOut: true });
-  assertEquals((await signedOut.get()).status, 401);
+  assertPrivate(await signedOut.get(), 401);
   assertEquals(signedOut.calls, []);
+  const authRejected = fixture({ authRejected: true });
+  assertPrivate(await authRejected.get(), 401);
+  assertEquals(authRejected.calls, []);
+  assertPrivate(await fixture({ rpcUnavailable: true }).get(), 503);
   const query = fixture();
-  assertEquals((await query.get("?owner_id=" + owner)).status, 400);
+  assertPrivate(await query.get("?owner_id=" + owner), 400);
   assertEquals(query.calls, []);
 });
 

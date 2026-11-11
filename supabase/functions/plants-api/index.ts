@@ -180,6 +180,16 @@ function createSupabaseNotificationAdapter(): NotificationClaimRpcAdapter {
   };
 }
 
+function privateResponse(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "private, no-store");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
   return async (req: Request): Promise<Response> => {
     if (req.method === "OPTIONS") {
@@ -187,12 +197,14 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     }
 
     const locale = resolveLocale(req);
+    const url = new URL(req.url);
+    const normalizedPath = url.pathname
+      .replace(/^\/functions\/v1\/plants-api/, "")
+      .replace(/^\/plants-api/, "") || "/";
+    const careMatch = req.method === "GET"
+      ? normalizedPath.match(/^\/plants\/([^/]+)\/care\/recommendation$/)
+      : null;
     try {
-      const url = new URL(req.url);
-      const normalizedPath = url.pathname
-        .replace(/^\/functions\/v1\/plants-api/, "")
-        .replace(/^\/plants-api/, "") || "/";
-
       if (req.method === "GET" && normalizedPath === "/health") {
         return jsonResponse({ status: "ok", version: "3.0.0", locale }, 200);
       }
@@ -279,9 +291,8 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         }
       }
 
-      const careMatch = normalizedPath.match(/^\/plants\/([^/]+)\/care\/recommendation$/);
-      if (req.method === "GET" && careMatch && deps.handleCareRecommendation) {
-        return await deps.handleCareRecommendation(req, ctx, careMatch[1]);
+      if (careMatch && deps.handleCareRecommendation) {
+        return privateResponse(await deps.handleCareRecommendation(req, ctx, careMatch[1]));
       }
 
       if (req.method === "GET" && normalizedPath === "/sync") {
@@ -322,7 +333,8 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
           : `Route not found: ${req.method} ${normalizedPath}`,
       );
     } catch (err) {
-      return errorResponse(err, locale);
+      const response = errorResponse(err, locale);
+      return careMatch ? privateResponse(response) : response;
     }
   };
 }
