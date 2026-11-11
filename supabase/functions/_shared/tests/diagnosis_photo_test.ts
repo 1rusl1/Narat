@@ -31,6 +31,8 @@ const hash = Array.from(
 function fixture(
   options: {
     providerFailure?: boolean;
+    provider?: string;
+    providerHttpStatus?: number;
     missingKey?: boolean;
   } = {},
 ) {
@@ -40,7 +42,17 @@ function fixture(
     SUPABASE_SERVICE_ROLE_KEY: key,
     ANALYSIS_RECEIPT_SIGNING_KEY: "fixture-signing-key-at-least-32-bytes",
   };
-  if (!options.missingKey) variables.ANTHROPIC_API_KEY = "fixture-anthropic";
+  if (!options.missingKey || options.provider === "openrouter") {
+    variables.ANTHROPIC_API_KEY = "fixture-anthropic";
+  }
+  if (!options.missingKey) variables.OPENROUTER_API_KEY = "fixture-openrouter";
+  if (options.provider) variables.ANALYSIS_PROVIDER = options.provider;
+  const openRouter = options.provider === "openrouter";
+  const expectedError = options.providerHttpStatus
+    ? "PROVIDER_TIMEOUT_OR_ERROR"
+    : options.providerFailure
+    ? "PROVIDER_REFUSAL"
+    : null;
   const env = (name: string) => variables[name];
   let expired = false;
   let ticketIssued = false;
@@ -69,7 +81,7 @@ function fixture(
     quota_state: quotaState,
     status: outcome,
     result: projection,
-    error_code: outcome === "failed" ? "PROVIDER_REFUSAL" : null,
+    error_code: outcome === "failed" ? expectedError : null,
     error_message: outcome === "failed"
       ? "The analysis could not be completed."
       : null,
@@ -77,6 +89,87 @@ function fixture(
 
   const transport: typeof fetch = async (input, init) => {
     const req = new Request(input, init);
+    if (new URL(req.url).origin !== host) {
+      providerCalls++;
+      assert(providerStarted);
+      assertEquals(req.method, "POST");
+      if (openRouter) {
+        assertEquals(req.url, "https://openrouter.ai/api/v1/messages");
+        assertEquals(
+          req.headers.get("authorization"),
+          "Bearer fixture-openrouter",
+        );
+        assertEquals(req.headers.get("x-api-key"), null);
+        assertEquals(req.redirect, "error");
+      } else {
+        assertEquals(req.url, "https://api.anthropic.com/v1/messages");
+        assertEquals(req.headers.get("x-api-key"), "fixture-anthropic");
+        assertEquals(req.headers.get("authorization"), null);
+      }
+      assert(init?.signal instanceof AbortSignal);
+      const body = await req.json();
+      assertEquals(
+        body.model,
+        openRouter ? "anthropic/claude-haiku-5.5" : "claude-haiku-5-5",
+      );
+      assertEquals(body.max_tokens, 2048);
+      assertEquals(body.output_config, { effort: "low" });
+      assertEquals(
+        body.thinking,
+        openRouter ? { type: "disabled" } : undefined,
+      );
+      assertEquals(
+        body.provider,
+        openRouter ? { allow_fallbacks: false } : undefined,
+      );
+      assert(
+        !("temperature" in body) && !("top_p" in body) && !("top_k" in body),
+      );
+      const [image, text] = body.messages[0].content;
+      assertEquals(image, {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/jpeg",
+          data: btoa(String.fromCharCode(...jpeg)),
+        },
+      });
+      assertEquals(JSON.parse(text.text).allowed_plants, [[
+        "monstera_deliciosa",
+        "Monstera deliciosa",
+      ]]);
+      if (options.providerHttpStatus) {
+        return Response.json(
+          { error: { message: "fixture upstream failure" } },
+          { status: options.providerHttpStatus },
+        );
+      }
+      if (options.providerFailure) {
+        return Response.json({ stop_reason: "refusal", content: [] });
+      }
+      return Response.json({
+        stop_reason: "end_turn",
+        usage: { input_tokens: 801, output_tokens: 143 },
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            schema_version: "3.0",
+            kb_release_id: kb,
+            mode: "diagnosis",
+            locale: "en",
+            image_quality: "usable",
+            identification: {
+              status: "identified",
+              plant_id: "monstera_deliciosa",
+              genus_id: "monstera",
+            },
+            diagnosis: { status: "insufficient_data", candidates: [] },
+            limitations: ["single_angle"],
+            visual_markers: [],
+          }),
+        }],
+      });
+    }
     assertEquals(req.headers.get("authorization"), `Bearer ${key}`);
     const path = new URL(req.url).pathname;
     if (path.startsWith("/storage/v1/object/")) {
@@ -184,7 +277,7 @@ function fixture(
         quotaState = body.p_non_billable ? "released" : "consumed";
         assertEquals(
           body.p_error_code,
-          options.providerFailure ? "PROVIDER_REFUSAL" : null,
+          expectedError,
         );
         return Response.json({
           already_finalized: false,
@@ -197,55 +290,7 @@ function fixture(
     }
   };
 
-  const anthropic = new AnthropicAdapter({
-    create: async (body, options_) => {
-      providerCalls++;
-      assert(providerStarted);
-      assertEquals(body.model, "claude-haiku-5-5");
-      assert(
-        !("temperature" in body) && !("top_p" in body) && !("top_k" in body),
-      );
-      assertEquals(body.output_config.effort, "low");
-      assert(options_?.signal instanceof AbortSignal);
-      const image = body.messages[0].content[0];
-      assert(image.type === "image");
-      assertEquals(image.source.data, btoa(String.fromCharCode(...jpeg)));
-      const text = body.messages[0].content[1];
-      assert(text.type === "text");
-      assertEquals(JSON.parse(text.text).allowed_plants, [[
-        "monstera_deliciosa",
-        "Monstera deliciosa",
-      ]]);
-      if (options.providerFailure) {
-        return { stop_reason: "refusal", content: [] };
-      }
-      return {
-        stop_reason: "end_turn",
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            schema_version: "3.0",
-            kb_release_id: kb,
-            mode: "diagnosis",
-            locale: "en",
-            image_quality: "usable",
-            identification: {
-              status: "identified",
-              plant_id: "monstera_deliciosa",
-              genus_id: "monstera",
-            },
-            diagnosis: { status: "insufficient_data", candidates: [] },
-            limitations: ["single_angle"],
-            visual_markers: [],
-          }),
-        }],
-      };
-    },
-  });
-  const worker = createDiagnosisWorker(env, {
-    fetch: transport,
-    anthropicAdapter: anthropic,
-  });
+  const worker = createDiagnosisWorker(env, { fetch: transport });
   const handler = createProductionPlantsApiHandler({
     resolveRequestContext: async (req): Promise<RequestContext> => ({
       ownerId: req.headers.get("authorization") === "Bearer fixture-other"
@@ -306,9 +351,28 @@ function fixture(
   };
 }
 
-for (const providerFailure of [false, true]) {
-  Deno.test(`Diagnosis production photo, job, worker and settlement fixture, refusal=${providerFailure}`, async () => {
-    const f = fixture({ providerFailure });
+for (
+  const scenario of [
+    { name: "direct Anthropic success" },
+    { name: "direct Anthropic refusal", providerFailure: true },
+    { name: "OpenRouter success", provider: "openrouter" },
+    {
+      name: "OpenRouter authentication error",
+      provider: "openrouter",
+      providerHttpStatus: 401,
+    },
+    {
+      name: "OpenRouter rate limit",
+      provider: "openrouter",
+      providerHttpStatus: 429,
+    },
+  ]
+) {
+  Deno.test(`Diagnosis production photo, job, worker and settlement: ${scenario.name}`, async () => {
+    const f = fixture(scenario);
+    const failed = Boolean(
+      scenario.providerFailure || scenario.providerHttpStatus,
+    );
     const ticket = await f.ticket();
     assertEquals(ticket.status, 200);
     const details = await ticket.json();
@@ -342,9 +406,9 @@ for (const providerFailure of [false, true]) {
     const result = await f.api(`/analysis/jobs/${job}`);
     assertEquals(result.status, 200);
     const status = await result.json();
-    assertEquals(status.status, providerFailure ? "failed" : "succeeded");
-    assertEquals(status.quota_state, providerFailure ? "released" : "consumed");
-    if (providerFailure) assertEquals(status.result, null);
+    assertEquals(status.status, failed ? "failed" : "succeeded");
+    assertEquals(status.quota_state, failed ? "released" : "consumed");
+    if (failed) assertEquals(status.result, null);
     else {
       assertEquals(status.result.plant_display_name, "Swiss cheese plant");
       assertEquals(status.result.diagnosis_status, "insufficient_data");
@@ -380,19 +444,59 @@ Deno.test("Diagnosis rejects another owner and tampered image before writing Sto
   );
 });
 
-Deno.test("Diagnosis missing provider credential fails closed before dispatch", async () => {
-  const f = fixture({ missingKey: true });
-  const details = await (await f.ticket()).json();
-  assertEquals((await f.put(details.signed_upload_url)).status, 200);
-  const response = await f.api("/analysis/jobs", {
-    operation_id: jobOperation,
-    photo_asset_id: photo,
-    mode: "diagnosis",
+for (const provider of [undefined, "openrouter", "typo"]) {
+  Deno.test(`Diagnosis unavailable provider fails before dispatch: ${provider ?? "default"}`, async () => {
+    const f = fixture({ provider, missingKey: provider !== "typo" });
+    const details = await (await f.ticket()).json();
+    assertEquals((await f.put(details.signed_upload_url)).status, 200);
+    const response = await f.api("/analysis/jobs", {
+      operation_id: jobOperation,
+      photo_asset_id: photo,
+      mode: "diagnosis",
+    });
+    assertEquals(response.status, 503);
+    assertEquals(f.rpcNames.at(-1), "create_diagnosis_job");
+    assertEquals(f.providerCalls(), 0);
+    assertEquals(f.work.length, 0);
   });
-  assertEquals(response.status, 503);
-  assertEquals(f.rpcNames.at(-1), "create_diagnosis_job");
-  assertEquals(f.providerCalls(), 0);
-  assertEquals(f.work.length, 0);
+}
+
+Deno.test("OpenRouter caller cancellation aborts the sole SDK transport request", async () => {
+  const deadline = new AbortController();
+  let calls = 0;
+  const adapter = new AnthropicAdapter(undefined, "fixture-openrouter", {
+    provider: "openrouter",
+    fetch: (_input, init) => {
+      calls++;
+      const signal = init?.signal;
+      assert(signal);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+        deadline.abort();
+      });
+    },
+  });
+  const result = await adapter.classifyAndResolve({
+    analysisId: job,
+    jobId: job,
+    mode: "diagnosis",
+    locale: "en",
+    imageBase64: btoa(String.fromCharCode(...jpeg)),
+    mediaType: "image/jpeg",
+    catalog: {
+      kbReleaseId: kb,
+      plantIds: new Set(),
+      genusIds: new Set(),
+      conditionProfiles: new Map(),
+    },
+    signingSecret: "fixture-signing-key-at-least-32-bytes",
+    signal: deadline.signal,
+  });
+  assertEquals(calls, 1);
+  assertEquals(result.errorCode, "PROVIDER_TIMEOUT_OR_ERROR");
+  assertEquals(result.shouldConsumeQuota, false);
 });
 
 Deno.test("Staging published diagnosis profile validates and applies to Monstera only", () => {

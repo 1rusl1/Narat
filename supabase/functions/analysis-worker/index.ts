@@ -202,7 +202,11 @@ export function createDiagnosisWorker(
   const config = () => {
     const url = env("SUPABASE_URL")?.trim();
     const key = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
-    const apiKey = env("ANTHROPIC_API_KEY")?.trim();
+    const provider = env("ANALYSIS_PROVIDER")?.trim() || "anthropic";
+    if (provider !== "anthropic" && provider !== "openrouter") return null;
+    const apiKey = env(
+      provider === "openrouter" ? "OPENROUTER_API_KEY" : "ANTHROPIC_API_KEY",
+    )?.trim();
     const signingSecret = env("ANALYSIS_RECEIPT_SIGNING_KEY")?.trim();
     if (
       !url || !key || !apiKey || !signingSecret || signingSecret.length < 32
@@ -212,7 +216,7 @@ export function createDiagnosisWorker(
     } catch {
       return null;
     }
-    return { url, key, apiKey, signingSecret };
+    return { url, key, provider, apiKey, signingSecret } as const;
   };
   return {
     ready: () => config() !== null,
@@ -232,7 +236,10 @@ export function createDiagnosisWorker(
       return await processSingleQueuedJob({
         ...createDiagnosisPersistence(client, jobId),
         anthropicAdapter: options.anthropicAdapter ??
-          new AnthropicAdapter(undefined, current.apiKey),
+          new AnthropicAdapter(undefined, current.apiKey, {
+            provider: current.provider,
+            fetch: options.fetch,
+          }),
         signingSecret: current.signingSecret,
         enforceDeadline: true,
       });

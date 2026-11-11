@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## B — кандидат OpenRouter для живого диагноза, 11 ноября 2026
+
+В `AnthropicAdapter.ts` и `analysis-worker/index.ts` добавлен серверный выбор `ANALYSIS_PROVIDER=openrouter` с отдельным `OPENROUTER_API_KEY`. Используется фиксированный OpenRouter Messages URL и `anthropic/claude-haiku-5.5`, Bearer, effort low, disabled thinking, лимит 2048, запрет fallback/retry и существующий тайм-аут. Прямой Anthropic остаётся по умолчанию. Квота, бюджет, валидатор, lease, SQL и клиентский контракт используются повторно. Технический журнал OpenRouter содержит только job ID, модель, длительность, HTTP-статус ошибки или количество токенов. `.env.example`, `diagnosis_photo_test.ts`, live smoke и одноразовый манифест приёмки обновлены.
+
+Реально прошли 11 целевых Deno fixture-тестов, включая реальный SDK с подменённым транспортом, раздельные credentials, OpenRouter 401/429 без повтора, прерывание SDK-запроса, освобождение квоты и прямой Anthropic. `py_compile` и `git diff --check` прошли. Первые typecheck-пробы выявили несовместимость деклараций node-fetch и Web Fetch SDK 0.32.1. Согласование типов локализовано на границе транспорта и проверено Deno.
+
+Основной чат подтвердил, что оба имени настройки установлены в `narat-staging`. Его отдельный прямой запрос OpenRouter с тестовой Monstera получил HTTP 200 за 3,19 с, 1470 входных и 113 выходных токенов. Это результат прямого API, без живого задания Narat. Следующий шаг — независимый локальный Reviewer/QA, публикация backend и выкладка только двух функций на `narat-staging`. Затем повторить `staging-monstera-20261111-01` с уже загруженным фото. Второй снимок допускается при обычной доступной квоте той же тестовой учётки. T031/T033/T034 пока открыты.
+
 ## B — фото в приватном Storage narat-staging, 11 ноября 2026
 
 Принятый backend `368d0f20960bd601f155b241aa4f23ec6fb4aa39` опубликован в `origin/codex/plants-backend`. Run `parallel-backend-diagnosis-photo-20261111-02` завершён. Reviewer и QA прошли с первого вызова. 9 проверок PASS, включая 341 Deno, 148 automation, 27 KB, 39 HTTP и по 556 pgTAP на clean/upgrade. Данные PostgreSQL и ответ провайдера в этих проверках тестовые. Узкий seed отдельно прошёл на локальном PG17: отказ без Monstera и идемпотентное повторное применение.

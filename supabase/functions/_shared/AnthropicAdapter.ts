@@ -1,9 +1,9 @@
 // supabase/functions/_shared/AnthropicAdapter.ts
-// T032: Classification-only AnthropicAdapter pinned to claude-haiku-5-5 with 40s timeout and maxRetries=0.
+// T032: Classification-only Anthropic Messages adapter with a 40s timeout and maxRetries=0.
 // Uses separate prompts for identification vs diagnosis, enforces stop_reason === 'end_turn',
 // validates against AnalysisValidator (Schema 3.0 + KB membership), and delegates advice/receipts to ProtocolResolver.
 
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { type ClientOptions } from "@anthropic-ai/sdk";
 import {
   AnalysisValidator,
   ValidatedAnalysisClassification,
@@ -18,7 +18,9 @@ import {
 } from "./ProtocolResolver.ts";
 
 export const PINNED_ANTHROPIC_MODEL = "claude-haiku-5-5";
+export const PINNED_OPENROUTER_MODEL = "anthropic/claude-haiku-5.5";
 export const PROVIDER_CALL_TIMEOUT_MS = 40_000;
+export type AnalysisProvider = "anthropic" | "openrouter";
 
 export interface AnthropicClassificationInput {
   analysisId: string;
@@ -60,6 +62,8 @@ export interface AnthropicMessagesClient {
     model: string;
     max_tokens: number;
     output_config: { effort: "low" };
+    thinking?: { type: "disabled" };
+    provider?: { allow_fallbacks: false };
     system: string;
     messages: Array<{
       role: "user";
@@ -78,7 +82,14 @@ export interface AnthropicMessagesClient {
   }, options?: { signal?: AbortSignal }): Promise<{
     stop_reason: string | null;
     content: Array<{ type: string; text?: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
   }>;
+}
+
+function tokenCount(value?: number): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 export function buildSystemPrompt(
@@ -115,15 +126,35 @@ export function buildSystemPrompt(
 
 export class AnthropicAdapter {
   private readonly messagesClient: AnthropicMessagesClient;
+  private readonly provider: AnalysisProvider;
 
-  constructor(messagesClient?: AnthropicMessagesClient, apiKey?: string) {
+  constructor(
+    messagesClient?: AnthropicMessagesClient,
+    apiKey?: string,
+    options: { provider?: AnalysisProvider; fetch?: typeof fetch } = {},
+  ) {
+    this.provider = options.provider ?? "anthropic";
     if (messagesClient) {
       this.messagesClient = messagesClient;
     } else {
+      const openRouter = this.provider === "openrouter";
+      const request = options.fetch ?? globalThis.fetch;
+      const transport: typeof fetch = (url, init) => request(
+        url,
+        openRouter ? { ...init, redirect: "error" } : init,
+      );
       const sdk = new Anthropic({
-        apiKey: apiKey ?? Deno.env.get("ANTHROPIC_API_KEY") ?? "missing-key",
+        baseURL: openRouter
+          ? "https://openrouter.ai/api"
+          : "https://api.anthropic.com",
+        apiKey: openRouter
+          ? null
+          : apiKey ?? Deno.env.get("ANTHROPIC_API_KEY") ?? "missing-key",
+        authToken: openRouter ? apiKey ?? null : null,
         maxRetries: 0,
         timeout: PROVIDER_CALL_TIMEOUT_MS,
+        // The SDK declares node-fetch types but accepts Web Fetch on Edge.
+        fetch: transport as unknown as ClientOptions["fetch"],
       });
       this.messagesClient = sdk.messages as unknown as AnthropicMessagesClient;
     }
@@ -177,11 +208,18 @@ export class AnthropicAdapter {
       },
     };
 
+    const openRouter = this.provider === "openrouter";
+    const started = performance.now();
+    let received = false;
     try {
       const response = await this.messagesClient.create({
-        model: PINNED_ANTHROPIC_MODEL,
+        model: openRouter ? PINNED_OPENROUTER_MODEL : PINNED_ANTHROPIC_MODEL,
         max_tokens: 2048,
         output_config: { effort: "low" },
+        ...(openRouter && {
+          thinking: { type: "disabled" },
+          provider: { allow_fallbacks: false },
+        }),
         system: systemPrompt,
         messages: [
           {
@@ -203,6 +241,18 @@ export class AnthropicAdapter {
           },
         ],
       }, { signal: input.signal });
+      received = true;
+      if (openRouter) {
+        console.info(JSON.stringify({
+          event: "analysis_provider_call",
+          job_id: input.jobId,
+          model: PINNED_OPENROUTER_MODEL,
+          outcome: "response",
+          elapsed_ms: Math.round(performance.now() - started),
+          input_tokens: tokenCount(response.usage?.input_tokens),
+          output_tokens: tokenCount(response.usage?.output_tokens),
+        }));
+      }
 
       if (response.stop_reason === "refusal") {
         return {
@@ -282,11 +332,23 @@ export class AnthropicAdapter {
         shouldConsumeQuota: validation.shouldConsumeQuota,
       };
     } catch (err) {
+      if (openRouter && !received) {
+        console.info(JSON.stringify({
+          event: "analysis_provider_call",
+          job_id: input.jobId,
+          model: PINNED_OPENROUTER_MODEL,
+          outcome: input.signal?.aborted || err instanceof Anthropic.APIConnectionTimeoutError
+            ? "timeout"
+            : "error",
+          elapsed_ms: Math.round(performance.now() - started),
+          http_status: err instanceof Anthropic.APIError ? err.status : undefined,
+        }));
+      }
       return {
         ok: false,
         shouldConsumeQuota: false,
         errorCode: "PROVIDER_TIMEOUT_OR_ERROR",
-        errorMessage: err instanceof Error ? err.message : String(err),
+        errorMessage: "The classification provider could not complete the request.",
       };
     }
   }

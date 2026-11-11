@@ -109,6 +109,7 @@ def main():
         ready = request("Private photo upload", ticket["signed_upload_url"], "PUT", photo, token)
     if ready != {"photo_asset_id": asset, "state": "ready"}:
         raise SmokeError("The upload did not return the expected ready photo.")
+    started = time.monotonic()
     created = request("Diagnosis create", api + "/analysis/jobs", "POST", {
         "operation_id": operation_id, "mode": "diagnosis", "photo_asset_id": asset,
     }, token, accepted=(200, 202, 503))
@@ -133,14 +134,20 @@ def main():
                 raise SmokeError("Terminal diagnosis result failed wire validation.")
             print(json.dumps({
                 "status": "succeeded", "job_id": job, "quota_state": value["quota_state"],
+                "quota_kind": value.get("quota_kind"),
+                "elapsed_seconds": round(time.monotonic() - started, 2),
                 "identification_status": result["identification_status"],
                 "diagnosis_status": result["diagnosis_status"],
+                "plant_id": result.get("plant_id"),
+                "plant_display_name": result.get("plant_display_name"),
+                "selected_condition_id": result.get("selected_condition_id"),
+                "condition_display_name": result.get("condition_display_name"),
             }))
             return
         if status in ("failed", "expired"):
             code = value.get("error_code")
             code = code if isinstance(code, str) and re.fullmatch(r"[A-Z0-9_]{1,80}", code) else "UNKNOWN_ERROR"
-            raise SmokeError(f"Staging diagnosis {status}: {code}.")
+            raise SmokeError(f"Staging diagnosis {job} {status}: {code}.")
         if status not in ("queued", "running"):
             raise SmokeError("Unrecognized job status.")
         time.sleep(1.5)
