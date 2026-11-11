@@ -1668,9 +1668,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-backend-openrouter-local: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 162.99 с, проверки — 91.61 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [parallel-backend-openrouter-local](validation/automation/tasks/parallel-backend-openrouter-local.md).
+parallel-backend-plant-create-staging: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 145.40 с, проверки — 77.83 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [parallel-backend-plant-create-staging](validation/automation/tasks/parallel-backend-plant-create-staging.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
