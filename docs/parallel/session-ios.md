@@ -12,7 +12,7 @@
 
 ## Первый этап: два узких sync-пакета
 
-До реализации подготовь **новый** manifest `tools/automation/tasks.parallel-ios-sync-transport.json`; затем отдельный зависимый `tasks.parallel-ios-sync-store.json`. Это замена слишком большого следующего шага, не повторная приёмка receipt. Branch config — игнорируемый `docs/validation/automation/runs/parallel-ios.config.json`, publish только `codex/plants-ios`. Подготовку/manifest/handoff проверь, закоммить и отправь до run; run начинается на чистом дереве. Используй новые уникальные run IDs `parallel-ios-sync-transport-...` и `parallel-ios-sync-store-...`. Внешние предпосылки уже принятых SHA запиши в constraints/files; `depends_on` внутри JSON ссылается только на задачи этого manifest.
+До реализации подготовь **новый** manifest `tools/automation/tasks.parallel-ios-sync-transport.json`; затем отдельный зависимый `tasks.parallel-ios-sync-store.json`. Это замена слишком большого следующего шага, не повторная приёмка receipt. Branch config — игнорируемый `docs/validation/automation/runs/parallel-ios.config.json`, publish только `codex/plants-ios`. Выполни `prepare` и сохрани новые входы пакета локальным коммитом. Engine опубликует его при приёмке. Используй новые уникальные run IDs `parallel-ios-sync-transport-...` и `parallel-ios-sync-store-...`. Внешние предпосылки уже принятых SHA запиши в constraints/files; `depends_on` внутри JSON ссылается только на задачи этого manifest.
 
 **A1, DTO/transport (без engine/store/UI):**
 
@@ -30,7 +30,7 @@
 - Все страницы одного окна staged; ошибка/некорректная/непродвигающаяся страница сохраняет прежний cache/checkpoint/outbox. Profile/entitlement не теряются даже при пустом changes; retired slots/rooms не оживают. Отмена/смена сессии A→B не применяет данные/commands A с токеном B.
 - Meaningful tests: APIClient→engine→реальный disk LocalStore, две страницы/точный outgoing cursor, failed page atomicity, restart и следующий запрос с исходным next_since, legacy disk, tombstones, owner switch/session change. Обязательны те же build/unit/Simulator gates.
 
-После каждого принятого пакета: handoff, commit/push своей ветки и отчёт с ID/SHA/checks/ограничениями/следующим шагом. Полный T162/T025/T026/T149 пока не закрывать. Передай B принятые SHA sync/store prerequisites; полный T164 всё ещё ждёт T162/T163.
+После приёмки используй опубликованный отчёт engine и сводку `summary`. Укажи следующий шаг. Полный T162/T025/T026/T149 пока не закрывать. Передай B принятые SHA sync/store prerequisites; полный T164 всё ещё ждёт T162/T163.
 
 ## Следующие пакеты
 

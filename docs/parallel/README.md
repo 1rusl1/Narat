@@ -23,7 +23,7 @@ config целиком default-конфигурацией и не resume стар
 1. Создать два чата **Worktree** от коммита подготовки, содержащего этот документ; обоим дать соответствующее задание ниже. Создание чатов и worktree не заменяется двумя CLI-процессами в исходной папке.
 2. A работает в своей ветке `codex/plants-ios`, B — `codex/plants-backend`. Если Worktree открылся в detached HEAD, управляющий чат создаёт свою ветку; если она уже существует — проверяет её checkout, не сбрасывает и не пересоздаёт.
 3. В каждом checkout проверить `git rev-parse --show-toplevel`, `git branch --show-current`, чистоту дерева и отсутствие старого активного контроллера. Запускать **копию** `tools/automation/orchestrator.py` из своего checkout: ROOT определяется местом скрипта, а не только cwd.
-4. Перед первым run создать конфигурацию своей ветки по инструкции ниже, подготовить узкий JSON manifest и необходимые trusted gates, выполнить `validate` и просмотреть `context`. Подготовку, handoff и manifest сохранить и отправить в свою ветку; затем запускать очередь из чистого дерева.
+4. Использовать сохранённый config своей ветки. Для пакета подготовить узкий manifest и выполнить `prepare`. Сохранить новые файлы одним локальным коммитом и запустить очередь с чистого дерева. Engine публикует этот коммит вместе с принятым пакетом и отчётом.
 
 Задания для вставки в новые чаты:
 
@@ -35,7 +35,7 @@ config целиком default-конфигурацией и не resume стар
 
 ## Публикация и ресурсы
 
-**Важное ограничение:** основной config публикует в `main`. Перед каждым run явно передавать `--config` с собственной веткой. Отключать publish нельзя: тогда оркестратор оставляет результат WAITING. В каждом worktree выполнить этот пример, заменив `lane` только на `ios` или `backend`:
+Основной config публикует в `main`. Для очереди A/B явно указывать собственный `--config`. Создайте его один раз в своём worktree, заменив `lane` на `ios` или `backend`.
 
 ```python
 import json
@@ -46,18 +46,21 @@ config = json.loads(Path("tools/automation/orchestrator.config.json").read_text(
 config["publish"]["branch"] = f"codex/plants-{lane}"
 path = Path(f"docs/validation/automation/runs/parallel-{lane}.config.json")
 path.parent.mkdir(parents=True, exist_ok=True)
-path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n")
+with path.open("x") as stream:
+    json.dump(config, stream, ensure_ascii=False, indent=2)
 ```
 
-Путь config игнорируется Git. Файл не содержит секретов; контрольную сумму и routing фиксировать в отчёте подготовки. После изменения config — новый run-id, а не resume старого run. Шаблон команд для **уже подготовленного** manifest:
+Путь config игнорируется Git. Повторно используйте его для следующих пакетов. При изменении config задайте новый run-id. Типовой запуск готового manifest выглядит так.
 
 ```sh
-python3 tools/automation/orchestrator.py validate --config docs/validation/automation/runs/parallel-ios.config.json --manifest tools/automation/tasks.parallel-ios-<slice>.json
-python3 tools/automation/orchestrator.py context --config docs/validation/automation/runs/parallel-ios.config.json --manifest tools/automation/tasks.parallel-ios-<slice>.json --role developer
-python3 tools/automation/orchestrator.py run --config docs/validation/automation/runs/parallel-ios.config.json --manifest tools/automation/tasks.parallel-ios-<slice>.json --run-id parallel-ios-<slice>-<unique>
+python3 tools/automation/orchestrator.py prepare --config docs/validation/automation/runs/parallel-ios.config.json --manifest tools/automation/tasks.parallel-ios-slice.json
+python3 tools/automation/orchestrator.py run --config docs/validation/automation/runs/parallel-ios.config.json --manifest tools/automation/tasks.parallel-ios-slice.json --run-id parallel-ios-slice-01
+python3 tools/automation/orchestrator.py summary --run-id parallel-ios-slice-01
 ```
 
-`<slice>`/`<unique>` — placeholders, команды не копировать без замены. Для B заменить `ios` на `backend`. У двух веток отдельные run directories и `.doctor.lock`; общий lock действует только внутри checkout. Поэтому **между worktree Simulator не защищён**: Simulator/Xcode UI gates выполняет только A. B запускает Deno и изолированные PostgreSQL/KB checks; Swift-проверки своего серверного пакета передаёт A. Локальные SQL gates должны создавать собственные data/socket/database и не трогать общий Supabase stack. Не выполнять параллельно reset/deploy общего backend. Живые тестовые аккаунты/данные тоже разделять; production не использовать для конкурентных экспериментов.
+Подставьте имя своего manifest и уникальный run-id. Для B используйте backend config. Проверки пакета идут внутри `run`. После приёмки используйте опубликованный отчёт engine и `summary`. При остановке возьмите факты из `summary` и запишите следующий шаг в handoff.
+
+У двух веток отдельные run directories и `.doctor.lock`; общий lock действует только внутри checkout. Поэтому **между worktree Simulator не защищён**: Simulator/Xcode UI gates выполняет только A. B запускает Deno и изолированные PostgreSQL/KB checks; Swift-проверки своего серверного пакета передаёт A. Локальные SQL gates должны создавать собственные data/socket/database и не трогать общий Supabase stack. Не выполнять параллельно reset/deploy общего backend. Живые тестовые аккаунты/данные тоже разделять; production не использовать для конкурентных экспериментов.
 
 ## Границы изменений
 
