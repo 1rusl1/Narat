@@ -1,0 +1,62 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-monstera-recommendation",
+      "description": "Accept the owner-scoped read path and versioned staging publication of one sourced Monstera watering rule.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "candidate_base": "9e412f4bfbd585e6b4df6f5bc7de42274a5c02aa",
+      "files": [
+        "tools/automation/tasks.parallel-backend-monstera-recommendation.json",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/render_staging_monstera_care_release.py",
+        "supabase/migrations/202611110017_plant_care_profile_read.sql",
+        "supabase/tests/plant_care_profile_read.test.sql",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/tests/care_recommendation_http_test.ts",
+        "specs/001-plants-ios-mvp/contracts/plant-care-recommendation-http.md",
+        "knowledge-base/releases/staging-monstera-care-v2/monstera-watering.json",
+        "knowledge-base/releases/staging-monstera-care-v2/README.md",
+        "knowledge-base/releases/staging-diagnosis-v1/monstera-overwatering.json",
+        "specs/001-plants-ios-mvp/contracts/plant-profile.schema.json"
+      ],
+      "write_files": [],
+      "evidence_files": [
+        "knowledge-base/releases/staging-monstera-care-v2/README.md",
+        "docs/handoff_status.md"
+      ],
+      "constraints": [
+        "Reviewer and QA reports must be in English. Audit the actual committed diff and saved local checks. Model roles are read-only with synthetic fixtures. The controller alone deploys to the documented staging project and performs the live owner read.",
+        "This is a read-only recommendation for an owned live plant. Confirm the exact active published taxon and KB release, service-only RPC, provenance and no fallback advice when any required evidence is absent. Verify stable 401/403/404 and private no-store semantics. Existing journal, care automation, diagnosis, provider, quota and billing behavior is outside the write scope.",
+        "The v2 artifact contains one conditional check_soil action derived from the stated UW–Madison watering fact, with a null calendar interval. Source attribution, the hash of the retained original evidence note and derived_records scope must match. Polish action text is required by the existing schema and EN is the acceptance language.",
+        "Review the explicit staging SQL renderer. It validates the prior release/taxon and existing condition content before atomically activating the new version. The previous pinned condition profile remains readable and the published catalogue is not edited. Local tests do not establish a live profile or iOS result."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Production HTTP fixtures prove the exact authored conditional rule and provenance, the null interval and fail-closed behavior; real PostgreSQL fixtures prove owner and published profile selection.",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql",
+            "kb-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Existing compact v2 schemas, Edge type checks and the actual scoped diff pass.",
+          "checks": [
+            "t157-compact-plant",
+            "t157-compact-condition",
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

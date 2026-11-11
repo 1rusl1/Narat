@@ -41,6 +41,7 @@ import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
 import { createDiagnosisMedia } from "./diagnosis-media.ts";
 import { handleGetSync } from "./collection.ts";
 import { handleCollectionCommand } from "./care-journal.ts";
+import { handleCareRecommendation } from "./care-recommendation.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
 // a real client with a mocked transport without reading credentials or using the network.
@@ -58,6 +59,7 @@ export interface PlantsApiDependencies {
   diagnosisJobs?: ReturnType<typeof createDiagnosisJobs>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
+  handleCareRecommendation?: (req: Request, ctx: RequestContext, plantId: string) => Promise<Response>;
 }
 
 function createSupabaseAuthClient(token: string): SupabaseClient | null {
@@ -277,6 +279,11 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         }
       }
 
+      const careMatch = normalizedPath.match(/^\/plants\/([^/]+)\/care\/recommendation$/);
+      if (req.method === "GET" && careMatch && deps.handleCareRecommendation) {
+        return await deps.handleCareRecommendation(req, ctx, careMatch[1]);
+      }
+
       if (req.method === "GET" && normalizedPath === "/sync") {
         requireActiveOwner(ctx);
         if (deps.handleSync) {
@@ -355,6 +362,8 @@ export function createProductionPlantsApiHandler(
       ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),
     handleCommand: deps.handleCommand ??
       ((req, ctx) => handleCollectionCommand(req, ctx, syncClient)),
+    handleCareRecommendation: deps.handleCareRecommendation ??
+      ((req, ctx, plantId) => handleCareRecommendation(req, ctx, plantId, syncClient)),
   });
 }
 
