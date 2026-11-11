@@ -1710,8 +1710,8 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-diagnosis-operation-ids: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 115.40 с, проверки — 115.26 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [parallel-ios-diagnosis-operation-ids](validation/automation/tasks/parallel-ios-diagnosis-operation-ids.md).
+parallel-ios-diagnosis-save-card: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 2, qa 1. Модели — 601.13 с, проверки — 228.43 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [parallel-ios-diagnosis-save-card](validation/automation/tasks/parallel-ios-diagnosis-save-card.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

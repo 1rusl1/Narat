@@ -31,6 +31,8 @@ struct RootContainerView: View {
     @State private var startupFailed = false
 #if DEBUG && targetEnvironment(simulator)
     @State private var stagingAccount: StagingAccountPresentation?
+    @State private var stagingAnalysisOwner: UUID?
+    @State private var diagnosisSave: StagingDiagnosisSave?
 #endif
 #if DEBUG
     @State private var fixtureContext: CatalogueUIFixtureContext?
@@ -76,7 +78,14 @@ struct RootContainerView: View {
                 case .selectPhoto, .careQuestions:
                     CareQuestionsView(model: analysisModel, languageStore: languageStore)
                 case .analyzing, .preliminaryResult, .diagnosticRefinement:
+#if DEBUG && targetEnvironment(simulator)
+                    PreliminaryResultView(
+                        model: analysisModel, languageStore: languageStore,
+                        saveToCollection: stagingSaveAvailable ? { presentDiagnosisSave() } : nil
+                    )
+#else
                     PreliminaryResultView(model: analysisModel, languageStore: languageStore)
+#endif
                 default:
                     welcomeIntentSection
                 }
@@ -84,6 +93,27 @@ struct RootContainerView: View {
         }
         .task { await prepareCatalogue() }
 #if DEBUG && targetEnvironment(simulator)
+        .sheet(item: $diagnosisSave) { save in
+            if let catalogue {
+                NavigationStack {
+                    ScrollView {
+                        CatalogueSaveView(
+                            connection: catalogue, speciesSlug: save.slug,
+                            displayName: save.label, scientificName: save.slug,
+                            polish: isPolish, selectionLocked: .constant(false),
+                            requestedFlowId: save.id, requiredOwnerId: save.ownerId,
+                            speciesDetails: { EmptyView() }
+                        )
+                        .padding()
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(isPolish ? "Zamknij" : "Close") { diagnosisSave = nil }
+                        }
+                    }
+                }
+            }
+        }
         .sheet(item: $stagingAccount) { account in
             StagingAccountView(connection: account.connection) { snapshot in
                 installStagingAnalysis(connection: account.connection, owner: snapshot.session.userId)
@@ -161,6 +191,20 @@ struct RootContainerView: View {
     }
 
 #if DEBUG && targetEnvironment(simulator)
+    private var stagingSaveAvailable: Bool {
+        guard let owner = stagingAnalysisOwner, let snapshot = catalogue?.snapshot else { return false }
+        return !snapshot.isAnonymous && snapshot.session.userId == owner
+    }
+
+    private func presentDiagnosisSave() {
+        guard stagingSaveAvailable, let owner = stagingAnalysisOwner,
+              let slug = analysisModel.diagnosisSaveSpeciesSlug,
+              let operation = analysisModel.currentOperationId else { return }
+        diagnosisSave = StagingDiagnosisSave(
+            id: operation, ownerId: owner, slug: slug, label: analysisModel.speciesLabel ?? slug
+        )
+    }
+
     @MainActor
     private func prepareStagingAnalysis() async {
         guard let config = try? NativeAuthConfiguration(),
@@ -189,6 +233,7 @@ struct RootContainerView: View {
     @MainActor
     private func installStagingAnalysis(connection: CatalogueConnection, owner: UUID) {
         guard let api = connection.apiClient else { return }
+        stagingAnalysisOwner = owner
         analysisModel.installAnalysisService(StagingAnalysisService(api: api) {
             let snapshot = try await connection.sessionSnapshot()
             guard !snapshot.isAnonymous, snapshot.session.userId == owner else {
@@ -414,6 +459,13 @@ final class StagingAnalysisService: AnalysisService {
         guard activeAttempt == attempt else { throw CancellationError() }
         try api.syncAuthority.withBoundValid(lease) {}
     }
+}
+
+private struct StagingDiagnosisSave: Identifiable {
+    let id: UUID
+    let ownerId: UUID
+    let slug: String
+    let label: String
 }
 
 private struct StagingAccountPresentation: Identifiable {

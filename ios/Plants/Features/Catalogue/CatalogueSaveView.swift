@@ -11,6 +11,18 @@ private enum CatalogueViewNotice {
     case invalidInput, unavailable, sessionChanged, nativeCancelled, authenticationFailed
 }
 
+/// Catalogue entry resumes its pointer; a diagnosis resumes only its own operation.
+enum CatalogueSaveResumePolicy {
+    /// A diagnosis checkpoint can exist before rememberModel publishes its pointer.
+    static func restorationFlowId(requestedFlowId: UUID?, catalogueFlowId: UUID?) -> UUID? {
+        requestedFlowId ?? catalogueFlowId
+    }
+
+    static func shouldResume(existingFlowId: UUID, requestedFlowId: UUID?) -> Bool {
+        requestedFlowId == nil || requestedFlowId == existingFlowId
+    }
+}
+
 /// Private form state belongs to one actual SDK snapshot, including its event epoch.
 @MainActor
 struct CatalogueSaveView<SpeciesDetails: View>: View {
@@ -20,6 +32,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let scientificName: String
     let polish: Bool
     @Binding var selectionLocked: Bool
+    // Nil preserves the existing catalogue selection/resume behavior.
+    var requestedFlowId: UUID? = nil
+    var requiredOwnerId: UUID? = nil
     @ViewBuilder let speciesDetails: () -> SpeciesDetails
 
     @State private var scope: CatalogueSDKSnapshot?
@@ -39,7 +54,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @FocusState private var nameFocused: Bool
 
     private var scopeIsCurrent: Bool {
-        scope != nil && connection.snapshot == scope
+        guard let scope, connection.snapshot == scope else { return false }
+        guard let requiredOwnerId else { return true }
+        return !scope.isAnonymous && scope.session.userId == requiredOwnerId
     }
 
     private var shouldLockSelection: Bool {
@@ -234,10 +251,13 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             .accessibilityIdentifier("catalogue.save.retry")
     }
 
+    @ViewBuilder
     private var editButton: some View {
-        Button(polish ? "Edytuj jako nowy zapis" : "Edit as a new save") { editAsNewIntent() }
-            .disabled(working || !journalAllowsNewIntent)
-            .accessibilityIdentifier("catalogue.save.edit")
+        if requestedFlowId == nil {
+            Button(polish ? "Edytuj jako nowy zapis" : "Edit as a new save") { editAsNewIntent() }
+                .disabled(working || !journalAllowsNewIntent)
+                .accessibilityIdentifier("catalogue.save.edit")
+        }
     }
 
     @ViewBuilder
@@ -293,7 +313,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func isCurrent(_ ticket: Int, _ expected: CatalogueSDKSnapshot) -> Bool {
-        active && revision == ticket && !Task.isCancelled && scope == expected && connection.snapshot == expected
+        active && revision == ticket && !Task.isCancelled && scope == expected && scopeIsCurrent && connection.snapshot == expected
     }
 
     private func synchronize() {
@@ -310,20 +330,25 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         restoreFailed = false
         journalAllowsNewIntent = false
         scope = connection.snapshot
-        guard let expected = scope else { working = false; return }
+        guard let expected = scope, scopeIsCurrent else { working = false; return }
         working = true
         work = Task { @MainActor in
             defer { if revision == ticket { working = false; work = nil } }
             do {
                 previousFlow = try connection.resumableFlow(expected: expected)
-                if let flow = previousFlow {
+                if let flow = CatalogueSaveResumePolicy.restorationFlowId(
+                    requestedFlowId: requestedFlowId, catalogueFlowId: previousFlow
+                ) {
                     let result = await connection.restoreModel(
                         ownerId: expected.session.userId, flowId: flow, expected: expected
                     )
                     guard isCurrent(ticket, expected) else { return }
                     switch result {
                     case let .restored(restored):
-                        if restored.input?.speciesSlug == speciesSlug {
+                        if restored.input?.speciesSlug == speciesSlug,
+                           CatalogueSaveResumePolicy.shouldResume(
+                               existingFlowId: flow, requestedFlowId: requestedFlowId
+                           ) {
                             model = restored
                             switch restored.state {
                             case .ready, .collectionLimitNotEnqueued:
@@ -343,7 +368,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                             await loadIfSaved(restored)
                         } else {
                             // An undisplayed flow still owns its pointer until its journal
-                            // proves that a different species can start safely.
+                            // proves that a fresh operation can start safely.
                             _ = try await replaceableFlow(expected: expected)
                             guard isCurrent(ticket, expected) else { return }
                             journalAllowsNewIntent = true
@@ -399,7 +424,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         nameFocused = false
         if model == nil && intent == nil {
             let input = CatalogueInput(speciesSlug: speciesSlug, personalName: name.isEmpty ? nil : name)
-            let chosen = CatalogueViewIntent(input: input, flowId: UUID(), operationId: UUID())
+            let chosen = CatalogueViewIntent(input: input, flowId: requestedFlowId ?? UUID(), operationId: UUID())
             do { _ = try input.makeEnvelope(operationId: chosen.operationId) }
             catch { notice = .invalidInput; return }
             intent = chosen

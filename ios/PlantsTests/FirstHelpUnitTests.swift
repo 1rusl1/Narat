@@ -253,19 +253,21 @@ final class FirstHelpUnitTests: XCTestCase {
     private func serviceResult(
         mode: AnalysisMode = .diagnosis,
         status: IdentificationStatus = .resolved,
-        labels: Bool = true
+        labels: Bool = true,
+        speciesSlug: String? = "fixture-species",
+        context: AnalysisContextState = .current
     ) -> AnalysisServiceResult {
         let resolved = status == .resolved
         return AnalysisServiceResult(
             analysis: PreliminaryAnalysis(
                 id: UUID(), jobId: UUID(), kbReleaseId: UUID(), mode: mode,
                 identificationStatus: status,
-                plantId: resolved ? "fixture-species" : nil, genusId: nil,
+                plantId: resolved ? speciesSlug : nil, genusId: nil,
                 diagnosisStatus: resolved ? .conditionDetected : .unknown,
                 candidates: [], selectedConditionId: resolved ? "fixture-condition" : nil,
                 visualMarkers: [], evidenceBasis: [], limitations: ["Fixture limitation"],
                 firstActionSummary: nil, controlIntervalDays: nil,
-                analysisReceipt: ""
+                contextState: context, analysisReceipt: ""
             ),
             speciesLabel: labels ? "Fixture species" : nil,
             conditionLabel: labels ? "Fixture condition" : nil
@@ -319,6 +321,101 @@ final class FirstHelpUnitTests: XCTestCase {
             XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
         }
     }
+
+    func testDiagnosisSaveUsesActualSlugAndRejectsObsoleteOrClearedResult() async throws {
+        let response = serviceResult(labels: false, speciesSlug: "monstera-deliciosa")
+        let model = AnalysisFlowModel(service: GalleryAnalysisFixture(response: response))
+        model.router.selectIntent(.problem)
+        model.selectPhotoData(photoFixture())
+        let task = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        XCTAssertNil(model.diagnosisSaveSpeciesSlug)
+        await task.value
+        XCTAssertNil(model.speciesLabel)
+        XCTAssertEqual(model.diagnosisSaveSpeciesSlug, "monstera-deliciosa")
+        let flow = model.router.flowState.flowId
+        model.router.flowState.flowId = UUID()
+        XCTAssertNil(model.diagnosisSaveSpeciesSlug)
+        model.router.flowState.flowId = flow
+        XCTAssertEqual(model.diagnosisSaveSpeciesSlug, "monstera-deliciosa")
+        model.preliminaryResult = nil
+        XCTAssertNil(model.diagnosisSaveSpeciesSlug)
+        model.preliminaryResult = response.analysis
+        XCTAssertEqual(model.diagnosisSaveSpeciesSlug, "monstera-deliciosa")
+        model.cancelAnalysis()
+        XCTAssertNil(model.diagnosisSaveSpeciesSlug)
+    }
+
+    func testDiagnosisSaveRejectsUncertainStaleAndMissingSlugResults() async throws {
+        let responses = [
+            serviceResult(status: .unknown), serviceResult(status: .genusOnly),
+            serviceResult(status: .outOfScope), serviceResult(speciesSlug: nil),
+            serviceResult(speciesSlug: ""), serviceResult(speciesSlug: "   "),
+            serviceResult(context: .stale), serviceResult(mode: .identification)
+        ]
+        for response in responses {
+            let model = AnalysisFlowModel(service: GalleryAnalysisFixture(response: response))
+            model.router.selectIntent(response.analysis.mode == .diagnosis ? .problem : .care)
+            if response.analysis.mode == .identification { model.router.selectCareMethod(.scan) }
+            model.selectPhotoData(photoFixture())
+            let task = try XCTUnwrap(model.submitAnalysis(locale: .en))
+            await task.value
+            XCTAssertNotNil(model.preliminaryResult)
+            XCTAssertNil(model.diagnosisSaveSpeciesSlug)
+        }
+    }
+
+    func testFreshDiagnosisCannotResumePriorSaveButSameOperationCanRetry() {
+        let prior = UUID()
+        let diagnosis = UUID()
+        XCTAssertTrue(CatalogueSaveResumePolicy.shouldResume(existingFlowId: prior, requestedFlowId: nil))
+        XCTAssertFalse(CatalogueSaveResumePolicy.shouldResume(existingFlowId: prior, requestedFlowId: diagnosis))
+        XCTAssertTrue(CatalogueSaveResumePolicy.shouldResume(existingFlowId: diagnosis, requestedFlowId: diagnosis))
+    }
+
+#if DEBUG
+    func testDiagnosisReopeningRestoresCheckpointBeforeResumePointerPublication() async throws {
+        let fixture = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .free2)
+        defer { try? fixture.cleanup() }
+        let connection = try XCTUnwrap(fixture.connection)
+        let expected = try await connection.sessionSnapshot()
+        let flow = UUID()
+        let operation = UUID()
+        let input = CatalogueInput(speciesSlug: "fixture-fern", personalName: "Luna")
+        let original = try await connection.makeModel(
+            input: input, flowId: flow, operationId: operation, expected: expected
+        )
+        // Emulate closing the child between durable checkpoint and pointer publication.
+        let checkpoint = try await original.checkpointInput()
+        original.cancel()
+        let pointer = try connection.resumableFlow(expected: expected)
+        XCTAssertNil(pointer)
+        XCTAssertTrue(fixture.server.snapshot.commits.isEmpty)
+
+        let restoreFlow = try XCTUnwrap(CatalogueSaveResumePolicy.restorationFlowId(
+            requestedFlowId: flow, catalogueFlowId: pointer
+        ))
+        let result = await connection.restoreModel(
+            ownerId: expected.session.userId, flowId: restoreFlow, expected: expected
+        )
+        guard case let .restored(reopened) = result else {
+            return XCTFail("Reopening must recover the durable diagnosis operation without a pointer")
+        }
+        XCTAssertEqual(reopened.checkpoint, checkpoint)
+        XCTAssertEqual(reopened.envelope?.operationId, operation)
+        XCTAssertEqual(reopened.input, input)
+        let remembered = try await connection.rememberModel(reopened, expected: expected)
+        XCTAssertEqual(remembered, checkpoint)
+        await reopened.save()
+        guard case let .saved(confirmation) = reopened.state else {
+            return XCTFail("Retry must save the recovered operation")
+        }
+        XCTAssertEqual(fixture.server.snapshot.commits.count, 1)
+        XCTAssertEqual(reopened.envelope?.operationId, operation)
+        await reopened.loadCard()
+        XCTAssertEqual(reopened.cardSummary?.id, confirmation.receipt.plantId)
+        XCTAssertEqual(reopened.cardSummary?.speciesSlug, input.speciesSlug)
+    }
+#endif
 
     func testExplicitRetryKeepsFrozenRequestAndOperationAfterProviderFailure() async throws {
         let service = GalleryAnalysisFixture(response: serviceResult())

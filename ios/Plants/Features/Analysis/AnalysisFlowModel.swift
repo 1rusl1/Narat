@@ -65,6 +65,23 @@ public final class AnalysisFlowModel {
 
     public var hasAnalysisService: Bool { service != nil }
 
+    /// Only the current, completed diagnosis may supply a create slug.
+    public var diagnosisSaveSpeciesSlug: String? {
+        guard !isAnalyzing, analysisError == nil,
+              router.flowState.currentStep == .preliminaryResult,
+              let request = frozenRequest, request.mode == .diagnosis,
+              request.intent == .problem,
+              request.operationId == currentOperationId,
+              request.flowId == router.flowState.flowId,
+              request.intent == router.flowState.intent,
+              let result = preliminaryResult, result.mode == .diagnosis,
+              result.identificationStatus == .resolved, result.contextState == .current,
+              let slug = result.plantId,
+              (try? CatalogueInput(speciesSlug: slug).makeEnvelope(operationId: request.operationId)) != nil
+        else { return nil }
+        return slug
+    }
+
     public init(
         router: AddPlantRouter = AddPlantRouter(),
         accessState: AnalysisAccessState? = nil,

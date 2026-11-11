@@ -4,9 +4,15 @@ public struct PreliminaryResultView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
 
-    public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
+    private let saveToCollection: (() -> Void)?
+
+    public init(
+        model: AnalysisFlowModel, languageStore: LanguageStore,
+        saveToCollection: (() -> Void)? = nil
+    ) {
         self.model = model
         self.languageStore = languageStore
+        self.saveToCollection = saveToCollection
     }
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
@@ -40,6 +46,11 @@ public struct PreliminaryResultView: View {
                     }
                     ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
+                    }
+                    if model.diagnosisSaveSpeciesSlug != nil, let saveToCollection {
+                        Button(isPolish ? "Zapisz w kolekcji" : "Save to collection", action: saveToCollection)
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("analysis.result.save")
                     }
                     exitButtons
                 } else {
