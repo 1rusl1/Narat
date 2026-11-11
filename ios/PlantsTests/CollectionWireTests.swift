@@ -780,8 +780,17 @@ extension CollectionWireTests {
         ]
         var empty = syncObject()
         empty["changes"] = [plant]
+        let recommendation = try syncJSON([
+            "plant_id": serverPlantId.uuidString, "status": "available",
+            "recommendation": [
+                "action_id": "verified-water-rule", "action_code": "check_soil",
+                "text": "Check the substrate before watering.", "next_check_interval_days": NSNull(),
+                "source": ["url": "https://example.invalid/watering", "locator": "Growing"]
+            ] as [String: Any]
+        ])
         let transport = CatalogueTransport([
-            .http(200, try syncJSON(page)), .http(200, try syncJSON(invalidHistory)),
+            .http(200, try syncJSON(page)), .network, .http(200, recommendation),
+            .http(200, try syncJSON(invalidHistory)),
             .network, .http(200, try syncJSON(empty))
         ])
         let api = client(transport)
@@ -801,6 +810,8 @@ extension CollectionWireTests {
         )
         guard case let .restored(model) = result else { return XCTFail("Expected durable restore") }
         XCTAssertEqual(model.wateringHistoryState, .idle)
+        await model.loadCareRecommendation()
+        XCTAssertEqual(model.careRecommendationState, .unavailable)
         await model.loadCard()
         XCTAssertEqual(model.cardSummary?.id, serverPlantId)
         guard case let .loaded(entries) = model.wateringHistoryState else {
@@ -809,6 +820,16 @@ extension CollectionWireTests {
         XCTAssertEqual(entries.map(\.id), [voidedId, activeId])
         XCTAssertEqual(entries.map(\.state), ["voided", "active"])
         XCTAssertEqual(entries.map(\.occurredLocalDate), ["2026-11-03", "2026-11-03"])
+        await model.loadCareRecommendation()
+        XCTAssertEqual(model.careRecommendationState, .failed)
+        XCTAssertEqual(model.cardSummary?.id, serverPlantId)
+        await model.loadCareRecommendation()
+        await model.loadCareRecommendation(retry: true)
+        guard case let .available(rule) = model.careRecommendationState else {
+            return XCTFail("Expected a rule on the restored canonical card")
+        }
+        XCTAssertEqual(rule.text, "Check the substrate before watering.")
+        XCTAssertEqual(rule.source.url, URL(string: "https://example.invalid/watering"))
         await model.loadCard()
         XCTAssertEqual(model.cardSummary?.id, serverPlantId)
         XCTAssertEqual(model.wateringHistoryState, .unavailable)
@@ -819,19 +840,20 @@ extension CollectionWireTests {
         await model.loadCard()
         XCTAssertEqual(model.wateringHistoryState, .loaded([]))
         let requests = await transport.capturedRequests()
-        XCTAssertEqual(requests.count, 4)
-        XCTAssertTrue(requests.allSatisfy {
-            $0.httpMethod == "GET" && $0.url?.lastPathComponent == "sync"
-        })
+        XCTAssertEqual(requests.map(\.httpMethod), Array(repeating: "GET", count: 6))
+        XCTAssertEqual(requests.map { $0.url?.lastPathComponent },
+                       ["sync", "recommendation", "recommendation", "sync", "sync", "sync"])
         let pending = try await store.pendingOutboxEntries(for: syncOwner)
         XCTAssertTrue(pending.isEmpty)
         await api.bindSyncSession(nil)
         await api.bindSyncSession(syncSession)
         XCTAssertNil(model.cardSummary)
         XCTAssertEqual(model.wateringHistoryState, .unavailable)
+        XCTAssertEqual(model.careRecommendationState, .unavailable)
         await model.loadCard()
+        await model.loadCareRecommendation(retry: true)
         let afterABA = await transport.capturedRequests()
-        XCTAssertEqual(afterABA.count, 4)
+        XCTAssertEqual(afterABA.count, 6)
     }
 
     private var syncSince: String { "2026-11-03T08:00:00.000001+00:00" }
