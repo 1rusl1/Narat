@@ -1,9 +1,17 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** Локально приняты галерея и экран результата `cfc47a3`, а также HTTP-транспорт `14f6d8b`. Следующий шаг — приёмка подключения к тестовой учётке и сборка Simulator. Сквозной прогон ждёт принятый стенд и защищённый вход.
+**Обновлено 2026-11-11.** Приняты подключение к стенду `b62645b` и исправление формы входа `e8b6069`. Перед сборкой для ручного прогона разделить UUID загрузки и создания задания, которые конфликтуют в PostgreSQL. Живой диагноз ждёт обновления стенда, ключа Anthropic и входа в приложении.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Подключение к стенду и форма входа
+
+В `b62645b` приняты `Info.plist`, `project.yml`, `PlantsApp.swift`, `APIModels.swift`, `AnalysisFlowModel.swift`, `PreliminaryResultView.swift` и `CollectionWireTests.swift`. Debug Simulator включает HTTPS-подключение к заданному тестовому origin по флагу `--narat-staging-analysis`. Сервис привязан к постоянной учётке и показывает полученные EN-названия или неопределённость. В `e8b6069` исправлена пустая форма входа в `PlantsApp.swift`.
+
+Оба этапа прошли diff-check, сборку и 204 Swift-теста без пропусков, Simulator smoke, Review и QA. Установил staging-сборку исходников `b6c3f16` на выделенный Simulator и визуально подтвердил `Test account`, `Email`, `Password` и недоступный `Sign in` при пустых полях. Вход из приложения и живой диагноз не запускались. [Подключение](validation/automation/tasks/parallel-ios-staging-diagnosis.md), [форма](validation/automation/tasks/parallel-ios-staging-account-form.md).
+
+QA backend выявил конфликт двух команд с одним UUID в общей `operation_receipts`. Следующий шаг — заморозить отдельный UUID загрузки рядом с UUID создания задания, проверить неизменность каждого тела при потере ответа, принять исправление и собрать новую `.app`. T037–T039 и T153 открыты.
 
 ## HTTP-транспорт фотоанализа принят
 
