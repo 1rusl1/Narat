@@ -70,7 +70,14 @@ def main():
                 status = response.status
                 value = json.load(response)
         except urllib.error.HTTPError as error:
-            raise SmokeError(f"{label} returned HTTP {error.code}.") from None
+            status = error.code
+            if status not in accepted:
+                raise SmokeError(f"{label} returned HTTP {status}.") from None
+            try:
+                with error:
+                    value = json.load(error)
+            except (OSError, ValueError):
+                raise SmokeError(f"{label} response could not be verified.") from None
         except (OSError, ValueError):
             raise SmokeError(f"{label} response could not be verified.") from None
         if status not in accepted:
@@ -94,12 +101,21 @@ def main():
     upload = urllib.parse.urlparse(ticket["signed_upload_url"])
     if upload.path != f"{api}/media/uploads/{asset}" or ticket["storage_bucket"] != "analysis-inputs":
         raise SmokeError("Unexpected upload ticket path or bucket.")
-    ready = request("Private photo upload", ticket["signed_upload_url"], "PUT", photo, token)
+    # The same run can resume after the original signed URL expired. Check
+    # completion before resending bytes for a photo that may already be ready.
+    ready = request("Photo completion", api + "/media/complete", "POST",
+                    {"photo_asset_id": asset}, token, accepted=(200, 409))
+    if ready.get("state") != "ready":
+        ready = request("Private photo upload", ticket["signed_upload_url"], "PUT", photo, token)
     if ready != {"photo_asset_id": asset, "state": "ready"}:
         raise SmokeError("The upload did not return the expected ready photo.")
     created = request("Diagnosis create", api + "/analysis/jobs", "POST", {
         "operation_id": operation_id, "mode": "diagnosis", "photo_asset_id": asset,
-    }, token, accepted=(200, 202))
+    }, token, accepted=(200, 202, 503))
+    if "error" in created:
+        if created["error"].get("code") == "PROVIDER_UNAVAILABLE":
+            raise SmokeError("Diagnosis create returned HTTP 503 (PROVIDER_UNAVAILABLE).")
+        raise SmokeError("Diagnosis create returned HTTP 503.")
     job = str(uuid.UUID(created["job_id"]))
     deadline = time.monotonic() + 65
     while time.monotonic() < deadline:
