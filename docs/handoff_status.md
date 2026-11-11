@@ -1,9 +1,33 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** Собрана и запущена staging `.app` из `8b1f131`. Вход открыт, фото Monstera добавлено в Simulator. Backend подтвердил приватную загрузку. Создание диагноза на стенде возвращает `503 PROVIDER_UNAVAILABLE` без ключа Anthropic.
+**Обновлено 2026-11-11.** В Simulator из `c8b7b4a` прошли два живых фотоанализа через OpenRouter. Monstera распознана, для нечёткого кадра вид не определён. Оба результата честно показывают недостаток данных для диагноза. Сессия открыта для ручной проверки.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Живой фотоанализ из Simulator
+
+Исходники сборки `c8b7b4ad3f93e00862120405753d560de5bfc5eb`. В `AnalysisPhotoInput.swift` удалены некорректные `kCFNull`-параметры ImageIO и добавлена проверка типа, кадра и статуса JPEG. `FirstHelpUnitTests.swift`, `project.yml` и `project.pbxproj` проверяют реальный JPEG каталога без копирования его в приложение. До исправления оба выходных файла из каталожной Monstera в тесте Simulator имели по 20 байт и не декодировались. Три живых задания из `8b1f131` также загрузили по 20 байт, получили HTTP 400 у OpenRouter и освободили квоту.
+
+**Локальные проверки.** `xcodegen`, `git diff --check`, целевой тест после правки и gate `ios-photo-jpeg-fix-20261111-01` прошли. В тесте оба JPEG полностью декодируются в 960×1091. Сборка, welcome и 205 Swift-тестов прошли без пропусков и ошибок. Сборка с отключённой подписью не сохраняла сессию в Keychain. Ручная подпись копии не запустилась. Штатная подпись Xcode прошла, вход отдельной подтверждённой staging-учёткой и сохранение сессии после перезапуска проверены.
+
+**Живой staging.** `plants-api` v6 и `analysis-worker` v4 из backend `c372c6b`, Claude Haiku 5.5 через OpenRouter. Оба задания завершились `succeeded`. Размеры из билетов совпали с метаданными приватного Storage. Время измерено от выбора фото до текста результата в UI.
+
+| Кадр | Задание | Байты JPEG | Результат в Simulator |
+| --- | --- | ---: | --- |
+| Monstera из каталога | `c21ed170-dde7-4bc9-b203-44500d8c28ac` | 574 412 | `Swiss Cheese plant`, `No conclusive diagnosis is available.` за 9,34 с. На сервере `identified / monstera_deliciosa / insufficient_data`. |
+| Нечёткий синтетический кадр | `a2f1295e-d979-4a09-be98-773fe6ecc4b5` | 125 601 | `Species could not be determined.`, `No conclusive diagnosis is available.` за 5,43 с. На сервере `unknown / insufficient_data`. |
+
+Первое задание израсходовало стартовый диагноз. Второе завершилось с освобождением обычной месячной квоты, текущее использование 0 из 3. Учётка осталась в приложении на главном экране `Diagnose a plant problem`. Оба кадра в галерее Simulator. Синтетический кадр получен встроенным imagegen по запросу на сильно расфокусированное зелёное растение в тёмной комнате без различимых признаков. Локальный файл `DerivedData/StagingDiagnosis-8b1f131d4e6c/live-fixtures/narat-unclear.png`. Снимки результатов в `DerivedData/StagingDiagnosis-c8b7b4ad3f93/LiveEvidence/`.
+
+Повторный запуск установленного приложения. При необходимости сначала установить подписанную `.app`.
+
+```sh
+xcrun simctl install 32009F39-32EF-426B-A91E-31B368D6C27E '/Users/ruslansabirov/.codex/worktrees/d09a/Plants/DerivedData/StagingDiagnosis-c8b7b4ad3f93/SimulatorXcodeSigned/Build/Products/Debug-iphonesimulator/Plants.app'
+xcrun simctl launch --terminate-running-process 32009F39-32EF-426B-A91E-31B368D6C27E app.narat.plants.stagingdiagnosis --narat-staging-analysis
+```
+
+Следующий шаг — подключить сохранение результата в коллекцию и проверить запись ухода. Полные сценарии T037–T039 и T153 открыты.
 
 ## Сборка Simulator с раздельными UUID загрузки и задания
 
