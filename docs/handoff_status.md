@@ -1,9 +1,19 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** Живое сохранение, повтор и перезапуск карточки Monstera проверены в Simulator. Чтение журнала принято локально в `0819d0d`. Следующий пакет — совет Monstera по серверному контракту, затем клиентская запись и отмена.
+**Обновлено 2026-11-11.** Карточка Monstera и совет по поливу проверены на живом стенде после перезапуска Simulator. Следующий пакет — клиентская запись, повтор и отмена ручного полива на этой карточке.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Совет по поливу Monstera
+
+В `d30b91c` принят английский совет на подтверждённой staging-карточке. `PlantsAPIClient.swift`, `CatalogueSaveModel.swift` и `CatalogueSaveView.swift` используют owner-bound `GET /plants/{plant_id}/care/recommendation` с явным повтором после ошибки. `CollectionWireTests.swift` проверяет контракт, восстановление с диска, повтор и смену сессии. Backend B развернул контракт `77975cc` и подтвердил живой ответ в `99c995a`.
+
+В `parallel-ios-care-recommendation-20261111-01` два патча Sol Low не применились. В `-02` прошли 210 Swift-тестов и Review, а QA запросила подтверждение отображения. `-03` с реальными скриншотами принят за 278,68 с. Review и QA Astra High по одному вызову. Прошли diff-check, сборка, welcome, 210 Swift-тестов и Simulator smoke. [Отчёт](validation/automation/tasks/parallel-ios-care-recommendation.md).
+
+На живом `narat-staging` карточка `9ee20834-951a-4c4e-9f63-cfe6221554ec` показала исходный английский текст совета и ссылку до и после перезапуска. «Check the potting mix. Let it dry slightly between waterings. Once it has dried a little, water thoroughly.» Интервал отсутствует в ответе. Подписанная тестовая сборка использовала изолированное локальное хранилище, без replay или сбоя транспорта. Скриншоты и дерево интерфейса сохранены в `DerivedData/AnalysisCreateLive/watering-recommendation-{opened,reopened}.{png,json}`. В строке вида при восстановлении пока отображается slug `monstera_deliciosa`. [Источник](https://hort.extension.wisc.edu/articles/monstera-deliciosa/).
+
+Следующий шаг — подключить `care.record` и `care.undo` к той же карточке, проверить повтор одного operation ID после потери ответа и оба состояния истории после перезапуска. Полные T055/T065/T067/T068/T171 открыты.
 
 ## Чтение журнала ручного полива
 
