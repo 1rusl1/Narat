@@ -1740,8 +1740,8 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-ios-care-recommendation: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 163.28 с, проверки — 107.44 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [parallel-ios-care-recommendation](validation/automation/tasks/parallel-ios-care-recommendation.md).
+parallel-ios-manual-care-write: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 205.82 с, проверки — 108.99 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [parallel-ios-manual-care-write](validation/automation/tasks/parallel-ios-manual-care-write.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
