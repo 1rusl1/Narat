@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** Собрана и запущена staging `.app` из `8b1f131`. Вход открыт, фото Monstera добавлено в Simulator. Backend развернул API/worker и подтвердил приватную загрузку. Сквозной прогон ждёт ключа Anthropic и входа тестового аккаунта в приложении.
+**Обновлено 2026-11-11.** Собрана и запущена staging `.app` из `8b1f131`. Вход открыт, фото Monstera добавлено в Simulator. Backend подтвердил приватную загрузку. Создание диагноза на стенде возвращает `503 PROVIDER_UNAVAILABLE` без ключа Anthropic.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -18,7 +18,9 @@ xcrun simctl install 32009F39-32EF-426B-A91E-31B368D6C27E '/Users/ruslansabirov/
 xcrun simctl launch --terminate-running-process 32009F39-32EF-426B-A91E-31B368D6C27E app.narat.plants.stagingdiagnosis --narat-staging-analysis
 ```
 
-Backend сообщает, что миграции, профиль Monstera, API и worker из `368d0f2` развёрнуты на `narat-staging`. На стенде проверены загрузка в приватный Storage и отказ прямого чтения. На worker отсутствует `ANTHROPIC_API_KEY`. В приложении сессия тестовой учётки и путь до реального результата пока не проверены. После настройки Anthropic войти через `Test account`, открыть `Diagnose a plant problem`, выбрать Monstera и затем неоднозначное фото. Зафиксировать фактические результаты обоих прогонов. T037–T039 и T153 открыты.
+По отчёту backend `d6b2bd5`, на `narat-staging` активны `plants-api` v3 и `analysis-worker` v1 из `368d0f2`. На стенде прошли Auth, `/analysis/access`, выдача билета, PUT в приватный Storage и `/media/complete`. Прямое чтение отклонено. `POST /analysis/jobs` с отдельным UUID вернул `503 PROVIDER_UNAVAILABLE`. На стенде отсутствует `ANTHROPIC_API_KEY`, задания и вызовы провайдера не созданы.
+
+Сверил iOS-клиент с `diagnosis-photo-http.md` из `d6b2bd5` по раздельным UUID, PUT с Bearer на том же origin, подтверждению загрузки, созданию и опросу задания, nullable-названиям. В этой сверке исходники iOS не менялись, сборку и тесты повторно не запускал. После настройки ключа backend повторит smoke `staging-monstera-20261111-01`. Затем в Simulator войти через `Test account`, открыть `Diagnose a plant problem` и проверить Monstera и неоднозначное фото. T037–T039 и T153 открыты.
 
 ## Подключение к стенду и форма входа
 
