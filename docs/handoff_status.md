@@ -1,9 +1,17 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** Живое сохранение подтверждённой Monstera из результата проверено в Simulator из `05e1c76`. После потери ответа повтор и перезапуск открыли один и тот же серверный ID. Следующий пакет — чтение журнала ухода, затем запись и отмена по принятому контракту B.
+**Обновлено 2026-11-11.** Живое сохранение, повтор и перезапуск карточки Monstera проверены в Simulator. Чтение журнала принято локально в `0819d0d`. Следующий пакет — совет Monstera по серверному контракту, затем клиентская запись и отмена.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Чтение журнала ручного полива
+
+В `0819d0d285addcbb9737a81e54b289ef28e27631` приняты `CollectionRepository.swift`, `CatalogueSaveModel.swift`, `CatalogueSaveView.swift` и `CollectionWireTests.swift`. Подтверждённая staging-карточка читает `care_entries` из своего owner `/sync`, показывает записи полива и отмену по исходной локальной дате. Записи других растений, задачи и другие действия отфильтрованы.
+
+`parallel-ios-manual-care-history-20261111-01` прошёл за 691,67 с. Developer Sol Low вызван трижды, Review и QA Astra High по одному. Первый кандидат нарушил существующий переход карточки в `loading`, правка прошла повторную проверку. Итоговые diff-check, сборка, welcome, 209 Swift-тестов без пропусков и Simulator smoke прошли. Фикстуры покрывают восстановление, active/voided и фильтрацию. [Отчёт](validation/automation/tasks/parallel-ios-manual-care-history.md).
+
+B отдельно подтвердил живые `care.record` и `care.undo` на `narat-staging` по контракту из `cc721ce`. Клиентскую запись, отмену и живой журнал в Simulator ещё предстоит проверить. По приоритету владельца следующий пакет подключает `GET /plants/{plant_id}/care/recommendation` и проверяет опубликованный английский совет на карточке `9ee20834-951a-4c4e-9f63-cfe6221554ec`. Затем подключить запись и отмену и проверить историю после перезапуска. Полные T055/T065/T067/T068/T171 открыты.
 
 ## Результат анализа → подтверждённая карточка
 
