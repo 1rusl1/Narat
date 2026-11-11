@@ -41,11 +41,14 @@ def main():
     parser.add_argument('--bind', action='store_true')
     parser.add_argument('--installations', action='store_true')
     parser.add_argument('--access', action='store_true')
+    parser.add_argument('--diagnosis-upload', action='store_true')
+    parser.add_argument('--diagnosis-jobs', action='store_true')
     parser.add_argument('--accounting', action='store_true')
     parser.add_argument('--baseline', action='store_true', help='Negative control; expected product rejection is NOT acceptance')
     args = parser.parse_args()
     assert not args.installations or args.bind, '--installations requires --bind'
     assert not args.access or args.installations, '--access requires --installations'
+    assert not args.diagnosis_jobs or args.diagnosis_upload, '--diagnosis-jobs requires --diagnosis-upload'
     assert BIN.joinpath('initdb').is_file() and PGTAP.is_file(), 'PG17/pgTAP required'
     work = Path(tempfile.mkdtemp(prefix='narat-backend-quota-'))
     sock = work / 'socket'
@@ -282,6 +285,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
         for case in ('clean','upgrade'):
             sql('postgres', f'CREATE DATABASE {case};')
             sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean);")
+            if args.diagnosis_upload:
+                sql(case, 'CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY, name text NOT NULL, public boolean, file_size_limit bigint, allowed_mime_types text[]);')
             for migration in selected:
                 if case == 'clean' or migration.name < FIRST:
                     sql(case, migration.read_text())
@@ -322,6 +327,18 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 cap_race(case, same=False)
             if not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
+            if args.diagnosis_upload:
+                tap(case, ROOT/'supabase/tests/diagnosis_upload.test.sql')
+            if args.diagnosis_jobs:
+                catalogue = json.loads((ROOT/'catalogue/releases/skeleton-300-v1/plants.json').read_text())
+                plant = next(x for x in catalogue['plants'] if x['plant_id'] == 'monstera_deliciosa')
+                encoded = json.dumps(plant, ensure_ascii=False)
+                assert '$fixture$' not in encoded
+                release = job(880)
+                sql(case, f"INSERT INTO public.catalogue_releases(id, version) VALUES('{release}', 'diagnosis-gate'); "
+                    f"SELECT public.upsert_catalogue_skeleton_species('{release}', $fixture${encoded}$fixture$::jsonb, true); "
+                    f"SELECT public.publish_catalogue_release('{release}');")
+                tap(case, ROOT/'supabase/tests/diagnosis_jobs.test.sql')
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:

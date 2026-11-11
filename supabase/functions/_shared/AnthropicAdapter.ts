@@ -36,6 +36,7 @@ export interface AnthropicClassificationInput {
   };
   catalog: PublishedReleaseCatalog;
   signingSecret: string;
+  signal?: AbortSignal;
 }
 
 export interface AnthropicAdapterResult {
@@ -58,7 +59,7 @@ export interface AnthropicMessagesClient {
   create(params: {
     model: string;
     max_tokens: number;
-    temperature: number;
+    output_config: { effort: "low" };
     system: string;
     messages: Array<{
       role: "user";
@@ -74,7 +75,7 @@ export interface AnthropicMessagesClient {
         | { type: "text"; text: string }
       >;
     }>;
-  }): Promise<{
+  }, options?: { signal?: AbortSignal }): Promise<{
     stop_reason: string | null;
     content: Array<{ type: string; text?: string }>;
   }>;
@@ -94,7 +95,9 @@ export function buildSystemPrompt(
       "Perform ONLY species/genus identification using closed KB plant_id and genus_id identifiers.",
       "Set diagnosis=null and visual_markers=[].",
       "Do NOT diagnose diseases, do NOT generate care advice, plans, product names, or clarifying questions.",
-      "Return ONLY a single valid JSON object conforming to Classification 3.0.",
+      "Use output_shape as the required fields. Choose only IDs in allowed_plants, allowed_genera and allowed_conditions.",
+    "For a usable image use image_quality=usable, otherwise blurred, too_dark or not_a_plant. Use unknown or out_of_scope identification if necessary.",
+    "Return ONLY a single valid JSON object conforming to Classification 3.0.",
     ].join(" ");
   }
 
@@ -102,6 +105,10 @@ export function buildSystemPrompt(
     `You are a strict plant pathology visual classifier (schema_version="3.0", kb_release_id="${kbReleaseId}", mode="diagnosis", locale="${locale}").`,
     "Classify species/genus, up to 2 candidate condition_ids from the closed 40 condition IDs with rank (1..2) and confidence (0..1), and visual_markers from the published ConditionProfile.",
     "Do NOT generate care advice, first-aid text, plans, product names, or clarifying questions.",
+    "Use output_shape as the required fields. Choose only IDs in allowed_plants, allowed_genera and allowed_conditions.",
+    "For a usable image use image_quality=usable, otherwise blurred, too_dark or not_a_plant. Use unknown or out_of_scope identification if necessary.",
+    "For diagnosis use problem_detected with ranked candidates only for a supported visible issue within the condition's host scope.",
+    "Do not infer moisture from leaf yellowing alone. Use healthy when no problem is visible or insufficient_data when the evidence is insufficient. Use out_of_scope for non-plants. Leave limitations empty unless single_angle is applicable.",
     "Return ONLY a single valid JSON object conforming to Classification 3.0.",
   ].join(" ");
 }
@@ -145,13 +152,36 @@ export class AnthropicAdapter {
       mode: input.mode,
       locale: input.locale,
       care_context: input.careContext ?? null,
+      allowed_plants: Array.from(input.catalog.plantIds, (id) =>
+        [id, input.catalog.plantScientificNames?.get(id) ?? id]),
+      allowed_genera: Array.from(input.catalog.genusIds),
+      allowed_conditions: input.mode === "diagnosis"
+        ? Array.from(input.catalog.conditionProfiles.values(), (profile) =>
+          ({
+            condition_id: profile.condition_id, visual_markers: profile.visual_markers,
+            host_scope: profile.host_scope,
+          }))
+        : [],
+      output_shape: {
+        schema_version: "3.0",
+        kb_release_id: input.catalog.kbReleaseId,
+        mode: input.mode,
+        locale: input.locale,
+        image_quality: "usable",
+        identification: { status: "unknown", plant_id: null, genus_id: null },
+        diagnosis: input.mode === "diagnosis"
+          ? { status: "insufficient_data", candidates: [] }
+          : null,
+        limitations: [],
+        visual_markers: [],
+      },
     };
 
     try {
       const response = await this.messagesClient.create({
         model: PINNED_ANTHROPIC_MODEL,
-        max_tokens: 1024,
-        temperature: 0,
+        max_tokens: 2048,
+        output_config: { effort: "low" },
         system: systemPrompt,
         messages: [
           {
@@ -172,7 +202,7 @@ export class AnthropicAdapter {
             ],
           },
         ],
-      });
+      }, { signal: input.signal });
 
       if (response.stop_reason === "refusal") {
         return {
@@ -184,13 +214,13 @@ export class AnthropicAdapter {
         };
       }
 
-      if (response.stop_reason === "max_tokens") {
+      if (response.stop_reason !== "end_turn") {
         return {
           ok: false,
           stopReason: response.stop_reason,
           shouldConsumeQuota: false,
           errorCode: "PROVIDER_TRUNCATED",
-          errorMessage: "Model output was truncated at max_tokens.",
+          errorMessage: "Provider did not complete its classification response.",
         };
       }
 
@@ -224,7 +254,8 @@ export class AnthropicAdapter {
       }
 
       const validation = AnalysisValidator.validate(parsed, input.catalog);
-      if (!validation.valid || !validation.classification) {
+      if (!validation.valid || !validation.classification ||
+        validation.classification.mode !== input.mode || validation.classification.locale !== input.locale) {
         return {
           ok: false,
           stopReason: response.stop_reason,

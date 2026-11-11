@@ -36,6 +36,9 @@ import {
   handleCreateAnalysisJob,
   handleGetAnalysisJob,
 } from "./analysis.ts";
+import { createDiagnosisWorker } from "../analysis-worker/index.ts";
+import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
+import { createDiagnosisMedia } from "./diagnosis-media.ts";
 import { handleGetSync, handlePlantCreate } from "./collection.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
@@ -49,7 +52,9 @@ export interface PlantsApiDependencies {
   installationsAdapter?: InstallationsStoreAdapter;
   analysisAccessAdapter?: AnalysisAccessQueryAdapter;
   mediaAdapter?: MediaStorageAdapter;
+  diagnosisMedia?: ReturnType<typeof createDiagnosisMedia>;
   analysisJobAdapter?: AnalysisJobStoreAdapter;
+  diagnosisJobs?: ReturnType<typeof createDiagnosisJobs>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
 }
@@ -231,6 +236,19 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         return await handleMediaUploadTicket(req, ctx, deps.mediaAdapter);
       }
 
+      if (deps.diagnosisMedia) {
+        if (req.method === "POST" && normalizedPath === "/media/upload-ticket") {
+          return await deps.diagnosisMedia.ticket(req, ctx);
+        }
+        if (req.method === "POST" && normalizedPath === "/media/complete") {
+          return await deps.diagnosisMedia.complete(req, ctx);
+        }
+        const upload = normalizedPath.match(/^\/media\/uploads\/([^/]+)$/);
+        if (req.method === "PUT" && upload) {
+          return await deps.diagnosisMedia.upload(req, ctx, upload[1]);
+        }
+      }
+
       if (
         req.method === "POST" &&
         normalizedPath === "/analysis/jobs" &&
@@ -247,6 +265,15 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
           jobMatch[1],
           deps.analysisJobAdapter,
         );
+      }
+
+      if (deps.diagnosisJobs) {
+        if (req.method === "POST" && normalizedPath === "/analysis/jobs") {
+          return await deps.diagnosisJobs.create(req, ctx);
+        }
+        if (req.method === "GET" && jobMatch) {
+          return await deps.diagnosisJobs.status(ctx, jobMatch[1]);
+        }
       }
 
       if (req.method === "GET" && normalizedPath === "/sync") {
@@ -295,6 +322,8 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
 export interface ProductionSyncOptions {
   env?: (name: string) => string | undefined;
   fetch?: typeof fetch;
+  diagnosisWorker?: Parameters<typeof createDiagnosisJobs>[1];
+  scheduleDiagnosis?: Parameters<typeof createDiagnosisJobs>[2];
 }
 
 // Keep the bare handler's T152 fallback. Only the deployed composition enables
@@ -303,8 +332,8 @@ export function createProductionPlantsApiHandler(
   deps: PlantsApiDependencies = {},
   options: ProductionSyncOptions = {},
 ) {
+  const env = options.env ?? ((name: string) => Deno.env.get(name));
   const syncClient = (): SupabaseClient | null => {
-    const env = options.env ?? ((name: string) => Deno.env.get(name));
     const url = env("SUPABASE_URL")?.trim();
     const key = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
     if (!url || !key) return null;
@@ -315,6 +344,11 @@ export function createProductionPlantsApiHandler(
   };
   return createPlantsApiHandler({
     ...deps,
+    diagnosisMedia: deps.diagnosisMedia ?? createDiagnosisMedia(syncClient, env),
+    diagnosisJobs: deps.diagnosisJobs ?? createDiagnosisJobs(
+      syncClient, options.diagnosisWorker ?? createDiagnosisWorker(env, { fetch: options.fetch }),
+      options.scheduleDiagnosis,
+    ),
     analysisAccessAdapter: deps.analysisAccessAdapter ?? createAnalysisAccessQueryAdapter(syncClient),
     handleSync: deps.handleSync ??
       ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),

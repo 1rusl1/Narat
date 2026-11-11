@@ -1,0 +1,163 @@
+{
+  "schema_version": "2.0",
+  "kb_release_id": "3ed50000-0000-4000-8000-000000000011",
+  "record_version": 1,
+  "condition_id": "overwatering",
+  "host_scope": {
+    "plant_ids": [
+      "monstera_deliciosa"
+    ],
+    "families": [],
+    "general_houseplants": false
+  },
+  "visual_markers": [
+    "yellowing_lower_leaves",
+    "standing_water_in_saucer"
+  ],
+  "contraindication_check_ids": [],
+  "first_help_action_id": "check_monstera_moisture",
+  "condition_content_i18n": {
+    "en": {
+      "title": "Possible overwatering",
+      "summary": "Standing water or persistently wet potting mix can stress Monstera deliciosa. Yellowing leaves alone do not establish the cause."
+    },
+    "pl": {
+      "title": "Możliwe przelanie",
+      "summary": "Woda stojąca w podstawce lub stale mokre podłoże mogą osłabić monsterę dziurawą. Samo żółknięcie liści nie pozwala ustalić przyczyny."
+    }
+  },
+  "actions": [
+    {
+      "action_id": "check_monstera_moisture",
+      "action_code": "check_soil",
+      "purpose": "diagnostic_check",
+      "next_check_interval_days": null,
+      "prerequisite_check_ids": [],
+      "contraindication_check_ids": [],
+      "action_en": "Check the potting mix for moisture and empty any standing water from the saucer. If the mix is still wet, wait before watering.",
+      "action_pl": "Sprawdź wilgotność podłoża i wylej wodę stojącą w podstawce. Jeśli podłoże jest nadal mokre, poczekaj z podlewaniem."
+    }
+  ],
+  "provenance": {
+    "source_documents": [
+      {
+        "source_id": "rhs_monstera",
+        "donor_id": "rhs",
+        "independence_group": "rhs",
+        "url": "https://www.rhs.org.uk/plants/swiss-cheese-plants",
+        "retrieved_at": "2026-11-11T06:06:38.165731+00:00",
+        "content_hash": "3b70d6cd9851936c62adcb1428c87cdf9c9c1ac86eef3776fe5fa19a6b0c91d3",
+        "use_basis": "Original source-specific factual note, retained in the release README.md. The hash identifies that note. Source text and images are not redistributed.",
+        "allowed_for": [
+          "derived_records"
+        ]
+      },
+      {
+        "source_id": "rhs_houseplant_health",
+        "donor_id": "rhs",
+        "independence_group": "rhs",
+        "url": "https://www.rhs.org.uk/plants/types/houseplants/how-to-help-a-poorly-houseplant",
+        "retrieved_at": "2026-11-11T06:06:38.166214+00:00",
+        "content_hash": "6dfe164454860c8b5d54585cfbf91933b67bdb9b994b50a1def43fd1bf8f3aab",
+        "use_basis": "Original source-specific factual note, retained in the release README.md. The hash identifies that note. Source text and images are not redistributed.",
+        "allowed_for": [
+          "derived_records"
+        ]
+      },
+      {
+        "source_id": "ncsu_monstera",
+        "donor_id": "ncsu",
+        "independence_group": "ncsu",
+        "url": "https://plants.ces.ncsu.edu/plants/monstera-deliciosa/",
+        "retrieved_at": "2026-11-11T06:06:38.166218+00:00",
+        "content_hash": "07c4bb2d55320881f399983d85d9ae5e04984c1075b525524d976a61a70291db",
+        "use_basis": "Original source-specific factual note, retained in the release README.md. The hash identifies that note. Source text and images are not redistributed.",
+        "allowed_for": [
+          "derived_records"
+        ]
+      },
+      {
+        "source_id": "wisconsin_monstera",
+        "donor_id": "wisconsin_extension",
+        "independence_group": "wisconsin_extension",
+        "url": "https://hort.extension.wisc.edu/articles/monstera-deliciosa/",
+        "retrieved_at": "2026-11-11T06:06:38.166222+00:00",
+        "content_hash": "76caa6efa6009388048ec634581b0b9c6749a836b8d88d2f54f528868a3281bb",
+        "use_basis": "Original source-specific factual note, retained in the release README.md. The hash identifies that note. Source text and images are not redistributed.",
+        "allowed_for": [
+          "derived_records"
+        ]
+      }
+    ],
+    "field_evidence": {
+      "/host_scope/plant_ids": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Preferences and Dislikes",
+          "scope": "Monstera deliciosa indoor cultivation"
+        },
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Description, watering between dry periods",
+          "scope": "Monstera deliciosa indoor cultivation"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant",
+          "scope": "Monstera deliciosa indoor cultivation"
+        }
+      ],
+      "/visual_markers": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Preferences and Dislikes",
+          "scope": "Standing water is a checkable sign. Yellowing is nonspecific."
+        },
+        {
+          "source_id": "rhs_houseplant_health",
+          "locator": "Signs of poor health and watering checks",
+          "scope": "Standing water is a checkable sign. Yellowing is nonspecific."
+        }
+      ],
+      "/condition_content_i18n": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Preferences and Dislikes",
+          "scope": "Moisture stress and uncertainty of visible signs"
+        },
+        {
+          "source_id": "rhs_houseplant_health",
+          "locator": "Signs of poor health and watering checks",
+          "scope": "Moisture stress and uncertainty of visible signs"
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant",
+          "scope": "Moisture stress and uncertainty of visible signs"
+        }
+      ],
+      "/actions/0": [
+        {
+          "source_id": "rhs_monstera",
+          "locator": "Preferences and Dislikes",
+          "scope": "Check potting mix and allow it to dry before watering. Avoid standing water."
+        },
+        {
+          "source_id": "ncsu_monstera",
+          "locator": "Description, watering between dry periods",
+          "scope": "Check potting mix and allow it to dry before watering. Avoid standing water."
+        },
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant",
+          "scope": "Check potting mix and allow it to dry before watering. Avoid standing water."
+        }
+      ]
+    },
+    "validation": {
+      "method": "multi_source_rules",
+      "validated_at": "2026-11-11T06:06:38.166231+00:00",
+      "unresolved_conflicts": []
+    }
+  }
+}

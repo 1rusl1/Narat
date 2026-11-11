@@ -1232,8 +1232,16 @@ Deno.test("T157 — provider accepts EN/PL without comparison and rejects legacy
           assertEquals(request.system.includes("follow_up"), false);
           const text = request.messages[0].content.find((block) => block.type === "text");
           assert(text?.type === "text");
-          assertEquals(Object.keys(JSON.parse(text.text)).sort(),
-            ["care_context", "kb_release_id", "locale", "mode"]);
+          const context = JSON.parse(text.text);
+          assertEquals(Object.keys(context).sort(), [
+            "allowed_conditions", "allowed_genera", "allowed_plants", "care_context",
+            "kb_release_id", "locale", "mode", "output_shape",
+          ]);
+          assertEquals(context.mode, mode);
+          assertEquals(context.locale, locale);
+          assertEquals(context.output_shape.kb_release_id, KB_RELEASE_ID);
+          assert(context.allowed_plants.length > 0);
+          assertEquals(context.allowed_conditions.length > 0, mode === "diagnosis");
           return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(output) }] };
         },
       });
@@ -1251,7 +1259,10 @@ Deno.test("T157 — provider accepts EN/PL without comparison and rejects legacy
           locale === "en" ? "Hold off on watering and check pot drainage."
             : "Wstrzymaj podlewanie i sprawdź odpływ wody z doniczki.");
       }
-      for (const invalid of [{ ...payload, mode: "follow_up" }, { ...payload, comparison: null }]) {
+      for (const invalid of [
+        { ...payload, mode: "follow_up" }, { ...payload, comparison: null },
+        { ...payload, locale: locale === "en" ? "pl" : "en" },
+      ]) {
         output = invalid;
         const rejected = await adapter.classifyAndResolve(input);
         assertEquals(rejected.ok, false);

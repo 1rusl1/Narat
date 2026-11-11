@@ -4,6 +4,7 @@
 // confidence in [0,1], visual_markers membership, and compact EN/PL actions.
 
 import Ajv2020Import from "ajv/dist/2020";
+import conditionProfileSchema from "../../../specs/001-plants-ios-mvp/contracts/condition-profile.schema.json" with { type: "json" };
 
 export const CANONICAL_CONDITION_IDS = [
   "overwatering",
@@ -183,6 +184,7 @@ export interface CanonicalConditionProfile {
 export interface PublishedReleaseCatalog {
   kbReleaseId: string;
   plantIds: Set<string>;
+  plantScientificNames?: Map<string, string>;
   genusIds: Set<string>;
   conditionProfiles: Map<CanonicalConditionId, CanonicalConditionProfile>;
 }
@@ -209,10 +211,7 @@ conditionAjv.addFormat("uri", (value: string) => {
 conditionAjv.addFormat("date-time", (value: string) =>
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value) &&
   Number.isFinite(Date.parse(value)));
-const validatePublishedCondition = conditionAjv.compile(JSON.parse(Deno.readTextFileSync(new URL(
-  "../../../specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
-  import.meta.url,
-))));
+const validatePublishedCondition = conditionAjv.compile<CanonicalConditionProfile>(conditionProfileSchema);
 
 export function validateConditionProfileSemantics(
   raw: unknown,
@@ -225,7 +224,7 @@ export function validateConditionProfileSemantics(
       ),
     };
   }
-  const profile = raw as CanonicalConditionProfile;
+  const profile = raw;
   const errors: string[] = [];
   const actionIds = new Set<string>();
   for (const action of profile.actions) {
