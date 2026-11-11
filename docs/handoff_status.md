@@ -1,5 +1,52 @@
 # Narat — текущий статус и передача работы
 
+## Фото → диагноз на тестовом стенде — 11 ноября 2026
+
+По прямой команде владельца возобновлены Plants A и Plants B. Первый этап
+трёхдневного плана — фото из галереи, вид и вероятный диагноз или явная
+неопределённость. Первый ручной прогон ограничен одним тестовым аккаунтом и EN.
+Добавление в коллекцию и запись ухода идут следующими этапами.
+
+- iOS подключила галерею и состояния результата (`cfc47a3`), HTTP-транспорт
+  (`14f6d8b`), вход на тестовый стенд и разные стабильные UUID загрузки и задания
+  (`8b1f131`, принято в `4753f2f`). Изменены `AnalysisFlowModel.swift`,
+  `CareQuestionsView.swift`, `PreliminaryResultView.swift`, `PlantsApp.swift`,
+  `PlantsAPIClient.swift`, `APIModels.swift`, конфигурация приложения и тесты.
+  204 Swift-теста на фикстурах, сборка, Simulator smoke, Review и QA прошли.
+  Debug `.app` с bundle ID `app.narat.plants.stagingdiagnosis` запущена на форме
+  `Test account`. Фото Monstera добавлено в галерею Simulator. Handoff iOS
+  опубликован в `origin/codex/plants-ios` (`1c09067`).
+- В `368d0f2` приняты маршруты `diagnosis-media.ts` и `diagnosis-jobs.ts`,
+  worker и `diagnosis-persistence.ts`, SQL 013/014, HTTP-контракт и узкая
+  тестовая карточка Monstera. После устранения расхождения UUID между фикстурой
+  и реальной БД прошли 341 Deno-тест, по 556 pgTAP-проверок на чистой и
+  обновлённой БД, независимые Review и QA. Коммит опубликован в
+  `origin/codex/plants-backend`.
+  Источники карточки — [RHS Monstera](https://www.rhs.org.uk/plants/swiss-cheese-plants)
+  и [RHS о диагностике комнатных растений](https://www.rhs.org.uk/plants/types/houseplants/how-to-help-a-poorly-houseplant).
+- На narat-staging проверены `/health` и `/auth/v1/settings`, оба HTTP 200.
+  Email-вход разрешён, Apple и Google выключены. Бэкенд подтвердил вход
+  синтетической постоянной учётки и чтение её активного профиля. Автопроверка
+  отклонила передачу между чатами пути к файлу с учётными данными.
+- Через Supabase CLI подтверждён доступ к narat-staging. Добавлен случайный
+  `ANALYSIS_RECEIPT_SIGNING_KEY` после проверки его отсутствия. Проверка
+  подтвердила наличие имени ключа без вывода значения. `ANTHROPIC_API_KEY`
+  отсутствует, запрос владельцу отправлен через основной чат.
+- На narat-staging применены 14 проверенных forward-миграций, добавлен профиль Monstera
+  и развёрнуты `plants-api` v3 и `analysis-worker` v1. Supabase CLI подтвердил
+  статус ACTIVE у обеих функций. `/analysis/access`, выдача билета, PUT и
+  `/media/complete` подтвердили загрузку одного фото в приватный Storage.
+  Прямое чтение отклонено. POST `/analysis/jobs` ответил HTTP 503
+  `PROVIDER_UNAVAILABLE`. В БД нет задания и вызова провайдера. Handoff и
+  проверка опубликованы в backend-ветке (`d6b2bd5`).
+
+Живой ответ на фото ещё не получен. В `tasks.md` остаются открыты T031–T034,
+T037–T039 и связанные задачи. Сверка `tasks.md` дала 15 закрытых и 136
+открытых ID, `git diff --check` прошёл. Следующий шаг после добавления ключа
+Anthropic — повторить `parallel_backend_diagnosis_live.py` с run ID
+`staging-monstera-20261111-01`, безопасно войти тестовым аккаунтом в приложении
+и прогнать известное и нечёткое фото на одной сборке.
+
 ## Подготовка и отчётность очередей — 11 ноября 2026
 
 `prepare` за одну команду проверяет manifest, ветку публикации, входы и Xcode Sources
