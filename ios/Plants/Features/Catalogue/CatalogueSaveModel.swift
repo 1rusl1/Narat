@@ -24,6 +24,14 @@ enum CatalogueWateringHistoryState: Sendable, Equatable {
     case unavailable
 }
 
+enum CatalogueCareRecommendationState: Sendable, Equatable {
+    case idle
+    case loading
+    case available(PlantCareRecommendation)
+    case unavailable
+    case failed
+}
+
 enum CatalogueCardState: Sendable, Equatable {
     case idle
     case loading
@@ -57,6 +65,7 @@ final class CatalogueSaveModel {
     @ObservationIgnored private var work: Task<Void, Never>?
     private var detailsPhase: CatalogueCardState = .idle
     private var historyPhase: CatalogueWateringHistoryState = .idle
+    private var recommendationPhase: CatalogueCareRecommendationState = .idle
 
     var wateringHistoryState: CatalogueWateringHistoryState {
         let value = historyPhase
@@ -77,6 +86,37 @@ final class CatalogueSaveModel {
     var cardSummary: CatalogueCardSummary? {
         guard case let .loaded(summary) = cardState else { return nil }
         return summary
+    }
+
+    var careRecommendationState: CatalogueCareRecommendationState {
+        guard isAccessible, !isAnonymous, cardSummary != nil else { return .unavailable }
+        return recommendationPhase
+    }
+
+    func loadCareRecommendation(retry: Bool = false) async {
+        guard !isAnonymous, case let .saved(confirmation) = state,
+              let card = cardSummary, card.id == confirmation.receipt.plantId else { return }
+        switch recommendationPhase {
+        case .idle: break
+        case .failed where retry: break
+        default: return
+        }
+        do {
+            try publish { recommendationPhase = .loading }
+            let recommendation = try await apiClient.fetchCareRecommendation(plantId: card.id, context: context)
+            try validateAuthority()
+            guard case let .saved(current) = state, current == confirmation,
+                  cardSummary == card else { throw CatalogueSaveUnavailable.sessionChanged }
+            try publish {
+                recommendationPhase = recommendation.map(CatalogueCareRecommendationState.available) ?? .unavailable
+            }
+        } catch {
+            if Task.isCancelled {
+                recommendationPhase = .idle
+            } else {
+                try? publish { recommendationPhase = .failed }
+            }
+        }
     }
 
     // Access is checked as well as publication: an idle old model also redacts after ABA.

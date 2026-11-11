@@ -1,6 +1,56 @@
 import CryptoKit
 import Foundation
 
+struct PlantCareRecommendation: Decodable, Sendable, Equatable {
+    struct Source: Decodable, Sendable, Equatable {
+        let url: URL
+        let locator: String
+    }
+
+    let actionId: String
+    let actionCode: String
+    let text: String
+    let nextCheckIntervalDays: Int?
+    let source: Source
+
+    enum CodingKeys: String, CodingKey {
+        case actionId = "action_id"
+        case actionCode = "action_code"
+        case text, source
+        case nextCheckIntervalDays = "next_check_interval_days"
+    }
+}
+
+private struct PlantCareRecommendationResponse: Decodable {
+    enum Status: String, Decodable { case available, unavailable }
+
+    let plantId: UUID
+    let status: Status
+    let recommendation: PlantCareRecommendation?
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case status, recommendation
+    }
+
+    func validated(for expectedPlantId: UUID) throws -> PlantCareRecommendation? {
+        guard plantId == expectedPlantId else { throw AnalysisHTTPError.invalidResponse }
+        if status == .unavailable, recommendation == nil { return nil }
+        guard status == .available, let recommendation,
+              recommendation.actionCode == "check_soil",
+              recommendation.nextCheckIntervalDays == nil,
+              [recommendation.actionId, recommendation.text, recommendation.source.locator].allSatisfy({
+                  !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }),
+              let url = URLComponents(url: recommendation.source.url, resolvingAgainstBaseURL: false),
+              url.scheme?.lowercased() == "https", url.host?.isEmpty == false,
+              url.user == nil, url.password == nil else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        return recommendation
+    }
+}
+
 public struct APIErrorResponse: Codable, Sendable, Equatable, Error {
     public struct ErrorBody: Codable, Sendable, Equatable {
         public let code: String
@@ -576,6 +626,18 @@ extension PlantsAPIClient {
         )
         try job.validate(mode: mode, jobId: id)
         return job
+    }
+
+    func fetchCareRecommendation(
+        plantId: UUID, context: SyncSessionLease
+    ) async throws -> PlantCareRecommendation? {
+        let request = try buildRequest(
+            path: "plants/\(plantId.uuidString.lowercased())/care/recommendation", method: "GET"
+        )
+        let response: PlantCareRecommendationResponse = try await analysisRequest(
+            request, locale: .en, context: context, status: [200], forbidRedirects: true
+        )
+        return try syncAuthority.withBoundValid(context) { try response.validated(for: plantId) }
     }
 
     private func validateUploadedPhoto(_ photo: AnalysisUploadedPhoto, id: UUID) throws {

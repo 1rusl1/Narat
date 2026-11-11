@@ -2709,6 +2709,58 @@ extension CollectionWireTests {
 }
 
 extension CollectionWireTests {
+    func testCareRecommendationUsesBoundOwnerAndRejectsUnverifiedProjection() async throws {
+        let plantId = serverPlantId
+        let text = "Check the substrate before watering."
+        let rule: [String: Any] = [
+            "action_id": "checked-watering-rule", "action_code": "check_soil", "text": text,
+            "next_check_interval_days": NSNull(),
+            "source": ["url": "https://example.invalid/watering", "locator": "Growing"]
+        ]
+        func response(_ plant: UUID, _ status: String, _ recommendation: Any) throws -> CatalogueTransport.Reply {
+            .http(200, try syncJSON([
+                "plant_id": plant.uuidString, "status": status, "recommendation": recommendation
+            ]))
+        }
+        var wrongAction = rule
+        wrongAction["action_code"] = "water_now"
+        var unsafeSource = rule
+        unsafeSource["source"] = ["url": "https://account:password@example.invalid/watering", "locator": "Growing"]
+        var guessedInterval = rule
+        guessedInterval["next_check_interval_days"] = 7
+        let transport = CatalogueTransport(try [
+            response(plantId, "available", rule), response(plantId, "unavailable", NSNull()),
+            response(UUID(), "available", rule), response(plantId, "available", wrongAction),
+            response(plantId, "available", unsafeSource), response(plantId, "available", guessedInterval),
+            response(plantId, "unavailable", rule)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let context = try await api.captureSyncContext(ownerId: accessOwner)
+        let recommendation = try await api.fetchCareRecommendation(plantId: plantId, context: context)
+        XCTAssertEqual(recommendation?.text, text)
+        XCTAssertEqual(recommendation?.source.url, URL(string: "https://example.invalid/watering"))
+        let unavailable = try await api.fetchCareRecommendation(plantId: plantId, context: context)
+        XCTAssertNil(unavailable)
+        for _ in 0..<5 {
+            do {
+                _ = try await api.fetchCareRecommendation(plantId: plantId, context: context)
+                XCTFail("An invalid care recommendation reached the card")
+            } catch AnalysisHTTPError.invalidResponse {}
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 7)
+        let path = "/functions/v1/plants-api/plants/\(plantId.uuidString.lowercased())/care/recommendation"
+        XCTAssertTrue(requests.allSatisfy {
+            $0.httpMethod == "GET" && $0.url?.path == path
+                && $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(accessSession.accessToken)"
+                && $0.value(forHTTPHeaderField: "X-Client-Locale") == "en"
+                && $0.value(forHTTPHeaderField: "X-Installation-Credential") == nil
+        })
+        let nonRedirecting = await transport.nonRedirectingRequests
+        XCTAssertEqual(nonRedirecting, requests.count)
+    }
+
     private func diagnosisTicket(url: String, photoId: UUID) -> String {
         #"{"photo_asset_id":"\#(photoId.uuidString)","storage_bucket":"photos","storage_path":"test.jpg","signed_upload_url":"\#(url)","expires_in_seconds":60,"max_byte_size":10485760}"#
     }

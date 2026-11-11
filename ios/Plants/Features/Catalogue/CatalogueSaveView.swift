@@ -290,6 +290,12 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("catalogue.saved.card." + summary.id.uuidString.lowercased())
             if analysisSaveIdentity != nil && !polish {
+#if DEBUG && targetEnvironment(simulator)
+                if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
+                    careRecommendation(model)
+                        .task(id: summary.id) { await model.loadCareRecommendation() }
+                }
+#endif
                 wateringHistory(model)
             }
         } else {
@@ -305,6 +311,29 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             case .loaded:
                 EmptyView()
             }
+        }
+    }
+
+    @ViewBuilder
+    private func careRecommendation(_ model: CatalogueSaveModel) -> some View {
+        switch model.careRecommendationState {
+        case .idle, .loading:
+            ProgressView("Loading care recommendation…")
+        case let .available(recommendation):
+            VStack(alignment: .leading, spacing: 8) {
+                Text(verbatim: recommendation.text)
+                    .accessibilityIdentifier("catalogue.saved.care.text")
+                Link("Verified care source", destination: recommendation.source.url)
+                    .accessibilityIdentifier("catalogue.saved.care.source")
+            }
+        case .unavailable:
+            Text("No verified care recommendation is available.")
+                .accessibilityIdentifier("catalogue.saved.care.unavailable")
+        case .failed:
+            Button("Retry care recommendation") {
+                Task { await model.loadCareRecommendation(retry: true) }
+            }
+            .accessibilityIdentifier("catalogue.saved.care.retry")
         }
     }
 
