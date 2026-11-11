@@ -39,7 +39,8 @@ import {
 import { createDiagnosisWorker } from "../analysis-worker/index.ts";
 import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
 import { createDiagnosisMedia } from "./diagnosis-media.ts";
-import { handleGetSync, handlePlantCreate } from "./collection.ts";
+import { handleGetSync } from "./collection.ts";
+import { handleCollectionCommand } from "./care-journal.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
 // a real client with a mocked transport without reading credentials or using the network.
@@ -327,7 +328,7 @@ export interface ProductionSyncOptions {
 }
 
 // Keep the bare handler's T152 fallback. Only the deployed composition enables
-// sync/catalogue create, and explicit delegates still take precedence.
+// sync and collection commands, and explicit delegates still take precedence.
 export function createProductionPlantsApiHandler(
   deps: PlantsApiDependencies = {},
   options: ProductionSyncOptions = {},
@@ -353,7 +354,7 @@ export function createProductionPlantsApiHandler(
     handleSync: deps.handleSync ??
       ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),
     handleCommand: deps.handleCommand ??
-      ((req, ctx) => handlePlantCreate(req, ctx, syncClient)),
+      ((req, ctx) => handleCollectionCommand(req, ctx, syncClient)),
   });
 }
 
