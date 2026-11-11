@@ -2745,3 +2745,68 @@ extension CollectionWireTests {
         } catch SyncWireValidationError.invalidSession {}
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+extension CollectionWireTests {
+    @MainActor
+    func testStagingAnalysisRequiresAnExplicitMatchingHTTPSHost() {
+        let flag = ["--narat-staging-analysis"]
+        let host = "staging.example.invalid"
+        let https = URL(string: "https://\(host)")!
+        XCTAssertTrue(StagingAnalysisService.isEnabled(arguments: flag, expectedHost: host, apiOrigin: https))
+        XCTAssertFalse(StagingAnalysisService.isEnabled(arguments: [], expectedHost: host, apiOrigin: https))
+        XCTAssertFalse(StagingAnalysisService.isEnabled(arguments: flag, expectedHost: nil, apiOrigin: https))
+        XCTAssertFalse(StagingAnalysisService.isEnabled(arguments: flag, expectedHost: "other.invalid", apiOrigin: https))
+        XCTAssertFalse(StagingAnalysisService.isEnabled(
+            arguments: flag, expectedHost: host, apiOrigin: URL(string: "http://\(host)")!
+        ))
+    }
+
+    @MainActor
+    func testStagingAnalysisRecoversLostUploadAndJobRepliesWithOneOperation() async throws {
+        let photo = serverPlantId
+        let id = operationId
+        let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+        let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+        let result = #"{"analysis_id":"\#(photo.uuidString)","job_id":"\#(id.uuidString)","kb_release_id":"\#(photo.uuidString)","mode":"diagnosis","identification_status":"identified","plant_id":"monstera_deliciosa","genus_id":"monstera","diagnosis_status":"problem_detected","selected_condition_id":"root_rot","candidates":[{"condition_id":"root_rot","rank":1,"confidence":0.7}],"visual_markers":[],"evidence_basis":[],"limitations":[],"first_action_summary":null,"control_interval_days":null,"plan_availability":"missing_condition_profile","analysis_receipt":"test-receipt","plant_display_name":"Monstera deliciosa","condition_display_name":"Root rot"}"#
+        let transport = CatalogueTransport([
+            .http(200, diagnosisTicket(url: url, photoId: photo)),
+            .network, .http(200, ready),
+            .network, .http(200, diagnosisJob(id: id, status: "queued")),
+            .http(200, diagnosisJob(id: id, status: "succeeded", result: result)
+                .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"consumed""#))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let owner = accessOwner
+        let service = StagingAnalysisService(api: api) {
+            try await api.captureSyncContext(ownerId: owner)
+        }
+        let input = AnalysisServiceRequest(
+            operationId: id, flowId: UUID(), mode: .diagnosis, intent: .problem,
+            photo: PreparedAnalysisPhoto(
+                cloudNormalizedJPEG: Data([1, 2]), aiVisionJPEG: Data([1, 2]),
+                aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 2
+            ),
+            conditions: CareConditionsInput(), locale: .en
+        )
+        for _ in 0..<2 {
+            do {
+                _ = try await service.analyze(input)
+                XCTFail("Expected a lost response")
+            } catch let error as URLError {
+                XCTAssertEqual(error.code, .networkConnectionLost)
+            }
+        }
+        let finished = try await service.analyze(input)
+        XCTAssertEqual(finished.speciesLabel, "Monstera deliciosa")
+        XCTAssertEqual(finished.conditionLabel, "Root rot")
+        XCTAssertEqual(finished.analysis.jobId, id)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "POST", "POST", "GET"])
+        XCTAssertEqual(requests.map { $0.url?.lastPathComponent },
+                       ["upload-ticket", photo.uuidString.lowercased(), "complete", "jobs", "jobs", id.uuidString.lowercased()])
+        XCTAssertEqual(requests[3].httpBody, requests[4].httpBody)
+    }
+}
+#endif

@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG && targetEnvironment(simulator)
+import Supabase
+#endif
 
 @main
 struct PlantsApp: App {
@@ -26,6 +29,9 @@ struct RootContainerView: View {
     @State private var catalogue: CatalogueConnection?
     @State private var starting = false
     @State private var startupFailed = false
+#if DEBUG && targetEnvironment(simulator)
+    @State private var stagingSignIn = false
+#endif
 #if DEBUG
     @State private var fixtureContext: CatalogueUIFixtureContext?
 #endif
@@ -77,12 +83,28 @@ struct RootContainerView: View {
             }
         }
         .task { await prepareCatalogue() }
+#if DEBUG && targetEnvironment(simulator)
+        .sheet(isPresented: $stagingSignIn) {
+            if let catalogue {
+                StagingAccountView(connection: catalogue) { snapshot in
+                    installStagingAnalysis(connection: catalogue, owner: snapshot.session.userId)
+                    stagingSignIn = false
+                }
+            }
+        }
+#endif
     }
 
     @MainActor
     private func prepareCatalogue() async {
         guard !starting else { return }
         starting = true
+#if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
+            await prepareStagingAnalysis()
+            return
+        }
+#endif
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let fixtureFlags = arguments.filter {
@@ -139,6 +161,47 @@ struct RootContainerView: View {
             // Preserve the default welcome and the catalogue's ordinary unavailable path.
         }
     }
+
+#if DEBUG && targetEnvironment(simulator)
+    @MainActor
+    private func prepareStagingAnalysis() async {
+        guard let config = try? NativeAuthConfiguration(),
+              StagingAnalysisService.isEnabled(
+                arguments: ProcessInfo.processInfo.arguments,
+                expectedHost: Bundle.main.object(forInfoDictionaryKey: "NaratStagingAnalysisHost") as? String,
+                apiOrigin: config.supabaseURL
+              ) else {
+            startupFailed = true
+            return
+        }
+        let connection = CatalogueConnection(configuration: { config })
+        guard connection.apiClient != nil else {
+            startupFailed = true
+            return
+        }
+        catalogue = connection
+        languageStore.currentLocale = .en
+        if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
+            installStagingAnalysis(connection: connection, owner: snapshot.session.userId)
+        } else {
+            stagingSignIn = true
+        }
+    }
+
+    @MainActor
+    private func installStagingAnalysis(connection: CatalogueConnection, owner: UUID) {
+        guard let api = connection.apiClient else { return }
+        analysisModel.installAnalysisService(StagingAnalysisService(api: api) {
+            let snapshot = try await connection.sessionSnapshot()
+            guard !snapshot.isAnonymous, snapshot.session.userId == owner else {
+                throw AnalysisServiceFailure.unavailable
+            }
+            let lease = try await api.captureSyncContext(ownerId: owner)
+            guard connection.snapshot == snapshot else { throw SyncWireValidationError.invalidSession }
+            return lease
+        })
+    }
+#endif
 
     private var welcomeIntentSection: some View {
         VStack(spacing: 24) {
@@ -229,3 +292,187 @@ struct RootContainerView: View {
         .padding()
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+@MainActor
+final class StagingAnalysisService: AnalysisService {
+    private struct Progress {
+        let operationId: UUID
+        let ownerId: UUID
+        var photoId: UUID?
+        var uploadAttempted = false
+        var photoReady = false
+        var jobId: UUID?
+    }
+
+    private let api: PlantsAPIClient
+    private let session: @MainActor () async throws -> SyncSessionLease
+    private var previous: Progress?
+    private var activeAttempt: UUID?
+
+    init(api: PlantsAPIClient, session: @escaping @MainActor () async throws -> SyncSessionLease) {
+        self.api = api
+        self.session = session
+    }
+
+    static func isEnabled(arguments: [String], expectedHost: String?, apiOrigin: URL) -> Bool {
+        guard arguments.contains("--narat-staging-analysis"),
+              let expectedHost, !expectedHost.isEmpty,
+              apiOrigin.scheme == "https", apiOrigin.host == expectedHost,
+              apiOrigin.port == nil || apiOrigin.port == 443,
+              apiOrigin.path.isEmpty || apiOrigin.path == "/",
+              apiOrigin.user == nil, apiOrigin.password == nil,
+              apiOrigin.query == nil, apiOrigin.fragment == nil else { return false }
+        return true
+    }
+
+    func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
+        guard request.mode == .diagnosis else { throw AnalysisServiceFailure.unavailable }
+        try Task.checkCancellation()
+        let attempt = UUID()
+        activeAttempt = attempt
+        defer { if activeAttempt == attempt { activeAttempt = nil } }
+        let lease = try await session()
+        try verify(lease, attempt: attempt)
+
+        var progress = Progress(operationId: request.operationId, ownerId: lease.ownerId)
+        if let previous, previous.operationId == request.operationId {
+            guard previous.ownerId == lease.ownerId else { throw AnalysisServiceFailure.unavailable }
+            progress = previous
+        }
+        defer { if activeAttempt == attempt { previous = progress } }
+        let locale = request.locale
+
+        do {
+            if progress.uploadAttempted, !progress.photoReady, let photoId = progress.photoId {
+                do {
+                    try await api.confirmAnalysisPhoto(id: photoId, locale: locale, context: lease)
+                    try verify(lease, attempt: attempt)
+                    progress.photoReady = true
+                } catch let error as APIErrorResponse where error.error.code == "CONFLICT" && error.error.retryable {
+                    // No confirmed upload. Refresh the ticket for the same operation and digest.
+                    try verify(lease, attempt: attempt)
+                }
+            }
+            if !progress.photoReady {
+                let jpeg = request.photo.aiVisionJPEG
+                let ticket = try await api.issueAnalysisUpload(
+                    jpeg: jpeg, operationId: request.operationId, locale: locale, context: lease
+                )
+                try verify(lease, attempt: attempt)
+                guard progress.photoId == nil || progress.photoId == ticket.photoAssetId else {
+                    throw AnalysisHTTPError.invalidResponse
+                }
+                progress.photoId = ticket.photoAssetId
+                progress.uploadAttempted = true
+                if ticket.expiresInSeconds == 0 {
+                    try await api.confirmAnalysisPhoto(id: ticket.photoAssetId, locale: locale, context: lease)
+                } else {
+                    try await api.uploadAnalysisJPEG(jpeg, ticket: ticket, locale: locale, context: lease)
+                }
+                try verify(lease, attempt: attempt)
+                progress.photoReady = true
+            }
+            guard let photoId = progress.photoId else { throw AnalysisHTTPError.invalidResponse }
+            var job: AnalysisJobWire
+            if let jobId = progress.jobId {
+                job = try await api.fetchAnalysisJob(id: jobId, mode: request.mode, locale: locale, context: lease)
+            } else {
+                job = try await api.createAnalysisJob(
+                    operationId: request.operationId, mode: request.mode, photoAssetId: photoId,
+                    locale: locale, context: lease
+                )
+            }
+            try verify(lease, attempt: attempt)
+            progress.jobId = job.jobId
+
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(90))
+            while job.status == .queued || job.status == .running {
+                guard clock.now < deadline else { throw AnalysisServiceFailure.unavailable }
+                try await Task.sleep(for: .seconds(1))
+                try verify(lease, attempt: attempt)
+                job = try await api.fetchAnalysisJob(id: job.jobId, mode: request.mode, locale: locale, context: lease)
+                try verify(lease, attempt: attempt)
+            }
+            if job.status == .failed, job.errorCode?.hasPrefix("PROVIDER_") == true {
+                throw AnalysisServiceFailure.providerFailed
+            }
+            guard job.status == .succeeded, let result = job.result else {
+                throw AnalysisServiceFailure.unavailable
+            }
+            return AnalysisServiceResult(
+                analysis: result.domainValue,
+                speciesLabel: result.plantDisplayName,
+                conditionLabel: result.conditionDisplayName
+            )
+        } catch let error as APIErrorResponse where error.error.code.hasPrefix("PROVIDER_") {
+            throw AnalysisServiceFailure.retryableProvider
+        }
+    }
+
+    private func verify(_ lease: SyncSessionLease, attempt: UUID) throws {
+        try Task.checkCancellation()
+        guard activeAttempt == attempt else { throw CancellationError() }
+        try api.syncAuthority.withBoundValid(lease) {}
+    }
+}
+
+private struct StagingAccountView: View {
+    let connection: CatalogueConnection
+    let signedIn: @MainActor (CatalogueSDKSnapshot) -> Void
+
+    @State private var email = ""
+    @State private var password = ""
+    @State private var signingIn = false
+    @State private var failed = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Email", text: $email)
+                    .textContentType(.username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.emailAddress)
+                    .accessibilityIdentifier("staging.email")
+                SecureField("Password", text: $password)
+                    .textContentType(.password)
+                    .accessibilityIdentifier("staging.password")
+                if failed {
+                    Text("Could not sign in to the test stand. Check the test account.")
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("staging.signin.error")
+                }
+                Button(signingIn ? "Signing in…" : "Sign in") {
+                    signIn()
+                }
+                .disabled(signingIn || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                .accessibilityIdentifier("staging.signin")
+            }
+            .navigationTitle("Test account")
+        }
+        .interactiveDismissDisabled()
+    }
+
+    private func signIn() {
+        guard !signingIn, let client = connection.client else { return }
+        let loginEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let loginPassword = password
+        password = ""
+        signingIn = true
+        failed = false
+        Task { @MainActor in
+            defer { signingIn = false }
+            do {
+                _ = try await client.auth.signIn(email: loginEmail, password: loginPassword)
+                let snapshot = try await connection.sessionSnapshot()
+                guard !snapshot.isAnonymous else { throw AnalysisServiceFailure.unavailable }
+                signedIn(snapshot)
+            } catch {
+                failed = true
+            }
+        }
+    }
+}
+#endif

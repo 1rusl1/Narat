@@ -28,6 +28,9 @@ public struct PreliminaryResultView: View {
                         if let condition = model.conditionLabel {
                             Text(isPolish ? "Możliwa przyczyna — \(condition)" : "Possible condition — \(condition)")
                                 .accessibilityIdentifier("analysis.result.condition")
+                        } else if result.diagnosisStatus == .healthy {
+                            Text(isPolish ? "Nie wykryto problemu." : "No problem detected.")
+                                .accessibilityIdentifier("analysis.result.healthy")
                         } else {
                             Text(isPolish
                                  ? "Nie ustalono jednoznacznej diagnozy."
@@ -77,6 +80,10 @@ struct AnalysisUnavailableSection: View {
             return isPolish
                 ? "Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie."
                 : "The analysis provider is temporarily unavailable. Please retry."
+        case "analysis.error.provider_terminal":
+            return isPolish
+                ? "Usługa analizy nie ukończyła zadania. Wróć do wyboru zdjęcia."
+                : "The provider could not complete the analysis. Go back to choose a photo."
         case "analysis.error.failed":
             return isPolish
                 ? "Nie udało się przeanalizować zdjęcia. Spróbuj ponownie."
@@ -94,11 +101,13 @@ struct AnalysisUnavailableSection: View {
                 .font(.headline)
                 .accessibilityIdentifier("analysis.unavailable.title")
 
-            Button(isPolish ? "Spróbuj ponownie" : "Retry") {
-                model.submitAnalysis(locale: languageStore.currentLocale)
+            if model.analysisError != "analysis.error.provider_terminal" {
+                Button(isPolish ? "Spróbuj ponownie" : "Retry") {
+                    model.submitAnalysis(locale: languageStore.currentLocale)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("analysis.retry.button")
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("analysis.retry.button")
 
             Button(isPolish ? "Wstecz" : "Back") {
                 model.returnFromAnalysis()

@@ -37,6 +37,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NaratSupabaseURL: $(NARAT_SUPABASE_URL)
+        NaratStagingAnalysisHost: $(NARAT_STAGING_ANALYSIS_HOST)
         NaratSupabasePublishableKey: $(NARAT_SUPABASE_PUBLISHABLE_KEY)
         GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
         GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)

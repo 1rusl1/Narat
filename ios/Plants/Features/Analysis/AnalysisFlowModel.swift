@@ -30,6 +30,7 @@ public struct AnalysisServiceResult: Sendable {
 
 public enum AnalysisServiceFailure: Error, Sendable, Equatable {
     case retryableProvider
+    case providerFailed
     case unavailable
 }
 
@@ -238,8 +239,12 @@ public final class AnalysisFlowModel {
                 self.router.flowState.currentStep = .preliminaryResult
             } catch {
                 guard let self, self.accepts(request, generation: submittedGeneration) else { return }
-                let key = (error as? AnalysisServiceFailure) == .retryableProvider
-                    ? "analysis.error.provider" : "analysis.error.failed"
+                let key: String
+                switch error as? AnalysisServiceFailure {
+                case .retryableProvider?: key = "analysis.error.provider"
+                case .providerFailed?: key = "analysis.error.provider_terminal"
+                default: key = "analysis.error.failed"
+                }
                 self.finishFailure(key)
             }
         }

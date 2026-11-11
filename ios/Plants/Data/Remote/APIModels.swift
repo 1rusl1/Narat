@@ -1155,8 +1155,12 @@ struct AnalysisProjectionWire: Decodable, Sendable {
     let controlIntervalDays: Int?
     let planAvailability: PlanAvailability
     let analysisReceipt: String
+    let plantDisplayName: String?
+    let conditionDisplayName: String?
 
     enum CodingKeys: String, CodingKey {
+        case plantDisplayName = "plant_display_name"
+        case conditionDisplayName = "condition_display_name"
         case analysisId = "analysis_id"
         case jobId = "job_id"
         case kbReleaseId = "kb_release_id"
