@@ -1678,9 +1678,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-parallel-backend-plant-create-staging: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 145.40 с, проверки — 77.83 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [parallel-backend-plant-create-staging](validation/automation/tasks/parallel-backend-plant-create-staging.md).
+parallel-backend-care-journal-staging: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 172.49 с, проверки — 91.37 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [parallel-backend-care-journal-staging](validation/automation/tasks/parallel-backend-care-journal-staging.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
