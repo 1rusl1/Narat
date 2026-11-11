@@ -1,5 +1,5 @@
-import { SupabaseClient } from "@supabase/supabase-js";
-import { ApiHttpError, errorResponse, jsonResponse } from "../_shared/http.ts";
+import { type SupabaseClient } from "@supabase/supabase-js";
+import { ApiHttpError, errorResponse, jsonResponse, type SupportedLocale } from "../_shared/http.ts";
 
 export interface CatalogueSpeciesRow {
   id: string;
@@ -173,4 +173,86 @@ export async function handleSearchCatalogue(
     locale,
     query,
   }, 200);
+}
+
+const catalogueSlug = /^[a-z][a-z0-9_]*$/i;
+const taxonUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const searchParams = new Set(["q", "limit", "offset"]);
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPublishedCard(value: unknown): boolean {
+  return record(value) && typeof value.taxon_id === "string" && taxonUuid.test(value.taxon_id) &&
+    typeof value.plant_id === "string" && catalogueSlug.test(value.plant_id) &&
+    typeof value.scientific_name === "string" && value.scientific_name.length > 0 &&
+    typeof value.display_name === "string" && value.display_name.length > 0 &&
+    typeof value.care_profile_available === "boolean";
+}
+
+function invalidCatalogueRequest() {
+  return new ApiHttpError(400, "VALIDATION_ERROR", "Invalid catalogue request.");
+}
+
+function unavailableCatalogue() {
+  return new ApiHttpError(503, "INTERNAL_ERROR", "The catalogue is temporarily unavailable.", true);
+}
+
+function integer(raw: string | null, fallback: number, min: number, max: number) {
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < min || value > max) {
+    throw invalidCatalogueRequest();
+  }
+  return value;
+}
+
+export async function handlePublishedCatalogue(
+  req: Request,
+  locale: SupportedLocale,
+  clientFactory: () => SupabaseClient | null,
+  segment?: string,
+): Promise<Response> {
+  const params = new URL(req.url).searchParams;
+  const keys = [...params.keys()];
+  if (keys.some((key) => !searchParams.has(key)) || new Set(keys).size !== keys.length ||
+    (segment !== undefined && keys.length > 0)) throw invalidCatalogueRequest();
+
+  let identifier: string | undefined;
+  if (segment !== undefined) {
+    try {
+      identifier = decodeURIComponent(segment);
+    } catch {
+      throw invalidCatalogueRequest();
+    }
+    if (!catalogueSlug.test(identifier) && !taxonUuid.test(identifier)) throw invalidCatalogueRequest();
+  }
+
+  const limit = integer(params.get("limit"), 50, 1, 200);
+  const offset = integer(params.get("offset"), 0, 0, 2_147_483_647);
+  let response;
+  try {
+    const client = clientFactory();
+    if (!client) throw unavailableCatalogue();
+    response = identifier === undefined
+      ? await client.rpc("search_catalogue_species", {
+        p_query: params.get("q") ?? "", p_locale: locale, p_limit: limit, p_offset: offset,
+      })
+      : await client.rpc("get_catalogue_species_card", { p_identifier: identifier, p_locale: locale });
+  } catch {
+    throw unavailableCatalogue();
+  }
+  const { data, error } = response;
+  if (error) throw unavailableCatalogue();
+  if (identifier !== undefined) {
+    if (data === null) throw new ApiHttpError(404, "NOT_FOUND", "The published species was not found.");
+    if (!isPublishedCard(data)) throw unavailableCatalogue();
+  } else if (!record(data) || data.locale !== locale || data.limit !== limit || data.offset !== offset ||
+    !Number.isSafeInteger(data.total) || Number(data.total) < 0 || !Array.isArray(data.items) ||
+    data.items.length > Math.min(limit, Math.max(0, Number(data.total) - offset)) ||
+    !data.items.every(isPublishedCard)) {
+    throw unavailableCatalogue();
+  }
+  return jsonResponse(data, 200, { Vary: "X-Client-Locale, Accept-Language" });
 }

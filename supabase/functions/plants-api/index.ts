@@ -42,6 +42,7 @@ import { createDiagnosisMedia } from "./diagnosis-media.ts";
 import { handleGetSync } from "./collection.ts";
 import { handleCollectionCommand } from "./care-journal.ts";
 import { handleCareRecommendation } from "./care-recommendation.ts";
+import { handlePublishedCatalogue } from "./catalogue.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
 // a real client with a mocked transport without reading credentials or using the network.
@@ -60,6 +61,7 @@ export interface PlantsApiDependencies {
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
   handleCareRecommendation?: (req: Request, ctx: RequestContext, plantId: string) => Promise<Response>;
+  handleCatalogue?: (req: Request, locale: RequestContext["locale"], identifier?: string) => Promise<Response>;
 }
 
 function createSupabaseAuthClient(token: string): SupabaseClient | null {
@@ -209,6 +211,11 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         return jsonResponse({ status: "ok", version: "3.0.0", locale }, 200);
       }
 
+      if (req.method === "GET" && deps.handleCatalogue) {
+        const catalogue = normalizedPath.match(/^\/catalogue(?:\/([^/]+))?$/);
+        if (catalogue) return await deps.handleCatalogue(req, locale, catalogue[1]);
+      }
+
       const ctx = deps.resolveRequestContext
         ? await deps.resolveRequestContext(req)
         : await defaultResolveRequestContext(req, deps.authClientFactory);
@@ -353,15 +360,17 @@ export function createProductionPlantsApiHandler(
   options: ProductionSyncOptions = {},
 ) {
   const env = options.env ?? ((name: string) => Deno.env.get(name));
-  const syncClient = (): SupabaseClient | null => {
+  const apiClient = (keyName: "SUPABASE_SERVICE_ROLE_KEY" | "SUPABASE_ANON_KEY"): SupabaseClient | null => {
     const url = env("SUPABASE_URL")?.trim();
-    const key = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+    const key = env(keyName)?.trim();
     if (!url || !key) return null;
     return createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       global: { fetch: options.fetch },
     });
   };
+  const syncClient = () => apiClient("SUPABASE_SERVICE_ROLE_KEY");
+  const catalogueClient = () => apiClient("SUPABASE_ANON_KEY");
   return createPlantsApiHandler({
     ...deps,
     diagnosisMedia: deps.diagnosisMedia ?? createDiagnosisMedia(syncClient, env),
@@ -376,6 +385,8 @@ export function createProductionPlantsApiHandler(
       ((req, ctx) => handleCollectionCommand(req, ctx, syncClient)),
     handleCareRecommendation: deps.handleCareRecommendation ??
       ((req, ctx, plantId) => handleCareRecommendation(req, ctx, plantId, syncClient)),
+    handleCatalogue: deps.handleCatalogue ??
+      ((req, locale, identifier) => handlePublishedCatalogue(req, locale, catalogueClient, identifier)),
   });
 }
 
