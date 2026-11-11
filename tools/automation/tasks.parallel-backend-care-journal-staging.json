@@ -1,0 +1,60 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-care-journal-staging",
+      "description": "Expose one owner-scoped manual watering entry and undo using existing care journal tables, command receipts and sync projections.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202610200010_command_protocol.sql",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/collection.ts",
+        "supabase/functions/_shared/tests/collection_http_test.ts",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "specs/001-plants-ios-mvp/contracts/api.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "supabase/migrations/202611110016_manual_care_journal.sql",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/_shared/tests/care_journal_http_test.ts",
+        "supabase/tests/manual_care_journal.test.sql",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md"
+      ],
+      "evidence_files": [
+        "docs/handoff_status.md"
+      ],
+      "constraints": [
+        "All role reports and the wire contract are in English. This packet starts after a known test plant is readable on staging. Model roles use synthetic local evidence and return a patch within write_files. The controller alone does later staging validation.",
+        "Reuse POST /commands, UUID operation_id and target plant_id, and the existing JSON-string payload_json. Dispatch only care.record and care.undo alongside the existing unchanged plant.create path. Require an authenticated active permanent owner and validate ownership and the live target again in service-only SQL.",
+        "Limit to a standalone manual water action: care.record payload action_code=water, occurred_at as ISO timestamp with offset, and timezone as IANA name. SQL derives occurred_local_date and rejects future or invalid dates. care.undo takes entry_id and only reverses the same owner's manual entry on the target plant. No task completion, recommendation generation, reminder, schedule, quota, billing, guest or client changes.",
+        "Use the existing owner watermark lock, operation_receipts and care_entries/care_reversals. Look up identical replay before mutable entry checks and keep the original receipt; a different command or payload with the same UUID conflicts. Record one entry, undo atomically voids it and records one reversal, including concurrent retry. Use the existing GET /sync projections to read both. Use built-in PostgreSQL hash functions or an explicitly resolvable hash independent of the pgcrypto schema.",
+        "Add real SQL tests for write/read, replay, cross-owner, invalid date, undo/replay and rollback on conflict. The controller alone wires the new pgTAP file into its existing fixture gate before running this packet. Add focused mocked production HTTP tests for routing and RPC. Preserve the branch config and previous tests. Do not mark full T055-T056/T062-T068/T171 or Simulator complete."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "A standalone owner manual fact and its reversal are visible through sync and stable across exact replays; foreign/mutated requests fail atomically.",
+          "checks": [
+            "parallel-backend-diagnosis-sql",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "The existing Edge entrypoint and scoped patch pass static checks.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}
