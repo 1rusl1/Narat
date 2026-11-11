@@ -13,26 +13,29 @@
   "roles": {
     "developer": {
       "low": {
-        "provider": "codex",
+        "provider": "agy",
         "models": [
-          "codex:gpt-6.1-sol",
-          "agy:gemini-3.8-flash-high"
+          "agy:gemini-3.8-flash-high",
+          {"provider": "codex", "model": "gpt-6-luna", "reasoning_effort": "high"},
+          {"provider": "codex", "model": "gpt-6.1-sol", "reasoning_effort": "low"}
         ],
-        "reasoning_effort": "medium"
+        "reasoning_effort": "high"
       },
       "medium": {
-        "provider": "codex",
+        "provider": "agy",
         "models": [
-          "codex:gpt-6.1-sol",
-          "agy:gemini-3.8-flash-high"
+          "agy:gemini-3.8-flash-high",
+          {"provider": "codex", "model": "gpt-6-luna", "reasoning_effort": "high"},
+          {"provider": "codex", "model": "gpt-6.1-sol", "reasoning_effort": "low"}
         ],
-        "reasoning_effort": "medium"
+        "reasoning_effort": "high"
       },
       "high": {
-        "provider": "codex",
+        "provider": "agy",
         "models": [
-          "codex:gpt-6.1-sol",
-          "agy:gemini-3.8-flash-high"
+          "agy:gemini-3.8-flash-high",
+          {"provider": "codex", "model": "gpt-6-luna", "reasoning_effort": "high"},
+          {"provider": "codex", "model": "gpt-6.1-sol", "reasoning_effort": "low"}
         ],
         "reasoning_effort": "high"
       }

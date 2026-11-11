@@ -18,7 +18,7 @@
 5. Server secrets: Anthropic API key, Apple key/issuer/app identifiers, privileged
    Supabase credentials и защищённые provider revocation credentials.
    В iOS bundle допустимы URL проекта и publishable key, но не service-role/AI/Apple private keys.
-6. Партии подтверждённых фактов ухода и отдельный выпуск протоколов проблем по SC-016, права доноров/credits и Golden Records PL/EN;
+6. Партии подтверждённых фактов ухода и отдельный выпуск протоколов проблем по SC-016, права доноров/credits и Golden Records EN;
    отдельная заранее размеченная eval-выборка без неразрешённых фото.
 
 ## Локальная среда после реализации scaffold
@@ -56,10 +56,9 @@ deno test --allow-env --allow-net=127.0.0.1,localhost supabase/functions/
 xcodebuild -project ios/Plants.xcodeproj -scheme Plants -showdestinations
 ```
 
-Задать `PLANTS_SIMULATOR_UDID` действительным ID из вывода, затем выполнить оба языка:
+Задать `PLANTS_SIMULATOR_UDID` действительным ID из вывода, затем проверить английский интерфейс для польского региона. После среза T170 UI-тесты должны запускаться без выбора языка; прежняя двуязычная матрица не является условием выпуска.
 
 ```sh
-xcodebuild -project ios/Plants.xcodeproj -scheme Plants -destination "platform=iOS Simulator,id=${PLANTS_SIMULATOR_UDID}" -testLanguage pl -testRegion PL test
 xcodebuild -project ios/Plants.xcodeproj -scheme Plants -destination "platform=iOS Simulator,id=${PLANTS_SIMULATOR_UDID}" -testLanguage en -testRegion PL test
 ```
 
@@ -70,7 +69,9 @@ Native Apple/Google sign-in и съёмка фото дополнительно 
 
 ## Сквозная приёмка
 
-Каждый маршрут EN/PL: версии, набор/источник данных, реальные команды/шаги, PASS/FAIL/не проверено. Fixtures, Simulator и live явно разделены.
+Первый живой прогон и его отличие от полной приёмки — в [критическом пути](critical-path.md).
+
+Каждый маршрут MVP на английском: версии, набор/источник данных, реальные команды/шаги, PASS/FAIL/не проверено. Fixtures, Simulator и live явно разделены.
 
 | ID | Маршрут | Что проверить |
 | --- | --- | --- |
@@ -87,7 +88,7 @@ Native Apple/Google sign-in и съёмка фото дополнительно 
 | V11 | Уход → журнал | Включение не выполнение; record/undo/backdate/offline/restart/lost response, одна запись и допустимая следующая проверка с коротким основанием. |
 | V12 | Care/trial reminders | Местный час/DST/стабильные IDs, перенос/отмена/logout/known expiry offline; trial opt-in по verified дате без server claim. |
 | V13 | Приватность/удаление | API/Storage/local A-B isolation, profile/plant/account deletion, отказ в разрешении не блокирует независимое. |
-| V14 | База | Ручные проверенные карточки, частичное покрытие, права/применимость/EN-PL/версия, atomic publish/rollback; без полного профиля и минимального охвата. |
+| V14 | База | Ручные проверенные карточки, частичное покрытие, права/применимость/EN/версия, atomic publish/rollback; без полного профиля и минимального охвата. |
 | V15 | Безопасность рекомендаций | Unknown safety не безопасно, вещество только при данных/условиях, сложное неподдерживаемое лечение не упрощено опасно; нет товаров/таймеров. |
 | V16 | События | Enum/privacy/event_id dedup, server purchase/restore, потеря client event не блокирует продукт; отдельного durable analytics outbox нет. |
 | V17 | Фото/карточка | Camera/gallery/контрольное фото и просмотр прежних, ownership/сохранность; без export/main-picker/специального сравнения. |
@@ -96,7 +97,7 @@ Native Apple/Google sign-in и съёмка фото дополнительно 
 
 ## Ранние проверки и публичный выпуск
 
-Сначала небольшой заранее выбранный набор случаев и качественные UX-прогоны EN/PL. Публикуются ограничения, исправляются блокирующие ошибки. Универсальные квоты 200 случаев и 20 участников на язык сняты.
+Сначала небольшой заранее выбранный набор случаев и качественные UX-прогоны на английском. Публикуются ограничения, исправляются блокирующие ошибки. Универсальные квоты 200 случаев и 20 участников на язык сняты.
 
 Для публичного выпуска T118 **до eval** задаёт покрытие, размер/стратификацию и достаточность независимой reference-выборки. Цели SC-003/004 (85% вид, 80% причина, 90% пригодные действия/неопределённость) сохраняются; малая выборка не служит доказательством качества всего покрытия. Опасные рекомендации исправлены и повторно проверены. SC-002 измеряется на описанных условиях сети/фото.
 

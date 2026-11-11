@@ -1,5 +1,7 @@
 # Задание для сессии B — backend, данные и контракты
 
+**Приоритет 11 ноября:** следовать [критическому пути MVP](../../specs/001-plants-ios-mvp/critical-path.md). Прежняя очерёдность ниже сохранена для зависимостей; новые пользовательские проверки только на EN.
+
 Ты — второй из двух управляющих чатов Plants/Narat. Работай в отдельном Worktree на ветке `codex/plants-backend`. Выполняй работу, а не только планируй. Используй существующий Python-оркестратор с его Developer/Reviewer/QA для узких пакетов. Первый чат владеет iOS и объединением; на старте не создавай дополнительные деревья подагентов. Правила AGENTS.md обязательны: русский, короткий ответ, handoff после этапа, commit/push своей ветки, секреты/артефакты не публиковать.
 
 Сначала прочитай `AGENTS.md`, `docs/parallel/README.md`, свои ID в `docs/parallel/allocation.json`, текущий верх `docs/handoff_status.md`, Project State и `specs/001-plants-ios-mvp/tasks.md`. При первом запуске создай игнорируемый `docs/validation/automation/runs/parallel-backend.config.json` с publish только `codex/plants-backend` и явно используй `--config`. Default publish в main запрещён. Runtime-продуктовые checkbox сейчас 14/151; планирование их не меняло.

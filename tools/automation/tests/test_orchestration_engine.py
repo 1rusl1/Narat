@@ -191,9 +191,10 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(provider.calls), 1)
         self.assertEqual(engine.state.data["tasks"]["one"]["calls"][0]["quota"], None)
 
-    def test_default_config_falls_back_from_codex_to_agy_on_limit(self):
+    def test_developer_falls_back_on_limit_without_changing_review_route(self):
         provider = FakeProvider([
-            {"status": "FAIL", "category": "limit", "error": "codex usage limit"},
+            {"status": "FAIL", "category": "limit", "error": "Gemini usage limit"},
+            {"status": "FAIL", "category": "unavailable", "error": "Luna unavailable"},
             {},
             {"status": "FAIL", "category": "limit", "error": "codex reviewer limit"},
             {},
@@ -201,15 +202,15 @@ class EngineTests(unittest.TestCase):
         ])
         engine = self.engine(provider)
         self.assertEqual(engine.execute()["one"], "COMPLETED")
-        self.assertEqual([(c["role"], c["provider"], c["model"]) for c in provider.calls], [
-            ("developer", "codex", "gpt-6.1-sol"),
-            ("developer", "agy", "gemini-3.8-flash-high"),
-            ("reviewer", "codex", "gpt-6.1-sol"),
-            ("reviewer", "agy", "gemini-3.8-flash-high"),
-            ("qa", "codex", "gpt-6.1-sol"),
+        self.assertEqual([(c["role"], c["provider"], c["model"], c["effort"]) for c in provider.calls], [
+            ("developer", "agy", "gemini-3.8-flash-high", "high"),
+            ("developer", "codex", "gpt-6-luna", "high"),
+            ("developer", "codex", "gpt-6.1-sol", "low"),
+            ("reviewer", "codex", "gpt-6.1-sol", "medium"),
+            ("reviewer", "agy", "gemini-3.8-flash-high", "medium"),
+            ("qa", "codex", "gpt-6.1-sol", "medium"),
         ])
-        self.assertIsNone(provider.calls[1]["session"])
-        self.assertIsNone(provider.calls[3]["session"])
+        self.assertTrue(all(provider.calls[i]["session"] is None for i in (1, 2, 4)))
 
     def test_explicit_allowed_fallback_gets_new_session(self):
         self.config["roles"]["developer"]["low"]["models"] = ["primary", "approved-alternative"]
@@ -470,7 +471,7 @@ class EngineTests(unittest.TestCase):
         engine = self.engine(provider)
         self.assertEqual(engine.execute()["one"], "COMPLETED")
         self.assertEqual([(c["role"], c["provider"]) for c in provider.calls],
-                         [("developer", "codex"), ("acceptance", "codex"), ("acceptance", "agy")])
+                         [("developer", "agy"), ("acceptance", "codex"), ("acceptance", "agy")])
         self.assertIsNone(provider.calls[-1]["session"])
         self.assertEqual(engine.state.data["tasks"]["one"]["calls"][-1]["retry"], 1)
 
@@ -505,8 +506,8 @@ class EngineTests(unittest.TestCase):
         provider = FakeProvider()
         self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
         self.assertEqual([(c["role"], c["model"]) for c in provider.calls], [
-            ("developer", "gpt-6.1-sol"), ("reviewer", "gpt-6-astra"), ("qa", "gpt-6-astra")])
-        self.assertEqual([c["effort"] for c in provider.calls], ["medium", "high", "high"])
+            ("developer", "gemini-3.8-flash-high"), ("reviewer", "gpt-6-astra"), ("qa", "gpt-6-astra")])
+        self.assertEqual([c["effort"] for c in provider.calls], ["high", "high", "high"])
 
     def test_ambiguous_cli_input_count_does_not_discard_repair_session(self):
         def large_usage(result, call, root):
@@ -550,6 +551,10 @@ class EngineTests(unittest.TestCase):
                          "estimated context threshold")
 
     def test_complex_finding_increases_developer_effort_in_fresh_session(self):
+        for level, effort in (("low", "medium"), ("high", "high")):
+            self.config["roles"]["developer"][level] = {
+                "models": ["codex:gpt-6.1-sol"], "reasoning_effort": effort,
+            }
         def complex_finding(result, call, root):
             fail_response("Ambiguous rollback defect")(result, call, root)
             result["reply"]["finding_complexity"] = "high"
@@ -655,7 +660,7 @@ class EngineTests(unittest.TestCase):
         self.task["complexity"] = "high"
         provider = FakeProvider()
         self.assertEqual(self.engine(provider).execute()["one"], "COMPLETED")
-        self.assertTrue(all(c["model"] == "gpt-6.1-sol" for c in provider.calls))
+        self.assertTrue(all(c["model"] == "gpt-6.1-sol" for c in provider.calls if c["role"] != "developer"))
 
     def test_complex_finding_escalates_next_acceptance_to_fresh_astra(self):
         self.config["acceptance"]["combined_levels"] = ["low"]

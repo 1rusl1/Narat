@@ -189,9 +189,10 @@ limit/unavailable не расходует дополнительную логи�
 `"codex:gpt-6.1-sol"`, `"agy:gemini-4-argon-low"`, `"agy:gemini-3.8-flash-high"`),
 обычным именем модели (тогда берётся `provider` уровня) или объектом
 `{"provider": "...", "model": "...", "reasoning_effort": "..."}`.
-Developer использует complexity: low/medium → Sol medium, high → Sol high.
-Сложное замечание (`finding_complexity=high`) включает high effort для дальнейшего
-Developer repair, с новой сессией и прежним budget. Risk не занижается ради скорости.
+Пилот Developer на всех уровнях: Gemini 3.8 Flash High → GPT-6 Luna High →
+GPT-6.1 Sol Low. Переход только при limit/unavailable; при смене модели сессия новая.
+Сложное замечание (`finding_complexity=high`) переводит repair на уровень high
+с прежним budget. На время пилота цепочка на всех уровнях одна и та же.
 Выбор checks по-прежнему использует максимум сложности и риска. Обычная приёмка
 использует Sol (`gpt-6.1-sol`, fallback `gemini-3.8-flash-high`); высокая сложность
 задачи сама по себе не включает Astra. Высокий риск (`risk=high`) или сложные

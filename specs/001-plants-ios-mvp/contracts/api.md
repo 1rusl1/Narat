@@ -5,7 +5,7 @@
 
 ## Общие границы
 
-Verified Supabase JWT (guest/permanent), active owner из JWT; RLS/private Storage. Mutations используют operation_id и canonical payload hash: lookup receipt до побочных эффектов/проверки нового расхода, mismatch — 409. Replay не даёт нового права доступа. Ошибка содержит локализуемый code/retryable; pending не считается committed. `X-Client-Locale` — pl/en; installation credential — Keychain/серверный hash, не логировать.
+Verified Supabase JWT (guest/permanent), active owner из JWT; RLS/private Storage. Mutations используют operation_id и canonical payload hash: lookup receipt до побочных эффектов/проверки нового расхода, mismatch — 409. Replay не даёт нового права доступа. Ошибка содержит локализуемый code/retryable; pending не считается committed. `X-Client-Locale` принимает pl/en для совместимости; клиент MVP отправляет en; installation credential — Keychain/серверный hash, не логировать.
 
 ## Анализ и сохранение
 
@@ -16,7 +16,7 @@ Verified Supabase JWT (guest/permanent), active owner из JWT; RLS/private Stor
 | POST /media/upload-ticket, /media/complete | Приватная загрузка, owner/MIME/size/hash; signed URL 60 секунд. Клиент сжимает до <=10 МБ, AI JPEG 1568px до отдельного eval, EXIF удаляется. |
 | POST /analysis/jobs; GET /analysis/jobs/:id | Idempotent job с фото/контекстом/locale и версией каталога/KB; reserve/lease и атомарный success+расход. Результат — классификация/ограничение и snapshot применимых действий, без вопросов или AI-советов. |
 | POST /claims/prepare, /claims/commit; GET /claims/:id | Перенос действительного семидневного draft после входа, proof 15 минут с возможностью обновления пока draft действителен. Staging-copy/атомарная публикация, защита cleanup, owner и count<3 Free. |
-| GET /catalogue, /catalogue/:id | Опубликованные виды, поиск PL/EN/Latin/синонимы, атрибуция; без обязательной KB. |
+| GET /catalogue, /catalogue/:id | Опубликованные виды, поиск EN/Latin/синонимы (существующие PL данные совместимы), атрибуция; без обязательной KB. |
 | GET /me | Профиль, registered_at, entitlement, квота/collection count и automatic-care state; без внутренних секретов. |
 
 Quota anchor — регистрация постоянного аккаунта. Free=3/paid=100 за общий период, starter раздельны; правила короткого месяца/переноса расхода из [редакции 8 ноября](revision-2026-11-08.md) сохраняются. Unknown не освобождает успешный анализ от расхода. Ошибка освобождает reserve ровно раз. Worker фиксирует исходный ledger, проверяет lease/owner/access; expiry не переводит запрос автоматически на Free.

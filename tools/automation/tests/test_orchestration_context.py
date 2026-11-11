@@ -188,9 +188,10 @@ class ContextTests(unittest.TestCase):
     def test_route_models_supports_codex_and_agy_fallback_chain(self):
         for lvl in ("low", "medium", "high"):
             dev = route_models(self.config["roles"]["developer"][lvl])
-            self.assertEqual([(m["provider"], m["model"]) for m in dev], [
-                ("codex", "gpt-6.1-sol"),
-                ("agy", "gemini-3.8-flash-high"),
+            self.assertEqual([(m["provider"], m["model"], m["reasoning_effort"]) for m in dev], [
+                ("agy", "gemini-3.8-flash-high", "high"),
+                ("codex", "gpt-6-luna", "high"),
+                ("codex", "gpt-6.1-sol", "low"),
             ])
         rev_high = route_models(self.config["roles"]["reviewer"]["high"])
         self.assertEqual([(m["provider"], m["model"]) for m in rev_high], [

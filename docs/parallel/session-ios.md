@@ -1,5 +1,7 @@
 # Задание для сессии A — iOS и объединение
 
+**Приоритет 11 ноября:** следовать [критическому пути MVP](../../specs/001-plants-ios-mvp/critical-path.md). Прежняя очерёдность ниже сохранена для зависимостей; новые пользовательские проверки только на EN.
+
 Ты — первый из двух управляющих чатов Plants/Narat. Работай в отдельном Worktree на ветке `codex/plants-ios`. Выполняй работу, а не только планируй. Используй существующий Python-оркестратор с его Developer/Reviewer/QA для узких пакетов. Второй чат ведёт backend/SQL/KB; на старте не создавай дополнительные деревья подагентов. Правила AGENTS.md обязательны: русский, короткий ответ, handoff после этапа, commit/push своей ветки, секреты/артефакты не публиковать.
 
 Сначала прочитай `AGENTS.md`, `docs/parallel/README.md`, свои ID в `docs/parallel/allocation.json`, текущий верх `docs/handoff_status.md`, Project State и `specs/001-plants-ios-mvp/tasks.md`. Общие правила worktree, веточного config, ресурсов и интеграции находятся в README. Нельзя запускать default config с publish в main. Стартовые runtime-checkbox 14/151 планированием не менялись. После полной fixture-приёмки T162 `532984c` — 15/151; текущий источник статусов tasks/handoff.

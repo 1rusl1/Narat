@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Критический путь MVP и пилот Developer — 11 ноября 2026
+
+- В `specs/001-plants-ios-mvp/critical-path.md` выделен первый живой срез:
+  результат фотоанализа → подтверждённая карточка → запись ухода после перезапуска.
+  Условия публичного выпуска перечислены отдельно. Обновлены `spec.md`, `plan.md`,
+  `tasks.md`, `quickstart.md`, `contracts/api.md` и инструкции `docs/parallel/`.
+  MVP принимается на EN; убрать существующий переключатель и фиксировать EN предстоит
+  в iOS (срез T170). История и форматы остаются совместимыми. 15 из 151 задач
+  отмечены, отметки не менялись.
+- В `tools/automation/orchestrator.config.json` Developer начинает с Gemini 3.8 Flash
+  High; при лимите/недоступности пробует Luna High, затем Sol Low. Обновлены
+  `ORCHESTRATOR.md` и тесты `test_orchestration_{context,engine}.py`. Review/QA без изменений.
+- Локально: 148 тестов автоматизации PASS (модели на фикстурах, временный Git);
+  `prepare` на примере с временным config текущей ветки, сверка ID/отметок,
+  изоляция изменений Developer и `git diff --check` — PASS.
+  `agy models` подтвердил наличие Gemini 3.8 Flash High. Живых вызовов моделей,
+  продуктовых интеграций и iOS-проверок в этом этапе не было; скорость пилота не измерена.
+
+Следующий шаг: в iOS-ветке подготовить узкий пакет «результат → `plant.create` →
+карточка после перезапуска», перенести только `roles.developer` и запустить
+с новым run ID. Проверить подтверждение сервера и повтор без дубля на staging;
+затем подключить одну запись ухода с повторным чтением журнала.
+
 ## Доступ Xcode к папке проекта — 11 ноября 2026
 
 Оба файла из ошибок, `ios/Configuration/Auth.xcconfig` и `Contents.json`
@@ -1289,12 +1312,14 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
+- Текущий приоритет 2026-11-11: [критический путь MVP](../specs/001-plants-ios-mvp/critical-path.md), EN без переключателя, фото → подтверждённая карточка → запись ухода. Первый пакет: результат → `plant.create` → чтение и restart. Developer: Gemini 3.8 Flash High → Luna High → Sol Low; Review/QA без изменений.
+
 - Пилот25a5830 перенесён в A/B и завершён по1task: A e04103f DTO/transport, B88a8ea8 GET snapshot;191Swift/HTTP39/Deno336/automation147/SQL511/ReviewQA PASS по своим scope;runtime935.649/249.722s,repeats/timeouts0. Обе очереди снова на паузе, main/CI/live не менялись. См. throughput-pilot-2026-11-10.md.
 - История до переноса: Engine/config throughput patch реализован локально: complexity routing Developer, 6 discovery hints, bounded-read instructions, measured-only context rotation, timeout replan, candidate_base diff/preflight. 147 fixture tests PASS; пакет в отдельной codex/development-throughput-audit, в A/B ещё не перенесён. Запуск НЕ разрешён, CI отложена.
 
 - ПРИОРИТЕТ 2026-11-10: владелец остановил A/B перед сменой конфигурации. Новые runs/repair/review/интеграции не запускать до прямой команды возобновления. GitHub Actions/T006 отложены и не блокируют разработку; локальные проверки сохраняются. Аудит throughput-audit-2026-11-10.md, конфигурация пока прежняя.
 
-- Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN/PL; конституция 5.0.0.
+- Narat: Swift 6/SwiftUI/SwiftData, Supabase, StoreKit 2, EN для MVP; конституция 5.0.0.
 - Scope принят 9 ноября: простой путь и уход, OPEN-PLAN разрешён; документы не подтверждают runtime.
 - 151 задача: 15 отмечены (12 исторических + T156 документ + T161 серверный пакет + T162 клиент), 136 открыты; 23 снятых. Из открытых T172–T174 — отдельные необязательные комнаты; пакеты T161–T174 описаны в orchestrator-cleanup-tasks.md, T161 принят по серверному контракту: cap b5f2c8f, slots 01ba170, TS/API eb58c03; fixtures PostgreSQL/Deno, live/client отдельно. Остальные manifests/gates готовятся перед запуском. T155/T157–T160 открыты; T148 остановлена перед pipeline slice.
 - Runtime AI классифицирует, советы из проверенных карточек. Sync/outbox, история/приватность/покупки сохранены. Free collection cap=3 и no-slot basic care приняты на сервере; месячные квоты и полный expiry ещё не заменены.
