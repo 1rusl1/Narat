@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## B — первый живой диагноз через OpenRouter, 11 ноября 2026
+
+`c372c6b921140c484ed2b110d95ba9672e9816d7` принят и опубликован в `origin/codex/plants-backend`. Run `parallel-backend-openrouter-20261111-01` завершился за 264,13 с. Reviewer и QA по одному, без повторов и тайм-аутов. Все 7 проверок PASS, включая 347 Deno, 148 automation, 39 HTTP, по 556 pgTAP clean/upgrade и прежний cap gate. SDK, ошибки 401/429 и отмена проверены на fixtures. Изменённые файлы перечислены ниже в записи кандидата. На `narat-staging` выложены `plants-api` v6 и `analysis-worker` v4 с существующей import map.
+
+Живой smoke `staging-monstera-20261111-01` повторно использовал один ранее загруженный приватный JPEG. Задание `48a33d48-15a1-49a7-83ca-dc199eb5f573` завершилось `succeeded`, `identified / monstera_deliciosa / Swiss Cheese plant`, `healthy`, без condition ID. В PostgreSQL подтверждены один job у владельца, один старт провайдера и `starter_diagnosis / consumed`. POST → полученный клиентом результат занял 5,22 с, DB job — 3,30 с, старт провайдера → settlement — 2,76 с. Журнал OpenRouter за 11:07 МСК показал Claude Haiku 5.5 через Claude Platform on AWS, 2171 входной и 145 выходных токенов, $0.00029, finish `stop`, routing overhead 1,21 с и TTFT 0,93 с. CLI v3 запрос журнала потребовал Management token, метрики прочитаны через авторизованный OpenRouter Logs. Фото и результат остаются в `narat-staging`. Технический отчёт передан основному чату и A.
+
+После результата живой GET `/analysis/access` показал starter=0, free_monthly remaining=0 и `quota_registration_required`. Второй снимок не отправлялся. Точный следующий шаг для него — проверить доступность месячной квоты после подтверждения и переноса даты регистрации из Auth, затем запустить отдельный smoke с лицензированным неоднозначным фото. T031–T034 и T163 остаются открыты в полном объёме. Подтверждён один серверный сценарий на staging, без iOS, identification-only, второго снимка и фонового reconciler.
+
 ## B — кандидат OpenRouter для живого диагноза, 11 ноября 2026
 
 В `AnthropicAdapter.ts` и `analysis-worker/index.ts` добавлен серверный выбор `ANALYSIS_PROVIDER=openrouter` с отдельным `OPENROUTER_API_KEY`. Используется фиксированный OpenRouter Messages URL и `anthropic/claude-haiku-5.5`, Bearer, effort low, disabled thinking, лимит 2048, запрет fallback/retry и существующий тайм-аут. Прямой Anthropic остаётся по умолчанию. Квота, бюджет, валидатор, lease, SQL и клиентский контракт используются повторно. Технический журнал OpenRouter содержит только job ID, модель, длительность, HTTP-статус ошибки или количество токенов. `.env.example`, `diagnosis_photo_test.ts`, live smoke и одноразовый манифест приёмки обновлены.
