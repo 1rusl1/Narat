@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## B — plant.create blocked on narat-staging, 11 November 2026
+
+The English staging probe used the existing permanent synthetic account and the persisted successful Monstera diagnosis. Auth, owned diagnosis status and initial `/sync` returned 200. The catalogue envelope with `analysis_job_id` returned 400 `VALIDATION_ERROR`, as expected for a field the current route does not accept. The documented catalogue envelope used the confirmed `monstera_deliciosa` and optional `origin_flow_id`, then returned 503 `INTERNAL_ERROR`.
+
+A rollback-only service-role RPC reproduced SQLSTATE `42883`, `function digest(text, unknown) does not exist`. The deployed function has `search_path=public`, while `pgcrypto` is installed in `extensions`. The service role has execute permission. No write was committed by the diagnostic. A forward-only plant-create repair and hosted-layout regression are scoped in `tools/automation/tasks.parallel-backend-plant-create-staging.json`. Create, fresh-session read and replay remain unverified. No task checkbox changed.
+
+The branch-local config took only `roles.developer` from `26ae2a0`, with Gemini 3.8 Flash High, GPT-6 Luna High and GPT-6.1 Sol Low in order. Checks, Review/QA and `origin/codex/plants-backend` publishing were compared and retained. Config SHA-256 `528f1054e3680fd9640a77f0cef18c7f5424a7d9c70147f915d0e8180cf3cd29`. The process check found no prior controller. Next step is `prepare` and a new run for the scoped repair, then a staging retry of the same operation.
+
 ## B — локализованы три отказа фото из Simulator, 11 ноября 2026
 
 На `narat-staging` проверены job `45cdaaa4`, `f5456157`, `b628e402`. Каждый upload-ticket, `storage.objects.metadata.size` и фактическое чтение объекта через Storage API дали 20 байт. SHA-256 совпал. Начало JPEG присутствует, маркеры кадра и скана отсутствуют. Worker подтвердил длину и хеш до вызова провайдера. Контрольное лицензированное фото Monstera из B имело 442 566 байт и успешно прошло тот же маршрут.
