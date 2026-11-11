@@ -61,6 +61,26 @@ struct CatalogueCardSummary: Decodable, Sendable, Equatable {
     }
 }
 
+/// Canonical standalone watering fact. Dates remain server calendar dates.
+struct CatalogueWateringEntry: Decodable, Sendable, Equatable, Identifiable {
+    let id: UUID
+    let plantId: UUID
+    let taskId: UUID?
+    let actionCode: String
+    let occurredAt: String
+    let occurredLocalDate: String
+    let state: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, state
+        case plantId = "plant_id"
+        case taskId = "task_id"
+        case actionCode = "action_code"
+        case occurredAt = "occurred_at"
+        case occurredLocalDate = "occurred_local_date"
+    }
+}
+
 struct CollectionCapacitySnapshot: Sendable {
     let plantCount: Int
     let entitlement: SyncWireEntitlementDTO?
@@ -187,6 +207,53 @@ public struct CollectionRepository: Sendable {
                 throw SyncWireValidationError.invalidPage
             }
             return summary
+        }
+    }
+
+    /// Read only after catalogueCard has refreshed the exact confirmed card.
+    /// The full owner refresh already includes care_entries; no second HTTP request.
+    func manualWateringHistory(
+        card: CatalogueCardSummary, confirmation: CatalogueCreateConfirmationSnapshot,
+        context: SyncSessionLease
+    ) async throws -> [CatalogueWateringEntry] {
+        try Task.checkCancellation()
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        guard confirmation.ownerId == context.ownerId,
+              card.id == confirmation.receipt.plantId else {
+            throw SyncWireValidationError.invalidSession
+        }
+        let entities = try await store.activeSyncedEntities(
+            ownerId: context.ownerId, entityType: "care_entries"
+        )
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            try Task.checkCancellation()
+            let dateFormat = DateFormatter()
+            dateFormat.locale = Locale(identifier: "en_US_POSIX")
+            dateFormat.calendar = Calendar(identifier: .gregorian)
+            dateFormat.timeZone = TimeZone(secondsFromGMT: 0)
+            dateFormat.dateFormat = "yyyy-MM-dd"
+            dateFormat.isLenient = false
+            var entries: [CatalogueWateringEntry] = []
+            for entity in entities {
+                let entry = try JSONDecoder().decode(
+                    CatalogueWateringEntry.self, from: Data(entity.payloadJSON.utf8)
+                )
+                guard entry.plantId == card.id, entry.taskId == nil,
+                      entry.actionCode == "water" else { continue }
+                guard entry.id == entity.id,
+                      ["active", "voided"].contains(entry.state),
+                      SQLTimestamp.microseconds(from: entry.occurredAt) != nil,
+                      let day = dateFormat.date(from: entry.occurredLocalDate),
+                      dateFormat.string(from: day) == entry.occurredLocalDate else {
+                    throw SyncWireValidationError.invalidPage
+                }
+                entries.append(entry)
+            }
+            return entries.sorted {
+                let lhs = SQLTimestamp.microseconds(from: $0.occurredAt)!
+                let rhs = SQLTimestamp.microseconds(from: $1.occurredAt)!
+                return lhs == rhs ? $0.id.uuidString < $1.id.uuidString : lhs > rhs
+            }
         }
     }
 

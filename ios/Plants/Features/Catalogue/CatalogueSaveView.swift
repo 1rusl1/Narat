@@ -289,6 +289,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("catalogue.saved.card." + summary.id.uuidString.lowercased())
+            if analysisSaveIdentity != nil && !polish {
+                wateringHistory(model)
+            }
         } else {
             switch model.cardState {
             case .idle, .loading:
@@ -301,6 +304,37 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .accessibilityIdentifier("catalogue.saved.retry")
             case .loaded:
                 EmptyView()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func wateringHistory(_ model: CatalogueSaveModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Manual watering history").font(.headline)
+            switch model.wateringHistoryState {
+            case .idle, .loading:
+                ProgressView("Loading watering history…")
+                    .accessibilityIdentifier("catalogue.saved.history.loading")
+            case let .loaded(entries):
+                if entries.isEmpty {
+                    Text("No manual watering recorded.")
+                        .accessibilityIdentifier("catalogue.saved.history.empty")
+                } else {
+                    ForEach(entries) { entry in
+                        HStack {
+                            Text(entry.occurredLocalDate)
+                            Text(entry.state == "voided" ? "Undone" : "Active")
+                        }
+                        .accessibilityIdentifier("catalogue.saved.history." + entry.id.uuidString.lowercased())
+                    }
+                }
+            case .unavailable:
+                Text("Watering history is unavailable.")
+                    .accessibilityIdentifier("catalogue.saved.history.unavailable")
+                Button("Retry watering history") { loadDetails(model) }
+                    .disabled(working)
+                    .accessibilityIdentifier("catalogue.saved.history.retry")
             }
         }
     }

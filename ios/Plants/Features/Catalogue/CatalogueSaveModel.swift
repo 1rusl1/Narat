@@ -17,6 +17,13 @@ enum CatalogueSaveState: Sendable, Equatable {
     case unavailable(CatalogueSaveUnavailable)
 }
 
+enum CatalogueWateringHistoryState: Sendable, Equatable {
+    case idle
+    case loading
+    case loaded([CatalogueWateringEntry])
+    case unavailable
+}
+
 enum CatalogueCardState: Sendable, Equatable {
     case idle
     case loading
@@ -49,6 +56,14 @@ final class CatalogueSaveModel {
     private var cancelled = false
     @ObservationIgnored private var work: Task<Void, Never>?
     private var detailsPhase: CatalogueCardState = .idle
+    private var historyPhase: CatalogueWateringHistoryState = .idle
+
+    var wateringHistoryState: CatalogueWateringHistoryState {
+        let value = historyPhase
+        guard isAccessible else { return .unavailable }
+        guard case .saved = state else { return .idle }
+        return value
+    }
     @ObservationIgnored private var detailsTask: Task<Void, Never>?
 
     /// Idle retained models redact details immediately after logout, switch or ABA.
@@ -272,7 +287,10 @@ final class CatalogueSaveModel {
 
     private func performCardLoad(_ confirmation: CatalogueCreateConfirmationSnapshot) async {
         do {
-            try publish { detailsPhase = .loading }
+            try publish {
+                detailsPhase = .loading
+                historyPhase = .loading
+            }
             let summary = try await repository.catalogueCard(
                 confirmation: confirmation, envelope: frozenEnvelope, context: context
             )
@@ -281,13 +299,22 @@ final class CatalogueSaveModel {
                 throw CatalogueSaveUnavailable.sessionChanged
             }
             try publish { detailsPhase = .loaded(summary) }
+            let history = try await repository.manualWateringHistory(
+                card: summary, confirmation: confirmation, context: context
+            )
+            try validateAuthority()
+            guard case let .saved(current) = state, current == confirmation else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            try publish { historyPhase = .loaded(history) }
         } catch {
             if Task.isCancelled {
                 cancel()
             } else {
                 // Includes service cancellation, absent/deleted/malformed data and disk failure.
                 // The guarded getters redact invalid authority; .saved remains durable truth.
-                detailsPhase = .unavailable
+                if case .loaded = detailsPhase {} else { detailsPhase = .unavailable }
+                historyPhase = .unavailable
             }
         }
     }
@@ -298,6 +325,7 @@ final class CatalogueSaveModel {
         work?.cancel()
         detailsTask?.cancel()
         detailsPhase = .unavailable
+        historyPhase = .unavailable
         phase = .unavailable(.cancelled)
     }
 

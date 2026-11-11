@@ -706,6 +706,134 @@ final class CollectionWireTests: XCTestCase {
 }
 
 extension CollectionWireTests {
+    @MainActor
+    func testRestoredCardReadsCanonicalManualWateringWithoutWrites() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let flow = UUID()
+        let input = CatalogueInput(speciesSlug: "fixture_collection_cap", personalName: "Saved plant")
+        let command = try input.makeEnvelope(operationId: operationId)
+        let receipt = try decodedCreateReceipt()
+        let schema = Schema([
+            LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
+            CatalogueInputCheckpointRecord.self, GuestDraftCacheRecord.self,
+            SyncedEntityRecord.self, SyncCheckpointRecord.self
+        ])
+        func reopen() throws -> LocalStore {
+            LocalStore(modelContainer: try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url)
+            ]))
+        }
+        // Persist the actual input journal and typed confirmation, then release the store.
+        do {
+            let seed = try reopen()
+            let api = client(CatalogueTransport([]))
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            _ = try await seed.checkpointCatalogueInput(
+                input, flowId: flow, operationId: operationId,
+                context: lease, authority: api.syncAuthority
+            )
+            _ = try await queueCreate(command, ownerId: syncOwner, in: seed)
+            try await seed.acknowledgeCatalogueCreate(
+                command, receipt: receipt, context: lease, authority: api.syncAuthority
+            )
+        }
+        let activeId = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+        let voidedId = UUID(uuidString: "44444444-4444-4444-8444-444444444444")!
+        func fact(_ id: UUID, plant: UUID, task: UUID? = nil,
+                  action: String = "water", state: String = "active",
+                  occurred: String = "2026-11-02T23:30:00.000001Z",
+                  day: String = "2026-11-03") -> [String: Any] {
+            ["entity_type": "care_entries", "id": id.uuidString,
+             "updated_at": syncUntil, "deleted_at": NSNull(),
+             "data": ["id": id.uuidString, "plant_id": plant.uuidString,
+                      "task_id": task.map { $0.uuidString as Any } ?? NSNull(),
+                      "action_code": action, "state": state, "occurred_at": occurred,
+                      "occurred_local_date": day]]
+        }
+        let plant: [String: Any] = [
+            "entity_type": "plants", "id": serverPlantId.uuidString,
+            "updated_at": syncUntil, "deleted_at": NSNull(),
+            "data": ["id": serverPlantId.uuidString, "plant_id": input.speciesSlug,
+                     "personal_name": "Saved plant", "revision": 1, "care_revision": 1]
+        ]
+        var changes = [
+            fact(activeId, plant: serverPlantId),
+            fact(voidedId, plant: serverPlantId, state: "voided",
+                 occurred: "2026-11-03T01:00:00.000001Z"),
+            fact(UUID(), plant: otherSyncOwner),
+            fact(UUID(), plant: serverPlantId, task: UUID()),
+            fact(UUID(), plant: serverPlantId, action: "fertilize"),
+            plant
+        ]
+        changes.sort {
+            let lhs = ($0["entity_type"] as! String, $0["id"] as! String)
+            let rhs = ($1["entity_type"] as! String, $1["id"] as! String)
+            return lhs < rhs
+        }
+        var page = syncObject()
+        page["changes"] = changes
+        var invalidHistory = syncObject()
+        invalidHistory["changes"] = [
+            fact(activeId, plant: serverPlantId, state: "invalid"), plant
+        ]
+        var empty = syncObject()
+        empty["changes"] = [plant]
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(page)), .http(200, try syncJSON(invalidHistory)),
+            .network, .http(200, try syncJSON(empty))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let store = try reopen()
+        let repository = CollectionRepository(
+            store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api)
+        )
+        let wrongFlow = await CatalogueSaveModel.restore(
+            store: store, apiClient: api, repository: repository,
+            ownerId: syncOwner, flowId: UUID(), session: syncSession, isAnonymous: false
+        )
+        guard case .absent = wrongFlow else { return XCTFail("Unrelated flow restored") }
+        let result = await CatalogueSaveModel.restore(
+            store: store, apiClient: api, repository: repository,
+            ownerId: syncOwner, flowId: flow, session: syncSession, isAnonymous: false
+        )
+        guard case let .restored(model) = result else { return XCTFail("Expected durable restore") }
+        XCTAssertEqual(model.wateringHistoryState, .idle)
+        await model.loadCard()
+        XCTAssertEqual(model.cardSummary?.id, serverPlantId)
+        guard case let .loaded(entries) = model.wateringHistoryState else {
+            return XCTFail("Expected canonical history")
+        }
+        XCTAssertEqual(entries.map(\.id), [voidedId, activeId])
+        XCTAssertEqual(entries.map(\.state), ["voided", "active"])
+        XCTAssertEqual(entries.map(\.occurredLocalDate), ["2026-11-03", "2026-11-03"])
+        await model.loadCard()
+        XCTAssertEqual(model.cardSummary?.id, serverPlantId)
+        XCTAssertEqual(model.wateringHistoryState, .unavailable)
+        await model.loadCard()
+        XCTAssertNil(model.cardSummary)
+        XCTAssertEqual(model.cardState, .unavailable)
+        XCTAssertEqual(model.wateringHistoryState, .unavailable)
+        await model.loadCard()
+        XCTAssertEqual(model.wateringHistoryState, .loaded([]))
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 4)
+        XCTAssertTrue(requests.allSatisfy {
+            $0.httpMethod == "GET" && $0.url?.lastPathComponent == "sync"
+        })
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(pending.isEmpty)
+        await api.bindSyncSession(nil)
+        await api.bindSyncSession(syncSession)
+        XCTAssertNil(model.cardSummary)
+        XCTAssertEqual(model.wateringHistoryState, .unavailable)
+        await model.loadCard()
+        let afterABA = await transport.capturedRequests()
+        XCTAssertEqual(afterABA.count, 4)
+    }
+
     private var syncSince: String { "2026-11-03T08:00:00.000001+00:00" }
     private var syncUntil: String { "2026-11-03T09:00:00.999999+00:00" }
     private var syncOwner: UUID { UUID(uuidString: "11111111-1111-4111-8111-111111111111")! }
