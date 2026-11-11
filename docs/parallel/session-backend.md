@@ -2,7 +2,7 @@
 
 Ты — второй из двух управляющих чатов Plants/Narat. Работай в отдельном Worktree на ветке `codex/plants-backend`. Выполняй работу, а не только планируй. Используй существующий Python-оркестратор с его Developer/Reviewer/QA для узких пакетов. Первый чат владеет iOS и объединением; на старте не создавай дополнительные деревья подагентов. Правила AGENTS.md обязательны: русский, короткий ответ, handoff после этапа, commit/push своей ветки, секреты/артефакты не публиковать.
 
-Сначала прочитай `AGENTS.md`, `docs/parallel/README.md`, свои ID в `docs/parallel/allocation.json`, текущий верх `docs/handoff_status.md`, Project State и `specs/001-plants-ios-mvp/tasks.md`. Перед run создай игнорируемый `docs/validation/automation/runs/parallel-backend.config.json` с publish только `codex/plants-backend` и явно используй `--config`. Default publish в main запрещён. Runtime-продуктовые checkbox сейчас 14/151; планирование их не меняло.
+Сначала прочитай `AGENTS.md`, `docs/parallel/README.md`, свои ID в `docs/parallel/allocation.json`, текущий верх `docs/handoff_status.md`, Project State и `specs/001-plants-ios-mvp/tasks.md`. При первом запуске создай игнорируемый `docs/validation/automation/runs/parallel-backend.config.json` с publish только `codex/plants-backend` и явно используй `--config`. Default publish в main запрещён. Runtime-продуктовые checkbox сейчас 14/151; планирование их не меняло.
 
 ## Результат и границы
 
@@ -20,7 +20,7 @@ T163 зависит от принятой T161, не от завершённой
 - Зафиксировать небольшой контракт `specs/001-plants-ios-mvp/contracts/monthly-access.md`: anchor регистрации постоянного аккаунта, UTC instant/короткие месяцы/29–31 число/високосный год; два starter и режимы по spec; Free=3, paid/trial=100; переходы trial→paid/restore/expiry без refill; API remaining/reset/error. Не подменять правила spec новым предположением; явную неразрешённую неоднозначность передать владельцу, продолжать независимые части.
 - Таблица переноса существующих consumed/reservations/ledger: считать сохранённый расход ровно раз, active leases/старые periods/retry не выдавать повторно. Неопределимый расход не обнулять молча. Применённые миграции не переписывать.
 - Controller-owned подготовка: новый `tools/automation/parallel_backend_quota_gate.py`, независимый temp PostgreSQL17/pgTAP clean/seeded-upgrade и **20 реальных одновременных соединений** на последний остаток, независимые IDs + same-operation replay/finalize/technical failure. Не заменять этот gate старым cap runner или наличием SQL файла. Проверить, что gate действительно ловит старые правила, без объявления ожидаемого провала успешной продуктовой приёмкой.
-- Создать новый точный manifest `tools/automation/tasks.parallel-backend-quota-sql.json` и branch config с отдельным check ID в **этой копии config**, не менять общий default config. Записать argv/mode/timeout и hash config в отчёте подготовки. Внешние принятые SHA — constraints, `depends_on` только для ID того же manifest. Validate/context/diff-check, handoff, commit/push подготовки перед run.
+- Создать новый точный manifest `tools/automation/tasks.parallel-backend-quota-sql.json` и branch config с отдельным check ID в **этой копии config**, не менять общий default config. Хранить argv/mode/timeout в конфигурации. Внешние принятые SHA — constraints, `depends_on` только для ID того же manifest. Выполни `prepare` и сохрани новые входы локальным коммитом.
 
 **B1, SQL и расход:**
 
@@ -34,7 +34,7 @@ T163 зависит от принятой T161, не от завершённой
 - Реальный production adapter/RPC args, серверные remaining/reset/стартеры/ошибки; purchase/restore/claim не меняют anchor/расход. Подготовить EN/PL error mapping и canonical fixtures, без фиктивного успеха.
 - Gate: actual handlers/adapter с mocked HTTP transport, Deno typecheck/full tests + SQL regression, независимые Review/QA по риску. Подготовку сохранить отдельно, запуск из чистого дерева с новым run-id.
 
-После каждого пакета: handoff, commit/push своей ветки; A передать ID, принятый SHA, контракт/fixtures, выполненные проверки/paths и ограничения. **Полный T163 остаётся открытым до проверки клиентского remaining/reset A (T036).** До этого B может продолжать независимую серверную работу. Simulator/iOS gates не запускай: они принадлежат A.
+После приёмки возьми отчёт engine и сводку `summary`. A передай ID, принятый SHA, контракт/fixtures, выполненные проверки/paths и ограничения. **Полный T163 остаётся открытым до проверки клиентского remaining/reset A (T036).** До этого B может продолжать независимую серверную работу. Simulator/iOS gates не запускай: они принадлежат A.
 
 ## Следующие пакеты и зависимости
 

@@ -1,5 +1,6 @@
 """Deterministic serial task queue, verification gates and recoverable acceptance."""
 
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import time
@@ -8,6 +9,7 @@ from .context import (SUMMARY_START, SUMMARY_END, combined_acceptance, make_delt
                       make_packet, route_level, route_models, selected_checks)
 from .process import error_excerpt, run
 from .preflight import candidate_comparison, verify_inputs
+from .reporting import activity, check_results
 from .repository import (apply_patch, changed_paths, contents, diff, fingerprint, git, manifest, require_clean)
 from .storage import State, atomic_json, atomic_text, checkpoint, digest
 
@@ -41,6 +43,18 @@ class Engine:
         self.save()
 
     def execute(self, resume=False):
+        self.started = time.monotonic()
+        invocation = {"started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                      "elapsed_seconds": None}
+        self.state.data.setdefault("invocations", []).append(invocation)
+        self.state.save()
+        try:
+            return self.execute_tasks(resume)
+        finally:
+            invocation["elapsed_seconds"] = round(time.monotonic() - self.started, 3)
+            self.state.save()
+
+    def execute_tasks(self, resume):
         attempted_this_run = 0
         if not self.state.data.get("initialized"):
             require_clean(self.root)
@@ -473,6 +487,7 @@ class Engine:
                     raise ValueError("Handoff summary markers missing")
                 start, end = text.index(SUMMARY_START) + len(SUMMARY_START), text.index(SUMMARY_END)
                 brief = (f"\n## Task Summary\n\n{task['id']}: проверки и Review/QA пройдены; публикация фиксируется в state.\n"
+                         f"{activity(record)}\n"
                          f"Отчёт: [{task['id']}](validation/automation/tasks/{task['id']}.md).\n"
                          "Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.\n")
                 publication = {"files": sorted(allowed | {report_path, "docs/handoff_status.md"}),
@@ -541,10 +556,10 @@ class Engine:
             self.stop(record, "WAITING", f"Publication failed: {error}")
 
     def report(self, task, record):
-        checks = "\n".join(f"- {name}: {value['status']}, {value['mode']}, exit {value['exit_code']}; log `{value['stdout']}`"
-                           for name, value in record["checks"].items())
+        checks = "\n".join(check_results(record))
         return (f"# {task['id']}\n\n{task['description']}\n\n{record['summary'].get('summary', '')}\n\n"
                 f"Изменённые файлы: {', '.join(record.get('changed_files', [])) or 'нет'}.\n\n"
+                f"{activity(record)}\n\n"
                 f"Проверки:\n\n{checks}\n\nReview и QA подтвердили критерии manifest; "
                 "это не автоматическое закрытие полной продуктовой задачи.\n\n"
                 f"Решения: {json.dumps(record['summary'].get('decisions', []), ensure_ascii=False)}.\n\n"
