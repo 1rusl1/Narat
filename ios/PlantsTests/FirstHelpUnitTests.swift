@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import ImageIO
 @testable import Plants
 
 @MainActor
@@ -18,6 +19,27 @@ final class FirstHelpUnitTests: XCTestCase {
         return data
     }
 
+    private func assertCompleteJPEG(
+        _ data: Data, expectedSize: CGSize? = nil, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            XCTFail("JPEG source could not be opened", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(CGImageSourceGetType(source) as String?, "public.jpeg", file: file, line: line)
+        XCTAssertEqual(CGImageSourceGetStatus(source), .statusComplete, file: file, line: line)
+        XCTAssertEqual(CGImageSourceGetStatusAtIndex(source, 0), .statusComplete, file: file, line: line)
+        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+        guard let decoded = CGImageSourceCreateImageAtIndex(source, 0, options) else {
+            XCTFail("JPEG pixels could not be decoded (\(data.count) bytes)", file: file, line: line)
+            return
+        }
+        if let expectedSize {
+            XCTAssertEqual(CGSize(width: decoded.width, height: decoded.height), expectedSize, file: file, line: line)
+        }
+        XCTAssertFalse(AnalysisPhotoInput.containsGpsOrExifMetadata(data), file: file, line: line)
+    }
+
     func testLargeOver10MBPhotoCompressesStripsMetadataAndResizesTo1568Px() throws {
         let largeRawData = photoFixture(largeOver10MB: true)
         XCTAssertGreaterThan(largeRawData.count, 10 * 1024 * 1024)
@@ -26,9 +48,22 @@ final class FirstHelpUnitTests: XCTestCase {
         XCTAssertLessThanOrEqual(prepared.cloudNormalizedJPEG.count, AnalysisPhotoInput.maxCloudBytes)
         XCTAssertLessThanOrEqual(max(prepared.aiWidthPx, prepared.aiHeightPx), 1568)
         XCTAssertTrue(prepared.strippedExifAndGps)
+        assertCompleteJPEG(prepared.cloudNormalizedJPEG)
+        assertCompleteJPEG(prepared.aiVisionJPEG, expectedSize: CGSize(width: prepared.aiWidthPx, height: prepared.aiHeightPx))
         XCTAssertThrowsError(try input.preparePhoto(from: Data([0x00, 0x01, 0x02, 0x03]))) { error in
             XCTAssertEqual(error as? PhotoInputError, .unreadableOrCorruptImage)
         }
+    }
+
+    func testCatalogueMonsteraPhotoProducesCompleteJPEGsWithRealDimensions() throws {
+        let bundle = Bundle(for: Self.self)
+        let photo = try XCTUnwrap(bundle.url(forResource: "48854fc7b2b6d711a508c396", withExtension: "jpg"))
+        let prepared = try AnalysisPhotoInput().preparePhoto(from: Data(contentsOf: photo))
+        let expectedSize = CGSize(width: 960, height: 1091)
+        XCTAssertEqual(prepared.aiWidthPx, 960)
+        XCTAssertEqual(prepared.aiHeightPx, 1091)
+        assertCompleteJPEG(prepared.aiVisionJPEG, expectedSize: expectedSize)
+        assertCompleteJPEG(prepared.cloudNormalizedJPEG, expectedSize: expectedSize)
     }
 
     func testDefaultHasNoConfirmedAccessOrFabricatedResult() {
