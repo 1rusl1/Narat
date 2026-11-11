@@ -2656,14 +2656,49 @@ extension CollectionWireTests {
         }
     }
 
+    func testDiagnosisMalformedTicketCannotProceedToUpload() async throws {
+        let path = "https://example.invalid/functions/v1/plants-api/media/uploads/\(serverPlantId.uuidString.lowercased())"
+        let valid = Data(diagnosisTicket(url: path, photoId: serverPlantId).utf8)
+        let original = try XCTUnwrap(try JSONSerialization.jsonObject(with: valid) as? [String: Any])
+        for (key, wrongValue) in [("storage_bucket", nil), ("storage_path", 1)] as [(String, Int?)] {
+            var malformed = original
+            if let wrongValue {
+                malformed[key] = wrongValue
+            } else {
+                malformed.removeValue(forKey: key)
+            }
+            let json = try syncJSON(malformed)
+            let transport = CatalogueTransport([.http(200, json)])
+            let api = client(transport)
+            await api.bindSyncSession(accessSession)
+            let context = try await api.captureSyncContext(ownerId: accessOwner)
+            do {
+                _ = try await api.issueAnalysisUpload(jpeg: Data([1]), operationId: operationId, locale: .en, context: context)
+                XCTFail("Malformed storage metadata was accepted")
+            } catch is DecodingError {}
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["POST"])
+        }
+    }
+
     func testDiagnosisStatusUnknownFailureAndWrongJobRemainDistinct() async throws {
         let id = operationId
         let result = #"{"analysis_id":"\#(serverPlantId.uuidString)","job_id":"\#(id.uuidString)","kb_release_id":"\#(serverPlantId.uuidString)","mode":"diagnosis","identification_status":"unknown","plant_id":null,"genus_id":null,"diagnosis_status":"insufficient_data","selected_condition_id":null,"candidates":[],"visual_markers":[],"evidence_basis":[],"limitations":["Photo too unclear."],"first_action_summary":null,"control_interval_days":null,"plan_availability":"diagnosis_unresolved","analysis_receipt":"test-receipt"}"#
+        let malformedCandidateResult = result.replacingOccurrences(
+            of: #""candidates":[]"#,
+            with: #""candidates":[{"condition_id":"test","rank":3,"confidence":0.5}]"#
+        )
+        let outOfRangeConfidence = result.replacingOccurrences(
+            of: #""candidates":[]"#,
+            with: #""candidates":[{"condition_id":"test","rank":1,"confidence":2}]"#
+        )
         let transport = CatalogueTransport([
             .http(200, diagnosisJob(id: id, status: "succeeded", result: result)),
             .http(200, diagnosisJob(id: id, status: "failed", errorCode: #""PROVIDER_UNAVAILABLE""#)),
             .http(200, diagnosisJob(id: serverPlantId, status: "running")),
             .http(200, diagnosisJob(id: id, status: "succeeded")),
+            .http(200, diagnosisJob(id: id, status: "succeeded", result: malformedCandidateResult)),
+            .http(200, diagnosisJob(id: id, status: "succeeded", result: outOfRangeConfidence)),
         ])
         let api = client(transport)
         await api.bindSyncSession(accessSession)
@@ -2675,7 +2710,7 @@ extension CollectionWireTests {
         let failed = try await api.fetchAnalysisJob(id: id, mode: .diagnosis, locale: .en, context: context)
         XCTAssertNil(failed.result)
         XCTAssertEqual(failed.errorCode, "PROVIDER_UNAVAILABLE")
-        for _ in 0..<2 {
+        for _ in 0..<4 {
             do {
                 _ = try await api.fetchAnalysisJob(id: id, mode: .diagnosis, locale: .en, context: context)
                 XCTFail("Invalid job response was accepted")
@@ -2687,7 +2722,7 @@ extension CollectionWireTests {
             XCTFail("Stale request dispatched")
         } catch SyncWireValidationError.invalidSession {}
         let requests = await transport.capturedRequests()
-        XCTAssertEqual(requests.count, 4)
+        XCTAssertEqual(requests.count, 6)
         XCTAssertTrue(requests.allSatisfy { $0.httpMethod == "GET" && $0.url?.lastPathComponent == id.uuidString.lowercased() })
     }
 }

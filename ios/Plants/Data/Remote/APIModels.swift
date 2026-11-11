@@ -1032,6 +1032,8 @@ enum AnalysisHTTPError: Error, Equatable {
 }
 
 struct AnalysisUploadTicket: Decodable, Sendable {
+    let storageBucket: String
+    let storagePath: String
     let photoAssetId: UUID
     let signedUploadURL: URL
     let expiresInSeconds: Int
@@ -1039,6 +1041,8 @@ struct AnalysisUploadTicket: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case photoAssetId = "photo_asset_id"
+        case storageBucket = "storage_bucket"
+        case storagePath = "storage_path"
         case signedUploadURL = "signed_upload_url"
         case expiresInSeconds = "expires_in_seconds"
         case maxByteSize = "max_byte_size"
@@ -1090,7 +1094,11 @@ struct AnalysisJobWire: Decodable, Sendable {
         if status == .succeeded {
             guard let result, result.jobId == jobId, result.mode == mode,
                   !result.analysisReceipt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  result.identificationStatus != .identified || result.plantId?.isEmpty == false
+                  result.identificationStatus != .identified || result.plantId?.isEmpty == false,
+                  result.candidates.count <= 2,
+                  result.candidates.allSatisfy({
+                      (1...2).contains($0.rank) && (0...1).contains($0.confidence)
+                  })
             else { throw AnalysisHTTPError.invalidResponse }
         } else if result != nil {
             throw AnalysisHTTPError.invalidResponse

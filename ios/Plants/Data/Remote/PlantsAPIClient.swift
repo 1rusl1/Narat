@@ -506,6 +506,8 @@ extension PlantsAPIClient {
             request, locale: locale, context: context, status: [200]
         )
         guard (0...60).contains(ticket.expiresInSeconds), ticket.maxByteSize >= jpeg.count,
+              !ticket.storageBucket.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !ticket.storagePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               isAnalysisUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId) else {
             throw AnalysisHTTPError.invalidUpload
         }
