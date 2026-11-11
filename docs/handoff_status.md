@@ -1,9 +1,24 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** Приняты подключение к стенду `b62645b` и исправление формы входа `e8b6069`. Перед сборкой для ручного прогона разделить UUID загрузки и создания задания, которые конфликтуют в PostgreSQL. Живой диагноз ждёт обновления стенда, ключа Anthropic и входа в приложении.
+**Обновлено 2026-11-11.** Собрана и запущена staging `.app` из `8b1f131`. Вход открыт, фото Monstera добавлено в Simulator. Сквозной прогон ждёт готовности staging API/worker, ключа Anthropic и входа тестового аккаунта в приложении.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## Сборка Simulator с раздельными UUID загрузки и задания
+
+В `4753f2f` принят исходный коммит `8b1f131d4e6c92660192b13d3f422236376af902`. В `AnalysisFlowModel.swift` заморожен отдельный UUID для загрузки. `PlantsApp.swift` отправляет его на `upload-ticket` и сохраняет исходный UUID на `analysis/jobs`. В `CollectionWireTests.swift` проверены раздельные UUID и неизменные тела запросов при потере ответов билета и создания задания, подтверждение потерянного PUT и чтение задания по возвращённому ID.
+
+Локально прошли diff-check, сборка и 204 Swift-теста без пропусков, Simulator smoke, Review и QA. По результатам `q-352f60300aabc9e3fb3f5d82` целевой тест `testStagingAnalysisRecoversLostUploadAndJobRepliesWithDistinctStableOperations` прошёл. Стендовая сборка отдельно прошла `xcodebuild`, установку, запуск и визуальную проверку пустой формы `Test account`. Фото Monstera из `catalogue/releases/skeleton-300-v1/media/48854fc7b2b6d711a508c396.jpg` добавлено через `simctl addmedia`. [Отчёт](validation/automation/tasks/parallel-ios-diagnosis-operation-ids.md).
+
+Установка и запуск существующей `.app` на выделенном Simulator.
+
+```sh
+xcrun simctl install 32009F39-32EF-426B-A91E-31B368D6C27E '/Users/ruslansabirov/.codex/worktrees/d09a/Plants/DerivedData/StagingDiagnosis-8b1f131d4e6c/Build/Products/Debug-iphonesimulator/Plants.app'
+xcrun simctl launch --terminate-running-process 32009F39-32EF-426B-A91E-31B368D6C27E app.narat.plants.stagingdiagnosis --narat-staging-analysis
+```
+
+Backend принял `368d0f2` и начал обновление `narat-staging`. Готовность сервера и настройка Anthropic ещё не подтверждены. В приложении сессия тестовой учётки и путь до реального результата пока не проверены. После подтверждения API/worker и Anthropic войти через `Test account`, открыть `Diagnose a plant problem`, выбрать Monstera и затем неоднозначное фото. Зафиксировать фактические результаты обоих прогонов. T037–T039 и T153 открыты.
 
 ## Подключение к стенду и форма входа
 
@@ -11,7 +26,7 @@
 
 Оба этапа прошли diff-check, сборку и 204 Swift-теста без пропусков, Simulator smoke, Review и QA. Установил staging-сборку исходников `b6c3f16` на выделенный Simulator и визуально подтвердил `Test account`, `Email`, `Password` и недоступный `Sign in` при пустых полях. Вход из приложения и живой диагноз не запускались. [Подключение](validation/automation/tasks/parallel-ios-staging-diagnosis.md), [форма](validation/automation/tasks/parallel-ios-staging-account-form.md).
 
-QA backend выявил конфликт двух команд с одним UUID в общей `operation_receipts`. Следующий шаг — заморозить отдельный UUID загрузки рядом с UUID создания задания, проверить неизменность каждого тела при потере ответа, принять исправление и собрать новую `.app`. T037–T039 и T153 открыты.
+QA backend выявил конфликт двух команд с одним UUID в общей `operation_receipts`. Исправление принято отдельным этапом выше.
 
 ## HTTP-транспорт фотоанализа принят
 
