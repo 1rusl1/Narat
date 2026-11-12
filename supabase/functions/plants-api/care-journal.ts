@@ -48,7 +48,8 @@ export async function handleCollectionCommand(
   if (
     !record(body) ||
     (body.command_name !== "care.record" && body.command_name !== "care.undo" &&
-      body.command_name !== "care.correct_date")
+      body.command_name !== "care.correct_date" &&
+      body.command_name !== "care.first_aid.record")
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
@@ -76,6 +77,7 @@ export async function handleCollectionCommand(
   }
   if (!record(payload)) throw invalid();
   const isRecord = body.command_name === "care.record";
+  const isFirstAid = body.command_name === "care.first_aid.record";
   const isUndo = body.command_name === "care.undo";
   if (
     Object.keys(payload).length !== (isUndo ? 1 : 3) ||
@@ -83,7 +85,8 @@ export async function handleCollectionCommand(
     (!isUndo && (typeof payload.occurred_at !== "string" ||
       typeof payload.timezone !== "string"))
   ) throw invalid();
-  const entryId = isRecord ? null : requireUuid(payload.entry_id, "entry_id");
+  if (isFirstAid) requireUuid(payload.job_id, "job_id");
+  const entryId = isRecord || isFirstAid ? null : requireUuid(payload.entry_id, "entry_id");
 
   let response;
   try {
@@ -112,7 +115,9 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         404,
         "NOT_FOUND",
-        "The plant or care entry was not found.",
+        isFirstAid
+          ? "The plant or first-aid action was not found."
+          : "The plant or care entry was not found.",
       );
     }
     if (error.code === "23505") {
@@ -132,6 +137,8 @@ export async function handleCollectionCommand(
     typeof data.entry_id !== "string" ||
     !uuid.test(data.entry_id) || typeof data.watermark !== "string" ||
     !Number.isFinite(Date.parse(data.watermark)) ||
+    (isFirstAid && data.control_id !== null &&
+      (typeof data.control_id !== "string" || !uuid.test(data.control_id))) ||
     (entryId !== null && data.entry_id !== entryId) ||
     (isUndo
       ? data.state !== "voided" || typeof data.reversal_id !== "string" ||

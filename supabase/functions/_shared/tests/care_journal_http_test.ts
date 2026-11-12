@@ -73,12 +73,14 @@ function fixture(options: { anonymous?: boolean; errorCode?: string } = {}) {
         }, { status: 400 });
       }
       const undo = body.p_command_name === "care.undo";
+      const firstAid = body.p_command_name === "care.first_aid.record";
       return Response.json({
         plant_id: plant,
         entry_id: entry,
         reversal_id: undo ? reversal : null,
         state: undo ? "voided" : "active",
         watermark: "2026-11-11T19:40:00.123456+03:00",
+        ...(firstAid && { control_id: null }),
       });
     },
   });
@@ -138,6 +140,27 @@ Deno.test("Manual care record and undo reuse the command wire and canonical SQL 
     p_payload: { entry_id: entry },
   });
   assertEquals(f.calls[3], f.calls[2]);
+});
+
+Deno.test("First-aid record sends the canonical job reference and accepts a null control", async () => {
+  const f = fixture();
+  const job = "17000000-0000-4000-8000-000000000041";
+  const payload = { job_id: job, occurred_at: "2025-10-11T23:30:00Z", timezone: "Europe/Warsaw" };
+  const body = {
+    operation_id: recordOp,
+    plant_id: plant,
+    command_name: "care.first_aid.record",
+    payload_json: JSON.stringify(payload),
+  };
+  const response = await f.send(body);
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).control_id, null);
+  assertEquals(f.calls[0], {
+    p_owner_id: owner, p_plant_id: plant, p_operation_id: recordOp,
+    p_command_name: "care.first_aid.record", p_payload: payload,
+  });
+  assertEquals((await f.send({ ...body, payload_json: JSON.stringify({ ...payload, job_id: null }) })).status, 400);
+  assertEquals((await fixture({ errorCode: "P0002" }).send(body)).status, 404);
 });
 
 Deno.test("Manual care rejects injected owner, invalid payload and guest before creating a receipt", async () => {

@@ -1,10 +1,10 @@
 # Narat — текущий статус и передача работы
 
-## B — V19 один контроль первой помощи, контракт, 12 ноября 2026
+## B — V19 один контроль первой помощи, локальный кандидат, 12 ноября 2026
 
 Раздел Watering у WVU описывает общую периодичность и отдельную повторную проверку уже влажного грунта. Источник Wisconsin для Monstera описывает состояние грунта между поливами. Проверенные материалы не дают видового срока от даты полива, поэтому V11 live с числовой датой открыт, профиль Monstera остаётся с null. [WVU Extension](https://extension.wvu.edu/files/d/d82924be-5fb5-480d-af6d-b1d0a23c1806/wlg-177-houseplants-digital.pdf) · [Wisconsin Extension](https://hort.extension.wisc.edu/articles/monstera-deliciosa/).
 
-Выбран V19/T135: запись применимой первой помощи из канонического диагноза и один pending control при подтверждённом сроке. Контракт использует `POST /commands`, `/sync` и существующий undo. Числовой случай проверяется на fixtures, действующий KB не меняется. Следом SQL/Edge, Review/QA и staging smoke. Наблюдение/фото, повторы, 024 и StoreKit вне пакета. Недельный остаток на старте — 17%. [Контракт](../specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md).
+Выбран V19/T135. Контракт `874b049`, миграция 028, `care-journal.ts`, Deno/SQL fixtures и gate. `care.first_aid.record` записывает применимую первую помощь из канонического диагноза и один pending control только при подтверждённом сроке. Используются существующие `/sync`, receipts и undo. Локально прошли пять целевых Deno-проверок, typecheck обоих entrypoints, diff-check и по 770 pgTAP на clean/upgrade (16 новых). После первого SQL-прогона исправлена ссылка на отсутствующий столбец старой схемы. Числовой случай проверен на fixtures, действующий KB сохранён. Следом Review/QA и staging smoke. Наблюдение/фото, повторы, 024 и StoreKit вне пакета. Недельный остаток — 17%. [Контракт](../specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md).
 
 ## B — V11/V19 следующая проверка на staging, 12 ноября 2026
 
