@@ -1,10 +1,14 @@
 # Narat — текущий статус и передача работы
 
-## B — T150 personal photo save in Review/QA, 12 November 2026
+## B — T150 personal photo save verified on staging, 12 November 2026
 
 This server candidate starts from `acb713d`. Migration 020 extends the existing `plant.create` command with an explicit confirmed catalogue taxon and owned completed identification job. It binds the source ready photo and flow in the same transaction as the plant and receipt. The private read route verifies original bytes and only resolves the owner's current main photo. The existing catalogue save remains available. A received the [scan save wire](../specs/001-plants-ios-mvp/contracts/identification-photo-http.md).
 
-Controller checks passed Deno entrypoint typecheck, 41 targeted HTTP tests and 634 pgTAP assertions in each clean/upgrade PostgreSQL database. Photos, SQL owners and provider replies in those gates were fixtures. Next accept `tasks.t150-identification-plant-photo.json`, deploy migration 020 and `plants-api` to staging, and verify the already-completed Monstera job through save, replay and private read. In parallel inspect the existing guest draft SQL and Edge composition for the following seven-day claim packet. T150 remains open.
+Controller checks passed Deno entrypoint typecheck, 41 targeted HTTP tests and 634 pgTAP assertions in each clean/upgrade PostgreSQL database. Photos, SQL owners and provider replies in those gates were fixtures. Exact-diff Review and QA accepted `0d7a3ea` and published `c81343c`. Dry-run listed only 020. The migration and `plants-api` were deployed to `narat-staging`.
+
+The real test account saved identification job `16f742f1-331f-4707-936b-efbe43be56a5` as plant `197bd854-6324-44cb-81e2-29d3cab37d13` with original photo `9fc1c377-8e42-465e-be7a-f1d0fae8f953`. The owner fetched the exact 442,566 bytes in two sessions, SHA-256 `bd004e951b155a37235a6dd80c019768db160321b40015ec6b490a1b009bbb3a`. Exact replay preserved the receipt and one plant. A changed payload and a second operation on the same photo returned 409. Sync kept the previous card, the old diagnosis was unchanged, and unauthenticated photo GET returned 401. Linked SQL checked the two-way asset and flow links, the private Storage row and a second permanent owner's denied metadata lookup. HTTP A/B isolation passed on fixtures. A received the result and the request for a second-owner live HTTP check.
+
+The current guest handlers are disconnected and call RPC signatures or schema fields absent from staging. Next implement installation-bound anonymous identification, immutable seven-day draft, target-owned claim and server-side private copy, then run local and live verification with the existing staging Auth settings. T150 is still open for guest transfer and the iOS live flow.
 
 ## B — T150/T153 server identification verified on staging, 12 November 2026
 
