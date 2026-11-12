@@ -8,6 +8,11 @@ INSERT INTO public.plants(id, owner_id, plant_id, creation_source, display_name)
     ('17400000-0000-4000-8000-000000000011', '17400000-0000-4000-8000-000000000001', 'monstera_deliciosa', 'identification', 'First-aid plant'),
     ('17400000-0000-4000-8000-000000000012', '17400000-0000-4000-8000-000000000001', 'monstera_deliciosa', 'identification', 'Other plant'),
     ('17400000-0000-4000-8000-000000000013', '17400000-0000-4000-8000-000000000002', 'monstera_deliciosa', 'identification', 'Foreign plant');
+INSERT INTO public.condition_snapshots(id, owner_id, plant_id, version) VALUES
+    ('17400000-0000-4000-8000-000000000021','17400000-0000-4000-8000-000000000001','17400000-0000-4000-8000-000000000011',1),
+    ('17400000-0000-4000-8000-000000000022','17400000-0000-4000-8000-000000000001','17400000-0000-4000-8000-000000000011',2);
+UPDATE public.plants SET current_condition_snapshot_id='17400000-0000-4000-8000-000000000021'
+WHERE id='17400000-0000-4000-8000-000000000011';
 
 -- This synthetic policy tests numeric scheduling. No staged or live profile is changed.
 INSERT INTO public.condition_profiles(kb_release_id, condition_id, version, state, protocol, field_evidence)
@@ -27,10 +32,10 @@ FROM public.kb_releases WHERE state = 'published';
 CREATE TEMP TABLE first_aid_jobs(slot int, job_id uuid, analysis_id uuid);
 INSERT INTO first_aid_jobs SELECT n, gen_random_uuid(), gen_random_uuid() FROM generate_series(1,5) n;
 INSERT INTO public.analysis_jobs(id, owner_id, flow_id, intent, add_method, plant_id, mode, kb_release_id,
-    prompt_version, operation_id, payload_hash, locale, quota_kind, quota_state, state)
+    prompt_version, operation_id, payload_hash, locale, snapshot_id, quota_kind, quota_state, state)
 SELECT j.job_id, '17400000-0000-4000-8000-000000000001', gen_random_uuid(), 'problem', 'scan',
     '17400000-0000-4000-8000-000000000011', 'diagnosis', k.id, 'fixture', gen_random_uuid(),
-    'fixture', 'en', 'starter_diagnosis', 'consumed', 'succeeded'
+    'fixture', 'en', '17400000-0000-4000-8000-000000000021', 'starter_diagnosis', 'consumed', 'succeeded'
 FROM first_aid_jobs j CROSS JOIN public.kb_releases k WHERE k.state = 'published';
 INSERT INTO public.diagnosis_job_runtime(job_id, catalogue_release_id, projection, repeat_context)
 SELECT j.job_id, c.id, jsonb_build_object('analysis_id', j.analysis_id,
@@ -71,6 +76,18 @@ SELECT is(pg_temp.first_aid_status(1,'17400000-0000-4000-8000-000000000002'), NU
 SELECT ok(NOT (pg_temp.first_aid_status(5) ? 'first_aid_action'), 'healthy GET has no recordable action');
 SELECT ok(NOT ((SELECT public.diagnosis_job_payload(job_id) FROM first_aid_jobs WHERE slot=1) ? 'first_aid_action'),
     'base payload and receipt wire are unchanged');
+
+CREATE TEMP TABLE first_aid_current AS SELECT pg_temp.first_aid_status(1) AS body;
+UPDATE public.plants SET current_condition_snapshot_id='17400000-0000-4000-8000-000000000022'
+WHERE id='17400000-0000-4000-8000-000000000011';
+SELECT is(pg_temp.first_aid_status(1), (SELECT body - 'first_aid_action' FROM first_aid_current),
+    'changed conditions hide the action while preserving the exact historical result');
+SELECT throws_ok($q$SELECT pg_temp.first_aid(1,gen_random_uuid())$q$,
+    'P0002','FIRST_AID_ACTION_NOT_FOUND','command rechecks current conditions');
+UPDATE public.plants SET current_condition_snapshot_id='17400000-0000-4000-8000-000000000021'
+WHERE id='17400000-0000-4000-8000-000000000011';
+SELECT is(pg_temp.first_aid_status(1), (SELECT body FROM first_aid_current),
+    'the original snapshot restores the otherwise eligible action');
 
 CREATE TEMP TABLE first_aid_op AS SELECT gen_random_uuid() AS id;
 CREATE TEMP TABLE first_aid_receipt AS SELECT pg_temp.first_aid(1,id) AS body FROM first_aid_op;
