@@ -1,9 +1,16 @@
 import SwiftUI
 
+struct GuestIdentificationActions {
+    let busy: Bool
+    let failed: Bool
+    let save: (PhotoIdentificationSelection) -> Void
+}
+
 public struct PreliminaryResultView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
     private var catalogueConnection: CatalogueConnection? = nil
+    private var guestActions: GuestIdentificationActions? = nil
     @State private var saveLocked = false
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
@@ -11,10 +18,12 @@ public struct PreliminaryResultView: View {
         self.languageStore = languageStore
     }
 
-    init(model: AnalysisFlowModel, languageStore: LanguageStore, catalogueConnection: CatalogueConnection?) {
+    init(model: AnalysisFlowModel, languageStore: LanguageStore, catalogueConnection: CatalogueConnection?,
+         guestActions: GuestIdentificationActions? = nil) {
         self.model = model
         self.languageStore = languageStore
         self.catalogueConnection = catalogueConnection
+        self.guestActions = guestActions
     }
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
@@ -42,6 +51,14 @@ public struct PreliminaryResultView: View {
                                 expectedPhotoId: confirmed.photoAssetId, selectionLocked: $saveLocked
                             ) { EmptyView() }
                             .id(confirmed.jobId)
+                        } else if let guestActions, let session = catalogueConnection?.snapshot,
+                                  session.isAnonymous, session.session.userId == confirmed.ownerId {
+                            Button("Sign in to save") { guestActions.save(confirmed) }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(guestActions.busy)
+                                .accessibilityIdentifier("staging.guest.draft.save")
+                            if guestActions.busy { ProgressView("Preparing your plant…") }
+                            if guestActions.failed { Text("Couldn’t prepare your plant. Try again.") }
                         }
                     } else if model.canConfirmPhotoIdentification {
                         Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
@@ -114,7 +131,7 @@ public struct PreliminaryResultView: View {
             }
             .accessibilityIdentifier("analysis.catalogue.button")
         }
-        .disabled(catalogueConnection != nil && saveLocked)
+        .disabled((catalogueConnection != nil && saveLocked) || guestActions?.busy == true)
         .buttonStyle(.bordered)
     }
 }

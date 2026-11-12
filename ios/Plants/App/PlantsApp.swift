@@ -1,5 +1,6 @@
 import SwiftUI
 #if DEBUG && targetEnvironment(simulator)
+import Observation
 import Supabase
 #endif
 
@@ -35,6 +36,9 @@ struct RootContainerView: View {
     @State private var stagingResume: CatalogueResumeSelection?
     @State private var stagingResumeLocked = false
     @State private var stagingSpecies: PublishedSpeciesCard?
+    @State private var stagingGuestClaim: StagingGuestPhotoClaim?
+    @State private var showingGuestTransfer = false
+    @State private var openClaimCollection = false
 #endif
 #if DEBUG
     @State private var fixtureContext: CatalogueUIFixtureContext?
@@ -130,7 +134,8 @@ struct RootContainerView: View {
                 case .analyzing, .preliminaryResult, .diagnosticRefinement:
                     PreliminaryResultView(
                         model: analysisModel, languageStore: languageStore,
-                        catalogueConnection: isStagingAnalysis ? catalogue : nil
+                        catalogueConnection: isStagingAnalysis ? catalogue : nil,
+                        guestActions: guestIdentificationActions
                     )
                 default:
                     welcomeIntentSection
@@ -140,6 +145,20 @@ struct RootContainerView: View {
                     Button(isPolish ? "Moje rośliny" : "My plants") { showingCollection = true }
                         .accessibilityIdentifier("collection.open")
                 }
+#if DEBUG && targetEnvironment(simulator)
+                if analysisModel.router.flowState.currentStep == .selectIntent,
+                   let claim = stagingGuestClaim, let scope = catalogue?.snapshot, claim.readyToSignIn(for: scope) {
+                    Button("Sign in to finish saving") {
+                        stagingAccount = StagingAccountPresentation(connection: claim.connection, guestTransfer: true)
+                    }
+                    .accessibilityIdentifier("staging.guest.draft.resume")
+                }
+                if let claim = stagingGuestClaim, let scope = catalogue?.snapshot, claim.pending(for: scope),
+                   !showingGuestTransfer {
+                    Button("Finish saving your plant") { showingGuestTransfer = true }
+                        .accessibilityIdentifier("staging.guest.claim.resume")
+                }
+#endif
             }
         }
         .task { await prepareCatalogue() }
@@ -147,13 +166,45 @@ struct RootContainerView: View {
             if let catalogue { CatalogueCollectionView(connection: catalogue, polish: isPolish) }
         }
 #if DEBUG && targetEnvironment(simulator)
-        .sheet(item: $stagingAccount) { account in
-            StagingAccountView(connection: account.connection) { snapshot in
-                installStagingAnalysis(connection: account.connection, owner: snapshot.session.userId)
-                stagingAccount = nil
-                Task { await restoreStagingCard(connection: account.connection) }
+        .sheet(item: $stagingAccount, onDismiss: showPendingGuestTransfer) { account in
+            StagingAccountView(
+                connection: account.connection,
+                cancel: account.guestTransfer ? { stagingAccount = nil } : nil
+            ) { snapshot in finishStagingSignIn(account, snapshot: snapshot) }
+        }
+        .sheet(isPresented: $showingGuestTransfer, onDismiss: {
+            if openClaimCollection {
+                openClaimCollection = false
+                showingCollection = true
+            }
+        }) {
+            if let claim = stagingGuestClaim {
+                StagingGuestTransferView(claim: claim) {
+                    openClaimCollection = true
+                    showingGuestTransfer = false
+                }
             }
         }
+#endif
+    }
+
+    private var guestIdentificationActions: GuestIdentificationActions? {
+#if DEBUG && targetEnvironment(simulator)
+        guard let claim = stagingGuestClaim, catalogue?.snapshot?.isAnonymous == true else { return nil }
+        return GuestIdentificationActions(busy: claim.busy, failed: claim.failed) { selection in
+            Task { @MainActor in
+                switch await claim.createDraft(selection) {
+                case .ready:
+                    stagingAccount = StagingAccountPresentation(connection: claim.connection, guestTransfer: true)
+                case .expired:
+                    analysisModel.returnFromAnalysis()
+                case .failed:
+                    break
+                }
+            }
+        }
+#else
+        return nil
 #endif
     }
 
@@ -243,12 +294,62 @@ struct RootContainerView: View {
         }
         catalogue = connection
         languageStore.currentLocale = .en
+        if ProcessInfo.processInfo.arguments.contains("--narat-staging-guest-claim") {
+            let claim = StagingGuestPhotoClaim(
+                connection: connection, credential: KeychainInstallationCredentialStore().getOrCreateCredential()
+            )
+            stagingGuestClaim = claim
+            do {
+                _ = try await connection.sessionOwner()
+                let snapshot = try await connection.sessionSnapshot()
+                if snapshot.isAnonymous {
+                    try await claim.register(snapshot)
+                    installStagingAnalysis(connection: connection, owner: snapshot.session.userId,
+                                           guestCredential: claim.credential)
+                    return
+                }
+                if claim.pending(for: snapshot) {
+                    showingGuestTransfer = true
+                    installStagingAnalysis(connection: connection, owner: snapshot.session.userId)
+                    return
+                }
+            } catch {
+                startupFailed = true
+                return
+            }
+        }
         if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
             installStagingAnalysis(connection: connection, owner: snapshot.session.userId)
             await restoreStagingCard(connection: connection)
         } else {
             stagingAccount = StagingAccountPresentation(connection: connection)
         }
+    }
+
+    @MainActor
+    private func finishStagingSignIn(_ account: StagingAccountPresentation, snapshot: CatalogueSDKSnapshot) {
+        if account.guestTransfer {
+            do {
+                guard let claim = stagingGuestClaim else { throw SyncWireValidationError.invalidSession }
+                try claim.acceptDestination(snapshot)
+            } catch {
+                startupFailed = true
+                stagingAccount = nil
+                return
+            }
+            analysisModel.router.flowState.currentStep = .selectIntent
+        }
+        installStagingAnalysis(connection: account.connection, owner: snapshot.session.userId)
+        stagingAccount = nil
+        if !account.guestTransfer {
+            Task { await restoreStagingCard(connection: account.connection) }
+        }
+    }
+
+    private func showPendingGuestTransfer() {
+        guard let claim = stagingGuestClaim, let snapshot = catalogue?.snapshot,
+              claim.pending(for: snapshot) else { return }
+        showingGuestTransfer = true
     }
 
     @MainActor
@@ -275,12 +376,14 @@ struct RootContainerView: View {
     }
 
     @MainActor
-    private func installStagingAnalysis(connection: CatalogueConnection, owner: UUID) {
+    private func installStagingAnalysis(connection: CatalogueConnection, owner: UUID, guestCredential: String? = nil) {
         guard let api = connection.apiClient else { return }
         let identificationEnabled = ProcessInfo.processInfo.arguments.contains("--narat-staging-identification")
-        analysisModel.installAnalysisService(StagingAnalysisService(api: api, identificationEnabled: identificationEnabled) {
+        analysisModel.installAnalysisService(StagingAnalysisService(
+            api: api, identificationEnabled: identificationEnabled, guestCredential: guestCredential
+        ) {
             let snapshot = try await connection.sessionSnapshot()
-            guard !snapshot.isAnonymous, snapshot.session.userId == owner else {
+            guard snapshot.isAnonymous == (guestCredential != nil), snapshot.session.userId == owner else {
                 throw AnalysisServiceFailure.unavailable
             }
             let lease = try await api.captureSyncContext(ownerId: owner)
@@ -394,14 +497,16 @@ final class StagingAnalysisService: AnalysisService {
 
     private let api: PlantsAPIClient
     private let identificationEnabled: Bool
+    private let guestCredential: String?
     private let session: @MainActor () async throws -> SyncSessionLease
     private var previous: Progress?
     private var activeAttempt: UUID?
 
-    init(api: PlantsAPIClient, identificationEnabled: Bool = false,
+    init(api: PlantsAPIClient, identificationEnabled: Bool = false, guestCredential: String? = nil,
          session: @escaping @MainActor () async throws -> SyncSessionLease) {
         self.api = api
         self.identificationEnabled = identificationEnabled
+        self.guestCredential = guestCredential
         self.session = session
     }
 
@@ -417,7 +522,7 @@ final class StagingAnalysisService: AnalysisService {
     }
 
     func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
-        guard request.mode == .diagnosis || (identificationEnabled && request.mode == .identification) else {
+        guard (guestCredential == nil && request.mode == .diagnosis) || (identificationEnabled && request.mode == .identification) else {
             throw AnalysisServiceFailure.unavailable
         }
         try Task.checkCancellation()
@@ -440,7 +545,7 @@ final class StagingAnalysisService: AnalysisService {
         do {
             if progress.uploadAttempted, !progress.photoReady, let photoId = progress.photoId {
                 do {
-                    try await api.confirmAnalysisPhoto(id: photoId, locale: locale, context: lease)
+                    try await api.confirmAnalysisPhoto(id: photoId, locale: locale, context: lease, guestCredential: guestCredential)
                     try verify(lease, attempt: attempt)
                     progress.photoReady = true
                 } catch let error as APIErrorResponse where error.error.code == "CONFLICT" && error.error.retryable {
@@ -451,7 +556,7 @@ final class StagingAnalysisService: AnalysisService {
             if !progress.photoReady {
                 let jpeg = request.photo.aiVisionJPEG
                 let ticket = try await api.issueAnalysisUpload(
-                    jpeg: jpeg, operationId: request.uploadOperationId, locale: locale, context: lease
+                    jpeg: jpeg, operationId: request.uploadOperationId, locale: locale, context: lease, guestCredential: guestCredential
                 )
                 try verify(lease, attempt: attempt)
                 guard progress.photoId == nil || progress.photoId == ticket.photoAssetId else {
@@ -460,9 +565,9 @@ final class StagingAnalysisService: AnalysisService {
                 progress.photoId = ticket.photoAssetId
                 progress.uploadAttempted = true
                 if ticket.expiresInSeconds == 0 {
-                    try await api.confirmAnalysisPhoto(id: ticket.photoAssetId, locale: locale, context: lease)
+                    try await api.confirmAnalysisPhoto(id: ticket.photoAssetId, locale: locale, context: lease, guestCredential: guestCredential)
                 } else {
-                    try await api.uploadAnalysisJPEG(jpeg, ticket: ticket, locale: locale, context: lease)
+                    try await api.uploadAnalysisJPEG(jpeg, ticket: ticket, locale: locale, context: lease, guestCredential: guestCredential)
                 }
                 try verify(lease, attempt: attempt)
                 progress.photoReady = true
@@ -470,12 +575,12 @@ final class StagingAnalysisService: AnalysisService {
             guard let photoId = progress.photoId else { throw AnalysisHTTPError.invalidResponse }
             var job: AnalysisJobWire
             if let jobId = progress.jobId {
-                job = try await api.fetchAnalysisJob(id: jobId, mode: request.mode, locale: locale, context: lease)
+                job = try await api.fetchAnalysisJob(id: jobId, mode: request.mode, locale: locale, context: lease, guestCredential: guestCredential)
             } else {
                 job = try await api.createAnalysisJob(
                     operationId: request.operationId, mode: request.mode, photoAssetId: photoId,
                     flowId: request.mode == .identification ? request.flowId : nil,
-                    locale: locale, context: lease
+                    locale: locale, context: lease, guestCredential: guestCredential
                 )
             }
             try verify(lease, attempt: attempt)
@@ -487,7 +592,7 @@ final class StagingAnalysisService: AnalysisService {
                 guard clock.now < deadline else { throw AnalysisServiceFailure.unavailable }
                 try await Task.sleep(for: .seconds(1))
                 try verify(lease, attempt: attempt)
-                job = try await api.fetchAnalysisJob(id: job.jobId, mode: request.mode, locale: locale, context: lease)
+                job = try await api.fetchAnalysisJob(id: job.jobId, mode: request.mode, locale: locale, context: lease, guestCredential: guestCredential)
                 try verify(lease, attempt: attempt)
             }
             if job.status == .failed, job.errorCode?.hasPrefix("PROVIDER_") == true {
@@ -526,13 +631,215 @@ final class StagingAnalysisService: AnalysisService {
     }
 }
 
+@MainActor
+@Observable
+private final class StagingGuestPhotoClaim {
+    enum DraftOutcome { case ready, expired, failed }
+
+    private struct Journal: Codable, Equatable {
+        let guestOwner: UUID
+        let installationId: UUID
+        let jobId: UUID
+        let taxonId: UUID
+        let photoId: UUID
+        let draftOperationId: UUID
+        let prepareOperationId: UUID
+        let commitOperationId: UUID
+        var draft: GuestPhotoDraftReceipt?
+        var destinationOwner: UUID?
+        var proof: GuestPhotoClaimProof?
+        var receipt: GuestPhotoClaimReceipt?
+    }
+
+    let connection: CatalogueConnection
+    let credential: String
+    private var installationId: UUID?
+    private var journal: Journal?
+    private(set) var busy = false
+    private(set) var failed = false
+
+    init(connection: CatalogueConnection, credential: String) {
+        self.connection = connection
+        self.credential = credential
+        if let data = connection.guestPhotoClaimData() {
+            journal = try? JSONDecoder().decode(Journal.self, from: data)
+        }
+    }
+
+    func register(_ expected: CatalogueSDKSnapshot) async throws {
+        guard expected.isAnonymous, let api = connection.apiClient else { throw AnalysisHTTPError.invalidResponse }
+        let lease = try await connection.analysisLease(expected: expected)
+        let id = try await api.registerPhotoInstallation(credential: credential, context: lease)
+        guard connection.snapshot == expected else { throw SyncWireValidationError.invalidSession }
+        installationId = id
+    }
+
+    func createDraft(_ selection: PhotoIdentificationSelection) async -> DraftOutcome {
+        guard !busy, let expected = connection.snapshot, expected.isAnonymous,
+              selection.ownerId == expected.session.userId, let installationId,
+              let api = connection.apiClient else { return .failed }
+        busy = true
+        failed = false
+        defer { busy = false }
+        do {
+            var current: Journal
+            if let journal, journal.receipt == nil {
+                guard journal.guestOwner == expected.session.userId,
+                      journal.installationId == installationId, journal.jobId == selection.jobId,
+                      journal.taxonId == selection.taxonId, journal.photoId == selection.photoAssetId,
+                      journal.destinationOwner == nil else { throw AnalysisHTTPError.invalidResponse }
+                current = journal
+            } else {
+                current = Journal(
+                    guestOwner: expected.session.userId, installationId: installationId,
+                    jobId: selection.jobId, taxonId: selection.taxonId, photoId: selection.photoAssetId,
+                    draftOperationId: UUID(), prepareOperationId: UUID(), commitOperationId: UUID()
+                )
+                try store(current)
+            }
+            if current.draft == nil {
+                let lease = try await connection.analysisLease(expected: expected)
+                current.draft = try await api.createPhotoDraft(
+                    operationId: current.draftOperationId, jobId: current.jobId, taxonId: current.taxonId,
+                    credential: credential, context: lease
+                )
+                guard !Task.isCancelled, connection.snapshot == expected else { throw SyncWireValidationError.invalidSession }
+                try store(current)
+            }
+            return connection.snapshot == expected ? .ready : .failed
+        } catch let error as APIErrorResponse where error.error.code == "DRAFT_EXPIRED" {
+            guard !Task.isCancelled, connection.snapshot == expected else { return .failed }
+            discardJournal()
+            return .expired
+        } catch {
+            if !Task.isCancelled, connection.snapshot == expected { failed = true }
+            return .failed
+        }
+    }
+
+    func acceptDestination(_ expected: CatalogueSDKSnapshot) throws {
+        guard !expected.isAnonymous, connection.snapshot == expected,
+              var current = journal, current.draft != nil, current.destinationOwner == nil else {
+            throw SyncWireValidationError.invalidSession
+        }
+        current.destinationOwner = expected.session.userId
+        try store(current)
+    }
+
+    func readyToSignIn(for expected: CatalogueSDKSnapshot) -> Bool {
+        expected.isAnonymous && journal?.guestOwner == expected.session.userId
+            && journal?.draft != nil && journal?.destinationOwner == nil
+    }
+
+    func pending(for expected: CatalogueSDKSnapshot) -> Bool {
+        !expected.isAnonymous && journal?.destinationOwner == expected.session.userId && journal?.receipt == nil
+    }
+
+    var receipt: GuestPhotoClaimReceipt? {
+        guard let expected = connection.snapshot, !expected.isAnonymous,
+              journal?.destinationOwner == expected.session.userId else { return nil }
+        return journal?.receipt
+    }
+
+    func transfer() async {
+        guard !busy, let expected = connection.snapshot, pending(for: expected),
+              var current = journal, let draft = current.draft, let api = connection.apiClient else { return }
+        busy = true
+        failed = false
+        defer { busy = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            try await api.bindPhotoInstallation(id: current.installationId, credential: credential, context: lease)
+            if current.proof == nil {
+                current.proof = try await api.preparePhotoClaim(
+                    operationId: current.prepareOperationId, draftId: draft.draftId, credential: credential, context: lease
+                )
+                guard !Task.isCancelled, connection.snapshot == expected else { throw SyncWireValidationError.invalidSession }
+                try store(current)
+            }
+            guard let proof = current.proof else { throw AnalysisHTTPError.invalidResponse }
+            let receipt: GuestPhotoClaimReceipt
+            do {
+                receipt = try await api.commitPhotoClaim(
+                    operationId: current.commitOperationId, claimId: proof.claimId, credential: credential, context: lease
+                )
+            } catch let error as APIErrorResponse where error.error.code == "CONFLICT" && error.error.retryable {
+                // Try the frozen commit first. An earlier successful receipt can still replay after proof expiry.
+                let refreshed = try await api.preparePhotoClaim(
+                    operationId: current.prepareOperationId, draftId: draft.draftId, credential: credential, context: lease
+                )
+                guard refreshed.claimId == proof.claimId else { throw AnalysisHTTPError.invalidResponse }
+                guard !Task.isCancelled, connection.snapshot == expected else { throw SyncWireValidationError.invalidSession }
+                current.proof = refreshed
+                try store(current)
+                receipt = try await api.commitPhotoClaim(
+                    operationId: current.commitOperationId, claimId: proof.claimId, credential: credential, context: lease
+                )
+            }
+            guard !Task.isCancelled, connection.snapshot == expected else { throw SyncWireValidationError.invalidSession }
+            guard receipt.photoId == current.photoId else { throw AnalysisHTTPError.invalidResponse }
+            current.receipt = receipt
+            try store(current)
+        } catch let error as APIErrorResponse where error.error.code == "DRAFT_EXPIRED" {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            discardJournal()
+        } catch {
+            if !Task.isCancelled, connection.snapshot == expected { failed = true }
+        }
+    }
+
+    private func store(_ value: Journal) throws {
+        connection.storeGuestPhotoClaimData(try JSONEncoder().encode(value))
+        journal = value
+    }
+
+    private func discardJournal() {
+        journal = nil
+        connection.storeGuestPhotoClaimData(nil)
+    }
+}
+
+@MainActor
+private struct StagingGuestTransferView: View {
+    let claim: StagingGuestPhotoClaim
+    let openCollection: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if claim.receipt != nil {
+                Text("Plant and photo saved.")
+                    .accessibilityIdentifier("staging.guest.claim.status")
+                Button("Open My plants", action: openCollection)
+                    .accessibilityIdentifier("staging.guest.claim.collection")
+            } else if claim.failed {
+                Text("Couldn’t finish saving your plant.")
+                    .accessibilityIdentifier("staging.guest.claim.status")
+                Button("Retry transfer") { Task { await claim.transfer() } }
+                    .accessibilityIdentifier("staging.guest.claim.retry")
+            } else if let scope = claim.connection.snapshot, claim.pending(for: scope) {
+                ProgressView("Saving your plant and photo…")
+                    .accessibilityIdentifier("staging.guest.claim.status")
+            } else {
+                Button("Choose a photo") { dismiss() }
+                    .accessibilityIdentifier("staging.guest.claim.closed")
+            }
+            Button("Close") { dismiss() }
+        }
+        .padding()
+        .task { await claim.transfer() }
+    }
+}
+
 private struct StagingAccountPresentation: Identifiable {
     let id = UUID()
     let connection: CatalogueConnection
+    var guestTransfer = false
 }
 
 private struct StagingAccountView: View {
     let connection: CatalogueConnection
+    let cancel: (() -> Void)?
     let signedIn: @MainActor (CatalogueSDKSnapshot) -> Void
 
     @State private var email = ""
@@ -564,8 +871,15 @@ private struct StagingAccountView: View {
                 .accessibilityIdentifier("staging.signin")
             }
             .navigationTitle("Test account")
+            .toolbar {
+                if let cancel {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel", action: cancel).disabled(signingIn)
+                    }
+                }
+            }
         }
-        .interactiveDismissDisabled()
+        .interactiveDismissDisabled(cancel == nil || signingIn)
     }
 
     private func signIn() {
@@ -578,9 +892,12 @@ private struct StagingAccountView: View {
         Task { @MainActor in
             defer { signingIn = false }
             do {
-                _ = try await client.auth.signIn(email: loginEmail, password: loginPassword)
+                let session = try await client.auth.signIn(email: loginEmail, password: loginPassword)
                 let snapshot = try await connection.sessionSnapshot()
-                guard !snapshot.isAnonymous else { throw AnalysisServiceFailure.unavailable }
+                guard !snapshot.isAnonymous, snapshot.session.userId == session.user.id,
+                      snapshot.session.accessToken == session.accessToken else {
+                    throw AnalysisServiceFailure.unavailable
+                }
                 signedIn(snapshot)
             } catch {
                 failed = true

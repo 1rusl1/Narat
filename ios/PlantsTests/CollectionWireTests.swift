@@ -3188,6 +3188,62 @@ extension CollectionWireTests {
         }
     }
 
+    func testGuestPhotoClaimUsesSameInstallationAndRetriesExactCommit() async throws {
+        let credential = "fixture-guest-installation"
+        let installation = UUID(), draft = UUID(), proof = UUID(), photo = UUID()
+        let guest = NativeAuthSession(userId: UUID(), accessToken: "fixture-guest-bearer", expiresAt: .distantFuture)
+        let draftOp = UUID(), prepareOp = UUID(), commitOp = UUID()
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(["installation_id": installation.uuidString])),
+            .http(201, try syncJSON(["draft_id": draft.uuidString, "expires_at": syncUntil])),
+            .http(200, try syncJSON(["bound": true, "installation_id": installation.uuidString, "owner_id": accessOwner.uuidString])),
+            .http(200, try syncJSON(["claim_id": proof.uuidString, "draft_id": draft.uuidString, "proof_expires_at": syncUntil])),
+            .network,
+            .http(200, try syncJSON(["plant_id": serverPlantId.uuidString, "photo_id": photo.uuidString]))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(guest)
+        let guestLease = try await api.captureSyncContext(ownerId: guest.userId)
+        let registered = try await api.registerPhotoInstallation(credential: credential, context: guestLease)
+        XCTAssertEqual(registered, installation)
+        let created = try await api.createPhotoDraft(operationId: draftOp, jobId: operationId, taxonId: serverPlantId,
+                                                     credential: credential, context: guestLease)
+        XCTAssertEqual(created.draftId, draft)
+        await api.bindSyncSession(accessSession)
+        let permanent = try await api.captureSyncContext(ownerId: accessOwner)
+        do {
+            _ = try await api.preparePhotoClaim(operationId: prepareOp, draftId: draft,
+                                               credential: credential, context: guestLease)
+            XCTFail("An old guest lease must not reach claim prepare")
+        } catch SyncWireValidationError.invalidSession {}
+        try await api.bindPhotoInstallation(id: installation, credential: credential, context: permanent)
+        let prepared = try await api.preparePhotoClaim(operationId: prepareOp, draftId: draft,
+                                                       credential: credential, context: permanent)
+        XCTAssertEqual(prepared.claimId, proof)
+        do {
+            _ = try await api.commitPhotoClaim(operationId: commitOp, claimId: proof, credential: credential, context: permanent)
+            XCTFail("Expected lost response")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .networkConnectionLost)
+        }
+        let committed = try await api.commitPhotoClaim(operationId: commitOp, claimId: proof,
+                                                       credential: credential, context: permanent)
+        XCTAssertEqual(committed.plantId, serverPlantId)
+        XCTAssertEqual(committed.photoId, photo)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map { $0.url?.path.components(separatedBy: "/plants-api/").last },
+                       ["installations/register", "drafts", "installations/bind", "claims/prepare", "claims/commit", "claims/commit"])
+        guard requests.count == 6 else { return }
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Installation-Credential") == credential })
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "Authorization"), "Bearer \(guest.accessToken)")
+        XCTAssertEqual(requests[2].value(forHTTPHeaderField: "Authorization"), "Bearer \(accessSession.accessToken)")
+        XCTAssertEqual(requests[4].httpBody, requests[5].httpBody)
+        let committedBody = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[5].httpBody))
+        XCTAssertEqual(committedBody, ["operation_id": commitOp.uuidString.lowercased(), "claim_id": proof.uuidString.lowercased()])
+        let nonRedirecting = await transport.nonRedirectingRequests
+        XCTAssertEqual(nonRedirecting, 6)
+    }
+
     func testDiagnosisUploadAndReplaySendCanonicalWireWithBoundToken() async throws {
         let photo = serverPlantId
         let uploadOperationId = UUID()

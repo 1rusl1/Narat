@@ -404,7 +404,12 @@ final class CatalogueConnection {
     }
 
     func collectionLease(expected: CatalogueSDKSnapshot) async throws -> SyncSessionLease {
-        guard let apiClient, !expected.isAnonymous else { throw CatalogueSaveUnavailable.sessionChanged }
+        guard !expected.isAnonymous else { throw CatalogueSaveUnavailable.sessionChanged }
+        return try await analysisLease(expected: expected)
+    }
+
+    func analysisLease(expected: CatalogueSDKSnapshot) async throws -> SyncSessionLease {
+        guard let apiClient else { throw CatalogueSaveUnavailable.sessionChanged }
         try validate(expected)
         try await bind(expected)
         let lease = try await apiClient.captureSyncContext(ownerId: expected.session.userId)
@@ -412,6 +417,14 @@ final class CatalogueConnection {
         try validate(expected)
         return lease
     }
+
+#if DEBUG && targetEnvironment(simulator)
+    func guestPhotoClaimData() -> Data? { resumeDefaults.data(forKey: "staging.guest.photo.claim") }
+
+    func storeGuestPhotoClaimData(_ data: Data?) {
+        resumeDefaults.set(data, forKey: "staging.guest.photo.claim")
+    }
+#endif
 
     /// Current-owner metadata only, for guests and permanent users alike.
     /// Payload and receipt remain exclusively in SQLite.

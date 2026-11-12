@@ -1063,6 +1063,55 @@ struct AnalysisUploadedPhoto: Decodable, Sendable {
     }
 }
 
+struct PhotoInstallationRegistration: Decodable, Sendable {
+    let installationId: UUID
+    enum CodingKeys: String, CodingKey { case installationId = "installation_id" }
+}
+
+struct PhotoInstallationBinding: Decodable, Sendable {
+    let bound: Bool
+    let ownerId: UUID
+    let installationId: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case bound
+        case ownerId = "owner_id"
+        case installationId = "installation_id"
+    }
+}
+
+struct GuestPhotoDraftReceipt: Codable, Equatable, Sendable {
+    let draftId: UUID
+    let expiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case draftId = "draft_id"
+        case expiresAt = "expires_at"
+    }
+}
+
+struct GuestPhotoClaimProof: Codable, Equatable, Sendable {
+    let claimId: UUID
+    let draftId: UUID
+    let proofExpiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case claimId = "claim_id"
+        case draftId = "draft_id"
+        case proofExpiresAt = "proof_expires_at"
+    }
+}
+
+struct GuestPhotoClaimReceipt: Codable, Equatable, Sendable {
+    let plantId: UUID
+    let photoId: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case photoId = "photo_id"
+    }
+}
+
 struct AnalysisJobWire: Decodable, Sendable {
     enum Status: String, Decodable, Sendable {
         case queued, running, succeeded, failed, expired

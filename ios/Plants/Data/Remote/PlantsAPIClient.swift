@@ -773,7 +773,7 @@ private final class AnalysisUploadRedirectDelegate: NSObject, URLSessionTaskDele
 
 extension PlantsAPIClient {
     func issueAnalysisUpload(
-        jpeg: Data, operationId: UUID, locale: SupportedLocale, context: SyncSessionLease
+        jpeg: Data, operationId: UUID, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws -> AnalysisUploadTicket {
         guard !jpeg.isEmpty, jpeg.count <= AnalysisPhotoInput.maxCloudBytes else {
             throw AnalysisHTTPError.invalidUpload
@@ -785,7 +785,7 @@ extension PlantsAPIClient {
         ], options: [.sortedKeys])
         let request = try buildRequest(path: "media/upload-ticket", method: "POST", body: body)
         let ticket: AnalysisUploadTicket = try await analysisRequest(
-            request, locale: locale, context: context, status: [200]
+            request, locale: locale, context: context, status: [200], installation: guestCredential
         )
         guard (0...60).contains(ticket.expiresInSeconds), ticket.maxByteSize >= jpeg.count,
               !ticket.storageBucket.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -798,7 +798,7 @@ extension PlantsAPIClient {
 
     func uploadAnalysisJPEG(
         _ jpeg: Data, ticket: AnalysisUploadTicket, locale: SupportedLocale,
-        context: SyncSessionLease
+        context: SyncSessionLease, guestCredential: String? = nil
     ) async throws {
         guard !jpeg.isEmpty, jpeg.count <= min(ticket.maxByteSize, AnalysisPhotoInput.maxCloudBytes),
               isAnalysisUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId) else {
@@ -809,25 +809,25 @@ extension PlantsAPIClient {
         request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
         request.httpBody = jpeg
         let photo: AnalysisUploadedPhoto = try await analysisRequest(
-            request, locale: locale, context: context, status: [200], forbidRedirects: true
+            request, locale: locale, context: context, status: [200], installation: guestCredential, forbidRedirects: true
         )
         try validateUploadedPhoto(photo, id: ticket.photoAssetId)
     }
 
     func confirmAnalysisPhoto(
-        id: UUID, locale: SupportedLocale, context: SyncSessionLease
+        id: UUID, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws {
         let body = try JSONEncoder().encode(["photo_asset_id": id.uuidString.lowercased()])
         let request = try buildRequest(path: "media/complete", method: "POST", body: body)
         let photo: AnalysisUploadedPhoto = try await analysisRequest(
-            request, locale: locale, context: context, status: [200]
+            request, locale: locale, context: context, status: [200], installation: guestCredential
         )
         try validateUploadedPhoto(photo, id: id)
     }
 
     func createAnalysisJob(
         operationId: UUID, mode: AnalysisMode, photoAssetId: UUID,
-        flowId: UUID? = nil, locale: SupportedLocale, context: SyncSessionLease
+        flowId: UUID? = nil, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws -> AnalysisJobWire {
         guard mode == .diagnosis || mode == .identification else {
             throw AnalysisHTTPError.invalidResponse
@@ -842,24 +842,90 @@ extension PlantsAPIClient {
         let body = try encoder.encode(fields)
         let request = try buildRequest(path: "analysis/jobs", method: "POST", body: body)
         let job: AnalysisJobWire = try await analysisRequest(
-            request, locale: locale, context: context, status: [200, 202]
+            request, locale: locale, context: context, status: [200, 202], installation: guestCredential
         )
         try job.validate(mode: mode)
         return job
     }
 
     func fetchAnalysisJob(
-        id: UUID, mode: AnalysisMode, locale: SupportedLocale, context: SyncSessionLease
+        id: UUID, mode: AnalysisMode, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws -> AnalysisJobWire {
         guard mode == .diagnosis || mode == .identification else {
             throw AnalysisHTTPError.invalidResponse
         }
         let request = try buildRequest(path: "analysis/jobs/\(id.uuidString.lowercased())", method: "GET")
         let job: AnalysisJobWire = try await analysisRequest(
-            request, locale: locale, context: context, status: [200]
+            request, locale: locale, context: context, status: [200], installation: guestCredential
         )
         try job.validate(mode: mode, jobId: id)
         return job
+    }
+
+    func registerPhotoInstallation(credential: String, context: SyncSessionLease) async throws -> UUID {
+        let reply: PhotoInstallationRegistration = try await guestPhotoRequest(
+            path: "installations/register", body: [:], credential: credential, context: context
+        )
+        return reply.installationId
+    }
+
+    func bindPhotoInstallation(
+        id: UUID, credential: String, context: SyncSessionLease
+    ) async throws {
+        let reply: PhotoInstallationBinding = try await guestPhotoRequest(
+            path: "installations/bind", body: ["installation_id": id.uuidString.lowercased()],
+            credential: credential, context: context
+        )
+        guard reply.bound, reply.installationId == id, reply.ownerId == context.ownerId else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+    }
+
+    func createPhotoDraft(
+        operationId: UUID, jobId: UUID, taxonId: UUID, credential: String, context: SyncSessionLease
+    ) async throws -> GuestPhotoDraftReceipt {
+        let result: GuestPhotoDraftReceipt = try await guestPhotoRequest(
+            path: "drafts",
+            body: ["operation_id": operationId.uuidString.lowercased(), "identification_job_id": jobId.uuidString.lowercased(),
+                   "taxon_id": taxonId.uuidString.lowercased()],
+            credential: credential, context: context
+        )
+        guard SQLTimestamp.date(from: result.expiresAt) != nil else { throw AnalysisHTTPError.invalidResponse }
+        return result
+    }
+
+    func preparePhotoClaim(
+        operationId: UUID, draftId: UUID, credential: String, context: SyncSessionLease
+    ) async throws -> GuestPhotoClaimProof {
+        let result: GuestPhotoClaimProof = try await guestPhotoRequest(
+            path: "claims/prepare", body: ["operation_id": operationId.uuidString.lowercased(), "draft_id": draftId.uuidString.lowercased()],
+            credential: credential, context: context
+        )
+        guard result.draftId == draftId, SQLTimestamp.date(from: result.proofExpiresAt) != nil else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        return result
+    }
+
+    func commitPhotoClaim(
+        operationId: UUID, claimId: UUID, credential: String, context: SyncSessionLease
+    ) async throws -> GuestPhotoClaimReceipt {
+        try await guestPhotoRequest(
+            path: "claims/commit", body: ["operation_id": operationId.uuidString.lowercased(), "claim_id": claimId.uuidString.lowercased()],
+            credential: credential, context: context
+        )
+    }
+
+    private func guestPhotoRequest<T: Decodable>(
+        path: String, body: [String: String], credential: String, context: SyncSessionLease
+    ) async throws -> T {
+        guard credential.count >= 16 else { throw AnalysisHTTPError.invalidResponse }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let request = try buildRequest(path: path, method: "POST", body: encoder.encode(body))
+        return try await analysisRequest(
+            request, locale: .en, context: context, status: [200, 201], installation: credential, forbidRedirects: true
+        )
     }
 
     func fetchCareRecommendation(
@@ -900,14 +966,14 @@ extension PlantsAPIClient {
 
     private func analysisRequest<T: Decodable>(
         _ input: URLRequest, locale: SupportedLocale, context: SyncSessionLease,
-        status: Set<Int>, forbidRedirects: Bool = false
+        status: Set<Int>, installation: String? = nil, forbidRedirects: Bool = false
     ) async throws -> T {
         var request = input
         try syncAuthority.withBoundValid(context) {
             guard let session = context.session else { throw SyncWireValidationError.invalidSession }
             request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue(locale.rawValue, forHTTPHeaderField: "X-Client-Locale")
-            request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
+            request.setValue(installation, forHTTPHeaderField: "X-Installation-Credential")
         }
         let data: Data
         let response: HTTPURLResponse
