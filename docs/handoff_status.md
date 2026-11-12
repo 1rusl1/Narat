@@ -1,9 +1,21 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-11.** На живом стенде проверена карточка Monstera с советом по поливу, повтор записи без дубля и отмена после перезапуска. iOS-пакет принят и опубликован в `6cfff16`.
+**Обновлено 2026-11-12.** T149 принята для английского MVP на живом каталоге из 606 видов. Следующий пакет — T150.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
+
+## T149 — живой каталог и коллекция iOS
+
+Кандидат `26cfc63` перевёл iOS на публичные `GET /catalogue` и `GET /catalogue/{slug}`, добавил серверный поиск с постраничной загрузкой и открытие растения из `My plants` по его UUID. Активные карточки читаются из `/sync` по текущей постоянной сессии. Изменены `PlantsApp.swift`, `PlantsAPIClient.swift`, `CollectionRepository.swift`, `GuestCatalogueView.swift`, `CatalogueSaveView.swift`, `CatalogueUIFixtures.swift`, `CatalogueUIFixtureTests.swift`, `CollectionWireTests.swift` и `CatalogueSaveUITests.swift`.
+
+**Живой стенд.** Backend B `7cc1f19`, миграция 018 и выпуск `skeleton-300-v1-en-85fcaba4` с 606 видами. Публичные страницы по 50 записей проверены без авторизации. Monstera отсутствует на первой странице и находится по `Swiss Cheese` в Simulator, карточка показывает Raul654 и CC BY-SA 3.0. Существующая Monstera `9ee20834-951a-4c4e-9f63-cfe6221554ec` после перезапуска и из `My plants` показала `Swiss Cheese plant`, тот же совет со ссылкой и ту же отменённую запись `a3a428a9-2822-428b-aba0-c763a4c564f0`.
+
+На выделенном Simulator вошли двумя синтетическими постоянными владельцами в одну изолированную установку. В A сохранение из каталога создало растение `802103f1-d434-4bae-b43f-86c185d89d82` операцией `aba23abb-bdc6-4b7f-8546-6e14b905e693`. Подписанный тестовый вариант отбросил первый реальный HTTP 200. В повторе после холодного запуска использован исходный UUID операции. В базе до и после повтора по одной карточке и квитанции. Повторный запуск и `My plants` открыли тот же UUID. A сохранил три растения, четвёртое остановлено preflight, в PostgreSQL ровно три записи и три квитанции. После входа B из той же установки коллекция пуста, карточки A скрыты. Скриншоты и ограниченные SQL-выборки лежат в `DerivedData/T149Validation/`.
+
+**Локальные проверки.** 5 EN XCUITest и 2 целевых Swift-теста прошли. На фикстурах проверены продолжение после нативного входа, Free cap, сохранение пятого и шестого растения в paid, повтор и открытие прежнего UUID из коллекции. Живой вход выполнен через тестовые постоянные учётные записи Supabase. StoreKit и живой Apple/Google остаются отдельными проверками. Итоговый `parallel-ios-t149-live-catalogue-20261112-01` принят в `edf05e9` за 309,87 с. Diff-check, сборка, welcome, 213 Swift-тестов, Simulator smoke, Review и QA Astra High прошли. [Отчёт](validation/automation/tasks/parallel-ios-t149-live-catalogue.md).
+
+**Следующий шаг.** T150 начать с привязки подтверждения вида к результату identification и ID загруженного фото. Живой identification, привязка фото к экземпляру и семидневный draft/claim требуют опубликованного серверного контракта и отдельной сквозной проверки.
 
 ## Запись и отмена ручного полива
 
