@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import PhotosUI
 import Supabase
 import SwiftUI
 import UIKit
@@ -768,13 +769,15 @@ private struct CatalogueCollectionCardView: View {
         case retryRecord(FirstAidRecordCommand)
         case undo(UUID)
         case retryUndo(CommandEnvelopeDTO)
-        case observe(UUID, FirstAidObservationStatus)
+        case observe(UUID, FirstAidObservationStatus, Data?)
         case retryObservation(FirstAidObservationCommand)
+        case retryObservationPhoto(FirstAidObservationPhotoDraft)
+        case discardObservationPhoto(FirstAidObservationPhotoDraft)
     }
 
     private enum FirstAidDialog {
         case undo(UUID)
-        case observe(UUID)
+        case observe(UUID, Data?)
 
         var title: String {
             switch self {
@@ -797,6 +800,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var pendingFirstAid: FirstAidRecordCommand?
     @State private var pendingFirstAidUndo: CommandEnvelopeDTO?
     @State private var pendingObservation: FirstAidObservationCommand?
+    @State private var pendingObservationPhoto: FirstAidObservationPhotoDraft?
     @State private var firstAidSelection: FirstAidDialog?
     @State private var showingFirstAidDialog = false
     @State private var savingFirstAid = false
@@ -829,7 +833,7 @@ private struct CatalogueCollectionCardView: View {
                             .accessibilityIdentifier("collection.diagnosis.repeat")
                     }
                     if let photo = card.mainPhotoId {
-                        CataloguePlantPhotoView(connection: connection, expected: expected, plantId: card.id, polish: polish)
+                        CataloguePrivatePhotoView(connection: connection, expected: expected, subject: .plant(card.id), polish: polish)
                             .id(photo)
                     }
                     if !polish {
@@ -848,11 +852,10 @@ private struct CatalogueCollectionCardView: View {
                                         .accessibilityIdentifier("catalogue.saved.firstAid.source")
                                     if firstAidWriteAvailable, control.canObserve(careRevision: card.careRevision),
                                        firstAidHistory.contains(where: { $0.id == control.actionEntryId && $0.state == "active" }) {
-                                        Button("Record observation") {
-                                            firstAidSelection = .observe(control.id)
+                                        FirstAidObservationActions(controlId: control.id) { jpeg in
+                                            firstAidSelection = .observe(control.id, jpeg)
                                             showingFirstAidDialog = true
                                         }
-                                        .accessibilityIdentifier("collection.firstAid.observe." + control.id.uuidString.lowercased())
                                     }
                                 }
                                 .accessibilityElement(children: .contain)
@@ -907,9 +910,12 @@ private struct CatalogueCollectionCardView: View {
                 case let .undo(entryId):
                     Button("Undo soil check", role: .destructive) { Task { await writeFirstAid(.undo(entryId)) } }
                         .accessibilityIdentifier("collection.firstAid.undo.confirm")
-                case let .observe(controlId):
+                case let .observe(controlId, jpeg):
                     ForEach(FirstAidObservationStatus.allCases, id: \.self) { status in
-                        Button(status.label) { Task { await writeFirstAid(.observe(controlId, status)) } }
+                        Button(status.label) {
+                            firstAidSelection = nil
+                            Task { await writeFirstAid(.observe(controlId, status, jpeg)) }
+                        }
                             .accessibilityIdentifier("collection.firstAid.observe.status." + status.rawValue)
                     }
                 }
@@ -944,9 +950,24 @@ private struct CatalogueCollectionCardView: View {
             ForEach(firstAid?.observations ?? []) { observation in
                 Text("Observation · \(observation.status.label)")
                     .accessibilityIdentifier("catalogue.saved.firstAid.observation." + observation.id.uuidString.lowercased())
+                if let photoId = observation.photoId {
+                    CataloguePrivatePhotoView(
+                        connection: connection, expected: expected, subject: .observation(observation.id), polish: polish
+                    )
+                    .id(photoId)
+                }
             }
             if savingFirstAid {
                 ProgressView("Syncing first-aid journal…")
+            } else if let pendingObservationPhoto {
+                Text("Observation photo couldn’t finish uploading.")
+                    .accessibilityIdentifier("collection.firstAid.photo.pending")
+                Button("Retry photo upload") { Task { await writeFirstAid(.retryObservationPhoto(pendingObservationPhoto)) } }
+                    .accessibilityIdentifier("collection.firstAid.photo.retry")
+                Button("Discard pending photo", role: .destructive) {
+                    Task { await writeFirstAid(.discardObservationPhoto(pendingObservationPhoto)) }
+                }
+                .accessibilityIdentifier("collection.firstAid.photo.discard")
             } else if let pendingObservation {
                 Text("Observation pending sync.")
                     .accessibilityIdentifier("collection.firstAid.observe.pending")
@@ -972,7 +993,8 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private var firstAidWriteAvailable: Bool {
-        !savingFirstAid && pendingFirstAid == nil && pendingFirstAidUndo == nil && pendingObservation == nil
+        !savingFirstAid && pendingFirstAid == nil && pendingFirstAidUndo == nil
+            && pendingObservation == nil && pendingObservationPhoto == nil
     }
 
     private func loadFirstAidJournal() async {
@@ -990,12 +1012,14 @@ private struct CatalogueCollectionCardView: View {
         let pending = try await repository.pendingFirstAidRecord(plantId: card.id, context: lease)
         let pendingUndo = try await repository.pendingFirstAidUndo(plantId: card.id, context: lease)
         let observation = try await repository.pendingFirstAidObservation(plantId: card.id, context: lease)
+        let photo = try await repository.pendingFirstAidPhotoDraft(plantId: card.id, context: lease)
         let journal = try await repository.collectionFirstAidHistory(plantId: card.id, context: lease)
         let control = try? await repository.collectionFirstAidControls(plantId: card.id, context: lease)
         guard !Task.isCancelled, connection.snapshot == expected else { throw CancellationError() }
         pendingFirstAid = pending
         pendingFirstAidUndo = pendingUndo
         pendingObservation = observation
+        pendingObservationPhoto = photo
         firstAidHistory = journal
         firstAid = control
         firstAidFailed = false
@@ -1017,14 +1041,28 @@ private struct CatalogueCollectionCardView: View {
                 outcome = try await repository.retryFirstAidUndo(command, context: lease)
             case let .retryUndo(command):
                 outcome = try await repository.retryFirstAidUndo(command, context: lease)
-            case let .observe(controlId, status):
-                let command = try await repository.enqueueFirstAidObservation(
-                    plantId: card.id, controlId: controlId, status: status, context: lease
-                )
-                pendingObservation = command
-                outcome = try await repository.retryFirstAidObservation(command, context: lease)
+            case let .observe(controlId, status, jpeg):
+                if let jpeg {
+                    let draft = try await repository.enqueueFirstAidPhotoDraft(
+                        plantId: card.id, controlId: controlId, status: status, jpeg: jpeg, context: lease
+                    )
+                    pendingObservationPhoto = draft
+                    outcome = try await repository.retryFirstAidPhotoDraft(draft, context: lease)
+                } else {
+                    let command = try await repository.enqueueFirstAidObservation(
+                        plantId: card.id, controlId: controlId, status: status, context: lease
+                    )
+                    pendingObservation = command
+                    outcome = try await repository.retryFirstAidObservation(command, context: lease)
+                }
             case let .retryObservation(command):
                 outcome = try await repository.retryFirstAidObservation(command, context: lease)
+            case let .retryObservationPhoto(draft):
+                outcome = try await repository.retryFirstAidPhotoDraft(draft, context: lease)
+            case let .discardObservationPhoto(draft):
+                try await repository.discardFirstAidPhotoDraft(draft, context: lease)
+                try await loadFirstAidJournal(repository, lease: lease)
+                return
             }
             try await loadFirstAidJournal(repository, lease: lease)
             if case .rejected = outcome { firstAidFailed = true }
@@ -1141,6 +1179,62 @@ private struct CatalogueCollectionCardView: View {
         for await connected in updates {
             if wasConnected == false, connected { await retryCorrection() }
             wasConnected = connected
+        }
+    }
+}
+
+private struct FirstAidObservationActions: View {
+    let controlId: UUID
+    let record: (Data?) -> Void
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var jpeg: Data?
+    @State private var loading = false
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Text(jpeg == nil ? "Add optional photo" : "Replace photo")
+            }
+            .accessibilityIdentifier("collection.firstAid.photo.select." + controlId.uuidString.lowercased())
+            if loading {
+                ProgressView("Preparing photo…")
+            } else if jpeg != nil {
+                Text("Photo ready").accessibilityIdentifier("collection.firstAid.photo.ready")
+            } else if failed {
+                Text("Couldn’t open the selected photo.")
+                    .accessibilityIdentifier("collection.firstAid.photo.error")
+            }
+            if selectedPhoto != nil {
+                Button("Remove photo") {
+                    selectedPhoto = nil
+                    jpeg = nil
+                    failed = false
+                    loading = false
+                }
+            }
+            Button("Record observation") { record(jpeg) }
+                .disabled(loading || failed || (selectedPhoto != nil && jpeg == nil))
+                .accessibilityIdentifier("collection.firstAid.observe." + controlId.uuidString.lowercased())
+        }
+        .onChange(of: selectedPhoto) { _, item in
+            jpeg = nil
+            loading = item != nil
+            failed = false
+        }
+        .task(id: selectedPhoto) {
+            guard let item = selectedPhoto else { return }
+            do {
+                guard let raw = try await item.loadTransferable(type: Data.self)
+                else { throw PhotoInputError.unreadableOrCorruptImage }
+                let prepared = try AnalysisPhotoInput().preparePhoto(from: raw).cloudNormalizedJPEG
+                guard !Task.isCancelled, item == selectedPhoto else { return }
+                jpeg = prepared
+            } catch {
+                guard !Task.isCancelled, item == selectedPhoto else { return }
+                failed = true
+            }
+            loading = false
         }
     }
 }

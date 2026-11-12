@@ -3824,6 +3824,145 @@ extension CollectionWireTests {
         XCTAssertEqual(payload, ["control_id": control.uuidString.lowercased(), "status_code": "improved"])
     }
 
+    @MainActor
+    func testFirstAidPhotoUploadAndAttachedObservationResumeAcrossRestarts() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let entry = UUID(), control = UUID(), asset = UUID(), observation = UUID()
+        let jpeg = Data([0xff, 0xd8, 0xff, 0xd9])
+        let completedAt = "2026-11-03T09:10:00.000001+00:00"
+        let assetAt = "2026-11-03T09:10:00.000002+00:00"
+        func row(_ type: String, _ id: UUID, at time: String, data: [String: Any]) -> [String: Any] {
+            var change = syncChange(time, id: id.uuidString, entity: type)
+            change["data"] = data.merging(["id": id.uuidString, "plant_id": serverPlantId.uuidString]) { old, _ in old }
+            return change
+        }
+        func followup(state: String, at time: String) -> [String: Any] {
+            row("first_aid_followups", control, at: time, data: [
+                "state": state, "action_code": "check_soil", "action_entry_id": entry.uuidString, "context_revision": 1,
+                "check_policy_snapshot": ["due_on": "2026-11-08", "interval_days": 5,
+                                          "source": ["url": "https://example.invalid/interval", "locator": "Fixture"]]
+            ])
+        }
+        func page(_ until: String, _ changes: [[String: Any]]) throws -> String {
+            var result = syncObject()
+            result["until"] = until
+            result["next_since"] = until
+            result["changes"] = changes.sorted { ($0["entity_type"] as! String) < ($1["entity_type"] as! String) }
+            return try syncJSON(result)
+        }
+        let baseline = try page(syncUntil, [
+            row("plants", serverPlantId, at: syncUntil, data: ["plant_id": "monstera_deliciosa", "revision": 1, "care_revision": 1]),
+            row("care_entries", entry, at: syncUntil, data: ["action_code": "check_soil", "state": "active",
+                                                            "occurred_at": syncUntil, "occurred_local_date": "2026-11-03"]),
+            followup(state: "active", at: syncUntil)
+        ])
+        let media = "/functions/v1/plants-api/media/first-aid"
+        let assetPath = media + "/uploads/" + asset.uuidString.lowercased()
+        let uploadTicket: [String: Any] = [
+            "photo_asset_id": asset.uuidString, "storage_bucket": "analysis-inputs", "storage_path": "private-test",
+            "signed_upload_url": "https://example.invalid" + assetPath + "?sig=fixture",
+            "expires_in_seconds": 60, "max_byte_size": 10 * 1024 * 1024
+        ]
+        var badTicket = uploadTicket
+        badTicket["signed_upload_url"] = "https://wrong.invalid" + assetPath
+        let draft: FirstAidObservationPhotoDraft
+        do {
+            let transport = CatalogueTransport([.http(200, baseline), .http(200, try syncJSON(badTicket)),
+                                               .http(200, try syncJSON(uploadTicket)), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            let discarded = try await repo.enqueueFirstAidPhotoDraft(
+                plantId: serverPlantId, controlId: control, status: .improved, jpeg: jpeg, context: lease
+            )
+            try await repo.discardFirstAidPhotoDraft(discarded, context: lease)
+            draft = try await repo.enqueueFirstAidPhotoDraft(
+                plantId: serverPlantId, controlId: control, status: .improved, jpeg: jpeg, context: lease
+            )
+            XCTAssertNotEqual(draft.envelope.operationId, draft.uploadOperationId)
+            for _ in 0..<2 {
+                guard case .pending = try await repo.retryFirstAidPhotoDraft(draft, context: lease) else {
+                    return XCTFail("Unsafe ticket or lost upload response must retain the original draft")
+                }
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map { $0.url?.path }, ["/functions/v1/plants-api/sync",
+                                                           media + "/upload-ticket", media + "/upload-ticket", assetPath])
+            XCTAssertEqual(requests[1].httpBody, requests[2].httpBody)
+            let ticketBody = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[1].httpBody)) as? [String: Any])
+            XCTAssertEqual(ticketBody["operation_id"] as? String, draft.uploadOperationId.uuidString.lowercased())
+            XCTAssertEqual(ticketBody["plant_id"] as? String, serverPlantId.uuidString.lowercased())
+            XCTAssertEqual(ticketBody["control_id"] as? String, control.uuidString.lowercased())
+            XCTAssertEqual(ticketBody["byte_size"] as? Int, jpeg.count)
+            XCTAssertEqual(requests.last?.httpBody, jpeg)
+            XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Content-Type"), "image/jpeg")
+        }
+        let firstPOST: URLRequest
+        let ready = try syncJSON(["photo_asset_id": asset.uuidString, "state": "ready"])
+        do {
+            let transport = CatalogueTransport([.http(200, ready), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            let restored = try await repo.pendingFirstAidPhotoDraft(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(restored?.envelope, draft.envelope)
+            guard case .pending = try await repo.retryFirstAidPhotoDraft(draft, context: lease) else {
+                return XCTFail("Lost observation response must preserve the promoted command")
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map { $0.url?.path }, [media + "/complete", "/functions/v1/plants-api/commands"])
+            let confirm = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests.first?.httpBody))
+            XCTAssertEqual(confirm, ["photo_asset_id": asset.uuidString.lowercased()])
+            firstPOST = try XCTUnwrap(requests.last)
+        }
+        let receipt = try syncJSON(["plant_id": serverPlantId.uuidString, "control_id": control.uuidString,
+                                    "observation_id": observation.uuidString, "state": "completed", "watermark": completedAt])
+        let noAsset = try page(completedAt, [
+            followup(state: "completed", at: completedAt),
+            row("care_observations", observation, at: completedAt, data: [
+                "first_aid_control_id": control.uuidString, "status_code": "improved",
+                "operation_id": draft.envelope.operationId.uuidString, "observed_at": completedAt, "photo_id": asset.uuidString
+            ])
+        ])
+        let withAsset = try page(assetAt, [row("photo_assets", asset, at: assetAt, data: ["state": "ready", "purpose": "diary"])])
+        let transport = CatalogueTransport([
+            .http(200, receipt), .http(200, noAsset), .http(200, receipt), .http(200, withAsset), .photo(jpeg, mime: "image/jpeg")
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        let pending = try await repo.pendingFirstAidObservation(plantId: serverPlantId, context: lease)
+        let command = try XCTUnwrap(pending)
+        XCTAssertEqual(command.envelope.operationId, draft.envelope.operationId)
+        XCTAssertEqual(command.photoId, asset)
+        guard case .pending = try await repo.retryFirstAidObservation(command, context: lease),
+              case .confirmed = try await repo.retryFirstAidObservation(command, context: lease) else {
+            return XCTFail("Acknowledgement must wait for the linked ready asset")
+        }
+        let history = try await repo.collectionFirstAidControls(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history?.observations.map(\.id), [observation])
+        XCTAssertEqual(history?.observations.first?.photoId, asset)
+        let bytes = try await api.fetchObservationPhoto(observationId: observation, context: lease)
+        XCTAssertEqual(bytes, jpeg)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET", "POST", "GET", "GET"])
+        for request in requests where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, firstPOST.httpBody)
+        }
+        XCTAssertEqual(requests.last?.url?.path, "/functions/v1/plants-api/care/observations/\(observation.uuidString.lowercased())/photo")
+        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer \(syncSession.accessToken)")
+        XCTAssertNil(requests.last?.value(forHTTPHeaderField: "X-Installation-Credential"))
+        XCTAssertEqual(requests.last?.cachePolicy, .reloadIgnoringLocalCacheData)
+    }
+
     private func identificationJob(id: UUID, status: String, quota: String, result: String = "null") -> String {
         #"{"job_id":"\#(id.uuidString)","mode":"identification","status":"\#(status)","quota_kind":"starter_identification","quota_state":"\#(quota)","result":\#(result),"error_code":null,"error_message":null}"#
     }

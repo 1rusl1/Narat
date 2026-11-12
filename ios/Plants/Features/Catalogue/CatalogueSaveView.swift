@@ -13,7 +13,18 @@ private enum CatalogueViewNotice {
 
 /// Only the current account may load or render the private image for a canonical card.
 @MainActor
-struct CataloguePlantPhotoView: View {
+struct CataloguePrivatePhotoView: View {
+    enum Subject {
+        case plant(UUID)
+        case observation(UUID)
+
+        var accessibilityId: String {
+            switch self {
+            case .plant: "catalogue.saved.photo"
+            case let .observation(id): "catalogue.saved.firstAid.photo." + id.uuidString.lowercased()
+            }
+        }
+    }
     private struct Read: Equatable {
         let scope: CatalogueSDKSnapshot
         let attempt: Int
@@ -21,7 +32,7 @@ struct CataloguePlantPhotoView: View {
 
     let connection: CatalogueConnection
     let expected: CatalogueSDKSnapshot
-    let plantId: UUID
+    let subject: Subject
     let polish: Bool
 
     @State private var image: UIImage?
@@ -37,16 +48,23 @@ struct CataloguePlantPhotoView: View {
                 if let image, loadedScope == expected {
                     Image(uiImage: image).resizable().scaledToFit()
                         .frame(maxHeight: 260)
-                        .accessibilityLabel(polish ? "Twoje zdjęcie rośliny" : "Your plant photo")
-                        .accessibilityIdentifier("catalogue.saved.photo")
+                        .accessibilityLabel(photoLabel)
+                        .accessibilityIdentifier(subject.accessibilityId)
                 } else if failed, loadedScope == expected {
                     Button(polish ? "Wczytaj zdjęcie ponownie" : "Retry photo") { attempt += 1 }
-                        .accessibilityIdentifier("catalogue.saved.photo.retry")
+                        .accessibilityIdentifier(subject.accessibilityId + ".retry")
                 } else {
                     ProgressView(polish ? "Wczytywanie zdjęcia…" : "Loading photo…")
                 }
             }
             .task(id: read) { await load(read) }
+        }
+    }
+
+    private var photoLabel: String {
+        switch subject {
+        case .plant: polish ? "Twoje zdjęcie rośliny" : "Your plant photo"
+        case .observation: "Your observation photo"
         }
     }
 
@@ -58,7 +76,11 @@ struct CataloguePlantPhotoView: View {
         do {
             guard let api = connection.apiClient else { throw CatalogueConnectionUnavailable.configurationMissing }
             let lease = try await connection.collectionLease(expected: requested.scope)
-            let bytes = try await api.fetchPlantPhoto(plantId: plantId, context: lease)
+            let bytes: Data
+            switch subject {
+            case let .plant(id): bytes = try await api.fetchPlantPhoto(plantId: id, context: lease)
+            case let .observation(id): bytes = try await api.fetchObservationPhoto(observationId: id, context: lease)
+            }
             guard !Task.isCancelled, read == requested, connection.snapshot == requested.scope else { return }
             guard let decoded = UIImage(data: bytes) else { throw URLError(.cannotDecodeContentData) }
             image = decoded
@@ -362,7 +384,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     speciesDetails()
                 }
                 if let photo = summary.mainPhotoId, let scope {
-                    CataloguePlantPhotoView(connection: connection, expected: scope, plantId: summary.id, polish: polish)
+                    CataloguePrivatePhotoView(connection: connection, expected: scope, subject: .plant(summary.id), polish: polish)
                         .id(photo)
                 }
             }

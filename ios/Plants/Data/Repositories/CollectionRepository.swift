@@ -214,6 +214,7 @@ struct CatalogueFirstAidObservation: Decodable, Sendable, Identifiable {
     let operationId: UUID
     let status: FirstAidObservationStatus
     let observedAt: String
+    let photoId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -223,6 +224,7 @@ struct CatalogueFirstAidObservation: Decodable, Sendable, Identifiable {
         case operationId = "operation_id"
         case status = "status_code"
         case observedAt = "observed_at"
+        case photoId = "photo_id"
     }
 
     var isStandalone: Bool { taskId == nil && SQLTimestamp.microseconds(from: observedAt) != nil }
@@ -540,6 +542,42 @@ public struct CollectionRepository: Sendable {
             command, context: context, authority: apiClient.syncAuthority
         )
         return observation == nil ? .rejected : .confirmed
+    }
+
+    func pendingFirstAidPhotoDraft(plantId: UUID, context: SyncSessionLease) async throws -> FirstAidObservationPhotoDraft? {
+        try await store.pendingFirstAidPhotoDraft(plantId: plantId, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func enqueueFirstAidPhotoDraft(
+        plantId: UUID, controlId: UUID, status: FirstAidObservationStatus, jpeg: Data, context: SyncSessionLease
+    ) async throws -> FirstAidObservationPhotoDraft {
+        let draft = try FirstAidObservationPhotoDraft.make(plantId: plantId, controlId: controlId, status: status)
+        return try await store.enqueueFirstAidPhotoDraft(
+            draft, jpeg: jpeg, now: clock(), context: context, authority: apiClient.syncAuthority
+        )
+    }
+
+    func retryFirstAidPhotoDraft(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
+    ) async throws -> FirstAidWriteOutcome {
+        _ = try await syncEngine.flushOutbox(context: context)
+        if try await pendingFirstAidPhotoDraft(plantId: draft.plantId, context: context)?.envelope == draft.envelope {
+            return .pending
+        }
+        if try await pendingFirstAidObservation(plantId: draft.plantId, context: context)?.envelope.operationId
+            == draft.envelope.operationId {
+            return .pending
+        }
+        let snapshot = try await collectionFirstAidControls(plantId: draft.plantId, context: context)
+        let observation = snapshot?.observations.first(where: {
+            $0.operationId == draft.envelope.operationId && $0.controlId == draft.controlId
+                && $0.status == draft.status && $0.photoId != nil
+        })
+        return observation == nil ? .rejected : .confirmed
+    }
+
+    func discardFirstAidPhotoDraft(_ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease) async throws {
+        try await store.discardFirstAidPhotoDraft(draft, context: context, authority: apiClient.syncAuthority)
     }
 
     func collectionFirstAidControls(plantId: UUID, context: SyncSessionLease) async throws -> CatalogueFirstAidSnapshot? {

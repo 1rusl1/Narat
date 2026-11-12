@@ -221,26 +221,71 @@ struct FirstAidObservationCommand: Sendable {
     let plantId: UUID
     let controlId: UUID
     let status: FirstAidObservationStatus
+    let photoId: UUID?
 
     init?(envelope: CommandEnvelopeDTO) {
         guard envelope.commandName == Self.name, let plantId = envelope.plantId,
               let fields = try? JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8)),
-              fields.count == 2, let controlId = fields["control_id"].flatMap(UUID.init(uuidString:)),
+              let controlId = fields["control_id"].flatMap(UUID.init(uuidString:)),
               let status = fields["status_code"].flatMap(FirstAidObservationStatus.init(rawValue:)) else { return nil }
+        let photoId = fields["photo_id"].flatMap(UUID.init(uuidString:))
+        guard fields.count == (photoId == nil ? 2 : 3) else { return nil }
         self.envelope = envelope
         self.plantId = plantId
         self.controlId = controlId
         self.status = status
+        self.photoId = photoId
+    }
+
+    static func make(
+        plantId: UUID, controlId: UUID, status: FirstAidObservationStatus, photoId: UUID? = nil, operationId: UUID = UUID()
+    ) throws -> Self {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var fields = ["control_id": controlId.uuidString.lowercased(), "status_code": status.rawValue]
+        fields["photo_id"] = photoId?.uuidString.lowercased()
+        let data = try encoder.encode(fields)
+        let envelope = CommandEnvelopeDTO(operationId: operationId, commandName: name, plantId: plantId,
+                                          payloadJSON: String(decoding: data, as: UTF8.self))
+        guard let command = Self(envelope: envelope) else { throw SyncWireValidationError.invalidRequest }
+        return command
+    }
+}
+
+/// Local outbox stage. Only the ready-asset observation command crosses the wire.
+struct FirstAidObservationPhotoDraft: Sendable {
+    static let name = "local.first_aid.observe_photo"
+    let envelope: CommandEnvelopeDTO
+    let plantId: UUID
+    let controlId: UUID
+    let status: FirstAidObservationStatus
+    let uploadOperationId: UUID
+
+    init?(envelope: CommandEnvelopeDTO) {
+        guard envelope.commandName == Self.name, let plantId = envelope.plantId,
+              let fields = try? JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8)),
+              fields.count == 3, let controlId = fields["control_id"].flatMap(UUID.init(uuidString:)),
+              let status = fields["status_code"].flatMap(FirstAidObservationStatus.init(rawValue:)),
+              let uploadId = fields["upload_operation_id"].flatMap(UUID.init(uuidString:)),
+              uploadId != envelope.operationId else { return nil }
+        self.envelope = envelope
+        self.plantId = plantId
+        self.controlId = controlId
+        self.status = status
+        uploadOperationId = uploadId
     }
 
     static func make(plantId: UUID, controlId: UUID, status: FirstAidObservationStatus) throws -> Self {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(["control_id": controlId.uuidString.lowercased(), "status_code": status.rawValue])
+        let data = try encoder.encode([
+            "control_id": controlId.uuidString.lowercased(), "status_code": status.rawValue,
+            "upload_operation_id": UUID().uuidString.lowercased()
+        ])
         let envelope = CommandEnvelopeDTO(operationId: UUID(), commandName: name, plantId: plantId,
                                           payloadJSON: String(decoding: data, as: UTF8.self))
-        guard let command = Self(envelope: envelope) else { throw SyncWireValidationError.invalidRequest }
-        return command
+        guard let draft = Self(envelope: envelope) else { throw SyncWireValidationError.invalidRequest }
+        return draft
     }
 }
 
@@ -514,6 +559,7 @@ public actor PlantsAPIClient {
         _ envelope: CommandEnvelopeDTO, context: SyncSessionLease
     ) async throws -> OutboxCommandResult {
         try validateSyncContext(context)
+        guard envelope.commandName != FirstAidObservationPhotoDraft.name else { throw SyncWireValidationError.invalidRequest }
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         let manualWatering = context.session == nil ? nil : ManualWateringAction(envelope: envelope)
         let firstAid = envelope.commandName == FirstAidRecordCommand.name
@@ -991,25 +1037,63 @@ private final class AnalysisUploadRedirectDelegate: NSObject, URLSessionTaskDele
 }
 
 extension PlantsAPIClient {
+    private enum UploadScope {
+        case analysis
+        case firstAid(plantId: UUID, controlId: UUID)
+
+        var mediaPath: String {
+            switch self {
+            case .analysis: "media"
+            case .firstAid: "media/first-aid"
+            }
+        }
+    }
+
     func issueAnalysisUpload(
         jpeg: Data, operationId: UUID, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
+    ) async throws -> AnalysisUploadTicket {
+        try await issuePhotoUpload(jpeg: jpeg, operationId: operationId, scope: .analysis,
+                                   locale: locale, context: context, guestCredential: guestCredential)
+    }
+
+    func issueFirstAidPhotoUpload(
+        jpeg: Data, draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
+    ) async throws -> AnalysisUploadTicket {
+        try await issuePhotoUpload(jpeg: jpeg, operationId: draft.uploadOperationId,
+                                   scope: .firstAid(plantId: draft.plantId, controlId: draft.controlId),
+                                   locale: .en, context: context)
+    }
+
+    private func issuePhotoUpload(
+        jpeg: Data, operationId: UUID, scope: UploadScope, locale: SupportedLocale,
+        context: SyncSessionLease, guestCredential: String? = nil
     ) async throws -> AnalysisUploadTicket {
         guard !jpeg.isEmpty, jpeg.count <= AnalysisPhotoInput.maxCloudBytes else {
             throw AnalysisHTTPError.invalidUpload
         }
         let digest = SHA256.hash(data: jpeg).map { String(format: "%02x", $0) }.joined()
-        let body = try JSONSerialization.data(withJSONObject: [
+        var fields: [String: Any] = [
             "operation_id": operationId.uuidString.lowercased(), "mime_type": "image/jpeg",
             "byte_size": jpeg.count, "content_sha256": digest
-        ], options: [.sortedKeys])
-        let request = try buildRequest(path: "media/upload-ticket", method: "POST", body: body)
+        ]
+        let privateUpload: Bool
+        switch scope {
+        case .analysis: privateUpload = false
+        case let .firstAid(plantId, controlId):
+            privateUpload = true
+            fields["plant_id"] = plantId.uuidString.lowercased()
+            fields["control_id"] = controlId.uuidString.lowercased()
+        }
+        let body = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
+        let request = try buildRequest(path: scope.mediaPath + "/upload-ticket", method: "POST", body: body)
         let ticket: AnalysisUploadTicket = try await analysisRequest(
-            request, locale: locale, context: context, status: [200], installation: guestCredential
+            request, locale: locale, context: context, status: [200], installation: guestCredential,
+            forbidRedirects: privateUpload
         )
         guard (0...60).contains(ticket.expiresInSeconds), ticket.maxByteSize >= jpeg.count,
               !ticket.storageBucket.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !ticket.storagePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              isAnalysisUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId) else {
+              isUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId, mediaPath: scope.mediaPath) else {
             throw AnalysisHTTPError.invalidUpload
         }
         return ticket
@@ -1019,8 +1103,20 @@ extension PlantsAPIClient {
         _ jpeg: Data, ticket: AnalysisUploadTicket, locale: SupportedLocale,
         context: SyncSessionLease, guestCredential: String? = nil
     ) async throws {
+        try await uploadPhotoJPEG(jpeg, ticket: ticket, mediaPath: "media", locale: locale,
+                                  context: context, guestCredential: guestCredential)
+    }
+
+    func uploadFirstAidJPEG(_ jpeg: Data, ticket: AnalysisUploadTicket, context: SyncSessionLease) async throws {
+        try await uploadPhotoJPEG(jpeg, ticket: ticket, mediaPath: "media/first-aid", locale: .en, context: context)
+    }
+
+    private func uploadPhotoJPEG(
+        _ jpeg: Data, ticket: AnalysisUploadTicket, mediaPath: String, locale: SupportedLocale,
+        context: SyncSessionLease, guestCredential: String? = nil
+    ) async throws {
         guard !jpeg.isEmpty, jpeg.count <= min(ticket.maxByteSize, AnalysisPhotoInput.maxCloudBytes),
-              isAnalysisUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId) else {
+              isUploadURL(ticket.signedUploadURL, photoAssetId: ticket.photoAssetId, mediaPath: mediaPath) else {
             throw AnalysisHTTPError.invalidUpload
         }
         var request = URLRequest(url: ticket.signedUploadURL)
@@ -1036,10 +1132,24 @@ extension PlantsAPIClient {
     func confirmAnalysisPhoto(
         id: UUID, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws {
+        try await confirmPhotoUpload(id: id, mediaPath: "media", locale: locale, context: context,
+                                     guestCredential: guestCredential)
+    }
+
+    func confirmFirstAidPhoto(id: UUID, context: SyncSessionLease) async throws {
+        try await confirmPhotoUpload(id: id, mediaPath: "media/first-aid", locale: .en,
+                                     context: context, forbidRedirects: true)
+    }
+
+    private func confirmPhotoUpload(
+        id: UUID, mediaPath: String, locale: SupportedLocale, context: SyncSessionLease,
+        guestCredential: String? = nil, forbidRedirects: Bool = false
+    ) async throws {
         let body = try JSONEncoder().encode(["photo_asset_id": id.uuidString.lowercased()])
-        let request = try buildRequest(path: "media/complete", method: "POST", body: body)
+        let request = try buildRequest(path: mediaPath + "/complete", method: "POST", body: body)
         let photo: AnalysisUploadedPhoto = try await analysisRequest(
-            request, locale: locale, context: context, status: [200], installation: guestCredential
+            request, locale: locale, context: context, status: [200], installation: guestCredential,
+            forbidRedirects: forbidRedirects
         )
         try validateUploadedPhoto(photo, id: id)
     }
@@ -1166,7 +1276,15 @@ extension PlantsAPIClient {
     }
 
     func fetchPlantPhoto(plantId: UUID, context: SyncSessionLease) async throws -> Data {
-        var request = try buildRequest(path: "plants/\(plantId.uuidString.lowercased())/photo", method: "GET")
+        try await fetchPrivatePhoto(path: "plants/\(plantId.uuidString.lowercased())/photo", context: context)
+    }
+
+    func fetchObservationPhoto(observationId: UUID, context: SyncSessionLease) async throws -> Data {
+        try await fetchPrivatePhoto(path: "care/observations/\(observationId.uuidString.lowercased())/photo", context: context)
+    }
+
+    private func fetchPrivatePhoto(path: String, context: SyncSessionLease) async throws -> Data {
+        var request = try buildRequest(path: path, method: "GET")
         try syncAuthority.withBoundValid(context) {
             guard let session = context.session else { throw SyncWireValidationError.invalidSession }
             request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
@@ -1219,7 +1337,7 @@ extension PlantsAPIClient {
         return try syncAuthority.withBoundValid(context) { decoded }
     }
 
-    private func isAnalysisUploadURL(_ url: URL, photoAssetId: UUID) -> Bool {
+    private func isUploadURL(_ url: URL, photoAssetId: UUID, mediaPath: String) -> Bool {
         guard let candidate = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let base = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
               base.scheme?.lowercased() == "https", candidate.scheme?.lowercased() == "https",
@@ -1230,6 +1348,6 @@ extension PlantsAPIClient {
         else { return false }
         let prefix = base.percentEncodedPath.hasSuffix("/")
             ? base.percentEncodedPath : base.percentEncodedPath + "/"
-        return candidate.percentEncodedPath == prefix + "media/uploads/" + photoAssetId.uuidString.lowercased()
+        return candidate.percentEncodedPath == prefix + mediaPath + "/uploads/" + photoAssetId.uuidString.lowercased()
     }
 }

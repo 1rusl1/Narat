@@ -14,6 +14,8 @@ public final class LocalOutboxRecord {
     public var retryCount: Int
     public var lastError: String?
     public var createdAt: Date
+    @Attribute(.externalStorage) var observationJPEG: Data?
+    var observationPhotoAssetId: UUID?
 
     public init(
         operationId: UUID = UUID(),
@@ -360,6 +362,14 @@ public actor LocalStore {
         commandName: String,
         payloadJSON: String
     ) throws -> OutboxEntrySnapshot {
+        try enqueueCommand(operationId: operationId, ownerId: ownerId, plantId: plantId,
+                           commandName: commandName, payloadJSON: payloadJSON, observationJPEG: nil)
+    }
+
+    private func enqueueCommand(
+        operationId: UUID, ownerId: UUID, plantId: UUID?, commandName: String, payloadJSON: String,
+        observationJPEG: Data?
+    ) throws -> OutboxEntrySnapshot {
         let modelContext = makeSyncContext()
         let existingDescriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
@@ -368,7 +378,8 @@ public actor LocalStore {
             guard existing.ownerId == ownerId,
                   existing.plantId == plantId,
                   existing.commandName.utf8.elementsEqual(commandName.utf8),
-                  existing.payloadJSON.utf8.elementsEqual(payloadJSON.utf8) else {
+                  existing.payloadJSON.utf8.elementsEqual(payloadJSON.utf8),
+                  existing.observationJPEG == observationJPEG else {
                 throw OutboxEnqueueError.operationIdentityMismatch
             }
             return OutboxEntrySnapshot(
@@ -397,6 +408,7 @@ public actor LocalStore {
             payloadJSON: payloadJSON,
             sequenceNumber: nextSeq
         )
+        record.observationJPEG = observationJPEG
         modelContext.insert(record)
         try modelContext.save()
 
@@ -526,7 +538,8 @@ public actor LocalStore {
                 else { throw OutboxEnqueueError.operationIdentityMismatch }
                 return pending
             }
-            guard entry.state == "active", try firstAidRecordInOutbox(plantId: plantId, ownerId: ownerId) == nil
+            guard entry.state == "active", try firstAidRecordInOutbox(plantId: plantId, ownerId: ownerId) == nil,
+                  try firstAidPhotoDraftInOutbox(plantId: plantId, ownerId: ownerId) == nil
             else { throw OutboxEnqueueError.operationIdentityMismatch }
             _ = try enqueueCommand(operationId: command.operationId, ownerId: ownerId, plantId: plantId,
                                    commandName: command.commandName, payloadJSON: command.payloadJSON)
@@ -611,35 +624,146 @@ public actor LocalStore {
             let ownerId = context.ownerId
             let plantId = command.plantId
             if let pending = try firstAidObservationInOutbox(plantId: plantId, ownerId: ownerId) {
-                guard pending.controlId == command.controlId, pending.status == command.status
+                guard pending.controlId == command.controlId, pending.status == command.status, pending.photoId == command.photoId
                 else { throw OutboxEnqueueError.operationIdentityMismatch }
                 return pending
             }
-            let disk = makeSyncContext()
-            let decoder = JSONDecoder()
-            guard let plantRow = try activeSyncRow("plants", id: plantId, ownerId: ownerId, in: disk),
+            guard command.photoId == nil, try firstAidPhotoDraftInOutbox(plantId: plantId, ownerId: ownerId) == nil
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            try requireActiveFirstAidTarget(plantId: plantId, controlId: command.controlId, ownerId: ownerId, now: now)
+            let envelope = command.envelope
+            _ = try enqueueCommand(operationId: envelope.operationId, ownerId: ownerId, plantId: plantId,
+                                   commandName: envelope.commandName, payloadJSON: envelope.payloadJSON)
+            return command
+        }
+    }
+
+    private func requireActiveFirstAidTarget(plantId: UUID, controlId: UUID, ownerId: UUID, now: Date) throws {
+        let disk = makeSyncContext()
+        let decoder = JSONDecoder()
+        guard let plantRow = try activeSyncRow("plants", id: plantId, ownerId: ownerId, in: disk),
                   let plant = try? decoder.decode(CatalogueCardSummary.self, from: Data(plantRow.payloadJSON.utf8)),
                   plant.id == plantId,
-                  let row = try activeSyncRow("first_aid_followups", id: command.controlId, ownerId: ownerId, in: disk),
+                  let row = try activeSyncRow("first_aid_followups", id: controlId, ownerId: ownerId, in: disk),
                   let control = try? decoder.decode(CatalogueFirstAidControl.self, from: Data(row.payloadJSON.utf8)),
-                  control.id == command.controlId, control.plantId == plantId,
+                  control.id == controlId, control.plantId == plantId,
                   control.canObserve(careRevision: plant.careRevision),
                   let factRow = try activeSyncRow("care_entries", id: control.actionEntryId, ownerId: ownerId, in: disk),
                   let fact = try? decoder.decode(CatalogueCareJournalEntry.self, from: Data(factRow.payloadJSON.utf8)),
                   fact.id == control.actionEntryId, fact.plantId == plantId, fact.state == "active",
                   fact.actionCode == control.actionCode, fact.taskId == nil, fact.hasCanonicalDatesAndState
-            else { throw SyncWireValidationError.invalidPage }
-            if let entitlement = try canonicalEntitlement(ownerId: ownerId, in: disk) {
-                guard let expiry = entitlement.verifiedAccessUntil, expiry > now
-                else { throw SyncWireValidationError.invalidRequest }
-            }
-            guard try pendingManualCare(plantId: plantId, firstAidUndo: true, ownerId: ownerId) == nil,
-                  try firstAidRecordInOutbox(plantId: plantId, ownerId: ownerId) == nil
+        else { throw SyncWireValidationError.invalidPage }
+        if let entitlement = try canonicalEntitlement(ownerId: ownerId, in: disk) {
+            guard let expiry = entitlement.verifiedAccessUntil, expiry > now
+            else { throw SyncWireValidationError.invalidRequest }
+        }
+        guard try pendingManualCare(plantId: plantId, firstAidUndo: true, ownerId: ownerId) == nil,
+              try firstAidRecordInOutbox(plantId: plantId, ownerId: ownerId) == nil
+        else { throw OutboxEnqueueError.operationIdentityMismatch }
+    }
+
+    func pendingFirstAidPhotoDraft(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidObservationPhotoDraft? {
+        try authority.withBoundValid(context) {
+            try firstAidPhotoDraftInOutbox(plantId: plantId, ownerId: context.ownerId)
+        }
+    }
+
+    private func firstAidPhotoDraftInOutbox(plantId: UUID, ownerId: UUID) throws -> FirstAidObservationPhotoDraft? {
+        guard let row = try pendingOutboxEntries(for: ownerId).first(where: {
+            $0.plantId == plantId && $0.commandName == FirstAidObservationPhotoDraft.name
+        }) else { return nil }
+        guard let draft = FirstAidObservationPhotoDraft(envelope: row.envelope)
+        else { throw OutboxEnqueueError.operationIdentityMismatch }
+        return draft
+    }
+
+    func enqueueFirstAidPhotoDraft(
+        _ draft: FirstAidObservationPhotoDraft, jpeg: Data, now: Date,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidObservationPhotoDraft {
+        try authority.withBoundValid(context) {
+            let ownerId = context.ownerId
+            guard !jpeg.isEmpty, jpeg.count <= AnalysisPhotoInput.maxCloudBytes,
+                  try firstAidObservationInOutbox(plantId: draft.plantId, ownerId: ownerId) == nil
             else { throw OutboxEnqueueError.operationIdentityMismatch }
-            let envelope = command.envelope
-            _ = try enqueueCommand(operationId: envelope.operationId, ownerId: ownerId, plantId: plantId,
-                                   commandName: envelope.commandName, payloadJSON: envelope.payloadJSON)
+            if let existing = try firstAidPhotoDraftInOutbox(plantId: draft.plantId, ownerId: ownerId) {
+                let record = try firstAidPhotoDraftRecord(existing, ownerId: ownerId, in: makeSyncContext())
+                guard existing.controlId == draft.controlId, existing.status == draft.status, record.observationJPEG == jpeg
+                else { throw OutboxEnqueueError.operationIdentityMismatch }
+                return existing
+            }
+            try requireActiveFirstAidTarget(plantId: draft.plantId, controlId: draft.controlId, ownerId: ownerId, now: now)
+            let envelope = draft.envelope
+            _ = try enqueueCommand(operationId: envelope.operationId, ownerId: ownerId, plantId: draft.plantId,
+                                   commandName: envelope.commandName, payloadJSON: envelope.payloadJSON, observationJPEG: jpeg)
+            return draft
+        }
+    }
+
+    private func firstAidPhotoDraftRecord(
+        _ draft: FirstAidObservationPhotoDraft, ownerId: UUID, in disk: ModelContext
+    ) throws -> LocalOutboxRecord {
+        let operationId = draft.envelope.operationId
+        let descriptor = FetchDescriptor<LocalOutboxRecord>(predicate: #Predicate { $0.operationId == operationId })
+        guard let row = try disk.fetch(descriptor).first, row.ownerId == ownerId, row.plantId == draft.plantId,
+              row.commandName == FirstAidObservationPhotoDraft.name, row.payloadJSON == draft.envelope.payloadJSON
+        else { throw OutboxEnqueueError.operationIdentityMismatch }
+        return row
+    }
+
+    func firstAidPhotoUpload(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> (jpeg: Data, assetId: UUID?) {
+        try authority.withBoundValid(context) {
+            let record = try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: makeSyncContext())
+            guard let jpeg = record.observationJPEG else { throw SyncWireValidationError.invalidRequest }
+            return (jpeg, record.observationPhotoAssetId)
+        }
+    }
+
+    func checkpointFirstAidPhoto(
+        _ assetId: UUID, for draft: FirstAidObservationPhotoDraft, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            let record = try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: disk)
+            guard record.observationPhotoAssetId == nil || record.observationPhotoAssetId == assetId
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            record.observationPhotoAssetId = assetId
+            try disk.save()
+        }
+    }
+
+    func finalizeFirstAidPhoto(
+        _ assetId: UUID, for draft: FirstAidObservationPhotoDraft, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidObservationCommand {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            let record = try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: disk)
+            guard record.observationPhotoAssetId == assetId else { throw OutboxEnqueueError.operationIdentityMismatch }
+            let command = try FirstAidObservationCommand.make(
+                plantId: draft.plantId, controlId: draft.controlId, status: draft.status,
+                photoId: assetId, operationId: draft.envelope.operationId
+            )
+            record.commandName = command.envelope.commandName
+            record.payloadJSON = command.envelope.payloadJSON
+            record.observationJPEG = nil
+            record.observationPhotoAssetId = nil
+            record.lastError = nil
+            try disk.save()
             return command
+        }
+    }
+
+    func discardFirstAidPhotoDraft(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            disk.delete(try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: disk))
+            try disk.save()
         }
     }
 
@@ -653,14 +777,32 @@ public actor LocalStore {
                   let link = try? decoder.decode(CatalogueFirstAidControlLink.self, from: Data(row.payloadJSON.utf8)),
                   link.id == command.controlId, link.plantId == command.plantId,
                   link.actionCode == "check_soil", link.state == "completed" else { return nil }
+            if let photoId = command.photoId {
+                guard let photoRow = try activeSyncRow("photo_assets", id: photoId, ownerId: context.ownerId, in: disk),
+                      let photo = try? decoder.decode(ObservationPhotoAsset.self, from: Data(photoRow.payloadJSON.utf8)),
+                      photo.id == photoId, photo.plantId == command.plantId, photo.state == "ready", photo.purpose == "diary"
+                else { return nil }
+            }
             let rows = try activeSyncedEntities(ownerId: context.ownerId, entityType: "care_observations", in: disk)
             return rows.first(where: { row in
                 guard let observation = try? decoder.decode(CatalogueFirstAidObservation.self, from: Data(row.payloadJSON.utf8))
                 else { return false }
                 return observation.id == row.id && observation.plantId == command.plantId
                     && observation.controlId == command.controlId && observation.operationId == command.envelope.operationId
-                    && observation.status == command.status && observation.isStandalone
+                    && observation.status == command.status && observation.photoId == command.photoId && observation.isStandalone
             })?.id
+        }
+    }
+
+    private struct ObservationPhotoAsset: Decodable {
+        let id: UUID
+        let plantId: UUID
+        let state: String
+        let purpose: String
+
+        enum CodingKeys: String, CodingKey {
+            case id, state, purpose
+            case plantId = "plant_id"
         }
     }
 

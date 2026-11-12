@@ -142,7 +142,7 @@ public actor SyncEngine {
                 continue
             }
 
-            let envelope = entry.envelope
+            var envelope = entry.envelope
             var firstAidUndo = false
             if context.session != nil, entry.commandName == ManualWateringAction.undoCommand {
                 firstAidUndo = try await store.isFirstAidUndo(envelope, context: context, authority: apiClient.syncAuthority)
@@ -151,6 +151,11 @@ public actor SyncEngine {
             let result: OutboxCommandResult
             var receivedReceipt = false
             do {
+                if entry.commandName == FirstAidObservationPhotoDraft.name {
+                    guard let draft = FirstAidObservationPhotoDraft(envelope: envelope)
+                    else { throw SyncWireValidationError.invalidRequest }
+                    envelope = try await prepareFirstAidObservationPhoto(draft, context: context).envelope
+                }
                 result = try await apiClient.sendOutboxCommand(envelope, context: context)
                 receivedReceipt = true
                 switch result {
@@ -184,7 +189,7 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
-                    let observation = entry.commandName == FirstAidObservationCommand.name
+                    let observation = envelope.commandName == FirstAidObservationCommand.name
                     if !receivedReceipt, (firstAidUndo || entry.commandName == FirstAidRecordCommand.name || observation),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
@@ -197,6 +202,8 @@ public actor SyncEngine {
                         continue
                     }
                     failure = String(decoding: try JSONEncoder().encode(apiError), as: UTF8.self)
+                } else if envelope.commandName == FirstAidObservationPhotoDraft.name {
+                    failure = "Observation photo upload failed"
                 } else {
                     failure = String(describing: error)
                 }
@@ -228,6 +235,29 @@ public actor SyncEngine {
         }
 
         return committedCount
+    }
+
+    private func prepareFirstAidObservationPhoto(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
+    ) async throws -> FirstAidObservationCommand {
+        let authority = apiClient.syncAuthority
+        let upload = try await store.firstAidPhotoUpload(draft, context: context, authority: authority)
+        if let assetId = upload.assetId {
+            do {
+                try await apiClient.confirmFirstAidPhoto(id: assetId, context: context)
+                return try await store.finalizeFirstAidPhoto(assetId, for: draft, context: context, authority: authority)
+            } catch let error as APIErrorResponse where error.error.code == "CONFLICT" && error.error.retryable {
+                // A lost PUT may have left the upload incomplete. Keep the original ticket identity.
+            }
+        }
+        let ticket = try await apiClient.issueFirstAidPhotoUpload(jpeg: upload.jpeg, draft: draft, context: context)
+        try await store.checkpointFirstAidPhoto(ticket.photoAssetId, for: draft, context: context, authority: authority)
+        if ticket.expiresInSeconds == 0 {
+            try await apiClient.confirmFirstAidPhoto(id: ticket.photoAssetId, context: context)
+        } else {
+            try await apiClient.uploadFirstAidJPEG(upload.jpeg, ticket: ticket, context: context)
+        }
+        return try await store.finalizeFirstAidPhoto(ticket.photoAssetId, for: draft, context: context, authority: authority)
     }
 
     private func refreshCareJournal(ownerId: UUID, watermark: Int64, context: SyncSessionLease) async throws {
