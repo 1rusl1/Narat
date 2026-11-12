@@ -253,7 +253,8 @@ final class FirstHelpUnitTests: XCTestCase {
     private func serviceResult(
         mode: AnalysisMode = .diagnosis,
         status: IdentificationStatus = .resolved,
-        labels: Bool = true
+        labels: Bool = true,
+        uploadedPhotoId: UUID? = nil
     ) -> AnalysisServiceResult {
         let resolved = status == .resolved
         return AnalysisServiceResult(
@@ -268,7 +269,8 @@ final class FirstHelpUnitTests: XCTestCase {
                 analysisReceipt: ""
             ),
             speciesLabel: labels ? "Fixture species" : nil,
-            conditionLabel: labels ? "Fixture condition" : nil
+            conditionLabel: labels ? "Fixture condition" : nil,
+            uploadedPhotoId: uploadedPhotoId
         )
     }
 
@@ -302,6 +304,42 @@ final class FirstHelpUnitTests: XCTestCase {
             XCTAssertNil(model.accessState)
             XCTAssertNil(model.submitAnalysis(locale: .en))
             XCTAssertEqual(service.requests.count, 1)
+        }
+    }
+
+    func testIdentificationConfirmationRequiresResolvedResultAndItsUploadedPhoto() async throws {
+        let photoId = UUID()
+        let candidates = [
+            serviceResult(mode: .identification, status: .unknown, uploadedPhotoId: photoId),
+            serviceResult(mode: .identification),
+            serviceResult(mode: .identification, uploadedPhotoId: photoId)
+        ]
+        for (index, result) in candidates.enumerated() {
+            let service = GalleryAnalysisFixture(response: result)
+            let model = AnalysisFlowModel(service: service)
+            model.router.selectIntent(.care)
+            model.router.selectCareMethod(.scan)
+            model.selectPhotoData(photoFixture())
+            let task = try XCTUnwrap(model.submitAnalysis(locale: .en))
+            await task.value
+            XCTAssertEqual(model.canConfirmPhotoIdentification, index == 2)
+            XCTAssertNil(model.confirmedPhotoIdentification)
+            XCTAssertNil(model.router.flowState.confirmedPlantId)
+            model.confirmPhotoIdentification()
+            if index == 2 {
+                XCTAssertEqual(model.confirmedPhotoIdentification, PhotoIdentificationSelection(
+                    jobId: result.analysis.jobId, photoAssetId: photoId, speciesSlug: "fixture-species"
+                ))
+                XCTAssertEqual(model.router.flowState.confirmedPlantId, "fixture-species")
+                XCTAssertEqual(service.requests.count, 1)
+                XCTAssertFalse(model.canConfirmPhotoIdentification)
+            } else {
+                XCTAssertNil(model.confirmedPhotoIdentification)
+            }
+            _ = model.beginPhotoSelection()
+            XCTAssertNil(model.confirmedPhotoIdentification)
+            XCTAssertNil(model.router.flowState.confirmedPlantId)
+            XCTAssertFalse(model.canConfirmPhotoIdentification)
         }
     }
 

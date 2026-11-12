@@ -49,6 +49,18 @@ public struct PreliminaryResultView: View {
                     ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
                     }
+                    if result.mode == .identification {
+                        if model.confirmedPhotoIdentification != nil {
+                            Text(isPolish ? "Gatunek potwierdzony." : "Species confirmed.")
+                                .accessibilityIdentifier("analysis.identification.confirmed")
+                        } else if model.canConfirmPhotoIdentification {
+                            Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
+                                model.confirmPhotoIdentification()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("analysis.identification.confirm")
+                        }
+                    }
                     if let connection = catalogueConnection,
                        connection.snapshot?.isAnonymous == false,
                        result.mode == .diagnosis,

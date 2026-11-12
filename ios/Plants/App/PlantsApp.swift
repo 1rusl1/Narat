@@ -486,7 +486,8 @@ final class StagingAnalysisService: AnalysisService {
             return AnalysisServiceResult(
                 analysis: result.domainValue,
                 speciesLabel: result.plantDisplayName,
-                conditionLabel: result.conditionDisplayName
+                conditionLabel: result.conditionDisplayName,
+                uploadedPhotoId: photoId
             )
         } catch let error as APIErrorResponse where error.error.code.hasPrefix("PROVIDER_") {
             throw AnalysisServiceFailure.retryableProvider

@@ -18,16 +18,25 @@ public struct AnalysisServiceResult: Sendable {
     public let analysis: PreliminaryAnalysis
     public let speciesLabel: String?
     public let conditionLabel: String?
+    public let uploadedPhotoId: UUID?
 
     public init(
         analysis: PreliminaryAnalysis,
         speciesLabel: String? = nil,
-        conditionLabel: String? = nil
+        conditionLabel: String? = nil,
+        uploadedPhotoId: UUID? = nil
     ) {
         self.analysis = analysis
         self.speciesLabel = speciesLabel
         self.conditionLabel = conditionLabel
+        self.uploadedPhotoId = uploadedPhotoId
     }
+}
+
+struct PhotoIdentificationSelection: Equatable, Sendable {
+    let jobId: UUID
+    let photoAssetId: UUID
+    let speciesSlug: String
 }
 
 public enum AnalysisServiceFailure: Error, Sendable, Equatable {
@@ -56,7 +65,8 @@ public final class AnalysisFlowModel {
     public private(set) var frozenRequest: AnalysisServiceRequest?
     public private(set) var speciesLabel: String?
     public private(set) var conditionLabel: String?
-
+    private var identifiedPhoto: PhotoIdentificationSelection?
+    private var confirmedPhoto: PhotoIdentificationSelection?
     private let photoInput = AnalysisPhotoInput()
     private var service: (any AnalysisService)?
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
@@ -93,7 +103,38 @@ public final class AnalysisFlowModel {
         preliminaryResult = nil
         speciesLabel = nil
         conditionLabel = nil
+        identifiedPhoto = nil
+        if confirmedPhoto != nil { router.flowState.confirmedPlantId = nil }
+        confirmedPhoto = nil
         analysisError = nil
+    }
+
+    private var photoIdentificationCandidate: PhotoIdentificationSelection? {
+        guard router.flowState.currentStep == .preliminaryResult,
+              let frozenRequest, frozenRequest.mode == .identification,
+              frozenRequest.flowId == router.flowState.flowId,
+              frozenRequest.operationId == currentOperationId,
+              frozenRequest.photo == preparedPhoto,
+              let result = preliminaryResult, result.mode == .identification,
+              result.identificationStatus == .resolved, speciesLabel != nil,
+              let identifiedPhoto, identifiedPhoto.jobId == result.jobId,
+              identifiedPhoto.speciesSlug == result.plantId else { return nil }
+        return identifiedPhoto
+    }
+
+    var confirmedPhotoIdentification: PhotoIdentificationSelection? {
+        guard let confirmedPhoto, confirmedPhoto == photoIdentificationCandidate else { return nil }
+        return confirmedPhoto
+    }
+
+    var canConfirmPhotoIdentification: Bool {
+        confirmedPhoto == nil && photoIdentificationCandidate != nil
+    }
+
+    func confirmPhotoIdentification() {
+        guard confirmedPhoto == nil, let candidate = photoIdentificationCandidate else { return }
+        confirmedPhoto = candidate
+        router.flowState.confirmedPlantId = candidate.speciesSlug
     }
 
     public func returnFromAnalysis() {
@@ -227,6 +268,12 @@ public final class AnalysisFlowModel {
                     return
                 }
                 self.preliminaryResult = result.analysis
+                if request.mode == .identification, result.analysis.identificationStatus == .resolved,
+                   let slug = Self.nonempty(result.analysis.plantId), let photoId = result.uploadedPhotoId {
+                    self.identifiedPhoto = PhotoIdentificationSelection(
+                        jobId: result.analysis.jobId, photoAssetId: photoId, speciesSlug: slug
+                    )
+                }
                 if result.analysis.identificationStatus == .resolved,
                    result.analysis.plantId != nil {
                     self.speciesLabel = Self.nonempty(result.speciesLabel)
