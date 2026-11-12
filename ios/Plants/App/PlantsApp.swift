@@ -534,6 +534,7 @@ final class StagingAnalysisService: AnalysisService {
     private struct Progress {
         let request: AnalysisServiceRequest
         let ownerId: UUID
+        var creationOperationId: UUID
         var photoId: UUID?
         var uploadAttempted = false
         var photoReady = false
@@ -585,7 +586,7 @@ final class StagingAnalysisService: AnalysisService {
             throw AnalysisServiceFailure.unavailable
         }
 
-        var progress = Progress(request: request, ownerId: lease.ownerId)
+        var progress = Progress(request: request, ownerId: lease.ownerId, creationOperationId: request.operationId)
         if let previous, previous.request.operationId == request.operationId {
             guard previous.ownerId == lease.ownerId, previous.request == request else {
                 throw AnalysisServiceFailure.unavailable
@@ -636,7 +637,7 @@ final class StagingAnalysisService: AnalysisService {
                 )
             } else {
                 job = try await api.createAnalysisJob(
-                    operationId: request.operationId, mode: request.mode, photoAssetId: photoId,
+                    operationId: progress.creationOperationId, mode: request.mode, photoAssetId: photoId,
                     flowId: request.mode == .identification || targetPlantId != nil ? request.flowId : nil,
                     targetPlantId: targetPlantId,
                     locale: locale, context: lease, guestCredential: guestCredential
@@ -658,6 +659,13 @@ final class StagingAnalysisService: AnalysisService {
                 try verify(lease, attempt: attempt)
             }
             if job.status == .failed, job.errorCode?.hasPrefix("PROVIDER_") == true {
+                if request.mode == .diagnosis, targetPlantId == nil, job.quotaState == .released {
+                    // A terminal job cannot be replayed into a new run. Keep the upload
+                    // and allocate one create operation for the user's next explicit retry.
+                    progress.jobId = nil
+                    progress.creationOperationId = UUID()
+                    throw AnalysisServiceFailure.retryableProvider
+                }
                 throw AnalysisServiceFailure.providerFailed
             }
             guard job.status == .succeeded else { throw AnalysisServiceFailure.unavailable }

@@ -3921,6 +3921,72 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testStagingDiagnosisRetriesReleasedProviderFailureWithTheSamePreparedInput() async throws {
+        let photo = UUID(), firstJob = UUID(), retryJob = UUID()
+        let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+        let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+        let failed = diagnosisJob(id: firstJob, status: "failed", errorCode: #""PROVIDER_TIMEOUT_OR_ERROR""#)
+            .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"released""#)
+        let unavailable = #"{"error":{"code":"PROVIDER_UNAVAILABLE","message":"Fixture provider error","retryable":true}}"#
+        let result = #"{"analysis_id":"\#(UUID().uuidString)","job_id":"\#(retryJob.uuidString)","kb_release_id":"\#(UUID().uuidString)","mode":"diagnosis","identification_status":"identified","plant_id":"monstera_deliciosa","genus_id":"monstera","diagnosis_status":"healthy","selected_condition_id":null,"candidates":[],"visual_markers":[],"evidence_basis":[],"limitations":[],"first_action_summary":null,"control_interval_days":null,"plan_availability":"diagnosis_unresolved","analysis_receipt":"test-receipt","plant_display_name":"Monstera deliciosa"}"#
+        let transport = CatalogueTransport([
+            .http(200, diagnosisTicket(url: url, photoId: photo)), .http(200, ready),
+            .http(202, diagnosisJob(id: firstJob, status: "queued")), .http(200, failed),
+            .http(503, unavailable), .http(202, diagnosisJob(id: retryJob, status: "queued")),
+            .http(200, diagnosisJob(id: firstJob, status: "running")),
+            .http(200, diagnosisJob(id: retryJob, status: "succeeded", result: result)
+                .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"consumed""#))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let owner = accessOwner
+        let service = StagingAnalysisService(api: api) { try await api.captureSyncContext(ownerId: owner) }
+        let model = AnalysisFlowModel(service: service)
+        model.router.selectIntent(.problem)
+        model.router.attachPhoto(identifier: "fixture-gallery-photo")
+        model.preparedPhoto = PreparedAnalysisPhoto(
+            cloudNormalizedJPEG: Data([1, 2]), aiVisionJPEG: Data([1, 2]),
+            aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 2
+        )
+        model.selectLightLevel(.medium)
+        model.selectWateringHabit(.moderate)
+        let first = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await first.value
+        let frozen = try XCTUnwrap(model.frozenRequest)
+        for error in ["analysis.error.provider", "analysis.error.provider", "analysis.error.failed"] {
+            XCTAssertEqual(model.analysisError, error)
+            XCTAssertEqual(model.router.flowState.currentStep, .analyzing)
+            XCTAssertEqual(model.router.flowState.photoLocalIdentifier, "fixture-gallery-photo")
+            XCTAssertEqual(model.router.flowState.conditions, frozen.conditions)
+            XCTAssertEqual(model.preparedPhoto, frozen.photo)
+            XCTAssertEqual(model.frozenRequest, frozen)
+            XCTAssertNil(model.preliminaryResult)
+            XCTAssertNil(model.speciesLabel)
+            XCTAssertNil(model.conditionLabel)
+            let retry = try XCTUnwrap(model.submitAnalysis(locale: .pl))
+            await retry.value
+        }
+        XCTAssertEqual(model.currentOperationId, frozen.operationId)
+        XCTAssertEqual(model.preliminaryResult?.jobId, retryJob)
+        XCTAssertEqual(model.preliminaryResult?.diagnosisStatus, .healthy)
+        XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "GET", "POST", "POST", "GET", "GET"])
+        guard requests.count == 8 else { return }
+        let firstCreate = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[2].httpBody))
+        let secondCreate = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[4].httpBody))
+        XCTAssertEqual(firstCreate["operation_id"], frozen.operationId.uuidString.lowercased())
+        XCTAssertNotEqual(firstCreate["operation_id"], secondCreate["operation_id"])
+        XCTAssertEqual(firstCreate["photo_asset_id"], photo.uuidString.lowercased())
+        XCTAssertEqual(secondCreate["photo_asset_id"], firstCreate["photo_asset_id"])
+        XCTAssertEqual(requests[4].httpBody, requests[5].httpBody)
+        XCTAssertEqual(requests[1].httpBody, frozen.photo.aiVisionJPEG)
+        XCTAssertEqual(requests[6].url, requests[7].url)
+        XCTAssertEqual(requests[7].url?.lastPathComponent, retryJob.uuidString.lowercased())
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Client-Locale") == "en" })
+    }
+
+    @MainActor
     func testStagingRepeatDiagnosisReplaysSameUploadAndRejectsOtherPhotoOrOwner() async throws {
         let target = RepeatDiagnosisTarget(plantId: serverPlantId, ownerId: accessOwner)
         let photo = UUID(), jobId = UUID()
