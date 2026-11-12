@@ -7,13 +7,13 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import struct
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "catalogue/releases/skeleton-300-v1"
-MANIFEST_PL = ROOT / "knowledge-base/manifests/pl-description-translations.json"
+sys.path.insert(0, str(ROOT / "knowledge-base/pipeline"))
+from catalogue_image import parse_image_dimensions_and_mime
 
 FORBIDDEN_COMMON_NAMES_EN = {
     "flowering perennial herbaceous bulbous plant",
@@ -38,53 +38,6 @@ CROSS_SPECIES_PL_LABELS = {
 }
 
 
-def parse_image_dimensions_and_mime(raw: bytes):
-    if raw.startswith(b"\x89PNG\r\n\x1a\n") and len(raw) >= 24:
-        w, h = struct.unpack(">II", raw[16:24])
-        return w, h, "image/png"
-    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-        return None, None, "image/webp"
-    if raw.startswith(b"\xff\xd8"):
-        i = 2
-        n = len(raw)
-        while i + 9 < n:
-            if raw[i] != 0xFF:
-                i += 1
-                continue
-            while i < n and raw[i] == 0xFF:
-                i += 1
-            if i >= n:
-                break
-            marker = raw[i]
-            i += 1
-            if marker in (0xD8, 0xD9) or (0xD0 <= marker <= 0xD7) or marker == 0x01:
-                continue
-            if i + 2 > n:
-                break
-            seg_len = struct.unpack(">H", raw[i : i + 2])[0]
-            if seg_len < 2 or i + seg_len > n:
-                break
-            if marker in (
-                0xC0,
-                0xC1,
-                0xC2,
-                0xC3,
-                0xC5,
-                0xC6,
-                0xC7,
-                0xC9,
-                0xCA,
-                0xCB,
-                0xCD,
-                0xCE,
-                0xCF,
-            ):
-                h, w = struct.unpack(">HH", raw[i + 3 : i + 7])
-                return w, h, "image/jpeg"
-            i += seg_len
-    raise ValueError("Unsupported or corrupt image header")
-
-
 def verify_pipeline(root: Path = ROOT) -> dict:
     checks = []
 
@@ -93,43 +46,21 @@ def verify_pipeline(root: Path = ROOT) -> dict:
         if not passed:
             raise AssertionError(f"{name}: {detail}")
 
-    pl_path = root / "knowledge-base/manifests/pl-description-translations.json"
-    pl_data = json.loads(pl_path.read_text(encoding="utf-8"))
+    import import_catalogue_300 as imp
 
-    expected_revs = {
-        "begonia_maculata": 1376148716,
-        "begonia_corallina": 1368208086,
-        "hoya_lanceolata": 1342565019,
-    }
-    for pid, rev in expected_revs.items():
-        entry = pl_data.get(pid)
-        ok = (
-            isinstance(entry, dict)
-            and entry.get("source_revision") == rev
-            and isinstance(entry.get("pl_text"), str)
-            and len(entry["pl_text"].strip()) >= 50
-            and isinstance(entry.get("pl_common_names"), list)
-        )
-        record(f"pl_manifest_{pid}", ok, f"rev={entry.get('source_revision') if isinstance(entry, dict) else None}")
-
-    tirucalli_names = [n.casefold() for n in pl_data.get("euphorbia_tirucalli", {}).get("pl_common_names", [])]
-    record(
-        "pl_manifest_euphorbia_tirucalli",
-        "wilczomlecz okazały" not in tirucalli_names and "wilczomlecz ołówkowy" in tirucalli_names,
-        f"names={tirucalli_names}",
-    )
-
-    for pid, bad_genus in (
-        ("ceropegia_linearis", "ceropegia"),
-        ("cymbidium_goeringii", "cymbidium"),
-        ("cymbidium_kanran", "cymbidium"),
-        ("oncidium_sphacelatum", "oncidium"),
+    # Historical Polish text is usable only when the source is about the card's taxon.
+    for qid, title in (
+        ("Q2893846", "Lista gatunków z rodzaju begonia"),
+        ("Q814368", "Begonia koralowa"),
+        ("Q162311", "Hoja piękna"),
     ):
-        names = [n.casefold() for n in pl_data.get(pid, {}).get("pl_common_names", [])]
-        record(f"pl_manifest_no_bare_genus_{pid}", bad_genus not in names, f"names={names}")
-
-    sys.path.insert(0, str(root / "knowledge-base/pipeline"))
-    import import_catalogue_300 as imp  # noqa: E402
+        page = {"title": title, "pageprops": {"wikibase_item": qid}}
+        record(f"reject_cross_taxon_source_{qid}",
+               imp.eligible_polish_article({"id": qid}, page) is None, title)
+    valid_page = {"title": "Monstera dziurawa", "pageprops": {"wikibase_item": "Q159385"}}
+    record("retain_matching_polish_article",
+           imp.eligible_polish_article({"id": "Q159385"}, valid_page) == valid_page,
+           "preserves the source article for a matching species")
 
     # 1. Verify common_names filtering
     item_braunii = {
