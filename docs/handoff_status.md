@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — T165 sync read projection in review, 12 November 2026
+
+T036 is accepted in iOS `bd408bd` and reflected in the checklist. The T165 client read compatibility was accepted in `145b5a2` and recorded in `f74f12f`. The two fields were sent to A before deployment. Migration 024 omits `profile.report_notifications_enabled` and excludes `notification_claim_summaries` before pagination. Stored preferences, historical rows and receipts, trial preference and entitlement dates remain. A saved legacy cursor still resumes the original window. The Edge parser accepts old and new SQL profile shapes to allow the Edge-first rollout.
+
+Controller checks passed 21 targeted Deno and 701 pgTAP in each clean and populated upgrade database. Upgrade preserved historical rows and the true preference. Next independently accept the exact diff, deploy the Edge function then 024 on `narat-staging`, and compare the live sync payload. Hand the deployment to A for signed iOS verification. T165 remains open for the local trial reminder and any remaining cache/read work.
+
 ## B — T165 server notification writes retired on staging, 12 November 2026
 
 After T154, migration 023 and the production route remove `POST /notifications/claim` and the two SQL write RPCs. The historical claim, receipt and existing sync read projections remain available to current iOS clients. The local trial reminder and sync read cleanup follow with A after decoder compatibility.

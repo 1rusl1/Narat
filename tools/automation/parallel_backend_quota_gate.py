@@ -367,6 +367,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                         f"VALUES('{job(891)}','{A}','progress_report','2026-11','{job(890)}','2026-11-01','scheduled','2026-11-01'); "
                         f"INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload) "
                         f"VALUES('{A}','{job(892)}','notification.claim','historical',jsonb_build_object('granted',true));")
+                if any(m.name == '202611120024_retire_notification_sync_projection.sql' for m in selected):
+                    sql(case, f"UPDATE public.profiles SET report_notifications_enabled=true,trial_reminder_enabled=true WHERE id='{A}';")
                 # Existing paid counters deliberately contain unattributable spend;
                 # known consumed/reserved jobs must not be added twice.
                 sql(case, f"INSERT INTO public.monthly_quotas(id,owner_id,quota_kind,period_start,period_end,limit_count,consumed_count,reserved_count) VALUES('{job(400)}','{A}','paid_monthly','2026-10-20','2026-11-20',100,7,1);")
@@ -399,6 +401,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 tap(case, ROOT/'supabase/tests/auth_registration_profile.test.sql')
             if args.access and any(m.name == '202611120023_retire_notification_claim_writes.sql' for m in selected):
                 tap(case, ROOT/'supabase/tests/notification_claim_retirement.test.sql')
+            if args.access and any(m.name == '202611120024_retire_notification_sync_projection.sql' for m in selected):
+                tap(case, ROOT/'supabase/tests/notification_sync_retirement.test.sql')
             if args.diagnosis_upload:
                 tap(case, ROOT/'supabase/tests/diagnosis_upload.test.sql')
             if args.diagnosis_jobs:

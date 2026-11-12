@@ -131,7 +131,9 @@ function canonicalPage(value: unknown): value is Record<string, unknown> {
     (profile.preferred_locale !== "en" && profile.preferred_locale !== "pl") ||
     !Number.isInteger(profile.reminder_hour_local) ||
     Number(profile.reminder_hour_local) < 0 || Number(profile.reminder_hour_local) > 23 ||
-    typeof profile.report_notifications_enabled !== "boolean" ||
+    // Accept old SQL pages while the Edge function is rolled out before the migration.
+    (Object.hasOwn(profile, "report_notifications_enabled") &&
+      typeof profile.report_notifications_enabled !== "boolean") ||
     typeof profile.trial_reminder_enabled !== "boolean"
   ) return false;
   if (value.entitlement !== null) {

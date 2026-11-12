@@ -28,10 +28,10 @@ SELECT is((SELECT response_payload FROM public.operation_receipts WHERE
     owner_id='16300000-0000-4000-8000-000000000001' AND operation_id='16300000-0000-4000-8000-000000000892'),
     '{"granted":true}'::jsonb,'historical notification operation receipt remains intact');
 SELECT ok(EXISTS (
-    SELECT 1 FROM jsonb_array_elements(public.fetch_sync_delta(
-        '16300000-0000-4000-8000-000000000001','2026-10-01',clock_timestamp(),NULL,NULL,NULL,500)->'changes') x
-    WHERE x->>'entity_type'='notification_claim_summaries' AND x->'data'->>'kind'='progress_report'
-),'older clients still read historical claims');
+    SELECT 1 FROM public.owner_sync_entries
+    WHERE owner_id='16300000-0000-4000-8000-000000000001'
+      AND entity_type='notification_claim_summaries' AND data->>'kind'='progress_report'
+),'historical claim stays in the owner history view');
 
 SELECT * FROM finish();
 ROLLBACK;

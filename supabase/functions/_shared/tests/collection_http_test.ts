@@ -234,6 +234,23 @@ Deno.test("T162 production HTTP: multipage window, microseconds, tombstone and f
   });
 });
 
+Deno.test("T165 production sync accepts the current profile and an in-flight historical claim cursor", async () => {
+  const current = page({
+    profile: { preferred_locale: "en", reminder_hour_local: 9, trial_reminder_enabled: true },
+  });
+  const f = fixture({ rpc: () => current });
+  const response = await f.handler(request(query({
+    since, until, limit: "1", cursor_updated_at: changedAt,
+    cursor_entity_type: "notification_claim_summaries", cursor_id: ownerB,
+  })));
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), current);
+  assertEquals(await f.rpcRequests[0].json(), {
+    p_owner_id: ownerA, p_since: since, p_until: until, p_limit: 1,
+    p_cursor_updated_at: changedAt, p_cursor_entity_type: "notification_claim_summaries", p_cursor_id: ownerB,
+  });
+});
+
 Deno.test("T162 production HTTP: A/B/A identity isolation and active anonymous owner", async () => {
   const f = fixture({
     anonymous: true,

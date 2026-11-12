@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "t165-notification-sync-retirement",
+      "description": "Accept removal of retired report and claim projections from live owner sync.",
+      "candidate_base": "f23d571ec566f2fc1e23b01a51262f8ef1fca37b",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/collection_http_test.ts",
+        "supabase/functions/plants-api/collection.ts",
+        "supabase/migrations/202611090004_retire_free_slots.sql",
+        "supabase/migrations/202611120024_retire_notification_sync_projection.sql",
+        "supabase/tests/notification_claim_retirement.test.sql",
+        "supabase/tests/notification_sync_retirement.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.t165-notification-sync-retirement.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Use only local checks. The controller alone deploys to narat-staging and uses synthetic staging sessions.",
+        "Preserve all historical rows and preferences, trial and entitlement read fields, ordering and previously issued cursors. Filter archived claim rows before limit and cursor construction. Edge parser remains compatible with both SQL versions during rollout.",
+        "T036 and iOS compatibility references are already accepted in the iOS branch. No client or billing edits in this packet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T165-R1",
+          "description": "Production static checks and exact diff pass.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T165-R2",
+          "description": "Production HTTP and clean/populated-upgrade PostgreSQL fixtures prove the reduced projection, preserved history and legacy pagination.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
