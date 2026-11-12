@@ -3568,6 +3568,125 @@ extension CollectionWireTests {
         }
     }
 
+    @MainActor
+    func testFirstAidUndoReplaysUntilExactReversalAndControlUpdate() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let entry = UUID(), control = UUID(), reversal = UUID()
+        let otherEntry = UUID(), otherControl = UUID()
+        let voidedAt = "2026-11-03T09:10:00.000001+00:00"
+        let controlUpdatedAt = "2026-11-03T09:10:00.000002+00:00"
+
+        func fact(_ id: UUID, state: String, timestamp: String) -> [String: Any] {
+            var row = syncChange(timestamp, id: id.uuidString, entity: "care_entries")
+            row["data"] = ["id": id.uuidString, "plant_id": serverPlantId.uuidString, "action_code": "check_soil",
+                           "state": state, "occurred_at": syncUntil, "occurred_local_date": "2026-11-03"]
+            return row
+        }
+        func followup(_ id: UUID, entry: UUID, state: String, timestamp: String) -> [String: Any] {
+            var row = syncChange(timestamp, id: id.uuidString, entity: "first_aid_followups")
+            row["data"] = [
+                "id": id.uuidString, "plant_id": serverPlantId.uuidString,
+                "action_entry_id": entry.uuidString, "action_code": "check_soil", "state": state,
+                "check_policy_snapshot": ["due_on": "2026-11-08", "interval_days": 5,
+                                          "source": ["url": "https://example.invalid/interval", "locator": "Fixture"]]
+            ] as [String: Any]
+            return row
+        }
+        func page(_ until: String, _ changes: [[String: Any]]) -> [String: Any] {
+            var result = syncObject()
+            result["until"] = until
+            result["next_since"] = until
+            result["changes"] = changes.sorted {
+                ($0["entity_type"] as! String, $0["id"] as! String) < ($1["entity_type"] as! String, $1["id"] as! String)
+            }
+            return result
+        }
+        var plant = syncChange(id: serverPlantId.uuidString)
+        plant["data"] = ["id": serverPlantId.uuidString, "plant_id": "monstera_deliciosa",
+                         "revision": 1, "care_revision": 1] as [String: Any]
+        let baseline = page(syncUntil, [
+            plant, fact(entry, state: "active", timestamp: syncUntil),
+            fact(otherEntry, state: "active", timestamp: syncUntil),
+            followup(control, entry: entry, state: "active", timestamp: syncUntil),
+            followup(otherControl, entry: otherEntry, state: "active", timestamp: syncUntil)
+        ])
+        let command: CommandEnvelopeDTO
+        let original: URLRequest
+        do {
+            let transport = CatalogueTransport([.http(200, try syncJSON(baseline)), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            do {
+                _ = try await repo.enqueueFirstAidUndo(plantId: UUID(), entryId: entry, context: lease)
+                XCTFail("An undo must target the same plant as the entry")
+            } catch SyncWireValidationError.invalidPage {}
+            command = try await repo.enqueueFirstAidUndo(plantId: serverPlantId, entryId: entry, context: lease)
+            let same = try await repo.enqueueFirstAidUndo(plantId: serverPlantId, entryId: entry, context: lease)
+            XCTAssertEqual(same, command)
+            let watering = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+            XCTAssertNil(watering)
+            guard case .pending = try await repo.retryFirstAidUndo(command, context: lease) else {
+                return XCTFail("An interrupted undo must stay pending")
+            }
+            let history = try await repo.collectionFirstAidHistory(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(history.first(where: { $0.id == entry })?.state, "active")
+            let snapshot = try await repo.collectionFirstAidControls(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(Set(snapshot?.controls.map(\.id) ?? []), [control, otherControl])
+            let requests = await transport.capturedRequests()
+            original = try XCTUnwrap(requests.last)
+        }
+        var receipt = manualWateringReceipt(entryId: entry, state: "voided", reversalId: reversal)
+        receipt["watermark"] = voidedAt
+        let wrongReceipt = manualWateringReceipt(entryId: otherEntry, state: "voided", reversalId: reversal)
+        var reversalChange = syncChange(voidedAt, id: reversal.uuidString, entity: "care_reversals")
+        reversalChange["data"] = ["id": reversal.uuidString, "entry_id": entry.uuidString,
+                                  "operation_id": command.operationId.uuidString, "recorded_at": voidedAt]
+        let missingControlUpdate = page(voidedAt, [fact(entry, state: "voided", timestamp: voidedAt), reversalChange])
+        let complete = page(controlUpdatedAt, [followup(control, entry: entry, state: "undone", timestamp: controlUpdatedAt)])
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(wrongReceipt)),
+            .http(200, try syncJSON(receipt)), .http(200, try syncJSON(missingControlUpdate)),
+            .http(200, try syncJSON(receipt)), .http(200, try syncJSON(complete))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        let reopened = try await repo.pendingFirstAidUndo(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(reopened, command)
+        for _ in 0..<2 {
+            guard case .pending = try await repo.retryFirstAidUndo(command, context: lease) else {
+                return XCTFail("Undo acknowledged against another entry or an active linked control")
+            }
+        }
+        guard case .confirmed = try await repo.retryFirstAidUndo(command, context: lease) else {
+            return XCTFail("Expected confirmation of the exact canonical undo")
+        }
+        let pending = try await repo.pendingFirstAidUndo(plantId: serverPlantId, context: lease)
+        XCTAssertNil(pending)
+        let history = try await repo.collectionFirstAidHistory(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history.first(where: { $0.id == entry })?.state, "voided")
+        XCTAssertEqual(history.first(where: { $0.id == otherEntry })?.state, "active")
+        let snapshot = try await repo.collectionFirstAidControls(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(snapshot?.controls.map(\.id), [otherControl])
+        let envelope = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(original.httpBody))
+        XCTAssertEqual(envelope.commandName, "care.undo")
+        XCTAssertEqual(envelope.plantId, serverPlantId)
+        XCTAssertEqual(ManualWateringAction(envelope: envelope), .undo(entry))
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "GET", "POST", "GET"])
+        for request in requests where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, original.httpBody)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), command.operationId.uuidString.lowercased())
+        }
+    }
+
     private func identificationJob(id: UUID, status: String, quota: String, result: String = "null") -> String {
         #"{"job_id":"\#(id.uuidString)","mode":"identification","status":"\#(status)","quota_kind":"starter_identification","quota_state":"\#(quota)","result":\#(result),"error_code":null,"error_message":null}"#
     }

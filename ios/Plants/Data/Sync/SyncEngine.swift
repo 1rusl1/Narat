@@ -142,12 +142,11 @@ public actor SyncEngine {
                 continue
             }
 
-            let envelope = CommandEnvelopeDTO(
-                operationId: entry.operationId,
-                commandName: entry.commandName,
-                plantId: entry.plantId,
-                payloadJSON: entry.payloadJSON
-            )
+            let envelope = entry.envelope
+            var firstAidUndo = false
+            if context.session != nil, entry.commandName == ManualWateringAction.undoCommand {
+                firstAidUndo = try await store.isFirstAidUndo(envelope, context: context, authority: apiClient.syncAuthority)
+            }
 
             let result: OutboxCommandResult
             var receivedReceipt = false
@@ -165,6 +164,11 @@ public actor SyncEngine {
                           ) == receipt.entryId else {
                         throw SyncWireValidationError.invalidPage
                     }
+                case let .careUndone(reversalId, watermark) where firstAidUndo:
+                    try await refreshCareJournal(ownerId: ownerId, watermark: watermark, context: context)
+                    guard try await store.confirmedFirstAidUndo(
+                        envelope, context: context, authority: apiClient.syncAuthority
+                    ) == reversalId else { throw SyncWireValidationError.invalidPage }
                 default:
                     break
                 }
@@ -174,7 +178,8 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
-                    if !receivedReceipt, entry.commandName == FirstAidRecordCommand.name, !apiError.error.retryable,
+                    if !receivedReceipt, (firstAidUndo || entry.commandName == FirstAidRecordCommand.name),
+                       !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         try await store.finishOutboxEntry(
                             operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
@@ -204,7 +209,7 @@ public actor SyncEngine {
                 try await store.acknowledgeCatalogueCreate(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic, .wateringDateCorrection, .firstAidRecorded:
+            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )

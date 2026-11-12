@@ -144,7 +144,7 @@ struct CatalogueCareJournalEntry: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
-enum FirstAidRecordOutcome {
+enum FirstAidWriteOutcome {
     case pending, confirmed, rejected
 }
 
@@ -340,19 +340,9 @@ public struct CollectionRepository: Sendable {
     }
 
     func pendingManualWatering(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
-        try apiClient.syncAuthority.withBoundValid(context) {}
-        let pending = try await store.pendingOutboxEntries(for: context.ownerId)
-        return try apiClient.syncAuthority.withBoundValid(context) {
-            guard let entry = pending.first(where: {
-                $0.plantId == plantId && ManualWateringAction.accepts(command: $0.commandName)
-            }) else { return nil }
-            let command = CommandEnvelopeDTO(operationId: entry.operationId, commandName: entry.commandName,
-                                             plantId: entry.plantId, payloadJSON: entry.payloadJSON)
-            guard ManualWateringAction(envelope: command) != nil else {
-                throw OutboxEnqueueError.operationIdentityMismatch
-            }
-            return command
-        }
+        try await store.pendingManualCare(
+            plantId: plantId, firstAidUndo: false, context: context, authority: apiClient.syncAuthority
+        )
     }
 
     func enqueueWateringDateCorrection(
@@ -442,13 +432,36 @@ public struct CollectionRepository: Sendable {
 
     func retryFirstAidRecord(
         _ command: FirstAidRecordCommand, context: SyncSessionLease
-    ) async throws -> FirstAidRecordOutcome {
+    ) async throws -> FirstAidWriteOutcome {
         _ = try await syncEngine.flushOutbox(context: context)
         if try await pendingFirstAidRecord(plantId: command.plantId, context: context)?.envelope == command.envelope {
             return .pending
         }
         let entry = try await store.confirmedFirstAidEntry(command, context: context, authority: apiClient.syncAuthority)
         return entry == nil ? .rejected : .confirmed
+    }
+
+    func pendingFirstAidUndo(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
+        try await store.pendingManualCare(
+            plantId: plantId, firstAidUndo: true, context: context, authority: apiClient.syncAuthority
+        )
+    }
+
+    func enqueueFirstAidUndo(plantId: UUID, entryId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO {
+        let command = try ManualWateringAction.undo(entryId).envelope(plantId: plantId)
+        return try await store.enqueueFirstAidUndo(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryFirstAidUndo(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws -> FirstAidWriteOutcome {
+        guard let plantId = command.plantId, case .undo = ManualWateringAction(envelope: command) else {
+            throw SyncWireValidationError.invalidRequest
+        }
+        _ = try await syncEngine.flushOutbox(context: context)
+        if try await pendingFirstAidUndo(plantId: plantId, context: context) == command {
+            return .pending
+        }
+        let reversal = try await store.confirmedFirstAidUndo(command, context: context, authority: apiClient.syncAuthority)
+        return reversal == nil ? .rejected : .confirmed
     }
 
     func collectionFirstAidControls(plantId: UUID, context: SyncSessionLease) async throws -> CatalogueFirstAidSnapshot? {

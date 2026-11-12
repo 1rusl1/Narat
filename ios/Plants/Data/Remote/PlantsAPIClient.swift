@@ -90,9 +90,10 @@ enum ManualWateringAction: Sendable, Equatable {
     case correctDate(entryId: UUID, occurredAt: String, timezone: String)
 
     static let correctionCommand = "care.correct_date"
+    static let undoCommand = "care.undo"
 
     static func accepts(command: String) -> Bool {
-        ["care.record", "care.undo", correctionCommand].contains(command)
+        ["care.record", undoCommand, correctionCommand].contains(command)
     }
 
     init?(envelope: CommandEnvelopeDTO) {
@@ -107,7 +108,7 @@ enum ManualWateringAction: Sendable, Equatable {
                   let occurredAt = payload["occurred_at"], SQLTimestamp.microseconds(from: occurredAt) != nil,
                   let timezone = payload["timezone"], TimeZone(identifier: timezone) != nil else { return nil }
             self = .record
-        case "care.undo":
+        case Self.undoCommand:
             guard payload.count == 1, let id = payload["entry_id"], let entryId = UUID(uuidString: id) else { return nil }
             self = .undo(entryId)
         default:
@@ -138,7 +139,7 @@ enum ManualWateringAction: Sendable, Equatable {
             name = "care.record"
             payload = ["action_code": "water", "occurred_at": Self.timestamp(now, timezone: timezone), "timezone": timezone.identifier]
         case let .undo(entryId):
-            name = "care.undo"
+            name = Self.undoCommand
             payload = ["entry_id": entryId.uuidString.lowercased()]
         case let .correctDate(entryId, occurredAt, timezone):
             name = Self.correctionCommand
@@ -373,6 +374,7 @@ enum OutboxCommandResult: Sendable {
     case generic
     case catalogueCreate(PlantCreateReceiptDTO)
     case wateringDateCorrection(watermark: Int64)
+    case careUndone(reversalId: UUID, watermark: Int64)
     case firstAidRecorded(FirstAidRecordReceipt)
 }
 
@@ -491,8 +493,13 @@ public actor PlantsAPIClient {
         } else if let manualWatering {
             let receipt = try await execute(request, as: ManualWateringReceipt.self, expectedStatus: 200)
             let watermark = try receipt.validate(plantId: envelope.plantId, action: manualWatering)
-            result = envelope.commandName == ManualWateringAction.correctionCommand
-                ? .wateringDateCorrection(watermark: watermark) : .generic
+            switch manualWatering {
+            case .record: result = .generic
+            case .correctDate: result = .wateringDateCorrection(watermark: watermark)
+            case .undo:
+                guard let reversalId = receipt.reversalId else { throw SyncWireValidationError.invalidPage }
+                result = .careUndone(reversalId: reversalId, watermark: watermark)
+            }
         } else {
             _ = try await execute(request, as: CommandResponseDTO.self)
             result = .generic
