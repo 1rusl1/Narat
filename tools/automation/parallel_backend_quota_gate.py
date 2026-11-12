@@ -346,7 +346,7 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 assert any(m.name == ACCESS for m in selected), 'Access snapshot migration required'
         for case in ('clean','upgrade'):
             sql('postgres', f'CREATE DATABASE {case};')
-            sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean);")
+            sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean,created_at timestamptz NOT NULL DEFAULT clock_timestamp());")
             if args.diagnosis_upload:
                 sql(case, 'CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY, name text NOT NULL, public boolean, file_size_limit bigint, allowed_mime_types text[]);')
             for migration in selected:
@@ -389,6 +389,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 cap_race(case, same=False)
             if not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
+            if args.access and any(m.name == '202611120022_auth_registration_profile.sql' for m in selected):
+                tap(case, ROOT/'supabase/tests/auth_registration_profile.test.sql')
             if args.diagnosis_upload:
                 tap(case, ROOT/'supabase/tests/diagnosis_upload.test.sql')
             if args.diagnosis_jobs:

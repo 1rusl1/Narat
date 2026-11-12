@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — T154 Auth registration candidate, 12 November 2026
+
+The installed Auth trigger previously provisioned anonymous inserts only. The forward migration 022 wires new permanent Auth inserts and the same UUID transitioning from anonymous to permanent into the existing profile and quota anchor triggers. It preserves historical profiles, NULL anchors, starter state and active leases. The controller's clean/upgrade run passed 681 pgTAP per database, including 26 new Auth trigger and quota assertions. Auth in these PostgreSQL checks was a fixture.
+
+On staging, a real anonymous session started with identification and diagnosis starters both 1. The licensed Monstera photo settled `starter_identification / consumed` in job `e9cdc1a1-5266-4d24-80b7-d4066a2a1011`. A second fresh anonymous UUID with the same installation still saw identification 0 and diagnosis 1. A received this T036 evidence. Next independently review the exact migration, deploy only 022 to `narat-staging`, then verify permanent registration and the same-ID conversion without manually inserting a profile. Record the Auth confirmation method and compare the reset, original job and installation spend.
+
 ## B — T154 integration baseline started, 12 November 2026
 
 After T151 acceptance, a linked read-only staging audit compared all 42 migration versions with the repository through `202611120021`. Nine relevant relations have RLS enabled. Seven sensitive RPCs grant execution to service role and deny anon/authenticated. `analysis-inputs` is private and `catalogue-media` public. The legacy test owner has an explicit unresolved NULL anchor. Two newly confirmed T151 synthetic accounts received immutable profile-insert anchors equal to the confirmed Auth creation timestamps. Their profile creation was assisted by the isolated fixture.
