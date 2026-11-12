@@ -137,6 +137,40 @@ struct CatalogueWateringEntry: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
+struct CatalogueFirstAidControl: Decodable, Sendable, Identifiable {
+    struct Policy: Decodable, Sendable {
+        let dueOn: String
+        let intervalDays: Int
+        let source: PlantCareRecommendation.Source
+
+        enum CodingKeys: String, CodingKey {
+            case dueOn = "due_on"
+            case intervalDays = "interval_days"
+            case source
+        }
+    }
+
+    let id: UUID
+    let plantId: UUID
+    let actionEntryId: UUID
+    let actionCode: String
+    let state: String
+    let policy: Policy
+
+    enum CodingKeys: String, CodingKey {
+        case id, state
+        case plantId = "plant_id"
+        case actionEntryId = "action_entry_id"
+        case actionCode = "action_code"
+        case policy = "check_policy_snapshot"
+    }
+}
+
+struct CatalogueFirstAidSnapshot: Sendable {
+    let controls: [CatalogueFirstAidControl]
+    let accessUntil: Date?
+}
+
 struct CollectionCapacitySnapshot: Sendable {
     let plantCount: Int
     let entitlement: SyncWireEntitlementDTO?
@@ -371,6 +405,28 @@ public struct CollectionRepository: Sendable {
         return try await wateringHistory(plantId: plantId, context: context)
     }
 
+    func collectionFirstAidControls(plantId: UUID, context: SyncSessionLease) async throws -> CatalogueFirstAidSnapshot? {
+        guard let snapshot = try await store.firstAidControlSnapshot(
+            plantId: plantId, context: context, authority: apiClient.syncAuthority
+        ) else { return nil }
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            let accessUntil = snapshot.entitlement?.verifiedAccessUntil
+            if snapshot.entitlement != nil {
+                guard let accessUntil, accessUntil > clock() else { return nil }
+            }
+            let decoder = JSONDecoder()
+            let controls = snapshot.rows.compactMap { row -> CatalogueFirstAidControl? in
+                guard let control = try? decoder.decode(CatalogueFirstAidControl.self, from: Data(row.payloadJSON.utf8)),
+                      control.id == row.id, control.plantId == plantId, control.state == "active",
+                      control.actionCode == "check_soil", (1...90).contains(control.policy.intervalDays),
+                      SQLCalendarDay.date(from: control.policy.dueOn) != nil, control.policy.source.isVerifiedLink else { return nil }
+                return control
+            }.sorted { ($0.policy.dueOn, $0.id.uuidString) < ($1.policy.dueOn, $1.id.uuidString) }
+            guard !controls.isEmpty else { return nil }
+            return CatalogueFirstAidSnapshot(controls: controls, accessUntil: accessUntil)
+        }
+    }
+
     private func wateringHistory(plantId: UUID, context: SyncSessionLease) async throws -> [CatalogueWateringEntry] {
         try apiClient.syncAuthority.withBoundValid(context) {}
         let entities = try await store.activeSyncedEntities(
@@ -416,15 +472,7 @@ public struct CollectionRepository: Sendable {
             context: context, authority: apiClient.syncAuthority
         )
         return try apiClient.syncAuthority.withBoundValid(context) {
-            let now = clock()
-            func future(_ raw: String?) -> Bool {
-                guard let raw, let expiry = SQLTimestamp.date(from: raw) else { return false }
-                return expiry > now
-            }
-            let paid = snapshot.entitlement.map {
-                ["active", "grace"].contains($0.state) && future($0.validUntil)
-                    && ($0.offerKind == "paid" || ($0.offerKind == "trial" && future($0.trialEndAt)))
-            } ?? false
+            let paid = snapshot.entitlement?.verifiedAccessUntil.map { $0 > clock() } ?? false
             return CollectionCapacity(
                 ownerId: context.ownerId, plantCount: snapshot.plantCount, hasVerifiedPaidAccess: paid
             )

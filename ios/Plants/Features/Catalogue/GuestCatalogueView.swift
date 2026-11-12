@@ -726,6 +726,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
     @State private var history: [CatalogueWateringEntry]?
+    @State private var firstAid: CatalogueFirstAidSnapshot?
     @State private var historyFailed = false
     @State private var adviceFailed = false
     @State private var attempt = 0
@@ -762,6 +763,19 @@ private struct CatalogueCollectionCardView: View {
                                 recommendation: advice, showNextCheck: adviceResponse == requestedAdvice
                             )
                         }
+                        if let firstAid, firstAid.accessUntil.map({ $0 > Date() }) ?? true {
+                            ForEach(firstAid.controls) { control in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("First-aid soil check · \(control.policy.dueOn)")
+                                        .font(.headline)
+                                        .accessibilityIdentifier("catalogue.saved.firstAid.date")
+                                    Link("First-aid interval source", destination: control.policy.source.url)
+                                        .accessibilityIdentifier("catalogue.saved.firstAid.source")
+                                }
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("catalogue.saved.firstAid." + control.id.uuidString.lowercased())
+                            }
+                        }
                         Text("Manual watering history").font(.headline)
                         correctionStatus
                         if let history {
@@ -794,6 +808,12 @@ private struct CatalogueCollectionCardView: View {
             }
             .task(id: attempt) { await loadCare() }
             .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
+            .task(id: firstAid?.accessUntil) {
+                guard let expiry = firstAid?.accessUntil else { return }
+                do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) }
+                catch { return }
+                if firstAid?.accessUntil == expiry { firstAid = nil }
+            }
             .task { await retryWhenConnected() }
             .sheet(item: $dateEdit) { edit in
                 WateringDateEditor(edit: edit) { date in
@@ -858,9 +878,11 @@ private struct CatalogueCollectionCardView: View {
     private func loadHistory(_ repository: CollectionRepository, lease: SyncSessionLease) async throws {
         let result = try await repository.collectionWateringHistory(plantId: card.id, context: lease)
         let queued = try await repository.pendingManualWatering(plantId: card.id, context: lease)
+        let control = try? await repository.collectionFirstAidControls(plantId: card.id, context: lease)
         guard !Task.isCancelled, connection.snapshot == expected else { throw CancellationError() }
         history = result
         historyFailed = false
+        firstAid = control
         if let queued {
             correction = queued.commandName == ManualWateringAction.correctionCommand ? .pending : .blocked
         } else {

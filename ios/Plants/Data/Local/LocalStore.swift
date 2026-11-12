@@ -1071,20 +1071,7 @@ public actor LocalStore {
             guard context.session != nil else { throw SyncWireValidationError.invalidSession }
             let ownerId = context.ownerId
             let modelContext = makeSyncContext()
-            let checkpoints = FetchDescriptor<SyncCheckpointRecord>(
-                predicate: #Predicate { $0.ownerId == ownerId }
-            )
-            guard let checkpoint = try modelContext.fetch(checkpoints).first,
-                  let raw = checkpoint.syncProfileJSON,
-                  let watermark = checkpoint.watermarkRaw,
-                  SQLTimestamp.microseconds(from: watermark) != nil else {
-                throw SyncWireValidationError.invalidPage
-            }
-            // A missing/malformed profile is not an empty Free collection.
-            _ = try JSONDecoder().decode(SyncWireProfileDTO.self, from: Data(raw.utf8))
-            let entitlement = try checkpoint.syncEntitlementJSON.map {
-                try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data($0.utf8))
-            }
+            let entitlement = try canonicalEntitlement(ownerId: ownerId, in: modelContext)
             let plants = FetchDescriptor<SyncedEntityRecord>(
                 predicate: #Predicate {
                     $0.ownerId == ownerId && $0.entityType == "plants" && $0.deletedAt == nil
@@ -1093,6 +1080,36 @@ public actor LocalStore {
             return CollectionCapacitySnapshot(
                 plantCount: try modelContext.fetchCount(plants), entitlement: entitlement
             )
+        }
+    }
+
+    func firstAidControlSnapshot(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> (entitlement: SyncWireEntitlementDTO?, rows: [SyncItemDTO])? {
+        try authority.withBoundValid(context) {
+            let ownerId = context.ownerId
+            let disk = makeSyncContext()
+            let plant = FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+                $0.ownerId == ownerId && $0.entityType == "plants" && $0.entityId == plantId && $0.deletedAt == nil
+            })
+            guard try disk.fetchCount(plant) == 1 else { return nil }
+            let entitlement = try canonicalEntitlement(ownerId: ownerId, in: disk)
+            let controls = try activeSyncedEntities(ownerId: ownerId, entityType: "first_aid_followups", in: disk)
+            return (entitlement, controls)
+        }
+    }
+
+    private func canonicalEntitlement(ownerId: UUID, in disk: ModelContext) throws -> SyncWireEntitlementDTO? {
+        let checkpoints = FetchDescriptor<SyncCheckpointRecord>(predicate: #Predicate { $0.ownerId == ownerId })
+        guard let checkpoint = try disk.fetch(checkpoints).first,
+              let raw = checkpoint.syncProfileJSON,
+              let watermark = checkpoint.watermarkRaw, SQLTimestamp.microseconds(from: watermark) != nil else {
+            throw SyncWireValidationError.invalidPage
+        }
+        // An absent entitlement means Free only after a canonical owner sync.
+        _ = try JSONDecoder().decode(SyncWireProfileDTO.self, from: Data(raw.utf8))
+        return try checkpoint.syncEntitlementJSON.map {
+            try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data($0.utf8))
         }
     }
 
@@ -1115,7 +1132,10 @@ public actor LocalStore {
     }
 
     public func activeSyncedEntities(ownerId: UUID, entityType: String) throws -> [SyncItemDTO] {
-        let modelContext = makeSyncContext()
+        try activeSyncedEntities(ownerId: ownerId, entityType: entityType, in: makeSyncContext())
+    }
+
+    private func activeSyncedEntities(ownerId: UUID, entityType: String, in modelContext: ModelContext) throws -> [SyncItemDTO] {
         let descriptor = FetchDescriptor<SyncedEntityRecord>(
             predicate: #Predicate {
                 $0.ownerId == ownerId && $0.entityType == entityType && $0.deletedAt == nil

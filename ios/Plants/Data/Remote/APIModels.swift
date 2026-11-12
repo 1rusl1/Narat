@@ -865,6 +865,13 @@ public struct SyncWireEntitlementDTO: Codable, Sendable, Equatable {
     public let trialEndAt: String?
     public let autoRenewEnabled: Bool
 
+    var verifiedAccessUntil: Date? {
+        guard ["active", "grace"].contains(state),
+              let validUntil = validUntil.flatMap(SQLTimestamp.date(from:)) else { return nil }
+        if offerKind == "paid" { return validUntil }
+        return trialEndAt.flatMap(SQLTimestamp.date(from:)).map { min(validUntil, $0) }
+    }
+
     enum CodingKeys: String, CodingKey {
         case productId = "product_id"
         case state
@@ -1028,6 +1035,26 @@ extension SQLTimestamp {
         }
         guard let seconds = date(from: whole) else { return nil }
         return Int64(seconds.timeIntervalSince1970.rounded()) * 1_000_000 + fraction
+    }
+}
+
+enum SQLCalendarDay {
+    static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    static func date(from raw: String) -> Date? {
+        guard raw.utf8.count == 10 else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        guard let date = formatter.date(from: raw), formatter.string(from: date) == raw else { return nil }
+        return date
     }
 }
 

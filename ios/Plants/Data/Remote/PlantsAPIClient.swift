@@ -6,7 +6,7 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
         let url: URL
         let locator: String
 
-        fileprivate var isVerifiedLink: Bool {
+        var isVerifiedLink: Bool {
             guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
             return parts.scheme?.lowercased() == "https" && parts.host?.isEmpty == false
                 && parts.user == nil && parts.password == nil
@@ -31,17 +31,9 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
         fileprivate func matches(interval: Int?) -> Bool {
             guard intervalDays > 0, intervalDays == interval, source.isVerifiedLink,
                   !basis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.calendar = calendar
-            formatter.timeZone = calendar.timeZone
-            formatter.dateFormat = "yyyy-MM-dd"
-            formatter.isLenient = false
-            guard let anchor = formatter.date(from: anchorOn), formatter.string(from: anchor) == anchorOn,
-                  let due = formatter.date(from: dueOn), formatter.string(from: due) == dueOn else { return false }
-            return calendar.dateComponents([.day], from: anchor, to: due).day == intervalDays
+            guard let anchor = SQLCalendarDay.date(from: anchorOn),
+                  let due = SQLCalendarDay.date(from: dueOn) else { return false }
+            return SQLCalendarDay.calendar.dateComponents([.day], from: anchor, to: due).day == intervalDays
         }
     }
 

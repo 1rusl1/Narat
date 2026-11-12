@@ -40,6 +40,27 @@ final class CatalogueSaveUITests: XCTestCase {
         localizedText(run, "catalogue.saved.name", run.language.canonicalName, run.language.canonicalName)
     }
 
+    @MainActor func testCollectionShowsOnlyThePendingFirstAidControl() {
+        let run = Run("firstAidControl", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let activePlant = run.app.buttons.matching(NSPredicate(format: "label == %@", "Fixture 1")).firstMatch
+        enabled(activePlant)
+        activePlant.tap()
+        let date = run.app.staticTexts["catalogue.saved.firstAid.date"]
+        require(date)
+        XCTAssertEqual(date.label, "First-aid soil check · 2026-11-08")
+        require(run.app.descendants(matching: .any)["catalogue.saved.firstAid.source"].firstMatch)
+        tap(run, "collection.back", "Back")
+        let undonePlant = run.app.buttons.matching(NSPredicate(format: "label == %@", "Fixture 2")).firstMatch
+        enabled(undonePlant)
+        undonePlant.tap()
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertFalse(date.exists)
+        XCTAssertFalse(run.app.descendants(matching: .any)["catalogue.saved.firstAid.source"].firstMatch.exists)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }

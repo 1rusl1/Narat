@@ -7,6 +7,7 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
+    case firstAidControl
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -421,11 +422,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 if let since, SQLTimestamp.microseconds(from: since) == nil {
                     throw CatalogueUIFixtureError.invalidRequest
                 }
-                let changes: [[String: Any]] = ledger.plants.filter {
+                let plants = ledger.plants.filter {
                     $0.owner == caller && (since == nil || SQLTimestamp.microseconds(from: $0.timestamp)! > SQLTimestamp.microseconds(from: since!)!)
                 }.sorted {
                     $0.timestamp == $1.timestamp ? $0.id.uuidString < $1.id.uuidString : $0.timestamp < $1.timestamp
-                }.map { plant in
+                }
+                let changes: [[String: Any]] = plants.map { plant in
                     ["entity_type": "plants", "id": plant.id.uuidString, "updated_at": plant.timestamp,
                      "deleted_at": NSNull(), "data": [
                         "id": plant.id.uuidString, "plant_id": plant.species,
@@ -435,6 +437,21 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "created_at": plant.timestamp
                      ]]
                 }
+                let firstAid: [[String: Any]] = ledger.scenario == .firstAidControl ? plants.map { plant in
+                    [
+                        "entity_type": "first_aid_followups", "id": plant.id.uuidString,
+                        "updated_at": plant.timestamp, "deleted_at": NSNull(),
+                        "data": [
+                            "id": plant.id.uuidString, "plant_id": plant.id.uuidString,
+                            "action_entry_id": plant.id.uuidString, "action_code": "check_soil",
+                            "state": plant.name == "Fixture 1" ? "active" : "undone",
+                            "check_policy_snapshot": [
+                                "due_on": "2026-11-08", "interval_days": 5,
+                                "source": ["url": "https://example.invalid/control", "locator": "Fixture interval"]
+                            ] as [String: Any]
+                        ] as [String: Any]
+                    ]
+                } : []
                 let entitlement: Any = ledger.scenario == .paid4 && caller == ledger.permanent ? [
                     "product_id": "fixture-only-paid", "state": "active", "offer_kind": "paid",
                     "valid_until": "2099-01-01T00:00:00.000000Z", "grace_until": NSNull(),
@@ -445,7 +462,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     "until": until, "has_more": false, "last_cursor": NSNull(), "next_since": until,
                     "profile": ["preferred_locale": "pl", "reminder_hour_local": 9,
                                 "report_notifications_enabled": true, "trial_reminder_enabled": false],
-                    "entitlement": entitlement, "changes": changes
+                    "entitlement": entitlement, "changes": firstAid + changes
                 ]))
             }
             guard method == "POST", url.path == "/functions/v1/plants-api/commands", query.isEmpty,
