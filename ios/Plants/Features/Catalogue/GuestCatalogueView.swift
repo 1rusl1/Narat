@@ -722,6 +722,7 @@ struct GuestCatalogueView: View {
 
     private struct Detail: Equatable {
         let slug: String?
+        let taxonId: UUID?
         let locale: SupportedLocale
         let attempt: Int
     }
@@ -732,6 +733,7 @@ struct GuestCatalogueView: View {
     @State private var cards: [PublishedSpeciesCard] = []
     @State private var page: PublishedCataloguePage?
     @State private var selection: String?
+    @State private var selectedTaxon: UUID?
     @State private var selectedCard: PublishedSpeciesCard?
     @State private var selectionLocked = false
     @State private var restoredSelection = false
@@ -747,7 +749,9 @@ struct GuestCatalogueView: View {
     private var search: Search {
         Search(locale: locale, query: query.trimmingCharacters(in: .whitespacesAndNewlines), attempt: searchAttempt)
     }
-    private var detail: Detail { Detail(slug: selection, locale: locale, attempt: detailAttempt) }
+    private var detail: Detail {
+        Detail(slug: selection, taxonId: selectedTaxon, locale: locale, attempt: detailAttempt)
+    }
 
     var body: some View {
         VStack {
@@ -782,6 +786,7 @@ struct GuestCatalogueView: View {
                     Button {
                         restoredSelection = false
                         selectedCard = nil
+                        selectedTaxon = card.taxonId
                         selection = card.id
                     } label: {
                         VStack(alignment: .leading) {
@@ -881,6 +886,7 @@ struct GuestCatalogueView: View {
             }
             restoredSelection = false
             selection = nil
+            selectedTaxon = nil
             selectedCard = nil
         } catch {
             detailFailed = true
@@ -962,7 +968,13 @@ struct GuestCatalogueView: View {
         detailFailed = false
         do {
             guard let api = connection.apiClient else { throw NativeAuthFailure.configurationMissing }
-            let card = try await api.fetchPublishedSpecies(slug: slug, locale: requested.locale)
+            let card: PublishedSpeciesCard
+            if let taxonId = requested.taxonId {
+                card = try await api.fetchPublishedSpecies(taxonId: taxonId, locale: requested.locale)
+            } else {
+                card = try await api.fetchPublishedSpecies(slug: slug, locale: requested.locale)
+            }
+            guard card.id == slug else { throw URLError(.cannotParseResponse) }
             guard !Task.isCancelled, detail == requested else { return }
             selectedCard = card
         } catch {

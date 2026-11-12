@@ -527,9 +527,21 @@ public actor PlantsAPIClient {
 
     func fetchPublishedSpecies(slug: String, locale: SupportedLocale) async throws -> PublishedSpeciesCard {
         guard PublishedSpeciesCard.isValidSlug(slug) else { throw URLError(.badURL) }
-        let request = try publicCatalogueRequest(path: "catalogue/\(slug)", locale: locale)
+        let card = try await fetchPublishedSpecies(identifier: slug, locale: locale)
+        guard card.id == slug else { throw URLError(.cannotParseResponse) }
+        return card
+    }
+
+    func fetchPublishedSpecies(taxonId: UUID, locale: SupportedLocale) async throws -> PublishedSpeciesCard {
+        let card = try await fetchPublishedSpecies(identifier: taxonId.uuidString.lowercased(), locale: locale)
+        guard card.taxonId == taxonId else { throw URLError(.cannotParseResponse) }
+        return card
+    }
+
+    private func fetchPublishedSpecies(identifier: String, locale: SupportedLocale) async throws -> PublishedSpeciesCard {
+        let request = try publicCatalogueRequest(path: "catalogue/\(identifier)", locale: locale)
         let card = try await execute(request, as: PublishedSpeciesCard.self, expectedStatus: 200)
-        guard card.id == slug, card.hasValidIdentity else { throw URLError(.cannotParseResponse) }
+        guard card.hasValidIdentity else { throw URLError(.cannotParseResponse) }
         return card
     }
 

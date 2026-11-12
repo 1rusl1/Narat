@@ -378,13 +378,14 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                       request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
                       let locale = request.value(forHTTPHeaderField: "X-Client-Locale"),
                       ["pl", "en"].contains(locale) else { throw CatalogueUIFixtureError.invalidRequest }
+                let taxon = "32e72c49-4e06-434a-86dd-bbf8a5cb209e"
                 let fern: [String: Any] = [
-                    "plant_id": "fixture_fern", "taxon_id": "32e72c49-4e06-434a-86dd-bbf8a5cb209e",
+                    "plant_id": "fixture_fern", "taxon_id": taxon,
                     "display_name": locale == "pl" ? "Paproć" : "Fern",
                     "scientific_name": "Nephrolepis exaltata", "description": NSNull(),
                     "hero_image": NSNull(), "care_profile_available": false
                 ]
-                if url.path == path + "/fixture_fern", query.isEmpty {
+                if [path + "/fixture_fern", path + "/" + taxon].contains(url.path), query.isEmpty {
                     return Reply(status: 200, data: try json(fern))
                 }
                 guard url.path == path, query.map(\.name) == ["q", "limit", "offset"],

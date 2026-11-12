@@ -11,7 +11,9 @@
 
 **Локально.** Diff-check, сборка, welcome и 214 Swift-тестов прошли без пропусков. Новый целевой тест прошёл. Run `ios-t150-identification-confirmation-start-20261112`. Живой стенд в этом срезе не запускался. T150 остаётся открытой.
 
-**Точный следующий шаг.** После публикации B контракта `identification` включить режим в `StagingAnalysisService`, проверить с постоянным тестовым владельцем реальное фото → upload → job → определённый вид или `unknown`, затем подключить серверное сохранение фото и действительный draft/claim. Текущий развернутый обработчик `diagnosis-jobs.ts` принимает только `diagnosis`.
+`PlantsAPIClient.swift` и `GuestCatalogueView.swift` читают выбранный вид по публичному taxon UUID и сверяют UUID и slug. Старое восстановление по slug сохранено. `CatalogueUIFixtures.swift` и `CatalogueUIFixtureTests.swift` проверяют оба способа lookup. Два целевых Swift-теста и один XCUITest открытия карточки после перезапуска прошли в `t150-published-taxon-id-01`. Отдельный живой GET по UUID `83f27806-3577-4bdc-9b18-222bedcf06d7` вернул `monstera_deliciosa` и `Swiss Cheese plant`.
+
+**Точный следующий шаг.** B готовит отдельный `identification` результат с taxon UUID, `catalogue_release_id` и `identified|unknown`. После утверждения и выкладки декодировать этот результат отдельно от диагноза, преобразовать `identified` в клиентский определённый вид через проверенный UUID lookup и включить режим в `StagingAnalysisService`. Затем прогнать живое фото → upload → job → результат и подключить сохранение фото и действительный draft/claim. Проверенный стендовый обработчик `diagnosis-jobs.ts` принимает только `diagnosis`.
 
 ## T149 — живой каталог и коллекция iOS
 
