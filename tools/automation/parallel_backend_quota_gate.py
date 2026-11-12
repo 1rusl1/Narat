@@ -243,6 +243,85 @@ def main():
         check(db, f"(SELECT quota_state='{quota}' FROM public.analysis_jobs WHERE id='{leased_job}')",
               f'guest bind and {expected} settlement keep the correct original quota')
 
+    def first_aid_observation_race(db, winner, offset):
+        owner, plant, diagnosis, entry, control, observe_op, undo_op = map(job, range(offset, offset + 7))
+        sql(db, f"""
+            INSERT INTO public.profiles(id,anonymous) VALUES('{owner}',false);
+            INSERT INTO public.entitlements(owner_id,product_id,state,offer_kind,valid_until)
+            VALUES('{owner}','app.narat.plants.pro.monthly','active','paid',clock_timestamp()+interval '5 minutes');
+            INSERT INTO public.plants(id,owner_id,plant_id,creation_source,display_name)
+            VALUES('{plant}','{owner}','monstera_deliciosa','identification','Observation race fixture');
+            INSERT INTO public.analysis_jobs(id,owner_id,flow_id,intent,add_method,plant_id,mode,kb_release_id,
+                prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,state)
+            VALUES('{diagnosis}','{owner}',gen_random_uuid(),'problem','scan','{plant}','diagnosis','{K}',
+                'observation-race-fixture',gen_random_uuid(),'fixture','en','none','not_applicable','succeeded');
+            INSERT INTO public.care_entries(id,owner_id,plant_id,action_code,occurred_at,occurred_local_date,
+                timezone,operation_id,first_aid_job_id)
+            VALUES('{entry}','{owner}','{plant}','check_soil',now(),current_date,'UTC',gen_random_uuid(),'{diagnosis}');
+            INSERT INTO public.first_aid_followups(id,owner_id,plant_id,origin_analysis_id,kb_release_id,
+                action_code,first_action_snapshot,check_policy_snapshot,action_entry_id)
+            VALUES('{control}','{owner}','{plant}',gen_random_uuid(),'{K}','check_soil','{{}}','{{"fixture":true}}','{entry}');
+        """)
+        observe = (f"SELECT public.complete_first_aid_control('{owner}','{observe_op}','{plant}',"
+                   f"jsonb_build_object('control_id','{control}','status_code','unknown'))->>'state';")
+        undo = (f"SELECT public.execute_manual_care_command('{owner}','{undo_op}','{plant}','care.undo',"
+                f"jsonb_build_object('entry_id','{entry}'))->>'state';")
+        expire = f"UPDATE public.entitlements SET valid_until=clock_timestamp() WHERE owner_id='{owner}';"
+        first = {'observe': observe, 'undo': undo, 'expiry': expire}[winner]
+        second = undo if winner == 'observe' else observe
+        expected = {'observe': 'voided', 'undo': 'FIRST_AID_CONTROL_INACTIVE',
+                    'expiry': 'FIRST_AID_CONTROL_EXPIRED'}[winner]
+        lock = f"SELECT id FROM public.profiles WHERE id='{owner}' FOR UPDATE;"
+        application = f'first_aid_observe_{winner}'
+        blocker = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+
+        def compete():
+            try:
+                return sql(db, f"SET application_name='{application}';\n{second}")
+            except RuntimeError as error:
+                match = re.search(r'ERROR:\s+(FIRST_AID_CONTROL_[A-Z_]+)', str(error))
+                if match:
+                    return match.group(1)
+                raise
+
+        def stop_blocker():
+            if blocker.poll() is None:
+                blocker.kill()
+                blocker.communicate(timeout=10)
+
+        try:
+            blocker.stdin.write(f"BEGIN; {lock}\n\\echo READY\n")
+            blocker.stdin.flush()
+            assert blocker.stdout.readline().strip() == owner and blocker.stdout.readline().strip() == 'READY'
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(compete)
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, f"SELECT count(*) FROM pg_stat_activity WHERE application_name='{application}' AND wait_event_type='Lock'") != '1':
+                        assert not future.done(), 'Competing care command did not wait for owner lock'
+                        assert time.monotonic() < deadline, 'Did not observe a real care command waiter'
+                        time.sleep(.03)
+                    blocker.stdin.write(f"{first} COMMIT;\n\\q\n")
+                    blocker.stdin.flush()
+                    output, error = blocker.communicate(timeout=15)
+                    assert blocker.returncode == 0, error
+                    assert output.strip() == {'observe': 'completed', 'undo': 'voided', 'expiry': ''}[winner]
+                    assert future.result(timeout=15) == expected
+                finally:
+                    stop_blocker()
+        finally:
+            stop_blocker()
+        state = {'observe': 'completed', 'undo': 'undone', 'expiry': 'active'}[winner]
+        count = int(winner == 'observe')
+        check(db, f"""(SELECT state='{state}' FROM public.first_aid_followups WHERE id='{control}')
+            AND (SELECT count(*)={count} FROM public.care_observations WHERE first_aid_control_id='{control}')
+            AND (SELECT count(*)={count} FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{observe_op}')
+            AND (SELECT count(*)=1 FROM public.analysis_jobs WHERE owner_id='{owner}' AND quota_state='not_applicable')
+            AND NOT EXISTS (SELECT 1 FROM public.analysis_jobs WHERE owner_id='{owner}' AND id<>'{diagnosis}')
+            AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              f'first-aid {winner} wins the real owner-lock race with no new job or quota spend')
+
     def legacy_guard(db):
         if db == 'upgrade':
             check(db, f"(SELECT registered_at IS NULL FROM public.account_quota_anchors WHERE owner_id='{B}')", 'legacy guard probe uses unresolved permanent owner')
@@ -430,6 +509,10 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     tap(case, ROOT/'supabase/tests/plant_next_check.test.sql')
                 if any(migration.name == '202611120028_first_aid_control.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/first_aid_control.test.sql')
+                if any(migration.name == '202611120030_first_aid_observation.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/first_aid_observation.test.sql')
+                    for offset, winner in enumerate(('observe', 'undo', 'expiry'), start=1):
+                        first_aid_observation_race(case, winner, 900 + offset * 10)
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:

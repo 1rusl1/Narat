@@ -14,6 +14,7 @@ const envelopeFields = new Set([
   "payload_json",
 ]);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const observationStatuses = new Set(["improved", "unchanged", "worse", "unknown"]);
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -49,7 +50,8 @@ export async function handleCollectionCommand(
     !record(body) ||
     (body.command_name !== "care.record" && body.command_name !== "care.undo" &&
       body.command_name !== "care.correct_date" &&
-      body.command_name !== "care.first_aid.record")
+      body.command_name !== "care.first_aid.record" &&
+      body.command_name !== "care.first_aid.observe")
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
@@ -79,24 +81,36 @@ export async function handleCollectionCommand(
   const isRecord = body.command_name === "care.record";
   const isFirstAid = body.command_name === "care.first_aid.record";
   const isUndo = body.command_name === "care.undo";
-  if (
-    Object.keys(payload).length !== (isUndo ? 1 : 3) ||
-    (isRecord && payload.action_code !== "water") ||
-    (!isUndo && (typeof payload.occurred_at !== "string" ||
-      typeof payload.timezone !== "string"))
-  ) throw invalid();
-  if (isFirstAid) requireUuid(payload.job_id, "job_id");
-  const entryId = isRecord || isFirstAid ? null : requireUuid(payload.entry_id, "entry_id");
+  const isObservation = body.command_name === "care.first_aid.observe";
+  let controlId: string | null = null;
+  let entryId: string | null = null;
+  if (isObservation) {
+    if (
+      Object.keys(payload).length !== 2 || typeof payload.status_code !== "string" ||
+      !observationStatuses.has(payload.status_code)
+    ) throw invalid();
+    controlId = requireUuid(payload.control_id, "control_id");
+    payload.control_id = controlId;
+  } else {
+    if (
+      Object.keys(payload).length !== (isUndo ? 1 : 3) ||
+      (isRecord && payload.action_code !== "water") ||
+      (!isUndo && (typeof payload.occurred_at !== "string" ||
+        typeof payload.timezone !== "string"))
+    ) throw invalid();
+    if (isFirstAid) requireUuid(payload.job_id, "job_id");
+    if (!isRecord && !isFirstAid) entryId = requireUuid(payload.entry_id, "entry_id");
+  }
 
   let response;
   try {
     const client = clientFactory();
     if (!client) throw unavailable();
-    response = await client.rpc("execute_manual_care_command", {
+    response = await client.rpc(isObservation ? "complete_first_aid_control" : "execute_manual_care_command", {
       p_owner_id: ownerId,
       p_operation_id: operationId,
       p_plant_id: plantId,
-      p_command_name: body.command_name,
+      ...(!isObservation && { p_command_name: body.command_name }),
       p_payload: payload,
     });
   } catch {
@@ -115,7 +129,7 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         404,
         "NOT_FOUND",
-        isFirstAid
+        isObservation ? "The plant or first-aid control was not found." : isFirstAid
           ? "The plant or first-aid action was not found."
           : "The plant or care entry was not found.",
       );
@@ -124,7 +138,9 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         409,
         "CONFLICT",
-        "The operation conflicts with an existing care entry or receipt.",
+        isObservation
+          ? "The first-aid control is unavailable or the operation conflicts with an existing receipt."
+          : "The operation conflicts with an existing care entry or receipt.",
       );
     }
     if (["22007", "22008", "22023", "22P02"].includes(error.code)) {
@@ -134,9 +150,18 @@ export async function handleCollectionCommand(
   }
   if (
     !record(data) || data.plant_id !== plantId ||
+    typeof data.watermark !== "string" || !Number.isFinite(Date.parse(data.watermark))
+  ) throw unavailable();
+  if (isObservation) {
+    if (
+      data.control_id !== controlId || data.state !== "completed" ||
+      typeof data.observation_id !== "string" || !uuid.test(data.observation_id)
+    ) throw unavailable();
+    return jsonResponse(data);
+  }
+  if (
     typeof data.entry_id !== "string" ||
-    !uuid.test(data.entry_id) || typeof data.watermark !== "string" ||
-    !Number.isFinite(Date.parse(data.watermark)) ||
+    !uuid.test(data.entry_id) ||
     (isFirstAid && data.control_id !== null &&
       (typeof data.control_id !== "string" || !uuid.test(data.control_id))) ||
     (entryId !== null && data.entry_id !== entryId) ||

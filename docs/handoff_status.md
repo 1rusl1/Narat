@@ -4,7 +4,11 @@
 
 Определён `care.first_aid.observe` через существующий `/commands` и owner sync. В этот срез входят один статус наблюдения, точный replay и конкуренция с отменой и expiry. Приватное фото требует отдельного контракта загрузки. Опубликованный интервал для живого контроля пока отсутствует. [Контракт](../specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md#manual-observation-for-a-first-aid-control-v19).
 
-Проверка на этом этапе — `git diff --check`. Сервер и живой стенд ещё не проверены. Следующий шаг — связать наблюдение с контрольной записью и проверить ownership, replay, гонки, квоты и отсутствие новых AI jobs. 024 и StoreKit на паузе. Недельный остаток — 15%.
+Контракт `bcc9534` передан A. Миграция 030 и `care-journal.ts` связывают один `care_observations` с контрольной записью и возвращают исходный receipt при replay. Изменены HTTP/SQL fixtures, PostgreSQL gate и manifest независимой приёмки.
+
+**Fixtures.** Прошли typecheck двух Edge entrypoints, diff-check, 8 целевых Deno и по 807 pgTAP на clean/upgrade. В двух соединениях проверены оба порядка undo и expiry во время ожидания блокировки. Запись не добавила AI job, квотный расход или задачу ухода.
+
+Следующий шаг — независимые Review/QA, репетиция точного порядка без 024 и staging smoke с маркированным pending. Живой pending с опубликованным сроком пока открыт. 024 и StoreKit на паузе. Недельный остаток перед PostgreSQL gate — 15%.
 
 ## B — V19 доступное действие первой помощи на staging, 12 ноября 2026
 

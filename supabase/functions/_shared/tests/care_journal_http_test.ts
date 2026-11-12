@@ -36,8 +36,28 @@ const correctionBody = {
   command_name: "care.correct_date",
   payload_json: JSON.stringify(correctionPayload),
 };
+const control = "17a00000-0000-4000-8000-000000000041";
+const observation = "17000000-0000-4000-8000-000000000042";
+const observationPayload = { control_id: control, status_code: "unchanged" };
+const observationBody = {
+  operation_id: "17000000-0000-4000-8000-000000000024",
+  plant_id: plant,
+  command_name: "care.first_aid.observe",
+  payload_json: JSON.stringify(observationPayload),
+};
+const observationReceipt = {
+  plant_id: plant,
+  control_id: control,
+  observation_id: observation,
+  state: "completed",
+  watermark: "2026-11-11T19:40:00.123456+03:00",
+};
 
-function fixture(options: { anonymous?: boolean; errorCode?: string } = {}) {
+function fixture(options: {
+  anonymous?: boolean;
+  errorCode?: string;
+  observationReceipt?: Record<string, unknown>;
+} = {}) {
   const calls: Record<string, unknown>[] = [];
   const handler = createProductionPlantsApiHandler({
     resolveRequestContext: async () => ({
@@ -56,10 +76,11 @@ function fixture(options: { anonymous?: boolean; errorCode?: string } = {}) {
       })[name],
     fetch: async (input, init) => {
       const req = new Request(input, init);
-      assertEquals(
-        req.url,
-        "https://care.example.test/rest/v1/rpc/execute_manual_care_command",
-      );
+      const observationRpc = "https://care.example.test/rest/v1/rpc/complete_first_aid_control";
+      const observe = req.url === observationRpc;
+      assertEquals(req.url, observe
+        ? observationRpc
+        : "https://care.example.test/rest/v1/rpc/execute_manual_care_command");
       assertEquals(
         req.headers.get("authorization"),
         "Bearer fixture-service-key",
@@ -72,6 +93,7 @@ function fixture(options: { anonymous?: boolean; errorCode?: string } = {}) {
           message: "private database error",
         }, { status: 400 });
       }
+      if (observe) return Response.json(options.observationReceipt ?? observationReceipt);
       const undo = body.p_command_name === "care.undo";
       const firstAid = body.p_command_name === "care.first_aid.record";
       return Response.json({
@@ -99,6 +121,46 @@ function fixture(options: { anonymous?: boolean; errorCode?: string } = {}) {
       ),
   };
 }
+
+Deno.test("First-aid observation uses the owner command envelope and exact completed receipt", async () => {
+  const f = fixture();
+  const response = await f.send(observationBody, { "x-operation-id": observationBody.operation_id });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), observationReceipt);
+  assertEquals(await (await f.send(observationBody)).json(), observationReceipt);
+  assertEquals(f.calls[0], {
+    p_owner_id: owner,
+    p_plant_id: plant,
+    p_operation_id: observationBody.operation_id,
+    p_payload: observationPayload,
+  });
+  assertEquals(f.calls[1], f.calls[0]);
+});
+
+Deno.test("First-aid observation rejects attachment and backdate input before RPC", async () => {
+  const f = fixture();
+  for (const payload of [
+    { ...observationPayload, photo_id: observation },
+    { ...observationPayload, observed_at: "2026-11-01T12:00:00Z" },
+    { ...observationPayload, status_code: "recovered" },
+    { ...observationPayload, control_id: null },
+  ]) {
+    const response = await f.send({ ...observationBody, payload_json: JSON.stringify(payload) });
+    assertEquals(response.status, 400);
+  }
+  assertEquals(f.calls, []);
+  const guest = fixture({ anonymous: true });
+  assertEquals((await guest.send(observationBody)).status, 403);
+  assertEquals(guest.calls, []);
+});
+
+Deno.test("First-aid observation maps ownership and conflict errors and rejects a mismatched receipt", async () => {
+  for (const [errorCode, status] of [["42501", 403], ["P0002", 404], ["23505", 409]] as const) {
+    assertEquals((await fixture({ errorCode }).send(observationBody)).status, status);
+  }
+  const f = fixture({ observationReceipt: { ...observationReceipt, control_id: plant } });
+  assertEquals((await f.send(observationBody)).status, 503);
+});
 
 Deno.test("Manual care record and undo reuse the command wire and canonical SQL receipts", async () => {
   const f = fixture();
