@@ -831,9 +831,11 @@ extension PlantsAPIClient {
 
     func createAnalysisJob(
         operationId: UUID, mode: AnalysisMode, photoAssetId: UUID,
-        flowId: UUID? = nil, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
+        flowId: UUID? = nil, targetPlantId: UUID? = nil,
+        locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws -> AnalysisJobWire {
-        guard mode == .diagnosis || mode == .identification else {
+        guard mode == .diagnosis || mode == .identification,
+              targetPlantId == nil || (mode == .diagnosis && guestCredential == nil) else {
             throw AnalysisHTTPError.invalidResponse
         }
         let encoder = JSONEncoder()
@@ -843,26 +845,30 @@ extension PlantsAPIClient {
             "photo_asset_id": photoAssetId.uuidString.lowercased()
         ]
         if let flowId { fields["flow_id"] = flowId.uuidString.lowercased() }
+        if let targetPlantId { fields["target_plant_id"] = targetPlantId.uuidString.lowercased() }
         let body = try encoder.encode(fields)
         let request = try buildRequest(path: "analysis/jobs", method: "POST", body: body)
         let job: AnalysisJobWire = try await analysisRequest(
             request, locale: locale, context: context, status: [200, 202], installation: guestCredential
         )
-        try job.validate(mode: mode)
+        try job.validate(mode: mode, targetPlantId: targetPlantId, photoAssetId: targetPlantId == nil ? nil : photoAssetId)
         return job
     }
 
     func fetchAnalysisJob(
-        id: UUID, mode: AnalysisMode, locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
+        id: UUID, mode: AnalysisMode, targetPlantId: UUID? = nil, photoAssetId: UUID? = nil,
+        locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws -> AnalysisJobWire {
-        guard mode == .diagnosis || mode == .identification else {
+        guard mode == .diagnosis || mode == .identification,
+              (targetPlantId == nil) == (photoAssetId == nil),
+              targetPlantId == nil || (mode == .diagnosis && guestCredential == nil) else {
             throw AnalysisHTTPError.invalidResponse
         }
         let request = try buildRequest(path: "analysis/jobs/\(id.uuidString.lowercased())", method: "GET")
         let job: AnalysisJobWire = try await analysisRequest(
             request, locale: locale, context: context, status: [200], installation: guestCredential
         )
-        try job.validate(mode: mode, jobId: id)
+        try job.validate(mode: mode, jobId: id, targetPlantId: targetPlantId, photoAssetId: photoAssetId)
         return job
     }
 

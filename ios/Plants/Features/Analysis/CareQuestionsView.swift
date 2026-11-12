@@ -104,6 +104,7 @@ public struct CareQuestionsView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
     private let accessSource: AnalysisAccessSource?
+    private let returnToPlant: (() -> Void)?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoLoadTask: Task<Void, Never>?
 
@@ -111,10 +112,14 @@ public struct CareQuestionsView: View {
         self.init(model: model, languageStore: languageStore, accessSource: nil)
     }
 
-    init(model: AnalysisFlowModel, languageStore: LanguageStore, accessSource: AnalysisAccessSource?) {
+    init(
+        model: AnalysisFlowModel, languageStore: LanguageStore, accessSource: AnalysisAccessSource?,
+        returnToPlant: (() -> Void)? = nil
+    ) {
         self.model = model
         self.languageStore = languageStore
         self.accessSource = accessSource
+        self.returnToPlant = returnToPlant
     }
 
     private var isPolish: Bool {
@@ -128,7 +133,7 @@ public struct CareQuestionsView: View {
                     if model.hasAnalysisService {
                         gallerySection
                     } else {
-                        AnalysisUnavailableSection(model: model, languageStore: languageStore)
+                        AnalysisUnavailableSection(model: model, languageStore: languageStore, returnToPlant: returnToPlant)
                     }
                 } else {
                     questionStepSection
@@ -185,14 +190,7 @@ public struct CareQuestionsView: View {
                      : "Unable to read this photo. Choose another.")
                     .accessibilityIdentifier("photo.error")
             }
-            Button(isPolish ? "Wstecz" : "Back") {
-                model.returnFromAnalysis()
-            }
-            .accessibilityIdentifier("analysis.back.button")
-            Button(isPolish ? "Przejdź do katalogu" : "Open catalogue") {
-                model.showCatalogue()
-            }
-            .accessibilityIdentifier("analysis.catalogue.button")
+            AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
         }
     }
 

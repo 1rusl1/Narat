@@ -11,6 +11,7 @@ public struct PreliminaryResultView: View {
     @Bindable var languageStore: LanguageStore
     private var catalogueConnection: CatalogueConnection? = nil
     private var guestActions: GuestIdentificationActions? = nil
+    private var returnToPlant: (() -> Void)? = nil
     @State private var saveLocked = false
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
@@ -19,11 +20,12 @@ public struct PreliminaryResultView: View {
     }
 
     init(model: AnalysisFlowModel, languageStore: LanguageStore, catalogueConnection: CatalogueConnection?,
-         guestActions: GuestIdentificationActions? = nil) {
+         guestActions: GuestIdentificationActions? = nil, returnToPlant: (() -> Void)? = nil) {
         self.model = model
         self.languageStore = languageStore
         self.catalogueConnection = catalogueConnection
         self.guestActions = guestActions
+        self.returnToPlant = returnToPlant
     }
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
@@ -87,7 +89,7 @@ public struct PreliminaryResultView: View {
                     ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
                     }
-                    if let connection = catalogueConnection,
+                    if model.repeatDiagnosisTarget == nil, let connection = catalogueConnection,
                        connection.snapshot?.isAnonymous == false,
                        result.mode == .diagnosis,
                        result.identificationStatus == .resolved,
@@ -105,7 +107,7 @@ public struct PreliminaryResultView: View {
                     }
                     exitButtons
                 } else {
-                    AnalysisUnavailableSection(model: model, languageStore: languageStore)
+                    AnalysisUnavailableSection(model: model, languageStore: languageStore, returnToPlant: returnToPlant)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,18 +123,27 @@ public struct PreliminaryResultView: View {
     }
 
     private var exitButtons: some View {
-        Group {
-            Button(isPolish ? "Wstecz" : "Back") {
-                model.returnFromAnalysis()
-            }
-            .accessibilityIdentifier("analysis.back.button")
-            Button(isPolish ? "Przejdź do katalogu" : "Open catalogue") {
-                model.showCatalogue()
-            }
-            .accessibilityIdentifier("analysis.catalogue.button")
+        AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+            .disabled((catalogueConnection != nil && saveLocked) || guestActions?.busy == true)
+            .buttonStyle(.bordered)
+    }
+}
+
+struct AnalysisExitButtons: View {
+    let model: AnalysisFlowModel
+    let polish: Bool
+    let returnToPlant: (() -> Void)?
+
+    var body: some View {
+        if let returnToPlant {
+            Button("Back to plant", action: returnToPlant)
+                .accessibilityIdentifier("analysis.back.button")
+        } else {
+            Button(polish ? "Wstecz" : "Back") { model.returnFromAnalysis() }
+                .accessibilityIdentifier("analysis.back.button")
+            Button(polish ? "Przejdź do katalogu" : "Open catalogue") { model.showCatalogue() }
+                .accessibilityIdentifier("analysis.catalogue.button")
         }
-        .disabled((catalogueConnection != nil && saveLocked) || guestActions?.busy == true)
-        .buttonStyle(.bordered)
     }
 }
 
@@ -140,6 +151,7 @@ public struct PreliminaryResultView: View {
 struct AnalysisUnavailableSection: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
+    var returnToPlant: (() -> Void)? = nil
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
 
@@ -150,6 +162,7 @@ struct AnalysisUnavailableSection: View {
                 ? "Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie."
                 : "The analysis provider is temporarily unavailable. Please retry."
         case "analysis.error.provider_terminal":
+            if returnToPlant != nil { return "The provider could not complete the analysis. Choose a new photo from your plant card." }
             return isPolish
                 ? "Usługa analizy nie ukończyła zadania. Wróć do wyboru zdjęcia."
                 : "The provider could not complete the analysis. Go back to choose a photo."
@@ -183,17 +196,8 @@ struct AnalysisUnavailableSection: View {
                 .accessibilityIdentifier("analysis.retry.button")
             }
 
-            Button(isPolish ? "Wstecz" : "Back") {
-                model.returnFromAnalysis()
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("analysis.back.button")
-
-            Button(isPolish ? "Przejdź do katalogu" : "Open catalogue") {
-                model.showCatalogue()
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("analysis.catalogue.button")
+            AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+                .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -1130,6 +1130,8 @@ struct AnalysisJobWire: Decodable, Sendable {
     let status: Status
     let quotaKind: String
     let quotaState: QuotaState
+    let targetPlantId: UUID?
+    let photoAssetId: UUID?
     let result: AnalysisProjectionWire?
     let identificationResult: PhotoIdentificationWire?
     let errorCode: String?
@@ -1140,6 +1142,8 @@ struct AnalysisJobWire: Decodable, Sendable {
         case mode, status, result
         case quotaKind = "quota_kind"
         case quotaState = "quota_state"
+        case targetPlantId = "target_plant_id"
+        case photoAssetId = "photo_asset_id"
         case errorCode = "error_code"
         case errorMessage = "error_message"
     }
@@ -1151,14 +1155,20 @@ struct AnalysisJobWire: Decodable, Sendable {
         status = try values.decode(Status.self, forKey: .status)
         quotaKind = try values.decode(String.self, forKey: .quotaKind)
         quotaState = try values.decode(QuotaState.self, forKey: .quotaState)
+        targetPlantId = try values.decodeIfPresent(UUID.self, forKey: .targetPlantId)
+        photoAssetId = try values.decodeIfPresent(UUID.self, forKey: .photoAssetId)
         result = mode == .diagnosis ? try values.decodeIfPresent(AnalysisProjectionWire.self, forKey: .result) : nil
         identificationResult = mode == .identification ? try values.decode(PhotoIdentificationWire?.self, forKey: .result) : nil
         errorCode = try values.decodeIfPresent(String.self, forKey: .errorCode)
         errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
     }
 
-    func validate(mode expectedMode: AnalysisMode, jobId expectedId: UUID? = nil) throws {
-        guard mode == expectedMode, expectedId == nil || expectedId == jobId else {
+    func validate(
+        mode expectedMode: AnalysisMode, jobId expectedId: UUID? = nil,
+        targetPlantId expectedTarget: UUID? = nil, photoAssetId expectedPhoto: UUID? = nil
+    ) throws {
+        guard mode == expectedMode, expectedId == nil || expectedId == jobId,
+              targetPlantId == expectedTarget, expectedPhoto == nil || photoAssetId == expectedPhoto else {
             throw AnalysisHTTPError.invalidResponse
         }
         if mode == .identification {

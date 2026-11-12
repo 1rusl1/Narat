@@ -316,6 +316,36 @@ final class FirstHelpUnitTests: XCTestCase {
         }
     }
 
+    func testRepeatDiagnosisStartsWithPhotoAndRetriesTheSameTargetAndInput() async throws {
+        let target = RepeatDiagnosisTarget(plantId: UUID(), ownerId: UUID())
+        let response = serviceResult()
+        let service = GalleryAnalysisFixture(response: response)
+        service.failure = URLError(.networkConnectionLost)
+        let model = AnalysisFlowModel(repeatDiagnosisTarget: target, service: service)
+
+        XCTAssertEqual(model.router.flowState.currentStep, .selectPhoto)
+        let raw = photoFixture()
+        model.selectPhotoData(raw, locale: .en)
+        XCTAssertEqual(model.router.flowState.currentStep, .analyzing)
+        let first = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await first.value
+        XCTAssertEqual(model.analysisError, "analysis.error.failed")
+        XCTAssertNil(model.preliminaryResult)
+
+        let request = try XCTUnwrap(service.requests.first)
+        XCTAssertEqual(request.repeatDiagnosisTarget, target)
+        XCTAssertEqual(request.photo, try AnalysisPhotoInput().preparePhoto(from: raw))
+        XCTAssertEqual(request.mode, .diagnosis)
+        XCTAssertEqual(request.locale, .en)
+        service.failure = nil
+        let retry = try XCTUnwrap(model.submitAnalysis(locale: .pl))
+        await retry.value
+
+        XCTAssertEqual(service.requests, [request, request])
+        XCTAssertEqual(model.preliminaryResult, response.analysis)
+        XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
+    }
+
     func testIdentificationConfirmationRequiresResolvedResultAndItsUploadedPhoto() async throws {
         let photoId = UUID()
         let candidates = [

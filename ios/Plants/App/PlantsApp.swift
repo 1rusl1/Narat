@@ -170,7 +170,11 @@ struct RootContainerView: View {
         }
         .task { await prepareCatalogue() }
         .sheet(isPresented: $showingCollection) {
-            if let catalogue { CatalogueCollectionView(connection: catalogue, polish: isPolish) }
+            if let catalogue {
+                CatalogueCollectionView(
+                    connection: catalogue, polish: isPolish, repeatDiagnosis: repeatDiagnosisEntry(for: catalogue)
+                )
+            }
         }
 #if DEBUG && targetEnvironment(simulator)
         .sheet(item: $stagingAccount, onDismiss: showPendingGuestTransfer) { account in
@@ -204,6 +208,25 @@ struct RootContainerView: View {
         }
 #endif
         return nil
+    }
+
+    private func repeatDiagnosisEntry(for connection: CatalogueConnection) -> RepeatDiagnosisEntry? {
+#if DEBUG && targetEnvironment(simulator)
+        guard isStagingAnalysis, !isPolish, let api = connection.apiClient else { return nil }
+        return RepeatDiagnosisEntry(
+            languageStore: languageStore,
+            accessSource: AnalysisAccessSource(connection: connection, repository: analysisAccessRepository, guestCredential: nil)
+        ) { card, expected in
+            guard connection.snapshot == expected, !expected.isAnonymous else { return nil }
+            let target = RepeatDiagnosisTarget(plantId: card.id, ownerId: expected.session.userId)
+            let service = StagingAnalysisService(api: api, repeatDiagnosisTarget: target) {
+                try await connection.collectionLease(expected: expected)
+            }
+            return AnalysisFlowModel(repeatDiagnosisTarget: target, service: service)
+        }
+#else
+        return nil
+#endif
     }
 
     private var guestIdentificationActions: GuestIdentificationActions? {
@@ -520,15 +543,18 @@ final class StagingAnalysisService: AnalysisService {
     private let api: PlantsAPIClient
     private let identificationEnabled: Bool
     private let guestCredential: String?
+    private let repeatDiagnosisTarget: RepeatDiagnosisTarget?
     private let session: @MainActor () async throws -> SyncSessionLease
     private var previous: Progress?
     private var activeAttempt: UUID?
 
     init(api: PlantsAPIClient, identificationEnabled: Bool = false, guestCredential: String? = nil,
+         repeatDiagnosisTarget: RepeatDiagnosisTarget? = nil,
          session: @escaping @MainActor () async throws -> SyncSessionLease) {
         self.api = api
         self.identificationEnabled = identificationEnabled
         self.guestCredential = guestCredential
+        self.repeatDiagnosisTarget = repeatDiagnosisTarget
         self.session = session
     }
 
@@ -544,7 +570,9 @@ final class StagingAnalysisService: AnalysisService {
     }
 
     func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
-        guard (guestCredential == nil && request.mode == .diagnosis) || (identificationEnabled && request.mode == .identification) else {
+        guard request.repeatDiagnosisTarget == repeatDiagnosisTarget,
+              (guestCredential == nil && request.mode == .diagnosis) ||
+              (repeatDiagnosisTarget == nil && identificationEnabled && request.mode == .identification) else {
             throw AnalysisServiceFailure.unavailable
         }
         try Task.checkCancellation()
@@ -553,6 +581,9 @@ final class StagingAnalysisService: AnalysisService {
         defer { if activeAttempt == attempt { activeAttempt = nil } }
         let lease = try await session()
         try verify(lease, attempt: attempt)
+        if let repeatDiagnosisTarget, lease.ownerId != repeatDiagnosisTarget.ownerId {
+            throw AnalysisServiceFailure.unavailable
+        }
 
         var progress = Progress(request: request, ownerId: lease.ownerId)
         if let previous, previous.request.operationId == request.operationId {
@@ -595,13 +626,19 @@ final class StagingAnalysisService: AnalysisService {
                 progress.photoReady = true
             }
             guard let photoId = progress.photoId else { throw AnalysisHTTPError.invalidResponse }
+            let targetPlantId = repeatDiagnosisTarget?.plantId
+            let expectedPhotoId = targetPlantId == nil ? nil : photoId
             var job: AnalysisJobWire
             if let jobId = progress.jobId {
-                job = try await api.fetchAnalysisJob(id: jobId, mode: request.mode, locale: locale, context: lease, guestCredential: guestCredential)
+                job = try await api.fetchAnalysisJob(
+                    id: jobId, mode: request.mode, targetPlantId: targetPlantId, photoAssetId: expectedPhotoId,
+                    locale: locale, context: lease, guestCredential: guestCredential
+                )
             } else {
                 job = try await api.createAnalysisJob(
                     operationId: request.operationId, mode: request.mode, photoAssetId: photoId,
-                    flowId: request.mode == .identification ? request.flowId : nil,
+                    flowId: request.mode == .identification || targetPlantId != nil ? request.flowId : nil,
+                    targetPlantId: targetPlantId,
                     locale: locale, context: lease, guestCredential: guestCredential
                 )
             }
@@ -614,7 +651,10 @@ final class StagingAnalysisService: AnalysisService {
                 guard clock.now < deadline else { throw AnalysisServiceFailure.unavailable }
                 try await Task.sleep(for: .seconds(1))
                 try verify(lease, attempt: attempt)
-                job = try await api.fetchAnalysisJob(id: job.jobId, mode: request.mode, locale: locale, context: lease, guestCredential: guestCredential)
+                job = try await api.fetchAnalysisJob(
+                    id: job.jobId, mode: request.mode, targetPlantId: targetPlantId, photoAssetId: expectedPhotoId,
+                    locale: locale, context: lease, guestCredential: guestCredential
+                )
                 try verify(lease, attempt: attempt)
             }
             if job.status == .failed, job.errorCode?.hasPrefix("PROVIDER_") == true {

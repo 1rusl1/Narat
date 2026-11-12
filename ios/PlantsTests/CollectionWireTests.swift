@@ -3210,8 +3210,12 @@ extension CollectionWireTests {
         #"{"photo_asset_id":"\#(photoId.uuidString)","storage_bucket":"photos","storage_path":"test.jpg","signed_upload_url":"\#(url)","expires_in_seconds":60,"max_byte_size":10485760}"#
     }
 
-    private func diagnosisJob(id: UUID, status: String, result: String = "null", errorCode: String = "null") -> String {
-        #"{"job_id":"\#(id.uuidString)","mode":"diagnosis","status":"\#(status)","quota_kind":"free_monthly","quota_state":"reserved","result":\#(result),"error_code":\#(errorCode),"error_message":null}"#
+    private func diagnosisJob(
+        id: UUID, status: String, result: String = "null", errorCode: String = "null",
+        target: (plant: UUID, photo: UUID)? = nil
+    ) -> String {
+        let binding = target.map { #","target_plant_id":"\#($0.plant.uuidString)","photo_asset_id":"\#($0.photo.uuidString)""# } ?? ""
+        return #"{"job_id":"\#(id.uuidString)","mode":"diagnosis","status":"\#(status)","quota_kind":"free_monthly","quota_state":"reserved","result":\#(result),"error_code":\#(errorCode),"error_message":null\#(binding)}"#
     }
 
     private func identificationJob(id: UUID, status: String, quota: String, result: String = "null") -> String {
@@ -3694,6 +3698,78 @@ extension CollectionWireTests {
         XCTAssertNotEqual(upload["operation_id"] as? String, job["operation_id"])
         XCTAssertEqual(requests[1].httpBody, uploadBody)
         XCTAssertEqual(requests[5].httpBody, jobBody)
+    }
+
+    @MainActor
+    func testStagingRepeatDiagnosisReplaysSameUploadAndRejectsOtherPhotoOrOwner() async throws {
+        let target = RepeatDiagnosisTarget(plantId: serverPlantId, ownerId: accessOwner)
+        let photo = UUID(), jobId = UUID()
+        let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+        let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+        let result = #"{"analysis_id":"\#(UUID().uuidString)","job_id":"\#(jobId.uuidString)","kb_release_id":"\#(UUID().uuidString)","mode":"diagnosis","identification_status":"identified","plant_id":"monstera_deliciosa","genus_id":"monstera","diagnosis_status":"healthy","selected_condition_id":null,"candidates":[],"visual_markers":[],"evidence_basis":[],"limitations":[],"first_action_summary":null,"control_interval_days":null,"plan_availability":"diagnosis_unresolved","analysis_receipt":"test-receipt","plant_display_name":"Monstera deliciosa"}"#
+        let transport = CatalogueTransport([
+            .http(200, diagnosisTicket(url: url, photoId: photo)), .http(200, ready), .network,
+            .http(200, diagnosisJob(id: jobId, status: "queued", target: (target.plantId, photo))),
+            .http(200, diagnosisJob(id: jobId, status: "running", target: (target.plantId, UUID()))),
+            .http(200, diagnosisJob(id: jobId, status: "succeeded", result: result, target: (target.plantId, photo))
+                .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"consumed""#))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let owner = accessOwner
+        let service = StagingAnalysisService(api: api, repeatDiagnosisTarget: target) {
+            try await api.captureSyncContext(ownerId: owner)
+        }
+        let prepared = PreparedAnalysisPhoto(
+            cloudNormalizedJPEG: Data([1, 2]), aiVisionJPEG: Data([1, 2]),
+            aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 2
+        )
+        let other = RepeatDiagnosisTarget(plantId: target.plantId, ownerId: UUID())
+        let wrongOwnerService = StagingAnalysisService(api: api, repeatDiagnosisTarget: other) {
+            try await api.captureSyncContext(ownerId: owner)
+        }
+        let wrongOwner = AnalysisServiceRequest(
+            operationId: UUID(), flowId: UUID(), mode: .diagnosis, intent: .problem, photo: prepared,
+            conditions: CareConditionsInput(), locale: .en, repeatDiagnosisTarget: other
+        )
+        do {
+            _ = try await wrongOwnerService.analyze(wrongOwner)
+            XCTFail("Sent a repeat request with another owner's lease")
+        } catch AnalysisServiceFailure.unavailable {}
+        let before = await transport.capturedRequests()
+        XCTAssertTrue(before.isEmpty)
+
+        let input = AnalysisServiceRequest(
+            operationId: operationId, flowId: UUID(), mode: .diagnosis, intent: .problem, photo: prepared,
+            conditions: CareConditionsInput(), locale: .en, repeatDiagnosisTarget: target
+        )
+        do {
+            _ = try await service.analyze(input)
+            XCTFail("Expected the create response to be lost")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .networkConnectionLost)
+        }
+        do {
+            _ = try await service.analyze(input)
+            XCTFail("Accepted a poll response for a different photo")
+        } catch AnalysisHTTPError.invalidResponse {}
+        let finished = try await service.analyze(input)
+        XCTAssertEqual(finished.analysis?.jobId, jobId)
+        XCTAssertEqual(finished.analysis?.plantId, "monstera_deliciosa")
+        XCTAssertEqual(finished.uploadedPhotoId, photo)
+
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "POST", "GET", "GET"])
+        guard requests.count == 6 else { return }
+        XCTAssertEqual(requests[2].httpBody, requests[3].httpBody)
+        let body = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[2].httpBody))
+        XCTAssertEqual(body, [
+            "operation_id": operationId.uuidString.lowercased(), "mode": "diagnosis",
+            "photo_asset_id": photo.uuidString.lowercased(), "target_plant_id": target.plantId.uuidString.lowercased(),
+            "flow_id": input.flowId.uuidString.lowercased()
+        ])
+        XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Client-Locale") == "en" })
+        XCTAssertTrue(requests.suffix(2).allSatisfy { $0.url?.lastPathComponent == jobId.uuidString.lowercased() })
     }
 }
 #endif

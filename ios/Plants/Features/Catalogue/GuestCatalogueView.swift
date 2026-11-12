@@ -566,6 +566,12 @@ final class CatalogueConnection {
     }
 }
 
+struct RepeatDiagnosisEntry {
+    let languageStore: LanguageStore
+    let accessSource: AnalysisAccessSource
+    let makeModel: @MainActor (CatalogueCardSummary, CatalogueSDKSnapshot) -> AnalysisFlowModel?
+}
+
 struct CatalogueCollectionView: View {
     private struct Read: Equatable {
         let session: CatalogueSDKSnapshot?
@@ -579,22 +585,46 @@ struct CatalogueCollectionView: View {
 
     let connection: CatalogueConnection
     let polish: Bool
+    var repeatDiagnosis: RepeatDiagnosisEntry? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var loadedScope: CatalogueSDKSnapshot?
     @State private var cards: [CatalogueCardSummary] = []
     @State private var selected: Selected?
+    @State private var repeatModel: AnalysisFlowModel?
     @State private var loading = true
     @State private var failed = false
     @State private var attempt = 0
 
     private var read: Read { Read(session: connection.snapshot, attempt: attempt) }
+    private var currentSelection: Selected? {
+        guard let selected, selected.scope == connection.snapshot else { return nil }
+        return selected
+    }
 
     var body: some View {
         NavigationStack {
             Group {
-                if let selected, selected.scope == connection.snapshot {
-                    CatalogueCollectionCardView(connection: connection, card: selected.card,
-                                                expected: selected.scope, polish: polish)
+                if let selected = currentSelection {
+                    if let repeatModel, let repeatDiagnosis {
+                        if repeatModel.router.flowState.currentStep == .selectPhoto {
+                            CareQuestionsView(
+                                model: repeatModel, languageStore: repeatDiagnosis.languageStore,
+                                accessSource: repeatDiagnosis.accessSource, returnToPlant: endRepeatDiagnosis
+                            )
+                        } else {
+                            PreliminaryResultView(
+                                model: repeatModel, languageStore: repeatDiagnosis.languageStore,
+                                catalogueConnection: nil, returnToPlant: endRepeatDiagnosis
+                            )
+                        }
+                    } else {
+                        CatalogueCollectionCardView(
+                            connection: connection, card: selected.card, expected: selected.scope, polish: polish,
+                            startRepeatDiagnosis: repeatDiagnosis.map { entry in
+                                { repeatModel = entry.makeModel(selected.card, selected.scope) }
+                            }
+                        )
+                    }
                 } else if read.session?.isAnonymous != false {
                     Text(polish ? "Zaloguj się, aby zobaczyć rośliny." : "Sign in to see your plants.")
                         .accessibilityIdentifier("collection.signInRequired")
@@ -622,20 +652,29 @@ struct CatalogueCollectionView: View {
             }
             .navigationTitle(polish ? "Moje rośliny" : "My plants")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(selected == nil ? (polish ? "Zamknij" : "Close") : (polish ? "Wstecz" : "Back")) {
-                        if selected != nil { selected = nil } else { dismiss() }
+                if currentSelection == nil || repeatModel == nil {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(currentSelection == nil ? (polish ? "Zamknij" : "Close") : (polish ? "Wstecz" : "Back")) {
+                            if currentSelection != nil { selected = nil } else { dismiss() }
+                        }
+                        .accessibilityIdentifier("collection.back")
                     }
-                    .accessibilityIdentifier("collection.back")
                 }
             }
         }
         .task(id: read) { await load(read) }
+        .onDisappear(perform: endRepeatDiagnosis)
+    }
+
+    private func endRepeatDiagnosis() {
+        repeatModel?.cancelAnalysis()
+        repeatModel = nil
     }
 
     @MainActor
     private func load(_ requested: Read) async {
         guard !Task.isCancelled, read == requested else { return }
+        endRepeatDiagnosis()
         selected = nil
         cards = []
         loadedScope = nil
@@ -662,6 +701,7 @@ private struct CatalogueCollectionCardView: View {
     let card: CatalogueCardSummary
     let expected: CatalogueSDKSnapshot
     let polish: Bool
+    var startRepeatDiagnosis: (() -> Void)? = nil
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
     @State private var history: [CatalogueWateringEntry]?
@@ -680,6 +720,11 @@ private struct CatalogueCollectionCardView: View {
                         .accessibilityIdentifier("catalogue.saved.name")
                     if let name = species?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
+                    }
+                    if let startRepeatDiagnosis {
+                        Button("Check plant again", action: startRepeatDiagnosis)
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("collection.diagnosis.repeat")
                     }
                     if let photo = card.mainPhotoId {
                         CataloguePlantPhotoView(connection: connection, expected: expected, plantId: card.id, polish: polish)

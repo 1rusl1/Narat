@@ -1,6 +1,11 @@
 import Foundation
 import Observation
 
+struct RepeatDiagnosisTarget: Sendable, Equatable {
+    let plantId: UUID
+    let ownerId: UUID
+}
+
 /// Immutable input retained in memory for an explicit retry of the same operation.
 public struct AnalysisServiceRequest: Sendable, Equatable {
     public let operationId: UUID
@@ -12,6 +17,22 @@ public struct AnalysisServiceRequest: Sendable, Equatable {
     public let photo: PreparedAnalysisPhoto
     public let conditions: CareConditionsInput
     public let locale: SupportedLocale
+    let repeatDiagnosisTarget: RepeatDiagnosisTarget?
+
+    init(
+        operationId: UUID, flowId: UUID, mode: AnalysisMode, intent: AddIntent,
+        photo: PreparedAnalysisPhoto, conditions: CareConditionsInput, locale: SupportedLocale,
+        repeatDiagnosisTarget: RepeatDiagnosisTarget? = nil
+    ) {
+        self.operationId = operationId
+        self.flowId = flowId
+        self.mode = mode
+        self.intent = intent
+        self.photo = photo
+        self.conditions = conditions
+        self.locale = locale
+        self.repeatDiagnosisTarget = repeatDiagnosisTarget
+    }
 }
 
 public struct PhotoIdentificationResult: Equatable, Sendable {
@@ -82,6 +103,7 @@ public protocol AnalysisService {
 @Observable
 public final class AnalysisFlowModel {
     public let router: AddPlantRouter
+    let repeatDiagnosisTarget: RepeatDiagnosisTarget?
     public var accessState: AnalysisAccessState?
     public var isPreparingPhoto: Bool = false
     public var preparedPhoto: PreparedAnalysisPhoto?
@@ -104,14 +126,28 @@ public final class AnalysisFlowModel {
 
     public var hasAnalysisService: Bool { service != nil }
 
-    public init(
+    public convenience init(
         router: AddPlantRouter = AddPlantRouter(),
         accessState: AnalysisAccessState? = nil,
         service: (any AnalysisService)? = nil
     ) {
+        self.init(router: router, accessState: accessState, service: service, repeatDiagnosisTarget: nil)
+    }
+
+    convenience init(repeatDiagnosisTarget: RepeatDiagnosisTarget, service: any AnalysisService) {
+        let router = AddPlantRouter()
+        router.selectIntent(.problem)
+        self.init(router: router, accessState: nil, service: service, repeatDiagnosisTarget: repeatDiagnosisTarget)
+    }
+
+    private init(
+        router: AddPlantRouter, accessState: AnalysisAccessState?, service: (any AnalysisService)?,
+        repeatDiagnosisTarget: RepeatDiagnosisTarget?
+    ) {
         self.router = router
         self.accessState = accessState
         self.service = service
+        self.repeatDiagnosisTarget = repeatDiagnosisTarget
     }
 
     /// RootContainerView can explicitly install its endpoint adapter here.
@@ -214,7 +250,7 @@ public final class AnalysisFlowModel {
             photoSelectionId = nil
             isPreparingPhoto = false
             preparedPhoto = prepared
-            router.attachPhoto(identifier: identifier)
+            router.attachPhoto(identifier: identifier, skipQuestions: repeatDiagnosisTarget != nil)
             if hasAnalysisService {
                 submitAnalysis(locale: locale)
             }
@@ -279,7 +315,7 @@ public final class AnalysisFlowModel {
                 operationId: UUID(), flowId: router.flowState.flowId,
                 mode: router.flowState.intent == .problem ? .diagnosis : .identification,
                 intent: router.flowState.intent, photo: photo,
-                conditions: router.flowState.conditions, locale: locale
+                conditions: router.flowState.conditions, locale: locale, repeatDiagnosisTarget: repeatDiagnosisTarget
             )
             frozenRequest = request
         }
