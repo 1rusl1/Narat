@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## B — T148 English MVP pipeline accepted, 12 November 2026
+
+Pipeline acceptance `440256f` is published in `origin/codex/plants-backend`. `import_catalogue_300.py`, its independent validator, the shared image parser and T148 gate correct misleading names and source assignments and store dimensions and MIME from the actual bytes. The catalogue JSON schema, TypeScript validators and forward-only migration 018 retain the Polish key and accept an explicit gap. Polish reads then use the original English description with its language and attribution. Existing valid Polish text and the translation manifest are preserved.
+
+`t148-pipeline-20261112-01` ended BLOCKED after three Luna High calls produced no patch. The controller implemented the candidate. `-02` passed Review and stopped at the QA evidence adapter because the successful gate omitted `summary.json`. `-03` flagged a missing integration regression for byte-derived media metadata. `-04` passed English Astra High Review and QA and all seven gates, including 358 Deno, 149 automation and 28 KB tests. Isolated PG17 passed 39 migrations, 239 pgTAP assertions, 1212 SQL/TS card projections and three publication races. The existing public raw snapshots and local Plantfolio input were used only in an isolated offline check. It rebuilt 606 records and validated the JSON, SQLite, source and image hashes. The 603 valid Polish descriptions remain and three invalid sources now use the English fallback.
+
+The release still requires separate editorial acceptance. The first baseline identified 105 image dimension mismatches. A visual review of the original 606 cards and a source cross-check identified six media replacements, now prepared from individually attributed sources. The next slice applies those replacements to the deterministic import, verifies rights and the English release, compares two offline rebuilds and repeats the isolated SQL import. Full T148 and its T149 dependency remain open. No staging deployment was performed in this slice.
+
 ## B — public catalogue verified on narat-staging, 11 November 2026
 
 Backend `715d5fc5db8f07806f097e5932c525e28ea01792` is accepted and published in `origin/codex/plants-backend`. `plants-api/catalogue.ts` and `plants-api/index.ts` expose the existing published search and species card RPCs to the anonymous role. The HTTP fixture, manifest, [wire contract](../specs/001-plants-ios-mvp/contracts/published-catalogue-http.md) and the T045 task entry record the scope. The staging deployment updated only `plants-api`.
