@@ -367,21 +367,26 @@ public actor PlantsAPIClient {
     /// Read-only wire boundary; callers must supply a lease from the bound session.
     /// Guest/permanent metadata is explicit because NativeAuthSession has no anonymous flag.
     func fetchAnalysisAccess(
-        context: SyncSessionLease, expectedGuest: Bool
+        context: SyncSessionLease, expectedGuest: Bool, guestCredential: String? = nil
     ) async throws -> AnalysisAccessWireDTO {
         let session = try syncAuthority.withBoundValid(context) {
             guard let session = context.session else { throw SyncWireValidationError.invalidSession }
             return session
         }
         if expectedGuest {
-            guard let credential = installationCredential,
+            guard let credential = guestCredential ?? installationCredential,
                   !credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw AnalysisAccessWireError.missingInstallationCredential
             }
         }
         var request = try buildRequest(path: "analysis/access", method: "GET")
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        let snapshot = try await execute(request, as: AnalysisAccessWireDTO.self, expectedStatus: 200)
+        if let guestCredential {
+            request.setValue(guestCredential, forHTTPHeaderField: "X-Installation-Credential")
+        }
+        let snapshot = try await execute(
+            request, as: AnalysisAccessWireDTO.self, expectedStatus: 200, forbidRedirects: true
+        )
         // Validate the captured generation, including cancellation and A -> B -> A,
         // before exposing a snapshot. Never consult a replacement bearer or owner.
         return try syncAuthority.withBoundValid(context) {
@@ -489,9 +494,9 @@ public actor PlantsAPIClient {
     }
 
     private func execute<T: Decodable>(
-        _ request: URLRequest, as type: T.Type, expectedStatus: Int? = nil
+        _ request: URLRequest, as type: T.Type, expectedStatus: Int? = nil, forbidRedirects: Bool = false
     ) async throws -> T {
-        let (data, http) = try await transport.send(request)
+        let (data, http) = try await (forbidRedirects ? transport.sendWithoutRedirect(request) : transport.send(request))
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 

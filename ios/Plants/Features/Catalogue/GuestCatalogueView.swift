@@ -418,6 +418,18 @@ final class CatalogueConnection {
         return lease
     }
 
+    func analysisAccess(
+        using repository: AnalysisAccessRepository, expected: CatalogueSDKSnapshot, guestCredential: String?
+    ) async throws -> AnalysisAccessWireDTO {
+        guard let apiClient else { throw CatalogueConnectionUnavailable.configurationMissing }
+        let lease = try await analysisLease(expected: expected)
+        let access = try await repository.fetchSnapshot(
+            api: apiClient, context: lease, expectedGuest: expected.isAnonymous, guestCredential: guestCredential
+        )
+        try validate(expected)
+        return access
+    }
+
 #if DEBUG && targetEnvironment(simulator)
     func guestPhotoClaimData() -> Data? { resumeDefaults.data(forKey: "staging.guest.photo.claim") }
 

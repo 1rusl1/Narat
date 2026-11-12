@@ -75,8 +75,11 @@ public struct KeychainInstallationCredentialStore: InstallationCredentialStoring
             return existing
         }
         let generated = "\(UUID().uuidString.lowercased())-\(UUID().uuidString.lowercased())"
-        saveToKeychain(generated)
-        return generated
+        switch saveToKeychain(generated) {
+        case errSecSuccess: return generated
+        case errSecDuplicateItem: return readFromKeychain() ?? ""
+        default: return ""
+        }
     }
 
     private func readFromKeychain() -> String? {
@@ -95,19 +98,16 @@ public struct KeychainInstallationCredentialStore: InstallationCredentialStoring
         return String(data: data, encoding: .utf8)
     }
 
-    private func saveToKeychain(_ value: String) {
+    private func saveToKeychain(_ value: String) -> OSStatus {
         let data = Data(value.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        SecItemDelete(query as CFDictionary)
-
-        var addQuery = query
-        addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        _ = SecItemAdd(addQuery as CFDictionary, nil)
+        return SecItemAdd(query as CFDictionary, nil)
     }
 }
 
@@ -143,6 +143,15 @@ public actor AnalysisAccessRepository {
 
     public func installationCredential() -> String {
         credentialStore.getOrCreateCredential()
+    }
+
+    func fetchSnapshot(
+        api: PlantsAPIClient, context: SyncSessionLease, expectedGuest: Bool, guestCredential: String?
+    ) async throws -> AnalysisAccessWireDTO {
+        try await api.fetchAnalysisAccess(
+            context: context, expectedGuest: expectedGuest,
+            guestCredential: expectedGuest ? guestCredential ?? installationCredential() : nil
+        )
     }
 
     public func currentAccessState() -> AnalysisAccessState {

@@ -250,6 +250,38 @@ extension CollectionWireTests {
         XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Installation-Credential") == nil })
     }
 
+    func testAccessRepositoryUsesClaimCredentialForGuestAndAccountOnlyForPermanent() async throws {
+        let transport = CatalogueTransport([.http(200, accessFixtures[5].json), .http(200, accessFixtures[0].json)])
+        let api = PlantsAPIClient(transport: transport, clientLocale: "en")
+        let repository = AnalysisAccessRepository()
+        let credential = "same-fixture-installation-used-for-claim"
+        await api.bindSyncSession(accessSession)
+        let guest = try await api.captureSyncContext(ownerId: accessOwner)
+        let guestAccess = try await repository.fetchSnapshot(
+            api: api, context: guest, expectedGuest: true, guestCredential: credential
+        )
+        XCTAssertTrue(guestAccess.isGuest)
+
+        let signedIn = NativeAuthSession(userId: accessOwner, accessToken: "permanent-bearer", expiresAt: .distantFuture)
+        await api.bindSyncSession(signedIn)
+        let permanent = try await api.captureSyncContext(ownerId: accessOwner)
+        let access = try await repository.fetchSnapshot(
+            api: api, context: permanent, expectedGuest: false, guestCredential: credential
+        )
+        XCTAssertFalse(access.isGuest)
+        do {
+            _ = try await repository.fetchSnapshot(api: api, context: guest, expectedGuest: true, guestCredential: credential)
+            XCTFail("An expired guest lease must not be used after sign-in")
+        } catch SyncWireValidationError.invalidSession {}
+
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "Authorization") },
+                       ["Bearer captured-access-token", "Bearer permanent-bearer"])
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "X-Installation-Credential") }, [credential, nil])
+        let nonRedirectingRequests = await transport.nonRedirectingRequests
+        XCTAssertEqual(nonRedirectingRequests, 2)
+    }
+
     func testAccessExplicitRetryErrorsWrongSuccessAndForeignScope() async throws {
         let error = #"{"error":{"code":"INTERNAL_ERROR","message":"Try again","retryable":true}}"#
         let transport = CatalogueTransport([.http(503, error), .http(200, accessFixtures[0].json)])
@@ -1248,6 +1280,10 @@ private actor SuspendedCollectionTransport: PlantsAPITransport {
     func resume() {
         release?.resume()
         release = nil
+    }
+
+    func sendWithoutRedirect(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        try await send(request)
     }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {

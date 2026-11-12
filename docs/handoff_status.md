@@ -61,7 +61,11 @@
 
 Оба живых ответа в `DerivedData/T036Validation/live-{free,paid}.json` декодированы локальным Swift-прогоном с действующими `AnalysisAccessWireDTO`, `SQLTimestamp` и `SyncWireRules.sameTime` из `APIModels.swift`. Результат 2/2, diff-check прошёл. Обновлены handoff и `tasks.md`. Действующий экран iOS и гостевая квота в этом прогоне не проверялись.
 
-**Следующий шаг.** Подключить `AnalysisAccessRepository.swift` к существующему `PlantsAPIClient.fetchAnalysisAccess` с lease текущего владельца. Отобразить остаток и серверную дату сброса до скана. Проверить EN iOS для Free/Paid и при ошибке запроса оставить каталог доступным. T036 остаётся открытой.
+`AnalysisAccessRepository.swift` подключён к `PlantsAPIClient.fetchAnalysisAccess` через lease текущего владельца из `GuestCatalogueView.swift`. В `PlantsApp.swift` и `CareQuestionsView.swift` английский staging-путь показывает стартовую и месячную квоты и серверную дату до галереи. При ошибке или запрете скана остаются повтор проверки и переход в каталог. Гость повторно использует Keychain credential регистрации и черновика. При конкурентном создании Keychain сохраняет первый записанный credential. GET квот запрещает перенаправления, устаревший SDK scope отбрасывается.
+
+**Локально.** `T036PreScanFocused01`: 62 `CollectionWireTests` прошли, включая новый тест точного guest credential, постоянного Bearer и отказа устаревшего lease. Diff-check прошёл. Изменены `PlantsApp.swift`, `PlantsAPIClient.swift`, `AnalysisAccessRepository.swift`, `CareQuestionsView.swift`, `GuestCatalogueView.swift` и `CollectionWireTests.swift`.
+
+**Следующий шаг.** На подписанном Simulator проверить живые Free/Paid, потерю ответа GET с доступным каталогом и гостевой расход до/после перезапуска. Совместный серверный сценарий конверсии идёт в B/T154. T036 остаётся открытой до приёмки.
 
 ## T149 — живой каталог и коллекция iOS
 

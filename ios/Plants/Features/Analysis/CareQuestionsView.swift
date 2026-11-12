@@ -1,15 +1,120 @@
 import SwiftUI
 import PhotosUI
 
+struct AnalysisAccessSource {
+    let connection: CatalogueConnection
+    let repository: AnalysisAccessRepository
+    let guestCredential: String?
+}
+
+private struct AnalysisQuotaGate<Content: View>: View {
+    let source: AnalysisAccessSource
+    let mode: AnalysisAccessWireDTO.AnalysisMode
+    let locale: SupportedLocale
+    @ViewBuilder let content: () -> Content
+
+    @State private var attempt = 0
+    @State private var result: Loaded?
+
+    private struct Read: Equatable {
+        let snapshot: CatalogueSDKSnapshot?
+        let attempt: Int
+    }
+
+    private struct Loaded {
+        let read: Read
+        let access: AnalysisAccessWireDTO?
+    }
+
+    private var isPolish: Bool { locale == .pl }
+
+    var body: some View {
+        let read = Read(snapshot: source.connection.snapshot, attempt: attempt)
+        VStack(alignment: .leading, spacing: 8) {
+            if read.snapshot == nil {
+                unavailable
+            } else if let result, result.read == read {
+                if let access = result.access, let quota = access.modes[mode.rawValue] {
+                    summary(access, quota: quota)
+                    if quota.allowed {
+                        content()
+                    } else {
+                        Text(isPolish ? "Analiza zdjęcia jest teraz niedostępna." : "Photo analysis is currently unavailable.")
+                            .accessibilityIdentifier("analysis.access.denied")
+                        retryButton
+                    }
+                } else {
+                    unavailable
+                }
+            } else {
+                ProgressView(isPolish ? "Sprawdzanie limitu analiz" : "Checking analysis quota")
+                    .accessibilityIdentifier("analysis.access.loading")
+            }
+        }
+        .task(id: read) {
+            guard let snapshot = read.snapshot else {
+                _ = try? await source.connection.sessionSnapshot()
+                return
+            }
+            let access = try? await source.connection.analysisAccess(
+                using: source.repository, expected: snapshot, guestCredential: source.guestCredential
+            )
+            guard !Task.isCancelled, source.connection.snapshot == snapshot, attempt == read.attempt else { return }
+            result = Loaded(read: read, access: access)
+        }
+    }
+
+    @ViewBuilder
+    private func summary(_ access: AnalysisAccessWireDTO, quota: AnalysisAccessWireDTO.Mode) -> some View {
+        if quota.activeQuotaKind == .starterIdentification || quota.activeQuotaKind == .starterDiagnosis {
+            Text(isPolish
+                 ? "Analiza startowa: \(quota.remaining) z \(quota.limit)"
+                 : "Starter analysis: \(quota.remaining) of \(quota.limit)")
+                .accessibilityIdentifier("analysis.access.starter")
+        }
+        if let remaining = access.monthly.remaining, let limit = access.monthly.limit {
+            Text(isPolish ? "Analizy miesięczne: \(remaining) z \(limit)" : "Monthly analyses: \(remaining) of \(limit)")
+                .accessibilityIdentifier("analysis.access.monthly")
+        } else if !access.isGuest {
+            Text(isPolish ? "Limit miesięczny niedostępny." : "Monthly quota unavailable.")
+                .accessibilityIdentifier("analysis.access.monthly.unavailable")
+        }
+        if let periodEnd = access.monthly.periodEnd, let date = SQLTimestamp.date(from: periodEnd) {
+            let display = date.formatted(.dateTime.month(.abbreviated).day().year().locale(locale.locale))
+            Text(isPolish ? "Limit odnowi się: \(display)" : "Resets on \(display)")
+                .accessibilityIdentifier("analysis.access.reset")
+        }
+    }
+
+    private var unavailable: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isPolish ? "Nie udało się sprawdzić limitu analiz." : "Couldn’t check analysis quota.")
+                .accessibilityIdentifier("analysis.access.error")
+            retryButton
+        }
+    }
+
+    private var retryButton: some View {
+        Button(isPolish ? "Spróbuj ponownie" : "Retry quota check") { attempt += 1 }
+            .accessibilityIdentifier("analysis.access.retry")
+    }
+}
+
 public struct CareQuestionsView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
+    private let accessSource: AnalysisAccessSource?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoLoadTask: Task<Void, Never>?
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
+        self.init(model: model, languageStore: languageStore, accessSource: nil)
+    }
+
+    init(model: AnalysisFlowModel, languageStore: LanguageStore, accessSource: AnalysisAccessSource?) {
         self.model = model
         self.languageStore = languageStore
+        self.accessSource = accessSource
     }
 
     private var isPolish: Bool {
@@ -61,11 +166,15 @@ public struct CareQuestionsView: View {
 
     private var gallerySection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Text(isPolish ? "Wybierz zdjęcie" : "Choose photo")
+            if let accessSource {
+                AnalysisQuotaGate(
+                    source: accessSource,
+                    mode: model.router.flowState.intent == .problem ? .diagnosis : .identification,
+                    locale: languageStore.currentLocale
+                ) { photoPicker }
+            } else {
+                photoPicker
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("photo.select.gallery")
 
             if model.isPreparingPhoto {
                 ProgressView(isPolish ? "Wczytywanie zdjęcia" : "Loading photo")
@@ -85,6 +194,14 @@ public struct CareQuestionsView: View {
             }
             .accessibilityIdentifier("analysis.catalogue.button")
         }
+    }
+
+    private var photoPicker: some View {
+        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+            Text(isPolish ? "Wybierz zdjęcie" : "Choose photo")
+        }
+        .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("photo.select.gallery")
     }
 
     private var questionStepSection: some View {

@@ -32,6 +32,7 @@ struct RootContainerView: View {
     @State private var starting = false
     @State private var startupFailed = false
 #if DEBUG && targetEnvironment(simulator)
+    @State private var analysisAccessRepository = AnalysisAccessRepository()
     @State private var stagingAccount: StagingAccountPresentation?
     @State private var stagingResume: CatalogueResumeSelection?
     @State private var stagingResumeLocked = false
@@ -130,7 +131,9 @@ struct RootContainerView: View {
                         .accessibilityIdentifier("catalogue.back")
                     }
                 case .selectPhoto, .careQuestions:
-                    CareQuestionsView(model: analysisModel, languageStore: languageStore)
+                    CareQuestionsView(
+                        model: analysisModel, languageStore: languageStore, accessSource: analysisAccessSource
+                    )
                 case .analyzing, .preliminaryResult, .diagnosticRefinement:
                     PreliminaryResultView(
                         model: analysisModel, languageStore: languageStore,
@@ -190,6 +193,17 @@ struct RootContainerView: View {
             }
         }
 #endif
+    }
+
+    private var analysisAccessSource: AnalysisAccessSource? {
+#if DEBUG && targetEnvironment(simulator)
+        if isStagingAnalysis, let catalogue {
+            return AnalysisAccessSource(
+                connection: catalogue, repository: analysisAccessRepository, guestCredential: stagingGuestClaim?.credential
+            )
+        }
+#endif
+        return nil
     }
 
     private var guestIdentificationActions: GuestIdentificationActions? {
@@ -304,7 +318,7 @@ struct RootContainerView: View {
         languageStore.currentLocale = .en
         if ProcessInfo.processInfo.arguments.contains("--narat-staging-guest-claim") {
             let claim = StagingGuestPhotoClaim(
-                connection: connection, credential: KeychainInstallationCredentialStore().getOrCreateCredential()
+                connection: connection, credential: await analysisAccessRepository.installationCredential()
             )
             stagingGuestClaim = claim
             do {
