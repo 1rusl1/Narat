@@ -1828,9 +1828,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t165-notification-sync-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 98.46 с, проверки — 76.43 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t165-notification-sync-retirement](validation/automation/tasks/t165-notification-sync-retirement.md).
+v02-repeat-plant-diagnosis: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 154.76 с, проверки — 77.52 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [v02-repeat-plant-diagnosis](validation/automation/tasks/v02-repeat-plant-diagnosis.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
