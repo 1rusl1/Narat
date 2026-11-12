@@ -3438,6 +3438,136 @@ extension CollectionWireTests {
         return #"{"job_id":"\#(id.uuidString)","mode":"diagnosis","status":"\#(status)","quota_kind":"free_monthly","quota_state":"reserved","result":\#(result),"error_code":\#(errorCode),"error_message":null\#(binding)}"#
     }
 
+    private func firstAidEligibility(jobId: UUID, plantId: UUID) throws -> RecordableFirstAidAction {
+        let fields = [
+            "job_id": jobId.uuidString, "plant_id": plantId.uuidString,
+            "action_id": "check_monstera_moisture", "action_code": "check_soil",
+            "source": ["url": "https://example.invalid/soil", "locator": "Soil moisture"]
+        ] as [String: Any]
+        return try JSONDecoder().decode(RecordableFirstAidAction.self, from: Data(syncJSON(fields).utf8))
+    }
+
+    func testFirstAidEligibilityRequiresBoundSuccessfulResultAndExactAdvisory() throws {
+        let jobId = UUID(), photo = UUID()
+        let result: [String: Any] = [
+            "analysis_id": UUID().uuidString, "job_id": jobId.uuidString, "kb_release_id": UUID().uuidString,
+            "mode": "diagnosis", "identification_status": "identified", "plant_id": "monstera_deliciosa",
+            "genus_id": "monstera", "diagnosis_status": "problem_detected", "selected_condition_id": "overwatering",
+            "candidates": [], "visual_markers": [], "evidence_basis": [], "limitations": [],
+            "first_action_summary": "Check soil moisture.", "control_interval_days": NSNull(),
+            "plan_availability": "available", "analysis_receipt": "test-receipt"
+        ]
+        func advisory(job: UUID, plant: UUID) -> [String: Any] {
+            ["job_id": job.uuidString, "plant_id": plant.uuidString,
+             "action_id": "check_monstera_moisture", "action_code": "check_soil",
+             "source": ["url": "https://example.invalid/soil", "locator": "Soil moisture"]]
+        }
+        func decode(result: [String: Any], action: [String: Any]? = nil) throws -> AnalysisJobWire {
+            let response = diagnosisJob(id: jobId, status: "succeeded", result: try syncJSON(result),
+                                        target: (serverPlantId, photo))
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+            object["first_aid_action"] = action
+            let wire = try JSONDecoder().decode(AnalysisJobWire.self, from: Data(syncJSON(object).utf8))
+            try wire.validate(mode: .diagnosis, jobId: jobId, targetPlantId: serverPlantId, photoAssetId: photo)
+            return wire
+        }
+        let eligible = advisory(job: jobId, plant: serverPlantId)
+        XCTAssertEqual(try decode(result: result, action: eligible).recordableFirstAid,
+                       try firstAidEligibility(jobId: jobId, plantId: serverPlantId))
+        XCTAssertNil(try decode(result: result).recordableFirstAid)
+        XCTAssertNil(try decode(result: result, action: advisory(job: jobId, plant: UUID())).recordableFirstAid)
+        XCTAssertNil(try decode(result: result, action: advisory(job: UUID(), plant: serverPlantId)).recordableFirstAid)
+        var unknown = result
+        unknown["identification_status"] = "unknown"
+        unknown["diagnosis_status"] = "insufficient_data"
+        unknown["selected_condition_id"] = NSNull()
+        unknown["plan_availability"] = "diagnosis_unresolved"
+        XCTAssertNil(try decode(result: unknown, action: eligible).recordableFirstAid)
+    }
+
+    @MainActor
+    func testFirstAidRecordReopensAndReplaysUntilExactFactIsInJournal() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let action = try firstAidEligibility(jobId: UUID(), plantId: serverPlantId)
+        let target = RepeatDiagnosisTarget(plantId: serverPlantId, ownerId: syncOwner)
+        let entry = UUID(), newer = "2026-11-03T09:10:00.000001+00:00"
+        var plant = syncChange(id: serverPlantId.uuidString)
+        plant["data"] = ["id": serverPlantId.uuidString, "plant_id": "monstera_deliciosa",
+                         "revision": 1, "care_revision": 1] as [String: Any]
+        var baseline = syncObject()
+        baseline["changes"] = [plant]
+        let original: URLRequest
+        let command: FirstAidRecordCommand
+        do {
+            let transport = CatalogueTransport([.http(200, try syncJSON(baseline)), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            command = try await repo.enqueueFirstAidRecord(action, target: target, context: lease)
+            let same = try await repo.enqueueFirstAidRecord(action, target: target, context: lease)
+            XCTAssertEqual(same.envelope, command.envelope)
+            let outcome = try await repo.retryFirstAidRecord(command, context: lease)
+            guard case .pending = outcome else { return XCTFail("Lost response must leave the command pending") }
+            let requests = await transport.capturedRequests()
+            original = try XCTUnwrap(requests.last)
+        }
+
+        var receipt = manualWateringReceipt(entryId: entry, state: "active")
+        receipt["control_id"] = NSNull()
+        receipt["watermark"] = newer
+        var fact = syncChange(newer, id: entry.uuidString, entity: "care_entries")
+        fact["data"] = ["id": entry.uuidString, "plant_id": serverPlantId.uuidString,
+                        "state": "active", "action_code": "check_soil", "timezone": "Europe/Moscow",
+                        "operation_id": command.envelope.operationId.uuidString,
+                        "occurred_at": newer, "occurred_local_date": "2026-11-03"]
+        var delta = syncObject()
+        delta["until"] = newer
+        delta["next_since"] = newer
+        delta["changes"] = [fact]
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(receipt)), .http(200, try syncJSON(syncObject())),
+            .http(200, try syncJSON(receipt)), .http(200, try syncJSON(delta)),
+            .http(409, #"{"error":{"code":"CONFLICT","message":"Already recorded","retryable":false}}"#)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        let queued = try await repo.pendingFirstAidRecord(plantId: serverPlantId, context: lease)
+        let restored = try XCTUnwrap(queued)
+        XCTAssertEqual(restored.envelope, command.envelope)
+        guard case .pending = try await repo.retryFirstAidRecord(restored, context: lease) else {
+            return XCTFail("Receipt alone cannot confirm a fact")
+        }
+        let missing = try await repo.collectionFirstAidHistory(plantId: serverPlantId, context: lease)
+        XCTAssertTrue(missing.isEmpty)
+        guard case .confirmed = try await repo.retryFirstAidRecord(restored, context: lease) else {
+            return XCTFail("Expected the exact canonical fact")
+        }
+        let pending = try await repo.pendingFirstAidRecord(plantId: serverPlantId, context: lease)
+        XCTAssertNil(pending)
+        let conflict = try await repo.enqueueFirstAidRecord(action, target: target, context: lease)
+        guard case .rejected = try await repo.retryFirstAidRecord(conflict, context: lease) else {
+            return XCTFail("A definitive conflict must not remain in the queue")
+        }
+        let afterConflict = try await repo.pendingFirstAidRecord(plantId: serverPlantId, context: lease)
+        XCTAssertNil(afterConflict)
+        let history = try await repo.collectionFirstAidHistory(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history.map(\.id), [entry])
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET", "POST", "GET", "POST"])
+        for request in requests.prefix(4) where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, original.httpBody)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"),
+                           command.envelope.operationId.uuidString.lowercased())
+        }
+    }
+
     private func identificationJob(id: UUID, status: String, quota: String, result: String = "null") -> String {
         #"{"job_id":"\#(id.uuidString)","mode":"identification","status":"\#(status)","quota_kind":"starter_identification","quota_state":"\#(quota)","result":\#(result),"error_code":null,"error_message":null}"#
     }

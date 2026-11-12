@@ -54,6 +54,7 @@ public struct AnalysisServiceResult: Sendable {
     public let conditionLabel: String?
     public let uploadedPhotoId: UUID?
     let photoOwnerId: UUID?
+    let firstAidAction: RecordableFirstAidAction?
 
     public init(
         analysis: PreliminaryAnalysis,
@@ -61,12 +62,19 @@ public struct AnalysisServiceResult: Sendable {
         conditionLabel: String? = nil,
         uploadedPhotoId: UUID? = nil
     ) {
+        self.init(analysis: analysis, speciesLabel: speciesLabel, conditionLabel: conditionLabel,
+                  uploadedPhotoId: uploadedPhotoId, firstAidAction: nil)
+    }
+
+    init(analysis: PreliminaryAnalysis, speciesLabel: String?, conditionLabel: String?,
+         uploadedPhotoId: UUID?, firstAidAction: RecordableFirstAidAction?) {
         self.analysis = analysis
         identification = nil
         self.speciesLabel = speciesLabel
         self.conditionLabel = conditionLabel
         self.uploadedPhotoId = uploadedPhotoId
         photoOwnerId = nil
+        self.firstAidAction = firstAidAction
     }
 
     init(identification: PhotoIdentificationResult, uploadedPhotoId: UUID?, photoOwnerId: UUID? = nil) {
@@ -76,6 +84,7 @@ public struct AnalysisServiceResult: Sendable {
         conditionLabel = nil
         self.uploadedPhotoId = uploadedPhotoId
         self.photoOwnerId = photoOwnerId
+        firstAidAction = nil
     }
 }
 
@@ -118,6 +127,7 @@ public final class AnalysisFlowModel {
     public private(set) var conditionLabel: String?
     private var identifiedPhoto: PhotoIdentificationSelection?
     private var confirmedPhoto: PhotoIdentificationSelection?
+    private var firstAidAction: RecordableFirstAidAction?
     private let photoInput = AnalysisPhotoInput()
     private var service: (any AnalysisService)?
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
@@ -172,7 +182,19 @@ public final class AnalysisFlowModel {
         identifiedPhoto = nil
         if confirmedPhoto != nil { router.flowState.confirmedPlantId = nil }
         confirmedPhoto = nil
+        firstAidAction = nil
         analysisError = nil
+    }
+
+    var recordableFirstAid: RecordableFirstAidAction? {
+        guard router.flowState.currentStep == .preliminaryResult, let result = preliminaryResult,
+              result.mode == .diagnosis, result.diagnosisStatus == .conditionDetected,
+              result.identificationStatus == .resolved, result.planAvailability == .available,
+              Self.nonempty(result.firstActionSummary) != nil,
+              let target = repeatDiagnosisTarget, let firstAidAction,
+              firstAidAction.jobId == result.jobId, firstAidAction.plantId == target.plantId,
+              firstAidAction.isSoilCheck else { return nil }
+        return firstAidAction
     }
 
     private var photoIdentificationCandidate: PhotoIdentificationSelection? {
@@ -342,6 +364,7 @@ public final class AnalysisFlowModel {
                     }
                 } else if request.mode == .diagnosis, let diagnosis = result.analysis, diagnosis.mode == .diagnosis {
                     self.preliminaryResult = diagnosis
+                    self.firstAidAction = result.firstAidAction
                     if diagnosis.identificationStatus == .resolved, diagnosis.plantId != nil {
                         self.speciesLabel = Self.nonempty(result.speciesLabel)
                     }

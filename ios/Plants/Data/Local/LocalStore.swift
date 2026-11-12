@@ -420,7 +420,7 @@ public actor LocalStore {
                 guard try activeSyncedEntities(ownerId: context.ownerId, entityType: "plants").contains(where: { $0.id == plantId }),
                       let item = try activeSyncedEntities(ownerId: context.ownerId, entityType: "care_entries")
                         .first(where: { $0.id == entryId }),
-                      let entry = try? JSONDecoder().decode(CatalogueWateringEntry.self, from: Data(item.payloadJSON.utf8)),
+                      let entry = try? JSONDecoder().decode(CatalogueCareJournalEntry.self, from: Data(item.payloadJSON.utf8)),
                       entry.id == entryId, entry.plantId == plantId, entry.taskId == nil,
                       entry.actionCode == "water", entry.state == "active" else {
                     throw SyncWireValidationError.invalidPage
@@ -433,6 +433,59 @@ public actor LocalStore {
             }) else { throw OutboxEnqueueError.operationIdentityMismatch }
             _ = try enqueueCommand(operationId: command.operationId, ownerId: context.ownerId,
                                    plantId: plantId, commandName: command.commandName, payloadJSON: command.payloadJSON)
+        }
+    }
+
+    func pendingFirstAidRecord(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidRecordCommand? {
+        try authority.withBoundValid(context) {
+            try firstAidRecordInOutbox(plantId: plantId, ownerId: context.ownerId)
+        }
+    }
+
+    func enqueueFirstAidRecord(
+        _ command: FirstAidRecordCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidRecordCommand {
+        try authority.withBoundValid(context) {
+            let ownerId = context.ownerId
+            guard try activeSyncedEntities(ownerId: ownerId, entityType: "plants")
+                .contains(where: { $0.id == command.plantId }) else { throw SyncWireValidationError.invalidPage }
+            if let pending = try firstAidRecordInOutbox(plantId: command.plantId, ownerId: ownerId) {
+                guard pending.jobId == command.jobId else { throw OutboxEnqueueError.operationIdentityMismatch }
+                return pending
+            }
+            let envelope = command.envelope
+            _ = try enqueueCommand(operationId: envelope.operationId, ownerId: ownerId, plantId: command.plantId,
+                                   commandName: envelope.commandName, payloadJSON: envelope.payloadJSON)
+            return command
+        }
+    }
+
+    private func firstAidRecordInOutbox(plantId: UUID, ownerId: UUID) throws -> FirstAidRecordCommand? {
+        guard let entry = try pendingOutboxEntries(for: ownerId).first(where: {
+            $0.plantId == plantId && $0.commandName == FirstAidRecordCommand.name
+        }) else { return nil }
+        guard let command = FirstAidRecordCommand(envelope: .init(
+            operationId: entry.operationId, commandName: entry.commandName,
+            plantId: entry.plantId, payloadJSON: entry.payloadJSON
+        )) else { throw OutboxEnqueueError.operationIdentityMismatch }
+        return command
+    }
+
+    func confirmedFirstAidEntry(
+        _ command: FirstAidRecordCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> UUID? {
+        try authority.withBoundValid(context) {
+            let rows = try activeSyncedEntities(ownerId: context.ownerId, entityType: "care_entries")
+            let decoder = JSONDecoder()
+            return rows.first(where: { row in
+                guard let entry = try? decoder.decode(CatalogueCareJournalEntry.self, from: Data(row.payloadJSON.utf8))
+                else { return false }
+                return entry.operationId == command.envelope.operationId && entry.id == row.id
+                    && entry.plantId == command.plantId && entry.taskId == nil && entry.actionCode == "check_soil"
+                    && entry.hasCanonicalDatesAndState
+            })?.id
         }
     }
 

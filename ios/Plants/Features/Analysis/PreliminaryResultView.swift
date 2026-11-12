@@ -6,12 +6,19 @@ struct GuestIdentificationActions {
     let save: (PhotoIdentificationSelection) -> Void
 }
 
+struct FirstAidResultContext {
+    let connection: CatalogueConnection
+    let expected: CatalogueSDKSnapshot
+    let openJournal: () -> Void
+}
+
 public struct PreliminaryResultView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
     private var catalogueConnection: CatalogueConnection? = nil
     private var guestActions: GuestIdentificationActions? = nil
     private var returnToPlant: (() -> Void)? = nil
+    private var firstAidContext: FirstAidResultContext? = nil
     @State private var saveLocked = false
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
@@ -20,12 +27,14 @@ public struct PreliminaryResultView: View {
     }
 
     init(model: AnalysisFlowModel, languageStore: LanguageStore, catalogueConnection: CatalogueConnection?,
-         guestActions: GuestIdentificationActions? = nil, returnToPlant: (() -> Void)? = nil) {
+         guestActions: GuestIdentificationActions? = nil, returnToPlant: (() -> Void)? = nil,
+         firstAidContext: FirstAidResultContext? = nil) {
         self.model = model
         self.languageStore = languageStore
         self.catalogueConnection = catalogueConnection
         self.guestActions = guestActions
         self.returnToPlant = returnToPlant
+        self.firstAidContext = firstAidContext
     }
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
@@ -89,6 +98,13 @@ public struct PreliminaryResultView: View {
                     ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
                     }
+                    if let context = firstAidContext, let action = model.recordableFirstAid,
+                       let target = model.repeatDiagnosisTarget, let summary = result.firstActionSummary,
+                       target.ownerId == context.expected.session.userId,
+                       context.connection.snapshot == context.expected {
+                        FirstAidRecordControls(context: context, target: target, action: action, summary: summary)
+                            .id(action.jobId)
+                    }
                     if model.repeatDiagnosisTarget == nil, let connection = catalogueConnection,
                        connection.snapshot?.isAnonymous == false,
                        result.mode == .diagnosis,
@@ -126,6 +142,85 @@ public struct PreliminaryResultView: View {
         AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
             .disabled((catalogueConnection != nil && saveLocked) || guestActions?.busy == true)
             .buttonStyle(.bordered)
+    }
+}
+
+private struct FirstAidRecordControls: View {
+    let context: FirstAidResultContext
+    let target: RepeatDiagnosisTarget
+    let action: RecordableFirstAidAction
+    let summary: String
+
+    @State private var pending: FirstAidRecordCommand?
+    @State private var busy = true
+    @State private var failed = false
+    @State private var confirming = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: summary)
+            Link("First-aid source", destination: action.source.url)
+                .accessibilityIdentifier("analysis.firstAid.source")
+            if busy {
+                ProgressView()
+            } else if let pending {
+                Text("Soil check pending sync.").accessibilityIdentifier("analysis.firstAid.pending")
+                if pending.jobId == action.jobId {
+                    Button("Retry soil check") { Task { await submit(pending) } }
+                        .accessibilityIdentifier("analysis.firstAid.retry")
+                }
+            } else if failed {
+                Text("Couldn’t record the soil check.")
+            } else {
+                Button("Record soil check") { confirming = true }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("analysis.firstAid.record")
+            }
+        }
+        .task {
+            do {
+                let lease = try await context.connection.collectionLease(expected: context.expected)
+                guard let repository = context.connection.repository else { throw SyncWireValidationError.invalidSession }
+                pending = try await repository.pendingFirstAidRecord(plantId: action.plantId, context: lease)
+            } catch {
+                failed = true
+            }
+            busy = false
+        }
+        .confirmationDialog("Did you check the soil?", isPresented: $confirming, titleVisibility: .visible) {
+            Button("I checked the soil") { Task { await submit(nil) } }
+                .accessibilityIdentifier("analysis.firstAid.confirm")
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func submit(_ retry: FirstAidRecordCommand?) async {
+        guard !busy, !failed, let repository = context.connection.repository else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let lease = try await context.connection.collectionLease(expected: context.expected)
+            let command: FirstAidRecordCommand
+            if let retry {
+                command = retry
+            } else {
+                command = try await repository.enqueueFirstAidRecord(action, target: target, context: lease)
+            }
+            pending = command
+            let outcome = try await repository.retryFirstAidRecord(command, context: lease)
+            guard context.connection.snapshot == context.expected else { return }
+            switch outcome {
+            case .confirmed:
+                context.openJournal()
+            case .rejected:
+                pending = nil
+                failed = true
+            case .pending:
+                break
+            }
+        } catch {
+            failed = pending == nil
+        }
     }
 }
 

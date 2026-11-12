@@ -666,11 +666,13 @@ final class StagingAnalysisService: AnalysisService {
             let targetPlantId = repeatDiagnosisTarget?.plantId
             let expectedPhotoId = targetPlantId == nil ? nil : photoId
             var job: AnalysisJobWire
+            var readStatus = false
             if let jobId = progress.jobId {
                 job = try await api.fetchAnalysisJob(
                     id: jobId, mode: request.mode, targetPlantId: targetPlantId, photoAssetId: expectedPhotoId,
                     locale: locale, context: lease, guestCredential: guestCredential
                 )
+                readStatus = true
             } else {
                 job = try await api.createAnalysisJob(
                     operationId: progress.creationOperationId, mode: request.mode, photoAssetId: photoId,
@@ -692,6 +694,15 @@ final class StagingAnalysisService: AnalysisService {
                     id: job.jobId, mode: request.mode, targetPlantId: targetPlantId, photoAssetId: expectedPhotoId,
                     locale: locale, context: lease, guestCredential: guestCredential
                 )
+                readStatus = true
+                try verify(lease, attempt: attempt)
+            }
+            if targetPlantId != nil, job.status == .succeeded, !readStatus {
+                job = try await api.fetchAnalysisJob(
+                    id: job.jobId, mode: request.mode, targetPlantId: targetPlantId, photoAssetId: expectedPhotoId,
+                    locale: locale, context: lease, guestCredential: guestCredential
+                )
+                readStatus = true
                 try verify(lease, attempt: attempt)
             }
             if job.status == .failed, job.errorCode?.hasPrefix("PROVIDER_") == true {
@@ -721,7 +732,8 @@ final class StagingAnalysisService: AnalysisService {
                 analysis: result.domainValue,
                 speciesLabel: result.plantDisplayName,
                 conditionLabel: result.conditionDisplayName,
-                uploadedPhotoId: photoId
+                uploadedPhotoId: photoId,
+                firstAidAction: readStatus ? job.recordableFirstAid : nil
             )
         } catch let error as APIErrorResponse where error.error.code == "QUOTA_REGISTRATION_REQUIRED" {
             throw AnalysisServiceFailure.quotaRegistrationRequired

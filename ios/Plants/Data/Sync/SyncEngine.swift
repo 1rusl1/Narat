@@ -150,15 +150,23 @@ public actor SyncEngine {
             )
 
             let result: OutboxCommandResult
+            var receivedReceipt = false
             do {
                 result = try await apiClient.sendOutboxCommand(envelope, context: context)
-                if case let .wateringDateCorrection(watermark) = result {
-                    // Keep the operation durable until the corrected journal is on disk.
-                    _ = try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
-                    guard let raw = try await store.currentWatermarkRaw(ownerId: ownerId),
-                          let confirmed = SQLTimestamp.microseconds(from: raw), confirmed >= watermark else {
+                receivedReceipt = true
+                switch result {
+                case let .wateringDateCorrection(watermark):
+                    try await refreshCareJournal(ownerId: ownerId, watermark: watermark, context: context)
+                case let .firstAidRecorded(receipt):
+                    try await refreshCareJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    guard let command = FirstAidRecordCommand(envelope: envelope),
+                          try await store.confirmedFirstAidEntry(
+                              command, context: context, authority: apiClient.syncAuthority
+                          ) == receipt.entryId else {
                         throw SyncWireValidationError.invalidPage
                     }
+                default:
+                    break
                 }
             } catch {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
@@ -166,6 +174,13 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
+                    if !receivedReceipt, entry.commandName == FirstAidRecordCommand.name, !apiError.error.retryable,
+                       ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
+                        try await store.finishOutboxEntry(
+                            operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                        )
+                        continue
+                    }
                     failure = String(decoding: try JSONEncoder().encode(apiError), as: UTF8.self)
                 } else {
                     failure = String(describing: error)
@@ -189,7 +204,7 @@ public actor SyncEngine {
                 try await store.acknowledgeCatalogueCreate(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic, .wateringDateCorrection:
+            case .generic, .wateringDateCorrection, .firstAidRecorded:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )
@@ -198,6 +213,14 @@ public actor SyncEngine {
         }
 
         return committedCount
+    }
+
+    private func refreshCareJournal(ownerId: UUID, watermark: Int64, context: SyncSessionLease) async throws {
+        _ = try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+        guard let raw = try await store.currentWatermarkRaw(ownerId: ownerId),
+              let confirmed = SQLTimestamp.microseconds(from: raw), confirmed >= watermark else {
+            throw SyncWireValidationError.invalidPage
+        }
     }
 
     // MARK: - Delta Sync with since/until Window & Stable Cursor

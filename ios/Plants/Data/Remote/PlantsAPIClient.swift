@@ -122,7 +122,7 @@ enum ManualWateringAction: Sendable, Equatable {
         .correctDate(entryId: entryId, occurredAt: timestamp(date, timezone: timezone), timezone: timezone.identifier)
     }
 
-    private static func timestamp(_ date: Date, timezone: TimeZone) -> String {
+    fileprivate static func timestamp(_ date: Date, timezone: TimeZone) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         formatter.timeZone = timezone
@@ -147,6 +147,66 @@ enum ManualWateringAction: Sendable, Equatable {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         return CommandEnvelopeDTO(operationId: operationId, commandName: name, plantId: plantId,
                                   payloadJSON: String(decoding: data, as: UTF8.self))
+    }
+}
+
+struct FirstAidRecordCommand: Sendable {
+    static let name = "care.first_aid.record"
+    let envelope: CommandEnvelopeDTO
+    let plantId: UUID
+    let jobId: UUID
+
+    init?(envelope: CommandEnvelopeDTO) {
+        guard envelope.commandName == Self.name, let plantId = envelope.plantId,
+              let fields = try? JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8)),
+              fields.count == 3, let jobId = fields["job_id"].flatMap(UUID.init(uuidString:)),
+              let date = fields["occurred_at"], SQLTimestamp.microseconds(from: date) != nil,
+              let timezone = fields["timezone"], TimeZone(identifier: timezone) != nil else { return nil }
+        self.envelope = envelope
+        self.plantId = plantId
+        self.jobId = jobId
+    }
+
+    static func make(for action: RecordableFirstAidAction, date: Date, timezone: TimeZone) throws -> FirstAidRecordCommand {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let body = try encoder.encode([
+            "job_id": action.jobId.uuidString.lowercased(),
+            "occurred_at": ManualWateringAction.timestamp(date, timezone: timezone),
+            "timezone": timezone.identifier
+        ])
+        let envelope = CommandEnvelopeDTO(operationId: UUID(), commandName: name, plantId: action.plantId,
+                                          payloadJSON: String(decoding: body, as: UTF8.self))
+        guard let command = Self(envelope: envelope) else { throw SyncWireValidationError.invalidRequest }
+        return command
+    }
+}
+
+struct FirstAidRecordReceipt: Decodable, Sendable {
+    let plantId: UUID
+    let entryId: UUID
+    let controlId: UUID?
+    let watermark: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case entryId = "entry_id"
+        case controlId = "control_id"
+        case reversalId = "reversal_id"
+        case state, watermark
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        plantId = try values.decode(UUID.self, forKey: .plantId)
+        entryId = try values.decode(UUID.self, forKey: .entryId)
+        controlId = try values.decode(UUID?.self, forKey: .controlId)
+        guard try values.decode(String.self, forKey: .state) == "active",
+              try values.decode(UUID?.self, forKey: .reversalId) == nil,
+              let time = SQLTimestamp.microseconds(from: try values.decode(String.self, forKey: .watermark)) else {
+            throw SyncWireValidationError.invalidPage
+        }
+        watermark = time
     }
 }
 
@@ -313,6 +373,7 @@ enum OutboxCommandResult: Sendable {
     case generic
     case catalogueCreate(PlantCreateReceiptDTO)
     case wateringDateCorrection(watermark: Int64)
+    case firstAidRecorded(FirstAidRecordReceipt)
 }
 
 public actor PlantsAPIClient {
@@ -394,12 +455,17 @@ public actor PlantsAPIClient {
         try validateSyncContext(context)
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         let manualWatering = context.session == nil ? nil : ManualWateringAction(envelope: envelope)
+        let firstAid = envelope.commandName == FirstAidRecordCommand.name
+        if firstAid {
+            try syncAuthority.withBoundValid(context) {}
+            guard FirstAidRecordCommand(envelope: envelope) != nil else { throw SyncWireValidationError.invalidRequest }
+        }
         if envelope.commandName == ManualWateringAction.correctionCommand, manualWatering == nil {
             throw SyncWireValidationError.invalidRequest
         }
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
-        if catalogueCreate || manualWatering != nil { encoder.outputFormatting = [.sortedKeys] }
+        if catalogueCreate || manualWatering != nil || firstAid { encoder.outputFormatting = [.sortedKeys] }
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(envelope)
         var request = try buildRequest(
@@ -408,7 +474,7 @@ public actor PlantsAPIClient {
         if let session = context.session {
             request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         }
-        if manualWatering != nil {
+        if manualWatering != nil || firstAid {
             request.setValue("en", forHTTPHeaderField: "X-Client-Locale")
             request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
         }
@@ -418,6 +484,10 @@ public actor PlantsAPIClient {
             let receipt = try await execute(request, as: PlantCreateReceiptDTO.self, expectedStatus: 200)
             try CatalogueCreateWire.validate(receipt, for: envelope)
             result = .catalogueCreate(receipt)
+        } else if firstAid {
+            let receipt = try await execute(request, as: FirstAidRecordReceipt.self, expectedStatus: 200)
+            guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }
+            result = .firstAidRecorded(receipt)
         } else if let manualWatering {
             let receipt = try await execute(request, as: ManualWateringReceipt.self, expectedStatus: 200)
             let watermark = try receipt.validate(plantId: envelope.plantId, action: manualWatering)

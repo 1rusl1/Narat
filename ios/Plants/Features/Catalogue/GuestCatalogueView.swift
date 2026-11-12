@@ -628,7 +628,13 @@ struct CatalogueCollectionView: View {
                         } else {
                             PreliminaryResultView(
                                 model: repeatModel, languageStore: repeatDiagnosis.languageStore,
-                                catalogueConnection: nil, returnToPlant: endRepeatDiagnosis
+                                catalogueConnection: nil, returnToPlant: endRepeatDiagnosis,
+                                firstAidContext: FirstAidResultContext(
+                                    connection: connection, expected: selected.scope,
+                                    openJournal: {
+                                        if self.repeatModel === repeatModel { endRepeatDiagnosis() }
+                                    }
+                                )
                             )
                         }
                     } else {
@@ -765,8 +771,12 @@ private struct CatalogueCollectionCardView: View {
     var startRepeatDiagnosis: (() -> Void)? = nil
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
-    @State private var history: [CatalogueWateringEntry]?
+    @State private var history: [CatalogueCareJournalEntry]?
     @State private var firstAid: CatalogueFirstAidSnapshot?
+    @State private var firstAidHistory: [CatalogueCareJournalEntry] = []
+    @State private var pendingFirstAid: FirstAidRecordCommand?
+    @State private var savingFirstAid = false
+    @State private var firstAidFailed = false
     @State private var historyFailed = false
     @State private var adviceFailed = false
     @State private var attempt = 0
@@ -788,6 +798,7 @@ private struct CatalogueCollectionCardView: View {
                     if let name = species?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
                     }
+                    firstAidJournal
                     if let startRepeatDiagnosis {
                         Button("Check plant again", action: startRepeatDiagnosis)
                             .buttonStyle(.bordered)
@@ -847,6 +858,7 @@ private struct CatalogueCollectionCardView: View {
                 species = try? await api.fetchPublishedSpecies(slug: slug, locale: locale)
             }
             .task(id: attempt) { await loadCare() }
+            .task(id: attempt) { await loadFirstAidJournal() }
             .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
             .task(id: firstAid?.accessUntil) {
                 guard let expiry = firstAid?.accessUntil else { return }
@@ -861,6 +873,67 @@ private struct CatalogueCollectionCardView: View {
                     Task { await correctDate(edit, to: date) }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var firstAidJournal: some View {
+        if !polish {
+            if !firstAidHistory.isEmpty {
+                Text("First-aid journal").font(.headline)
+                ForEach(firstAidHistory) { entry in
+                    Text("Soil checked · " + entry.occurredLocalDate + (entry.state == "voided" ? " · Undone" : ""))
+                        .accessibilityIdentifier("catalogue.saved.firstAid.entry." + entry.id.uuidString.lowercased())
+                }
+            }
+            if savingFirstAid {
+                ProgressView("Saving soil check…")
+            } else if let pendingFirstAid {
+                Text("Soil check pending sync.")
+                Button("Retry soil check") { Task { await retryFirstAid(pendingFirstAid) } }
+                    .accessibilityIdentifier("collection.firstAid.retry")
+            }
+            if firstAidFailed {
+                Text("Couldn’t load or save the soil check.")
+                if pendingFirstAid == nil {
+                    Button("Reload first-aid journal") { Task { await loadFirstAidJournal() } }
+                }
+            }
+        }
+    }
+
+    private func loadFirstAidJournal() async {
+        guard !polish, let repository = connection.repository else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            try await loadFirstAidJournal(repository, lease: lease)
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            firstAidFailed = true
+        }
+    }
+
+    private func loadFirstAidJournal(_ repository: CollectionRepository, lease: SyncSessionLease) async throws {
+        let pending = try await repository.pendingFirstAidRecord(plantId: card.id, context: lease)
+        let journal = try await repository.collectionFirstAidHistory(plantId: card.id, context: lease)
+        guard !Task.isCancelled, connection.snapshot == expected else { throw CancellationError() }
+        pendingFirstAid = pending
+        firstAidHistory = journal
+        firstAidFailed = false
+    }
+
+    private func retryFirstAid(_ command: FirstAidRecordCommand) async {
+        guard !savingFirstAid, let repository = connection.repository else { return }
+        savingFirstAid = true
+        defer { savingFirstAid = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let outcome = try await repository.retryFirstAidRecord(command, context: lease)
+            try await loadFirstAidJournal(repository, lease: lease)
+            if case .rejected = outcome { firstAidFailed = true }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            firstAidFailed = true
         }
     }
 
@@ -982,7 +1055,7 @@ private struct WateringDateEdit: Identifiable {
     let original: Date
     let timezone: TimeZone
 
-    init?(_ entry: CatalogueWateringEntry) {
+    init?(_ entry: CatalogueCareJournalEntry) {
         guard entry.state == "active", let name = entry.timezone, let zone = TimeZone(identifier: name),
               let occurredAt = SQLTimestamp.date(from: entry.occurredAt) else { return nil }
         id = entry.id

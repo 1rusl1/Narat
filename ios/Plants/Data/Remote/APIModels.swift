@@ -1142,6 +1142,27 @@ struct GuestPhotoClaimReceipt: Codable, Equatable, Sendable {
     }
 }
 
+struct RecordableFirstAidAction: Decodable, Sendable, Equatable {
+    let jobId: UUID
+    let plantId: UUID
+    let actionId: String
+    let actionCode: String
+    let source: PlantCareRecommendation.Source
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case plantId = "plant_id"
+        case actionId = "action_id"
+        case actionCode = "action_code"
+        case source
+    }
+
+    var isSoilCheck: Bool {
+        actionCode == "check_soil" && actionId.range(of: #"^[a-z][a-z0-9_]*$"#, options: .regularExpression) != nil
+            && source.isVerifiedLink
+    }
+}
+
 struct AnalysisJobWire: Decodable, Sendable {
     enum Status: String, Decodable, Sendable {
         case queued, running, succeeded, failed, expired
@@ -1161,6 +1182,7 @@ struct AnalysisJobWire: Decodable, Sendable {
     let photoAssetId: UUID?
     let result: AnalysisProjectionWire?
     let identificationResult: PhotoIdentificationWire?
+    private let firstAidAction: RecordableFirstAidAction?
     let errorCode: String?
     let errorMessage: String?
 
@@ -1173,6 +1195,7 @@ struct AnalysisJobWire: Decodable, Sendable {
         case photoAssetId = "photo_asset_id"
         case errorCode = "error_code"
         case errorMessage = "error_message"
+        case firstAidAction = "first_aid_action"
     }
 
     init(from decoder: Decoder) throws {
@@ -1186,8 +1209,19 @@ struct AnalysisJobWire: Decodable, Sendable {
         photoAssetId = try values.decodeIfPresent(UUID.self, forKey: .photoAssetId)
         result = mode == .diagnosis ? try values.decodeIfPresent(AnalysisProjectionWire.self, forKey: .result) : nil
         identificationResult = mode == .identification ? try values.decode(PhotoIdentificationWire?.self, forKey: .result) : nil
+        firstAidAction = try? values.decode(RecordableFirstAidAction.self, forKey: .firstAidAction)
         errorCode = try values.decodeIfPresent(String.self, forKey: .errorCode)
         errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+    }
+
+    var recordableFirstAid: RecordableFirstAidAction? {
+        guard mode == .diagnosis, status == .succeeded, let result, result.jobId == jobId,
+              result.identificationStatus == .identified, result.diagnosisStatus == .problemDetected,
+              result.planAvailability == .available,
+              result.firstActionSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+              let firstAidAction, firstAidAction.jobId == jobId, firstAidAction.plantId == targetPlantId,
+              firstAidAction.isSoilCheck else { return nil }
+        return firstAidAction
     }
 
     func validate(

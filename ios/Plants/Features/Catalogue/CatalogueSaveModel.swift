@@ -20,7 +20,7 @@ enum CatalogueSaveState: Sendable, Equatable {
 enum CatalogueWateringHistoryState: Sendable, Equatable {
     case idle
     case loading
-    case loaded([CatalogueWateringEntry])
+    case loaded([CatalogueCareJournalEntry])
     case unavailable
 }
 

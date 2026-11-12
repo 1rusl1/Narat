@@ -116,9 +116,10 @@ struct CatalogueCollectionSnapshot: Sendable {
     let isCached: Bool
 }
 
-/// Canonical standalone watering fact. Dates remain server calendar dates.
-struct CatalogueWateringEntry: Decodable, Sendable, Equatable, Identifiable {
+/// Canonical care fact. Dates remain server calendar dates.
+struct CatalogueCareJournalEntry: Decodable, Sendable, Equatable, Identifiable {
     let id: UUID
+    let operationId: UUID?
     let plantId: UUID
     let taskId: UUID?
     let actionCode: String
@@ -129,12 +130,22 @@ struct CatalogueWateringEntry: Decodable, Sendable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, state, timezone
+        case operationId = "operation_id"
         case plantId = "plant_id"
         case taskId = "task_id"
         case actionCode = "action_code"
         case occurredAt = "occurred_at"
         case occurredLocalDate = "occurred_local_date"
     }
+
+    var hasCanonicalDatesAndState: Bool {
+        (state == "active" || state == "voided") && SQLTimestamp.microseconds(from: occurredAt) != nil
+            && SQLCalendarDay.date(from: occurredLocalDate) != nil
+    }
+}
+
+enum FirstAidRecordOutcome {
+    case pending, confirmed, rejected
 }
 
 struct CatalogueFirstAidControl: Decodable, Sendable, Identifiable {
@@ -386,23 +397,58 @@ public struct CollectionRepository: Sendable {
     func manualWateringHistory(
         card: CatalogueCardSummary, confirmation: CatalogueCreateConfirmationSnapshot,
         context: SyncSessionLease
-    ) async throws -> [CatalogueWateringEntry] {
+    ) async throws -> [CatalogueCareJournalEntry] {
         try Task.checkCancellation()
         try apiClient.syncAuthority.withBoundValid(context) {}
         guard confirmation.ownerId == context.ownerId,
               card.id == confirmation.receipt.plantId else {
             throw SyncWireValidationError.invalidSession
         }
-        return try await wateringHistory(plantId: card.id, context: context)
+        return try await manualCareHistory(plantId: card.id, actionCode: "water", context: context)
     }
 
     func collectionWateringHistory(
         plantId: UUID, context: SyncSessionLease
-    ) async throws -> [CatalogueWateringEntry] {
+    ) async throws -> [CatalogueCareJournalEntry] {
+        try await collectionCareHistory(plantId: plantId, actionCode: "water", context: context)
+    }
+
+    func collectionFirstAidHistory(plantId: UUID, context: SyncSessionLease) async throws -> [CatalogueCareJournalEntry] {
+        try await collectionCareHistory(plantId: plantId, actionCode: "check_soil", context: context)
+    }
+
+    private func collectionCareHistory(
+        plantId: UUID, actionCode: String, context: SyncSessionLease
+    ) async throws -> [CatalogueCareJournalEntry] {
         try apiClient.syncAuthority.withBoundValid(context) {}
         let plants = try await store.activeSyncedEntities(ownerId: context.ownerId, entityType: "plants")
         guard plants.contains(where: { $0.id == plantId }) else { throw SyncWireValidationError.invalidPage }
-        return try await wateringHistory(plantId: plantId, context: context)
+        return try await manualCareHistory(plantId: plantId, actionCode: actionCode, context: context)
+    }
+
+    func pendingFirstAidRecord(plantId: UUID, context: SyncSessionLease) async throws -> FirstAidRecordCommand? {
+        try await store.pendingFirstAidRecord(plantId: plantId, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func enqueueFirstAidRecord(
+        _ action: RecordableFirstAidAction, target: RepeatDiagnosisTarget, context: SyncSessionLease
+    ) async throws -> FirstAidRecordCommand {
+        guard target.ownerId == context.ownerId, target.plantId == action.plantId, action.isSoilCheck else {
+            throw SyncWireValidationError.invalidRequest
+        }
+        let command = try FirstAidRecordCommand.make(for: action, date: clock(), timezone: .current)
+        return try await store.enqueueFirstAidRecord(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryFirstAidRecord(
+        _ command: FirstAidRecordCommand, context: SyncSessionLease
+    ) async throws -> FirstAidRecordOutcome {
+        _ = try await syncEngine.flushOutbox(context: context)
+        if try await pendingFirstAidRecord(plantId: command.plantId, context: context)?.envelope == command.envelope {
+            return .pending
+        }
+        let entry = try await store.confirmedFirstAidEntry(command, context: context, authority: apiClient.syncAuthority)
+        return entry == nil ? .rejected : .confirmed
     }
 
     func collectionFirstAidControls(plantId: UUID, context: SyncSessionLease) async throws -> CatalogueFirstAidSnapshot? {
@@ -427,31 +473,23 @@ public struct CollectionRepository: Sendable {
         }
     }
 
-    private func wateringHistory(plantId: UUID, context: SyncSessionLease) async throws -> [CatalogueWateringEntry] {
+    private func manualCareHistory(
+        plantId: UUID, actionCode: String, context: SyncSessionLease
+    ) async throws -> [CatalogueCareJournalEntry] {
         try apiClient.syncAuthority.withBoundValid(context) {}
         let entities = try await store.activeSyncedEntities(
             ownerId: context.ownerId, entityType: "care_entries"
         )
         return try apiClient.syncAuthority.withBoundValid(context) {
             try Task.checkCancellation()
-            let dateFormat = DateFormatter()
-            dateFormat.locale = Locale(identifier: "en_US_POSIX")
-            dateFormat.calendar = Calendar(identifier: .gregorian)
-            dateFormat.timeZone = TimeZone(secondsFromGMT: 0)
-            dateFormat.dateFormat = "yyyy-MM-dd"
-            dateFormat.isLenient = false
-            var entries: [CatalogueWateringEntry] = []
+            var entries: [CatalogueCareJournalEntry] = []
             for entity in entities {
                 let entry = try JSONDecoder().decode(
-                    CatalogueWateringEntry.self, from: Data(entity.payloadJSON.utf8)
+                    CatalogueCareJournalEntry.self, from: Data(entity.payloadJSON.utf8)
                 )
                 guard entry.plantId == plantId, entry.taskId == nil,
-                      entry.actionCode == "water" else { continue }
-                guard entry.id == entity.id,
-                      ["active", "voided"].contains(entry.state),
-                      SQLTimestamp.microseconds(from: entry.occurredAt) != nil,
-                      let day = dateFormat.date(from: entry.occurredLocalDate),
-                      dateFormat.string(from: day) == entry.occurredLocalDate else {
+                      entry.actionCode == actionCode else { continue }
+                guard entry.id == entity.id, entry.hasCanonicalDatesAndState else {
                     throw SyncWireValidationError.invalidPage
                 }
                 entries.append(entry)
