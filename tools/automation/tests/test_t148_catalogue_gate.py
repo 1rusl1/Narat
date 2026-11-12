@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from struct import pack
 
 from tools.automation.t148_catalogue_gate import (
     CROSS_SPECIES_PL_LABELS,
@@ -30,6 +31,24 @@ class T148CatalogueGateTests(unittest.TestCase):
         self.assertIn(("dracaena_braunii", "dracena sandera"), CROSS_SPECIES_PL_LABELS)
         self.assertIn(("begonia_corallina", "begonia koralowa"), CROSS_SPECIES_PL_LABELS)
         self.assertIn(("hoya_lanceolata", "hoja piękna"), CROSS_SPECIES_PL_LABELS)
+
+    def test_webp_dimensions_and_truncation(self):
+        def webp(chunk, data):
+            payload = b"WEBP" + chunk + pack("<I", len(data)) + data + b"\0" * (len(data) % 2)
+            return b"RIFF" + pack("<I", len(payload)) + payload
+
+        w, h = 912, 408
+        data = {
+            b"VP8 ": b"\0\0\0\x9d\x01\x2a" + pack("<HH", w, h),
+            b"VP8L": b"\x2f" + pack("<I", (w - 1) | ((h - 1) << 14)),
+            b"VP8X": bytes(4) + (w - 1).to_bytes(3, "little") + (h - 1).to_bytes(3, "little"),
+        }
+        for chunk, payload in data.items():
+            with self.subTest(chunk=chunk):
+                raw = webp(chunk, payload)
+                self.assertEqual(parse_image_dimensions_and_mime(raw), (w, h, "image/webp"))
+                with self.assertRaises(ValueError):
+                    parse_image_dimensions_and_mime(raw[:-1])
 
 
 if __name__ == "__main__":

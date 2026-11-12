@@ -17,6 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, quote, urlparse
 from urllib.request import Request, urlopen
 
+from catalogue_image import parse_image_dimensions_and_mime
 from import_wikidata import values
 from rights import require_operations
 
@@ -26,6 +27,17 @@ OUT = ROOT / 'catalogue/releases/skeleton-300-v1'
 PLANTFOLIO_DIR = ROOT / 'knowledge-base/references/personal/watering/plantfolio-common-plants'
 SPECIES_RANK = 'Q7432'
 LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/'
+GENERIC_EN_NAMES = {'cactus', 'orchid', 'plant', 'houseplant', 'tree', 'shrub', 'fern', 'palm', 'succulent'}
+POLISH_SOURCE_COLLISIONS = {
+    'Q814368': 'begonia koralowa',
+    'Q162311': 'hoja piękna',
+}
+POLISH_NAME_COLLISIONS = {
+    'Q31318': {'dracena sandera', 'dracaena sanderiana'},
+    'Q814368': {'begonia koralowa'},
+    'Q162311': {'hoja piękna', 'hoya bella'},
+    'Q883685': {'wilczomlecz okazały'},
+}
 
 BROAD_CATEGORY_IDS = {
     'aroids', 'trailing-aroids', 'prayer-plants', 'ferns', 'palms',
@@ -421,8 +433,23 @@ def taxon(item):
     return names[0]
 
 
-def common_names(item, scientific):
+def polish_name_is_eligible(value, qid):
+    key = norm(value)
+    return not key.startswith('lista gatunków ') and key not in POLISH_NAME_COLLISIONS.get(qid, ())
+
+
+def eligible_polish_article(item, page):
+    if not page or page.get('pageprops', {}).get('wikibase_item') != item['id']:
+        return None
+    title = norm(page.get('title', ''))
+    if not title or title.startswith('lista ') or title == POLISH_SOURCE_COLLISIONS.get(item['id']):
+        return None
+    return page
+
+
+def common_names(item, scientific, scientific_genera=()):
     scientific_values = {norm(scientific), *(norm(v) for v in values(item, 'P225'))}
+    genus = norm(scientific.split()[0])
     result = {lang: [] for lang in ('en', 'pl')}
     for lang in result:
         candidates = [(v['text'], 'P1843') for v in values(item, 'P1843')
@@ -433,11 +460,16 @@ def common_names(item, scientific):
         seen = set()
         for value, origin in candidates:
             # Do not pass scientific names / Latin aliases off as common names.
-            if norm(value) in scientific_values:
+            key = norm(value)
+            if not key or key in scientific_values or key == genus or key in scientific_genera:
                 continue
-            if norm(value) not in seen:
+            if lang == 'en' and key in GENERIC_EN_NAMES:
+                continue
+            if lang == 'pl' and not polish_name_is_eligible(value, item['id']):
+                continue
+            if key not in seen:
                 result[lang].append({'name': value, 'source_property': origin, 'source_entity': item['id']})
-                seen.add(norm(value))
+                seen.add(key)
     return result
 
 
@@ -447,12 +479,12 @@ def intro_common_names(page, aliases, scientific_genera):
     lead = text[:1800]
     # Only the introductory naming clause can name the plant. Later sentences may
     # name leaf parts, chemicals, other taxa or countries.
-    subject = re.split(r'\bis\s+(?:a|an|the)\b', lead, maxsplit=1, flags=re.I)[0]
-    subject = subject[:450] + '.'
+    subject = re.split(r'\bis\s+(?:a|an|the|one)\b', lead[:450], maxsplit=1, flags=re.I)[0]
+    subject = re.split(r',\s+(?:a|an|in the family)\s+', subject, maxsplit=1, flags=re.I)[0] + '.'
     subject = re.sub(r'\b(?:formerly|previously)\s+known as\s+[^,]+?(?=,\s| and commonly|\.$)', '', subject, flags=re.I)
     clauses = []
     patterns = [
-        r"\b(?:commonly |also |sometimes |often )?(?:known as|called)\s+(.+?)(?=,?\s+(?:is|are)\b|[);.])",
+        r"\b(?:commonly |also |sometimes |often )?(?:known as|called)\s+(.+?)(?=,?\s+(?:is|are)\b|[();.])",
         r"\bcommon names?:\s*([^)]{2,240})\)",
         r"^[^.]{0,200}?,\s+the\s+(.+?)(?:,\s*)?\.$",
         r'\bcommonly marketed as\s+["“]([^"”]+)["”]',
@@ -473,23 +505,24 @@ def intro_common_names(page, aliases, scientific_genera):
         clause = clause.replace('hen and chicken fern', 'hen_AND_chicken fern').replace('hens and chicks', 'hens_AND_chicks')
         for value in re.split(r',|\s+or\s+|\s+and\s+', clause):
             value = value.replace('_AND_', ' and ')
-            value = re.sub(r'^(?:as well as|also sold as|and)\s+', '', value.strip(), flags=re.I)
+            value = re.sub(r'^(?:as well as|also sold as|and|simply|by its māori name of)\s+', '', value.strip(), flags=re.I)
             value = re.sub(r'\s+and$', '', value, flags=re.I)
-            value = re.sub(r'^(?:the|a|an)\s+', '', value.strip(), flags=re.I).strip(' \"“”.,:')
+            value = re.sub(r'^(?:the|a|an)\s+', '', value.strip(), flags=re.I).strip(" \"'‘’“”.,:")
             if not 3 <= len(value) <= 65 or len(value.split()) > 8 or any(c in value for c in '()[]=0123456789'):
                 continue
             if re.search(r'\b(?:species|family|genus|synonym|cultivar|native|because|which|where|when|from|sometimes|commonly|known|called|has|have|in|is|are|that|group|among|amongst|due|hence|like)\b', value, re.I):
                 continue
-            if '"' in value or '“' in value or '”' in value or value.lower() in ('houseplant', 'plant', 'tree', 'shrub', 'cactus'):
+            key = norm(value)
+            if any(quote in value for quote in '"“”') or key in GENERIC_EN_NAMES or 'cousin to' in key or 'māori name' in key:
                 continue
             if value.split()[0].casefold() in scientific_genera:
                 continue
-            if norm(value) not in seen:
+            if key not in seen:
                 result.append({'name': value, 'source_property': 'wikipedia_intro',
                     'evidence': evidence, 'source_page_title': page['title'],
                     'source_revision': page.get('revisions', [{}])[0].get('revid'),
                     'review_status': 'extracted_editorial_review_pending'})
-                seen.add(norm(value))
+                seen.add(key)
     return result
 
 
@@ -547,9 +580,9 @@ def translated_pl_common_names(page, pl_entry, item, scientific_name, existing_p
     added = []
     for pl_cname in pl_entry['pl_common_names']:
         val = pl_cname.strip() if isinstance(pl_cname, str) else ''
-        if not val or norm(val) in scientific_values or norm(val) in existing_pl:
+        if not val or norm(val) in scientific_values or norm(val) in existing_pl or not polish_name_is_eligible(val, item['id']):
             continue
-        if val.split()[0].casefold() in scientific_genera and len(val.split()) >= 2:
+        if val.split()[0].casefold() in scientific_genera:
             continue
         added.append({
             'name': val,
@@ -627,10 +660,10 @@ def download_image(client, image):
     filename = sha(image['download_url'].encode())[:24] + extension
     target = OUT / 'media' / filename
     raw, meta = client.request(image['download_url'], target, binary=True)
-    if not (raw.startswith(b'\xff\xd8') or raw.startswith(b'\x89PNG\r\n\x1a\n') or raw[:4] == b'RIFF' and raw[8:12] == b'WEBP'):
-        raise ValueError('Unexpected image payload')
+    width, height, mime = parse_image_dimensions_and_mime(raw)
     return {**image, 'local_path': str(target.relative_to(ROOT)), 'sha256': sha(raw),
-            'bytes': len(raw), 'retrieved_at': meta['retrieved_at']}
+            'bytes': len(raw), 'width': width, 'height': height, 'mime': mime,
+            'retrieved_at': meta['retrieved_at']}
 
 
 def strip_parens(text):
@@ -1017,17 +1050,14 @@ def run(args):
         name = resolved_taxon(item)
         image = next(metadata[i] for i in images[:3] if i in metadata)
         image = download_image(client, image)
-        names = common_names(item, name)
+        names = common_names(item, name, scientific_genera)
         existing_en = {norm(n['name']) for n in names['en']}
         for extracted in intro_common_names(page, [a['value'] for a in item.get('aliases', {}).get('en', [])], scientific_genera):
             if norm(extracted['name']) not in existing_en:
                 names['en'].append(extracted)
                 existing_en.add(norm(extracted['name']))
         pl_title = item.get('sitelinks', {}).get('plwiki', {}).get('title')
-        pl_page = polish.get(pl_title)
-        # Reject a wrong cross-wiki entity (e.g. genus article masquerading as species).
-        if pl_page and pl_page.get('pageprops', {}).get('wikibase_item') != item['id']:
-            pl_page = None
+        pl_page = eligible_polish_article(item, polish.get(pl_title))
         plant_id = name.lower().replace(' ', '_').replace('-', '_')
         pl_entry = pl_translations.get(plant_id)
         pl_desc = description(pl_page, 'pl') or translated_description(page, pl_entry)
@@ -1037,7 +1067,8 @@ def run(args):
             'wikidata_id': item['id'], 'source_revision': item['lastrevid'],
             'external_taxon_ids': {prop: values(item, prop) for prop in ('P846', 'P961', 'P5037')},
             'common_names': names,
-            'search_aliases': {lang: [a['value'] for a in item.get('aliases', {}).get(lang, [])] for lang in ('en', 'pl')},
+            'search_aliases': {lang: [a['value'] for a in item.get('aliases', {}).get(lang, [])
+                if lang == 'en' or polish_name_is_eligible(a['value'], item['id'])] for lang in ('en', 'pl')},
             'descriptions': {'en': description(page, 'en'), 'pl': pl_desc},
             'hero_image': image, 'watering': None, 'care_profile_available': False,
             'status': 'imported_editorial_review_pending',

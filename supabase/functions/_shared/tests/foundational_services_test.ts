@@ -424,3 +424,26 @@ Deno.test("T147: each DTO field independently rejects missing keys and wrong typ
   nullable.watering!.watering_method = "immersion";
   assert(validateAndProjectSkeletonRelease({ ...bundle, plants: [nullable] }, { minSpeciesCount: 1 }).valid);
 });
+
+Deno.test("T148: an explicit Polish gap preserves the original English description", () => {
+  const bundle = JSON.parse(Deno.readTextFileSync(new URL(
+    "../../../../catalogue/releases/skeleton-300-v1/plants.json",
+    import.meta.url,
+  ))) as CatalogueSkeletonBundle;
+  const plant = structuredClone(bundle.plants[0]);
+  const options = { locale: "pl" as const };
+  const historical = validateAndProjectSkeletonRelease({ ...bundle, plants: [plant] }, options);
+  assert(historical.valid);
+  assertEquals(historical.cards[0].description, plant.descriptions.pl);
+
+  plant.descriptions.pl = null;
+  const fallback = validateAndProjectSkeletonRelease({ ...bundle, plants: [plant] }, options);
+  assert(fallback.valid, fallback.errors.join("; "));
+  assertEquals(fallback.cards[0].description, plant.descriptions.en);
+  assertEquals(fallback.cards[0].descriptions.pl, null);
+  assertEquals(validateCatalogueSkeletonCardContract(fallback.cards[0]), []);
+
+  const withoutKey = { ...plant, descriptions: { en: plant.descriptions.en } };
+  const incomplete = { ...bundle, plants: [withoutKey] } as CatalogueSkeletonBundle;
+  assertEquals(validateAndProjectSkeletonRelease(incomplete, options).valid, false);
+});

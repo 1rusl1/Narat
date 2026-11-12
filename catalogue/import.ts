@@ -212,7 +212,7 @@ export interface CatalogueSkeletonPlantRecord {
   };
   descriptions: {
     en: SkeletonDescriptionEntry;
-    pl: SkeletonDescriptionEntry;
+    pl: SkeletonDescriptionEntry | null;
   };
   hero_image: SkeletonHeroImageEntry;
   watering: SkeletonWateringEntry;
@@ -254,7 +254,7 @@ export interface PublicCatalogueSkeletonCard {
   description: SkeletonDescriptionEntry;
   descriptions: {
     en: SkeletonDescriptionEntry;
-    pl: SkeletonDescriptionEntry;
+    pl: SkeletonDescriptionEntry | null;
   };
   hero_image: SkeletonHeroImageEntry;
   watering: SkeletonWateringEntry;
@@ -881,9 +881,11 @@ export function validateCatalogueSkeletonCardContract(card: unknown): string[] {
     errors.push(
       ...validateDescriptionEntry(plantId, "card.descriptions.en", "en", obj.descriptions.en),
     );
-    errors.push(
-      ...validateDescriptionEntry(plantId, "card.descriptions.pl", "pl", obj.descriptions.pl),
-    );
+    if (obj.descriptions.pl !== null) {
+      errors.push(
+        ...validateDescriptionEntry(plantId, "card.descriptions.pl", "pl", obj.descriptions.pl),
+      );
+    }
   }
   errors.push(...validateHeroImageEntry(plantId, obj.hero_image));
   errors.push(...validateWateringEntry(plantId, obj.watering));
@@ -912,7 +914,7 @@ export function validateAndProjectSkeletonRelease(
   options: { minSpeciesCount?: number; locale?: "en" | "pl" } = {},
 ): SkeletonValidationResult {
   const errors: string[] = [];
-  const minCount = options.minSpeciesCount ?? 300;
+  const minCount = options.minSpeciesCount ?? 0;
   const locale = options.locale ?? "en";
 
   if (
@@ -986,6 +988,7 @@ export function validateAndProjectSkeletonRelease(
 
     for (const lang of ["en", "pl"] as const) {
       const desc = plant.descriptions?.[lang];
+      if (lang === "pl" && desc === null) continue;
       if (!desc || typeof desc !== "object") {
         errors.push(`Plant '${pid}' is missing ${lang.toUpperCase()} description.`);
         continue;

@@ -11,10 +11,12 @@ from import_catalogue_300 import (
     Client,
     common_names,
     description,
+    eligible_polish_article,
     intro_common_names,
     match_plantfolio_watering,
     parse_plantfolio_examples,
     permitted_image,
+    polish_name_is_eligible,
     taxon,
     translated_description,
     translated_pl_common_names,
@@ -37,6 +39,19 @@ def media(license='CC BY-SA 4.0', author='<a href="/wiki/X">Photographer</a>'):
 
 
 class SkeletonTests(unittest.TestCase):
+    def test_polish_sources_must_match_the_species_even_with_matching_pageprops(self):
+        cases = [('Q2893846', 'Lista gatunków z rodzaju begonia'),
+                 ('Q814368', 'Begonia koralowa'), ('Q162311', 'Hoja piękna')]
+        for qid, title in cases:
+            with self.subTest(qid=qid):
+                self.assertIsNone(eligible_polish_article(
+                    {'id': qid}, {'title': title, 'pageprops': {'wikibase_item': qid}}))
+        page = {'title': 'Monstera dziurawa', 'pageprops': {'wikibase_item': 'Q161077'}}
+        self.assertIs(eligible_polish_article({'id': 'Q161077'}, page), page)
+        self.assertIsNone(eligible_polish_article({'id': 'Q162311'}, page))
+        self.assertFalse(polish_name_is_eligible('Hoya bella', 'Q162311'))
+        self.assertTrue(polish_name_is_eligible('Monstera dziurawa', 'Q161077'))
+
     def test_genus_hybrid_and_ambiguous_name_not_counted_as_species(self):
         self.assertEqual(taxon(entity()), 'Monstera deliciosa')
         self.assertIsNone(taxon(entity(rank='Q34740')))

@@ -1,0 +1,76 @@
+{
+  "tasks": [
+    {
+      "id": "t148-pipeline-001",
+      "description": "Repair the existing catalogue ingestion and verify the English MVP path with evidence from the pinned catalogue data. This is the pipeline slice of T148. Actual release editorial acceptance follows separately.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "knowledge-base/pipeline/import_catalogue_300.py",
+        "knowledge-base/pipeline/catalogue_image.py",
+        "knowledge-base/pipeline/validate_catalogue_skeleton.py",
+        "knowledge-base/pipeline/sync_catalogue_schema.py",
+        "knowledge-base/tests/test_catalogue_skeleton.py",
+        "knowledge-base/manifests/pl-description-translations.json",
+        "tools/automation/t148_catalogue_gate.py",
+        "tools/automation/tests/test_t148_catalogue_gate.py",
+        "specs/001-plants-ios-mvp/contracts/catalogue-skeleton.schema.json",
+        "catalogue/import.ts",
+        "supabase/migrations/202611050001_catalogue_skeleton.sql",
+        "supabase/migrations/202611120018_catalogue_pl_description_fallback.sql",
+        "supabase/tests/catalogue_skeleton.test.sql",
+        "tools/automation/tasks.t148-pipeline.json",
+        "tools/automation/tasks.t148-pipeline-review.json",
+        "supabase/functions/_shared/tests/foundational_services_test.ts"
+      ],
+      "write_files": [],
+      "search_terms": [
+        "intro_common_names",
+        "translated_pl_common_names",
+        "verify_pipeline",
+        "catalogue_skeleton_schema",
+        "projectCatalogueSkeletonCard"
+      ],
+      "constraints": [
+        "Audit the actual committed diff read-only. The controller implemented it after the Developer run produced no patch. Independent local controller evidence is separate from the model gates.",
+        "Reviewer and QA reports must be in English. Use the approved EN-only MVP scope from 26ae2a0. Preserve existing valid Polish data and format compatibility. Do not add Polish translations, mark editorial complete, change catalogue data/media, change staging, or rewrite historical migrations.",
+        "The existing pipeline gate carries English regression samples for Hippeastrum, Adiantum, Cordyline, Echeveria, Jasminum and Phalaenopsis. Fix the name parsing and reject generic or bare-genus labels as common names without dropping valid names. Correct known cross-species Polish names and search aliases on Q31318, Q814368 and Q162311, the list alias on Q2893846, and the erroneous translated common name on Q883685. Keep Latin synonyms and other historical Polish names. Preserve data and filter errors at ingestion rather than editing the translation manifest.",
+        "The retained Polish pages on Q2893846, Q814368 and Q162311 describe a genus list, Begonia maculata and Hoya bella respectively, even though their cached pageprops claims match the target QID. Verify eligible_polish_article(item, page), which returns a valid page or None. Reject the exact known source/title collisions as well as list articles and entity mismatches. Keep valid existing translations and their original revisions. When no valid PL source exists, retain the pl key with null. Canonical TS and SQL projection already use the English description as fallback and keep its actual language. Make this explicit in the shared JSON Schema, TS types, a forward-only 018 SQL schema migration and existing parity check. Regress existing valid PL, missing PL, and malformed data. Keep English mandatory.",
+        "Persist width, height and MIME from downloaded bytes. Use the controller-owned parse_image_dimensions_and_mime from knowledge-base/pipeline/catalogue_image.py in importer and validator. Preserve all source URLs, license, attribution, hashes and cache validation. Strengthen the independent validator with actual dimensions, source identity and PL translation provenance. Existing raw snapshots and Plantfolio inputs are local only; never stage them.",
+        "The controller owns the revised pipeline gate. Its actual acceptance depends on the listed behavior rather than new Polish coverage. Keep release mode separate for the next actual editorial slice. The controller will independently run isolated PostgreSQL regression and real offline rebuild, and handle identified hero-image exceptions and release publication evidence in the next slice.",
+        "The generic default minimum of 300 in TS was removed per the accepted specification. Explicit test callers may still supply a count. Verify that the declared 606-record real release remains covered and that this does not declare full T148 complete."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T148-P1",
+          "description": "Static checks pass and the latest SQL/JSON schema stays synchronized without rewriting applied migrations.",
+          "checks": [
+            "diff-check",
+            "catalogue-schema-sync",
+            "deno-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "T148-P2",
+          "description": "Knowledge-base and Deno fixtures cover provenance, media header formats, English naming defects and optional Polish fallback without fake translations.",
+          "checks": [
+            "kb-tests",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "T148-P3",
+          "description": "The corrected pipeline gate passes with targeted English name, actual media and Polish identity regressions.",
+          "checks": [
+            "t148-pipeline-gate"
+          ],
+          "mode": "local"
+        }
+      ],
+      "candidate_base": "25716fd7d744f714e804192abc882c9ae0b8c7c8"
+    }
+  ]
+}

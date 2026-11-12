@@ -8,6 +8,9 @@ from pathlib import Path
 import sqlite3
 from contextlib import closing
 
+from catalogue_image import parse_image_dimensions_and_mime
+from import_catalogue_300 import eligible_polish_article, polish_name_is_eligible
+
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'catalogue/releases/skeleton-300-v1'
 PLANTFOLIO_DIR = ROOT / 'knowledge-base/references/personal/watering/plantfolio-common-plants'
@@ -80,7 +83,8 @@ def main():
             for meta in description['snapshots']:
                 doc = check_snapshot(meta)
                 matching.extend(p for p in doc['query']['pages'] if p.get('extract') and
-                    p.get('revisions', [{}])[0].get('revid') == description['source_revision'])
+                    p.get('revisions', [{}])[0].get('revid') == description['source_revision'] and
+                    p.get('pageprops', {}).get('wikibase_item') == description.get('article_wikidata_id'))
             if description.get('translation_source_language') == 'en':
                 assert language == 'pl'
                 assert description['source_revision'] == plant['descriptions']['en']['source_revision']
@@ -90,10 +94,22 @@ def main():
                 expected_pl = '\n\n'.join(s.strip() for s in pl_entry['pl_text'].split('\n') if s.strip())
                 assert description['text'] == expected_pl, plant['plant_id']
             else:
+                if language == 'pl':
+                    matching = [p for p in matching if eligible_polish_article(entity, p)]
                 assert any('\n\n'.join(s.strip() for s in p['extract'].split('\n') if s.strip()) == description['text'] for p in matching), plant['plant_id']
+        for name in plant['common_names']['pl']:
+            assert polish_name_is_eligible(name['name'], plant['wikidata_id']), name
+            if name['source_property'] == 'wikipedia_intro_pl_translation':
+                entry = pl_translations[plant['plant_id']]
+                assert name['source_revision'] == entry['source_revision'] == plant['descriptions']['en']['source_revision']
+                assert name['name'] in [value.strip() for value in entry['pl_common_names']], name
+        assert all(polish_name_is_eligible(alias, plant['wikidata_id']) for alias in plant['search_aliases']['pl'])
         image = plant['hero_image']
         assert image['author'] and image['license_url'] and image['source_page']
-        assert digest(ROOT / image['local_path']) == image['sha256'] == media_manifest[image['local_path']]
+        raw = (ROOT / image['local_path']).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == image['sha256'] == media_manifest[image['local_path']]
+        assert len(raw) == image['bytes'], image['local_path']
+        assert parse_image_dimensions_and_mime(raw) == (image['width'], image['height'], image['mime']), image['local_path']
         check_snapshot(image['metadata_snapshot'])
         watering = plant.get('watering')
         if watering is None:

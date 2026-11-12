@@ -202,18 +202,23 @@
           ]
         },
         "pl": {
-          "allOf": [
+          "anyOf": [
             {
-              "$ref": "#/definitions/description"
+              "type": "null"
             },
             {
-              "properties": {
-                "language": {
-                  "enum": [
-                    "pl"
-                  ]
+              "allOf": [
+                {
+                  "$ref": "#/definitions/description"
+                },
+                {
+                  "properties": {
+                    "language": {
+                      "enum": ["pl"]
+                    }
+                  }
                 }
-              }
+              ]
             }
           ]
         }

@@ -57,9 +57,9 @@ def verify_pipeline(root: Path = ROOT) -> dict:
         page = {"title": title, "pageprops": {"wikibase_item": qid}}
         record(f"reject_cross_taxon_source_{qid}",
                imp.eligible_polish_article({"id": qid}, page) is None, title)
-    valid_page = {"title": "Monstera dziurawa", "pageprops": {"wikibase_item": "Q159385"}}
+    valid_page = {"title": "Monstera dziurawa", "pageprops": {"wikibase_item": "Q161077"}}
     record("retain_matching_polish_article",
-           imp.eligible_polish_article({"id": "Q159385"}, valid_page) == valid_page,
+           imp.eligible_polish_article({"id": "Q161077"}, valid_page) == valid_page,
            "preserves the source article for a matching species")
 
     # 1. Verify common_names filtering
@@ -82,7 +82,7 @@ def verify_pipeline(root: Path = ROOT) -> dict:
         },
         "labels": {"en": {"value": "Pilea"}, "pl": {"value": "Pilea"}},
     }
-    cn_genus = imp.common_names(item_genus_label, "Pilea peperomioides")
+    cn_genus = imp.common_names(item_genus_label, "Pilea peperomioides", {"fatsia", "pilea"})
     record(
         "common_names_rejects_genus_and_generic",
         cn_genus["en"] == [] and cn_genus["pl"] == [],
@@ -134,6 +134,14 @@ def verify_pipeline(root: Path = ROOT) -> dict:
     }
     names_jas = [n["name"] for n in imp.intro_common_names(p_jas, [], genera)]
     record("intro_jasminum_simply_stripped", names_jas == ["common jasmine", "jasmine"], f"got={names_jas}")
+
+    p_col = {
+        "title": "Columnea gloriosa",
+        "revisions": [{"revid": 7}],
+        "extract": "Columnea gloriosa is commonly known as the goldfish plant (a name it shares with other species). Also known as a cousin to African violets.",
+    }
+    names_col = [n["name"] for n in imp.intro_common_names(p_col, [], genera)]
+    record("intro_columnea_rejects_relationship", names_col == ["goldfish plant"], f"got={names_col}")
 
     p_phal = {
         "title": "Phalaenopsis violacea",
