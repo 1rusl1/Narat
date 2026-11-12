@@ -25,6 +25,8 @@ const catalogue = "be350000-0000-4000-8000-000000000009";
 const species = "be350000-0000-4000-8000-000000000010";
 const savedPlant = "be350000-0000-4000-8000-000000000012";
 const outsider = "be350000-0000-4000-8000-000000000011";
+const firstAidControl = "be350000-0000-4000-8000-000000000013";
+const observation = "be350000-0000-4000-8000-000000000014";
 const host = "https://diagnosis.example.test";
 const repeatContext = {
   light: "bright_indirect",
@@ -334,18 +336,29 @@ function fixture(
             : null,
         );
       case "create_diagnosis_upload":
+      case "create_first_aid_photo_upload":
         assertEquals(body.p_owner_id, owner);
         assertEquals(body.p_operation_id, uploadOperation);
         assertEquals(body.p_content_sha256, hash);
+        if (rpc === "create_first_aid_photo_upload") {
+          assertEquals(body.p_plant_id, savedPlant);
+          assertEquals(body.p_control_id, firstAidControl);
+        }
         ticketIssued = true;
         return Response.json(row());
       case "read_diagnosis_upload":
+      case "read_first_aid_photo_upload":
         return Response.json(body.p_owner_id === owner ? row() : null);
       case "mark_diagnosis_upload_ready":
+      case "mark_first_aid_photo_ready":
         assert(stored);
         assertEquals(body.p_content_sha256, hash);
         ready = true;
         return Response.json(row());
+      case "read_owned_first_aid_observation_photo":
+        return Response.json(
+          body.p_owner_id === owner && body.p_observation_id === observation && ready ? row() : null,
+        );
       case "create_photo_analysis_job":
       case "create_plant_diagnosis_job":
       case "create_diagnosis_job": {
@@ -542,6 +555,42 @@ function fixture(
     },
   };
 }
+
+Deno.test("First-aid photo reuses private bytes and rejects a ticket on the diagnosis route", async () => {
+  const f = fixture();
+  const body = {
+    operation_id: uploadOperation,
+    mime_type: "image/jpeg",
+    byte_size: jpeg.length,
+    content_sha256: hash,
+    plant_id: savedPlant,
+    control_id: firstAidControl,
+  };
+  assertEquals((await f.api("/media/first-aid/upload-ticket", { ...body, control_id: null })).status, 400);
+  const response = await f.api("/media/first-aid/upload-ticket", body);
+  assertEquals(response.status, 200);
+  const ticket = await response.json();
+  assertEquals(ticket.photo_asset_id, photo);
+  assertEquals(ticket.expires_in_seconds, 60);
+  const url = new URL(ticket.signed_upload_url);
+  assertEquals(url.origin, host);
+  assertEquals(url.pathname, "/functions/v1/plants-api/media/first-aid/uploads/" + photo);
+  assertEquals((await f.put(url.toString().replace("/first-aid/", "/"))).status, 404);
+  assertEquals((await f.put(url.toString(), jpeg, "fixture-other")).status, 404);
+  assertEquals((await f.put(url.toString(), new Uint8Array([0xff, 0xd8, 0xff, 0x00]))).status, 400);
+  assertEquals(await (await f.put(url.toString())).json(), { photo_asset_id: photo, state: "ready" });
+  assertEquals(await (await f.api("/media/first-aid/complete", { photo_asset_id: photo })).json(), {
+    photo_asset_id: photo, state: "ready",
+  });
+  const path = "/care/observations/" + observation + "/photo";
+  const bytes = await f.api(path);
+  assertEquals(bytes.status, 200);
+  assertEquals(bytes.headers.get("cache-control"), "private, no-store");
+  assertEquals(new Uint8Array(await bytes.arrayBuffer()), jpeg);
+  const denied = await f.api(path, undefined, "fixture-other");
+  assertEquals(denied.status, 404);
+  assertEquals(denied.headers.get("cache-control"), "private, no-store");
+});
 
 Deno.test("saved plant repeat diagnosis sends one new photo and factual context through the ordinary worker", async () => {
   const f = fixture({ repeatDiagnosis: true });

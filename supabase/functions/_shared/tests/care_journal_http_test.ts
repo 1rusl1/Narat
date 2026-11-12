@@ -137,10 +137,19 @@ Deno.test("First-aid observation uses the owner command envelope and exact compl
   assertEquals(f.calls[1], f.calls[0]);
 });
 
-Deno.test("First-aid observation rejects attachment and backdate input before RPC", async () => {
+Deno.test("First-aid observation forwards only a valid optional photo UUID", async () => {
+  const f = fixture();
+  const payload = { ...observationPayload, photo_id: observation };
+  const response = await f.send({ ...observationBody, payload_json: JSON.stringify(payload) });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), observationReceipt);
+  assertEquals(f.calls[0].p_payload, payload);
+});
+
+Deno.test("First-aid observation rejects invalid attachment and backdate input before RPC", async () => {
   const f = fixture();
   for (const payload of [
-    { ...observationPayload, photo_id: observation },
+    { ...observationPayload, photo_id: null },
     { ...observationPayload, observed_at: "2026-11-01T12:00:00Z" },
     { ...observationPayload, status_code: "recovered" },
     { ...observationPayload, control_id: null },

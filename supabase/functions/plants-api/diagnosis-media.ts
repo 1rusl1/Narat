@@ -14,6 +14,10 @@ import {
 } from "./media.ts";
 
 export const DIAGNOSIS_PHOTO_BUCKET = "analysis-inputs";
+type UploadScope = "diagnosis" | "first-aid";
+const firstAidTicketFields = new Set([
+  "operation_id", "mime_type", "byte_size", "content_sha256", "plant_id", "control_id",
+]);
 
 interface Upload {
   photo_asset_id: string;
@@ -68,6 +72,16 @@ function incomplete(ctx: RequestContext) {
   );
 }
 
+function permanentOwnerRequired(ctx: RequestContext) {
+  return new ApiHttpError(
+    403,
+    "FORBIDDEN",
+    ctx.locale === "pl"
+      ? "Wymagane jest aktywne konto."
+      : "An active permanent account is required.",
+  );
+}
+
 function parseUpload(
   value: unknown,
   owner: string,
@@ -94,6 +108,7 @@ function parseUpload(
 
 async function ticketSignature(
   key: string,
+  scope: UploadScope,
   owner: string,
   asset: string,
 ): Promise<string> {
@@ -112,7 +127,7 @@ async function ticketSignature(
     await crypto.subtle.sign(
       "HMAC",
       signingKey,
-      encoder.encode(`diagnosis-upload-v1:${owner}:${asset}`),
+      encoder.encode(`${scope}-upload-v1:${owner}:${asset}`),
     ),
   );
 }
@@ -202,15 +217,7 @@ export function createDiagnosisMedia(
       throw unavailable(ctx);
     }
     const { data, error } = response;
-    if (error?.code === "42501") {
-      throw new ApiHttpError(
-        403,
-        "FORBIDDEN",
-        ctx.locale === "pl"
-          ? "Wymagane jest aktywne konto."
-          : "An active permanent account is required.",
-      );
-    }
+    if (error?.code === "42501") throw permanentOwnerRequired(ctx);
     if (error?.message === "IDEMPOTENCY_CONFLICT") {
       throw new ApiHttpError(
         409,
@@ -218,6 +225,13 @@ export function createDiagnosisMedia(
         ctx.locale === "pl"
           ? "Identyfikator operacji jest już użyty."
           : "Operation ID is already in use.",
+      );
+    }
+    if (name === "create_first_aid_photo_upload" && error?.code === "23505") {
+      throw new ApiHttpError(
+        409,
+        "CONFLICT",
+        ctx.locale === "pl" ? "Kontrola jest niedostępna." : "The control is unavailable.",
       );
     }
     if (error?.code === "P0002") throw notFound(ctx);
@@ -231,9 +245,9 @@ export function createDiagnosisMedia(
     return key;
   }
 
-  async function load(ctx: RequestContext, owner: string, asset: string) {
+  async function load(ctx: RequestContext, scope: UploadScope, owner: string, asset: string) {
     const value = parseUpload(
-      await rpc(ctx, "read_diagnosis_upload", {
+      await rpc(ctx, scope === "first-aid" ? "read_first_aid_photo_upload" : "read_diagnosis_upload", {
         p_owner_id: owner,
         p_photo_asset_id: asset,
       }),
@@ -244,9 +258,9 @@ export function createDiagnosisMedia(
     return value;
   }
 
-  async function markReady(ctx: RequestContext, upload: Upload) {
+  async function markReady(ctx: RequestContext, scope: UploadScope, upload: Upload) {
     const value = parseUpload(
-      await rpc(ctx, "mark_diagnosis_upload_ready", {
+      await rpc(ctx, scope === "first-aid" ? "mark_first_aid_photo_ready" : "mark_diagnosis_upload_ready", {
         p_owner_id: upload.owner_id,
         p_photo_asset_id: upload.photo_asset_id,
         p_content_sha256: upload.content_sha256,
@@ -263,7 +277,7 @@ export function createDiagnosisMedia(
     });
   }
 
-  async function confirmStored(ctx: RequestContext, upload: Upload) {
+  async function confirmStored(ctx: RequestContext, scope: UploadScope, upload: Upload) {
     if (upload.state === "ready") {
       return jsonResponse({
         photo_asset_id: upload.photo_asset_id,
@@ -284,7 +298,7 @@ export function createDiagnosisMedia(
       ctx,
     );
     await verifyBytes(bytes, upload, ctx);
-    return await markReady(ctx, upload);
+    return await markReady(ctx, scope, upload);
   }
 
   async function loadVerifiedStorage(
@@ -304,30 +318,31 @@ export function createDiagnosisMedia(
     }
   }
 
-  return {
-    async plantPhoto(ctx: RequestContext, id: string) {
-      const owner = requireActiveOwner(ctx);
-      if (ctx.isAnonymous) throw notFound(ctx);
-      const plant = requireUuid(id, "plant_id");
-      const upload = parseUpload(
-        await rpc(ctx, "read_owned_plant_photo", {
-          p_owner_id: owner,
-          p_plant_id: plant,
-        }),
-        owner,
-        ctx,
-      );
-      if (upload.state !== "ready") throw notFound(ctx);
+  async function ownerPhoto(ctx: RequestContext, rpcName: string, parameter: string, id: string, field: string) {
+    const owner = requireActiveOwner(ctx);
+    if (ctx.isAnonymous) throw notFound(ctx);
+    const upload = parseUpload(
+      await rpc(ctx, rpcName, { p_owner_id: owner, [parameter]: requireUuid(id, field) }),
+      owner,
+      ctx,
+    );
+    if (upload.state !== "ready") throw notFound(ctx);
 
-      const bytes = await loadVerifiedStorage(ctx, upload, upload.storage_path);
-      return new Response(bytes, {
-        headers: {
-          "Content-Type": upload.mime_type,
-          "Content-Length": String(upload.byte_size),
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
-    },
+    const bytes = await loadVerifiedStorage(ctx, upload, upload.storage_path);
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": upload.mime_type,
+        "Content-Length": String(upload.byte_size),
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
+
+  return {
+    plantPhoto: (ctx: RequestContext, id: string) =>
+      ownerPhoto(ctx, "read_owned_plant_photo", "p_plant_id", id, "plant_id"),
+    observationPhoto: (ctx: RequestContext, id: string) =>
+      ownerPhoto(ctx, "read_owned_first_aid_observation_photo", "p_observation_id", id, "observation_id"),
 
     async copyPhotoForClaim(
       ctx: RequestContext,
@@ -362,8 +377,16 @@ export function createDiagnosisMedia(
       await loadVerifiedStorage(ctx, upload, destination);
     },
 
-    async ticket(req: Request, ctx: RequestContext) {
+    async ticket(req: Request, ctx: RequestContext, scope: UploadScope = "diagnosis") {
       const owner = requireActiveOwner(ctx);
+      let controlId: string | null = null;
+      if (scope === "first-aid") {
+        if (ctx.isAnonymous) throw permanentOwnerRequired(ctx);
+        const body = await req.clone().json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body) ||
+          Object.keys(body).some((key) => !firstAidTicketFields.has(key))) throw badPhoto(ctx);
+        controlId = requireUuid(body.control_id, "control_id");
+      }
       const key = signingKey(ctx);
       let base: URL;
       try {
@@ -380,7 +403,7 @@ export function createDiagnosisMedia(
       return await handleMediaUploadTicket(req, ctx, {
         async createSignedUploadTicket(params) {
           if (
-            params.draftId || params.plantId || !params.contentSha256 ||
+            params.draftId || Boolean(params.plantId) !== (scope === "first-aid") || !params.contentSha256 ||
             !/^[a-f0-9]{64}$/.test(params.contentSha256)
           ) throw badPhoto(ctx);
           const credentialHash = ctx.isAnonymous
@@ -389,7 +412,7 @@ export function createDiagnosisMedia(
           const upload = parseUpload(
             await rpc(
               ctx,
-              credentialHash
+              scope === "first-aid" ? "create_first_aid_photo_upload" : credentialHash
                 ? "create_bound_photo_upload"
                 : "create_diagnosis_upload",
               {
@@ -399,6 +422,7 @@ export function createDiagnosisMedia(
                 p_byte_size: params.byteSize,
                 p_content_sha256: params.contentSha256,
                 ...(credentialHash && { p_credential_hash: credentialHash }),
+                ...(controlId && { p_control_id: controlId, p_plant_id: params.plantId }),
               },
             ),
             owner,
@@ -407,13 +431,14 @@ export function createDiagnosisMedia(
           if (upload.expires_in_seconds === 0 && upload.state !== "ready") {
             throw incomplete(ctx);
           }
+          const path = scope === "first-aid" ? "/media/first-aid" : "/media";
           const url = new URL(
-            `/functions/v1/plants-api/media/uploads/${upload.photo_asset_id}`,
+            `/functions/v1/plants-api${path}/uploads/${upload.photo_asset_id}`,
             base,
           );
           url.searchParams.set(
             "sig",
-            await ticketSignature(key, owner, upload.photo_asset_id),
+            await ticketSignature(key, scope, owner, upload.photo_asset_id),
           );
           return {
             photo_asset_id: upload.photo_asset_id,
@@ -429,18 +454,19 @@ export function createDiagnosisMedia(
         },
       });
     },
-    async upload(req: Request, ctx: RequestContext, id: string) {
+    async upload(req: Request, ctx: RequestContext, id: string, scope: UploadScope = "diagnosis") {
       const owner = requireActiveOwner(ctx);
+      if (scope === "first-aid" && ctx.isAnonymous) throw permanentOwnerRequired(ctx);
       const asset = requireUuid(id, "photo_asset_id");
       if (
         !equalSignature(
-          await ticketSignature(signingKey(ctx), owner, asset),
+          await ticketSignature(signingKey(ctx), scope, owner, asset),
           new URL(req.url).searchParams.get("sig"),
         )
       ) {
         throw notFound(ctx);
       }
-      const upload = await load(ctx, owner, asset);
+      const upload = await load(ctx, scope, owner, asset);
       if (upload.state === "ready") {
         return jsonResponse({ photo_asset_id: asset, state: "ready" });
       }
@@ -460,14 +486,15 @@ export function createDiagnosisMedia(
       } catch {
         throw unavailable(ctx);
       }
-      if (response.error) return await confirmStored(ctx, upload);
-      return await markReady(ctx, upload);
+      if (response.error) return await confirmStored(ctx, scope, upload);
+      return await markReady(ctx, scope, upload);
     },
-    async complete(req: Request, ctx: RequestContext) {
+    async complete(req: Request, ctx: RequestContext, scope: UploadScope = "diagnosis") {
       const owner = requireActiveOwner(ctx);
+      if (scope === "first-aid" && ctx.isAnonymous) throw permanentOwnerRequired(ctx);
       const body = await req.json().catch(() => null);
       const asset = requireUuid(body?.photo_asset_id, "photo_asset_id");
-      return await confirmStored(ctx, await load(ctx, owner, asset));
+      return await confirmStored(ctx, scope, await load(ctx, scope, owner, asset));
     },
   };
 }

@@ -86,11 +86,13 @@ export async function handleCollectionCommand(
   let entryId: string | null = null;
   if (isObservation) {
     if (
-      Object.keys(payload).length !== 2 || typeof payload.status_code !== "string" ||
+      Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||
+      typeof payload.status_code !== "string" ||
       !observationStatuses.has(payload.status_code)
     ) throw invalid();
     controlId = requireUuid(payload.control_id, "control_id");
     payload.control_id = controlId;
+    if ("photo_id" in payload) payload.photo_id = requireUuid(payload.photo_id, "photo_id");
   } else {
     if (
       Object.keys(payload).length !== (isUndo ? 1 : 3) ||
@@ -129,7 +131,7 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         404,
         "NOT_FOUND",
-        isObservation ? "The plant or first-aid control was not found." : isFirstAid
+        isObservation ? "The plant, first-aid control or photo was not found." : isFirstAid
           ? "The plant or first-aid action was not found."
           : "The plant or care entry was not found.",
       );

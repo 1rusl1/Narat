@@ -243,7 +243,7 @@ def main():
         check(db, f"(SELECT quota_state='{quota}' FROM public.analysis_jobs WHERE id='{leased_job}')",
               f'guest bind and {expected} settlement keep the correct original quota')
 
-    def first_aid_observation_race(db, winner, offset):
+    def first_aid_observation_race(db, winner, offset, with_photo=False):
         owner, plant, diagnosis, entry, control, observe_op, undo_op = map(job, range(offset, offset + 7))
         sql(db, f"""
             INSERT INTO public.profiles(id,anonymous) VALUES('{owner}',false);
@@ -262,8 +262,14 @@ def main():
                 action_code,first_action_snapshot,check_policy_snapshot,action_entry_id)
             VALUES('{control}','{owner}','{plant}',gen_random_uuid(),'{K}','check_soil','{{}}','{{"fixture":true}}','{entry}');
         """)
+        payload = f"jsonb_build_object('control_id','{control}','status_code','unknown')"
+        if with_photo:
+            asset = sql(db, f"SELECT public.create_first_aid_photo_upload('{owner}','{job(offset+7)}',"
+                        f"'{plant}','{control}','image/jpeg',4,repeat('a',64))->>'photo_asset_id';")
+            assert sql(db, f"SELECT public.mark_first_aid_photo_ready('{owner}','{asset}',repeat('a',64))->>'state';") == 'ready'
+            payload += f" || jsonb_build_object('photo_id','{asset}')"
         observe = (f"SELECT public.complete_first_aid_control('{owner}','{observe_op}','{plant}',"
-                   f"jsonb_build_object('control_id','{control}','status_code','unknown'))->>'state';")
+                   f"{payload})->>'state';")
         undo = (f"SELECT public.execute_manual_care_command('{owner}','{undo_op}','{plant}','care.undo',"
                 f"jsonb_build_object('entry_id','{entry}'))->>'state';")
         expire = f"UPDATE public.entitlements SET valid_until=clock_timestamp() WHERE owner_id='{owner}';"
@@ -321,6 +327,11 @@ def main():
             AND NOT EXISTS (SELECT 1 FROM public.analysis_jobs WHERE owner_id='{owner}' AND id<>'{diagnosis}')
             AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
               f'first-aid {winner} wins the real owner-lock race with no new job or quota spend')
+        if with_photo:
+            attached = f"plant_id='{plant}'" if winner == 'observe' else 'plant_id IS NULL'
+            check(db, f"(SELECT {attached} FROM public.photo_assets WHERE id='{asset}') "
+                  f"AND (SELECT count(*)={count} FROM public.care_observations WHERE photo_id='{asset}')",
+                  f'photo attachment is atomic when {winner} wins')
 
     def legacy_guard(db):
         if db == 'upgrade':
@@ -511,8 +522,11 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     tap(case, ROOT/'supabase/tests/first_aid_control.test.sql')
                 if any(migration.name == '202611120030_first_aid_observation.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/first_aid_observation.test.sql')
+                    with_photo = any(migration.name == '202611120031_first_aid_observation_photo.sql' for migration in selected)
+                    if with_photo:
+                        tap(case, ROOT/'supabase/tests/first_aid_observation_photo.test.sql')
                     for offset, winner in enumerate(('observe', 'undo', 'expiry'), start=1):
-                        first_aid_observation_race(case, winner, 900 + offset * 10)
+                        first_aid_observation_race(case, winner, 900 + offset * 10, with_photo)
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:

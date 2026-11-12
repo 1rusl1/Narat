@@ -177,6 +177,10 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     const photoMatch = req.method === "GET"
       ? normalizedPath.match(/^\/plants\/([^/]+)\/photo$/)
       : null;
+    const observationPhotoMatch = req.method === "GET"
+      ? normalizedPath.match(/^\/care\/observations\/([^/]+)\/photo$/)
+      : null;
+    const firstAidMedia = normalizedPath.startsWith("/media/first-aid/");
     const guestRoute = /^\/(drafts|claims)(?:\/|$)/.test(normalizedPath);
     try {
       if (req.method === "POST" && normalizedPath === "/internal/guest-drafts/cleanup" &&
@@ -255,15 +259,20 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         if (photoMatch) {
           return privateResponse(await deps.diagnosisMedia.plantPhoto(ctx, photoMatch[1]));
         }
-        if (req.method === "POST" && normalizedPath === "/media/upload-ticket") {
-          return await deps.diagnosisMedia.ticket(req, ctx);
+        if (observationPhotoMatch) {
+          return privateResponse(await deps.diagnosisMedia.observationPhoto(ctx, observationPhotoMatch[1]));
         }
-        if (req.method === "POST" && normalizedPath === "/media/complete") {
-          return await deps.diagnosisMedia.complete(req, ctx);
+        const mediaScope = firstAidMedia ? "first-aid" : "diagnosis";
+        const mediaPath = firstAidMedia ? normalizedPath.replace("/media/first-aid/", "/media/") : normalizedPath;
+        if (req.method === "POST" && mediaPath === "/media/upload-ticket") {
+          return await deps.diagnosisMedia.ticket(req, ctx, mediaScope);
         }
-        const upload = normalizedPath.match(/^\/media\/uploads\/([^/]+)$/);
+        if (req.method === "POST" && mediaPath === "/media/complete") {
+          return await deps.diagnosisMedia.complete(req, ctx, mediaScope);
+        }
+        const upload = mediaPath.match(/^\/media\/uploads\/([^/]+)$/);
         if (req.method === "PUT" && upload) {
-          return await deps.diagnosisMedia.upload(req, ctx, upload[1]);
+          return await deps.diagnosisMedia.upload(req, ctx, upload[1], mediaScope);
         }
       }
 
@@ -337,7 +346,9 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       );
     } catch (err) {
       const response = errorResponse(err, locale);
-      return careMatch || photoMatch || guestRoute ? privateResponse(response) : response;
+      return careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute
+        ? privateResponse(response)
+        : response;
     }
   };
 }

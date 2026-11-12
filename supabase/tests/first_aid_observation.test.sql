@@ -62,9 +62,9 @@ SELECT throws_ok($q$SELECT public.complete_first_aid_control(owner, operation, o
     FROM observation_fixture CROSS JOIN pending_controls WHERE n = 1$q$,
     'P0002', 'FIRST_AID_CONTROL_NOT_FOUND', 'control belongs to the selected plant');
 SELECT throws_ok($q$SELECT public.complete_first_aid_control(owner, operation, plant,
-    jsonb_build_object('control_id', control, 'status_code', 'improved', 'photo_id', gen_random_uuid()))
+    jsonb_build_object('control_id', control, 'status_code', 'improved', 'note', 'extra'))
     FROM observation_fixture CROSS JOIN pending_controls WHERE n = 1$q$,
-    '22023', 'INVALID_OBSERVATION_INPUT', 'direct RPC also rejects photo attachment');
+    '22023', 'INVALID_OBSERVATION_INPUT', 'direct RPC also rejects unsupported fields');
 UPDATE public.plants p SET current_condition_snapshot_id = f.changed_snapshot
 FROM observation_fixture f WHERE p.id = f.plant;
 SELECT throws_ok($q$SELECT pg_temp.observe(1)$q$, '23505', 'FIRST_AID_CONTROL_INACTIVE',
