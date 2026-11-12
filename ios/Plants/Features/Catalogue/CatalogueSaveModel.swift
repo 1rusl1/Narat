@@ -73,6 +73,7 @@ final class CatalogueSaveModel {
     private var detailsPhase: CatalogueCardState = .idle
     private var historyPhase: CatalogueWateringHistoryState = .idle
     private var recommendationPhase: CatalogueCareRecommendationState = .idle
+    @ObservationIgnored private var recommendationRead = 0
     private var manualWateringPhase: CatalogueManualWateringState = .unavailable
     private var frozenWateringCommand: CommandEnvelopeDTO?
 
@@ -110,16 +111,20 @@ final class CatalogueSaveModel {
         case .failed where retry: break
         default: return
         }
+        recommendationRead += 1
+        let requested = recommendationRead
         do {
             try publish { recommendationPhase = .loading }
             let recommendation = try await apiClient.fetchCareRecommendation(plantId: card.id, context: context)
             try validateAuthority()
+            guard recommendationRead == requested else { return }
             guard case let .saved(current) = state, current == confirmation,
                   cardSummary == card else { throw CatalogueSaveUnavailable.sessionChanged }
             try publish {
                 recommendationPhase = recommendation.map(CatalogueCareRecommendationState.available) ?? .unavailable
             }
         } catch {
+            guard recommendationRead == requested else { return }
             if Task.isCancelled {
                 recommendationPhase = .idle
             } else {
@@ -170,10 +175,18 @@ final class CatalogueSaveModel {
                 try publish { manualWateringPhase = .pending }
                 return
             }
-            try publish { frozenWateringCommand = nil }
+            let reloadRecommendation = recommendationPhase != .idle
+            try publish {
+                frozenWateringCommand = nil
+                if reloadRecommendation {
+                    recommendationRead += 1
+                    recommendationPhase = .idle
+                }
+            }
             await loadCard(includeManualWateringActions: true)
             if case .loaded = wateringHistoryState {
                 try publish { manualWateringPhase = .ready }
+                if reloadRecommendation { await loadCareRecommendation() }
             } else {
                 try publish { manualWateringPhase = .unavailable }
             }

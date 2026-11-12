@@ -5,6 +5,44 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
     struct Source: Decodable, Sendable, Equatable {
         let url: URL
         let locator: String
+
+        fileprivate var isVerifiedLink: Bool {
+            guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+            return parts.scheme?.lowercased() == "https" && parts.host?.isEmpty == false
+                && parts.user == nil && parts.password == nil
+                && !locator.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    struct NextCheck: Decodable, Sendable, Equatable {
+        let dueOn: String
+        let anchorOn: String
+        let intervalDays: Int
+        let basis: String
+        let source: Source
+
+        enum CodingKeys: String, CodingKey {
+            case dueOn = "due_on"
+            case anchorOn = "anchor_on"
+            case intervalDays = "interval_days"
+            case basis, source
+        }
+
+        fileprivate func matches(interval: Int?) -> Bool {
+            guard intervalDays > 0, intervalDays == interval, source.isVerifiedLink,
+                  !basis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = calendar
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.isLenient = false
+            guard let anchor = formatter.date(from: anchorOn), formatter.string(from: anchor) == anchorOn,
+                  let due = formatter.date(from: dueOn), formatter.string(from: due) == dueOn else { return false }
+            return calendar.dateComponents([.day], from: anchor, to: due).day == intervalDays
+        }
     }
 
     let actionId: String
@@ -12,6 +50,7 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
     let text: String
     let nextCheckIntervalDays: Int?
     let source: Source
+    fileprivate(set) var nextCheck: NextCheck? = nil
 
     enum CodingKeys: String, CodingKey {
         case actionId = "action_id"
@@ -27,26 +66,28 @@ private struct PlantCareRecommendationResponse: Decodable {
     let plantId: UUID
     let status: Status
     let recommendation: PlantCareRecommendation?
+    let nextCheck: PlantCareRecommendation.NextCheck?
 
     enum CodingKeys: String, CodingKey {
         case plantId = "plant_id"
         case status, recommendation
+        case nextCheck = "next_check"
     }
 
     func validated(for expectedPlantId: UUID) throws -> PlantCareRecommendation? {
         guard plantId == expectedPlantId else { throw AnalysisHTTPError.invalidResponse }
-        if status == .unavailable, recommendation == nil { return nil }
-        guard status == .available, let recommendation,
+        if status == .unavailable, recommendation == nil, nextCheck == nil { return nil }
+        guard status == .available, var recommendation,
               recommendation.actionCode == "check_soil",
-              recommendation.nextCheckIntervalDays == nil,
-              [recommendation.actionId, recommendation.text, recommendation.source.locator].allSatisfy({
+              recommendation.nextCheckIntervalDays.map({ $0 > 0 }) ?? true,
+              [recommendation.actionId, recommendation.text].allSatisfy({
                   !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
               }),
-              let url = URLComponents(url: recommendation.source.url, resolvingAgainstBaseURL: false),
-              url.scheme?.lowercased() == "https", url.host?.isEmpty == false,
-              url.user == nil, url.password == nil else {
+              recommendation.source.isVerifiedLink,
+              nextCheck?.matches(interval: recommendation.nextCheckIntervalDays) ?? true else {
             throw AnalysisHTTPError.invalidResponse
         }
+        recommendation.nextCheck = nextCheck
         return recommendation
     }
 }

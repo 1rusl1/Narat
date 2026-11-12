@@ -729,12 +729,15 @@ private struct CatalogueCollectionCardView: View {
     @State private var historyFailed = false
     @State private var adviceFailed = false
     @State private var attempt = 0
+    @State private var adviceRequest = 0
+    @State private var adviceResponse: Int?
     @State private var correction: CorrectionPhase = .loading
     @State private var dateEdit: WateringDateEdit?
 
     private var locale: SupportedLocale { polish ? .pl : .en }
 
     var body: some View {
+        let requestedAdvice = adviceRequest
         if connection.snapshot == expected {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -755,9 +758,9 @@ private struct CatalogueCollectionCardView: View {
                     }
                     if !polish {
                         if let advice {
-                            Text(verbatim: advice.text).accessibilityIdentifier("catalogue.saved.care.text")
-                            Link("Verified care source", destination: advice.source.url)
-                                .accessibilityIdentifier("catalogue.saved.care.source")
+                            PlantCareRecommendationContent(
+                                recommendation: advice, showNextCheck: adviceResponse == requestedAdvice
+                            )
                         }
                         Text("Manual watering history").font(.headline)
                         correctionStatus
@@ -773,7 +776,10 @@ private struct CatalogueCollectionCardView: View {
                             }
                         }
                         if historyFailed || adviceFailed || correction == .failed {
-                            Button("Retry care details") { attempt += 1 }
+                            Button("Retry care details") {
+                                attempt += 1
+                                adviceRequest += 1
+                            }
                         }
                     }
                 }
@@ -787,6 +793,7 @@ private struct CatalogueCollectionCardView: View {
                 species = try? await api.fetchPublishedSpecies(slug: slug, locale: locale)
             }
             .task(id: attempt) { await loadCare() }
+            .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
             .task { await retryWhenConnected() }
             .sheet(item: $dateEdit) { edit in
                 WateringDateEditor(edit: edit) { date in
@@ -818,7 +825,7 @@ private struct CatalogueCollectionCardView: View {
 
     @MainActor
     private func loadCare() async {
-        guard !polish, let api = connection.apiClient, let repository = connection.repository,
+        guard !polish, let repository = connection.repository,
               let lease = try? await connection.collectionLease(expected: expected) else { return }
         if correction != .saving {
             correction = .loading
@@ -831,13 +838,19 @@ private struct CatalogueCollectionCardView: View {
                 correction = .failed
             }
         }
+    }
+
+    private func loadAdvice(_ requested: Int) async {
+        guard !polish, let api = connection.apiClient else { return }
         do {
+            let lease = try await connection.collectionLease(expected: expected)
             let result = try await api.fetchCareRecommendation(plantId: card.id, context: lease)
-            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            guard !Task.isCancelled, connection.snapshot == expected, adviceRequest == requested else { return }
             advice = result
+            adviceResponse = requested
             adviceFailed = false
         } catch {
-            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            guard !Task.isCancelled, connection.snapshot == expected, adviceRequest == requested else { return }
             adviceFailed = true
         }
     }
@@ -879,6 +892,7 @@ private struct CatalogueCollectionCardView: View {
             let lease = try await connection.collectionLease(expected: expected)
             try await repository.retryWateringDateCorrection(plantId: card.id, context: lease)
             try await loadHistory(repository, lease: lease)
+            if correction == .ready { adviceRequest += 1 }
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             correction = .pending

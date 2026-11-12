@@ -400,12 +400,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         case .idle, .loading:
             ProgressView("Loading care recommendation…")
         case let .available(recommendation):
-            VStack(alignment: .leading, spacing: 8) {
-                Text(verbatim: recommendation.text)
-                    .accessibilityIdentifier("catalogue.saved.care.text")
-                Link("Verified care source", destination: recommendation.source.url)
-                    .accessibilityIdentifier("catalogue.saved.care.source")
-            }
+            PlantCareRecommendationContent(recommendation: recommendation)
         case .unavailable:
             Text("No verified care recommendation is available.")
                 .accessibilityIdentifier("catalogue.saved.care.unavailable")
@@ -779,6 +774,29 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         work = Task { @MainActor in
             defer { if revision == ticket { working = false; work = nil } }
             await target.loadCard(includeManualWateringActions: showsManualWateringActions)
+        }
+    }
+}
+
+struct PlantCareRecommendationContent: View {
+    let recommendation: PlantCareRecommendation
+    var showNextCheck = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: recommendation.text)
+                .accessibilityIdentifier("catalogue.saved.care.text")
+            Link("Verified care source", destination: recommendation.source.url)
+                .accessibilityIdentifier("catalogue.saved.care.source")
+            if showNextCheck, let check = recommendation.nextCheck {
+                Text("Next soil check · \(check.dueOn)")
+                    .font(.headline)
+                    .accessibilityIdentifier("catalogue.saved.care.next.date")
+                Text(verbatim: check.basis)
+                    .accessibilityIdentifier("catalogue.saved.care.next.basis")
+                Link("Soil check interval source", destination: check.source.url)
+                    .accessibilityIdentifier("catalogue.saved.care.next.source")
+            }
         }
     }
 }

@@ -2911,6 +2911,26 @@ extension CollectionWireTests {
          "state": state, "watermark": syncUntil]
     }
 
+    private func careProjection(anchor: String? = nil, due: String? = nil) -> [String: Any] {
+        var result: [String: Any] = [
+            "plant_id": serverPlantId.uuidString, "status": "available",
+            "recommendation": [
+                "action_id": "fixture-soil", "action_code": "check_soil", "text": "Check the substrate.",
+                "next_check_interval_days": 7,
+                "source": ["url": "https://example.invalid/soil", "locator": "Watering guidance"]
+            ] as [String: Any],
+            "next_check": NSNull()
+        ]
+        if let anchor, let due {
+            result["next_check"] = [
+                "anchor_on": anchor, "due_on": due, "interval_days": 7,
+                "basis": "Based on the last recorded watering and the published 7-day interval.",
+                "source": ["url": "https://example.invalid/interval", "locator": "Soil check interval"]
+            ] as [String: Any]
+        }
+        return result
+    }
+
     @MainActor
     func testManualWateringLostResponseRestoresFrozenWriteAndReadsUndo() async throws {
         let url = try diskURL()
@@ -2941,25 +2961,27 @@ extension CollectionWireTests {
             return model
         }
         let entryId = UUID()
-        func page(_ state: String? = nil) throws -> String {
+        func page(_ state: String? = nil, newEntry: UUID? = nil) throws -> String {
             let plant: [String: Any] = [
                 "entity_type": "plants", "id": serverPlantId.uuidString,
                 "updated_at": syncUntil, "deleted_at": NSNull(),
                 "data": ["id": serverPlantId.uuidString, "plant_id": input.speciesIdentifier,
                          "personal_name": "Saved plant", "revision": 1, "care_revision": 1]
             ]
-            var rows = [plant]
-            if let state {
-                rows.insert([
-                    "entity_type": "care_entries", "id": entryId.uuidString,
+            func fact(_ id: UUID, state: String) -> [String: Any] {
+                [
+                    "entity_type": "care_entries", "id": id.uuidString,
                     "updated_at": syncUntil, "deleted_at": NSNull(),
-                    "data": ["id": entryId.uuidString, "plant_id": serverPlantId.uuidString,
+                    "data": ["id": id.uuidString, "plant_id": serverPlantId.uuidString,
                              "task_id": NSNull(), "action_code": "water", "state": state,
                              "occurred_at": "2026-11-03T07:00:00Z", "occurred_local_date": "2026-11-03"]
-                ], at: 0)
+                ]
             }
+            var rows = state.map { [fact(entryId, state: $0)] } ?? []
+            if let newEntry { rows.append(fact(newEntry, state: "active")) }
+            rows.sort { ($0["id"] as! String) < ($1["id"] as! String) }
             var result = syncObject()
-            result["changes"] = rows
+            result["changes"] = rows + [plant]
             return try syncJSON(result)
         }
         let original: URLRequest
@@ -3015,9 +3037,39 @@ extension CollectionWireTests {
 
         let validRecord = try syncJSON(manualWateringReceipt(entryId: entryId, state: "active"))
         let validUndo = try syncJSON(manualWateringReceipt(entryId: entryId, state: "voided", reversalId: UUID()))
+        let noDate = try syncJSON(careProjection())
+        let dated = try syncJSON(careProjection(anchor: "2026-11-03", due: "2026-11-10"))
+        let nextEntryId = UUID()
+        let nextRecord = try syncJSON(manualWateringReceipt(entryId: nextEntryId, state: "active"))
+        let activePage = try page("voided", newEntry: nextEntryId)
+        let correctedAt = "2026-11-02T07:00:00Z"
+        let correctedUntil = "2026-11-03T09:10:00.000001+00:00"
+        var correctedPage = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(activePage.utf8)) as? [String: Any]
+        )
+        var rows = try XCTUnwrap(correctedPage["changes"] as? [[String: Any]])
+        let correctedIndex = try XCTUnwrap(rows.firstIndex { ($0["id"] as? String) == nextEntryId.uuidString })
+        var correctedRow = try XCTUnwrap(rows[correctedIndex]["data"] as? [String: Any])
+        correctedRow["occurred_at"] = correctedAt
+        correctedRow["occurred_local_date"] = "2026-11-02"
+        rows[correctedIndex]["data"] = correctedRow
+        rows[correctedIndex]["updated_at"] = correctedUntil
+        correctedPage["until"] = correctedUntil
+        correctedPage["next_since"] = correctedUntil
+        let changed = rows.remove(at: correctedIndex)
+        var correctedDelta = correctedPage
+        correctedDelta["changes"] = [changed]
+        correctedPage["changes"] = rows + [changed]
+        var correctionReceipt = manualWateringReceipt(entryId: nextEntryId, state: "active")
+        correctionReceipt["watermark"] = correctedUntil
+        let correctedAdvice = try syncJSON(careProjection(anchor: "2026-11-02", due: "2026-11-09"))
         let transport = CatalogueTransport([
-            .http(200, try page("active")), .http(200, validRecord), .network, .http(200, try page("active")),
-            .http(200, validUndo), .http(200, try page("voided"))
+            .http(200, try page("active")), .http(200, noDate), .http(200, validRecord), .network,
+            .http(200, try page("active")), .http(200, dated),
+            .http(200, validUndo), .http(200, try page("voided")), .http(200, noDate),
+            .http(200, nextRecord), .http(200, activePage), .http(200, dated),
+            .http(200, activePage), .http(200, try syncJSON(correctionReceipt)),
+            .http(200, try syncJSON(correctedDelta)), .http(200, try syncJSON(correctedPage)), .http(200, correctedAdvice)
         ])
         let api = client(transport)
         await api.bindSyncSession(syncSession)
@@ -3025,6 +3077,7 @@ extension CollectionWireTests {
         let model = try await restore(store, api)
         await model.loadCard(includeManualWateringActions: true)
         XCTAssertEqual(model.manualWateringState, .pending)
+        await model.loadCareRecommendation()
         await model.retryManualWatering()
         XCTAssertEqual(model.wateringHistoryState, .unavailable)
         XCTAssertEqual(model.manualWateringState, .unavailable)
@@ -3033,7 +3086,8 @@ extension CollectionWireTests {
         XCTAssertTrue(acknowledged.isEmpty)
         await model.retryManualWatering()
         let requestsAfterRefreshFailure = await transport.capturedRequests()
-        XCTAssertEqual(requestsAfterRefreshFailure.map(\.httpMethod), ["GET", "POST", "GET"])
+        XCTAssertEqual(requestsAfterRefreshFailure.map(\.httpMethod), ["GET", "GET", "POST", "GET"])
+        XCTAssertEqual(model.careRecommendationState, .unavailable)
         await model.loadCard(includeManualWateringActions: true)
         XCTAssertEqual(model.manualWateringState, .ready)
         guard case let .loaded(active) = model.wateringHistoryState else {
@@ -3041,6 +3095,11 @@ extension CollectionWireTests {
         }
         XCTAssertEqual(active.map(\.id), [entryId])
         XCTAssertEqual(active.map(\.state), ["active"])
+        await model.loadCareRecommendation()
+        guard case let .available(beforeUndo) = model.careRecommendationState else {
+            return XCTFail("Expected a calendar check after reading the active fact")
+        }
+        XCTAssertEqual(beforeUndo.nextCheck?.dueOn, "2026-11-10")
         await model.undoWatering(entryId: entryId)
         XCTAssertEqual(model.manualWateringState, .ready)
         guard case let .loaded(voided) = model.wateringHistoryState else {
@@ -3048,6 +3107,10 @@ extension CollectionWireTests {
         }
         XCTAssertEqual(voided.map(\.id), [entryId])
         XCTAssertEqual(voided.map(\.state), ["voided"])
+        guard case let .available(afterUndo) = model.careRecommendationState else {
+            return XCTFail("Undo should reload the recommendation")
+        }
+        XCTAssertNil(afterUndo.nextCheck)
         let posts = await transport.capturedRequests().filter { $0.httpMethod == "POST" }
         XCTAssertEqual(posts.count, 2)
         let retry = try XCTUnwrap(posts.first)
@@ -3062,6 +3125,30 @@ extension CollectionWireTests {
         XCTAssertEqual(undoPayload, ["entry_id": entryId.uuidString.lowercased()])
         let pending = try await store.pendingOutboxEntries(for: syncOwner)
         XCTAssertTrue(pending.isEmpty)
+        await model.recordWatering()
+        guard case let .available(afterRecord) = model.careRecommendationState else {
+            return XCTFail("Recording a fact should reload the recommendation")
+        }
+        XCTAssertEqual(afterRecord.nextCheck?.dueOn, "2026-11-10")
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let repository = CollectionRepository(
+            store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api)
+        )
+        try await repository.enqueueWateringDateCorrection(
+            plantId: serverPlantId, entryId: nextEntryId,
+            date: XCTUnwrap(SQLTimestamp.date(from: correctedAt)), timezone: TimeZone(secondsFromGMT: 0)!,
+            context: lease
+        )
+        await model.loadCard(includeManualWateringActions: true)
+        XCTAssertEqual(model.manualWateringState, .pending)
+        XCTAssertEqual(model.careRecommendationState, .available(afterRecord))
+        await model.retryManualWatering()
+        guard case let .available(afterCorrection) = model.careRecommendationState else {
+            return XCTFail("Confirming a date correction should reload the recommendation")
+        }
+        XCTAssertEqual(afterCorrection.nextCheck?.dueOn, "2026-11-09")
+        let refreshedRequests = await transport.capturedRequests().suffix(4)
+        XCTAssertEqual(refreshedRequests.map { $0.url?.lastPathComponent }, ["commands", "sync", "sync", "recommendation"])
     }
 
     @MainActor
@@ -3259,12 +3346,12 @@ extension CollectionWireTests {
         wrongAction["action_code"] = "water_now"
         var unsafeSource = rule
         unsafeSource["source"] = ["url": "https://account:password@example.invalid/watering", "locator": "Growing"]
-        var guessedInterval = rule
-        guessedInterval["next_check_interval_days"] = 7
+        var invalidInterval = rule
+        invalidInterval["next_check_interval_days"] = 0
         let transport = CatalogueTransport(try [
             response(plantId, "available", rule), response(plantId, "unavailable", NSNull()),
             response(UUID(), "available", rule), response(plantId, "available", wrongAction),
-            response(plantId, "available", unsafeSource), response(plantId, "available", guessedInterval),
+            response(plantId, "available", unsafeSource), response(plantId, "available", invalidInterval),
             response(plantId, "unavailable", rule)
         ])
         let api = client(transport)
@@ -3273,6 +3360,7 @@ extension CollectionWireTests {
         let recommendation = try await api.fetchCareRecommendation(plantId: plantId, context: context)
         XCTAssertEqual(recommendation?.text, text)
         XCTAssertEqual(recommendation?.source.url, URL(string: "https://example.invalid/watering"))
+        XCTAssertNil(recommendation?.nextCheck)
         let unavailable = try await api.fetchCareRecommendation(plantId: plantId, context: context)
         XCTAssertNil(unavailable)
         for _ in 0..<5 {
@@ -3292,6 +3380,50 @@ extension CollectionWireTests {
         })
         let nonRedirecting = await transport.nonRedirectingRequests
         XCTAssertEqual(nonRedirecting, requests.count)
+    }
+
+    func testCareNextCheckReadsCalendarDaysAndRejectsAnUnverifiedDate() async throws {
+        let dated = careProjection(anchor: "2026-10-29", due: "2026-11-05")
+        let corrected = careProjection(anchor: "2026-10-28", due: "2026-11-04")
+        let olderAnchor = careProjection(anchor: "2026-10-20", due: "2026-10-27")
+        let impossible = careProjection(anchor: "2026-11-31", due: "2026-12-07")
+        var wrongSource = try XCTUnwrap(dated["next_check"] as? [String: Any])
+        wrongSource["source"] = ["url": "http://example.invalid/interval", "locator": "Soil check interval"]
+        var unsafe = dated
+        unsafe["next_check"] = wrongSource
+        var mismatched = dated
+        var rule = try XCTUnwrap(dated["recommendation"] as? [String: Any])
+        rule["next_check_interval_days"] = 8
+        mismatched["recommendation"] = rule
+        var older = careProjection()
+        older.removeValue(forKey: "next_check")
+        let replies = [dated, corrected, olderAnchor, careProjection(), older, impossible, unsafe, mismatched]
+        let transport = CatalogueTransport(try replies.map { .http(200, try syncJSON($0)) })
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let context = try await api.captureSyncContext(ownerId: accessOwner)
+        for (anchor, day) in [
+            ("2026-10-29", "2026-11-05"), ("2026-10-28", "2026-11-04"), ("2026-10-20", "2026-10-27")
+        ] {
+            let recommendation = try await api.fetchCareRecommendation(plantId: serverPlantId, context: context)
+            let check = try XCTUnwrap(recommendation?.nextCheck)
+            XCTAssertEqual(check.anchorOn, anchor)
+            XCTAssertEqual(check.dueOn, day)
+            XCTAssertEqual(check.intervalDays, 7)
+            XCTAssertEqual(check.source.url, URL(string: "https://example.invalid/interval"))
+            XCTAssertEqual(check.basis, "Based on the last recorded watering and the published 7-day interval.")
+        }
+        for _ in 0..<2 {
+            let recommendation = try await api.fetchCareRecommendation(plantId: serverPlantId, context: context)
+            XCTAssertEqual(recommendation?.text, "Check the substrate.")
+            XCTAssertNil(recommendation?.nextCheck)
+        }
+        for _ in 0..<3 {
+            do {
+                _ = try await api.fetchCareRecommendation(plantId: serverPlantId, context: context)
+                XCTFail("An invalid calendar check reached the card")
+            } catch AnalysisHTTPError.invalidResponse {}
+        }
     }
 
     private func diagnosisTicket(url: String, photoId: UUID) -> String {
