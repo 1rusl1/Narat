@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — T150 guest photo transfer candidate, 12 November 2026
+
+The prior guest handlers were not wired and did not match the deployed SQL. Migration 021 and the guest photo Edge composition add registered-installation anonymous identification, an immutable seven-day draft, a permanent-owner 15-minute claim proof, verified private copy, exact replay and cleanup. The [wire](../specs/001-plants-ios-mvp/contracts/identification-photo-http.md) was shared with A. The same source photo UUID is retained. No Auth setting or quota threshold changes.
+
+The controller's PG17 clean/upgrade fixtures passed 651 assertions in each database. The production-handler transport fixture verified that the server copies the exact bytes and returns one immutable receipt. The first SQL check found a permanent-only upload finalizer, which was corrected and retested. Anonymous sign-up itself passed separately on `narat-staging` with the existing Auth configuration. The candidate is pending independent Review/QA, deployment, real guest upload/identification and live claim including deleted/expired tests. T150 and T151 remain open.
+
 ## B — T150 personal photo save verified on staging, 12 November 2026
 
 This server candidate starts from `acb713d`. Migration 020 extends the existing `plant.create` command with an explicit confirmed catalogue taxon and owned completed identification job. It binds the source ready photo and flow in the same transaction as the plant and receipt. The private read route verifies original bytes and only resolves the owner's current main photo. The existing catalogue save remains available. A received the [scan save wire](../specs/001-plants-ios-mvp/contracts/identification-photo-http.md).

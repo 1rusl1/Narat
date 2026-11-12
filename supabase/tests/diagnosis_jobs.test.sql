@@ -230,5 +230,88 @@ UPDATE public.plants SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM s
 SELECT is(public.read_owned_plant_photo(
     '16300000-0000-4000-8000-000000000002',(SELECT id FROM scan_plant)),NULL::jsonb,
     'a deleted plant no longer exposes photo bytes');
+-- Seven-day anonymous draft and permanent transfer from a real leased fixture job.
+INSERT INTO public.profiles(id,anonymous) VALUES ('16310000-0000-4000-8000-000000000061',true);
+CREATE TEMP TABLE guest_install AS SELECT (public.register_installation_access(
+    repeat('e',64),'16310000-0000-4000-8000-000000000061')->>'installation_id')::uuid id;
+CREATE TEMP TABLE guest_photo AS SELECT (public.create_bound_photo_upload(
+    '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000062',
+    'image/jpeg',4,repeat('d',64),repeat('e',64))->>'photo_asset_id')::uuid id;
+SELECT public.mark_diagnosis_upload_ready('16310000-0000-4000-8000-000000000061',(SELECT id FROM guest_photo),repeat('d',64));
+SELECT throws_ok($q$SELECT public.create_bound_photo_analysis_job(
+    '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000063',
+    (SELECT id FROM guest_photo),NULL,'en',true,'identification',repeat('f',64))$q$,
+    '42501','INSTALLATION_CREDENTIAL_MISMATCH','guest identification requires the bound installation');
+CREATE TEMP TABLE guest_job AS SELECT (public.create_bound_photo_analysis_job(
+    '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000063',
+    (SELECT id FROM guest_photo),NULL,'en',true,'identification',repeat('e',64))->'job'->>'job_id')::uuid id;
+CREATE TEMP TABLE guest_lease AS SELECT (public.lease_diagnosis_job((SELECT id FROM guest_job))->>'lease_token')::uuid id;
+SELECT is(public.start_diagnosis_provider((SELECT id FROM guest_job),(SELECT id FROM guest_lease))->>'allowed',
+    'true','registered guest can start identification');
+SELECT is(public.finish_diagnosis_job((SELECT id FROM guest_job),(SELECT id FROM guest_lease),
+    (SELECT jsonb_set(body,'{job_id}',to_jsonb((SELECT id FROM guest_job))) FROM identified_result),false,NULL)->>'quota_state',
+    'consumed','guest identification consumes its bound starter');
+CREATE TEMP TABLE guest_draft_created AS SELECT public.create_guest_photo_draft(
+    '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000064',(SELECT id FROM guest_job),
+    (SELECT (body->>'taxon_id')::uuid FROM scan_input),repeat('e',64)) body;
+CREATE TEMP TABLE guest_draft AS SELECT (body->>'draft_id')::uuid id FROM guest_draft_created;
+SELECT is((SELECT expires_at-created_at FROM public.guest_drafts WHERE id=(SELECT id FROM guest_draft)),
+    interval '7 days','guest draft lives exactly seven days');
+SELECT is(public.create_guest_photo_draft(
+    '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000064',(SELECT id FROM guest_job),
+    (SELECT (body->>'taxon_id')::uuid FROM scan_input),repeat('e',64)),(SELECT body FROM guest_draft_created),
+    'draft operation replay preserves identity and deadline');
+SELECT throws_ok($q$SELECT public.prepare_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000001','16310000-0000-4000-8000-000000000065',
+    (SELECT id FROM guest_draft),repeat('e',64))$q$,
+    '42501','INSTALLATION_CREDENTIAL_MISMATCH','unbound permanent owner cannot prepare the guest claim');
+SELECT public.bind_installation_credential((SELECT id FROM guest_install),'16300000-0000-4000-8000-000000000002',repeat('e',64));
+CREATE TEMP TABLE guest_claim AS SELECT (public.prepare_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000065',
+    (SELECT id FROM guest_draft),repeat('e',64))->>'claim_id')::uuid id;
+SELECT throws_ok($q$SELECT public.process_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000066',
+    (SELECT id FROM guest_claim),repeat('e',64),true)$q$,
+    '22023','COPY_NOT_PREPARED','publication requires the copy phase');
+SELECT is(public.process_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000066',
+    (SELECT id FROM guest_claim),repeat('e',64),false)->>'destination',
+    '16300000-0000-4000-8000-000000000002/'||(SELECT id::text FROM guest_photo),
+    'server chooses immutable target path using the original photo ID');
+
+UPDATE public.guest_drafts SET expires_at=clock_timestamp()-interval '1 second' WHERE id=(SELECT id FROM guest_draft);
+SELECT throws_ok($q$SELECT public.process_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000066',
+    (SELECT id FROM guest_claim),repeat('e',64),true)$q$,
+    'P0002','DRAFT_EXPIRED','copy started before expiry cannot publish an expired draft');
+UPDATE public.guest_drafts SET expires_at=created_at+interval '7 days' WHERE id=(SELECT id FROM guest_draft);
+-- Use isolated statements to preserve pgTAP's accounting for rejection cases.
+UPDATE public.guest_drafts SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM guest_draft);
+SELECT throws_ok($q$SELECT public.process_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000066',
+    (SELECT id FROM guest_claim),repeat('e',64),true)$q$,
+    'P0002','DRAFT_EXPIRED','a deleted draft cannot be published');
+UPDATE public.guest_drafts SET deleted_at=NULL WHERE id=(SELECT id FROM guest_draft);
+CREATE TEMP TABLE guest_commit AS SELECT public.process_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000066',
+    (SELECT id FROM guest_claim),repeat('e',64),true) body;
+SELECT is((SELECT body->'receipt'->>'photo_id' FROM guest_commit),(SELECT id::text FROM guest_photo),
+    'claim retains original photo identity');
+SELECT is(public.process_guest_photo_claim(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000066',
+    (SELECT id FROM guest_claim),repeat('e',64),false),(SELECT body FROM guest_commit),
+    'published claim replays the same receipt without a second copy');
+SELECT is((SELECT count(*) FROM public.plants WHERE origin_draft_id=(SELECT id FROM guest_draft)),1::bigint,
+    'one card survives replay');
+SELECT is(public.read_owned_plant_photo('16300000-0000-4000-8000-000000000002',
+    (SELECT (body->'receipt'->>'plant_id')::uuid FROM guest_commit))->>'content_sha256',
+    repeat('d',64),'new owner reads exact source hash');
+SELECT is(public.read_diagnosis_upload('16310000-0000-4000-8000-000000000061',(SELECT id FROM guest_photo)),
+    NULL::jsonb,'old anonymous owner can no longer resolve the claimed photo');
+SELECT is((public.read_guest_photo_cleanup((SELECT id FROM guest_draft))->0->>'source'),
+    '16310000-0000-4000-8000-000000000061/'||(SELECT id::text FROM guest_photo),
+    'published claim cleanup only removes the guest source');
+SELECT is((public.read_guest_photo_cleanup((SELECT id FROM guest_draft))->0->>'abandoned_target'),NULL::text,
+    'cleanup never deletes the published private photo');
 SELECT * FROM finish();
 ROLLBACK;

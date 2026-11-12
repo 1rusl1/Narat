@@ -7,6 +7,7 @@ import {
   requireUuid,
 } from "../_shared/http.ts";
 import type { PhotoIdentificationResult } from "../_shared/KnowledgeTypes.ts";
+import { installationCredentialHash } from "./analysis-access.ts";
 import type { AnalysisJobStatusResponse } from "./analysis.ts";
 
 type PhotoJobStatus = Omit<AnalysisJobStatusResponse, "result"> & {
@@ -179,7 +180,13 @@ export function createDiagnosisJobs(
         ? null
         : requireUuid(body.flow_id, "flow_id");
       const identification = body.mode === "identification";
-      const command = identification
+      const guestIdentification = identification && ctx.isAnonymous;
+      const credentialHash = guestIdentification
+        ? await installationCredentialHash(ctx, true)
+        : null;
+      const command = guestIdentification
+        ? "create_bound_photo_analysis_job"
+        : identification
         ? "create_photo_analysis_job"
         : "create_diagnosis_job";
       const result = await rpc(ctx, command, {
@@ -190,6 +197,7 @@ export function createDiagnosisJobs(
         p_locale: ctx.locale,
         p_can_dispatch: worker.ready(),
         ...(identification && { p_mode: body.mode }),
+        ...(guestIdentification && { p_credential_hash: credentialHash }),
       });
       if (typeof result?.replayed !== "boolean") throw unavailable(ctx);
       const job = parseJob(result.job, ctx);

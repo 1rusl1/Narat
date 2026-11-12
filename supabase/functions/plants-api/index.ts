@@ -37,6 +37,7 @@ import {
   handleGetAnalysisJob,
 } from "./analysis.ts";
 import { createDiagnosisWorker } from "../analysis-worker/index.ts";
+import { createGuestPhotoApi } from "./guest-photo.ts";
 import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
 import { createDiagnosisMedia } from "./diagnosis-media.ts";
 import { handleGetSync } from "./collection.ts";
@@ -58,6 +59,8 @@ export interface PlantsApiDependencies {
   diagnosisMedia?: ReturnType<typeof createDiagnosisMedia>;
   analysisJobAdapter?: AnalysisJobStoreAdapter;
   diagnosisJobs?: ReturnType<typeof createDiagnosisJobs>;
+  guestPhoto?: ReturnType<typeof createGuestPhotoApi>;
+  handleGuestPhotoMaintenance?: (req: Request) => Promise<Response>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
   handleCareRecommendation?: (req: Request, ctx: RequestContext, plantId: string) => Promise<Response>;
@@ -209,7 +212,12 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     const photoMatch = req.method === "GET"
       ? normalizedPath.match(/^\/plants\/([^/]+)\/photo$/)
       : null;
+    const guestRoute = /^\/(drafts|claims)(?:\/|$)/.test(normalizedPath);
     try {
+      if (req.method === "POST" && normalizedPath === "/internal/guest-drafts/cleanup" &&
+        deps.handleGuestPhotoMaintenance) {
+        return privateResponse(await deps.handleGuestPhotoMaintenance(req));
+      }
       if (req.method === "GET" && normalizedPath === "/health") {
         return jsonResponse({ status: "ok", version: "3.0.0", locale }, 200);
       }
@@ -243,6 +251,29 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         deps.installationsAdapter
       ) {
         return await handleInstallationBind(req, ctx, deps.installationsAdapter);
+      }
+
+      if (deps.guestPhoto) {
+        const guest = deps.guestPhoto;
+        if (req.method === "POST" && normalizedPath === "/installations/register") {
+          return privateResponse(await guest.registerInstallation(ctx));
+        }
+        if (req.method === "POST" && normalizedPath === "/installations/bind") {
+          return privateResponse(await guest.bindInstallation(req, ctx));
+        }
+        if (req.method === "POST" && normalizedPath === "/drafts") {
+          return privateResponse(await guest.draft(req, ctx));
+        }
+        const draft = normalizedPath.match(/^\/drafts\/([^/]+)$/);
+        if (req.method === "DELETE" && draft) return privateResponse(await guest.deleteDraft(ctx, draft[1]));
+        if (req.method === "POST" && normalizedPath === "/claims/prepare") {
+          return privateResponse(await guest.prepare(req, ctx));
+        }
+        if (req.method === "POST" && normalizedPath === "/claims/commit") {
+          return privateResponse(await guest.commit(req, ctx));
+        }
+        const claim = normalizedPath.match(/^\/claims\/([^/]+)$/);
+        if (req.method === "GET" && claim) return privateResponse(await guest.status(ctx, claim[1]));
       }
 
       if (
@@ -347,7 +378,7 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       );
     } catch (err) {
       const response = errorResponse(err, locale);
-      return careMatch || photoMatch ? privateResponse(response) : response;
+      return careMatch || photoMatch || guestRoute ? privateResponse(response) : response;
     }
   };
 }
@@ -377,9 +408,14 @@ export function createProductionPlantsApiHandler(
   };
   const syncClient = () => apiClient("SUPABASE_SERVICE_ROLE_KEY");
   const catalogueClient = () => apiClient("SUPABASE_ANON_KEY");
+  const diagnosisMedia = deps.diagnosisMedia ?? createDiagnosisMedia(syncClient, env);
+  const guestPhoto = deps.guestPhoto ?? createGuestPhotoApi(syncClient, diagnosisMedia.copyPhotoForClaim);
   return createPlantsApiHandler({
     ...deps,
-    diagnosisMedia: deps.diagnosisMedia ?? createDiagnosisMedia(syncClient, env),
+    diagnosisMedia,
+    guestPhoto,
+    handleGuestPhotoMaintenance: deps.handleGuestPhotoMaintenance ??
+      ((req) => guestPhoto.maintenance(req, env("SUPABASE_SERVICE_ROLE_KEY")?.trim())),
     diagnosisJobs: deps.diagnosisJobs ?? createDiagnosisJobs(
       syncClient, options.diagnosisWorker ?? createDiagnosisWorker(env, { fetch: options.fetch }),
       options.scheduleDiagnosis,

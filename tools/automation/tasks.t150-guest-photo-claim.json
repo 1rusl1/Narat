@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "t150-guest-photo-claim",
+      "description": "Accept the seven-day guest identification photo draft and private claim.",
+      "candidate_base": "ac4c10e760a7c89925ad7f44467e8f17423e134d",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/identification-photo-http.md",
+        "supabase/functions/_shared/tests/guest_photo_http_test.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/plants-api/diagnosis-media.ts",
+        "supabase/functions/plants-api/guest-photo.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/migrations/202611120021_guest_photo_claim.sql",
+        "supabase/tests/diagnosis_jobs.test.sql",
+        "tools/automation/tasks.t150-guest-photo-claim.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Independent English Reviewer and QA on the exact committed diff, local checks only. The controller exercises fixed narat-staging Auth and Storage using test accounts. No model role changes Auth, credentials, quotas, iOS, or deployment.",
+        "Check the production registered installation and anonymous identification quota path. Review seven-day draft lifetime, 15-minute proof, lock order, original-owner context, one target and original UUID, exact replay, active-source deletion races, and immutable verified copy. Verify 410 for expired/deleted drafts and destination-safe cleanup.",
+        "Existing photos, diagnosis and collection cap must work. No client storage path, fallback or receipt injection. The internal cleanup endpoint uses the configured service authorization. A periodic invocation is separate from the service sweep."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T150-G1",
+          "description": "Production Edge entrypoints and exact diff pass.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T150-G2",
+          "description": "SDK and clean/upgrade PG17 fixtures verify anonymous quota, draft, ownership, copy and expiry.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

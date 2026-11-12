@@ -6,6 +6,7 @@ import {
   requireActiveOwner,
   requireUuid,
 } from "../_shared/http.ts";
+import { installationCredentialHash } from "./analysis-access.ts";
 import {
   handleMediaUploadTicket,
   MAX_NORMALIZED_PHOTO_BYTES,
@@ -286,6 +287,23 @@ export function createDiagnosisMedia(
     return await markReady(ctx, upload);
   }
 
+  async function loadVerifiedStorage(
+    ctx: RequestContext,
+    upload: Upload,
+    path: string,
+  ) {
+    try {
+      const { data, error } = await client(ctx).storage
+        .from(DIAGNOSIS_PHOTO_BUCKET).download(path);
+      if (error || !data || data.size !== upload.byte_size) throw new Error();
+      const bytes = await readBytes(data.stream(), upload.byte_size, ctx);
+      await verifyBytes(bytes, upload, ctx);
+      return bytes;
+    } catch {
+      throw unavailable(ctx);
+    }
+  }
+
   return {
     async plantPhoto(ctx: RequestContext, id: string) {
       const owner = requireActiveOwner(ctx);
@@ -301,16 +319,7 @@ export function createDiagnosisMedia(
       );
       if (upload.state !== "ready") throw notFound(ctx);
 
-      let bytes: Uint8Array<ArrayBuffer>;
-      try {
-        const { data, error } = await client(ctx).storage
-          .from(DIAGNOSIS_PHOTO_BUCKET).download(upload.storage_path);
-        if (error || !data || data.size !== upload.byte_size) throw new Error();
-        bytes = await readBytes(data.stream(), upload.byte_size, ctx);
-        await verifyBytes(bytes, upload, ctx);
-      } catch {
-        throw unavailable(ctx);
-      }
+      const bytes = await loadVerifiedStorage(ctx, upload, upload.storage_path);
       return new Response(bytes, {
         headers: {
           "Content-Type": upload.mime_type,
@@ -318,6 +327,39 @@ export function createDiagnosisMedia(
           "X-Content-Type-Options": "nosniff",
         },
       });
+    },
+
+    async copyPhotoForClaim(
+      ctx: RequestContext,
+      value: unknown,
+      destination: unknown,
+    ) {
+      const target = requireActiveOwner(ctx);
+      const sourceOwner = (value as { owner_id?: unknown } | null)?.owner_id;
+      if (typeof sourceOwner !== "string" || sourceOwner === target) {
+        throw unavailable(ctx);
+      }
+      const upload = parseUpload(value, sourceOwner, ctx);
+      if (
+        upload.state !== "ready" ||
+        destination !== `${target}/${upload.photo_asset_id}`
+      ) {
+        throw unavailable(ctx);
+      }
+      const bytes = await loadVerifiedStorage(ctx, upload, upload.storage_path);
+      try {
+        await client(ctx).storage.from(DIAGNOSIS_PHOTO_BUCKET).upload(
+          destination,
+          bytes,
+          {
+            contentType: upload.mime_type,
+            upsert: false,
+          },
+        );
+      } catch {
+        // A lost upload response is recoverable from the immutable destination.
+      }
+      await loadVerifiedStorage(ctx, upload, destination);
     },
 
     async ticket(req: Request, ctx: RequestContext) {
@@ -341,14 +383,24 @@ export function createDiagnosisMedia(
             params.draftId || params.plantId || !params.contentSha256 ||
             !/^[a-f0-9]{64}$/.test(params.contentSha256)
           ) throw badPhoto(ctx);
+          const credentialHash = ctx.isAnonymous
+            ? await installationCredentialHash(ctx, true)
+            : null;
           const upload = parseUpload(
-            await rpc(ctx, "create_diagnosis_upload", {
-              p_owner_id: owner,
-              p_operation_id: params.operationId,
-              p_mime_type: params.mimeType,
-              p_byte_size: params.byteSize,
-              p_content_sha256: params.contentSha256,
-            }),
+            await rpc(
+              ctx,
+              credentialHash
+                ? "create_bound_photo_upload"
+                : "create_diagnosis_upload",
+              {
+                p_owner_id: owner,
+                p_operation_id: params.operationId,
+                p_mime_type: params.mimeType,
+                p_byte_size: params.byteSize,
+                p_content_sha256: params.contentSha256,
+                ...(credentialHash && { p_credential_hash: credentialHash }),
+              },
+            ),
             owner,
             ctx,
           );
