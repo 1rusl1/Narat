@@ -275,14 +275,16 @@ struct FirstAidObservationPhotoDraft: Sendable {
         uploadOperationId = uploadId
     }
 
-    static func make(plantId: UUID, controlId: UUID, status: FirstAidObservationStatus) throws -> Self {
+    static func make(
+        plantId: UUID, controlId: UUID, status: FirstAidObservationStatus, operationId: UUID = UUID()
+    ) throws -> Self {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode([
             "control_id": controlId.uuidString.lowercased(), "status_code": status.rawValue,
             "upload_operation_id": UUID().uuidString.lowercased()
         ])
-        let envelope = CommandEnvelopeDTO(operationId: UUID(), commandName: name, plantId: plantId,
+        let envelope = CommandEnvelopeDTO(operationId: operationId, commandName: name, plantId: plantId,
                                           payloadJSON: String(decoding: data, as: UTF8.self))
         guard let draft = Self(envelope: envelope) else { throw SyncWireValidationError.invalidRequest }
         return draft

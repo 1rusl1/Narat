@@ -194,7 +194,14 @@ public actor SyncEngine {
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
-                            _ = try? await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+                            if let command = FirstAidObservationCommand(envelope: envelope), let photoId = command.photoId {
+                                if try await recoverRejectedFirstAidPhoto(command, photoId: photoId, context: context) {
+                                    blockedPlantIds.insert(command.plantId)
+                                    continue
+                                }
+                            } else {
+                                _ = try? await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+                            }
                         }
                         try await store.finishOutboxEntry(
                             operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
@@ -240,13 +247,27 @@ public actor SyncEngine {
     private func prepareFirstAidObservationPhoto(
         _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
     ) async throws -> FirstAidObservationCommand {
+        do {
+            return try await uploadFirstAidObservationPhoto(draft, context: context)
+        } catch let error as APIErrorResponse where error.isMissingPhoto || error.isIncompletePhoto {
+            // At this stage no observe has been sent. An expired ticket cannot be refreshed by replay.
+            let renewed = try await store.renewFirstAidPhotoDraft(
+                draft, context: context, authority: apiClient.syncAuthority
+            )
+            return try await uploadFirstAidObservationPhoto(renewed, context: context)
+        }
+    }
+
+    private func uploadFirstAidObservationPhoto(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
+    ) async throws -> FirstAidObservationCommand {
         let authority = apiClient.syncAuthority
         let upload = try await store.firstAidPhotoUpload(draft, context: context, authority: authority)
         if let assetId = upload.assetId {
             do {
                 try await apiClient.confirmFirstAidPhoto(id: assetId, context: context)
                 return try await store.finalizeFirstAidPhoto(assetId, for: draft, context: context, authority: authority)
-            } catch let error as APIErrorResponse where error.error.code == "CONFLICT" && error.error.retryable {
+            } catch let error as APIErrorResponse where error.isIncompletePhoto {
                 // A lost PUT may have left the upload incomplete. Keep the original ticket identity.
             }
         }
@@ -258,6 +279,32 @@ public actor SyncEngine {
             try await apiClient.uploadFirstAidJPEG(upload.jpeg, ticket: ticket, context: context)
         }
         return try await store.finalizeFirstAidPhoto(ticket.photoAssetId, for: draft, context: context, authority: authority)
+    }
+
+    private func recoverRejectedFirstAidPhoto(
+        _ command: FirstAidObservationCommand, photoId: UUID, context: SyncSessionLease
+    ) async throws -> Bool {
+        let authority = apiClient.syncAuthority
+        do {
+            _ = try await pullDelta(for: context.ownerId, pageSize: 200, fullRefresh: false, context: context)
+            if try await store.confirmedFirstAidObservation(command, context: context, authority: authority) != nil {
+                return true
+            }
+            guard try await store.canReplaceRejectedFirstAidPhoto(command, context: context, authority: authority)
+            else { return false }
+            do {
+                try await apiClient.confirmFirstAidPhoto(id: photoId, context: context)
+                return false
+            } catch let error as APIErrorResponse where error.isMissingPhoto {
+                try await store.replaceRejectedFirstAidPhoto(command, context: context, authority: authority)
+                return true
+            }
+        } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            // Inconclusive readback keeps the exact observe, which checks the server receipt first.
+            try await apiClient.validateSyncContext(context)
+            return true
+        }
     }
 
     private func refreshCareJournal(ownerId: UUID, watermark: Int64, context: SyncSessionLease) async throws {
@@ -487,4 +534,9 @@ public actor SyncEngine {
         planHistoryByOwner[ownerId] = nil
         reportCacheByOwner[ownerId] = nil
     }
+}
+
+private extension APIErrorResponse {
+    var isMissingPhoto: Bool { error.code == "NOT_FOUND" && !error.retryable }
+    var isIncompletePhoto: Bool { error.code == "CONFLICT" && error.retryable }
 }

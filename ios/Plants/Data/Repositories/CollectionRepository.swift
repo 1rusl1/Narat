@@ -538,6 +538,11 @@ public struct CollectionRepository: Sendable {
         if try await pendingFirstAidObservation(plantId: command.plantId, context: context)?.envelope == command.envelope {
             return .pending
         }
+        if command.photoId != nil,
+           let replacement = try await pendingFirstAidPhotoDraft(plantId: command.plantId, context: context),
+           replacement.controlId == command.controlId, replacement.status == command.status {
+            return .pending
+        }
         let observation = try await store.confirmedFirstAidObservation(
             command, context: context, authority: apiClient.syncAuthority
         )
@@ -561,7 +566,8 @@ public struct CollectionRepository: Sendable {
         _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
     ) async throws -> FirstAidWriteOutcome {
         _ = try await syncEngine.flushOutbox(context: context)
-        if try await pendingFirstAidPhotoDraft(plantId: draft.plantId, context: context)?.envelope == draft.envelope {
+        if let pending = try await pendingFirstAidPhotoDraft(plantId: draft.plantId, context: context),
+           pending.controlId == draft.controlId, pending.status == draft.status {
             return .pending
         }
         if try await pendingFirstAidObservation(plantId: draft.plantId, context: context)?.envelope.operationId

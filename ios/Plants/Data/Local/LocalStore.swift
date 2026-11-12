@@ -689,7 +689,7 @@ public actor LocalStore {
                   try firstAidObservationInOutbox(plantId: draft.plantId, ownerId: ownerId) == nil
             else { throw OutboxEnqueueError.operationIdentityMismatch }
             if let existing = try firstAidPhotoDraftInOutbox(plantId: draft.plantId, ownerId: ownerId) {
-                let record = try firstAidPhotoDraftRecord(existing, ownerId: ownerId, in: makeSyncContext())
+                let record = try firstAidPhotoOutboxRecord(existing.envelope, ownerId: ownerId, in: makeSyncContext())
                 guard existing.controlId == draft.controlId, existing.status == draft.status, record.observationJPEG == jpeg
                 else { throw OutboxEnqueueError.operationIdentityMismatch }
                 return existing
@@ -702,13 +702,13 @@ public actor LocalStore {
         }
     }
 
-    private func firstAidPhotoDraftRecord(
-        _ draft: FirstAidObservationPhotoDraft, ownerId: UUID, in disk: ModelContext
+    private func firstAidPhotoOutboxRecord(
+        _ envelope: CommandEnvelopeDTO, ownerId: UUID, in disk: ModelContext
     ) throws -> LocalOutboxRecord {
-        let operationId = draft.envelope.operationId
+        let operationId = envelope.operationId
         let descriptor = FetchDescriptor<LocalOutboxRecord>(predicate: #Predicate { $0.operationId == operationId })
-        guard let row = try disk.fetch(descriptor).first, row.ownerId == ownerId, row.plantId == draft.plantId,
-              row.commandName == FirstAidObservationPhotoDraft.name, row.payloadJSON == draft.envelope.payloadJSON
+        guard let row = try disk.fetch(descriptor).first, row.ownerId == ownerId, row.plantId == envelope.plantId,
+              row.commandName == envelope.commandName, row.payloadJSON == envelope.payloadJSON
         else { throw OutboxEnqueueError.operationIdentityMismatch }
         return row
     }
@@ -717,7 +717,7 @@ public actor LocalStore {
         _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> (jpeg: Data, assetId: UUID?) {
         try authority.withBoundValid(context) {
-            let record = try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: makeSyncContext())
+            let record = try firstAidPhotoOutboxRecord(draft.envelope, ownerId: context.ownerId, in: makeSyncContext())
             guard let jpeg = record.observationJPEG else { throw SyncWireValidationError.invalidRequest }
             return (jpeg, record.observationPhotoAssetId)
         }
@@ -728,7 +728,7 @@ public actor LocalStore {
     ) throws {
         try authority.withBoundValid(context) {
             let disk = makeSyncContext()
-            let record = try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: disk)
+            let record = try firstAidPhotoOutboxRecord(draft.envelope, ownerId: context.ownerId, in: disk)
             guard record.observationPhotoAssetId == nil || record.observationPhotoAssetId == assetId
             else { throw OutboxEnqueueError.operationIdentityMismatch }
             record.observationPhotoAssetId = assetId
@@ -741,7 +741,7 @@ public actor LocalStore {
     ) throws -> FirstAidObservationCommand {
         try authority.withBoundValid(context) {
             let disk = makeSyncContext()
-            let record = try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: disk)
+            let record = try firstAidPhotoOutboxRecord(draft.envelope, ownerId: context.ownerId, in: disk)
             guard record.observationPhotoAssetId == assetId else { throw OutboxEnqueueError.operationIdentityMismatch }
             let command = try FirstAidObservationCommand.make(
                 plantId: draft.plantId, controlId: draft.controlId, status: draft.status,
@@ -749,7 +749,7 @@ public actor LocalStore {
             )
             record.commandName = command.envelope.commandName
             record.payloadJSON = command.envelope.payloadJSON
-            record.observationJPEG = nil
+            // Keep the bytes until the observe receipt is acknowledged. Cleanup can win before attach.
             record.observationPhotoAssetId = nil
             record.lastError = nil
             try disk.save()
@@ -762,7 +762,70 @@ public actor LocalStore {
     ) throws {
         try authority.withBoundValid(context) {
             let disk = makeSyncContext()
-            disk.delete(try firstAidPhotoDraftRecord(draft, ownerId: context.ownerId, in: disk))
+            disk.delete(try firstAidPhotoOutboxRecord(draft.envelope, ownerId: context.ownerId, in: disk))
+            try disk.save()
+        }
+    }
+
+    func renewFirstAidPhotoDraft(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidObservationPhotoDraft {
+        let replacement = try FirstAidObservationPhotoDraft.make(
+            plantId: draft.plantId, controlId: draft.controlId, status: draft.status,
+            operationId: draft.envelope.operationId
+        )
+        try replaceUnavailableFirstAidPhoto(draft.envelope, with: replacement, context: context, authority: authority)
+        return replacement
+    }
+
+    func canReplaceRejectedFirstAidPhoto(
+        _ command: FirstAidObservationCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> Bool {
+        try authority.withBoundValid(context) {
+            let record = try firstAidPhotoOutboxRecord(command.envelope, ownerId: context.ownerId, in: makeSyncContext())
+            guard record.observationJPEG != nil else { return false }
+            do {
+                try requireActiveFirstAidTarget(
+                    plantId: command.plantId, controlId: command.controlId, ownerId: context.ownerId, now: Date()
+                )
+                return true
+            } catch SyncWireValidationError.invalidPage {
+                return false
+            } catch SyncWireValidationError.invalidRequest {
+                return false
+            } catch OutboxEnqueueError.operationIdentityMismatch {
+                return false
+            }
+        }
+    }
+
+    func replaceRejectedFirstAidPhoto(
+        _ command: FirstAidObservationCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        let replacement = try FirstAidObservationPhotoDraft.make(
+            plantId: command.plantId, controlId: command.controlId, status: command.status
+        )
+        try replaceUnavailableFirstAidPhoto(command.envelope, with: replacement, context: context, authority: authority)
+    }
+
+    private func replaceUnavailableFirstAidPhoto(
+        _ envelope: CommandEnvelopeDTO, with draft: FirstAidObservationPhotoDraft,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            let record = try firstAidPhotoOutboxRecord(envelope, ownerId: context.ownerId, in: disk)
+            guard record.observationJPEG != nil else { throw SyncWireValidationError.invalidRequest }
+            try requireActiveFirstAidTarget(
+                plantId: draft.plantId, controlId: draft.controlId, ownerId: context.ownerId, now: Date()
+            )
+            record.operationId = draft.envelope.operationId
+            record.commandName = draft.envelope.commandName
+            record.payloadJSON = draft.envelope.payloadJSON
+            record.observationPhotoAssetId = nil
+            record.retryCount = 0
+            record.lastError = nil
+            try Task.checkCancellation()
             try disk.save()
         }
     }

@@ -3963,6 +3963,156 @@ extension CollectionWireTests {
         XCTAssertEqual(requests.last?.cachePolicy, .reloadIgnoringLocalCacheData)
     }
 
+    @MainActor
+    func testFirstAidPhotoReusesBytesAfterExpiryAndCleanupWithoutRewritingAcceptedObserve() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let entry = UUID(), control = UUID(), expiredAsset = UUID(), removedAsset = UUID(), readyAsset = UUID()
+        let observation = UUID(), jpeg = Data([0xff, 0xd8, 0xff, 0xd9])
+        let later = "2026-11-03T09:10:00.000001+00:00"
+        let completed = "2026-11-03T09:10:00.000002+00:00"
+        let apiPath = "/functions/v1/plants-api"
+        let media = apiPath + "/media/first-aid"
+        let incomplete = #"{"error":{"code":"CONFLICT","message":"Photo upload is incomplete.","retryable":true}}"#
+        let conflict = #"{"error":{"code":"CONFLICT","message":"The first-aid control is unavailable or the operation conflicts with an existing receipt.","retryable":false}}"#
+        let missing = #"{"error":{"code":"NOT_FOUND","message":"Photo not found.","retryable":false}}"#
+
+        func row(_ type: String, _ id: UUID, at time: String, data: [String: Any]) -> [String: Any] {
+            var change = syncChange(time, id: id.uuidString, entity: type)
+            change["data"] = data.merging(["id": id.uuidString, "plant_id": serverPlantId.uuidString]) { old, _ in old }
+            return change
+        }
+        func followup(_ state: String, at time: String) -> [String: Any] {
+            row("first_aid_followups", control, at: time, data: [
+                "state": state, "action_code": "check_soil", "action_entry_id": entry.uuidString, "context_revision": 1,
+                "check_policy_snapshot": ["due_on": "2026-11-08", "interval_days": 5,
+                                          "source": ["url": "https://example.invalid/interval", "locator": "Fixture"]]
+            ])
+        }
+        func page(_ until: String, _ changes: [[String: Any]]) throws -> String {
+            var result = syncObject()
+            result["until"] = until
+            result["next_since"] = until
+            result["changes"] = changes.sorted { ($0["entity_type"] as! String) < ($1["entity_type"] as! String) }
+            return try syncJSON(result)
+        }
+        func ticket(_ asset: UUID) throws -> String {
+            try syncJSON(["photo_asset_id": asset.uuidString, "storage_bucket": "analysis-inputs", "storage_path": "private-test",
+                          "signed_upload_url": "https://example.invalid" + media + "/uploads/" + asset.uuidString.lowercased() + "?sig=fixture",
+                          "expires_in_seconds": 60, "max_byte_size": 10 * 1024 * 1024])
+        }
+        func ready(_ asset: UUID) throws -> String {
+            try syncJSON(["photo_asset_id": asset.uuidString, "state": "ready"])
+        }
+        func reopened(
+            _ replies: [CatalogueTransport.Reply],
+            run: (CollectionRepository, SyncSessionLease) async throws -> Void
+        ) async throws -> [URLRequest] {
+            let transport = CatalogueTransport(replies)
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            try await run(repo, lease)
+            return await transport.capturedRequests()
+        }
+        let baseline = try page(syncUntil, [
+            row("plants", serverPlantId, at: syncUntil, data: ["plant_id": "monstera_deliciosa", "revision": 1, "care_revision": 1]),
+            row("care_entries", entry, at: syncUntil, data: ["action_code": "check_soil", "state": "active",
+                                                            "occurred_at": syncUntil, "occurred_local_date": "2026-11-03"]),
+            followup("active", at: syncUntil)
+        ])
+        var queued: FirstAidObservationPhotoDraft?
+        let first = try await reopened([.http(200, baseline), .http(200, try ticket(expiredAsset)), .network]) { repo, lease in
+            _ = try await repo.collectionCards(context: lease)
+            let draft = try await repo.enqueueFirstAidPhotoDraft(
+                plantId: serverPlantId, controlId: control, status: .improved, jpeg: jpeg, context: lease
+            )
+            queued = draft
+            guard case .pending = try await repo.retryFirstAidPhotoDraft(draft, context: lease)
+            else { return XCTFail("Ambiguous PUT must keep the same draft") }
+        }
+        let original = try XCTUnwrap(queued)
+        let renewed = try await reopened([
+            .http(409, incomplete), .http(409, incomplete), .http(200, try ticket(removedAsset)),
+            .http(200, try ready(removedAsset)), .network
+        ]) { repo, lease in
+            let stored = try await repo.pendingFirstAidPhotoDraft(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(stored?.envelope, original.envelope)
+            guard case .pending = try await repo.retryFirstAidPhotoDraft(original, context: lease)
+            else { return XCTFail("Expired upload must progress to a replayable observe") }
+        }
+        XCTAssertEqual(renewed.map { $0.url?.path }, [
+            media + "/complete", media + "/upload-ticket", media + "/upload-ticket",
+            media + "/uploads/" + removedAsset.uuidString.lowercased(), apiPath + "/commands"
+        ])
+        XCTAssertEqual(first[1].httpBody, renewed[1].httpBody)
+        XCTAssertEqual(renewed[3].httpBody, jpeg)
+        let firstObserve = try XCTUnwrap(renewed.last?.httpBody)
+        var replacement: FirstAidObservationPhotoDraft?
+        let rejected = try await reopened([
+            .http(409, conflict), .network, .http(404, missing), .http(200, try page(later, [])), .http(404, missing)
+        ]) { repo, lease in
+            let pending = try await repo.pendingFirstAidObservation(plantId: serverPlantId, context: lease)
+            let command = try XCTUnwrap(pending)
+            XCTAssertEqual(command.envelope.operationId, original.envelope.operationId)
+            XCTAssertEqual(command.photoId, removedAsset)
+            guard case .pending = try await repo.retryFirstAidObservation(command, context: lease)
+            else { return XCTFail("An inconclusive sync must keep the exact observe") }
+            let unchanged = try await repo.pendingFirstAidObservation(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(unchanged?.envelope, command.envelope)
+            guard case .pending = try await repo.retryFirstAidObservation(command, context: lease)
+            else { return XCTFail("A rejected observe with a missing photo must recover the draft") }
+            replacement = try await repo.pendingFirstAidPhotoDraft(plantId: serverPlantId, context: lease)
+        }
+        XCTAssertEqual(rejected.map { $0.url?.path }, [
+            apiPath + "/commands", apiPath + "/sync", apiPath + "/commands", apiPath + "/sync", media + "/complete"
+        ])
+        XCTAssertEqual(rejected[0].httpBody, firstObserve)
+        XCTAssertEqual(rejected[2].httpBody, firstObserve)
+        let draft = try XCTUnwrap(replacement)
+        XCTAssertNotEqual(draft.envelope.operationId, original.envelope.operationId)
+        let retried = try await reopened([.http(200, try ticket(readyAsset)), .http(200, try ready(readyAsset)), .network]) { repo, lease in
+            guard case .pending = try await repo.retryFirstAidPhotoDraft(draft, context: lease)
+            else { return XCTFail("Lost response must keep the new observe") }
+        }
+        XCTAssertEqual(retried[1].httpBody, jpeg)
+        var ticketOperations = Set<String>()
+        var contentHashes = Set<String>()
+        for request in [first[1], renewed[2], retried[0]] {
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            ticketOperations.insert(try XCTUnwrap(body["operation_id"] as? String))
+            contentHashes.insert(try XCTUnwrap(body["content_sha256"] as? String))
+            XCTAssertEqual(body["byte_size"] as? Int, jpeg.count)
+            XCTAssertEqual(body["control_id"] as? String, control.uuidString.lowercased())
+        }
+        XCTAssertEqual(ticketOperations.count, 3)
+        XCTAssertEqual(contentHashes.count, 1)
+        let receipt = try syncJSON(["plant_id": serverPlantId.uuidString, "control_id": control.uuidString,
+                                    "observation_id": observation.uuidString, "state": "completed", "watermark": completed])
+        let sync = try page(completed, [
+            followup("completed", at: completed),
+            row("care_observations", observation, at: completed, data: [
+                "first_aid_control_id": control.uuidString, "status_code": "improved",
+                "operation_id": draft.envelope.operationId.uuidString, "observed_at": completed, "photo_id": readyAsset.uuidString
+            ]),
+            row("photo_assets", readyAsset, at: completed, data: ["state": "ready", "purpose": "diary"])
+        ])
+        let replay = try await reopened([.http(200, receipt), .http(200, sync)]) { repo, lease in
+            let pending = try await repo.pendingFirstAidObservation(plantId: serverPlantId, context: lease)
+            let command = try XCTUnwrap(pending)
+            XCTAssertEqual(command.envelope.operationId, draft.envelope.operationId)
+            XCTAssertEqual(command.photoId, readyAsset)
+            guard case .confirmed = try await repo.retryFirstAidObservation(command, context: lease)
+            else { return XCTFail("Accepted observe must replay without an upload") }
+            let history = try await repo.collectionFirstAidControls(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(history?.observations.map(\.id), [observation])
+        }
+        XCTAssertEqual(replay.map { $0.url?.path }, [apiPath + "/commands", apiPath + "/sync"])
+        XCTAssertEqual(replay.first?.httpBody, retried.last?.httpBody)
+    }
+
     private func identificationJob(id: UUID, status: String, quota: String, result: String = "null") -> String {
         #"{"job_id":"\#(id.uuidString)","mode":"identification","status":"\#(status)","quota_kind":"starter_identification","quota_state":"\#(quota)","result":\#(result),"error_code":null,"error_message":null}"#
     }
