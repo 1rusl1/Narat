@@ -1113,6 +1113,12 @@ public actor LocalStore {
         }
     }
 
+    func syncedCanonicalEntitlement(context: SyncSessionLease, authority: SyncSessionAuthority) throws -> SyncWireEntitlementDTO? {
+        try authority.withBoundValid(context) {
+            try canonicalEntitlement(ownerId: context.ownerId, in: makeSyncContext())
+        }
+    }
+
     public func syncedProfile(ownerId: UUID) throws -> SyncWireProfileDTO? {
         let modelContext = makeSyncContext()
         let descriptor = FetchDescriptor<SyncCheckpointRecord>(

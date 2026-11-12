@@ -24,10 +24,19 @@ struct PlantsApp: App {
 }
 
 struct RootContainerView: View {
+    private struct TrialReminderRead: Equatable {
+        let snapshot: CatalogueSDKSnapshot?
+        let authResolved: Bool
+        let active: Bool
+        let locale: SupportedLocale
+    }
+
     @Bindable var languageStore: LanguageStore
     @Bindable var analysisModel: AnalysisFlowModel
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var catalogue: CatalogueConnection?
+    @State private var trialReminder = TrialReminderScheduler()
     @State private var showingCollection = false
     @State private var starting = false
     @State private var startupFailed = false
@@ -58,6 +67,10 @@ struct RootContainerView: View {
     }
 
     var body: some View {
+        let reminderRead = TrialReminderRead(
+            snapshot: catalogue?.snapshot, authResolved: catalogue?.hasResolvedAuth == true || catalogue?.unavailable != nil,
+            active: scenePhase == .active, locale: languageStore.currentLocale
+        )
         NavigationStack {
             VStack(spacing: 16) {
                 if !isStagingAnalysis {
@@ -169,10 +182,12 @@ struct RootContainerView: View {
             }
         }
         .task { await prepareCatalogue() }
+        .task(id: reminderRead) { await observeTrialReminder(reminderRead) }
         .sheet(isPresented: $showingCollection) {
             if let catalogue {
                 CatalogueCollectionView(
-                    connection: catalogue, polish: isPolish, repeatDiagnosis: repeatDiagnosisEntry(for: catalogue)
+                    connection: catalogue, polish: isPolish, repeatDiagnosis: repeatDiagnosisEntry(for: catalogue),
+                    trialReminder: trialReminder
                 )
             }
         }
@@ -197,6 +212,27 @@ struct RootContainerView: View {
             }
         }
 #endif
+    }
+
+    private func observeTrialReminder(_ read: TrialReminderRead) async {
+        guard !Task.isCancelled else { return }
+        guard let connection = catalogue, let expected = read.snapshot, !expected.isAnonymous,
+              let sync = connection.syncEngine else {
+            if read.authResolved { trialReminder.update(ownerId: nil, entitlement: nil, locale: read.locale) }
+            return
+        }
+        if let previousOwner = trialReminder.trial?.ownerId, previousOwner != expected.session.userId {
+            trialReminder.update(ownerId: nil, entitlement: nil, locale: read.locale)
+        }
+        guard read.active else { return }
+        let updates = await sync.canonicalSyncUpdates()
+        func refresh() async {
+            let entitlement = try? await connection.syncedTrialEntitlement(expected: expected)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            trialReminder.update(ownerId: expected.session.userId, entitlement: entitlement, locale: read.locale)
+        }
+        await refresh()
+        for await _ in updates { await refresh() }
     }
 
     private var analysisAccessSource: AnalysisAccessSource? {

@@ -256,6 +256,7 @@
 - [ ] T132 [US3] Реализовать `ios/Plants/Domain/Entitlements/RequestedAction.swift`, resume в `PaywallFlowModel.swift` и verification fields в `supabase/functions/plants-api/billing.ts`: eligible/ineligible year trial, confirmed offer_kind/end/auto-renew, контекст покупки и возврат, pending/cancel/error без ложного успеха. Зависимости: T052/T054/T057/T058. Покрытие: FR-015, FR-016, FR-017, FR-018, FR-019, FR-020, FR-021, SC-008, SC-022.
 
 - [ ] T133 Реализовать `TrialReminderScheduler.swift`: локальный opt-in, стабильный request ID за 24ч verified trial_end_at, отмена/обновление при expiry/refund/новом сроке/opt-out/logout. Дата доступна при отказе разрешения; server claim не нужен. Зависимости: T132/T075/T084/T159. Покрытие: FR-015, FR-016, FR-017, FR-018, FR-021, SC-008.
+  - V12: локальное напоминание подключено к канонической дате из `/sync` и проверено на фикстурах. Живой trial, доставка и интеграция с профилем открыты. [Отчёт](../../docs/validation/mvp-acceptance.md#v12--локальное-trial-напоминание).
 
 - [ ] T134 Проверить `TrialContinuationTests.swift`/`narat_access_test.ts`: контекст покупки, регистрационный период/без refill, локальный opt-in reminder, expiry всей коллекции и читаемый/ручной журнал. Расширенные рекомендации имеют простой формат. Покрытие: FR-015, FR-016, FR-017, FR-018, FR-020, FR-021, SC-008, SC-021, SC-022.
 

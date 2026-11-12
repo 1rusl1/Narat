@@ -7,7 +7,7 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
-    case firstAidControl
+    case firstAidControl, trialReminder
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -452,11 +452,23 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         ] as [String: Any]
                     ]
                 } : []
-                let entitlement: Any = ledger.scenario == .paid4 && caller == ledger.permanent ? [
-                    "product_id": "fixture-only-paid", "state": "active", "offer_kind": "paid",
-                    "valid_until": "2099-01-01T00:00:00.000000Z", "grace_until": NSNull(),
-                    "trial_end_at": NSNull(), "auto_renew_enabled": false
-                ] as [String: Any] : NSNull()
+                let entitlement: Any
+                switch ledger.scenario {
+                case .paid4 where caller == ledger.permanent:
+                    entitlement = [
+                        "product_id": "fixture-only-paid", "state": "active", "offer_kind": "paid",
+                        "valid_until": "2099-01-01T00:00:00.000000Z", "grace_until": NSNull(),
+                        "trial_end_at": NSNull(), "auto_renew_enabled": false
+                    ] as [String: Any]
+                case .trialReminder where caller == ledger.permanent:
+                    entitlement = [
+                        "product_id": "app.narat.plants.pro.yearly", "state": "active", "offer_kind": "trial",
+                        "valid_until": "2099-01-08T12:00:00Z", "grace_until": NSNull(),
+                        "trial_end_at": "2099-01-08T12:00:00Z", "auto_renew_enabled": true
+                    ] as [String: Any]
+                default:
+                    entitlement = NSNull()
+                }
                 let until = Self.time(ledger.tick)
                 return Reply(status: 200, data: try json([
                     "until": until, "has_more": false, "last_cursor": NSNull(), "next_since": until,

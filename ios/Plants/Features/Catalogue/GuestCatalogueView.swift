@@ -75,6 +75,7 @@ final class CatalogueConnection {
     let repository: CollectionRepository?
     let unavailable: CatalogueConnectionUnavailable?
     private var observedSnapshot: CatalogueSDKSnapshot?
+    private(set) var hasResolvedAuth = false
     @ObservationIgnored private let sdkEpoch: CatalogueSDKEpoch
     @ObservationIgnored private var observer: Task<any AuthStateChangeListenerRegistration, Never>?
     @ObservationIgnored private var pending: Task<UUID, Error>?
@@ -186,6 +187,7 @@ final class CatalogueConnection {
             _ = try? await bind(nil, epoch: epoch)
             guard sdkEpoch.read() == epoch else { return }
             observedSnapshot = nil
+            hasResolvedAuth = true
             return
         }
         let snapshot = Self.snapshot(current, epoch: epoch)
@@ -193,6 +195,7 @@ final class CatalogueConnection {
         catch { return }
         guard (try? validate(snapshot)) != nil else { return }
         observedSnapshot = snapshot
+        hasResolvedAuth = true
     }
 
     private static func snapshot(_ session: Session, epoch: UInt64) -> CatalogueSDKSnapshot {
@@ -409,6 +412,14 @@ final class CatalogueConnection {
         return try await analysisLease(expected: expected)
     }
 
+    func syncedTrialEntitlement(expected: CatalogueSDKSnapshot) async throws -> SyncWireEntitlementDTO? {
+        let lease = try await collectionLease(expected: expected)
+        guard let store, let apiClient else { throw CatalogueConnectionUnavailable.storageUnavailable }
+        let entitlement = try await store.syncedCanonicalEntitlement(context: lease, authority: apiClient.syncAuthority)
+        try validate(expected)
+        return entitlement
+    }
+
     func analysisLease(expected: CatalogueSDKSnapshot) async throws -> SyncSessionLease {
         guard let apiClient else { throw CatalogueSaveUnavailable.sessionChanged }
         try validate(expected)
@@ -587,6 +598,7 @@ struct CatalogueCollectionView: View {
     let connection: CatalogueConnection
     let polish: Bool
     var repeatDiagnosis: RepeatDiagnosisEntry? = nil
+    var trialReminder: TrialReminderScheduler? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var loadedScope: CatalogueSDKSnapshot?
     @State private var cards: [CatalogueCardSummary] = []
@@ -664,6 +676,9 @@ struct CatalogueCollectionView: View {
 
     private var collectionList: some View {
         VStack {
+            if let trialReminder, let trial = trialReminder.trial, trial.ownerId == loadedScope?.session.userId {
+                trialReminderSettings(trialReminder, trial: trial)
+            }
             if usingCachedCards {
                 Text(polish ? "Rośliny z ostatniej synchronizacji." : "Showing last synced plants.")
                     .foregroundStyle(.secondary)
@@ -684,6 +699,31 @@ struct CatalogueCollectionView: View {
                 }
             }
         }
+    }
+
+    private func trialReminderSettings(_ scheduler: TrialReminderScheduler, trial: VerifiedTrial) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(polish ? "Koniec okresu próbnego" : "Trial end")
+                .font(.headline)
+            Text(trial.end, format: .dateTime.day().month().year().hour().minute())
+                .accessibilityIdentifier("trial.reminder.end")
+            if trial.reminderDate > Date(), trial.reminderDate < trial.accessUntil {
+                Toggle(polish ? "Przypomnij 24 godziny wcześniej" : "Remind me 24 hours before", isOn: Binding(
+                    get: { scheduler.optedIn },
+                    set: { enabled in Task { await scheduler.setOptIn(enabled, ownerId: trial.ownerId) } }
+                ))
+                .accessibilityIdentifier("trial.reminder.optIn")
+            }
+            if scheduler.notificationsDenied {
+                Text(polish ? "Powiadomienia są wyłączone w ustawieniach iOS." : "Notifications are off in iOS Settings.")
+                    .accessibilityIdentifier("trial.reminder.denied")
+            } else if scheduler.schedulingFailed {
+                Text(polish ? "Nie udało się ustawić przypomnienia." : "Couldn’t schedule the reminder.")
+                    .accessibilityIdentifier("trial.reminder.failed")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
     }
 
     @MainActor

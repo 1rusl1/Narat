@@ -61,6 +61,19 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.descendants(matching: .any)["catalogue.saved.firstAid.source"].firstMatch.exists)
     }
 
+    @MainActor func testCollectionShowsVerifiedTrialDateWithOptInOffByDefault() {
+        let run = Run("trialReminder", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let end = run.app.staticTexts["trial.reminder.end"]
+        require(end)
+        XCTAssertTrue(end.label.contains("2099"))
+        let optIn = run.app.switches["trial.reminder.optIn"]
+        require(optIn)
+        XCTAssertEqual(optIn.value as? String, "0")
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }

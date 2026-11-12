@@ -84,10 +84,25 @@ public actor SyncEngine {
     private var drainingOwners = Set<UUID>()
     private var planHistoryByOwner: [UUID: [UUID: CachedPlanHistoryEntry]] = [:]
     private var reportCacheByOwner: [UUID: [String: ProgressReportDTO]] = [:]
+    private var canonicalSyncObservers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
     public init(store: LocalStore, apiClient: PlantsAPIClient) {
         self.store = store
         self.apiClient = apiClient
+    }
+
+    func canonicalSyncUpdates() -> AsyncStream<Void> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        canonicalSyncObservers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeCanonicalSyncObserver(id) }
+        }
+        return stream
+    }
+
+    private func removeCanonicalSyncObserver(_ id: UUID) {
+        canonicalSyncObservers[id] = nil
     }
 
     // MARK: - Outbox Drain (Sequential per plantId)
@@ -298,6 +313,7 @@ public actor SyncEngine {
             items: items, ownerId: ownerId, watermark: watermark, wirePage: finalPage, changes: changes,
             fullRefresh: fullRefresh, context: context, authority: apiClient.syncAuthority
         )
+        for observer in canonicalSyncObservers.values { observer.yield(()) }
         if fullRefresh { planHistoryByOwner[ownerId] = nil }
         ingestSpecialEntities(items, ownerId: ownerId)
         if let watermark { invalidateReportCache(for: ownerId, newWatermark: watermark) }
