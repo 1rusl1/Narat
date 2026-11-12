@@ -1,10 +1,12 @@
 # Narat — текущий статус и передача работы
 
-## B — T165 server notification write retirement in review, 12 November 2026
+## B — T165 server notification writes retired on staging, 12 November 2026
 
 After T154, migration 023 and the production route remove `POST /notifications/claim` and the two SQL write RPCs. The historical claim, receipt and existing sync read projections remain available to current iOS clients. The local trial reminder and sync read cleanup follow with A after decoder compatibility.
 
-Controller fixtures passed all seven targeted Deno tests and 688 pgTAP assertions per clean/upgrade database. Upgrade seeded a prior claim and receipt and preserved them byte for byte. The live baseline query found both writer functions and zero prior notification claims or receipts on `narat-staging`. No notification was sent. Next accept the exact diff, deploy 023 and `plants-api` to staging, then check both old kinds return 404 and the historical aggregates and current sync contract are unchanged.
+Controller fixtures passed all seven targeted Deno tests and 688 pgTAP assertions per clean/upgrade database. Upgrade seeded a prior claim and receipt and preserved them byte for byte. The live baseline query found both writer functions and zero prior notification claims or receipts on `narat-staging`. No notification was sent. The exact diff passed independent Review and QA and was published as `838d9ff`. All five gates passed, with 369 Deno, 149 automation and 688 pgTAP per database. The staging dry-run listed 023 only. The migration and `plants-api` were deployed to `narat-staging`. Authenticated requests for both old claim kinds returned 404, the existing sync payload was identical, and linked SQL confirmed both write RPCs are absent. The historical aggregate counts and hashes stayed identical, with zero claims and receipts in this staging baseline. Historical-row preservation was proven separately in the populated upgrade fixture.
+
+A has the writer and read-contract boundary. Next make the iOS decoder compatible with an omitted report preference and retire the legacy report/claim sync keys once that decoder is accepted. The local opt-in trial reminder still needs its own iOS acceptance. T165 remains open.
 
 ## B — T154 live Auth and upgrade accepted, 12 November 2026
 
@@ -12,7 +14,7 @@ The installed Auth trigger previously provisioned anonymous inserts only. The fo
 
 On staging, a real anonymous session started with identification and diagnosis starters both 1. The licensed Monstera photo settled `starter_identification / consumed` in job `e9cdc1a1-5266-4d24-80b7-d4066a2a1011`. A second fresh anonymous UUID with the same installation still saw identification 0 and diagnosis 1. A received this T036 evidence. The exact candidate passed Review and QA and was published as `049b536`. Only migration 022 was applied to `narat-staging`. A new permanent account confirmed a synthetic signup link through the public Auth verify endpoint and obtained a profile and Free 3 through the installed triggers. The original guest was converted through Auth Admin confirmation for a synthetic address, with the same Auth UUID and no manual profile insert. A fresh password login and refresh returned the same registration anchor, monthly reset, identification starter 0 and diagnosis starter 1. Linked SQL confirmed all 43 staged versions, both anchor sources and the original installation-bound starter spend. SMTP delivery and native providers remain separate.
 
-The [integration report](validation/integrations.md) closes T154. A received the live T036 guest and converted-session evidence. Next T165 starts with retirement of server notification claim writes before changing the read contract.
+The [integration report](validation/integrations.md) closes T154. A received the live T036 guest and converted-session evidence. An additional live fresh login returned the same access JSON with and without the installation header. Next T165 starts with retirement of server notification claim writes before changing the read contract.
 
 ## B — T154 integration baseline started, 12 November 2026
 
