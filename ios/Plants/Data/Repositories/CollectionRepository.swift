@@ -167,6 +167,8 @@ struct CatalogueFirstAidControl: Decodable, Sendable, Identifiable {
     let actionCode: String
     let state: String
     let policy: Policy
+    let contextRevision: Int?
+    let controlTaskId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id, state
@@ -174,11 +176,61 @@ struct CatalogueFirstAidControl: Decodable, Sendable, Identifiable {
         case actionEntryId = "action_entry_id"
         case actionCode = "action_code"
         case policy = "check_policy_snapshot"
+        case contextRevision = "context_revision"
+        case controlTaskId = "control_task_id"
+    }
+
+    var hasSupportedPolicy: Bool {
+        (1...90).contains(policy.intervalDays) && SQLCalendarDay.date(from: policy.dueOn) != nil
+            && policy.source.isVerifiedLink
+    }
+
+    func canObserve(careRevision: Int) -> Bool {
+        state == "active" && actionCode == "check_soil" && controlTaskId == nil
+            && contextRevision == careRevision && hasSupportedPolicy
     }
 }
 
+struct CatalogueFirstAidControlLink: Decodable, Sendable {
+    let id: UUID
+    let plantId: UUID
+    let actionEntryId: UUID
+    let actionCode: String
+    let state: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, state
+        case plantId = "plant_id"
+        case actionEntryId = "action_entry_id"
+        case actionCode = "action_code"
+    }
+}
+
+struct CatalogueFirstAidObservation: Decodable, Sendable, Identifiable {
+    let id: UUID
+    let plantId: UUID
+    let controlId: UUID
+    let taskId: UUID?
+    let operationId: UUID
+    let status: FirstAidObservationStatus
+    let observedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case plantId = "plant_id"
+        case controlId = "first_aid_control_id"
+        case taskId = "task_id"
+        case operationId = "operation_id"
+        case status = "status_code"
+        case observedAt = "observed_at"
+    }
+
+    var isStandalone: Bool { taskId == nil && SQLTimestamp.microseconds(from: observedAt) != nil }
+}
+
 struct CatalogueFirstAidSnapshot: Sendable {
-    let controls: [CatalogueFirstAidControl]
+    var controls: [CatalogueFirstAidControl]
+    let observations: [CatalogueFirstAidObservation]
     let accessUntil: Date?
 }
 
@@ -464,25 +516,64 @@ public struct CollectionRepository: Sendable {
         return reversal == nil ? .rejected : .confirmed
     }
 
+    func pendingFirstAidObservation(plantId: UUID, context: SyncSessionLease) async throws -> FirstAidObservationCommand? {
+        try await store.pendingFirstAidObservation(plantId: plantId, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func enqueueFirstAidObservation(
+        plantId: UUID, controlId: UUID, status: FirstAidObservationStatus, context: SyncSessionLease
+    ) async throws -> FirstAidObservationCommand {
+        let command = try FirstAidObservationCommand.make(plantId: plantId, controlId: controlId, status: status)
+        return try await store.enqueueFirstAidObservation(
+            command, now: clock(), context: context, authority: apiClient.syncAuthority
+        )
+    }
+
+    func retryFirstAidObservation(
+        _ command: FirstAidObservationCommand, context: SyncSessionLease
+    ) async throws -> FirstAidWriteOutcome {
+        _ = try await syncEngine.flushOutbox(context: context)
+        if try await pendingFirstAidObservation(plantId: command.plantId, context: context)?.envelope == command.envelope {
+            return .pending
+        }
+        let observation = try await store.confirmedFirstAidObservation(
+            command, context: context, authority: apiClient.syncAuthority
+        )
+        return observation == nil ? .rejected : .confirmed
+    }
+
     func collectionFirstAidControls(plantId: UUID, context: SyncSessionLease) async throws -> CatalogueFirstAidSnapshot? {
         guard let snapshot = try await store.firstAidControlSnapshot(
             plantId: plantId, context: context, authority: apiClient.syncAuthority
         ) else { return nil }
         return try apiClient.syncAuthority.withBoundValid(context) {
             let accessUntil = snapshot.entitlement?.verifiedAccessUntil
-            if snapshot.entitlement != nil {
-                guard let accessUntil, accessUntil > clock() else { return nil }
-            }
+            let hasAccess = snapshot.entitlement == nil || accessUntil.map { $0 > clock() } == true
             let decoder = JSONDecoder()
-            let controls = snapshot.rows.compactMap { row -> CatalogueFirstAidControl? in
+            let controls = hasAccess ? snapshot.controls.compactMap { row -> CatalogueFirstAidControl? in
                 guard let control = try? decoder.decode(CatalogueFirstAidControl.self, from: Data(row.payloadJSON.utf8)),
                       control.id == row.id, control.plantId == plantId, control.state == "active",
-                      control.actionCode == "check_soil", (1...90).contains(control.policy.intervalDays),
-                      SQLCalendarDay.date(from: control.policy.dueOn) != nil, control.policy.source.isVerifiedLink else { return nil }
+                      control.actionCode == "check_soil", control.hasSupportedPolicy else { return nil }
                 return control
-            }.sorted { ($0.policy.dueOn, $0.id.uuidString) < ($1.policy.dueOn, $1.id.uuidString) }
-            guard !controls.isEmpty else { return nil }
-            return CatalogueFirstAidSnapshot(controls: controls, accessUntil: accessUntil)
+            }.sorted { ($0.policy.dueOn, $0.id.uuidString) < ($1.policy.dueOn, $1.id.uuidString) } : []
+            let completed = Set(snapshot.controls.compactMap { row -> UUID? in
+                guard let control = try? decoder.decode(CatalogueFirstAidControlLink.self, from: Data(row.payloadJSON.utf8)),
+                      control.id == row.id, control.plantId == plantId, control.state == "completed",
+                      control.actionCode == "check_soil" else { return nil }
+                return control.id
+            })
+            let observations = snapshot.observations.compactMap { row -> CatalogueFirstAidObservation? in
+                guard let observation = try? decoder.decode(CatalogueFirstAidObservation.self, from: Data(row.payloadJSON.utf8)),
+                      observation.id == row.id, observation.plantId == plantId, observation.isStandalone,
+                      completed.contains(observation.controlId) else { return nil }
+                return observation
+            }.sorted {
+                let lhs = SQLTimestamp.microseconds(from: $0.observedAt)!
+                let rhs = SQLTimestamp.microseconds(from: $1.observedAt)!
+                return lhs == rhs ? $0.id.uuidString < $1.id.uuidString : lhs > rhs
+            }
+            guard !controls.isEmpty || !observations.isEmpty else { return nil }
+            return CatalogueFirstAidSnapshot(controls: controls, observations: observations, accessUntil: accessUntil)
         }
     }
 

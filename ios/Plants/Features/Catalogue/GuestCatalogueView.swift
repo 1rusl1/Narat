@@ -768,6 +768,20 @@ private struct CatalogueCollectionCardView: View {
         case retryRecord(FirstAidRecordCommand)
         case undo(UUID)
         case retryUndo(CommandEnvelopeDTO)
+        case observe(UUID, FirstAidObservationStatus)
+        case retryObservation(FirstAidObservationCommand)
+    }
+
+    private enum FirstAidDialog {
+        case undo(UUID)
+        case observe(UUID)
+
+        var title: String {
+            switch self {
+            case .undo: "Undo the soil check?"
+            case .observe: "How is the plant doing?"
+            }
+        }
     }
 
     let connection: CatalogueConnection
@@ -782,8 +796,9 @@ private struct CatalogueCollectionCardView: View {
     @State private var firstAidHistory: [CatalogueCareJournalEntry] = []
     @State private var pendingFirstAid: FirstAidRecordCommand?
     @State private var pendingFirstAidUndo: CommandEnvelopeDTO?
-    @State private var undoSelection: CatalogueCareJournalEntry?
-    @State private var confirmingFirstAidUndo = false
+    @State private var pendingObservation: FirstAidObservationCommand?
+    @State private var firstAidSelection: FirstAidDialog?
+    @State private var showingFirstAidDialog = false
     @State private var savingFirstAid = false
     @State private var firstAidFailed = false
     @State private var historyFailed = false
@@ -831,6 +846,14 @@ private struct CatalogueCollectionCardView: View {
                                         .accessibilityIdentifier("catalogue.saved.firstAid.date")
                                     Link("First-aid interval source", destination: control.policy.source.url)
                                         .accessibilityIdentifier("catalogue.saved.firstAid.source")
+                                    if firstAidWriteAvailable, control.canObserve(careRevision: card.careRevision),
+                                       firstAidHistory.contains(where: { $0.id == control.actionEntryId && $0.state == "active" }) {
+                                        Button("Record observation") {
+                                            firstAidSelection = .observe(control.id)
+                                            showingFirstAidDialog = true
+                                        }
+                                        .accessibilityIdentifier("collection.firstAid.observe." + control.id.uuidString.lowercased())
+                                    }
                                 }
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("catalogue.saved.firstAid." + control.id.uuidString.lowercased())
@@ -873,15 +896,23 @@ private struct CatalogueCollectionCardView: View {
                 guard let expiry = firstAid?.accessUntil else { return }
                 do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) }
                 catch { return }
-                if firstAid?.accessUntil == expiry { firstAid = nil }
+                if firstAid?.accessUntil == expiry { firstAid?.controls.removeAll() }
             }
             .task { await retryWhenConnected() }
             .confirmationDialog(
-                "Undo the soil check?", isPresented: $confirmingFirstAidUndo, titleVisibility: .visible,
-                presenting: undoSelection
-            ) { entry in
-                Button("Undo soil check", role: .destructive) { Task { await writeFirstAid(.undo(entry.id)) } }
-                    .accessibilityIdentifier("collection.firstAid.undo.confirm")
+                firstAidSelection?.title ?? "", isPresented: $showingFirstAidDialog, titleVisibility: .visible,
+                presenting: firstAidSelection
+            ) { selection in
+                switch selection {
+                case let .undo(entryId):
+                    Button("Undo soil check", role: .destructive) { Task { await writeFirstAid(.undo(entryId)) } }
+                        .accessibilityIdentifier("collection.firstAid.undo.confirm")
+                case let .observe(controlId):
+                    ForEach(FirstAidObservationStatus.allCases, id: \.self) { status in
+                        Button(status.label) { Task { await writeFirstAid(.observe(controlId, status)) } }
+                            .accessibilityIdentifier("collection.firstAid.observe.status." + status.rawValue)
+                    }
+                }
                 Button("Cancel", role: .cancel) {}
             }
             .sheet(item: $dateEdit) { edit in
@@ -901,17 +932,26 @@ private struct CatalogueCollectionCardView: View {
                 ForEach(firstAidHistory) { entry in
                     Text("Soil checked · " + entry.occurredLocalDate + (entry.state == "voided" ? " · Undone" : ""))
                         .accessibilityIdentifier("catalogue.saved.firstAid.entry." + entry.id.uuidString.lowercased())
-                    if entry.state == "active", pendingFirstAid == nil, pendingFirstAidUndo == nil, !savingFirstAid {
+                    if entry.state == "active", firstAidWriteAvailable {
                         Button("Undo soil check") {
-                            undoSelection = entry
-                            confirmingFirstAidUndo = true
+                            firstAidSelection = .undo(entry.id)
+                            showingFirstAidDialog = true
                         }
                         .accessibilityIdentifier("collection.firstAid.undo." + entry.id.uuidString.lowercased())
                     }
                 }
             }
+            ForEach(firstAid?.observations ?? []) { observation in
+                Text("Observation · \(observation.status.label)")
+                    .accessibilityIdentifier("catalogue.saved.firstAid.observation." + observation.id.uuidString.lowercased())
+            }
             if savingFirstAid {
                 ProgressView("Syncing first-aid journal…")
+            } else if let pendingObservation {
+                Text("Observation pending sync.")
+                    .accessibilityIdentifier("collection.firstAid.observe.pending")
+                Button("Retry observation") { Task { await writeFirstAid(.retryObservation(pendingObservation)) } }
+                    .accessibilityIdentifier("collection.firstAid.observe.retry")
             } else if let pendingFirstAidUndo {
                 Text("Soil check undo pending sync.")
                     .accessibilityIdentifier("collection.firstAid.undo.pending")
@@ -924,11 +964,15 @@ private struct CatalogueCollectionCardView: View {
             }
             if firstAidFailed {
                 Text("Couldn’t sync the first-aid journal.")
-                if pendingFirstAid == nil, pendingFirstAidUndo == nil {
+                if firstAidWriteAvailable {
                     Button("Reload first-aid journal") { Task { await loadFirstAidJournal() } }
                 }
             }
         }
+    }
+
+    private var firstAidWriteAvailable: Bool {
+        !savingFirstAid && pendingFirstAid == nil && pendingFirstAidUndo == nil && pendingObservation == nil
     }
 
     private func loadFirstAidJournal() async {
@@ -945,11 +989,13 @@ private struct CatalogueCollectionCardView: View {
     private func loadFirstAidJournal(_ repository: CollectionRepository, lease: SyncSessionLease) async throws {
         let pending = try await repository.pendingFirstAidRecord(plantId: card.id, context: lease)
         let pendingUndo = try await repository.pendingFirstAidUndo(plantId: card.id, context: lease)
+        let observation = try await repository.pendingFirstAidObservation(plantId: card.id, context: lease)
         let journal = try await repository.collectionFirstAidHistory(plantId: card.id, context: lease)
         let control = try? await repository.collectionFirstAidControls(plantId: card.id, context: lease)
         guard !Task.isCancelled, connection.snapshot == expected else { throw CancellationError() }
         pendingFirstAid = pending
         pendingFirstAidUndo = pendingUndo
+        pendingObservation = observation
         firstAidHistory = journal
         firstAid = control
         firstAidFailed = false
@@ -971,6 +1017,14 @@ private struct CatalogueCollectionCardView: View {
                 outcome = try await repository.retryFirstAidUndo(command, context: lease)
             case let .retryUndo(command):
                 outcome = try await repository.retryFirstAidUndo(command, context: lease)
+            case let .observe(controlId, status):
+                let command = try await repository.enqueueFirstAidObservation(
+                    plantId: card.id, controlId: controlId, status: status, context: lease
+                )
+                pendingObservation = command
+                outcome = try await repository.retryFirstAidObservation(command, context: lease)
+            case let .retryObservation(command):
+                outcome = try await repository.retryFirstAidObservation(command, context: lease)
             }
             try await loadFirstAidJournal(repository, lease: lease)
             if case .rejected = outcome { firstAidFailed = true }
@@ -1087,6 +1141,17 @@ private struct CatalogueCollectionCardView: View {
         for await connected in updates {
             if wasConnected == false, connected { await retryCorrection() }
             wasConnected = connected
+        }
+    }
+}
+
+private extension FirstAidObservationStatus {
+    var label: String {
+        switch self {
+        case .improved: "Improved"
+        case .unchanged: "Unchanged"
+        case .worse: "Worse"
+        case .unknown: "Not sure"
         }
     }
 }

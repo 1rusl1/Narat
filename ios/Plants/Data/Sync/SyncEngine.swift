@@ -169,6 +169,12 @@ public actor SyncEngine {
                     guard try await store.confirmedFirstAidUndo(
                         envelope, context: context, authority: apiClient.syncAuthority
                     ) == reversalId else { throw SyncWireValidationError.invalidPage }
+                case let .firstAidObserved(receipt):
+                    try await refreshCareJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    guard let command = FirstAidObservationCommand(envelope: envelope),
+                          try await store.confirmedFirstAidObservation(
+                              command, context: context, authority: apiClient.syncAuthority
+                          ) == receipt.observationId else { throw SyncWireValidationError.invalidPage }
                 default:
                     break
                 }
@@ -178,9 +184,13 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
-                    if !receivedReceipt, (firstAidUndo || entry.commandName == FirstAidRecordCommand.name),
+                    let observation = entry.commandName == FirstAidObservationCommand.name
+                    if !receivedReceipt, (firstAidUndo || entry.commandName == FirstAidRecordCommand.name || observation),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
+                        if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
+                            _ = try? await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+                        }
                         try await store.finishOutboxEntry(
                             operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                         )
@@ -209,7 +219,7 @@ public actor SyncEngine {
                 try await store.acknowledgeCatalogueCreate(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone:
+            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )

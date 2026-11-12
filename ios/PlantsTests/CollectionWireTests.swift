@@ -3687,6 +3687,143 @@ extension CollectionWireTests {
         }
     }
 
+    @MainActor
+    func testFirstAidObservationReplaysUntilControlAndLinkedObservationAreSynced() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let entry = UUID(), control = UUID(), observation = UUID(), stale = UUID()
+        let completionTime = "2026-11-03T09:10:00.000001+00:00"
+        let observationTime = "2026-11-03T09:10:00.000002+00:00"
+        let entitlement: [String: Any] = [
+            "product_id": "fixture-trial", "state": "active", "offer_kind": "trial",
+            "valid_until": "2026-11-04T09:00:00Z", "grace_until": NSNull(),
+            "trial_end_at": "2026-11-04T09:00:00Z", "auto_renew_enabled": true
+        ]
+        func row(_ type: String, _ id: UUID, time: String = "", data: [String: Any]) -> [String: Any] {
+            var change = syncChange(time.isEmpty ? syncUntil : time, id: id.uuidString, entity: type)
+            change["data"] = data.merging(["id": id.uuidString, "plant_id": serverPlantId.uuidString]) { old, _ in old }
+            return change
+        }
+        func followup(_ id: UUID, state: String = "active", revision: Int = 1, time: String = "") -> [String: Any] {
+            row("first_aid_followups", id, time: time, data: [
+                "state": state, "action_code": "check_soil", "action_entry_id": entry.uuidString,
+                "context_revision": revision, "control_task_id": NSNull(),
+                "check_policy_snapshot": ["due_on": "2026-11-08", "interval_days": 5,
+                                          "source": ["url": "https://example.invalid/interval", "locator": "Fixture"]]
+            ])
+        }
+        func page(_ until: String, _ changes: [[String: Any]]) throws -> String {
+            var result = syncObject()
+            result["until"] = until
+            result["next_since"] = until
+            result["entitlement"] = entitlement
+            result["changes"] = changes.sorted {
+                ($0["entity_type"] as! String, $0["id"] as! String) < ($1["entity_type"] as! String, $1["id"] as! String)
+            }
+            return try syncJSON(result)
+        }
+        let baseline = try page(syncUntil, [
+            row("plants", serverPlantId, data: ["plant_id": "monstera_deliciosa", "revision": 1, "care_revision": 1]),
+            row("care_entries", entry, data: ["action_code": "check_soil", "state": "active",
+                                              "occurred_at": syncUntil, "occurred_local_date": "2026-11-03"]),
+            followup(control), followup(stale, revision: 2)
+        ])
+        let now = try XCTUnwrap(SQLTimestamp.date(from: syncUntil))
+        let command: FirstAidObservationCommand
+        let original: URLRequest
+        do {
+            let transport = CatalogueTransport([.http(200, baseline), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api),
+                                            clock: { now })
+            _ = try await repo.collectionCards(context: lease)
+            for (plant, candidate) in [(UUID(), control), (serverPlantId, stale)] {
+                do {
+                    _ = try await repo.enqueueFirstAidObservation(plantId: plant, controlId: candidate, status: .improved, context: lease)
+                    XCTFail("Accepted a foreign or stale control")
+                } catch SyncWireValidationError.invalidPage {}
+            }
+            command = try await repo.enqueueFirstAidObservation(
+                plantId: serverPlantId, controlId: control, status: .improved, context: lease
+            )
+            let duplicate = try await repo.enqueueFirstAidObservation(
+                plantId: serverPlantId, controlId: control, status: .improved, context: lease
+            )
+            XCTAssertEqual(duplicate.envelope, command.envelope)
+            guard case .pending = try await repo.retryFirstAidObservation(command, context: lease) else {
+                return XCTFail("Lost response must retain the observation")
+            }
+            let history = try await repo.collectionFirstAidControls(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(history?.observations.count, 0)
+            XCTAssertTrue(history?.controls.contains(where: { $0.id == control }) == true)
+            let requests = await transport.capturedRequests()
+            original = try XCTUnwrap(requests.last)
+        }
+        let receipt = ["plant_id": serverPlantId.uuidString, "control_id": control.uuidString,
+                       "observation_id": observation.uuidString, "state": "completed", "watermark": completionTime]
+        var mismatch = receipt
+        mismatch["control_id"] = stale.uuidString
+        let completed = try page(completionTime, [followup(control, state: "completed", time: completionTime)])
+        let linked = try page(observationTime, [
+            row("care_observations", observation, time: observationTime, data: [
+                "first_aid_control_id": control.uuidString, "status_code": "improved",
+                "operation_id": command.envelope.operationId.uuidString, "observed_at": observationTime
+            ]),
+            row("care_observations", UUID(), time: observationTime, data: [
+                "status_code": "worse", "operation_id": UUID().uuidString, "observed_at": observationTime
+            ])
+        ])
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(mismatch)),
+            .http(200, try syncJSON(receipt)), .http(200, completed),
+            .http(200, try syncJSON(receipt)), .http(200, linked)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api),
+                                        clock: { .distantFuture })
+        let restored = try await repo.pendingFirstAidObservation(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(restored?.envelope, command.envelope)
+        for _ in 0..<2 {
+            guard case .pending = try await repo.retryFirstAidObservation(command, context: lease) else {
+                return XCTFail("Receipt mismatch or missing observation must retain the queued write")
+            }
+        }
+        guard case .confirmed = try await repo.retryFirstAidObservation(command, context: lease) else {
+            return XCTFail("Expired access must still allow exact replay and canonical history")
+        }
+        let pending = try await repo.pendingFirstAidObservation(plantId: serverPlantId, context: lease)
+        XCTAssertNil(pending)
+        let activeRepo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api),
+                                              clock: { now })
+        let activeHistory = try await activeRepo.collectionFirstAidControls(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(activeHistory?.controls.map(\.id), [stale])
+        do {
+            _ = try await activeRepo.enqueueFirstAidObservation(
+                plantId: serverPlantId, controlId: control, status: .worse, context: lease
+            )
+            XCTFail("Completed control must reject a new observation")
+        } catch SyncWireValidationError.invalidPage {}
+        let history = try await repo.collectionFirstAidControls(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history?.controls.count, 0)
+        XCTAssertEqual(history?.observations.map(\.id), [observation])
+        XCTAssertEqual(history?.observations.first?.controlId, control)
+        XCTAssertEqual(history?.observations.first?.status, .improved)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "GET", "POST", "GET"])
+        for request in requests where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, original.httpBody)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), command.envelope.operationId.uuidString.lowercased())
+        }
+        let payload = try JSONDecoder().decode([String: String].self, from: Data(command.envelope.payloadJSON.utf8))
+        XCTAssertEqual(payload, ["control_id": control.uuidString.lowercased(), "status_code": "improved"])
+    }
+
     private func identificationJob(id: UUID, status: String, quota: String, result: String = "null") -> String {
         #"{"job_id":"\#(id.uuidString)","mode":"identification","status":"\#(status)","quota_kind":"starter_identification","quota_state":"\#(quota)","result":\#(result),"error_code":null,"error_message":null}"#
     }

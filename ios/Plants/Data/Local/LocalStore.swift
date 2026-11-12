@@ -547,14 +547,20 @@ public actor LocalStore {
     ) throws -> CatalogueCareJournalEntry? {
         guard let plantId = command.plantId, case let .undo(entryId) = ManualWateringAction(envelope: command)
         else { return nil }
-        let descriptor = FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
-            $0.ownerId == ownerId && $0.entityType == "care_entries" && $0.entityId == entryId && $0.deletedAt == nil
-        })
-        guard let row = try disk.fetch(descriptor).first,
+        guard let row = try activeSyncRow("care_entries", id: entryId, ownerId: ownerId, in: disk),
               let entry = try? JSONDecoder().decode(CatalogueCareJournalEntry.self, from: Data(row.payloadJSON.utf8)),
               entry.id == entryId, entry.plantId == plantId, entry.taskId == nil,
               entry.actionCode == "check_soil", entry.hasCanonicalDatesAndState else { return nil }
         return entry
+    }
+
+    private func activeSyncRow(
+        _ entityType: String, id: UUID, ownerId: UUID, in disk: ModelContext
+    ) throws -> SyncedEntityRecord? {
+        let descriptor = FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+            $0.ownerId == ownerId && $0.entityType == entityType && $0.entityId == id && $0.deletedAt == nil
+        })
+        return try disk.fetch(descriptor).first
     }
 
     func confirmedFirstAidUndo(
@@ -568,7 +574,7 @@ public actor LocalStore {
             let decoder = JSONDecoder()
             let controls = try activeSyncedEntities(ownerId: ownerId, entityType: "first_aid_followups", in: disk)
             guard !controls.contains(where: { row in
-                guard let link = try? decoder.decode(FirstAidControlLink.self, from: Data(row.payloadJSON.utf8))
+                guard let link = try? decoder.decode(CatalogueFirstAidControlLink.self, from: Data(row.payloadJSON.utf8))
                 else { return false }
                 return link.plantId == entry.plantId && link.actionEntryId == entry.id && link.state == "active"
             }) else { return nil }
@@ -581,15 +587,80 @@ public actor LocalStore {
         }
     }
 
-    private struct FirstAidControlLink: Decodable {
-        let plantId: UUID
-        let actionEntryId: UUID
-        let state: String
+    func pendingFirstAidObservation(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidObservationCommand? {
+        try authority.withBoundValid(context) {
+            try firstAidObservationInOutbox(plantId: plantId, ownerId: context.ownerId)
+        }
+    }
 
-        enum CodingKeys: String, CodingKey {
-            case plantId = "plant_id"
-            case actionEntryId = "action_entry_id"
-            case state
+    private func firstAidObservationInOutbox(plantId: UUID, ownerId: UUID) throws -> FirstAidObservationCommand? {
+        guard let entry = try pendingOutboxEntries(for: ownerId).first(where: {
+            $0.plantId == plantId && $0.commandName == FirstAidObservationCommand.name
+        }) else { return nil }
+        guard let command = FirstAidObservationCommand(envelope: entry.envelope)
+        else { throw OutboxEnqueueError.operationIdentityMismatch }
+        return command
+    }
+
+    func enqueueFirstAidObservation(
+        _ command: FirstAidObservationCommand, now: Date, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> FirstAidObservationCommand {
+        try authority.withBoundValid(context) {
+            let ownerId = context.ownerId
+            let plantId = command.plantId
+            if let pending = try firstAidObservationInOutbox(plantId: plantId, ownerId: ownerId) {
+                guard pending.controlId == command.controlId, pending.status == command.status
+                else { throw OutboxEnqueueError.operationIdentityMismatch }
+                return pending
+            }
+            let disk = makeSyncContext()
+            let decoder = JSONDecoder()
+            guard let plantRow = try activeSyncRow("plants", id: plantId, ownerId: ownerId, in: disk),
+                  let plant = try? decoder.decode(CatalogueCardSummary.self, from: Data(plantRow.payloadJSON.utf8)),
+                  plant.id == plantId,
+                  let row = try activeSyncRow("first_aid_followups", id: command.controlId, ownerId: ownerId, in: disk),
+                  let control = try? decoder.decode(CatalogueFirstAidControl.self, from: Data(row.payloadJSON.utf8)),
+                  control.id == command.controlId, control.plantId == plantId,
+                  control.canObserve(careRevision: plant.careRevision),
+                  let factRow = try activeSyncRow("care_entries", id: control.actionEntryId, ownerId: ownerId, in: disk),
+                  let fact = try? decoder.decode(CatalogueCareJournalEntry.self, from: Data(factRow.payloadJSON.utf8)),
+                  fact.id == control.actionEntryId, fact.plantId == plantId, fact.state == "active",
+                  fact.actionCode == control.actionCode, fact.taskId == nil, fact.hasCanonicalDatesAndState
+            else { throw SyncWireValidationError.invalidPage }
+            if let entitlement = try canonicalEntitlement(ownerId: ownerId, in: disk) {
+                guard let expiry = entitlement.verifiedAccessUntil, expiry > now
+                else { throw SyncWireValidationError.invalidRequest }
+            }
+            guard try pendingManualCare(plantId: plantId, firstAidUndo: true, ownerId: ownerId) == nil,
+                  try firstAidRecordInOutbox(plantId: plantId, ownerId: ownerId) == nil
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            let envelope = command.envelope
+            _ = try enqueueCommand(operationId: envelope.operationId, ownerId: ownerId, plantId: plantId,
+                                   commandName: envelope.commandName, payloadJSON: envelope.payloadJSON)
+            return command
+        }
+    }
+
+    func confirmedFirstAidObservation(
+        _ command: FirstAidObservationCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> UUID? {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            let decoder = JSONDecoder()
+            guard let row = try activeSyncRow("first_aid_followups", id: command.controlId, ownerId: context.ownerId, in: disk),
+                  let link = try? decoder.decode(CatalogueFirstAidControlLink.self, from: Data(row.payloadJSON.utf8)),
+                  link.id == command.controlId, link.plantId == command.plantId,
+                  link.actionCode == "check_soil", link.state == "completed" else { return nil }
+            let rows = try activeSyncedEntities(ownerId: context.ownerId, entityType: "care_observations", in: disk)
+            return rows.first(where: { row in
+                guard let observation = try? decoder.decode(CatalogueFirstAidObservation.self, from: Data(row.payloadJSON.utf8))
+                else { return false }
+                return observation.id == row.id && observation.plantId == command.plantId
+                    && observation.controlId == command.controlId && observation.operationId == command.envelope.operationId
+                    && observation.status == command.status && observation.isStandalone
+            })?.id
         }
     }
 
@@ -1254,7 +1325,7 @@ public actor LocalStore {
 
     func firstAidControlSnapshot(
         plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
-    ) throws -> (entitlement: SyncWireEntitlementDTO?, rows: [SyncItemDTO])? {
+    ) throws -> (entitlement: SyncWireEntitlementDTO?, controls: [SyncItemDTO], observations: [SyncItemDTO])? {
         try authority.withBoundValid(context) {
             let ownerId = context.ownerId
             let disk = makeSyncContext()
@@ -1264,7 +1335,8 @@ public actor LocalStore {
             guard try disk.fetchCount(plant) == 1 else { return nil }
             let entitlement = try canonicalEntitlement(ownerId: ownerId, in: disk)
             let controls = try activeSyncedEntities(ownerId: ownerId, entityType: "first_aid_followups", in: disk)
-            return (entitlement, controls)
+            let observations = try activeSyncedEntities(ownerId: ownerId, entityType: "care_observations", in: disk)
+            return (entitlement, controls, observations)
         }
     }
 
