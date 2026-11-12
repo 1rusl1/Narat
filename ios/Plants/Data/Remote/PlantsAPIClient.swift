@@ -54,22 +54,46 @@ private struct PlantCareRecommendationResponse: Decodable {
 enum ManualWateringAction: Sendable, Equatable {
     case record
     case undo(UUID)
+    case correctDate(entryId: UUID, occurredAt: String, timezone: String)
+
+    static let correctionCommand = "care.correct_date"
+
+    static func accepts(command: String) -> Bool {
+        ["care.record", "care.undo", correctionCommand].contains(command)
+    }
 
     init?(envelope: CommandEnvelopeDTO) {
         guard envelope.plantId != nil,
-              envelope.commandName == "care.record" || envelope.commandName == "care.undo",
+              Self.accepts(command: envelope.commandName),
               let payload = try? JSONSerialization.jsonObject(with: Data(envelope.payloadJSON.utf8)) as? [String: String] else {
             return nil
         }
-        if envelope.commandName == "care.record" {
+        switch envelope.commandName {
+        case "care.record":
             guard payload.count == 3, payload["action_code"] == "water",
                   let occurredAt = payload["occurred_at"], SQLTimestamp.microseconds(from: occurredAt) != nil,
                   let timezone = payload["timezone"], TimeZone(identifier: timezone) != nil else { return nil }
             self = .record
-        } else {
+        case "care.undo":
             guard payload.count == 1, let id = payload["entry_id"], let entryId = UUID(uuidString: id) else { return nil }
             self = .undo(entryId)
+        default:
+            guard payload.count == 3, let id = payload["entry_id"], let entryId = UUID(uuidString: id),
+                  let occurredAt = payload["occurred_at"], SQLTimestamp.microseconds(from: occurredAt) != nil,
+                  let timezone = payload["timezone"], TimeZone(identifier: timezone) != nil else { return nil }
+            self = .correctDate(entryId: entryId, occurredAt: occurredAt, timezone: timezone)
         }
+    }
+
+    static func correction(entryId: UUID, date: Date, timezone: TimeZone) -> Self {
+        .correctDate(entryId: entryId, occurredAt: timestamp(date, timezone: timezone), timezone: timezone.identifier)
+    }
+
+    private static func timestamp(_ date: Date, timezone: TimeZone) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = timezone
+        return formatter.string(from: date)
     }
 
     func envelope(plantId: UUID, operationId: UUID = UUID(), now: Date = Date(),
@@ -79,13 +103,13 @@ enum ManualWateringAction: Sendable, Equatable {
         switch self {
         case .record:
             name = "care.record"
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            formatter.timeZone = timezone
-            payload = ["action_code": "water", "occurred_at": formatter.string(from: now), "timezone": timezone.identifier]
+            payload = ["action_code": "water", "occurred_at": Self.timestamp(now, timezone: timezone), "timezone": timezone.identifier]
         case let .undo(entryId):
             name = "care.undo"
             payload = ["entry_id": entryId.uuidString.lowercased()]
+        case let .correctDate(entryId, occurredAt, timezone):
+            name = Self.correctionCommand
+            payload = ["entry_id": entryId.uuidString.lowercased(), "occurred_at": occurredAt, "timezone": timezone]
         }
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         return CommandEnvelopeDTO(operationId: operationId, commandName: name, plantId: plantId,
@@ -107,8 +131,8 @@ private struct ManualWateringReceipt: Decodable {
         case state, watermark
     }
 
-    func validate(plantId expectedPlantId: UUID?, action: ManualWateringAction) throws {
-        guard plantId == expectedPlantId, SQLTimestamp.microseconds(from: watermark) != nil else {
+    func validate(plantId expectedPlantId: UUID?, action: ManualWateringAction) throws -> Int64 {
+        guard plantId == expectedPlantId, let micros = SQLTimestamp.microseconds(from: watermark) else {
             throw SyncWireValidationError.invalidPage
         }
         switch action {
@@ -118,7 +142,12 @@ private struct ManualWateringReceipt: Decodable {
             guard state == "voided", entryId == expectedEntryId, reversalId != nil else {
                 throw SyncWireValidationError.invalidPage
             }
+        case let .correctDate(expectedEntryId, _, _):
+            guard state == "active", entryId == expectedEntryId, reversalId == nil else {
+                throw SyncWireValidationError.invalidPage
+            }
         }
+        return micros
     }
 }
 
@@ -250,6 +279,7 @@ final class SyncSessionAuthority: @unchecked Sendable {
 enum OutboxCommandResult: Sendable {
     case generic
     case catalogueCreate(PlantCreateReceiptDTO)
+    case wateringDateCorrection(watermark: Int64)
 }
 
 public actor PlantsAPIClient {
@@ -331,6 +361,9 @@ public actor PlantsAPIClient {
         try validateSyncContext(context)
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         let manualWatering = context.session == nil ? nil : ManualWateringAction(envelope: envelope)
+        if envelope.commandName == ManualWateringAction.correctionCommand, manualWatering == nil {
+            throw SyncWireValidationError.invalidRequest
+        }
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
         if catalogueCreate || manualWatering != nil { encoder.outputFormatting = [.sortedKeys] }
@@ -354,8 +387,9 @@ public actor PlantsAPIClient {
             result = .catalogueCreate(receipt)
         } else if let manualWatering {
             let receipt = try await execute(request, as: ManualWateringReceipt.self, expectedStatus: 200)
-            try receipt.validate(plantId: envelope.plantId, action: manualWatering)
-            result = .generic
+            let watermark = try receipt.validate(plantId: envelope.plantId, action: manualWatering)
+            result = envelope.commandName == ManualWateringAction.correctionCommand
+                ? .wateringDateCorrection(watermark: watermark) : .generic
         } else {
             _ = try await execute(request, as: CommandResponseDTO.self)
             result = .generic

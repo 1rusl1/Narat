@@ -413,13 +413,23 @@ public actor LocalStore {
         _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws {
         try authority.withBoundValid(context) {
-            guard let plantId = command.plantId, ManualWateringAction(envelope: command) != nil else {
+            guard let plantId = command.plantId, let action = ManualWateringAction(envelope: command) else {
                 throw OutboxEnqueueError.operationIdentityMismatch
+            }
+            if case let .correctDate(entryId, _, _) = action {
+                guard try activeSyncedEntities(ownerId: context.ownerId, entityType: "plants").contains(where: { $0.id == plantId }),
+                      let item = try activeSyncedEntities(ownerId: context.ownerId, entityType: "care_entries")
+                        .first(where: { $0.id == entryId }),
+                      let entry = try? JSONDecoder().decode(CatalogueWateringEntry.self, from: Data(item.payloadJSON.utf8)),
+                      entry.id == entryId, entry.plantId == plantId, entry.taskId == nil,
+                      entry.actionCode == "water", entry.state == "active" else {
+                    throw SyncWireValidationError.invalidPage
+                }
             }
             let pending = try pendingOutboxEntries(for: context.ownerId)
             guard !pending.contains(where: {
                 $0.plantId == plantId && $0.operationId != command.operationId
-                    && ($0.commandName == "care.record" || $0.commandName == "care.undo")
+                    && ManualWateringAction.accepts(command: $0.commandName)
             }) else { throw OutboxEnqueueError.operationIdentityMismatch }
             _ = try enqueueCommand(operationId: command.operationId, ownerId: context.ownerId,
                                    plantId: plantId, commandName: command.commandName, payloadJSON: command.payloadJSON)

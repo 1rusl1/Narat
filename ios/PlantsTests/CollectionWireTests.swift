@@ -3065,6 +3065,94 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testWateringDateCorrectionReopensExactOperationUntilCanonicalDateIsOnDisk() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let entry = UUID()
+        let newer = "2026-11-03T09:10:00.000001+00:00"
+        let corrected = "2026-11-02T08:30:00+03:00"
+        var plant = syncChange(id: serverPlantId.uuidString)
+        plant["data"] = ["id": serverPlantId.uuidString, "plant_id": "monstera_deliciosa",
+                         "revision": 1, "care_revision": 1] as [String: Any]
+        func fact(time: String, day: String, updatedAt: String) -> [String: Any] {
+            var change = syncChange(updatedAt, id: entry.uuidString, entity: "care_entries")
+            change["data"] = ["id": entry.uuidString, "plant_id": serverPlantId.uuidString,
+                              "state": "active", "action_code": "water", "timezone": "Europe/Moscow",
+                              "occurred_at": time, "occurred_local_date": day]
+            return change
+        }
+        var baseline = syncObject()
+        baseline["changes"] = [fact(time: "2026-11-03T08:30:00+03:00", day: "2026-11-03", updatedAt: syncUntil), plant]
+        let original: URLRequest
+        do {
+            let transport = CatalogueTransport([.http(200, try syncJSON(baseline)), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            let date = try XCTUnwrap(SQLTimestamp.date(from: corrected))
+            let zone = try XCTUnwrap(TimeZone(identifier: "Europe/Moscow"))
+            do {
+                try await repo.enqueueWateringDateCorrection(
+                    plantId: serverPlantId, entryId: UUID(), date: date, timezone: zone, context: lease
+                )
+                XCTFail("Queued a correction for a different entry")
+            } catch SyncWireValidationError.invalidPage {}
+            try await repo.enqueueWateringDateCorrection(
+                plantId: serverPlantId, entryId: entry, date: date, timezone: zone, context: lease
+            )
+            try await repo.retryWateringDateCorrection(plantId: serverPlantId, context: lease)
+            let requests = await transport.capturedRequests()
+            original = try XCTUnwrap(requests.last)
+        }
+
+        var receipt = manualWateringReceipt(entryId: entry, state: "active")
+        receipt["watermark"] = newer
+        let wrongReceipt = manualWateringReceipt(entryId: UUID(), state: "active")
+        var delta = syncObject()
+        delta["until"] = newer
+        delta["next_since"] = newer
+        delta["changes"] = [fact(time: corrected, day: "2026-11-02", updatedAt: newer)]
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(wrongReceipt)),
+            .http(200, try syncJSON(receipt)), .network,
+            .http(200, try syncJSON(receipt)), .http(200, try syncJSON(delta))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        let envelope = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(original.httpBody))
+        XCTAssertEqual(envelope.commandName, "care.correct_date")
+        let payload = try JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8))
+        XCTAssertEqual(payload, ["entry_id": entry.uuidString.lowercased(), "occurred_at": corrected, "timezone": "Europe/Moscow"])
+
+        for _ in 0..<2 {
+            try await repo.retryWateringDateCorrection(plantId: serverPlantId, context: lease)
+            let pending = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(pending, envelope)
+            let history = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(history.map(\.occurredLocalDate), ["2026-11-03"])
+        }
+        try await repo.retryWateringDateCorrection(plantId: serverPlantId, context: lease)
+        let pending = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+        XCTAssertNil(pending)
+        let history = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history.map(\.id), [entry])
+        XCTAssertEqual(history.map(\.occurredLocalDate), ["2026-11-02"])
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "GET", "POST", "GET"])
+        for request in requests where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, original.httpBody)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), envelope.operationId.uuidString.lowercased())
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Locale"), "en")
+        }
+    }
+
+    @MainActor
     func testManualWateringInvalidReceiptsKeepOriginalOperationOnDisk() async throws {
         let entryId = UUID()
         let cases: [(ManualWateringAction, String, Any)] = [
@@ -3080,7 +3168,7 @@ extension CollectionWireTests {
             defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
             var receipt: [String: Any]
             switch action {
-            case .record: receipt = manualWateringReceipt(entryId: entryId, state: "active")
+            case .record, .correctDate: receipt = manualWateringReceipt(entryId: entryId, state: "active")
             case .undo: receipt = manualWateringReceipt(entryId: entryId, state: "voided", reversalId: UUID())
             }
             receipt[key] = value

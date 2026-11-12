@@ -124,10 +124,11 @@ struct CatalogueWateringEntry: Decodable, Sendable, Equatable, Identifiable {
     let actionCode: String
     let occurredAt: String
     let occurredLocalDate: String
+    let timezone: String?
     let state: String
 
     enum CodingKeys: String, CodingKey {
-        case id, state
+        case id, state, timezone
         case plantId = "plant_id"
         case taskId = "task_id"
         case actionCode = "action_code"
@@ -298,7 +299,7 @@ public struct CollectionRepository: Sendable {
         let pending = try await store.pendingOutboxEntries(for: context.ownerId)
         return try apiClient.syncAuthority.withBoundValid(context) {
             guard let entry = pending.first(where: {
-                $0.plantId == plantId && ($0.commandName == "care.record" || $0.commandName == "care.undo")
+                $0.plantId == plantId && ManualWateringAction.accepts(command: $0.commandName)
             }) else { return nil }
             let command = CommandEnvelopeDTO(operationId: entry.operationId, commandName: entry.commandName,
                                              plantId: entry.plantId, payloadJSON: entry.payloadJSON)
@@ -307,6 +308,21 @@ public struct CollectionRepository: Sendable {
             }
             return command
         }
+    }
+
+    func enqueueWateringDateCorrection(
+        plantId: UUID, entryId: UUID, date: Date, timezone: TimeZone, context: SyncSessionLease
+    ) async throws {
+        guard date <= Date() else { throw SyncWireValidationError.invalidRequest }
+        let action = ManualWateringAction.correction(entryId: entryId, date: date, timezone: timezone)
+        let command = try action.envelope(plantId: plantId)
+        try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryWateringDateCorrection(plantId: UUID, context: SyncSessionLease) async throws {
+        guard let pending = try await pendingManualWatering(plantId: plantId, context: context),
+              pending.commandName == ManualWateringAction.correctionCommand else { return }
+        _ = try await syncEngine.flushOutbox(context: context)
     }
 
     /// The typed receipt must be validated by the existing outbox drain before the queue item disappears.

@@ -141,6 +141,7 @@
 - [ ] T061 [US4] Реализовать адаптер расписания `supabase/functions/_shared/ScheduleCalculator.ts` к SQL-функции `calculate_plant_schedule`. Не дублировать SQL-алгоритм в TypeScript; проверить контракт адаптера в `supabase/functions/_shared/tests/schedule_adapter_test.ts`. Покрытие: FR-023, FR-027, FR-028, FR-029, FR-030.
 
 - [ ] T062 Обновить `care.record/undo/correct_date/postpone` в миграциях: ручные факты допускаются после expiry и при неприменимости, без потери/дублей. Они не возобновляют автоматические задачи/напоминания. Базовые проверки активного Free до expiry продолжаются по данным; исправление даты не является вторым действием. Покрытие: FR-023, FR-024, FR-025, FR-026, FR-027, FR-028, FR-029, FR-030, FR-048, FR-050, SC-021.
+  - V11: B `d1d2605` принял и выложил 026 для `care.correct_date`. iOS-путь и фикстуры готовы, подписанный прогон ожидается.
 
 - [ ] T063 Проверить `care_consistency.test.sql`: record/undo/backdate/retry, актуальность следующей проверки, пауза/expiry и ручной журнал без возобновления. Нет универсальных лечебных переходов; first-aid control проверяется T137/T160. Покрытие: FR-022, FR-023, FR-024, FR-025, FR-026, FR-027, FR-028, FR-029, FR-030, FR-048, FR-050, SC-005, SC-006, SC-021.
 

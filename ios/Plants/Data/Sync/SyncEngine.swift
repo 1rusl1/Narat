@@ -137,6 +137,14 @@ public actor SyncEngine {
             let result: OutboxCommandResult
             do {
                 result = try await apiClient.sendOutboxCommand(envelope, context: context)
+                if case let .wateringDateCorrection(watermark) = result {
+                    // Keep the operation durable until the corrected journal is on disk.
+                    _ = try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+                    guard let raw = try await store.currentWatermarkRaw(ownerId: ownerId),
+                          let confirmed = SQLTimestamp.microseconds(from: raw), confirmed >= watermark else {
+                        throw SyncWireValidationError.invalidPage
+                    }
+                }
             } catch {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 // Cancellation/auth changes abort the drain without touching the captured queue.
@@ -166,7 +174,7 @@ public actor SyncEngine {
                 try await store.acknowledgeCatalogueCreate(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic:
+            case .generic, .wateringDateCorrection:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )

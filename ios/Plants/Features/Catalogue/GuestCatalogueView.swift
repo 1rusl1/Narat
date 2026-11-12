@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Supabase
 import SwiftUI
 import UIKit
@@ -713,6 +714,10 @@ struct CatalogueCollectionView: View {
 }
 
 private struct CatalogueCollectionCardView: View {
+    private enum CorrectionPhase {
+        case loading, ready, saving, pending, blocked, failed
+    }
+
     let connection: CatalogueConnection
     let card: CatalogueCardSummary
     let expected: CatalogueSDKSnapshot
@@ -724,6 +729,8 @@ private struct CatalogueCollectionCardView: View {
     @State private var historyFailed = false
     @State private var adviceFailed = false
     @State private var attempt = 0
+    @State private var correction: CorrectionPhase = .loading
+    @State private var dateEdit: WateringDateEdit?
 
     private var locale: SupportedLocale { polish ? .pl : .en }
 
@@ -753,14 +760,19 @@ private struct CatalogueCollectionCardView: View {
                                 .accessibilityIdentifier("catalogue.saved.care.source")
                         }
                         Text("Manual watering history").font(.headline)
+                        correctionStatus
                         if let history {
                             if history.isEmpty { Text("No manual watering recorded.") }
                             ForEach(history) { entry in
                                 Text(entry.occurredLocalDate + (entry.state == "voided" ? " · Undone" : " · Active"))
                                     .accessibilityIdentifier("catalogue.saved.history." + entry.id.uuidString.lowercased())
+                                if correction == .ready, let edit = WateringDateEdit(entry) {
+                                    Button("Correct watering date") { dateEdit = edit }
+                                        .accessibilityIdentifier("collection.watering.correct." + entry.id.uuidString.lowercased())
+                                }
                             }
                         }
-                        if historyFailed || adviceFailed {
+                        if historyFailed || adviceFailed || correction == .failed {
                             Button("Retry care details") { attempt += 1 }
                         }
                     }
@@ -775,6 +787,32 @@ private struct CatalogueCollectionCardView: View {
                 species = try? await api.fetchPublishedSpecies(slug: slug, locale: locale)
             }
             .task(id: attempt) { await loadCare() }
+            .task { await retryWhenConnected() }
+            .sheet(item: $dateEdit) { edit in
+                WateringDateEditor(edit: edit) { date in
+                    dateEdit = nil
+                    Task { await correctDate(edit, to: date) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var correctionStatus: some View {
+        switch correction {
+        case .saving:
+            ProgressView("Saving watering date…")
+        case .pending:
+            Text("Watering date pending sync.")
+                .accessibilityIdentifier("collection.watering.pending")
+            Button("Retry watering date") { Task { await retryCorrection() } }
+                .accessibilityIdentifier("collection.watering.retry")
+        case .blocked:
+            Text("Another watering change is pending.")
+        case .failed:
+            Text("Couldn’t load or save the watering date.")
+        default:
+            EmptyView()
         }
     }
 
@@ -782,14 +820,16 @@ private struct CatalogueCollectionCardView: View {
     private func loadCare() async {
         guard !polish, let api = connection.apiClient, let repository = connection.repository,
               let lease = try? await connection.collectionLease(expected: expected) else { return }
-        do {
-            let result = try await repository.collectionWateringHistory(plantId: card.id, context: lease)
-            guard !Task.isCancelled, connection.snapshot == expected else { return }
-            history = result
-            historyFailed = false
-        } catch {
-            guard !Task.isCancelled, connection.snapshot == expected else { return }
-            historyFailed = true
+        if correction != .saving {
+            correction = .loading
+            do {
+                try await loadHistory(repository, lease: lease)
+                await retryCorrection()
+            } catch {
+                guard !Task.isCancelled, connection.snapshot == expected else { return }
+                historyFailed = true
+                correction = .failed
+            }
         }
         do {
             let result = try await api.fetchCareRecommendation(plantId: card.id, context: lease)
@@ -799,6 +839,131 @@ private struct CatalogueCollectionCardView: View {
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             adviceFailed = true
+        }
+    }
+
+    private func loadHistory(_ repository: CollectionRepository, lease: SyncSessionLease) async throws {
+        let result = try await repository.collectionWateringHistory(plantId: card.id, context: lease)
+        let queued = try await repository.pendingManualWatering(plantId: card.id, context: lease)
+        guard !Task.isCancelled, connection.snapshot == expected else { throw CancellationError() }
+        history = result
+        historyFailed = false
+        if let queued {
+            correction = queued.commandName == ManualWateringAction.correctionCommand ? .pending : .blocked
+        } else {
+            correction = .ready
+        }
+    }
+
+    private func correctDate(_ edit: WateringDateEdit, to date: Date) async {
+        guard correction == .ready, let repository = connection.repository else { return }
+        correction = .saving
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            try await repository.enqueueWateringDateCorrection(
+                plantId: card.id, entryId: edit.id, date: date, timezone: edit.timezone, context: lease
+            )
+            guard connection.snapshot == expected else { return }
+            correction = .pending
+            await retryCorrection()
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            correction = .failed
+        }
+    }
+
+    private func retryCorrection() async {
+        guard correction == .pending, let repository = connection.repository else { return }
+        correction = .saving
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            try await repository.retryWateringDateCorrection(plantId: card.id, context: lease)
+            try await loadHistory(repository, lease: lease)
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            correction = .pending
+        }
+    }
+
+    private func retryWhenConnected() async {
+        guard !polish else { return }
+        let monitor = NWPathMonitor()
+        let updates = AsyncStream<Bool>(bufferingPolicy: .bufferingNewest(1)) { stream in
+            monitor.pathUpdateHandler = { stream.yield($0.status == .satisfied) }
+            stream.onTermination = { _ in monitor.cancel() }
+        }
+        monitor.start(queue: DispatchQueue(label: "narat.watering.connectivity"))
+        var wasConnected: Bool?
+        for await connected in updates {
+            if wasConnected == false, connected { await retryCorrection() }
+            wasConnected = connected
+        }
+    }
+}
+
+private struct WateringDateEdit: Identifiable {
+    let id: UUID
+    let original: Date
+    let timezone: TimeZone
+
+    init?(_ entry: CatalogueWateringEntry) {
+        guard entry.state == "active", let name = entry.timezone, let zone = TimeZone(identifier: name),
+              let occurredAt = SQLTimestamp.date(from: entry.occurredAt) else { return nil }
+        id = entry.id
+        original = occurredAt
+        timezone = zone
+    }
+}
+
+private struct WateringDateEditor: View {
+    let edit: WateringDateEdit
+    let save: (Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date: Date
+
+    init(edit: WateringDateEdit, save: @escaping (Date) -> Void) {
+        self.edit = edit
+        self.save = save
+        _date = State(initialValue: edit.original)
+    }
+
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = edit.timezone
+        return calendar
+    }
+
+    private var correctedDate: Date? {
+        guard !calendar.isDate(date, inSameDayAs: edit.original) else { return nil }
+        let time = calendar.dateComponents([.hour, .minute, .second], from: edit.original)
+        guard let hour = time.hour, let minute = time.minute, let second = time.second,
+              let corrected = calendar.date(
+                bySettingHour: hour, minute: minute, second: second, of: date,
+                matchingPolicy: .nextTimePreservingSmallerComponents
+              ), calendar.isDate(date, inSameDayAs: corrected), corrected <= Date() else { return nil }
+        return corrected
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Watering date", selection: $date, in: ...Date(), displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .environment(\.calendar, calendar)
+                    .environment(\.timeZone, edit.timezone)
+                    .accessibilityIdentifier("collection.watering.date")
+            }
+            .navigationTitle("Correct watering date")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save date") {
+                        if let correctedDate { save(correctedDate) }
+                    }
+                    .disabled(correctedDate == nil)
+                    .accessibilityIdentifier("collection.watering.save")
+                }
+            }
         }
     }
 }
