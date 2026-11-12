@@ -17,13 +17,15 @@
         "supabase/functions/plants-api/index.ts",
         "supabase/migrations/202611120021_guest_photo_claim.sql",
         "supabase/tests/diagnosis_jobs.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
         "tools/automation/tasks.t150-guest-photo-claim.json"
       ],
       "write_files": [],
       "constraints": [
         "Independent English Reviewer and QA on the exact committed diff, local checks only. The controller exercises fixed narat-staging Auth and Storage using test accounts. No model role changes Auth, credentials, quotas, iOS, or deployment.",
         "Check the production registered installation and anonymous identification quota path. Review seven-day draft lifetime, 15-minute proof, lock order, original-owner context, one target and original UUID, exact replay, active-source deletion races, and immutable verified copy. Verify 410 for expired/deleted drafts and destination-safe cleanup.",
-        "Existing photos, diagnosis and collection cap must work. No client storage path, fallback or receipt injection. The internal cleanup endpoint uses the configured service authorization. A periodic invocation is separate from the service sweep."
+        "Existing photos, diagnosis and collection cap must work. No client storage path, fallback or receipt injection. The internal cleanup endpoint uses the configured service authorization. A periodic invocation is separate from the service sweep.",
+        "The first independent review found a seven-day start-time defect and an installation/job lock inversion. Verify both repairs against the delayed and expired source fixtures and the four real PostgreSQL races. Success fixes the retention deadline and cleanup covers the absence of a draft. Status and finish must acquire installation before job."
       ],
       "acceptance_criteria": [
         {

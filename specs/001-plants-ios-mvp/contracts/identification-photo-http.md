@@ -44,7 +44,7 @@ The confirmed taxon can come from the AI result or a manual catalogue correction
 
 Use the anonymous Supabase session and the same random `X-Installation-Credential` across sign-in. Register the installation via `POST /installations/register`, then use the same private upload and identification endpoints. Guest identification uses the installation's starter quota.
 
-1. With the guest session, send `POST /drafts` with `operation_id`, `identification_job_id` and the confirmed catalogue `taxon_id`. The response contains `draft_id` and `expires_at`. The server sets a seven-day lifetime. An exact replay preserves the deadline.
+1. With the guest session, send `POST /drafts` with `operation_id`, `identification_job_id` and the confirmed catalogue `taxon_id`. The response contains `draft_id` and `expires_at`. The seven-day lifetime begins at the successful analysis. Creating or replaying a draft later preserves that deadline.
 2. Sign in with the permanent account and send `POST /installations/bind` with the registered `installation_id`.
 3. Send `POST /claims/prepare` with `operation_id` and `draft_id`. The response contains `claim_id`, `draft_id` and `proof_expires_at`. Proof lasts up to 15 minutes and can be refreshed while the draft is valid.
 4. Send `POST /claims/commit` with its own `operation_id` and `claim_id`. The server verifies and copies the original photo before committing one plant and transferring the original `photo_id`. The result is the canonical save receipt. Exact retries return the same receipt. `GET /claims/{claim_id}` reports progress or that result.

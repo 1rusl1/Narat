@@ -1,5 +1,15 @@
 BEGIN;
 
+-- The first successful analysis fixes the lifetime of an unclaimed guest photo.
+CREATE TABLE public.guest_identification_sources (
+    photo_id UUID PRIMARY KEY REFERENCES public.photo_assets(id) ON DELETE CASCADE,
+    succeeded_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    storage_cleaned_at TIMESTAMPTZ
+);
+ALTER TABLE public.guest_identification_sources ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.guest_identification_sources FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.read_diagnosis_upload(p_owner_id UUID, p_photo_asset_id UUID)
 RETURNS JSONB LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
     SELECT jsonb_build_object(
@@ -148,6 +158,10 @@ BEGIN
     JOIN public.diagnosis_upload_tickets t ON t.photo_asset_id = a.id
     WHERE a.id = p_photo_asset_id AND a.owner_id = p_owner_id
       AND a.deleted_at IS NULL AND a.state = 'ready' AND a.uploaded_at IS NOT NULL
+      AND (NOT v_guest OR (a.draft_id IS NULL AND NOT EXISTS (
+        SELECT 1 FROM public.guest_identification_sources gs
+        WHERE gs.photo_id=a.id AND gs.expires_at<=clock_timestamp()
+      )))
     FOR UPDATE OF a;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'PHOTO_NOT_READY' USING ERRCODE = 'P0002';
@@ -203,17 +217,29 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.read_diagnosis_job(p_owner_id UUID, p_job_id UUID)
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE v_job public.analysis_jobs%ROWTYPE; v_guest BOOLEAN;
+DECLARE
+    v_job public.analysis_jobs%ROWTYPE;
+    v_guest BOOLEAN;
 BEGIN
     SELECT anonymous INTO v_guest FROM public.profiles
     WHERE id = p_owner_id AND account_state = 'active' FOR UPDATE;
     IF NOT FOUND THEN RETURN NULL; END IF;
+    -- Settlement follows the quota service lock order even for a status poll.
+    PERFORM i.id FROM public.installation_access i JOIN public.analysis_jobs j
+      ON j.quota_installation_id=i.id
+    WHERE j.id=p_job_id AND j.owner_id=p_owner_id FOR UPDATE OF i;
     SELECT j.* INTO v_job FROM public.analysis_jobs j
     JOIN public.diagnosis_job_runtime r ON r.job_id = j.id
     WHERE j.owner_id = p_owner_id AND j.id = p_job_id
       AND (NOT v_guest OR (j.mode = 'identification' AND j.quota_installation_id IS NOT NULL))
     FOR UPDATE OF j;
     IF NOT FOUND THEN RETURN NULL; END IF;
+    IF v_guest AND v_job.state='succeeded' AND (
+        EXISTS (SELECT 1 FROM public.guest_identification_sources
+          WHERE photo_id=v_job.photo_ids[1] AND expires_at<=clock_timestamp())
+        OR EXISTS (SELECT 1 FROM public.guest_drafts WHERE id=v_job.draft_id
+          AND (deleted_at IS NOT NULL OR claimed_at IS NOT NULL))
+    ) THEN RETURN NULL; END IF;
     IF v_job.state IN ('queued','running') AND v_job.deadline_at <= clock_timestamp() THEN
         PERFORM public.finalize_analysis_quota(v_job.id, 'timed_out', true, clock_timestamp());
         UPDATE public.analysis_jobs SET error_code = 'ANALYSIS_TIMEOUT' WHERE id = v_job.id;
@@ -285,6 +311,91 @@ REVOKE ALL ON FUNCTION public.create_bound_photo_upload(UUID,UUID,TEXT,INTEGER,T
 GRANT EXECUTE ON FUNCTION public.create_bound_photo_upload(UUID,UUID,TEXT,INTEGER,TEXT,TEXT),
     public.create_bound_photo_analysis_job(UUID,UUID,UUID,UUID,TEXT,BOOLEAN,TEXT,TEXT) TO service_role;
 
+CREATE OR REPLACE FUNCTION public.finish_diagnosis_job(
+    p_job_id UUID, p_lease_token UUID, p_result JSONB, p_non_billable BOOLEAN, p_error_code TEXT
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE
+    v_owner UUID;
+    v_guest BOOLEAN;
+    v_job public.analysis_jobs%ROWTYPE;
+    v_outcome TEXT;
+    v_projection JSONB;
+    v_now TIMESTAMPTZ;
+    v_catalogue UUID;
+    v_species UUID;
+    v_name TEXT;
+    v_identification_status TEXT;
+BEGIN
+    SELECT owner_id INTO v_owner FROM public.analysis_jobs WHERE id = p_job_id;
+    SELECT anonymous INTO v_guest FROM public.profiles WHERE id = v_owner FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'JOB_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+    -- Binding can hold an installation before reading the guest job.
+    PERFORM i.id FROM public.installation_access i JOIN public.analysis_jobs j
+      ON j.quota_installation_id=i.id
+    WHERE j.id=p_job_id AND j.owner_id=v_owner FOR UPDATE OF i;
+    SELECT j.* INTO v_job FROM public.analysis_jobs j
+    JOIN public.diagnosis_job_runtime r ON r.job_id = j.id
+    WHERE j.id = p_job_id AND j.owner_id = v_owner FOR UPDATE OF j;
+    IF NOT FOUND OR p_lease_token IS NULL OR v_job.lease_token IS DISTINCT FROM p_lease_token THEN
+        RAISE EXCEPTION 'STALE_LEASE' USING ERRCODE = '42501';
+    END IF;
+    IF v_job.state IN ('succeeded','failed','timed_out') THEN
+        RETURN jsonb_build_object('already_finalized', true, 'quota_state', v_job.quota_state, 'outcome', v_job.state);
+    END IF;
+    v_now := clock_timestamp();
+    v_outcome := CASE WHEN v_job.deadline_at <= v_now THEN 'timed_out'
+                      WHEN p_result IS NULL THEN 'failed' ELSE 'succeeded' END;
+    IF v_outcome = 'succeeded' THEN
+        IF v_job.provider_started_at IS NULL OR p_non_billable IS NULL OR
+           v_job.mode NOT IN ('identification', 'diagnosis') OR
+           p_result->>'job_id' IS DISTINCT FROM v_job.id::text OR
+           p_result->>'mode' IS DISTINCT FROM v_job.mode THEN
+            RAISE EXCEPTION 'INVALID_DIAGNOSIS_RESULT' USING ERRCODE = '22023';
+        END IF;
+        IF v_job.mode = 'identification' THEN
+            SELECT catalogue_release_id INTO STRICT v_catalogue
+            FROM public.diagnosis_job_runtime WHERE job_id = p_job_id;
+            v_identification_status := p_result->>'identification_status';
+            IF v_identification_status = 'identified' THEN
+                SELECT s.taxon_id, coalesce(nullif(s.common_names->v_job.locale->0->>'name',''),
+                       s.accepted_scientific_name)
+                INTO v_species, v_name FROM public.catalogue_release_species s
+                WHERE s.release_id = v_catalogue AND s.status = 'published'
+                  AND s.rank IN ('species', 'hybrid') AND s.taxon_id::text = p_result->>'plant_id';
+                IF NOT FOUND OR p_non_billable THEN
+                    RAISE EXCEPTION 'INVALID_IDENTIFICATION_RESULT' USING ERRCODE = '22023';
+                END IF;
+            ELSIF v_identification_status IS DISTINCT FROM 'unknown' THEN
+                RAISE EXCEPTION 'INVALID_IDENTIFICATION_RESULT' USING ERRCODE = '22023';
+            END IF;
+            IF p_result IS DISTINCT FROM jsonb_build_object(
+                'schema_version', '1.0', 'job_id', v_job.id, 'mode', v_job.mode,
+                'catalogue_release_id', v_catalogue, 'identification_status', v_identification_status,
+                'plant_id', v_species, 'plant_display_name', v_name
+            ) THEN
+                RAISE EXCEPTION 'INVALID_IDENTIFICATION_RESULT' USING ERRCODE = '22023';
+            END IF;
+        ELSIF p_result->>'kb_release_id' IS DISTINCT FROM v_job.kb_release_id::text THEN
+            RAISE EXCEPTION 'INVALID_DIAGNOSIS_RESULT' USING ERRCODE = '22023';
+        END IF;
+        v_projection := p_result;
+    END IF;
+    PERFORM public.finalize_analysis_quota(p_job_id, v_outcome, coalesce(p_non_billable,true), v_now);
+    IF v_guest AND v_outcome='succeeded' AND v_job.mode='identification' THEN
+        INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at)
+        VALUES(v_job.photo_ids[1],v_now,v_now+interval '7 days')
+        ON CONFLICT(photo_id) DO NOTHING;
+    END IF;
+    UPDATE public.diagnosis_job_runtime SET projection = v_projection WHERE job_id = p_job_id;
+    UPDATE public.analysis_jobs SET error_code =
+        CASE v_outcome WHEN 'timed_out' THEN 'ANALYSIS_TIMEOUT'
+            WHEN 'failed' THEN coalesce(p_error_code, 'ANALYSIS_FAILED') ELSE NULL END
+    WHERE id = p_job_id;
+    RETURN jsonb_build_object('already_finalized', false, 'quota_state',
+        (SELECT quota_state FROM public.analysis_jobs WHERE id = p_job_id), 'outcome', v_outcome);
+END;
+$$;
+
 ALTER TABLE public.guest_drafts
     ALTER COLUMN expires_at SET DEFAULT (clock_timestamp() + interval '7 days'),
     ADD COLUMN confirmed_taxon_id UUID REFERENCES public.catalogue_taxa(id),
@@ -306,7 +417,8 @@ DECLARE
     v_photo public.photo_assets%ROWTYPE;
     v_job public.analysis_jobs%ROWTYPE;
     v_draft public.guest_drafts%ROWTYPE;
-    v_now TIMESTAMPTZ := clock_timestamp();
+    v_now TIMESTAMPTZ;
+    v_expires_at TIMESTAMPTZ;
     v_hash TEXT;
     v_result JSONB;
 BEGIN
@@ -350,12 +462,15 @@ BEGIN
     IF v_photo.draft_id IS NOT NULL THEN
         RAISE EXCEPTION 'DRAFT_ALREADY_EXISTS' USING ERRCODE='23505';
     END IF;
+    SELECT expires_at INTO v_expires_at FROM public.guest_identification_sources
+    WHERE photo_id=v_photo.id AND storage_cleaned_at IS NULL FOR UPDATE;
     v_now := clock_timestamp();
+    IF NOT FOUND OR v_expires_at<=v_now THEN RAISE EXCEPTION 'DRAFT_EXPIRED' USING ERRCODE='P0002'; END IF;
     INSERT INTO public.guest_drafts(
       guest_owner_id,flow_id,intent,add_method,photo_id,analysis_job_id,expires_at,created_at,
       updated_at,confirmed_taxon_id,installation_id,source_storage_key
     ) VALUES (
-      p_owner_id,v_job.flow_id,'care','scan',v_photo.id,v_job.id,v_now+interval '7 days',v_now,
+      p_owner_id,v_job.flow_id,'care','scan',v_photo.id,v_job.id,v_expires_at,v_now,
       v_now,p_taxon_id,v_installation,v_photo.original_key
     ) RETURNING * INTO v_draft;
     UPDATE public.photo_assets SET draft_id=v_draft.id,updated_at=v_now WHERE id=v_photo.id;
@@ -524,6 +639,9 @@ BEGIN
     UPDATE public.photo_assets SET owner_id=p_owner_id,plant_id=v_plant,draft_id=NULL,
       original_key=v_destination,analysis_key=v_destination,updated_at=v_ts WHERE id=v_photo.id;
     UPDATE public.guest_drafts SET claimed_at=v_ts,updated_at=v_ts WHERE id=v_draft.id;
+    UPDATE public.diagnosis_job_runtime r SET projection=NULL FROM public.analysis_jobs j
+    WHERE r.job_id=j.id AND j.owner_id=v_draft.guest_owner_id AND j.mode='identification'
+      AND j.photo_ids[1]=v_photo.id;
     UPDATE public.draft_claims SET state='published',result_plant_id=v_plant,updated_at=v_ts WHERE id=v_claim.id;
 
     v_plan := CASE WHEN v_taxon.care_profile_available OR EXISTS (
@@ -556,22 +674,45 @@ $$;
 
 CREATE FUNCTION public.read_guest_photo_cleanup(p_draft_id UUID DEFAULT NULL)
 RETURNS JSONB LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
-    SELECT coalesce(jsonb_agg(jsonb_build_object('draft_id',d.id,'source',d.source_storage_key,
-        'abandoned_target', CASE WHEN d.claimed_at IS NULL AND c.state='copying'
-            THEN c.target_owner_id::text || '/' || d.photo_id::text END)), '[]'::jsonb)
-    FROM (
-        SELECT g.* FROM public.guest_drafts g
+    SELECT coalesce(jsonb_agg(work.entry),'[]'::jsonb) FROM (
+        SELECT jsonb_build_object('draft_id',g.id,'source_photo_id',NULL,'source',g.source_storage_key,
+            'abandoned_target',CASE WHEN g.claimed_at IS NULL AND c.state='copying'
+                THEN c.target_owner_id::text || '/' || g.photo_id::text END) AS entry,
+            g.expires_at
+        FROM public.guest_drafts g
+        LEFT JOIN LATERAL (
+            SELECT c.state,c.target_owner_id FROM public.draft_claims c WHERE c.draft_id=g.id
+            ORDER BY c.created_at,c.id LIMIT 1
+        ) c ON true
         WHERE g.installation_id IS NOT NULL AND g.storage_cleaned_at IS NULL
           AND (p_draft_id IS NULL OR g.id=p_draft_id)
           AND (g.claimed_at IS NOT NULL OR g.deleted_at IS NOT NULL OR g.expires_at<=clock_timestamp())
           AND NOT EXISTS (SELECT 1 FROM public.draft_claims c WHERE c.draft_id=g.id AND c.state='copying'
             AND c.updated_at+interval '15 minutes'>clock_timestamp())
-        ORDER BY g.expires_at,g.id LIMIT 20
-    ) d
-    LEFT JOIN LATERAL (
-        SELECT c.state,c.target_owner_id FROM public.draft_claims c WHERE c.draft_id=d.id
-        ORDER BY c.created_at,c.id LIMIT 1
-    ) c ON true
+        UNION ALL
+        SELECT jsonb_build_object('draft_id',NULL,'source_photo_id',a.id,'source',a.original_key,
+            'abandoned_target',NULL),s.expires_at
+        FROM public.guest_identification_sources s JOIN public.photo_assets a ON a.id=s.photo_id
+        WHERE p_draft_id IS NULL AND s.storage_cleaned_at IS NULL AND s.expires_at<=clock_timestamp()
+          AND a.draft_id IS NULL AND a.plant_id IS NULL AND a.state='ready' AND a.deleted_at IS NULL
+        ORDER BY expires_at LIMIT 20
+    ) work
+$$;
+
+CREATE FUNCTION public.finish_guest_source_cleanup(p_photo_id UUID)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+BEGIN
+    UPDATE public.photo_assets a SET state='deleted',deleted_at=clock_timestamp(),updated_at=clock_timestamp()
+    WHERE a.id=p_photo_id AND a.draft_id IS NULL AND a.plant_id IS NULL AND a.deleted_at IS NULL
+      AND EXISTS (SELECT 1 FROM public.guest_identification_sources s
+        WHERE s.photo_id=a.id AND s.expires_at<=clock_timestamp());
+    IF FOUND THEN
+        UPDATE public.guest_identification_sources SET storage_cleaned_at=clock_timestamp() WHERE photo_id=p_photo_id;
+        UPDATE public.diagnosis_job_runtime r SET projection=NULL
+        FROM public.analysis_jobs j JOIN public.photo_assets a ON a.id=j.photo_ids[1] AND a.owner_id=j.owner_id
+        WHERE r.job_id=j.id AND a.id=p_photo_id AND j.mode='identification';
+    END IF;
+END;
 $$;
 
 CREATE FUNCTION public.finish_guest_photo_cleanup(p_draft_id UUID)
@@ -586,6 +727,9 @@ BEGIN
     IF v_draft.claimed_at IS NULL THEN
         UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp(),updated_at=clock_timestamp()
         WHERE id=v_draft.photo_id AND draft_id=v_draft.id AND owner_id=v_draft.guest_owner_id AND plant_id IS NULL;
+        UPDATE public.diagnosis_job_runtime r SET projection=NULL FROM public.analysis_jobs j
+        WHERE r.job_id=j.id AND j.owner_id=v_draft.guest_owner_id AND j.mode='identification'
+          AND j.photo_ids[1]=v_draft.photo_id;
     END IF;
     UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp() WHERE id=v_draft.id;
 END;
@@ -595,12 +739,12 @@ REVOKE ALL ON FUNCTION public.create_guest_photo_draft(UUID,UUID,UUID,UUID,TEXT)
     public.prepare_guest_photo_claim(UUID,UUID,UUID,TEXT),
     public.process_guest_photo_claim(UUID,UUID,UUID,TEXT,BOOLEAN),
     public.delete_guest_photo_draft(UUID,UUID,TEXT),public.read_guest_photo_cleanup(UUID),
-    public.finish_guest_photo_cleanup(UUID) FROM PUBLIC, anon, authenticated;
+    public.finish_guest_photo_cleanup(UUID),public.finish_guest_source_cleanup(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_guest_photo_draft(UUID,UUID,UUID,UUID,TEXT),
     public.prepare_guest_photo_claim(UUID,UUID,UUID,TEXT),
     public.process_guest_photo_claim(UUID,UUID,UUID,TEXT,BOOLEAN),
     public.delete_guest_photo_draft(UUID,UUID,TEXT),public.read_guest_photo_cleanup(UUID),
-    public.finish_guest_photo_cleanup(UUID) TO service_role;
+    public.finish_guest_photo_cleanup(UUID),public.finish_guest_source_cleanup(UUID) TO service_role;
 
 CREATE FUNCTION public.read_guest_photo_claim(p_owner_id UUID, p_claim_id UUID, p_credential_hash TEXT)
 RETURNS JSONB LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$

@@ -140,7 +140,19 @@ export function createGuestPhotoApi(
       const { error } = await client().storage.from(DIAGNOSIS_PHOTO_BUCKET)
         .remove(paths);
       if (error) continue;
-      await rpc("finish_guest_photo_cleanup", { p_draft_id: entry.draft_id });
+      if (
+        typeof entry.draft_id === "string" && entry.source_photo_id === null
+      ) {
+        await rpc("finish_guest_photo_cleanup", { p_draft_id: entry.draft_id });
+      } else if (
+        entry.draft_id === null && typeof entry.source_photo_id === "string"
+      ) {
+        await rpc("finish_guest_source_cleanup", {
+          p_photo_id: entry.source_photo_id,
+        });
+      } else {
+        throw unavailable();
+      }
       cleaned++;
     }
     return cleaned;

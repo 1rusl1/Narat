@@ -251,12 +251,30 @@ SELECT is(public.start_diagnosis_provider((SELECT id FROM guest_job),(SELECT id 
 SELECT is(public.finish_diagnosis_job((SELECT id FROM guest_job),(SELECT id FROM guest_lease),
     (SELECT jsonb_set(body,'{job_id}',to_jsonb((SELECT id FROM guest_job))) FROM identified_result),false,NULL)->>'quota_state',
     'consumed','guest identification consumes its bound starter');
+CREATE TEMP TABLE original_guest_window AS SELECT * FROM public.guest_identification_sources
+WHERE photo_id=(SELECT id FROM guest_photo);
+UPDATE public.guest_identification_sources SET succeeded_at=clock_timestamp()-interval '7 days',
+    expires_at=clock_timestamp() WHERE photo_id=(SELECT id FROM guest_photo);
+SELECT throws_ok($q$SELECT public.create_guest_photo_draft(
+    '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000064',(SELECT id FROM guest_job),
+    (SELECT (body->>'taxon_id')::uuid FROM scan_input),repeat('e',64))$q$,
+    'P0002','DRAFT_EXPIRED','a job at the seven-day boundary cannot create a new draft');
+SELECT is(public.read_diagnosis_job('16310000-0000-4000-8000-000000000061',(SELECT id FROM guest_job)),NULL::jsonb,
+    'guest job result is unavailable at the seven-day boundary');
+SELECT ok(EXISTS (SELECT 1 FROM jsonb_array_elements(public.read_guest_photo_cleanup(NULL)) x
+    WHERE x->>'source_photo_id'=(SELECT id::text FROM guest_photo) AND x->>'draft_id' IS NULL),
+    'a completed guest photo that never became a draft enters cleanup');
+UPDATE public.guest_identification_sources s SET succeeded_at=o.succeeded_at-interval '1 hour',
+    expires_at=o.expires_at-interval '1 hour' FROM original_guest_window o WHERE s.photo_id=o.photo_id;
 CREATE TEMP TABLE guest_draft_created AS SELECT public.create_guest_photo_draft(
     '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000064',(SELECT id FROM guest_job),
     (SELECT (body->>'taxon_id')::uuid FROM scan_input),repeat('e',64)) body;
 CREATE TEMP TABLE guest_draft AS SELECT (body->>'draft_id')::uuid id FROM guest_draft_created;
-SELECT is((SELECT expires_at-created_at FROM public.guest_drafts WHERE id=(SELECT id FROM guest_draft)),
-    interval '7 days','guest draft lives exactly seven days');
+SELECT is((SELECT d.expires_at-s.succeeded_at FROM public.guest_drafts d
+    JOIN public.guest_identification_sources s ON s.photo_id=d.photo_id WHERE d.id=(SELECT id FROM guest_draft)),
+    interval '7 days','guest lifetime is exactly seven days from successful analysis');
+SELECT ok((SELECT expires_at-created_at<interval '7 days' FROM public.guest_drafts WHERE id=(SELECT id FROM guest_draft)),
+    'delayed confirmation does not refresh the analysis deadline');
 SELECT is(public.create_guest_photo_draft(
     '16310000-0000-4000-8000-000000000061','16310000-0000-4000-8000-000000000064',(SELECT id FROM guest_job),
     (SELECT (body->>'taxon_id')::uuid FROM scan_input),repeat('e',64)),(SELECT body FROM guest_draft_created),

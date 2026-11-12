@@ -183,6 +183,66 @@ def main():
                 first.kill()
                 first.communicate(timeout=10)
 
+    def guest_settlement_bind_race(db, release, timed_out):
+        offset = 600 if timed_out else 610
+        guest, target = job(offset), job(offset + 1)
+        secret_hash = ('1' if timed_out else '2') * 64
+        sql(db, f"INSERT INTO public.profiles(id,anonymous) VALUES('{guest}',true),('{target}',false);")
+        installation = sql(db, f"SELECT public.register_installation_access('{secret_hash}','{guest}')->>'installation_id';")
+        photo = sql(db, f"SELECT public.create_bound_photo_upload('{guest}','{job(offset+2)}','image/jpeg',4,repeat('a',64),'{secret_hash}')->>'photo_asset_id';")
+        sql(db, f"SELECT public.mark_diagnosis_upload_ready('{guest}','{photo}',repeat('a',64));")
+        leased_job = sql(db, f"SELECT public.create_bound_photo_analysis_job('{guest}','{job(offset+3)}','{photo}',NULL,'en',true,'identification','{secret_hash}')->'job'->>'job_id';")
+        lease_token = sql(db, f"SELECT public.lease_diagnosis_job('{leased_job}')->>'lease_token';")
+        assert sql(db, f"SELECT public.start_diagnosis_provider('{leased_job}','{lease_token}')->>'allowed';") == 'true'
+        if timed_out:
+            sql(db, f"UPDATE public.analysis_jobs SET deadline_at=clock_timestamp()-interval '1 second' WHERE id='{leased_job}';")
+            settle = f"SELECT public.read_diagnosis_job('{guest}','{leased_job}')->>'status';"
+            expected = 'expired'
+            quota = 'released'
+        else:
+            result = json.dumps({
+                'schema_version': '1.0', 'mode': 'identification', 'job_id': leased_job,
+                'catalogue_release_id': release, 'identification_status': 'unknown',
+                'plant_id': None, 'plant_display_name': None,
+            })
+            settle = f"SELECT public.finish_diagnosis_job('{leased_job}','{lease_token}',$result${result}$result$::jsonb,false,NULL)->>'outcome';"
+            expected = 'succeeded'
+            quota = 'consumed'
+        application = f'guest_bind_settle_{offset}'
+        blocker = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            blocker.stdin.write(f"BEGIN; SELECT id FROM public.installation_access WHERE id='{installation}' FOR UPDATE;\n\\echo READY\n")
+            blocker.stdin.flush()
+            while blocker.stdout.readline().strip() != 'READY':
+                if blocker.poll() is not None:
+                    raise RuntimeError(blocker.stderr.read())
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(sql, db, f"SET application_name='{application}'; " + settle)
+                deadline = time.monotonic() + 10
+                while sql(db, f"SELECT count(*) FROM pg_stat_activity WHERE application_name='{application}' AND wait_event_type='Lock'") != '1':
+                    assert not future.done(), 'Guest settlement did not wait for installation'
+                    assert time.monotonic() < deadline, 'Did not observe a real settlement waiter'
+                    time.sleep(.03)
+                try:
+                    # The pending settlement must not already hold the guest job.
+                    assert sql(db, f"SELECT id FROM public.analysis_jobs WHERE id='{leased_job}' FOR UPDATE NOWAIT;") == leased_job
+                    blocker.stdin.write(f"SELECT public.bind_installation_credential('{installation}','{target}','{secret_hash}'); COMMIT;\n\\q\n")
+                    blocker.stdin.flush()
+                    _, error = blocker.communicate(timeout=15)
+                    assert blocker.returncode == 0, error
+                    assert future.result(timeout=15) == expected
+                finally:
+                    if blocker.poll() is None:
+                        blocker.kill()
+                        blocker.communicate(timeout=10)
+        finally:
+            if blocker.poll() is None:
+                blocker.kill()
+                blocker.communicate(timeout=10)
+        check(db, f"(SELECT quota_state='{quota}' FROM public.analysis_jobs WHERE id='{leased_job}')",
+              f'guest bind and {expected} settlement keep the correct original quota')
+
     def legacy_guard(db):
         if db == 'upgrade':
             check(db, f"(SELECT registered_at IS NULL FROM public.account_quota_anchors WHERE owner_id='{B}')", 'legacy guard probe uses unresolved permanent owner')
@@ -341,6 +401,9 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     f"SELECT public.upsert_catalogue_skeleton_species('{release}', $fixture${encoded}$fixture$::jsonb, true); "
                     f"SELECT public.publish_catalogue_release('{release}');")
                 tap(case, ROOT/'supabase/tests/diagnosis_jobs.test.sql')
+                if any(migration.name == '202611120021_guest_photo_claim.sql' for migration in selected):
+                    guest_settlement_bind_race(case, release, timed_out=False)
+                    guest_settlement_bind_race(case, release, timed_out=True)
                 if any(migration.name == CARE_JOURNAL for migration in selected):
                     tap(case, ROOT/'supabase/tests/manual_care_journal.test.sql')
                 if any(migration.name == CARE_PROFILE_READ for migration in selected):
