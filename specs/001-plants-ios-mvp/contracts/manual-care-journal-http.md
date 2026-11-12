@@ -18,7 +18,7 @@ Invalid input returns 400, unavailable ownership returns 403, and a missing or i
 
 ## First-aid action and one pending control (V19)
 
-`POST /commands` accepts `care.first_aid.record` with the same envelope and `payload_json` containing `job_id`, `occurred_at`, and `timezone`. The job UUID must belong to a successful problem diagnosis bound to the same saved plant, with current conditions and a still-published applicable first action. This packet supports the published diagnostic soil check. A missing, foreign or incompatible job/action returns 404.
+`POST /commands` accepts `care.first_aid.record` with the same envelope and `payload_json` containing `job_id`, `occurred_at`, and `timezone`. The job UUID must belong to a successful problem diagnosis bound to the same saved plant, with current conditions and a still-published applicable first action directly supported by an approved HTTPS source. This packet supports the published diagnostic soil check. A missing, foreign or incompatible job/action returns 404. The command rechecks eligibility independently of the [job status projection](diagnosis-photo-http.md#действие-первой-помощи-доступное-для-записи-v19).
 
 An accepted fact returns the usual active entry receipt plus `control_id` (UUID or null). The same operation returns the same receipt. Another operation for the same diagnosis returns 409. The date of a pending control is the action's local day plus the published interval when that interval has direct approved source evidence and access is current. Without that evidence, the action remains in the journal with a null control ID.
 
