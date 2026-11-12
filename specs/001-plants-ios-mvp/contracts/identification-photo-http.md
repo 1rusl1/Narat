@@ -16,6 +16,8 @@ The existing envelope contains `job_id`, `mode`, `status`, `quota_kind`, `quota_
 }
 ```
 
-An `unknown` result has null `plant_id` and `plant_display_name`. An identified plant belongs to the published species rows of the catalogue pinned at admission. The server supplies the name in the request locale with scientific-name fallback. The result contains no condition, KB or diagnosis receipt. Only a usable classification consumes the reserved analysis quota. An unsuitable image returns unknown and releases the reservation. Provider refusal, truncation or invalid JSON fails the job and releases the reservation. Polling and replay never run the provider a second time.
+An `unknown` result has null `plant_id` and `plant_display_name`. An identified plant belongs to the published species rows of the catalogue pinned at admission. The returned UUID is the catalogue card's `taxon_id`. Species and named hybrids are eligible. The server supplies the name in the request locale with scientific-name fallback. The result contains no condition, KB or diagnosis receipt. Only a usable classification consumes the reserved analysis quota. An unsuitable image returns unknown and releases the reservation. Provider refusal, truncation or invalid JSON fails the job and releases the reservation. Polling and replay never run the provider a second time.
+
+If the starter is exhausted and a legacy account lacks a verified registration date, create returns 409 `QUOTA_REGISTRATION_REQUIRED`.
 
 Personal photo attachment and seven-day guest draft/claim have separate contracts.

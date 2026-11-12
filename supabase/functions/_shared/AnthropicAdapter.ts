@@ -9,6 +9,8 @@ import {
   ValidatedAnalysisClassification,
 } from "./AnalysisValidator.ts";
 import {
+  type PhotoIdentificationCatalogue,
+  type PhotoIdentificationResult,
   PublishedReleaseCatalog,
   VisionClassification30,
 } from "./KnowledgeTypes.ts";
@@ -46,6 +48,7 @@ export interface AnthropicAdapterResult {
   stopReason?: string | null;
   validation?: ValidatedAnalysisClassification;
   projection?: PreliminaryAnalysisProjection;
+  identification?: PhotoIdentificationResult;
   shouldConsumeQuota: boolean;
   errorCode?:
     | "UNSUPPORTED_ANALYSIS_MODE"
@@ -208,6 +211,135 @@ export class AnthropicAdapter {
       },
     };
 
+    return await this.classifyPhoto(
+      input,
+      systemPrompt,
+      contextPayload,
+      async (parsed, stopReason) => {
+        const validation = AnalysisValidator.validate(parsed, input.catalog);
+        if (
+          !validation.valid || !validation.classification ||
+          validation.classification.mode !== input.mode ||
+          validation.classification.locale !== input.locale
+        ) {
+          return {
+            ok: false,
+            stopReason,
+            validation,
+            shouldConsumeQuota: false,
+            errorCode: "SCHEMA_VALIDATION_FAILED",
+            errorMessage: validation.errors.join("; "),
+          };
+        }
+
+        const projection = await ProtocolResolver.resolvePreliminaryProjection({
+          analysisId: input.analysisId,
+          jobId: input.jobId,
+          classification: validation.classification as VisionClassification30,
+          catalog: input.catalog,
+          signingSecret: input.signingSecret,
+        });
+
+        return {
+          ok: true,
+          stopReason,
+          validation,
+          projection,
+          shouldConsumeQuota: validation.shouldConsumeQuota,
+        };
+      },
+    );
+  }
+
+  async identifySpecies(
+    input: Pick<
+      AnthropicClassificationInput,
+      "jobId" | "imageBase64" | "mediaType" | "signal"
+    >,
+    catalogue: PhotoIdentificationCatalogue,
+  ): Promise<AnthropicAdapterResult> {
+    const systemPrompt = [
+      "Identify the visible plant at species level using the supplied closed catalogue.",
+      'Return exactly a JSON object with "status" and "plant_id".',
+      'Use "identified" and the exact allowed UUID only when a single listed species matches confidently.',
+      'Use "unknown" and null for an ambiguous plant or a plant outside the list.',
+      'Use "unusable" and null for a non-plant or a photo too poor to classify.',
+      "Do not identify a genus alone or include any other fields.",
+    ].join(" ");
+    const contextPayload = {
+      allowed_plants: Array.from(
+        catalogue.species,
+        ([id, plant]) => [id, plant.scientificName],
+      ),
+    };
+    return await this.classifyPhoto(
+      input,
+      systemPrompt,
+      contextPayload,
+      (parsed, stopReason) => {
+        const fields = parsed as
+          | { status?: unknown; plant_id?: unknown }
+          | null;
+        const id = fields?.plant_id;
+        if (
+          !fields || typeof fields !== "object" || Array.isArray(fields) ||
+          Object.keys(fields).length !== 2 ||
+          !(
+            (fields.status === "identified" && typeof id === "string" &&
+              /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(id)) ||
+            ((fields.status === "unknown" || fields.status === "unusable") &&
+              id === null)
+          )
+        ) {
+          return {
+            ok: false,
+            stopReason,
+            shouldConsumeQuota: false,
+            errorCode: "SCHEMA_VALIDATION_FAILED",
+          };
+        }
+        const plantId = typeof id === "string" ? id.toLowerCase() : null;
+        const species = plantId === null
+          ? undefined
+          : catalogue.species.get(plantId);
+        return {
+          ok: true,
+          stopReason,
+          shouldConsumeQuota: fields.status !== "unusable",
+          identification: {
+            schema_version: "1.0",
+            mode: "identification",
+            job_id: input.jobId,
+            catalogue_release_id: catalogue.releaseId,
+            ...(species && plantId
+              ? {
+                identification_status: "identified",
+                plant_id: plantId,
+                plant_display_name: species.displayName,
+              }
+              : {
+                identification_status: "unknown",
+                plant_id: null,
+                plant_display_name: null,
+              }),
+          },
+        };
+      },
+    );
+  }
+
+  private async classifyPhoto(
+    input: Pick<
+      AnthropicClassificationInput,
+      "jobId" | "imageBase64" | "mediaType" | "signal"
+    >,
+    systemPrompt: string,
+    contextPayload: unknown,
+    resolve: (
+      parsed: unknown,
+      stopReason: string,
+    ) => AnthropicAdapterResult | Promise<AnthropicAdapterResult>,
+  ): Promise<AnthropicAdapterResult> {
     const openRouter = this.provider === "openrouter";
     const started = performance.now();
     let received = false;
@@ -270,11 +402,14 @@ export class AnthropicAdapter {
           stopReason: response.stop_reason,
           shouldConsumeQuota: false,
           errorCode: "PROVIDER_TRUNCATED",
-          errorMessage: "Provider did not complete its classification response.",
+          errorMessage:
+            "Provider did not complete its classification response.",
         };
       }
 
-      const textBlock = response.content.find((b) => b.type === "text" && b.text);
+      const textBlock = response.content.find((b) =>
+        b.type === "text" && b.text
+      );
       if (!textBlock?.text) {
         return {
           ok: false,
@@ -303,52 +438,30 @@ export class AnthropicAdapter {
         };
       }
 
-      const validation = AnalysisValidator.validate(parsed, input.catalog);
-      if (!validation.valid || !validation.classification ||
-        validation.classification.mode !== input.mode || validation.classification.locale !== input.locale) {
-        return {
-          ok: false,
-          stopReason: response.stop_reason,
-          validation,
-          shouldConsumeQuota: false,
-          errorCode: "SCHEMA_VALIDATION_FAILED",
-          errorMessage: validation.errors.join("; "),
-        };
-      }
-
-      const projection = await ProtocolResolver.resolvePreliminaryProjection({
-        analysisId: input.analysisId,
-        jobId: input.jobId,
-        classification: validation.classification as VisionClassification30,
-        catalog: input.catalog,
-        signingSecret: input.signingSecret,
-      });
-
-      return {
-        ok: true,
-        stopReason: response.stop_reason,
-        validation,
-        projection,
-        shouldConsumeQuota: validation.shouldConsumeQuota,
-      };
+      return await resolve(parsed, response.stop_reason);
     } catch (err) {
       if (openRouter && !received) {
         console.info(JSON.stringify({
           event: "analysis_provider_call",
           job_id: input.jobId,
           model: PINNED_OPENROUTER_MODEL,
-          outcome: input.signal?.aborted || err instanceof Anthropic.APIConnectionTimeoutError
-            ? "timeout"
-            : "error",
+          outcome:
+            input.signal?.aborted ||
+              err instanceof Anthropic.APIConnectionTimeoutError
+              ? "timeout"
+              : "error",
           elapsed_ms: Math.round(performance.now() - started),
-          http_status: err instanceof Anthropic.APIError ? err.status : undefined,
+          http_status: err instanceof Anthropic.APIError
+            ? err.status
+            : undefined,
         }));
       }
       return {
         ok: false,
         shouldConsumeQuota: false,
         errorCode: "PROVIDER_TIMEOUT_OR_ERROR",
-        errorMessage: "The classification provider could not complete the request.",
+        errorMessage:
+          "The classification provider could not complete the request.",
       };
     }
   }

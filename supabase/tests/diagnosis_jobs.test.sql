@@ -82,5 +82,88 @@ SELECT is((SELECT quota_state FROM public.analysis_jobs WHERE id=(SELECT id FROM
     'released','no polling required to recover an abandoned starter');
 SELECT ok(NOT has_function_privilege('authenticated','public.lease_diagnosis_job(uuid)','execute'),'client cannot lease or dispatch provider directly');
 SELECT ok(NOT has_table_privilege('authenticated','public.diagnosis_job_runtime','select'),'projection table is private');
+-- Identification must work with no published care KB.
+UPDATE public.kb_releases SET state = 'retired' WHERE state = 'published';
+CREATE TEMP TABLE identification_created AS SELECT public.create_photo_analysis_job(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000041',
+    (SELECT id FROM photo),NULL,'en',true,'identification') payload;
+CREATE TEMP TABLE identification_job AS
+    SELECT (payload->'job'->>'job_id')::uuid id FROM identification_created;
+SELECT is((SELECT payload->'job'->>'quota_kind' FROM identification_created),
+    'starter_identification','identification has its own starter without published KB');
+SELECT is((SELECT kb_release_id FROM public.analysis_jobs WHERE id=(SELECT id FROM identification_job)),
+    NULL::uuid,'identification does not store a KB link');
+SELECT is(public.create_photo_analysis_job('16300000-0000-4000-8000-000000000002',
+    '16310000-0000-4000-8000-000000000041',(SELECT id FROM photo),NULL,'en',false,'identification'),
+    (SELECT jsonb_set(payload,'{replayed}','true') FROM identification_created),'identification retries before worker availability');
+SELECT throws_ok($q$SELECT public.create_diagnosis_job(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000041',
+    (SELECT id FROM photo),NULL,'en',true)$q$,'23505','IDEMPOTENCY_CONFLICT','diagnosis cannot replay identification');
+SELECT throws_ok($q$SELECT public.create_photo_analysis_job(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000012',
+    (SELECT id FROM photo),NULL,'en',true,'identification')$q$,'23505','IDEMPOTENCY_CONFLICT','identification cannot replay diagnosis');
+SELECT throws_ok($q$SELECT public.create_photo_analysis_job(
+    '16300000-0000-4000-8000-000000000001','16310000-0000-4000-8000-000000000041',
+    (SELECT id FROM photo),NULL,'en',true,'identification')$q$,'P0002','PHOTO_NOT_READY','another owner cannot identify from this photo');
+SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000001',(SELECT id FROM identification_job)),
+    NULL::jsonb,'another owner cannot read identification');
+CREATE TEMP TABLE identification_lease AS
+    SELECT (public.lease_diagnosis_job((SELECT id FROM identification_job))->>'lease_token')::uuid id;
+SELECT ok((SELECT id IS NOT NULL FROM identification_lease),'identification leases through the same queue');
+SELECT is(public.lease_diagnosis_job((SELECT id FROM identification_job)),NULL::jsonb,'identification does not lease twice');
+SELECT is(public.read_identification_catalog((SELECT id FROM identification_job),gen_random_uuid()),
+    NULL::jsonb,'invalid lease cannot read identification catalogue');
+CREATE TEMP TABLE identification_catalogue AS SELECT public.read_identification_catalog(
+    (SELECT id FROM identification_job),(SELECT id FROM identification_lease)) body;
+SELECT is((SELECT body->'plants'->0->>'plant_id' FROM identification_catalogue),
+    (SELECT taxon_id::text FROM public.catalogue_release_species WHERE plant_id='monstera_deliciosa'),
+    'closed identification list uses the public catalogue UUID');
+SELECT ok((SELECT NOT (body ? 'kb_release_id' OR body ? 'conditions') FROM identification_catalogue),
+    'identification worker input contains neither KB nor conditions');
+SELECT is(public.start_diagnosis_provider((SELECT id FROM identification_job),(SELECT id FROM identification_lease))->>'allowed',
+    'true','identification starts provider with the existing budget');
+CREATE TEMP TABLE unknown_identification AS SELECT jsonb_build_object(
+    'schema_version','1.0','job_id',(SELECT id FROM identification_job),'mode','identification',
+    'catalogue_release_id',body->'catalogue_release_id','identification_status','unknown',
+    'plant_id',NULL,'plant_display_name',NULL) body FROM identification_catalogue;
+SELECT is(public.finish_diagnosis_job((SELECT id FROM identification_job),(SELECT id FROM identification_lease),
+    (SELECT body FROM unknown_identification),true,NULL)->>'quota_state','released','unsuitable image releases the identification starter');
+SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000002',(SELECT id FROM identification_job))->'result',
+    (SELECT body FROM unknown_identification),'unknown persists as an explicit result');
+
+CREATE TEMP TABLE identified_job AS SELECT (public.create_photo_analysis_job(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000042',
+    (SELECT id FROM photo),NULL,'en',true,'identification')->'job'->>'job_id')::uuid id;
+CREATE TEMP TABLE identified_lease AS
+    SELECT (public.lease_diagnosis_job((SELECT id FROM identified_job))->>'lease_token')::uuid id;
+UPDATE public.catalogue_releases SET state='retired' WHERE state='published';
+SELECT is(public.read_identification_catalog((SELECT id FROM identified_job),(SELECT id FROM identified_lease)),
+    (SELECT body FROM identification_catalogue),'an admitted job still reads its pinned catalogue after retirement');
+SELECT is(public.start_diagnosis_provider((SELECT id FROM identified_job),(SELECT id FROM identified_lease))->>'allowed',
+    'true','a released starter can be admitted again');
+CREATE TEMP TABLE identified_result AS SELECT jsonb_build_object(
+    'schema_version','1.0','job_id',(SELECT id FROM identified_job),'mode','identification',
+    'catalogue_release_id',body->'catalogue_release_id','identification_status','identified',
+    'plant_id',body->'plants'->0->'plant_id','plant_display_name',body->'plants'->0->'display_name') body
+FROM identification_catalogue;
+SELECT throws_ok($q$SELECT public.finish_diagnosis_job((SELECT id FROM identified_job),(SELECT id FROM identified_lease),
+    (SELECT jsonb_set(body,'{plant_id}',to_jsonb(gen_random_uuid())) FROM identified_result),false,NULL)$q$,
+    '22023','INVALID_IDENTIFICATION_RESULT','database rejects a species outside the pinned list');
+SELECT throws_ok($q$SELECT public.finish_diagnosis_job((SELECT id FROM identified_job),(SELECT id FROM identified_lease),
+    (SELECT jsonb_set(body,'{catalogue_release_id}',to_jsonb(gen_random_uuid())) FROM identified_result),false,NULL)$q$,
+    '22023','INVALID_IDENTIFICATION_RESULT','database rejects a different catalogue pin');
+SELECT throws_ok($q$SELECT public.finish_diagnosis_job((SELECT id FROM identified_job),(SELECT id FROM identified_lease),
+    (SELECT body || '{"diagnosis_status":"healthy"}'::jsonb FROM identified_result),false,NULL)$q$,
+    '22023','INVALID_IDENTIFICATION_RESULT','database rejects diagnosis fields in identification');
+SELECT is(public.finish_diagnosis_job((SELECT id FROM identified_job),(SELECT id FROM identified_lease),
+    (SELECT body FROM identified_result),false,NULL)->>'quota_state','consumed','identified success settles the original quota');
+SELECT is(public.finish_diagnosis_job((SELECT id FROM identified_job),(SELECT id FROM identified_lease),NULL,true,NULL)->>'already_finalized',
+    'true','identification settles only once');
+SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000002',(SELECT id FROM identified_job))->'result',
+    (SELECT body FROM identified_result),'owner reads the immutable identification');
+SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000002',(SELECT id FROM job_id))->'result',
+    (SELECT body FROM projection),'existing diagnosis survives independent identification and catalogue retirement');
+SELECT ok(NOT has_function_privilege('authenticated','public.read_identification_catalog(uuid,uuid)','execute'),
+    'client cannot bypass the identification worker');
 SELECT * FROM finish();
 ROLLBACK;

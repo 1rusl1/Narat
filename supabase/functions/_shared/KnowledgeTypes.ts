@@ -191,6 +191,31 @@ export interface CanonicalPlantCareProfile {
   actions: ProfileAction[];
 }
 
+export interface PhotoIdentificationCatalogue {
+  releaseId: string;
+  species: ReadonlyMap<string, { scientificName: string; displayName: string }>;
+}
+
+export type PhotoIdentificationResult =
+  & {
+    schema_version: "1.0";
+    job_id: string;
+    mode: "identification";
+    catalogue_release_id: string;
+  }
+  & (
+    | {
+      identification_status: "identified";
+      plant_id: string;
+      plant_display_name: string;
+    }
+    | {
+      identification_status: "unknown";
+      plant_id: null;
+      plant_display_name: null;
+    }
+  );
+
 export interface PublishedReleaseCatalog {
   kbReleaseId: string;
   plantIds: Set<string>;

@@ -21,6 +21,9 @@ const kb = "be350000-0000-4000-8000-000000000005";
 const uploadOperation = "be350000-0000-4000-8000-000000000006";
 const lease = "be350000-0000-4000-8000-000000000007";
 const jobOperation = "be350000-0000-4000-8000-000000000008";
+const catalogue = "be350000-0000-4000-8000-000000000009";
+const species = "be350000-0000-4000-8000-000000000010";
+const outsider = "be350000-0000-4000-8000-000000000011";
 const host = "https://diagnosis.example.test";
 const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 const hash = Array.from(
@@ -34,6 +37,12 @@ function fixture(
     provider?: string;
     providerHttpStatus?: number;
     missingKey?: boolean;
+    registrationRequired?: boolean;
+    identificationReply?: {
+      text: string;
+      stopReason?: string;
+      errorCode?: string;
+    };
   } = {},
 ) {
   const key = "fixture-service-role";
@@ -48,11 +57,14 @@ function fixture(
   if (!options.missingKey) variables.OPENROUTER_API_KEY = "fixture-openrouter";
   if (options.provider) variables.ANALYSIS_PROVIDER = options.provider;
   const openRouter = options.provider === "openrouter";
-  const expectedError = options.providerHttpStatus
-    ? "PROVIDER_TIMEOUT_OR_ERROR"
-    : options.providerFailure
-    ? "PROVIDER_REFUSAL"
-    : null;
+  const identification = options.identificationReply;
+  const mode = identification ? "identification" : "diagnosis";
+  const expectedError = identification?.errorCode ??
+    (options.providerHttpStatus
+      ? "PROVIDER_TIMEOUT_OR_ERROR"
+      : options.providerFailure
+      ? "PROVIDER_REFUSAL"
+      : null);
   const env = (name: string) => variables[name];
   let expired = false;
   let ticketIssued = false;
@@ -76,8 +88,8 @@ function fixture(
   });
   const status = () => ({
     job_id: job,
-    mode: "diagnosis",
-    quota_kind: "starter_diagnosis",
+    mode,
+    quota_kind: `starter_${mode}`,
     quota_state: quotaState,
     status: outcome,
     result: projection,
@@ -134,6 +146,15 @@ function fixture(
           data: btoa(String.fromCharCode(...jpeg)),
         },
       });
+      if (identification) {
+        assertEquals(JSON.parse(text.text), {
+          allowed_plants: [[species, "Monstera deliciosa"]],
+        });
+        return Response.json({
+          stop_reason: identification.stopReason ?? "end_turn",
+          content: [{ type: "text", text: identification.text }],
+        });
+      }
       assertEquals(JSON.parse(text.text).allowed_plants, [[
         "monstera_deliciosa",
         "Monstera deliciosa",
@@ -204,7 +225,18 @@ function fixture(
         assertEquals(body.p_content_sha256, hash);
         ready = true;
         return Response.json(row());
+      case "create_photo_analysis_job":
       case "create_diagnosis_job": {
+        const requested = path.endsWith("/create_photo_analysis_job")
+          ? body.p_mode
+          : "diagnosis";
+        if (created && requested !== mode) {
+          return Response.json({
+            code: "23505",
+            message: "IDEMPOTENCY_CONFLICT",
+          }, { status: 409 });
+        }
+        assertEquals(requested, mode);
         assertEquals(body.p_owner_id, owner);
         assertEquals(body.p_photo_asset_id, photo);
         if (ticketIssued && body.p_operation_id === uploadOperation) {
@@ -215,6 +247,13 @@ function fixture(
         }
         assertEquals(body.p_operation_id, jobOperation);
         assert(ready);
+        if (options.registrationRequired) {
+          return Response.json({
+            code: "P0001",
+            message: "QUOTA_DENIED",
+            details: "quota_registration_required",
+          }, { status: 400 });
+        }
         if (!body.p_can_dispatch) {
           return Response.json({
             code: "P0001",
@@ -242,14 +281,26 @@ function fixture(
           job_id: job,
           owner_id: owner,
           lease_token: lease,
-          kb_release_id: kb,
-          mode: "diagnosis",
+          kb_release_id: identification ? null : kb,
+          mode,
           locale: "en",
-          quota_kind: "starter_diagnosis",
+          quota_kind: `starter_${mode}`,
           deadline_at: new Date(Date.now() + 55_000).toISOString(),
           upload: row(),
         });
+      case "read_identification_catalog":
+        assert(identification);
+        assertEquals(body.p_lease_token, lease);
+        return Response.json({
+          catalogue_release_id: catalogue,
+          plants: [{
+            plant_id: species,
+            scientific_name: "Monstera deliciosa",
+            display_name: "Swiss cheese plant",
+          }],
+        });
       case "read_diagnosis_catalog":
+        assert(!identification);
         assertEquals(body.p_lease_token, lease);
         return Response.json({
           kb_release_id: kb,
@@ -420,6 +471,131 @@ for (
     );
   });
 }
+
+for (
+  const scenario of [
+    {
+      name: "catalogue species",
+      fields: { status: "identified", plant_id: species },
+      status: "identified",
+      consumed: true,
+    },
+    {
+      name: "explicit unknown",
+      fields: { status: "unknown", plant_id: null },
+      status: "unknown",
+      consumed: true,
+    },
+    {
+      name: "unknown ID",
+      fields: { status: "identified", plant_id: outsider },
+      status: "unknown",
+      consumed: true,
+    },
+    {
+      name: "unusable photo",
+      fields: { status: "unusable", plant_id: null },
+      status: "unknown",
+      consumed: false,
+    },
+    {
+      name: "refusal",
+      fields: {},
+      stopReason: "refusal",
+      errorCode: "PROVIDER_REFUSAL",
+    },
+    {
+      name: "truncation",
+      fields: {},
+      stopReason: "max_tokens",
+      errorCode: "PROVIDER_TRUNCATED",
+    },
+    {
+      name: "invalid JSON",
+      fields: {},
+      text: "{",
+      errorCode: "PROVIDER_INVALID_JSON",
+    },
+    {
+      name: "extra diagnosis data",
+      fields: { status: "unknown", plant_id: null, diagnosis: null },
+      errorCode: "SCHEMA_VALIDATION_FAILED",
+    },
+  ]
+) {
+  Deno.test(`Identification production photo/worker: ${scenario.name}`, async () => {
+    const f = fixture({
+      provider: "openrouter",
+      identificationReply: {
+        text: scenario.text ?? JSON.stringify(scenario.fields),
+        stopReason: scenario.stopReason,
+        errorCode: scenario.errorCode,
+      },
+    });
+    const ticket = await (await f.ticket()).json();
+    assertEquals((await f.put(ticket.signed_upload_url)).status, 200);
+    const createBody = {
+      operation_id: jobOperation,
+      photo_asset_id: photo,
+      mode: "identification",
+    };
+    assertEquals((await f.api("/analysis/jobs", createBody)).status, 202);
+    await Promise.all(f.work);
+    const path = `/analysis/jobs/${job}`;
+    const terminal = await (await f.api(path)).json();
+    assertEquals(terminal.mode, "identification");
+    assertEquals(terminal.quota_kind, "starter_identification");
+    assertEquals(terminal.status, scenario.errorCode ? "failed" : "succeeded");
+    assertEquals(terminal.error_code, scenario.errorCode ?? null);
+    assertEquals(
+      terminal.quota_state,
+      scenario.consumed ? "consumed" : "released",
+    );
+    assertEquals(
+      terminal.result,
+      scenario.errorCode ? null : {
+        schema_version: "1.0",
+        mode: "identification",
+        job_id: job,
+        catalogue_release_id: catalogue,
+        identification_status: scenario.status,
+        plant_id: scenario.status === "identified" ? species : null,
+        plant_display_name: scenario.status === "identified"
+          ? "Swiss cheese plant"
+          : null,
+      },
+    );
+    const replay = await f.api("/analysis/jobs", createBody);
+    assertEquals(replay.status, 200);
+    assertEquals((await replay.json()).job_id, job);
+    assertEquals(
+      (await f.api("/analysis/jobs", { ...createBody, mode: "diagnosis" }))
+        .status,
+      409,
+    );
+    assertEquals((await f.api(path, undefined, "fixture-other")).status, 404);
+    await Promise.all(f.work);
+    assertEquals(f.providerCalls(), 1);
+    assertEquals(await (await f.api(path)).json(), terminal);
+  });
+}
+
+Deno.test("Analysis explicitly blocks a legacy monthly account without a verified registration date", async () => {
+  const f = fixture({ registrationRequired: true });
+  const ticket = await (await f.ticket()).json();
+  assertEquals((await f.put(ticket.signed_upload_url)).status, 200);
+  const response = await f.api("/analysis/jobs", {
+    operation_id: jobOperation,
+    photo_asset_id: photo,
+    mode: "diagnosis",
+  });
+  assertEquals(response.status, 409);
+  assertEquals(
+    (await response.json()).error.code,
+    "QUOTA_REGISTRATION_REQUIRED",
+  );
+  assertEquals(f.providerCalls(), 0);
+});
 
 Deno.test("Diagnosis rejects another owner and tampered image before writing Storage", async () => {
   const f = fixture();

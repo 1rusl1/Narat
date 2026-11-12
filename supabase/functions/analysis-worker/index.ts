@@ -7,7 +7,11 @@ import {
   AnthropicAdapter,
   PROVIDER_CALL_TIMEOUT_MS,
 } from "../_shared/AnthropicAdapter.ts";
-import { PublishedReleaseCatalog } from "../_shared/KnowledgeTypes.ts";
+import type {
+  PhotoIdentificationCatalogue,
+  PhotoIdentificationResult,
+  PublishedReleaseCatalog,
+} from "../_shared/KnowledgeTypes.ts";
 import { PreliminaryAnalysisProjection } from "../_shared/ProtocolResolver.ts";
 import {
   ESTIMATED_HAIKU_CLASSIFICATION_COST_MICRO_USD,
@@ -24,7 +28,7 @@ export interface LeasedAnalysisJob {
   id: string;
   ownerId: string | null;
   installationId: string | null;
-  kbReleaseId: string;
+  kbReleaseId: string | null;
   // Persisted adapter data is untrusted, including jobs queued before mode removal.
   mode: string;
   locale: "pl" | "en";
@@ -50,6 +54,8 @@ export interface WorkerPersistenceAdapter {
 
   loadPublishedCatalog(kbReleaseId: string): Promise<PublishedReleaseCatalog>;
 
+  loadIdentificationCatalog?(): Promise<PhotoIdentificationCatalogue>;
+
   loadJobImage?(job: LeasedAnalysisJob): Promise<string>;
 
   finalizeJobOnce(params: {
@@ -57,6 +63,7 @@ export interface WorkerPersistenceAdapter {
     outcome: "succeeded" | "failed";
     isNonBillableResult: boolean;
     projection: PreliminaryAnalysisProjection | null;
+    identification?: PhotoIdentificationResult;
     errorCode?: string;
     errorMessage?: string;
     now: Date;
@@ -120,9 +127,18 @@ export async function processSingleQueuedJob(params: {
     | undefined;
   let errorCode = "ANALYSIS_PROCESSING_FAILED";
   try {
-    const catalog = await params.workerAdapter.loadPublishedCatalog(
-      job.kbReleaseId,
-    );
+    const target = job.mode === "identification"
+      ? {
+        mode: "identification" as const,
+        catalog: await params.workerAdapter.loadIdentificationCatalog?.(),
+      }
+      : {
+        mode: "diagnosis" as const,
+        catalog: job.kbReleaseId
+          ? await params.workerAdapter.loadPublishedCatalog(job.kbReleaseId)
+          : undefined,
+      };
+    if (!target.catalog) throw new Error("The pinned release is unavailable.");
     const image = params.workerAdapter.loadJobImage
       ? await params.workerAdapter.loadJobImage(job)
       : job.imageBase64;
@@ -143,18 +159,26 @@ export async function processSingleQueuedJob(params: {
             Math.max(1, Math.floor(remaining())),
           )
           : PROVIDER_CALL_TIMEOUT_MS;
-        result = await params.anthropicAdapter.classifyAndResolve({
-          analysisId: crypto.randomUUID(),
+        const imageInput = {
           jobId: job.id,
-          mode: job.mode,
-          locale: job.locale,
           imageBase64: image,
           mediaType: job.mediaType,
-          careContext: job.careContext,
-          catalog,
-          signingSecret: params.signingSecret,
           signal: AbortSignal.timeout(timeout),
-        });
+        };
+        result = target.mode === "identification"
+          ? await params.anthropicAdapter.identifySpecies(
+            imageInput,
+            target.catalog,
+          )
+          : await params.anthropicAdapter.classifyAndResolve({
+            ...imageInput,
+            analysisId: crypto.randomUUID(),
+            mode: target.mode,
+            locale: job.locale,
+            careContext: job.careContext,
+            catalog: target.catalog,
+            signingSecret: params.signingSecret,
+          });
         errorCode = result.errorCode ?? errorCode;
       }
     }
@@ -162,13 +186,18 @@ export async function processSingleQueuedJob(params: {
     // Storage, catalogue and budget failures settle the original reservation.
   }
   try {
-    const succeeded = Boolean(result?.ok && result.projection);
+    const projection = result?.ok ? result.projection : undefined;
+    const identification = result?.ok ? result.identification : undefined;
+    const succeeded = job.mode === "identification"
+      ? !!identification
+      : !!projection;
     const outcome = succeeded ? "succeeded" : "failed";
     const settled = await params.workerAdapter.finalizeJobOnce({
       jobId: job.id,
       outcome,
       isNonBillableResult: !succeeded || !result?.shouldConsumeQuota,
-      projection: succeeded ? result!.projection! : null,
+      projection: projection ?? null,
+      ...(identification && { identification }),
       errorCode: succeeded ? undefined : errorCode,
       now: new Date(),
     });

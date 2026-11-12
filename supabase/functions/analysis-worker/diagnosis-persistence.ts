@@ -20,9 +20,9 @@ interface Lease {
   job_id: string;
   owner_id: string;
   lease_token: string;
-  mode: "diagnosis";
+  mode: "diagnosis" | "identification";
   locale: "en" | "pl";
-  kb_release_id: string;
+  kb_release_id: string | null;
   quota_kind: string;
   deadline_at: string;
   upload: {
@@ -64,7 +64,7 @@ export function createDiagnosisPersistence(
       if (!lease) return null;
       if (
         lease.job_id !== jobId || !lease.lease_token ||
-        lease.mode !== "diagnosis" ||
+        (lease.mode !== "diagnosis" && lease.mode !== "identification") ||
         !["en", "pl"].includes(lease.locale) ||
         !Number.isFinite(Date.parse(lease.deadline_at))
       ) {
@@ -166,11 +166,36 @@ export function createDiagnosisPersistence(
       return catalog;
     },
 
+    async loadIdentificationCatalog() {
+      const data = await call("read_identification_catalog", identity());
+      if (
+        typeof data?.catalogue_release_id !== "string" ||
+        !Array.isArray(data.plants) || !data.plants.length
+      ) throw new Error("The pinned identification catalogue is unavailable.");
+
+      const species = new Map<
+        string,
+        { scientificName: string; displayName: string }
+      >();
+      for (const plant of data.plants) {
+        if (
+          typeof plant.plant_id !== "string" ||
+          typeof plant.scientific_name !== "string" ||
+          typeof plant.display_name !== "string"
+        ) throw new Error("Invalid published species.");
+        species.set(plant.plant_id, {
+          scientificName: plant.scientific_name,
+          displayName: plant.display_name,
+        });
+      }
+      return { releaseId: data.catalogue_release_id, species };
+    },
+
     async finalizeJobOnce(params) {
       const projection = params.projection;
       const condition = projection?.selected_condition_id ??
         projection?.candidates[0]?.condition_id;
-      const result = projection
+      const result = params.identification ?? (projection
         ? {
           ...projection,
           plant_display_name: projection.plant_id
@@ -181,7 +206,7 @@ export function createDiagnosisPersistence(
               .title ?? null
             : null,
         }
-        : null;
+        : null);
       const data = await call("finish_diagnosis_job", {
         ...identity(),
         p_result: result,
