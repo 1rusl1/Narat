@@ -1,6 +1,12 @@
 # Narat — текущий статус и передача работы
 
-## B — T151 live catalogue and Paid/Free verified, 12 November 2026
+## B — T154 integration baseline started, 12 November 2026
+
+After T151 acceptance, a linked read-only staging audit compared all 42 migration versions with the repository through `202611120021`. Nine relevant relations have RLS enabled. Seven sensitive RPCs grant execution to service role and deny anon/authenticated. `analysis-inputs` is private and `catalogue-media` public. The legacy test owner has an explicit unresolved NULL anchor. Two newly confirmed T151 synthetic accounts received immutable profile-insert anchors equal to the confirmed Auth creation timestamps. Their profile creation was assisted by the isolated fixture.
+
+The [integration report](validation/integrations.md) records the live baseline and the existing clean/upgrade and guest/collection evidence separately. Next exercise the supported Auth registration or same-identity anonymous conversion without an assisted profile insert, confirm the anchor is captured once and starter spend carries over, and record the results before closing T154.
+
+## B — T151 English catalogue accepted, 12 November 2026
 
 T150 is closed for the English MVP in iOS `02aa48e` and the backend checklist. T151 follows the English scope in `26ae2a0`. The [T151 report](validation/catalogue-skeleton.md) separates the live API, Storage and iOS from fixtures.
 
@@ -8,7 +14,7 @@ Live staging returned 606 unique English cards with release-aligned names, descr
 
 The paid preflight found zero active Paid owners. Two isolated confirmed synthetic owners started with empty collections. The same four no-care-profile species yielded three saves plus `409 COLLECTION_LIMIT_REACHED` for Free and four saves for Paid. Fresh sessions replayed exact receipts and read disjoint sets. Linked SQL confirmed no condition snapshot, personal photo or StoreKit purchase. The isolated Paid fixture uses the existing one-day test entitlement, without changing other owners, Auth or caps. A received a local protected export command and the backend evidence.
 
-Fixtures passed 42 unchanged migrations, 239 catalogue pgTAP, 1,212 SQL/TS card comparisons and three release races. Separate clean/upgrade cap fixtures passed four suites and exact/distinct create races. The combined preliminary fixture invocation mixed catalogue seeds. The independent catalogue and cap invocations passed. Next collect A's live iOS T151 result, close the checklist and start the next critical-path task.
+Fixtures passed 42 unchanged migrations, 239 catalogue pgTAP, 1,212 SQL/TS card comparisons and three release races. Separate clean/upgrade cap fixtures passed four suites and exact/distinct create races. The combined preliminary fixture invocation mixed catalogue seeds. The independent catalogue and cap invocations passed. Signed iOS build `b12d12a` and acceptance `7593456` closed T151. A verified a no-care profile save, same UUID after lost response and cold restart, Free cap, owner isolation and the fifth Paid card with cold restart. The backend checklist is closed. T154 started with the live integration baseline.
 
 ## B — T150 guest photo transfer verified on staging, 12 November 2026
 
