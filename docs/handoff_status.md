@@ -65,6 +65,8 @@
 
 **Локально.** `T036PreScanFocused01`: 62 `CollectionWireTests` прошли, включая новый тест точного guest credential, постоянного Bearer и отказа устаревшего lease. Diff-check прошёл. Изменены `PlantsApp.swift`, `PlantsAPIClient.swift`, `AnalysisAccessRepository.swift`, `CareQuestionsView.swift`, `GuestCatalogueView.swift` и `CollectionWireTests.swift`.
 
+Первый независимый Review (`parallel-ios-t036-prescan-20261112-01`) выявил, что постоянный GET мог унаследовать installation-заголовок из ранее настроенного клиента. `PlantsAPIClient.swift` явно очищает его для постоянной сессии. Тест теперь проверяет старый заголовок в клиенте и гостевую замену. Повторный `T036PreScanFocused02` прошёл, 62/62. B подтвердил живой переход того же гостевого Auth UUID в постоянный после 022 (`049b536`): израсходованный starter 0, диагностика 1, общий Free 3 и регистрационная граница сохранены после повторного входа и refresh.
+
 **Следующий шаг.** На подписанном Simulator проверить живые Free/Paid, потерю ответа GET с доступным каталогом и гостевой расход до/после перезапуска. Совместный серверный сценарий конверсии идёт в B/T154. T036 остаётся открытой до приёмки.
 
 ## T149 — живой каталог и коллекция iOS

@@ -373,17 +373,16 @@ public actor PlantsAPIClient {
             guard let session = context.session else { throw SyncWireValidationError.invalidSession }
             return session
         }
+        let credential = expectedGuest ? guestCredential ?? installationCredential : nil
         if expectedGuest {
-            guard let credential = guestCredential ?? installationCredential,
+            guard let credential,
                   !credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw AnalysisAccessWireError.missingInstallationCredential
             }
         }
         var request = try buildRequest(path: "analysis/access", method: "GET")
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        if let guestCredential {
-            request.setValue(guestCredential, forHTTPHeaderField: "X-Installation-Credential")
-        }
+        request.setValue(credential, forHTTPHeaderField: "X-Installation-Credential")
         let snapshot = try await execute(
             request, as: AnalysisAccessWireDTO.self, expectedStatus: 200, forbidRedirects: true
         )

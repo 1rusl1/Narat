@@ -106,7 +106,8 @@ extension CollectionWireTests {
             XCTAssertNil(request.httpBody)
             XCTAssertNil(request.value(forHTTPHeaderField: "X-Operation-Id"))
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer captured-access-token")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Installation-Credential"), "fixture-installation")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Installation-Credential"),
+                           index == 5 ? "fixture-installation" : nil)
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Locale"), "en")
         }
     }
@@ -252,7 +253,7 @@ extension CollectionWireTests {
 
     func testAccessRepositoryUsesClaimCredentialForGuestAndAccountOnlyForPermanent() async throws {
         let transport = CatalogueTransport([.http(200, accessFixtures[5].json), .http(200, accessFixtures[0].json)])
-        let api = PlantsAPIClient(transport: transport, clientLocale: "en")
+        let api = PlantsAPIClient(transport: transport, installationCredential: "old-client-installation", clientLocale: "en")
         let repository = AnalysisAccessRepository()
         let credential = "same-fixture-installation-used-for-claim"
         await api.bindSyncSession(accessSession)
@@ -442,7 +443,7 @@ extension CollectionWireTests {
             let requests = await transport.capturedRequests()
             XCTAssertEqual(requests.count, 1)
             XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer captured-access-token")
-            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "X-Installation-Credential"), "fixture-installation")
+            XCTAssertNil(requests.first?.value(forHTTPHeaderField: "X-Installation-Credential"))
             XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "X-Client-Locale"), "en")
         }
     }
