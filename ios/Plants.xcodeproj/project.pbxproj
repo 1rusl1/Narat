@@ -19,6 +19,7 @@
 		330C9FB6DD9A3DAFB5D82F68 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = EC0934152F6D3267D4C9C9C0 /* Supabase */; };
 		47E2C2CD6F792211A9D673E2 /* PlantsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F9CD80AA4DD37A53A72483 /* PlantsUITests.swift */; };
 		4A78CE422C4EB9F29A998D01 /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78EFBA290DC19BBF401135FE /* LocalStore.swift */; };
+		4EE2684AD21639BDFCD1C41C /* StoreKitServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5509C28493FD4ADF295C1B /* StoreKitServiceTests.swift */; };
 		604A231D843684FD6882B99E /* CatalogueConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CF212919E5860E5FEFF756 /* CatalogueConnectionTests.swift */; };
 		63BBED9A10F903C990E7F0BA /* CatalogueUIFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA8ED8D3D5A68921B587504 /* CatalogueUIFixtures.swift */; };
 		6D900267E76268239847FD6A /* CatalogueSaveModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362A9E7E683E11C97ACC24F4 /* CatalogueSaveModelTests.swift */; };
@@ -29,7 +30,9 @@
 		89CBF03BAD1C9C162D4D244C /* PlantTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86370884EF4396B542D1F173 /* PlantTypes.swift */; };
 		8BD367FD1A1CD5FE1F59104B /* AnalysisFlowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62CD931E87B1312E678D520D /* AnalysisFlowModel.swift */; };
 		8EB0187BC9575C464C2D486A /* AddPlantRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBB5C2A19F35D9B00D4E4DB8 /* AddPlantRouter.swift */; };
+		8EC9DAB01585BCAC3E7DDC09 /* StoreKit.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 6A3C9281DE5FB10637B69CA1 /* StoreKit.storekit */; };
 		A061CC4CEFF68004BE2EEC29 /* PlantsBootstrapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6FD3B93A45D6E5E9532BF63 /* PlantsBootstrapTests.swift */; };
+		A21D77B1185C3B0DCE12E673 /* StoreKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BF6A7D703EB7BF1BBFA2A0 /* StoreKitService.swift */; };
 		AB33B2A60B7E2DB0A9CC94AA /* FirstHelpUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54336AF0334AC86C7E445CB5 /* FirstHelpUnitTests.swift */; };
 		B576BE1938EAD199DB1743E4 /* LanguageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04236BC9DAE108A2BDCAC0D2 /* LanguageStore.swift */; };
 		BCA7BF19DD1DF33E4CB4CB2E /* PlantsAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF416545B4B7C95A0E4BD012 /* PlantsAPIClient.swift */; };
@@ -74,6 +77,7 @@
 		278B776CABA22DDC66FE3A6A /* CatalogueSaveUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueSaveUITests.swift; sourceTree = "<group>"; };
 		2E35E230E9894C7A1FB11F26 /* Auth.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Auth.xcconfig; sourceTree = "<group>"; };
 		362A9E7E683E11C97ACC24F4 /* CatalogueSaveModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueSaveModelTests.swift; sourceTree = "<group>"; };
+		3F5509C28493FD4ADF295C1B /* StoreKitServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitServiceTests.swift; sourceTree = "<group>"; };
 		46ADF7131111530E8907D142 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		477EB0429D17FA0253D830B1 /* CollectionWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionWireTests.swift; sourceTree = "<group>"; };
 		481C9DE40A11A1924375A739 /* NativeAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthService.swift; sourceTree = "<group>"; };
@@ -84,6 +88,7 @@
 		5CF31B7143A463B3C93611AC /* CatalogueSaveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueSaveView.swift; sourceTree = "<group>"; };
 		62CD931E87B1312E678D520D /* AnalysisFlowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisFlowModel.swift; sourceTree = "<group>"; };
 		65CF212919E5860E5FEFF756 /* CatalogueConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueConnectionTests.swift; sourceTree = "<group>"; };
+		6A3C9281DE5FB10637B69CA1 /* StoreKit.storekit */ = {isa = PBXFileReference; name = StoreKit.storekit; path = ../Configuration/StoreKit.storekit; sourceTree = "<group>"; };
 		78EFBA290DC19BBF401135FE /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStore.swift; sourceTree = "<group>"; };
 		7BDC7053EC77E6615D2781D1 /* PlantsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlantsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8097EE5109CAE9D4A02ED456 /* CollectionRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionRepositoryTests.swift; sourceTree = "<group>"; };
@@ -106,6 +111,7 @@
 		E94A843068E8C94DB5624B05 /* AnalysisPhotoInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisPhotoInput.swift; sourceTree = "<group>"; };
 		F24C19F53C753771E608D374 /* FirstHelpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstHelpTests.swift; sourceTree = "<group>"; };
 		F5ED18BDC9941DA4A86F0D59 /* CareQuestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareQuestionsView.swift; sourceTree = "<group>"; };
+		F7BF6A7D703EB7BF1BBFA2A0 /* StoreKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitService.swift; sourceTree = "<group>"; };
 		FAA8ED8D3D5A68921B587504 /* CatalogueUIFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueUIFixtures.swift; sourceTree = "<group>"; };
 		FE7ADF3DB10F961D1467C1E0 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -192,6 +198,7 @@
 				54336AF0334AC86C7E445CB5 /* FirstHelpUnitTests.swift */,
 				E3EA6CB274FD7BB671AE96C4 /* NativeAuthTests.swift */,
 				C6FD3B93A45D6E5E9532BF63 /* PlantsBootstrapTests.swift */,
+				3F5509C28493FD4ADF295C1B /* StoreKitServiceTests.swift */,
 				9C425C07B1ADE14D3F44C391 /* SyncPersistenceTests.swift */,
 				B0B24EEFFBA61E5B3B8E089D /* Fixtures */,
 			);
@@ -343,6 +350,7 @@
 			isa = PBXGroup;
 			children = (
 				04C125102622741F401289ED /* 48854fc7b2b6d711a508c396.jpg */,
+				6A3C9281DE5FB10637B69CA1 /* StoreKit.storekit */,
 			);
 			name = Fixtures;
 			sourceTree = "<group>";
@@ -374,6 +382,7 @@
 		C09FB454AAEBA9C5C14C1448 /* StoreKit */ = {
 			isa = PBXGroup;
 			children = (
+				F7BF6A7D703EB7BF1BBFA2A0 /* StoreKitService.swift */,
 			);
 			path = StoreKit;
 			sourceTree = "<group>";
@@ -567,6 +576,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				ED24C0EAE33E185C0BB78DA4 /* 48854fc7b2b6d711a508c396.jpg in Resources */,
+				8EC9DAB01585BCAC3E7DDC09 /* StoreKit.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -606,6 +616,7 @@
 				BCA7BF19DD1DF33E4CB4CB2E /* PlantsAPIClient.swift in Sources */,
 				15166E88C7659442FDBE9252 /* PlantsApp.swift in Sources */,
 				218718DA507A0A891BB04C86 /* PreliminaryResultView.swift in Sources */,
+				A21D77B1185C3B0DCE12E673 /* StoreKitService.swift in Sources */,
 				D1CC6AF8FD85D05222631564 /* SupabaseAuthExchange.swift in Sources */,
 				181666AC1EEBCB049C05BECB /* SyncEngine.swift in Sources */,
 			);
@@ -623,6 +634,7 @@
 				AB33B2A60B7E2DB0A9CC94AA /* FirstHelpUnitTests.swift in Sources */,
 				EBB9A89C1794C2FE19D0324D /* NativeAuthTests.swift in Sources */,
 				A061CC4CEFF68004BE2EEC29 /* PlantsBootstrapTests.swift in Sources */,
+				4EE2684AD21639BDFCD1C41C /* StoreKitServiceTests.swift in Sources */,
 				BD689918C0713D3D467F69EA /* SyncPersistenceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

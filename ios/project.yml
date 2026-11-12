@@ -83,6 +83,9 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: PlantsTests
+      - path: Configuration/StoreKit.storekit
+        group: PlantsTests/Fixtures
+        buildPhase: resources
       - path: ../catalogue/releases/skeleton-300-v1/media/48854fc7b2b6d711a508c396.jpg
         group: PlantsTests/Fixtures
         buildPhase: resources
