@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "t149-staging-catalogue",
+      "description": "Accept the exact staging-only T149 server cutover tooling, before the controller publishes the approved T148 catalogue and media.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "candidate_base": "11f2e3726fe58b95779e92316454db593c867ea0",
+      "files": [
+        "tools/automation/tasks.t149-staging-catalogue.json",
+        "tools/automation/publish_staging_catalogue.py",
+        "tools/automation/staging_catalogue_activation.sql",
+        "supabase/tests/run_staging_catalogue_rehearsal.py",
+        "supabase/migrations/202611050001_catalogue_skeleton.sql",
+        "supabase/migrations/202611060001_catalogue_release_activation.sql",
+        "supabase/migrations/202611120018_catalogue_pl_description_fallback.sql",
+        "catalogue/releases/skeleton-300-v1/editorial-review.json"
+      ],
+      "write_files": [],
+      "evidence_files": ["catalogue/releases/skeleton-300-v1/editorial-review.json"],
+      "constraints": [
+        "Reviewer and QA report in English. Read-only inspection of the committed diff and local gates. The controller separately runs the provided PG17 rehearsal and alone changes the fixed narat-staging project. Never run Supabase commands, use credentials, access storage media/raw catalogue inputs or publish an iOS/production change in a model role.",
+        "Review strict digest and media integrity checks, staging-bound endpoints, no overwrite, attribution-preserving download_url projection, guarded batched draft and atomic activation. Check that pilot taxon UUIDs, the current KB and owner recommendations, manual journal and pinned diagnosis payloads survive. Review failure on missing Storage, wrong taxon and guarded rollback.",
+        "018 was independently accepted in T148 and is deployed separately via its existing migration. No Edge or SQL product changes outside the release cutover are part of this packet. Full T149 needs the app and remaining dependencies."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T149-S1",
+          "description": "Static checks and catalogue schema synchronization pass.",
+          "checks": ["catalogue-schema-sync", "deno-check", "diff-check"],
+          "mode": "local"
+        },
+        {
+          "id": "T149-S2",
+          "description": "Existing Deno, KB and real PostgreSQL regression fixtures pass.",
+          "checks": ["deno-tests", "kb-tests", "parallel-backend-diagnosis-sql"],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}
