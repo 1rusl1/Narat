@@ -123,6 +123,20 @@ Live-проверка доставки охватила открытие кар�
 
 **Следующий шаг.** В текущем клиенте есть системный `PhotosPicker` и отдельный маршрут каталога. Вход съёмки отсутствует. Для полного FR-003/FR-033 подключить съёмку к выбору фото, затем на физическом iPhone проверить системный запрос, отказ из приложения, галерею, каталог и успешный захват. Покрытие V13/V17 и T098 частичное. StoreKit и 024 на паузе. Недельный остаток Codex 11%. [Отчёт](validation/mvp-acceptance.md#v13v17--галерея-и-каталог-при-запрете-camera).
 
+### V17/T031 — вход съёмки, остановка на пороге 10%
+
+В `ios/Plants/Features/Analysis/CareQuestionsView.swift` начато подключение EN-кнопки `Take photo`, проверки разрешения и доступности и возврата к галерее. Выбранный снимок направляется в существующий `AnalysisFlowModel.selectPhotoData`. Работа остановлена по команде координатора при 10%. Адаптер `PlantCameraPicker` и его `Result` ещё отсутствуют. Изменённый исходник пока не собирается из-за этих ссылок.
+
+**Проверки.** Сверены маршруты выбора фото, API модели и существующий `NSCameraUsageDescription`. После правки прошёл `git diff --check`. Сборка, тесты и Simulator в этом этапе не запускались. Предыдущий EN-прогон галереи и каталога с системным запретом Camera относится к `dccfbe5`. Физический iPhone открыт. Включение живого анализа в текущем приложении ограничено DEBUG Simulator, для проверки захвата потребуется подписанная конфигурация устройства с доступным существующим фото-маршрутом.
+
+**Следующий шаг.** В том же Swift-файле добавить `PlantCameraPicker` на `UIImagePickerController` с результатами `.photo(Data)`, `.unreadable` и `.unavailable` и выходом при отмене. Добавить адресную проверку `PhotoCameraAccess`, затем выполнить команду:
+
+```sh
+xcodebuild -project ios/Plants.xcodeproj -scheme Plants -destination 'platform=iOS Simulator,id=32009F39-32EF-426B-A91E-31B368D6C27E' -derivedDataPath DerivedData/Automation -clonedSourcePackagesDirPath DerivedData/Automation/SourcePackages -packageCachePath DerivedData/Automation/PackageCache -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO -only-testing:PlantsTests/FirstHelpUnitTests test
+```
+
+V17, T031 и T098 открыты. StoreKit и 024 на паузе.
+
 ### V12/T133 — локальное напоминание об окончании trial
 
 Выбран локальный срез T133. Штатный owner `/sync` уже возвращает серверный `trial_end_at`. `SyncEngine.swift`, `LocalStore.swift` и `PlantsApp.swift` обновляют напоминание после канонической записи entitlement под исходным lease, при смене сессии и при возврате в приложение. `TrialReminderScheduler.swift` принимает только текущий годовой trial, хранит opt-in на устройстве отдельно для каждого владельца и ставит одно уведомление за 24 часа со стабильным ID. Смена срока заменяет запрос. Opt-out, выход, смена владельца, известное expiry или отзыв доступа снимают trial-напоминание. `GuestCatalogueView.swift` показывает дату и переключатель в «Моих растениях». При отказе в разрешении дата остаётся видна. `project.pbxproj` подключает scheduler и тесты.

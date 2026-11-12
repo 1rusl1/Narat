@@ -1,5 +1,7 @@
 import SwiftUI
 import PhotosUI
+import AVFoundation
+import UIKit
 
 struct AnalysisAccessSource {
     let connection: CatalogueConnection
@@ -100,6 +102,19 @@ private struct AnalysisQuotaGate<Content: View>: View {
     }
 }
 
+enum PhotoCameraAccess: Equatable {
+    case ready, request, denied, unavailable
+
+    init(available: Bool, authorization: AVAuthorizationStatus) {
+        switch authorization {
+        case .denied, .restricted: self = .denied
+        case .authorized: self = available ? .ready : .unavailable
+        case .notDetermined: self = available ? .request : .unavailable
+        @unknown default: self = .unavailable
+        }
+    }
+}
+
 public struct CareQuestionsView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
@@ -107,6 +122,11 @@ public struct CareQuestionsView: View {
     private let returnToPlant: (() -> Void)?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoLoadTask: Task<Void, Never>?
+    @State private var cameraPermissionTask: Task<Void, Never>?
+    @State private var cameraNotice: PhotoCameraAccess?
+    @State private var showingCamera = false
+    @State private var cameraScope: CatalogueSDKSnapshot?
+    @State private var cameraResult: PlantCameraPicker.Result?
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
         self.init(model: model, languageStore: languageStore, accessSource: nil)
@@ -131,7 +151,7 @@ public struct CareQuestionsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 if model.router.flowState.currentStep == .selectPhoto {
                     if model.hasAnalysisService {
-                        gallerySection
+                        photoSection
                     } else {
                         AnalysisUnavailableSection(model: model, languageStore: languageStore, returnToPlant: returnToPlant)
                     }
@@ -142,9 +162,17 @@ public struct CareQuestionsView: View {
             .padding()
         }
         .navigationTitle(isPolish ? "Pierwsza pomoc" : "First Help")
+        .fullScreenCover(isPresented: $showingCamera, onDismiss: finishCameraSelection) {
+            PlantCameraPicker { result in
+                cameraResult = result
+                showingCamera = false
+            }
+            .ignoresSafeArea()
+        }
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
             selectedPhoto = nil
+            cameraNotice = nil
             photoLoadTask?.cancel()
             let selectionId = model.beginPhotoSelection()
             photoLoadTask = Task { @MainActor in
@@ -164,21 +192,29 @@ public struct CareQuestionsView: View {
             }
         }
         .onDisappear {
+            cameraPermissionTask?.cancel()
+            cameraPermissionTask = nil
             photoLoadTask?.cancel()
             if model.isPreparingPhoto { model.cancelAnalysis() }
         }
     }
 
-    private var gallerySection: some View {
+    private var photoSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let accessSource {
                 AnalysisQuotaGate(
                     source: accessSource,
                     mode: model.router.flowState.intent == .problem ? .diagnosis : .identification,
                     locale: languageStore.currentLocale
-                ) { photoPicker }
+                ) { photoChoices }
             } else {
-                photoPicker
+                photoChoices
+            }
+            if let cameraNotice {
+                Text(cameraNotice == .denied
+                     ? "Camera access is off. You can still choose a photo."
+                     : "Camera is unavailable. You can still choose a photo.")
+                    .accessibilityIdentifier("photo.camera.notice")
             }
 
             if model.isPreparingPhoto {
@@ -194,12 +230,83 @@ public struct CareQuestionsView: View {
         }
     }
 
+    private var photoChoices: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !isPolish {
+                Button("Take photo", action: openCamera)
+                    .buttonStyle(.bordered)
+                    .disabled(model.isPreparingPhoto || cameraPermissionTask != nil)
+                    .accessibilityIdentifier("photo.select.camera")
+            }
+            photoPicker
+                .disabled(cameraPermissionTask != nil)
+        }
+    }
+
     private var photoPicker: some View {
         PhotosPicker(selection: $selectedPhoto, matching: .images) {
             Text(isPolish ? "Wybierz zdjęcie" : "Choose photo")
         }
         .buttonStyle(.borderedProminent)
         .accessibilityIdentifier("photo.select.gallery")
+    }
+
+    private func openCamera() {
+        let scope = accessSource?.connection.snapshot
+        cameraNotice = nil
+        let access = PhotoCameraAccess(
+            available: UIImagePickerController.isSourceTypeAvailable(.camera),
+            authorization: AVCaptureDevice.authorizationStatus(for: .video)
+        )
+        switch access {
+        case .ready:
+            presentCamera(scope: scope)
+        case .request:
+            cameraPermissionTask = Task { @MainActor in
+                let granted = await AVCaptureDevice.requestAccess(for: .video)
+                guard !Task.isCancelled else { return }
+                cameraPermissionTask = nil
+                guard model.router.flowState.currentStep == .selectPhoto,
+                      accessSource?.connection.snapshot == scope else { return }
+                if granted {
+                    presentCamera(scope: scope)
+                } else {
+                    cameraNotice = .denied
+                }
+            }
+        case .denied, .unavailable:
+            cameraNotice = access
+        }
+    }
+
+    private func presentCamera(scope: CatalogueSDKSnapshot?) {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            cameraNotice = .unavailable
+            return
+        }
+        cameraResult = nil
+        cameraScope = scope
+        showingCamera = true
+    }
+
+    private func finishCameraSelection() {
+        let result = cameraResult
+        cameraResult = nil
+        let scope = cameraScope
+        cameraScope = nil
+        guard model.router.flowState.currentStep == .selectPhoto,
+              accessSource?.connection.snapshot == scope else { return }
+        switch result {
+        case let .photo(data):
+            photoLoadTask?.cancel()
+            model.selectPhotoData(data, locale: languageStore.currentLocale)
+        case .unreadable:
+            model.failPhotoSelection(model.beginPhotoSelection())
+        case .unavailable:
+            cameraNotice = .unavailable
+        case .none:
+            break
+        }
     }
 
     private var questionStepSection: some View {
