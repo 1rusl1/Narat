@@ -408,6 +408,63 @@ final class CollectionRepositoryTests: XCTestCase {
         XCTAssertTrue(legacy.isEmpty)
     }
 
+    func testCollectionAndJournalReopenOfflineOnlyForPreviouslySyncedOwner() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let plant = UUID(uuidString: "22222222-2222-4222-8222-000000000001")!
+        let entry = UUID(uuidString: "55555555-5555-4555-8555-000000000001")!
+        var card = change(1)
+        card["data"] = ["id": plant.uuidString.lowercased(), "plant_id": "monstera_deliciosa",
+                        "personal_name": "Saved Monstera", "revision": 1, "care_revision": 1] as [String: Any]
+        let fact: [String: Any] = [
+            "entity_type": "care_entries", "id": entry.uuidString.lowercased(), "updated_at": until, "deleted_at": NSNull(),
+            "data": ["id": entry.uuidString.lowercased(), "plant_id": plant.uuidString.lowercased(),
+                     "action_code": "water", "occurred_at": boundary, "occurred_local_date": "2026-11-03", "state": "active"]
+        ]
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            let api = PlantsAPIClient(transport: CapacityTransport([try json(page([fact, card]))]))
+            await api.bindSyncSession(session)
+            let lease = try await api.captureSyncContext(ownerId: owner)
+            let collection = try await repository(store, api).collectionCards(context: lease)
+            XCTAssertFalse(collection.isCached)
+            XCTAssertEqual(collection.cards.map(\.id), [plant])
+        }
+
+        let store = LocalStore(modelContainer: try container(url))
+        let transport = OutboxFailureTransport()
+        let api = PlantsAPIClient(transport: transport)
+        await api.bindSyncSession(session)
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let repo = repository(store, api)
+        let before = try await state(store, ownerId: owner)
+        let cached = try await repo.collectionCards(context: lease)
+        XCTAssertTrue(cached.isCached)
+        XCTAssertEqual(cached.cards.map(\.id), [plant])
+        XCTAssertEqual(cached.cards.first?.personalName, "Saved Monstera")
+        let history = try await repo.collectionWateringHistory(plantId: plant, context: lease)
+        XCTAssertEqual(history.map(\.id), [entry])
+        XCTAssertEqual(history.first?.state, "active")
+        XCTAssertEqual(history.first?.occurredLocalDate, "2026-11-03")
+        let after = try await state(store, ownerId: owner)
+        XCTAssertEqual(after, before)
+
+        await api.bindSyncSession(NativeAuthSession(userId: other, accessToken: "capacity-b", expiresAt: .distantFuture))
+        do {
+            _ = try await repo.collectionCards(context: lease)
+            XCTFail("A revoked lease read the previous owner's cache")
+        } catch SyncWireValidationError.invalidSession {}
+        let otherLease = try await api.captureSyncContext(ownerId: other)
+        do {
+            _ = try await repo.collectionCards(context: otherLease)
+            XCTFail("Reported an empty offline collection without a synced snapshot")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .notConnectedToInternet)
+        }
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "GET"])
+    }
+
     private func assertFrozenCommand(_ actual: OutboxEntrySnapshot, _ original: OutboxEntrySnapshot) {
         XCTAssertEqual(actual.operationId, original.operationId)
         XCTAssertEqual(actual.ownerId, original.ownerId)

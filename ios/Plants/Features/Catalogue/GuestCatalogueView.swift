@@ -593,6 +593,7 @@ struct CatalogueCollectionView: View {
     @State private var repeatModel: AnalysisFlowModel?
     @State private var loading = true
     @State private var failed = false
+    @State private var usingCachedCards = false
     @State private var attempt = 0
 
     private var read: Read { Read(session: connection.snapshot, attempt: attempt) }
@@ -635,19 +636,8 @@ struct CatalogueCollectionView: View {
                         Text(polish ? "Nie udało się wczytać roślin." : "Couldn’t load your plants.")
                         Button(polish ? "Spróbuj ponownie" : "Try again") { attempt += 1 }
                     }
-                } else if cards.isEmpty {
-                    Text(polish ? "Nie masz jeszcze roślin." : "You haven’t saved any plants yet.")
-                        .accessibilityIdentifier("collection.empty")
                 } else {
-                    List(cards) { card in
-                        Button {
-                            guard let scope = loadedScope, scope == connection.snapshot else { return }
-                            selected = Selected(card: card, scope: scope)
-                        } label: {
-                            Text(card.personalName ?? card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
-                        }
-                        .accessibilityIdentifier("collection.plant." + card.id.uuidString.lowercased())
-                    }
+                    collectionList
                 }
             }
             .navigationTitle(polish ? "Moje rośliny" : "My plants")
@@ -671,6 +661,30 @@ struct CatalogueCollectionView: View {
         repeatModel = nil
     }
 
+    private var collectionList: some View {
+        VStack {
+            if usingCachedCards {
+                Text(polish ? "Rośliny z ostatniej synchronizacji." : "Showing last synced plants.")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("collection.cached")
+            }
+            if cards.isEmpty {
+                Text(polish ? "Nie masz jeszcze roślin." : "You haven’t saved any plants yet.")
+                    .accessibilityIdentifier("collection.empty")
+            } else {
+                List(cards) { card in
+                    Button {
+                        guard let scope = loadedScope, scope == connection.snapshot else { return }
+                        selected = Selected(card: card, scope: scope)
+                    } label: {
+                        Text(card.personalName ?? card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
+                    }
+                    .accessibilityIdentifier("collection.plant." + card.id.uuidString.lowercased())
+                }
+            }
+        }
+    }
+
     @MainActor
     private func load(_ requested: Read) async {
         guard !Task.isCancelled, read == requested else { return }
@@ -679,6 +693,7 @@ struct CatalogueCollectionView: View {
         cards = []
         loadedScope = nil
         failed = false
+        usingCachedCards = false
         loading = true
         guard let expected = requested.session, !expected.isAnonymous else { return }
         do {
@@ -686,7 +701,8 @@ struct CatalogueCollectionView: View {
             guard let repository = connection.repository else { throw CatalogueConnectionUnavailable.storageUnavailable }
             let result = try await repository.collectionCards(context: lease)
             guard !Task.isCancelled, read == requested else { return }
-            cards = result
+            cards = result.cards
+            usingCachedCards = result.isCached
         } catch {
             guard !Task.isCancelled, read == requested else { return }
             failed = true

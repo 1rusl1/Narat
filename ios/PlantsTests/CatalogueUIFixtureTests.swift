@@ -61,7 +61,9 @@ final class CatalogueUIFixtureTests: XCTestCase {
         XCTAssertEqual(refreshed.plantCount, 3)
         let scope = try await h.connection.sessionSnapshot()
         let lease = try await h.connection.collectionLease(expected: scope)
-        let cards = try await h.connection.repository!.collectionCards(context: lease)
+        let collection = try await h.connection.repository!.collectionCards(context: lease)
+        XCTAssertFalse(collection.isCached)
+        let cards = collection.cards
         XCTAssertEqual(cards.count, 3)
         let savedCard = try XCTUnwrap(cards.first { $0.id == confirmation.receipt.plantId })
         XCTAssertEqual(savedCard.speciesSlug, input.speciesSlug)

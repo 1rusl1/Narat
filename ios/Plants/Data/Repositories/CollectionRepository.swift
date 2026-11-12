@@ -111,6 +111,11 @@ struct CatalogueCardSummary: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
+struct CatalogueCollectionSnapshot: Sendable {
+    let cards: [CatalogueCardSummary]
+    let isCached: Bool
+}
+
 /// Canonical standalone watering fact. Dates remain server calendar dates.
 struct CatalogueWateringEntry: Decodable, Sendable, Equatable, Identifiable {
     let id: UUID
@@ -260,12 +265,23 @@ public struct CollectionRepository: Sendable {
         }
     }
 
-    func collectionCards(context: SyncSessionLease) async throws -> [CatalogueCardSummary] {
+    func collectionCards(context: SyncSessionLease) async throws -> CatalogueCollectionSnapshot {
         try apiClient.syncAuthority.withBoundValid(context) {}
-        _ = try await syncEngine.performFullRefresh(context: context)
+        let isCached: Bool
+        do {
+            _ = try await syncEngine.performFullRefresh(context: context)
+            isCached = false
+        } catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost, .timedOut].contains(error.code) {
+            try Task.checkCancellation()
+            try apiClient.syncAuthority.withBoundValid(context) {}
+            guard try await store.syncedProfile(ownerId: context.ownerId) != nil else { throw error }
+            isCached = true
+        }
         let entities = try await store.activeSyncedEntities(ownerId: context.ownerId, entityType: "plants")
         return try apiClient.syncAuthority.withBoundValid(context) {
-            try entities.reversed().map(Self.decodeCard)
+            try Task.checkCancellation()
+            let cards = try entities.reversed().map(Self.decodeCard)
+            return CatalogueCollectionSnapshot(cards: cards, isCached: isCached)
         }
     }
 
