@@ -361,6 +361,12 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 cap_seed = (ROOT/'supabase/tests/rooms_upgrade.seed.sql').read_text() + '\nINSERT INTO public.plants(id,owner_id,plant_id,creation_source,display_name) VALUES\n(\'15800000-0000-4000-8000-000000000203\',\'15800000-0000-4000-8000-000000000001\',\'fixture_rooms_plant\',\'identification\',\'Historical A2\');\nINSERT INTO public.basic_care_memberships(owner_id,plant_id,enabled,free_slot) VALUES\n(\'15800000-0000-4000-8000-000000000001\',\'15800000-0000-4000-8000-000000000201\',true,2);\nINSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload) VALUES\n(\'15800000-0000-4000-8000-000000000001\',\'15800000-0000-4000-8000-000000000821\',\'free_care.select\',encode(digest(\'{"selected_plant_ids": []}\'::jsonb::text,\'sha256\'),\'hex\'),\'{"legacy_selection": true}\'::jsonb);\n'
                 sql(case, cap_seed)
             if case == 'upgrade':
+                if any(m.name == '202611120023_retire_notification_claim_writes.sql' for m in selected):
+                    sql(case, f"INSERT INTO public.installation_access(id,credential_hash) VALUES('{job(890)}',repeat('f',64)); "
+                        f"INSERT INTO public.notification_claims(id,owner_id,kind,period_key,installation_id,scheduled_at,state,updated_at) "
+                        f"VALUES('{job(891)}','{A}','progress_report','2026-11','{job(890)}','2026-11-01','scheduled','2026-11-01'); "
+                        f"INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload) "
+                        f"VALUES('{A}','{job(892)}','notification.claim','historical',jsonb_build_object('granted',true));")
                 # Existing paid counters deliberately contain unattributable spend;
                 # known consumed/reserved jobs must not be added twice.
                 sql(case, f"INSERT INTO public.monthly_quotas(id,owner_id,quota_kind,period_start,period_end,limit_count,consumed_count,reserved_count) VALUES('{job(400)}','{A}','paid_monthly','2026-10-20','2026-11-20',100,7,1);")
@@ -391,6 +397,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
             if args.access and any(m.name == '202611120022_auth_registration_profile.sql' for m in selected):
                 tap(case, ROOT/'supabase/tests/auth_registration_profile.test.sql')
+            if args.access and any(m.name == '202611120023_retire_notification_claim_writes.sql' for m in selected):
+                tap(case, ROOT/'supabase/tests/notification_claim_retirement.test.sql')
             if args.diagnosis_upload:
                 tap(case, ROOT/'supabase/tests/diagnosis_upload.test.sql')
             if args.diagnosis_jobs:

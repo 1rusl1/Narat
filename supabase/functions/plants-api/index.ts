@@ -13,11 +13,6 @@ import {
   resolveLocale,
 } from "../_shared/http.ts";
 import {
-  handleNotificationClaim,
-  NotificationClaimResponse,
-  NotificationClaimRpcAdapter,
-} from "./notifications.ts";
-import {
   handleInstallationBind,
   handleInstallationRegister,
   InstallationsStoreAdapter,
@@ -52,7 +47,6 @@ export type AuthClientFactory = (token: string) => SupabaseClient | null;
 export interface PlantsApiDependencies {
   resolveRequestContext?: (req: Request) => Promise<RequestContext>;
   authClientFactory?: AuthClientFactory;
-  notificationAdapter?: NotificationClaimRpcAdapter;
   installationsAdapter?: InstallationsStoreAdapter;
   analysisAccessAdapter?: AnalysisAccessQueryAdapter;
   mediaAdapter?: MediaStorageAdapter;
@@ -156,35 +150,6 @@ async function defaultResolveRequestContext(
   };
 }
 
-function createSupabaseNotificationAdapter(): NotificationClaimRpcAdapter {
-  return {
-    async claimSlot(params): Promise<NotificationClaimResponse> {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-      const client = createClient(supabaseUrl, serviceRoleKey || "", {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-
-      const { data, error } = await client.rpc("claim_notification_slot", {
-        p_owner_id: params.ownerId,
-        p_operation_id: params.operationId,
-        p_kind: params.kind,
-        p_period_key: params.periodKey,
-        p_device_installation_id: params.deviceInstallationId,
-      });
-
-      if (error) {
-        throw new ApiHttpError(
-          400,
-          "VALIDATION_ERROR",
-          error.message,
-        );
-      }
-      return data as NotificationClaimResponse;
-    },
-  };
-}
-
 function privateResponse(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, no-store");
@@ -230,12 +195,6 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       const ctx = deps.resolveRequestContext
         ? await deps.resolveRequestContext(req)
         : await defaultResolveRequestContext(req, deps.authClientFactory);
-
-      if (req.method === "POST" && normalizedPath === "/notifications/claim") {
-        const adapter = deps.notificationAdapter ??
-          createSupabaseNotificationAdapter();
-        return await handleNotificationClaim(req, ctx, adapter);
-      }
 
       if (
         req.method === "POST" &&

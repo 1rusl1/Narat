@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — T165 server notification write retirement in review, 12 November 2026
+
+After T154, migration 023 and the production route remove `POST /notifications/claim` and the two SQL write RPCs. The historical claim, receipt and existing sync read projections remain available to current iOS clients. The local trial reminder and sync read cleanup follow with A after decoder compatibility.
+
+Controller fixtures passed all seven targeted Deno tests and 688 pgTAP assertions per clean/upgrade database. Upgrade seeded a prior claim and receipt and preserved them byte for byte. The live baseline query found both writer functions and zero prior notification claims or receipts on `narat-staging`. No notification was sent. Next accept the exact diff, deploy 023 and `plants-api` to staging, then check both old kinds return 404 and the historical aggregates and current sync contract are unchanged.
+
 ## B — T154 live Auth and upgrade accepted, 12 November 2026
 
 The installed Auth trigger previously provisioned anonymous inserts only. The forward migration 022 wires new permanent Auth inserts and the same UUID transitioning from anonymous to permanent into the existing profile and quota anchor triggers. It preserves historical profiles, NULL anchors, starter state and active leases. The controller's clean/upgrade run passed 681 pgTAP per database, including 26 new Auth trigger and quota assertions. Auth in these PostgreSQL checks was a fixture.

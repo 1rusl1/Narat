@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "id": "t165-notification-claim-retirement",
+      "description": "Accept retirement of server notification claim and cancellation writes while preserving history and the current sync read contract.",
+      "candidate_base": "1d5beb866e4afbc5cde778e081d3453d6e1bafee",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "supabase/functions/_shared/tests/foundational_services_test.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/notifications.ts",
+        "supabase/migrations/202611010001_notification_claims.sql",
+        "supabase/migrations/202611120023_retire_notification_claim_writes.sql",
+        "supabase/tests/notification_claim_retirement.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.t165-notification-claim-retirement.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Exact read-only candidate diff and local gates. The controller alone deploys to narat-staging and probes the removed endpoint using synthetic sessions. No notifications are sent.",
+        "Remove the HTTP writer and both legacy SQL writer RPCs. Preserve historical claims, receipts and current sync projection for existing iOS decoders. New iOS reminder and sync/read retirement are separate. No Auth, billing, quota or StoreKit changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T165-N1",
+          "description": "Production Edge entrypoints typecheck and the diff passes.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "T165-N2",
+          "description": "Production HTTP fixtures and clean/upgrade PostgreSQL prove removal and preserve seeded historical rows.",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}
