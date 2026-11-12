@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — V19 один контроль первой помощи, контракт, 12 ноября 2026
+
+Раздел Watering у WVU описывает общую периодичность и отдельную повторную проверку уже влажного грунта. Источник Wisconsin для Monstera описывает состояние грунта между поливами. Проверенные материалы не дают видового срока от даты полива, поэтому V11 live с числовой датой открыт, профиль Monstera остаётся с null. [WVU Extension](https://extension.wvu.edu/files/d/d82924be-5fb5-480d-af6d-b1d0a23c1806/wlg-177-houseplants-digital.pdf) · [Wisconsin Extension](https://hort.extension.wisc.edu/articles/monstera-deliciosa/).
+
+Выбран V19/T135: запись применимой первой помощи из канонического диагноза и один pending control при подтверждённом сроке. Контракт использует `POST /commands`, `/sync` и существующий undo. Числовой случай проверяется на fixtures, действующий KB не меняется. Следом SQL/Edge, Review/QA и staging smoke. Наблюдение/фото, повторы, 024 и StoreKit вне пакета. Недельный остаток на старте — 17%. [Контракт](../specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md).
+
 ## B — V11/V19 следующая проверка на staging, 12 ноября 2026
 
 Подписанный iOS-срез исправления даты принят в A `55fd63b`. Контракт для A опубликован в `bc74c66`. Миграция 027 расширяет owner RPC, `care-recommendation.ts` добавляет `next_check` с датой и отдельным источником интервала. Изменены SQL/HTTP fixtures и gate. [Контракт](../specs/001-plants-ios-mvp/contracts/plant-care-recommendation-http.md).
