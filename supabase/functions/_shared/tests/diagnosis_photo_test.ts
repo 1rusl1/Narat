@@ -125,7 +125,29 @@ function fixture(
         openRouter ? "anthropic/claude-haiku-5.5" : "claude-haiku-5-5",
       );
       assertEquals(body.max_tokens, 2048);
-      assertEquals(body.output_config, { effort: "low" });
+      assertEquals(
+        body.output_config,
+        identification
+          ? {
+            effort: "low",
+            format: {
+              type: "json_schema",
+              schema: {
+                type: "object",
+                properties: {
+                  status: {
+                    type: "string",
+                    enum: ["identified", "unknown", "unusable"],
+                  },
+                  plant_id: { type: ["string", "null"] },
+                },
+                required: ["status", "plant_id"],
+                additionalProperties: false,
+              },
+            },
+          }
+          : { effort: "low" },
+      );
       assertEquals(
         body.thinking,
         openRouter ? { type: "disabled" } : undefined,

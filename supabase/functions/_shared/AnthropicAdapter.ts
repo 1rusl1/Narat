@@ -60,11 +60,29 @@ export interface AnthropicAdapterResult {
   errorMessage?: string;
 }
 
+interface JsonOutputFormat {
+  type: "json_schema";
+  schema: Record<string, unknown>;
+}
+
+const IDENTIFICATION_OUTPUT_FORMAT: JsonOutputFormat = {
+  type: "json_schema",
+  schema: {
+    type: "object",
+    properties: {
+      status: { type: "string", enum: ["identified", "unknown", "unusable"] },
+      plant_id: { type: ["string", "null"] },
+    },
+    required: ["status", "plant_id"],
+    additionalProperties: false,
+  },
+};
+
 export interface AnthropicMessagesClient {
   create(params: {
     model: string;
     max_tokens: number;
-    output_config: { effort: "low" };
+    output_config: { effort: "low"; format?: JsonOutputFormat };
     thinking?: { type: "disabled" };
     provider?: { allow_fallbacks: false };
     system: string;
@@ -325,6 +343,7 @@ export class AnthropicAdapter {
           },
         };
       },
+      IDENTIFICATION_OUTPUT_FORMAT,
     );
   }
 
@@ -339,6 +358,7 @@ export class AnthropicAdapter {
       parsed: unknown,
       stopReason: string,
     ) => AnthropicAdapterResult | Promise<AnthropicAdapterResult>,
+    format?: JsonOutputFormat,
   ): Promise<AnthropicAdapterResult> {
     const openRouter = this.provider === "openrouter";
     const started = performance.now();
@@ -347,7 +367,7 @@ export class AnthropicAdapter {
       const response = await this.messagesClient.create({
         model: openRouter ? PINNED_OPENROUTER_MODEL : PINNED_ANTHROPIC_MODEL,
         max_tokens: 2048,
-        output_config: { effort: "low" },
+        output_config: { effort: "low", ...(format && { format }) },
         ...(openRouter && {
           thinking: { type: "disabled" },
           provider: { allow_fallbacks: false },
