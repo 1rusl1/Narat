@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — T150 personal photo save in Review/QA, 12 November 2026
+
+This server candidate starts from `acb713d`. Migration 020 extends the existing `plant.create` command with an explicit confirmed catalogue taxon and owned completed identification job. It binds the source ready photo and flow in the same transaction as the plant and receipt. The private read route verifies original bytes and only resolves the owner's current main photo. The existing catalogue save remains available. A received the [scan save wire](../specs/001-plants-ios-mvp/contracts/identification-photo-http.md).
+
+Controller checks passed Deno entrypoint typecheck, 41 targeted HTTP tests and 634 pgTAP assertions in each clean/upgrade PostgreSQL database. Photos, SQL owners and provider replies in those gates were fixtures. Next accept `tasks.t150-identification-plant-photo.json`, deploy migration 020 and `plants-api` to staging, and verify the already-completed Monstera job through save, replay and private read. In parallel inspect the existing guest draft SQL and Edge composition for the following seven-day claim packet. T150 remains open.
+
 ## B — T150/T153 server identification verified on staging, 12 November 2026
 
 T149 is accepted for the English MVP. iOS `edf05e9` verified permanent test-account sign-in, save/replay, the same plant ID after cold restart, Free cap and owner isolation on the live 606-species catalogue. The saved Monstera retained its recommendation and Undone journal. Paid and native continuation were exercised with fixtures. The accepted iOS result is recorded in `37d1e3b` and reflected in the backend task list.

@@ -23,6 +23,7 @@ const lease = "be350000-0000-4000-8000-000000000007";
 const jobOperation = "be350000-0000-4000-8000-000000000008";
 const catalogue = "be350000-0000-4000-8000-000000000009";
 const species = "be350000-0000-4000-8000-000000000010";
+const savedPlant = "be350000-0000-4000-8000-000000000012";
 const outsider = "be350000-0000-4000-8000-000000000011";
 const host = "https://diagnosis.example.test";
 const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
@@ -67,6 +68,7 @@ function fixture(
       : null);
   const env = (name: string) => variables[name];
   let expired = false;
+  let plantSaved = false;
   let ticketIssued = false;
   let ready = false, created = false, leased = false, providerStarted = false;
   let providerCalls = 0, uploads = 0;
@@ -234,6 +236,33 @@ function fixture(
     rpcNames.push(rpc);
     const body = await req.json();
     switch (rpc) {
+      case "execute_plant_create_command":
+        assertEquals(body.p_owner_id, owner);
+        assertEquals(body.p_payload, {
+          creation_source: "catalogue",
+          add_method: "scan",
+          creation_intent: "care",
+          identification_job_id: job,
+          taxon_id: species,
+        });
+        assertEquals(outcome, "succeeded");
+        plantSaved = true;
+        return Response.json({
+          plant_id: savedPlant,
+          photo_id: photo,
+          care_revision: 1,
+          context_state: "current",
+          next_available_step: "enable_basic_care",
+          plan_availability: "available",
+          watermark: "2026-11-12T08:00:00.000000Z",
+        });
+      case "read_owned_plant_photo":
+        return Response.json(
+          plantSaved && body.p_owner_id === owner &&
+            body.p_plant_id === savedPlant
+            ? row()
+            : null,
+        );
       case "create_diagnosis_upload":
         assertEquals(body.p_owner_id, owner);
         assertEquals(body.p_operation_id, uploadOperation);
@@ -421,6 +450,9 @@ function fixture(
     },
     providerCalls: () => providerCalls,
     uploads: () => uploads,
+    corruptPhoto: () => {
+      stored = new Uint8Array(jpeg.length);
+    },
   };
 }
 
@@ -601,6 +633,64 @@ for (
     assertEquals(await (await f.api(path)).json(), terminal);
   });
 }
+
+Deno.test("Identification saves the original photo and privately reads identical bytes", async () => {
+  const f = fixture({
+    identificationReply: {
+      text: JSON.stringify({ status: "identified", plant_id: species }),
+    },
+  });
+  const ticket = await (await f.ticket()).json();
+  assertEquals((await f.put(ticket.signed_upload_url)).status, 200);
+  assertEquals(
+    (await f.api("/analysis/jobs", {
+      operation_id: jobOperation,
+      photo_asset_id: photo,
+      mode: "identification",
+    })).status,
+    202,
+  );
+  await Promise.all(f.work);
+  const payload = {
+    creation_source: "catalogue",
+    add_method: "scan",
+    creation_intent: "care",
+    identification_job_id: job,
+    taxon_id: species,
+  };
+  const save = (data: Record<string, unknown>) =>
+    f.api("/commands", {
+      command_name: "plant.create",
+      operation_id: outsider,
+      payload_json: JSON.stringify(data),
+    });
+  assertEquals((await save({ ...payload, photo_id: outsider })).status, 400);
+  assertEquals(
+    (await save({ ...payload, add_method: "catalogue" })).status,
+    400,
+  );
+  const first = await save(payload);
+  assertEquals(first.status, 200);
+  const receipt = await first.json();
+  assertEquals(receipt.photo_id, photo);
+  assertEquals(await (await save(payload)).json(), receipt);
+
+  const path = `/plants/${receipt.plant_id}/photo`;
+  const ownerRead = await f.api(path);
+  assertEquals(ownerRead.status, 200);
+  assertEquals(ownerRead.headers.get("content-type"), "image/jpeg");
+  assertEquals(ownerRead.headers.get("cache-control"), "private, no-store");
+  assertEquals(new Uint8Array(await ownerRead.arrayBuffer()), jpeg);
+  const otherRead = await f.api(path, undefined, "fixture-other");
+  assertEquals(otherRead.status, 404);
+  assertEquals(otherRead.headers.get("cache-control"), "private, no-store");
+  assertEquals(f.uploads(), 1);
+
+  f.corruptPhoto();
+  const corruptRead = await f.api(path);
+  assertEquals(corruptRead.status, 503);
+  assertEquals(corruptRead.headers.get("cache-control"), "private, no-store");
+});
 
 Deno.test("Analysis explicitly blocks a legacy monthly account without a verified registration date", async () => {
   const f = fixture({ registrationRequired: true });

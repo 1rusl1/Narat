@@ -206,6 +206,9 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     const careMatch = req.method === "GET"
       ? normalizedPath.match(/^\/plants\/([^/]+)\/care\/recommendation$/)
       : null;
+    const photoMatch = req.method === "GET"
+      ? normalizedPath.match(/^\/plants\/([^/]+)\/photo$/)
+      : null;
     try {
       if (req.method === "GET" && normalizedPath === "/health") {
         return jsonResponse({ status: "ok", version: "3.0.0", locale }, 200);
@@ -259,6 +262,9 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       }
 
       if (deps.diagnosisMedia) {
+        if (photoMatch) {
+          return privateResponse(await deps.diagnosisMedia.plantPhoto(ctx, photoMatch[1]));
+        }
         if (req.method === "POST" && normalizedPath === "/media/upload-ticket") {
           return await deps.diagnosisMedia.ticket(req, ctx);
         }
@@ -341,7 +347,7 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       );
     } catch (err) {
       const response = errorResponse(err, locale);
-      return careMatch ? privateResponse(response) : response;
+      return careMatch || photoMatch ? privateResponse(response) : response;
     }
   };
 }

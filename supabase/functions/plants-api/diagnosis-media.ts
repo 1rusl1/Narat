@@ -287,6 +287,39 @@ export function createDiagnosisMedia(
   }
 
   return {
+    async plantPhoto(ctx: RequestContext, id: string) {
+      const owner = requireActiveOwner(ctx);
+      if (ctx.isAnonymous) throw notFound(ctx);
+      const plant = requireUuid(id, "plant_id");
+      const upload = parseUpload(
+        await rpc(ctx, "read_owned_plant_photo", {
+          p_owner_id: owner,
+          p_plant_id: plant,
+        }),
+        owner,
+        ctx,
+      );
+      if (upload.state !== "ready") throw notFound(ctx);
+
+      let bytes: Uint8Array<ArrayBuffer>;
+      try {
+        const { data, error } = await client(ctx).storage
+          .from(DIAGNOSIS_PHOTO_BUCKET).download(upload.storage_path);
+        if (error || !data || data.size !== upload.byte_size) throw new Error();
+        bytes = await readBytes(data.stream(), upload.byte_size, ctx);
+        await verifyBytes(bytes, upload, ctx);
+      } catch {
+        throw unavailable(ctx);
+      }
+      return new Response(bytes, {
+        headers: {
+          "Content-Type": upload.mime_type,
+          "Content-Length": String(upload.byte_size),
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    },
+
     async ticket(req: Request, ctx: RequestContext) {
       const owner = requireActiveOwner(ctx);
       const key = signingKey(ctx);

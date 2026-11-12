@@ -165,5 +165,70 @@ SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000002',(SELE
     (SELECT body FROM projection),'existing diagnosis survives independent identification and catalogue retirement');
 SELECT ok(NOT has_function_privilege('authenticated','public.read_identification_catalog(uuid,uuid)','execute'),
     'client cannot bypass the identification worker');
+-- Restore the active fixture for the confirmed-species save.
+UPDATE public.catalogue_releases SET state='published'
+WHERE id=(SELECT (body->>'catalogue_release_id')::uuid FROM identification_catalogue);
+CREATE TEMP TABLE scan_input AS SELECT jsonb_build_object(
+    'creation_source','catalogue','add_method','scan','creation_intent','care',
+    'identification_job_id',(SELECT id FROM identified_job),'taxon_id',body->'plant_id'
+) body FROM identified_result;
+SELECT throws_ok($q$SELECT public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000001','16310000-0000-4000-8000-000000000051',
+    (SELECT body FROM scan_input))$q$,
+    'P0002','identification_source_not_found','another owner cannot attach the identification');
+SELECT throws_ok($q$SELECT public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000051',
+    (SELECT body || jsonb_build_object('origin_flow_id',gen_random_uuid()) FROM scan_input))$q$,
+    'P0002','identification_source_not_found','a different flow cannot attach the photo');
+SELECT throws_ok($q$SELECT public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000051',
+    (SELECT body || jsonb_build_object('photo_id',gen_random_uuid()) FROM scan_input))$q$,
+    '22023','invalid_identification_save','scan save ignores no client-supplied replacement photo');
+SELECT throws_ok($q$SELECT public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000051',
+    (SELECT body || jsonb_build_object('identification_job_id',(SELECT id FROM job_id)) FROM scan_input))$q$,
+    'P0002','identification_source_not_found','a completed diagnosis is not a scan-save source');
+SELECT is((SELECT plant_id FROM public.photo_assets WHERE id=(SELECT id FROM photo)),
+    NULL::uuid,'failed saves leave the photo unattached');
+CREATE TEMP TABLE scan_saved AS SELECT public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000051',
+    (SELECT body FROM scan_input)) body;
+CREATE TEMP TABLE scan_plant AS SELECT (body->>'plant_id')::uuid id FROM scan_saved;
+SELECT is((SELECT body->>'photo_id' FROM scan_saved),(SELECT id::text FROM photo),
+    'receipt records the original photo identity');
+SELECT is((SELECT main_photo_id FROM public.plants WHERE id=(SELECT id FROM scan_plant)),
+    (SELECT id FROM photo),'confirmed plant points to the original photo');
+SELECT is((SELECT plant_id FROM public.photo_assets WHERE id=(SELECT id FROM photo)),
+    (SELECT id FROM scan_plant),'original photo points back to its saved plant');
+SELECT is((SELECT origin_flow_id FROM public.plants WHERE id=(SELECT id FROM scan_plant)),
+    (SELECT flow_id FROM public.analysis_jobs WHERE id=(SELECT id FROM identified_job)),
+    'origin flow comes from the owned completed job');
+SELECT is((SELECT creation_source FROM public.plants WHERE id=(SELECT id FROM scan_plant)),
+    'identification','saved instance records identification provenance');
+SELECT is((SELECT taxon_id::text FROM public.plants WHERE id=(SELECT id FROM scan_plant)),
+    (SELECT body->>'taxon_id' FROM scan_input),'confirmed taxon is persisted');
+SELECT is(public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000051',
+    (SELECT body FROM scan_input)),(SELECT body FROM scan_saved),'exact replay preserves the complete receipt');
+SELECT throws_ok($q$SELECT public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000051',
+    (SELECT body || '{"personal_name":"another payload"}'::jsonb FROM scan_input))$q$,
+    '23505','operation_payload_mismatch','changed payload conflicts before looking at attached media');
+SELECT throws_ok($q$SELECT public.execute_plant_create_command(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000052',
+    (SELECT body FROM scan_input))$q$,
+    '23505','identification_photo_already_attached','a new operation cannot attach the original photo twice');
+SELECT is(public.read_owned_plant_photo(
+    '16300000-0000-4000-8000-000000000002',(SELECT id FROM scan_plant))->>'content_sha256',
+    repeat('a',64),'owner reads immutable photo metadata');
+SELECT is(public.read_owned_plant_photo(
+    '16300000-0000-4000-8000-000000000001',(SELECT id FROM scan_plant)),NULL::jsonb,
+    'another owner cannot resolve private photo metadata');
+SELECT ok(NOT has_function_privilege('authenticated','public.read_owned_plant_photo(uuid,uuid)','execute'),
+    'private photo lookup is service-only');
+UPDATE public.plants SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM scan_plant);
+SELECT is(public.read_owned_plant_photo(
+    '16300000-0000-4000-8000-000000000002',(SELECT id FROM scan_plant)),NULL::jsonb,
+    'a deleted plant no longer exposes photo bytes');
 SELECT * FROM finish();
 ROLLBACK;

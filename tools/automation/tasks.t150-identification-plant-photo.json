@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "t150-identification-plant-photo",
+      "description": "Accept the atomic owned identification-to-plant photo save and private byte read.",
+      "candidate_base": "acb713d0debae78f36cfc151eac4e71664646272",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/identification-photo-http.md",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/functions/plants-api/collection.ts",
+        "supabase/functions/plants-api/diagnosis-media.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "supabase/migrations/202611120020_identification_plant_photo.sql",
+        "supabase/tests/diagnosis_jobs.test.sql",
+        "tools/automation/tasks.t150-identification-plant-photo.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Independent Reviewer and QA report in English. Use only local fixture checks. The controller deploys to narat-staging and runs the live verification. No model role may use staging credentials or deploy.",
+        "Review the exact forward replacement of the existing command. Verify owner lock, idempotent receipt, completed identification and verified media ownership, flow, current confirmed taxon, no raw photo injection, one attachment and unchanged older catalogue/diagnosis cases. Verify bounded owner-only original bytes and error handling with no Storage path in the wire.",
+        "The private-read scope is a saved plant. Existing catalogue cap and provider quota stay in place. Guest drafts, iOS and production are outside this packet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T150-P1",
+          "description": "Production route and SQL adapter sources compile and diff hygiene passes.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T150-P2",
+          "description": "HTTP SDK fixtures and clean/upgrade PostgreSQL prove original photo, owner isolation, replay and baseline regressions.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
