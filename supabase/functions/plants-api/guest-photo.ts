@@ -11,6 +11,15 @@ import { DIAGNOSIS_PHOTO_BUCKET } from "./diagnosis-media.ts";
 
 const objectKey = /^[a-f0-9-]{36}\/[a-f0-9-]{36}$/;
 
+function matchesSecret(expected: string | undefined, supplied: string | null): boolean {
+  if (!expected || supplied?.length !== expected.length) return false;
+  let difference = 0;
+  for (let i = 0; i < expected.length; i++) {
+    difference |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return difference === 0;
+}
+
 export function createGuestPhotoApi(
   clientFactory: () => SupabaseClient | null,
   copy: (
@@ -356,17 +365,12 @@ export function createGuestPhotoApi(
       return jsonResponse(data.receipt);
     },
 
-    async maintenance(req: Request, key: string | undefined) {
-      const expected = key ? `Bearer ${key}` : "";
-      const auth = req.headers.get("authorization") ?? "";
-      if (!expected || auth.length !== expected.length) {
-        throw new ApiHttpError(401, "UNAUTHORIZED", "Unauthorized.");
-      }
-      let difference = 0;
-      for (let i = 0; i < expected.length; i++) {
-        difference |= auth.charCodeAt(i) ^ expected.charCodeAt(i);
-      }
-      if (difference) {
+    async maintenance(req: Request, legacyKey: string | undefined, secretKey?: string) {
+      const legacyBearer = legacyKey ? `Bearer ${legacyKey}` : undefined;
+      if (
+        !matchesSecret(legacyBearer, req.headers.get("authorization")) &&
+        !matchesSecret(secretKey, req.headers.get("apikey"))
+      ) {
         throw new ApiHttpError(401, "UNAUTHORIZED", "Unauthorized.");
       }
       const query = new URL(req.url).searchParams;

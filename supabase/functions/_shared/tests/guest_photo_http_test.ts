@@ -282,3 +282,33 @@ Deno.test("Unscoped photo maintenance keeps guest cleanup and runs the bounded f
   assertEquals(await response.json(), { cleaned: 0 });
   assertEquals(calls, ["read_guest_photo_cleanup", "claim_first_aid_photo_cleanup"]);
 });
+
+Deno.test("Photo maintenance accepts the configured default secret only via apikey", async () => {
+  const secret = "sb_secret_fixture_default";
+  const named = "sb_secret_fixture_named__";
+  let calls = 0;
+  const handler = createProductionPlantsApiHandler({}, {
+    env: (name) => ({
+      SUPABASE_URL: host,
+      SUPABASE_SERVICE_ROLE_KEY: serviceKey,
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: secret, named }),
+    })[name],
+    fetch: async (input, init) => {
+      const req = new Request(input, init);
+      assertEquals(new URL(req.url).pathname, "/rest/v1/rpc/claim_first_aid_photo_cleanup");
+      assertEquals(await req.json(), { p_photo_id: photo });
+      calls++;
+      return Response.json([]);
+    },
+  });
+  const post = (headers: HeadersInit) => handler(new Request(
+    host + "/internal/guest-drafts/cleanup?first_aid_photo_id=" + photo,
+    { method: "POST", headers },
+  ));
+  assertEquals((await post({ apikey: "sb_publishable_fixture" })).status, 401);
+  assertEquals((await post({ apikey: named })).status, 401);
+  assertEquals((await post({ authorization: "Bearer " + secret })).status, 401);
+  assertEquals(calls, 0);
+  assertEquals(await (await post({ apikey: secret })).json(), { cleaned: 0 });
+  assertEquals(calls, 1);
+});

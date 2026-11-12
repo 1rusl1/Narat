@@ -360,6 +360,19 @@ export interface ProductionSyncOptions {
   scheduleDiagnosis?: Parameters<typeof createDiagnosisJobs>[2];
 }
 
+function defaultServiceSecret(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const key: unknown = JSON.parse(value)?.default;
+    if (typeof key === "string" && key.startsWith("sb_secret_") && key.length > "sb_secret_".length) {
+      return key;
+    }
+  } catch {
+    // A missing or malformed secret configuration leaves legacy authentication available.
+  }
+  return undefined;
+}
+
 // Keep the bare handler's T152 fallback. Only the deployed composition enables
 // sync and collection commands, and explicit delegates still take precedence.
 export function createProductionPlantsApiHandler(
@@ -385,7 +398,9 @@ export function createProductionPlantsApiHandler(
     diagnosisMedia,
     guestPhoto,
     handleGuestPhotoMaintenance: deps.handleGuestPhotoMaintenance ??
-      ((req) => guestPhoto.maintenance(req, env("SUPABASE_SERVICE_ROLE_KEY")?.trim())),
+      ((req) => guestPhoto.maintenance(
+        req, env("SUPABASE_SERVICE_ROLE_KEY")?.trim(), defaultServiceSecret(env("SUPABASE_SECRET_KEYS")),
+      )),
     diagnosisJobs: deps.diagnosisJobs ?? createDiagnosisJobs(
       syncClient, options.diagnosisWorker ?? createDiagnosisWorker(env, { fetch: options.fetch }),
       options.scheduleDiagnosis,
