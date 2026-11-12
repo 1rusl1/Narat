@@ -288,7 +288,7 @@
 
 - [ ] T159 Срез T155: guest seven-day claim без local fallback, убрать report/cache/product timer/blocks/notification claims из runtime/DTO. Сохранить proof/operation receipts; analysis_receipt удалить только после проверки всех consumers. Clean/upgrade, cleanup race/срок/replay/покупка и локальный trial reminder отдельно. Покрытие: FR-016, FR-040, FR-041, FR-048, FR-057, SC-008, SC-014, SC-018, SC-025.
 
-- [ ] T160 Срез T155: SQL schedule/Swift DTO/карточка/notifications для действий сейчас и следующей проверки. Обычный repeat по правилу, один first-aid control, record/undo/backdate/пауза/expiry, явное обновление без стадий; убрать дополнительные photo/season flows. Проверить чистое/upgrade, offline/restart и сохранность истории. Покрытие: FR-024, FR-025, FR-026, FR-027, FR-028, FR-029, FR-030, FR-035, FR-036, FR-037, FR-063, FR-066, FR-067, SC-005, SC-006, SC-020, SC-023.
+- [ ] T160 Срез T155: SQL schedule/Swift DTO/карточка/notifications для действий сейчас и следующей проверки. Обычный repeat по правилу, один first-aid control, record/undo/backdate/пауза/expiry, явное обновление без стадий; убрать дополнительные photo/season flows. Проверить чистое/upgrade, offline/restart и сохранность истории. **V11/V19:** wire `next_check` опубликован в `bc74c66`, серверная проекция прошла локальные fixtures. Повторы и first-aid control открыты. Покрытие: FR-024, FR-025, FR-026, FR-027, FR-028, FR-029, FR-030, FR-035, FR-036, FR-037, FR-063, FR-066, FR-067, SC-005, SC-006, SC-020, SC-023.
 
 ## Пакеты для оркестратора: очистка и простые комнаты
 

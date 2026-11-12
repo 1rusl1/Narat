@@ -85,6 +85,7 @@ Deno.test("Published Monstera v2 profile returns the exact sourced conditional r
         locator: "Growing Swiss-Cheese Plant, watering paragraph",
       },
     },
+    next_check: null,
   });
   const pl = await (await fixture({ polish: true }).get()).json();
   assertEquals(pl.recommendation.text, profile.actions[0].action_pl);
@@ -96,13 +97,6 @@ Deno.test("No recommendation is substituted for missing, mismatched or unsupport
       { ...published, profile: null },
       { ...published, kb_release_id: owner },
       { ...published, plant_slug: "ficus_elastica" },
-      {
-        ...published,
-        profile: {
-          ...profile,
-          actions: [{ ...profile.actions[0], next_check_interval_days: 7 }],
-        },
-      },
       {
         ...published,
         profile: {
@@ -124,7 +118,73 @@ Deno.test("No recommendation is substituted for missing, mismatched or unsupport
       plant_id: plant,
       status: "unavailable",
       recommendation: null,
+      next_check: null,
     });
+  }
+});
+
+Deno.test("Calendar check adds published days to the factual local day and cites interval evidence", async () => {
+  const ruleUrl = "https://example.test/reviewed-rule";
+  const datedProfile = {
+    ...profile,
+    actions: [{ ...profile.actions[0], next_check_interval_days: 7 }],
+    provenance: {
+      ...profile.provenance,
+      source_documents: [...profile.provenance.source_documents, {
+        ...profile.provenance.source_documents[0],
+        source_id: "fixture_interval",
+        url: ruleUrl,
+      }],
+      field_evidence: {
+        ...profile.provenance.field_evidence,
+        "/actions/0/next_check_interval_days": [{
+          source_id: "fixture_interval",
+          locator: "Calendar interval",
+          scope: "Synthetic check-only interval fixture",
+        }],
+      },
+    },
+  };
+  const row = {
+    ...published,
+    profile: datedProfile,
+    calendar_eligible: true,
+    last_watered_on: "2024-02-26",
+  };
+  const response = await (await fixture({ row }).get()).json();
+  assertEquals(response.recommendation.next_check_interval_days, 7);
+  assertEquals(response.next_check, {
+    due_on: "2024-03-04",
+    anchor_on: "2024-02-26",
+    interval_days: 7,
+    basis: "Based on the last recorded watering and the published 7-day interval.",
+    source: { url: ruleUrl, locator: "Calendar interval" },
+  });
+  const corrected = await (await fixture({
+    polish: true,
+    row: { ...row, last_watered_on: "2024-03-01" },
+  }).get()).json();
+  assertEquals(corrected.next_check.due_on, "2024-03-08");
+  assert(corrected.next_check.basis.startsWith("Na podstawie"));
+  for (const fallback of [
+    { ...row, last_watered_on: null },
+    { ...row, last_watered_on: "2024-02-30" },
+    { ...row, calendar_eligible: false },
+    { ...row, calendar_eligible: undefined },
+    {
+      ...row,
+      profile: {
+        ...datedProfile,
+        provenance: {
+          ...datedProfile.provenance,
+          field_evidence: profile.provenance.field_evidence,
+        },
+      },
+    },
+  ]) {
+    const result = await (await fixture({ row: fallback }).get()).json();
+    assertEquals(result.status, "available");
+    assertEquals(result.next_check, null);
   }
 });
 

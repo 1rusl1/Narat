@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "v19-next-check",
+      "description": "Independently verify the owner calendar check projection, published interval evidence and corrected journal anchor.",
+      "candidate_base": "bc74c663c7600de0d2b68dc3e7ed04b7fa471276",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/plant-care-recommendation-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/care_recommendation_http_test.ts",
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "supabase/migrations/202611120027_plant_next_check.sql",
+        "supabase/tests/plant_next_check.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v19-next-check.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Local gates only. The controller owns staging and shared usage checkpoints.",
+        "Preserve owner isolation, immediate recommendation and older clients. A date requires a factual owner/plant watering and separately sourced interval, with pause and elapsed-access suppression. No schedule writes, invented interval, recurrence, first aid, 024 or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19-D1",
+          "description": "Production entrypoints type-check and exact diff passes.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V19-D2",
+          "description": "SQL and HTTP fixtures cover corrected/undone anchors, date arithmetic, evidence, isolation and null cases.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

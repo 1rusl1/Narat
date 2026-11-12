@@ -426,6 +426,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     tap(case, ROOT/'supabase/tests/manual_care_date_correction.test.sql')
                 if any(migration.name == CARE_PROFILE_READ for migration in selected):
                     tap(case, ROOT/'supabase/tests/plant_care_profile_read.test.sql')
+                if any(migration.name == '202611120027_plant_next_check.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_next_check.test.sql')
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:
