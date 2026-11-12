@@ -3209,7 +3209,7 @@ extension CollectionWireTests {
         let expected = try await h.connection.sessionSnapshot()
         let flow = UUID()
         let model = try await h.connection.makeModel(
-            input: CatalogueInput(speciesSlug: "fixture-fern", personalName: "Diagnosis plant"),
+            input: CatalogueInput(speciesSlug: "fixture_fern", personalName: "Diagnosis plant"),
             flowId: flow, operationId: UUID(), expected: expected
         )
         _ = try await h.connection.rememberModel(model, expected: expected)
@@ -3227,7 +3227,7 @@ extension CollectionWireTests {
         let firstCataloguePage: [String] = []
         XCTAssertFalse(firstCataloguePage.contains(selection.speciesSlug))
         XCTAssertEqual(selection.flowId, flow)
-        XCTAssertEqual(selection.speciesSlug, "fixture-fern")
+        XCTAssertEqual(selection.speciesSlug, "fixture_fern")
         await restored.loadCard()
         XCTAssertEqual(restored.cardSummary?.id, saved.receipt.plantId)
         XCTAssertEqual(restored.cardSummary?.personalName, "Diagnosis plant")
@@ -3242,7 +3242,7 @@ extension CollectionWireTests {
         let expected = try await h.connection.sessionSnapshot()
         let analysisFlow = UUID()
         let model = try await h.connection.makeModel(
-            input: CatalogueInput(speciesSlug: "fixture-fern", personalName: "Original"),
+            input: CatalogueInput(speciesSlug: "fixture_fern", personalName: "Original"),
             flowId: analysisFlow, operationId: UUID(), expected: expected
         )
         _ = try await h.connection.rememberModel(model, expected: expected)

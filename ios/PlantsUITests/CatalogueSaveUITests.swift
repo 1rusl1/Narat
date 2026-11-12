@@ -25,6 +25,21 @@ final class CatalogueSaveUITests: XCTestCase {
     @MainActor func testACKFailureRestartEnglish() { verifyACKFailureRestart(.en) }
     @MainActor func testACKFailureRestartPolish() { verifyACKFailureRestart(.pl) }
 
+    @MainActor func testCollectionOpensSameServerCardAfterRestart() {
+        let run = Run("free2", .en)
+        defer { run.app.terminate() }
+        openCatalogue(run)
+        enterName(run, run.language.input)
+        submit(run)
+        let saved = assertCard(run, name: run.language.canonicalName)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        let plantId = saved.dropFirst("catalogue.saved.card.".count)
+        tap(run, "collection.plant." + plantId, run.language.canonicalName)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), saved)
+        localizedText(run, "catalogue.saved.name", run.language.canonicalName, run.language.canonicalName)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }
@@ -103,7 +118,7 @@ final class CatalogueSaveUITests: XCTestCase {
 
     @MainActor
     private func chooseSpecies(_ run: Run) {
-        tap(run, "catalogue.species.fixture-fern")
+        tap(run, "catalogue.species.fixture_fern")
         localizedText(run, "catalogue.selected.scientific", "Nephrolepis exaltata", "Nephrolepis exaltata")
         let field = run.app.textFields["catalogue.save.name"]
         enabled(field)

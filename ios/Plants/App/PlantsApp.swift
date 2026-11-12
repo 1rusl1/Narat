@@ -27,12 +27,14 @@ struct RootContainerView: View {
     @Bindable var analysisModel: AnalysisFlowModel
 
     @State private var catalogue: CatalogueConnection?
+    @State private var showingCollection = false
     @State private var starting = false
     @State private var startupFailed = false
 #if DEBUG && targetEnvironment(simulator)
     @State private var stagingAccount: StagingAccountPresentation?
     @State private var stagingResume: CatalogueResumeSelection?
     @State private var stagingResumeLocked = false
+    @State private var stagingSpecies: PublishedSpeciesCard?
 #endif
 #if DEBUG
     @State private var fixtureContext: CatalogueUIFixtureContext?
@@ -80,12 +82,21 @@ struct RootContainerView: View {
                             ScrollView {
                                 CatalogueSaveView(
                                     connection: catalogue, speciesSlug: resumed.speciesSlug,
-                                    displayName: resumed.speciesSlug, scientificName: "", polish: false,
+                                    displayName: stagingSpecies?.displayName ?? resumed.speciesSlug,
+                                    scientificName: stagingSpecies?.scientificName ?? "", polish: false,
                                     analysisSaveIdentity: resumed.flowId,
                                     selectionLocked: $stagingResumeLocked
                                 ) { EmptyView() }
                                 .id(resumed.flowId)
                                 .padding()
+                            }
+                            .task(id: resumed.flowId) {
+                                stagingSpecies = nil
+                                let species = try? await catalogue.apiClient?.fetchPublishedSpecies(
+                                    slug: resumed.speciesSlug, locale: .en
+                                )
+                                guard !Task.isCancelled, stagingResume?.flowId == resumed.flowId else { return }
+                                stagingSpecies = species
                             }
                             Button("Back") {
                                 stagingResume = nil
@@ -120,9 +131,17 @@ struct RootContainerView: View {
                 default:
                     welcomeIntentSection
                 }
+                if catalogue != nil,
+                   [.selectIntent, .selectCatalogueSpecies].contains(analysisModel.router.flowState.currentStep) {
+                    Button(isPolish ? "Moje rośliny" : "My plants") { showingCollection = true }
+                        .accessibilityIdentifier("collection.open")
+                }
             }
         }
         .task { await prepareCatalogue() }
+        .sheet(isPresented: $showingCollection) {
+            if let catalogue { CatalogueCollectionView(connection: catalogue, polish: isPolish) }
+        }
 #if DEBUG && targetEnvironment(simulator)
         .sheet(item: $stagingAccount) { account in
             StagingAccountView(connection: account.connection) { snapshot in

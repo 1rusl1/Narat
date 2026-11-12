@@ -46,9 +46,9 @@ public enum CatalogueSaveResult: Sendable, Equatable {
 }
 
 /// The minimal canonical SQL plants projection, never reconstructed from create input.
-struct CatalogueCardSummary: Decodable, Sendable, Equatable {
+struct CatalogueCardSummary: Decodable, Sendable, Equatable, Identifiable {
     let id: UUID
-    let speciesSlug: String
+    let speciesSlug: String?
     let personalName: String?
     let revision: Int
     let careRevision: Int
@@ -198,16 +198,29 @@ public struct CollectionRepository: Sendable {
             guard let entity = plants.first(where: { $0.id == confirmation.receipt.plantId }) else {
                 throw SyncWireValidationError.invalidPage
             }
-            let summary = try JSONDecoder().decode(
-                CatalogueCardSummary.self, from: Data(entity.payloadJSON.utf8)
-            )
-            guard summary.id == entity.id,
-                  !summary.speciesSlug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  summary.revision > 0, summary.careRevision > 0 else {
+            let summary = try Self.decodeCard(entity)
+            guard summary.speciesSlug?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
                 throw SyncWireValidationError.invalidPage
             }
             return summary
         }
+    }
+
+    func collectionCards(context: SyncSessionLease) async throws -> [CatalogueCardSummary] {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        _ = try await syncEngine.performFullRefresh(context: context)
+        let entities = try await store.activeSyncedEntities(ownerId: context.ownerId, entityType: "plants")
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            try entities.reversed().map(Self.decodeCard)
+        }
+    }
+
+    private static func decodeCard(_ entity: SyncItemDTO) throws -> CatalogueCardSummary {
+        let card = try JSONDecoder().decode(CatalogueCardSummary.self, from: Data(entity.payloadJSON.utf8))
+        guard card.id == entity.id, card.revision > 0, card.careRevision > 0 else {
+            throw SyncWireValidationError.invalidPage
+        }
+        return card
     }
 
     func pendingManualWatering(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
@@ -260,6 +273,20 @@ public struct CollectionRepository: Sendable {
               card.id == confirmation.receipt.plantId else {
             throw SyncWireValidationError.invalidSession
         }
+        return try await wateringHistory(plantId: card.id, context: context)
+    }
+
+    func collectionWateringHistory(
+        plantId: UUID, context: SyncSessionLease
+    ) async throws -> [CatalogueWateringEntry] {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        let plants = try await store.activeSyncedEntities(ownerId: context.ownerId, entityType: "plants")
+        guard plants.contains(where: { $0.id == plantId }) else { throw SyncWireValidationError.invalidPage }
+        return try await wateringHistory(plantId: plantId, context: context)
+    }
+
+    private func wateringHistory(plantId: UUID, context: SyncSessionLease) async throws -> [CatalogueWateringEntry] {
+        try apiClient.syncAuthority.withBoundValid(context) {}
         let entities = try await store.activeSyncedEntities(
             ownerId: context.ownerId, entityType: "care_entries"
         )
@@ -276,7 +303,7 @@ public struct CollectionRepository: Sendable {
                 let entry = try JSONDecoder().decode(
                     CatalogueWateringEntry.self, from: Data(entity.payloadJSON.utf8)
                 )
-                guard entry.plantId == card.id, entry.taskId == nil,
+                guard entry.plantId == plantId, entry.taskId == nil,
                       entry.actionCode == "water" else { continue }
                 guard entry.id == entity.id,
                       ["active", "voided"].contains(entry.state),

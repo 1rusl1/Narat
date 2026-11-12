@@ -112,7 +112,7 @@ enum CatalogueUIFixtures {
                 // manufactured model phase. Reopening must replay this same disk intent.
                 let expected = try await connection.sessionSnapshot()
                 let pending = try await connection.makeModel(
-                    input: CatalogueInput(speciesSlug: "fixture-fern", personalName: "Luna"),
+                    input: CatalogueInput(speciesSlug: "fixture_fern", personalName: "Luna"),
                     flowId: UUID(), operationId: UUID(), expected: expected
                 )
                 guard let api = connection.apiClient, let store = connection.store else {
@@ -275,7 +275,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             let owner = UUID()
             ledger = Ledger(scenario: scenario, guest: UUID(), permanent: owner, plants: [])
             ledger.plants = (0..<scenario.initialCount).map { index in
-                Plant(owner: owner, id: UUID(), species: "fixture-fern", name: "Fixture \(index + 1)",
+                Plant(owner: owner, id: UUID(), species: "fixture_fern", name: "Fixture \(index + 1)",
                       timestamp: Self.time(0))
             }
             try JSONEncoder().encode(ledger).write(to: file, options: .atomic)
@@ -372,6 +372,35 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 var next = ledger; next.revoked.remove(owner); try persist(next)
                 return try session(owner)
             }
+            if method == "GET", url.path.hasPrefix("/functions/v1/plants-api/catalogue") {
+                let path = "/functions/v1/plants-api/catalogue"
+                guard request.value(forHTTPHeaderField: "Authorization") == nil,
+                      request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
+                      let locale = request.value(forHTTPHeaderField: "X-Client-Locale"),
+                      ["pl", "en"].contains(locale) else { throw CatalogueUIFixtureError.invalidRequest }
+                let fern: [String: Any] = [
+                    "plant_id": "fixture_fern", "taxon_id": "32e72c49-4e06-434a-86dd-bbf8a5cb209e",
+                    "display_name": locale == "pl" ? "Paproć" : "Fern",
+                    "scientific_name": "Nephrolepis exaltata", "description": NSNull(),
+                    "hero_image": NSNull(), "care_profile_available": false
+                ]
+                if url.path == path + "/fixture_fern", query.isEmpty {
+                    return Reply(status: 200, data: try json(fern))
+                }
+                guard url.path == path, query.map(\.name) == ["q", "limit", "offset"],
+                      let term = query[0].value, let limit = query[1].value.flatMap(Int.init),
+                      let offset = query[2].value.flatMap(Int.init), (1...200).contains(limit), offset >= 0 else {
+                    throw CatalogueUIFixtureError.invalidRequest
+                }
+                let matches = term.isEmpty || ["Fern", "Paproć", "Nephrolepis exaltata"].contains {
+                    $0.localizedStandardContains(term)
+                }
+                return Reply(status: 200, data: try json([
+                    "release_version": "fixture", "kb_release_id": NSNull(), "locale": locale,
+                    "total": matches ? 1 : 0, "limit": limit, "offset": offset,
+                    "items": matches && offset == 0 ? [fern] : []
+                ]))
+            }
             let caller = try owner(request)
             if method == "GET", url.path == "/auth/v1/user", query.isEmpty {
                 return Reply(status: 200, data: try json(user(caller)))
@@ -380,16 +409,6 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                query.isEmpty || (query.count == 1 && query[0].name == "scope" && query[0].value == "global") {
                 var next = ledger; next.revoked.insert(caller); try persist(next)
                 return Reply(status: 204, data: Data())
-            }
-            if method == "POST", url.path == "/rest/v1/rpc/search_catalogue_species", query.isEmpty {
-                guard Set(object.keys) == ["p_locale"],
-                      let locale = object["p_locale"] as? String, ["pl", "en"].contains(locale) else {
-                    throw CatalogueUIFixtureError.invalidRequest
-                }
-                return Reply(status: 200, data: try json(["items": [[
-                    "plant_id": "fixture-fern", "display_name": locale == "pl" ? "Paproć" : "Fern",
-                    "scientific_name": "Nephrolepis exaltata", "description": NSNull(), "hero_image": NSNull()
-                ]]]))
             }
             if method == "GET", url.path == "/functions/v1/plants-api/sync" {
                 guard Set(query.map(\.name)).count == query.count,
@@ -435,7 +454,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             guard request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased(),
                   Set(object.keys).isSubset(of: ["operation_id", "command_name", "plant_id", "payload_json"]),
                   let payload = try JSONSerialization.jsonObject(with: Data(envelope.payloadJSON.utf8)) as? [String: Any],
-                  payload["plant_id"] as? String == "fixture-fern",
+                  payload["plant_id"] as? String == "fixture_fern",
                   Set(payload.keys).isSubset(of: ["plant_id", "personal_name", "creation_source"]) else {
                 throw CatalogueUIFixtureError.invalidRequest
             }
@@ -459,7 +478,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             // Match SQL trim/NULLIF and the published Polish catalogue-name fallback.
             let suppliedName = (payload["personal_name"] as? String)?.trimmingCharacters(in: CharacterSet(charactersIn: " "))
             let personalName = suppliedName.flatMap { $0.isEmpty ? nil : $0 } ?? "Paproć"
-            let plant = Plant(owner: caller, id: UUID(), species: "fixture-fern",
+            let plant = Plant(owner: caller, id: UUID(), species: "fixture_fern",
                               name: personalName, timestamp: Self.time(next.tick))
             let receipt = try json([
                 "plant_id": plant.id.uuidString, "care_revision": 1, "context_state": "current",

@@ -502,6 +502,117 @@ public actor PlantsAPIClient {
         }
         return try decoder.decode(T.self, from: data)
     }
+
+    func searchPublishedCatalogue(
+        query: String, locale: SupportedLocale, limit: Int, offset: Int
+    ) async throws -> PublishedCataloguePage {
+        let request = try publicCatalogueRequest(
+            path: "catalogue", locale: locale, query: [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "offset", value: String(offset))
+            ]
+        )
+        let page = try await execute(request, as: PublishedCataloguePage.self, expectedStatus: 200)
+        guard page.locale == locale.rawValue, page.limit == limit, page.offset == offset,
+              limit > 0, offset >= 0, page.total >= 0,
+              page.items.count == min(limit, max(0, page.total - offset)),
+              page.releaseVersion != nil || page.total == 0,
+              Set(page.items.map(\.id)).count == page.items.count,
+              page.items.allSatisfy(\.hasValidIdentity) else {
+            throw URLError(.cannotParseResponse)
+        }
+        return page
+    }
+
+    func fetchPublishedSpecies(slug: String, locale: SupportedLocale) async throws -> PublishedSpeciesCard {
+        guard PublishedSpeciesCard.isValidSlug(slug) else { throw URLError(.badURL) }
+        let request = try publicCatalogueRequest(path: "catalogue/\(slug)", locale: locale)
+        let card = try await execute(request, as: PublishedSpeciesCard.self, expectedStatus: 200)
+        guard card.id == slug, card.hasValidIdentity else { throw URLError(.cannotParseResponse) }
+        return card
+    }
+
+    private func publicCatalogueRequest(
+        path: String, locale: SupportedLocale, query: [URLQueryItem] = []
+    ) throws -> URLRequest {
+        var request = try buildRequest(path: path, method: "GET", queryItems: query)
+        request.setValue(locale.rawValue, forHTTPHeaderField: "X-Client-Locale")
+        request.setValue(nil, forHTTPHeaderField: "Authorization")
+        request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
+        return request
+    }
+}
+
+struct PublishedCataloguePage: Decodable, Sendable {
+    let releaseVersion: String?
+    let kbReleaseId: UUID?
+    let locale: String
+    let total: Int
+    let limit: Int
+    let offset: Int
+    let items: [PublishedSpeciesCard]
+
+    enum CodingKeys: String, CodingKey {
+        case releaseVersion = "release_version"
+        case kbReleaseId = "kb_release_id"
+        case locale, total, limit, offset, items
+    }
+}
+
+struct PublishedSpeciesCard: Decodable, Sendable, Identifiable {
+    struct Description: Decodable, Sendable {
+        let text: String
+        let language: String?
+        let attribution: String?
+        let sourceURL: URL?
+
+        enum CodingKeys: String, CodingKey {
+            case text, language, attribution
+            case sourceURL = "source_url"
+        }
+    }
+
+    struct Photo: Decodable, Sendable {
+        let downloadURL: URL?
+        let sourcePage: URL?
+        let attribution: String?
+        let author: String?
+        let license: String?
+
+        enum CodingKeys: String, CodingKey {
+            case downloadURL = "download_url"
+            case sourcePage = "source_page"
+            case attribution, author, license
+        }
+    }
+
+    let id: String
+    let taxonId: UUID
+    let displayName: String
+    let scientificName: String
+    let description: Description?
+    let heroImage: Photo?
+    let careProfileAvailable: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id = "plant_id"
+        case taxonId = "taxon_id"
+        case displayName = "display_name"
+        case scientificName = "scientific_name"
+        case description
+        case heroImage = "hero_image"
+        case careProfileAvailable = "care_profile_available"
+    }
+
+    static func isValidSlug(_ value: String) -> Bool {
+        value.range(of: #"^[a-z][a-z0-9_]*\z"#, options: .regularExpression) != nil
+    }
+
+    var hasValidIdentity: Bool {
+        Self.isValidSlug(id) && !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !scientificName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 public enum CatalogueCreateValidationError: Error, Sendable {

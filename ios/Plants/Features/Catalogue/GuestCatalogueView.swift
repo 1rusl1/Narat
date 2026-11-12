@@ -403,6 +403,16 @@ final class CatalogueConnection {
         try await apiClient.updateClientLocale(locale)
     }
 
+    func collectionLease(expected: CatalogueSDKSnapshot) async throws -> SyncSessionLease {
+        guard let apiClient, !expected.isAnonymous else { throw CatalogueSaveUnavailable.sessionChanged }
+        try validate(expected)
+        try await bind(expected)
+        let lease = try await apiClient.captureSyncContext(ownerId: expected.session.userId)
+        guard lease.session == expected.session else { throw CatalogueSaveUnavailable.sessionChanged }
+        try validate(expected)
+        return lease
+    }
+
     /// Current-owner metadata only, for guests and permanent users alike.
     /// Payload and receipt remain exclusively in SQLite.
     func resumableFlow(expected: CatalogueSDKSnapshot) throws -> UUID? {
@@ -531,194 +541,433 @@ final class CatalogueConnection {
     }
 }
 
-private struct SpeciesCard: Decodable, Identifiable {
-    struct Description: Decodable {
-        let text: String
-        let attribution: String?
-        let source_url: URL?
+struct CatalogueCollectionView: View {
+    private struct Read: Equatable {
+        let session: CatalogueSDKSnapshot?
+        let attempt: Int
     }
 
-    struct Photo: Decodable {
-        let download_url: URL?
-        let source_page: URL?
-        let attribution: String?
+    private struct Selected: Equatable {
+        let card: CatalogueCardSummary
+        let scope: CatalogueSDKSnapshot
     }
 
-    let plant_id: String
-    let display_name: String
-    let scientific_name: String
-    let description: Description?
-    let hero_image: Photo?
-    var id: String { plant_id }
+    let connection: CatalogueConnection
+    let polish: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var loadedScope: CatalogueSDKSnapshot?
+    @State private var cards: [CatalogueCardSummary] = []
+    @State private var selected: Selected?
+    @State private var loading = true
+    @State private var failed = false
+    @State private var attempt = 0
+
+    private var read: Read { Read(session: connection.snapshot, attempt: attempt) }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let selected, selected.scope == connection.snapshot {
+                    CatalogueCollectionCardView(connection: connection, card: selected.card,
+                                                expected: selected.scope, polish: polish)
+                } else if read.session?.isAnonymous != false {
+                    Text(polish ? "Zaloguj się, aby zobaczyć rośliny." : "Sign in to see your plants.")
+                        .accessibilityIdentifier("collection.signInRequired")
+                } else if loading || loadedScope != read.session {
+                    ProgressView()
+                } else if failed {
+                    VStack {
+                        Text(polish ? "Nie udało się wczytać roślin." : "Couldn’t load your plants.")
+                        Button(polish ? "Spróbuj ponownie" : "Try again") { attempt += 1 }
+                    }
+                } else if cards.isEmpty {
+                    Text(polish ? "Nie masz jeszcze roślin." : "You haven’t saved any plants yet.")
+                        .accessibilityIdentifier("collection.empty")
+                } else {
+                    List(cards) { card in
+                        Button {
+                            guard let scope = loadedScope, scope == connection.snapshot else { return }
+                            selected = Selected(card: card, scope: scope)
+                        } label: {
+                            Text(card.personalName ?? card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
+                        }
+                        .accessibilityIdentifier("collection.plant." + card.id.uuidString.lowercased())
+                    }
+                }
+            }
+            .navigationTitle(polish ? "Moje rośliny" : "My plants")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(selected == nil ? (polish ? "Zamknij" : "Close") : (polish ? "Wstecz" : "Back")) {
+                        if selected != nil { selected = nil } else { dismiss() }
+                    }
+                    .accessibilityIdentifier("collection.back")
+                }
+            }
+        }
+        .task(id: read) { await load(read) }
+    }
+
+    @MainActor
+    private func load(_ requested: Read) async {
+        guard !Task.isCancelled, read == requested else { return }
+        selected = nil
+        cards = []
+        loadedScope = nil
+        failed = false
+        loading = true
+        guard let expected = requested.session, !expected.isAnonymous else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            guard let repository = connection.repository else { throw CatalogueConnectionUnavailable.storageUnavailable }
+            let result = try await repository.collectionCards(context: lease)
+            guard !Task.isCancelled, read == requested else { return }
+            cards = result
+        } catch {
+            guard !Task.isCancelled, read == requested else { return }
+            failed = true
+        }
+        loadedScope = expected
+        loading = false
+    }
 }
 
-private struct SpeciesPage: Decodable {
-    let items: [SpeciesCard]
+private struct CatalogueCollectionCardView: View {
+    let connection: CatalogueConnection
+    let card: CatalogueCardSummary
+    let expected: CatalogueSDKSnapshot
+    let polish: Bool
+    @State private var species: PublishedSpeciesCard?
+    @State private var advice: PlantCareRecommendation?
+    @State private var history: [CatalogueWateringEntry]?
+    @State private var historyFailed = false
+    @State private var adviceFailed = false
+    @State private var attempt = 0
+
+    private var locale: SupportedLocale { polish ? .pl : .en }
+
+    var body: some View {
+        if connection.snapshot == expected {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(card.personalName ?? species?.displayName ?? (polish ? "Roślina" : "Plant"))
+                        .font(.title)
+                        .accessibilityIdentifier("catalogue.saved.name")
+                    if let name = species?.displayName ?? card.speciesSlug {
+                        Text(name).accessibilityIdentifier("catalogue.saved.species")
+                    }
+                    if !polish {
+                        if let advice {
+                            Text(verbatim: advice.text).accessibilityIdentifier("catalogue.saved.care.text")
+                            Link("Verified care source", destination: advice.source.url)
+                                .accessibilityIdentifier("catalogue.saved.care.source")
+                        }
+                        Text("Manual watering history").font(.headline)
+                        if let history {
+                            if history.isEmpty { Text("No manual watering recorded.") }
+                            ForEach(history) { entry in
+                                Text(entry.occurredLocalDate + (entry.state == "voided" ? " · Undone" : " · Active"))
+                                    .accessibilityIdentifier("catalogue.saved.history." + entry.id.uuidString.lowercased())
+                            }
+                        }
+                        if historyFailed || adviceFailed {
+                            Button("Retry care details") { attempt += 1 }
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("catalogue.saved.card." + card.id.uuidString.lowercased())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+            }
+            .task(id: locale) {
+                guard let slug = card.speciesSlug, let api = connection.apiClient else { return }
+                species = try? await api.fetchPublishedSpecies(slug: slug, locale: locale)
+            }
+            .task(id: attempt) { await loadCare() }
+        }
+    }
+
+    @MainActor
+    private func loadCare() async {
+        guard !polish, let api = connection.apiClient, let repository = connection.repository,
+              let lease = try? await connection.collectionLease(expected: expected) else { return }
+        do {
+            let result = try await repository.collectionWateringHistory(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            history = result
+            historyFailed = false
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            historyFailed = true
+        }
+        do {
+            let result = try await api.fetchCareRecommendation(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            advice = result
+            adviceFailed = false
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            adviceFailed = true
+        }
+    }
 }
 
 struct GuestCatalogueView: View {
+    private struct Search: Equatable {
+        let locale: SupportedLocale
+        let query: String
+        let attempt: Int
+    }
+
+    private struct Detail: Equatable {
+        let slug: String?
+        let locale: SupportedLocale
+        let attempt: Int
+    }
+
     let connection: CatalogueConnection
     let polish: Bool
     let back: () -> Void
-    @State private var cards: [SpeciesCard] = []
-    @State private var selected: SpeciesCard?
+    @State private var cards: [PublishedSpeciesCard] = []
+    @State private var page: PublishedCataloguePage?
+    @State private var selection: String?
+    @State private var selectedCard: PublishedSpeciesCard?
     @State private var selectionLocked = false
-    @State private var resumedSpecies: String?
-    @State private var bootstrapped = false
+    @State private var restoredSelection = false
     @State private var query = ""
     @State private var loading = true
-    @State private var failed = false
-    @State private var retry = 0
+    @State private var loadingMore = false
+    @State private var searchFailed = false
+    @State private var detailFailed = false
+    @State private var searchAttempt = 0
+    @State private var detailAttempt = 0
+
+    private var locale: SupportedLocale { polish ? .pl : .en }
+    private var search: Search {
+        Search(locale: locale, query: query.trimmingCharacters(in: .whitespacesAndNewlines), attempt: searchAttempt)
+    }
+    private var detail: Detail { Detail(slug: selection, locale: locale, attempt: detailAttempt) }
 
     var body: some View {
         VStack {
-            // Keep the same save child mounted while localized public data is refetched.
-            if let card = selected {
-                ScrollView {
-                    CatalogueSaveView(
-                        connection: connection, speciesSlug: card.id,
-                        displayName: card.display_name, scientificName: card.scientific_name,
-                        polish: polish, selectionLocked: $selectionLocked
-                    ) {
-                        speciesDetails(card)
-                    }
-                    .id(card.id)
-                    .padding()
-                }
-                if loading { ProgressView() }
-                if failed { catalogueError }
-                Button(polish ? "Wybierz inny gatunek" : "Choose another species") {
-                    beginNewPlantIntent()
-                }
-                .disabled(selectionLocked)
-                .accessibilityIdentifier("catalogue.change")
-            } else if loading {
-                ProgressView()
-            } else if failed {
-                catalogueError
+            if let selection {
+                selectedSpecies(selection)
             } else {
-                TextField(polish ? "Szukaj gatunku" : "Search species", text: $query)
-                    .textFieldStyle(.roundedBorder).padding(.horizontal)
-                    .accessibilityIdentifier("catalogue.search")
-                List(cards.filter {
-                    query.isEmpty || ($0.scientific_name + " " + $0.display_name).localizedStandardContains(query)
-                }) { card in
-                    Button {
-                        if let owner = connection.snapshot?.session.userId {
-                            UserDefaults.standard.set(card.id, forKey: selectionKey(owner))
-                        }
-                        selected = card
-                    } label: {
-                        VStack(alignment: .leading) {
-                            Text(card.display_name)
-                            Text(card.scientific_name).font(.caption)
-                        }
-                    }
-                    .accessibilityIdentifier("catalogue.species." + card.id)
-                }
+                searchResults
             }
             Button(polish ? "Wstecz" : "Back", action: back)
                 .accessibilityIdentifier("catalogue.back")
         }
-        .task(id: "\(polish)-\(retry)") { await loadCatalogue() }
+        .task { await restoreSelection() }
+        .task(id: search) { await loadCatalogue(search) }
+        .task(id: detail) { await loadSpecies(detail) }
     }
 
-    private var catalogueError: some View {
+    @ViewBuilder
+    private var searchResults: some View {
+        TextField(polish ? "Szukaj gatunku" : "Search species", text: $query)
+            .textFieldStyle(.roundedBorder).padding(.horizontal)
+            .accessibilityIdentifier("catalogue.search")
+        if loading {
+            ProgressView()
+        } else if searchFailed && cards.isEmpty {
+            catalogueError { searchAttempt += 1 }
+        } else if cards.isEmpty {
+            Text(polish ? "Brak wyników." : "No species found.")
+                .accessibilityIdentifier("catalogue.empty")
+        } else {
+            List {
+                ForEach(cards) { card in
+                    Button {
+                        restoredSelection = false
+                        selectedCard = nil
+                        selection = card.id
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(card.displayName)
+                            Text(card.scientificName).font(.caption)
+                        }
+                    }
+                    .accessibilityIdentifier("catalogue.species." + card.id)
+                }
+                if searchFailed {
+                    catalogueError { Task { await loadMore() } }
+                } else if let page, cards.count < page.total {
+                    Button(polish ? "Załaduj więcej" : "Load more") { Task { await loadMore() } }
+                        .disabled(loadingMore)
+                        .accessibilityIdentifier("catalogue.more")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func selectedSpecies(_ slug: String) -> some View {
+        if selectedCard?.id == slug || restoredSelection {
+            let card = selectedCard
+            ScrollView {
+                CatalogueSaveView(
+                    connection: connection, speciesSlug: slug,
+                    displayName: card?.displayName ?? slug, scientificName: card?.scientificName ?? "",
+                    polish: polish, selectionLocked: $selectionLocked
+                ) {
+                    if let card { speciesDetails(card) }
+                }
+                .id(slug)
+                .padding()
+            }
+        } else if detailFailed {
+            catalogueError { detailAttempt += 1 }
+        } else {
+            ProgressView()
+        }
+        Button(polish ? "Wybierz inny gatunek" : "Choose another species") { beginNewPlantIntent() }
+            .disabled(selectionLocked)
+            .accessibilityIdentifier("catalogue.change")
+    }
+
+    private func catalogueError(retry: @escaping () -> Void) -> some View {
         VStack {
             Text(polish ? "Nie udało się pobrać katalogu." : "Couldn’t load the catalogue.")
                 .accessibilityIdentifier("catalogue.error")
-            Button(polish ? "Spróbuj ponownie" : "Try again") { retry += 1 }
+            Button(polish ? "Spróbuj ponownie" : "Try again", action: retry)
                 .accessibilityIdentifier("catalogue.retry")
         }
     }
 
     @ViewBuilder
-    private func speciesDetails(_ card: SpeciesCard) -> some View {
-        if let photo = card.hero_image, let url = photo.download_url {
+    private func speciesDetails(_ card: PublishedSpeciesCard) -> some View {
+        if let photo = card.heroImage, let url = safeWebURL(photo.downloadURL) {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFit()
             } placeholder: { Color.clear }
             .frame(maxHeight: 240)
-            if let source = photo.source_page, let credit = photo.attribution {
-                Link(credit, destination: source).font(.caption)
+            let credit = [photo.author ?? photo.attribution, photo.license].compactMap { $0 }.joined(separator: " · ")
+            if !credit.isEmpty {
+                if let source = safeWebURL(photo.sourcePage) {
+                    Link(credit, destination: source).font(.caption)
+                        .accessibilityIdentifier("catalogue.species.photo.credit")
+                } else {
+                    Text(credit).font(.caption)
+                        .accessibilityIdentifier("catalogue.species.photo.credit")
+                }
             }
         }
         if let description = card.description {
             Text(description.text)
-            if let source = description.source_url {
+            if let source = safeWebURL(description.sourceURL) {
                 Link(description.attribution ?? (polish ? "Źródło" : "Source"), destination: source)
                     .font(.caption)
             }
         }
     }
 
+    private func safeWebURL(_ url: URL?) -> URL? {
+        guard let url, url.scheme?.lowercased() == "https", url.host != nil,
+              url.user == nil, url.password == nil else { return nil }
+        return url
+    }
+
     @MainActor
     private func beginNewPlantIntent() {
-        guard !selectionLocked, let expected = connection.snapshot else { return }
+        guard !selectionLocked else { return }
         do {
-            if let flow = try connection.resumableFlow(expected: expected) {
-                // Forget only this owner's current resume pointer. SQLite keeps the original
-                // checkpoint, pending command, receipt and canonical plant history intact.
+            if let expected = connection.snapshot,
+               let flow = try connection.resumableFlow(expected: expected) {
                 guard try connection.forgetResumableFlow(
                     ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
                 ) else { throw CatalogueSaveUnavailable.sessionChanged }
             }
-            guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
-            UserDefaults.standard.removeObject(forKey: selectionKey(expected.session.userId))
-            resumedSpecies = nil
-            selected = nil
+            restoredSelection = false
+            selection = nil
+            selectedCard = nil
         } catch {
-            failed = true
+            detailFailed = true
         }
-    }
-
-    private func selectionKey(_ owner: UUID) -> String {
-        "catalogue.selection." + owner.uuidString
     }
 
     @MainActor
-    private func loadCatalogue() async {
-        loading = true
-        failed = false
+    private func restoreSelection() async {
         do {
-            if !bootstrapped {
-                _ = try await connection.sessionOwner()
-                let expected = try await connection.sessionSnapshot()
-                if let flow = try connection.resumableFlow(expected: expected) {
-                    switch await connection.restoreModel(
-                        ownerId: expected.session.userId, flowId: flow, expected: expected
-                    ) {
-                    case let .restored(model):
-                        guard connection.snapshot == expected, let input = model.input else {
-                            throw CatalogueSaveUnavailable.sessionChanged
-                        }
-                        resumedSpecies = input.speciesSlug
-                    case .absent: break
-                    case let .unavailable(reason): throw reason
-                    }
-                }
-                try Task.checkCancellation()
-                guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
-                bootstrapped = true
-            }
-            try await connection.updateClientLocale(polish ? "pl" : "en")
-            guard let client = connection.client else { throw NativeAuthFailure.configurationMissing }
-            let page: SpeciesPage = try await client.rpc(
-                "search_catalogue_species", params: ["p_locale": polish ? "pl" : "en"]
-            ).execute().value
-            try Task.checkCancellation()
-            cards = page.items
-            // A permanent owner's restored flow wins even without a public preference.
-            let preferred = selected?.id ?? resumedSpecies ?? connection.snapshot.flatMap {
-                UserDefaults.standard.string(forKey: selectionKey($0.session.userId))
-            }
-            if let matching = cards.first(where: { $0.id == preferred }) {
-                selected = matching
-            }
+            _ = try await connection.sessionOwner()
+            let expected = try await connection.sessionSnapshot()
+            guard let flow = try connection.resumableFlow(expected: expected) else { return }
+            let outcome = await connection.restoreModel(
+                ownerId: expected.session.userId, flowId: flow, expected: expected
+            )
+            guard connection.snapshot == expected, !Task.isCancelled, selection == nil,
+                  case let .restored(model) = outcome, let input = model.input else { return }
+            restoredSelection = true
+            selection = input.speciesSlug
         } catch {
-            if Task.isCancelled { return }
-            failed = true
+            // Public search is independent of authentication and local restoration.
+        }
+    }
+
+    @MainActor
+    private func loadCatalogue(_ requested: Search) async {
+        guard !Task.isCancelled, search == requested else { return }
+        loading = true
+        loadingMore = false
+        searchFailed = false
+        cards = []
+        page = nil
+        do {
+            if !requested.query.isEmpty { try await Task.sleep(for: .milliseconds(250)) }
+            guard let api = connection.apiClient else { throw NativeAuthFailure.configurationMissing }
+            try await connection.updateClientLocale(requested.locale.rawValue)
+            let first = try await api.searchPublishedCatalogue(
+                query: requested.query, locale: requested.locale, limit: 50, offset: 0
+            )
+            guard !Task.isCancelled, search == requested else { return }
+            cards = first.items
+            page = first
+        } catch {
+            guard !Task.isCancelled, search == requested else { return }
+            searchFailed = true
         }
         loading = false
+    }
+
+    @MainActor
+    private func loadMore() async {
+        guard !loadingMore, let page, cards.count < page.total, let api = connection.apiClient else { return }
+        let requested = search
+        let offset = cards.count
+        loadingMore = true
+        searchFailed = false
+        defer { if search == requested { loadingMore = false } }
+        do {
+            let next = try await api.searchPublishedCatalogue(
+                query: requested.query, locale: requested.locale, limit: page.limit, offset: offset
+            )
+            guard !Task.isCancelled, search == requested else { return }
+            guard next.releaseVersion == page.releaseVersion, next.kbReleaseId == page.kbReleaseId,
+                  next.total == page.total,
+                  Set(cards.map(\.id)).isDisjoint(with: next.items.map(\.id)) else {
+                await loadCatalogue(requested)
+                return
+            }
+            cards.append(contentsOf: next.items)
+        } catch {
+            guard !Task.isCancelled, search == requested else { return }
+            searchFailed = true
+        }
+    }
+
+    @MainActor
+    private func loadSpecies(_ requested: Detail) async {
+        guard let slug = requested.slug, !Task.isCancelled, detail == requested else { return }
+        detailFailed = false
+        do {
+            guard let api = connection.apiClient else { throw NativeAuthFailure.configurationMissing }
+            let card = try await api.fetchPublishedSpecies(slug: slug, locale: requested.locale)
+            guard !Task.isCancelled, detail == requested else { return }
+            selectedCard = card
+        } catch {
+            guard !Task.isCancelled, detail == requested else { return }
+            detailFailed = true
+        }
     }
 }

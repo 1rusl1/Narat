@@ -288,7 +288,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(summary.personalName ?? (polish ? "Roślina" : "Plant")).font(.title)
                     .accessibilityIdentifier("catalogue.saved.name")
-                Text(summary.speciesSlug == speciesSlug ? displayName : summary.speciesSlug)
+                Text(summary.speciesSlug == speciesSlug ? displayName : (summary.speciesSlug ?? ""))
                     .accessibilityIdentifier("catalogue.saved.species")
                 if summary.speciesSlug == speciesSlug {
                     Text(scientificName).italic()
