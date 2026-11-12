@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## B — T151 live catalogue and Paid/Free verified, 12 November 2026
+
+T150 is closed for the English MVP in iOS `02aa48e` and the backend checklist. T151 follows the English scope in `26ae2a0`. The [T151 report](validation/catalogue-skeleton.md) separates the live API, Storage and iOS from fixtures.
+
+Live staging returned 606 unique English cards with release-aligned names, descriptions and media. Five public assets matched bytes and SHA-256. The PL compatibility probe retained the same UUIDs, 603 historical descriptions and three EN fallbacks. The former Free owner replayed the same catalogue receipt after a fresh login and kept three cards.
+
+The paid preflight found zero active Paid owners. Two isolated confirmed synthetic owners started with empty collections. The same four no-care-profile species yielded three saves plus `409 COLLECTION_LIMIT_REACHED` for Free and four saves for Paid. Fresh sessions replayed exact receipts and read disjoint sets. Linked SQL confirmed no condition snapshot, personal photo or StoreKit purchase. The isolated Paid fixture uses the existing one-day test entitlement, without changing other owners, Auth or caps. A received a local protected export command and the backend evidence.
+
+Fixtures passed 42 unchanged migrations, 239 catalogue pgTAP, 1,212 SQL/TS card comparisons and three release races. Separate clean/upgrade cap fixtures passed four suites and exact/distinct create races. The combined preliminary fixture invocation mixed catalogue seeds. The independent catalogue and cap invocations passed. Next collect A's live iOS T151 result, close the checklist and start the next critical-path task.
+
 ## B — T150 guest photo transfer verified on staging, 12 November 2026
 
 The prior guest handlers were not wired and did not match the deployed SQL. Migration 021 and the guest photo Edge composition add registered-installation anonymous identification, an immutable seven-day draft from successful analysis, a permanent-owner 15-minute claim proof, verified private copy, exact replay and cleanup. The [wire](../specs/001-plants-ios-mvp/contracts/identification-photo-http.md) was shared with A. The same source photo UUID is retained. No Auth setting or quota threshold changes.
@@ -8,7 +18,7 @@ The controller's PG17 clean/upgrade fixtures passed 651 assertions in each datab
 
 The live anonymous session registered its installation, uploaded two negative-control images and the licensed Monstera, and received real OpenRouter outcomes. All three drafts initially had a deadline exactly seven days after analysis. The guest deleted one draft normally. An isolated staging SQL fixture moved only the dedicated expiry case to its seven-day boundary. Both returned `410 DRAFT_EXPIRED` and published no plants. The valid draft `f2663ee4-9162-4ad6-aeab-664133f79b7a` was claimed after the permanent test login and installation bind. Claim `c70da539-84b0-4769-a2fd-aba7ac8fc228` created one plant `dd0e723d-10bc-438b-bfa5-4e3d4067a99c` with original photo `e005de1f-e8a9-4437-ae37-ed74fe0f8fc6`. A fresh permanent session re-read and replayed the exact receipt, retained both earlier cards and downloaded the same 442,566 bytes. The former guest received 404. Linked SQL and Storage metadata confirmed removal of all three guest source objects and one retained private destination.
 
-A received the deployed wire and live evidence. Next receive the live iOS guest acceptance and then run the T151 EN/PL catalogue validation. Periodic sweep scheduling is separate. T150 is pending the iOS guest gate, and T151 has not been started.
+A received the deployed wire and live evidence. iOS acceptance `02aa48e` completed T150 for the English MVP. Periodic sweep scheduling, physical camera and native Apple/Google are tracked separately.
 
 ## B — T150 personal photo save verified on staging, 12 November 2026
 
