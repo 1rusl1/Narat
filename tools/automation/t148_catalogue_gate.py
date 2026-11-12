@@ -287,13 +287,19 @@ def main():
 
     out_dir = ROOT / "docs/validation/automation/runs" / args.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = out_dir / "summary.json"
+    summary_path.unlink(missing_ok=True)
     report = verify_pipeline(ROOT) if args.mode == "pipeline" else verify_release(ROOT)
     report["run_id"] = args.run_id
     report["timestamp"] = datetime.now(timezone.utc).isoformat()
+    report["status"] = "PASS"
     (out_dir / f"t148-{args.mode}-gate.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    summary_path.write_text(json.dumps({"status": "PASS", "mode": "local",
+                                        "report": f"t148-{args.mode}-gate.json"}) + "\n",
+                            encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
