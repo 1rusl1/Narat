@@ -410,6 +410,134 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
         assert sql(db, query) == 'true', 'Permanent legacy owner can re-register to evade unresolved anchor'
         print(f'PASS {db}: trusted permanent-to-guest reversal rejected', flush=True)
 
+    def bound_repeat_last_attempt(db):
+        owner, plant, flow, winner, distinct, retry = map(job, range(960, 966))
+        sql(db, f"""
+            INSERT INTO auth.users(id,is_anonymous) VALUES('{owner}',false);
+            INSERT INTO public.plants(id,owner_id,plant_id,creation_source,display_name)
+            VALUES('{plant}','{owner}','monstera_deliciosa','identification','V05 fixture');
+        """)
+
+        def ready_photo():
+            asset = sql(db, f"SELECT public.create_diagnosis_upload('{owner}',gen_random_uuid(),"
+                        "'image/jpeg',4,repeat('a',64))->>'photo_asset_id';")
+            assert sql(db, f"SELECT public.mark_diagnosis_upload_ready('{owner}','{asset}',repeat('a',64))->>'state';") == 'ready'
+            return asset
+
+        def admission(operation, asset, can_dispatch=True):
+            return (f"SELECT public.create_plant_diagnosis_job('{owner}',{operation},'{asset}',"
+                    f"'{flow}','en',{str(can_dispatch).lower()},'{plant}');")
+
+        def read_job(job_id):
+            return json.loads(sql(db, f"SELECT public.read_diagnosis_job('{owner}','{job_id}');"))
+
+        def settle(job_id, succeeded):
+            lease = json.loads(sql(db, f"SELECT public.lease_diagnosis_job('{job_id}');"))
+            assert lease and lease['job_id'] == job_id
+            assert sql(db, f"SELECT public.start_diagnosis_provider('{job_id}','{lease['lease_token']}')->>'allowed';") == 'true'
+            result = (f"jsonb_build_object('job_id','{job_id}','mode','diagnosis',"
+                      f"'kb_release_id','{lease['kb_release_id']}')") if succeeded else 'NULL'
+            error = 'NULL' if succeeded else "'PROVIDER_FAILURE_FIXTURE'"
+            return sql(db, f"SELECT public.finish_diagnosis_job('{job_id}','{lease['lease_token']}',"
+                       f"{result},{str(not succeeded).lower()},{error})->>'quota_state';")
+
+        # Consume the starter and the first two monthly attempts through real admission and settlement.
+        for quota in ('starter_diagnosis', 'free_monthly', 'free_monthly'):
+            seeded = json.loads(sql(db, admission('gen_random_uuid()', ready_photo())))['job']
+            assert seeded['quota_kind'] == quota and settle(seeded['job_id'], True) == 'consumed'
+
+        original_photo, other_photo = ready_photo(), ready_photo()
+        create = admission(f"'{winner}'", original_photo)
+        replay = admission(f"'{winner}'", original_photo, can_dispatch=False)
+        competing = '\\set VERBOSITY verbose\n' + admission(f"'{distinct}'", other_photo)
+
+        def expect_exhausted(action):
+            try:
+                action()
+            except RuntimeError as error:
+                failure = re.search(r'ERROR:\s+(P0001): (QUOTA_DENIED).*?DETAIL:\s+(free_monthly_exhausted)',
+                                    str(error), re.S)
+                assert failure, error
+                code, message, details = failure.groups()
+                return {'code': code, 'message': message, 'details': details}
+            else:
+                raise AssertionError('A distinct request bypassed the last-attempt limit')
+
+        first = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, env=env)
+
+        def stop_first():
+            if first.poll() is None:
+                first.kill()
+                first.communicate(timeout=10)
+
+        try:
+            first.stdin.write(f"BEGIN; {create}\n\\echo READY\n")
+            first.stdin.flush()
+            accepted = json.loads(first.stdout.readline())
+            assert first.stdout.readline().strip() == 'READY' and accepted['replayed'] is False
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                exact = pool.submit(sql, db, "SET application_name='v05_exact'; " + replay)
+                different = pool.submit(sql, db, "SET application_name='v05_distinct';\n" + competing)
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN ('v05_exact','v05_distinct') AND wait_event_type='Lock';") != '2':
+                        assert not exact.done() and not different.done(), 'V05 contenders bypassed the owner lock'
+                        assert time.monotonic() < deadline, 'V05 contenders never overlapped'
+                        time.sleep(.03)
+                    first.stdin.write('COMMIT;\n\\q\n')
+                    first.stdin.flush()
+                    _, error = first.communicate(timeout=15)
+                    assert first.returncode == 0, error
+                    concurrent_replay = json.loads(exact.result(timeout=15))
+                    assert concurrent_replay == {**accepted, 'replayed': True}
+                    concurrent_denial = expect_exhausted(lambda: different.result(timeout=15))
+                finally:
+                    stop_first()
+        finally:
+            stop_first()
+
+        receipt = accepted['job']
+        failed_job = receipt['job_id']
+        assert receipt['quota_kind'] == 'free_monthly' and receipt['quota_state'] == 'reserved'
+        assert receipt['target_plant_id'] == plant and receipt['photo_asset_id'] == original_photo
+        check(db, f"""(SELECT count(*)=3 AND count(*) FILTER (WHERE quota_state='consumed')=2
+                 AND count(*) FILTER (WHERE quota_state='reserved' AND job_id='{failed_job}')=1
+                 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V05 concurrent requests leave exactly one reservation on the winning job')
+        assert settle(failed_job, False) == 'released'
+        failed = read_job(failed_job)
+        assert failed['status'] == 'failed' and failed['quota_state'] == 'released'
+        failed_replay = json.loads(sql(db, replay))
+        assert failed_replay == concurrent_replay
+
+        retried = json.loads(sql(db, admission(f"'{retry}'", original_photo)))
+        replacement = retried['job']
+        assert retried['replayed'] is False and replacement['job_id'] != failed_job
+        assert replacement['target_plant_id'] == plant and replacement['photo_asset_id'] == original_photo
+        assert replacement['quota_kind'] == 'free_monthly' and settle(replacement['job_id'], True) == 'consumed'
+        terminal = read_job(replacement['job_id'])
+        assert terminal['status'] == 'succeeded' and terminal['quota_state'] == 'consumed'
+        terminal_denial = expect_exhausted(lambda: sql(db, competing))
+        terminal_replay = json.loads(sql(db, admission(f"'{retry}'", original_photo, False)))
+        assert terminal_replay == {**retried, 'replayed': True}
+        assert read_job(failed_job) == failed and read_job(replacement['job_id']) == terminal
+        check(db, f"""(SELECT count(*)=5 FROM public.analysis_jobs WHERE owner_id='{owner}')
+            AND (SELECT count(*)=5 FROM public.operation_receipts WHERE owner_id='{owner}' AND command_name='analysis.job.create')
+            AND NOT EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{distinct}')
+            AND (SELECT count(*)=4 AND count(*) FILTER (WHERE quota_state='consumed')=3
+                 AND count(*) FILTER (WHERE quota_state='released')=1
+                 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V05 bound repeat: concurrent last Free attempt, immutable replay, release and one successful retry')
+        wire = dict(owner=owner, plant=plant, flow=flow, winner=winner, distinct=distinct, retry=retry,
+                    original_photo=original_photo, other_photo=other_photo, accepted=accepted,
+                    concurrent_replay=concurrent_replay, concurrent_denial=concurrent_denial,
+                    failed=failed, failed_replay=failed_replay, retried=retried, terminal=terminal,
+                    terminal_denial=terminal_denial, terminal_replay=terminal_replay)
+        command(['deno', 'run', '-A', '--config', str(ROOT/'supabase/functions/deno.json'),
+                 str(ROOT/'tools/automation/v05_bound_repeat_wire.ts')], json.dumps(wire))
+        print(f'PASS {db}: V05 202/200/429 and terminal GET through production Edge using real SQL outcomes', flush=True)
+
     def concurrency(db, same=False, outcome='succeeded'):
         # Fresh owner with exactly one remaining paid slot; 20 independent psql
         # processes all MUST be visible blocked on a held owner lock before release.
@@ -571,6 +699,7 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 tap(case, ROOT/'supabase/tests/diagnosis_jobs.test.sql')
                 if any(migration.name == '202611120025_repeat_plant_diagnosis.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/repeat_plant_diagnosis.test.sql')
+                    bound_repeat_last_attempt(case)
                 if any(migration.name == '202611120021_guest_photo_claim.sql' for migration in selected):
                     guest_settlement_bind_race(case, release, timed_out=False)
                     guest_settlement_bind_race(case, release, timed_out=True)

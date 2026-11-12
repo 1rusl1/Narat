@@ -17,3 +17,15 @@ Backend `2f45aa9`, независимые Review и QA. Прошли typecheck �
 V02 принят в этом EN-прогоне. T029 и T098 остаются открыты для остальных критериев. [Подписанный прогон и приёмка A](https://github.com/1rusl1/Narat/blob/13d9dc9/docs/validation/mvp-acceptance.md#v02--повторная-диагностика-из-сохранённой-карточки).
 
 Очередь V11/V19 начинается с ручного исправления даты существующего факта ухода (T062). Автоматические повторы и один контроль первой помощи зависят от T160/T171.
+
+## V05 — последний Free-слот на wire V02/V03
+
+Прежний T163 проверял 20 подключений на уровне `admit_analysis_quota` и settlement. Фикстуры V02/V03 отдельно покрывали привязку карточки, точный replay и освобождение резерва. Добавлен один прогон через действующий RPC `create_plant_diagnosis_job` и обработчик `/analysis/jobs`. [Контракт](../../specs/001-plants-ios-mvp/contracts/diagnosis-photo-http.md).
+
+**Изолированная БД.** Владелец создан через Auth-триггер. Starter и две месячные попытки проведены через реальные reserve и settle. После первого запроса на последний Free-слот PostgreSQL одновременно наблюдал два ожидания блокировки владельца. Точная копия получила прежнюю квитанцию, другая операция с отдельным готовым фото получила `QUOTA_DENIED / free_monthly_exhausted`. Одна строка ledger осталась `reserved`. Технический `failed` освободил её. Новая операция с тем же фото и карточкой создала новый job и списала одну месячную попытку после успеха. В итоговом ledger три `consumed`, один `released`, ноль `reserved`. У отклонённой операции отсутствуют job и квитанция.
+
+**HTTP-фикстура.** Реальные результаты RPC из PostgreSQL поданы рабочему Edge-обработчику через тестовый транспорт. Проверены тот же envelope с `target_plant_id`, `flow_id` и фото, 202 для новой операции, 200 с исходной квитанцией для точного replay при недоступном worker, и 429 `QUOTA_EXHAUSTED` для другой операции. GET вернул `failed / released` и `succeeded / consumed`. Точный replay после обоих исходов сохранил исходный ответ. Тестовый worker увидел запуск только для двух новых jobs. [PG gate](../../tools/automation/parallel_backend_quota_gate.py) · [Wire gate](../../tools/automation/v05_bound_repeat_wire.ts).
+
+В PG17 с pgTAP и Deno прошёл `python3 tools/automation/parallel_backend_quota_gate.py --bind --installations --access --diagnosis-upload --diagnosis-jobs`. По 863 pgTAP на clean/upgrade и по 850 в порядке staging без 024. Гонка V05 и проверка HTTP прошли в обеих базах обоих прогонов отдельно от pgTAP. Typecheck теста и diff-check прошли.
+
+**Имеющиеся живые данные.** V02 на подписанной EN-сборке подтвердил потерю 202, точный replay и одно успешное списание starter. В V03 живой `unknown / released` подтверждён отдельно. Ошибка `failed / released` в подписанном сценарии была транспортной фикстурой, после неё повтор с тем же фото завершился на живом API. Гонка за последний месячный остаток в живых прогонах отсутствует. [Отчёт A по V03](https://github.com/1rusl1/Narat/blob/ab3c6a1/docs/validation/mvp-acceptance.md#v03--ошибка-анализа-и-повтор).
