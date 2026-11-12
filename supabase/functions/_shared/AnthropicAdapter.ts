@@ -24,6 +24,13 @@ export const PINNED_OPENROUTER_MODEL = "anthropic/claude-haiku-5.5";
 export const PROVIDER_CALL_TIMEOUT_MS = 40_000;
 export type AnalysisProvider = "anthropic" | "openrouter";
 
+export interface RepeatDiagnosisContext {
+  light: string;
+  watering_frequency: string;
+  drainage: string;
+  care_history: Array<{ action_code: string; occurred_local_date: string }>;
+}
+
 export interface AnthropicClassificationInput {
   analysisId: string;
   jobId: string;
@@ -38,6 +45,7 @@ export interface AnthropicClassificationInput {
     pot_type?: string;
     season_override?: string;
   };
+  repeatContext?: RepeatDiagnosisContext;
   catalog: PublishedReleaseCatalog;
   signingSecret: string;
   signal?: AbortSignal;
@@ -193,17 +201,32 @@ export class AnthropicAdapter {
         errorMessage: "Unsupported analysis mode.",
       };
     }
-    const systemPrompt = buildSystemPrompt(
+    let systemPrompt = buildSystemPrompt(
       input.mode,
       input.catalog.kbReleaseId,
       input.locale,
     );
+    const repeatContext = input.mode === "diagnosis" ? input.repeatContext : undefined;
+    if (repeatContext) {
+      systemPrompt += " Diagnose only the submitted new photo. Use saved conditions and recorded care as background facts. Missing information remains unknown. Do not compare images, diagnose from the journal alone, or infer improvement or deterioration.";
+    }
 
     const contextPayload = {
       kb_release_id: input.catalog.kbReleaseId,
       mode: input.mode,
       locale: input.locale,
       care_context: input.careContext ?? null,
+      ...(repeatContext && {
+        repeat_context: {
+          light: repeatContext.light,
+          watering_frequency: repeatContext.watering_frequency,
+          drainage: repeatContext.drainage,
+          care_history: repeatContext.care_history.map(({ action_code, occurred_local_date }) => ({
+            action_code,
+            occurred_local_date,
+          })),
+        },
+      }),
       allowed_plants: Array.from(input.catalog.plantIds, (id) =>
         [id, input.catalog.plantScientificNames?.get(id) ?? id]),
       allowed_genera: Array.from(input.catalog.genusIds),

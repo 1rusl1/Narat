@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { RepeatDiagnosisContext } from "../_shared/AnthropicAdapter.ts";
 import {
   type CanonicalConditionId,
   type CanonicalConditionProfile,
@@ -25,6 +26,7 @@ interface Lease {
   kb_release_id: string | null;
   quota_kind: string;
   deadline_at: string;
+  repeat_context?: RepeatDiagnosisContext | null;
   upload: {
     photo_asset_id: string;
     owner_id: string;
@@ -82,6 +84,7 @@ export function createDiagnosisPersistence(
         quotaKind: lease.quota_kind,
         monthlyQuotaId: null,
         leaseExpiresAt: lease.deadline_at,
+        repeatContext: lease.repeat_context ?? undefined,
       };
     },
 

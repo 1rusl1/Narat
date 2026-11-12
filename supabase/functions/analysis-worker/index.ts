@@ -6,6 +6,7 @@
 import {
   AnthropicAdapter,
   PROVIDER_CALL_TIMEOUT_MS,
+  type RepeatDiagnosisContext,
 } from "../_shared/AnthropicAdapter.ts";
 import type {
   PhotoIdentificationCatalogue,
@@ -41,6 +42,7 @@ export interface LeasedAnalysisJob {
     pot_type?: string;
     season_override?: string;
   };
+  repeatContext?: RepeatDiagnosisContext;
   quotaKind: string;
   monthlyQuotaId: string | null;
   leaseExpiresAt: string;
@@ -176,6 +178,7 @@ export async function processSingleQueuedJob(params: {
             mode: target.mode,
             locale: job.locale,
             careContext: job.careContext,
+            repeatContext: job.repeatContext,
             catalog: target.catalog,
             signingSecret: params.signingSecret,
           });

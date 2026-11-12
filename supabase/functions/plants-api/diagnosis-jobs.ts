@@ -12,7 +12,11 @@ import type { AnalysisJobStatusResponse } from "./analysis.ts";
 
 type PhotoJobStatus = Omit<AnalysisJobStatusResponse, "result"> & {
   result: AnalysisJobStatusResponse["result"] | PhotoIdentificationResult;
+  target_plant_id?: string;
+  photo_asset_id?: string;
 };
+
+const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 interface DiagnosisWorker {
   ready(): boolean;
@@ -35,8 +39,8 @@ function notFound(ctx: RequestContext) {
     404,
     "NOT_FOUND",
     ctx.locale === "pl"
-      ? "Nie znaleziono zdjęcia lub zadania."
-      : "Photo or job not found.",
+      ? "Nie znaleziono rośliny, zdjęcia lub zadania."
+      : "Plant, photo or job not found.",
   );
 }
 
@@ -49,10 +53,12 @@ function parseJob(
   const job = value as PhotoJobStatus;
   if (
     typeof job.job_id !== "string" ||
-    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
-      job.job_id,
-    ) ||
+    !uuid.test(job.job_id) ||
     (job.mode !== "diagnosis" && job.mode !== "identification") ||
+    (("target_plant_id" in job || "photo_asset_id" in job) &&
+      (job.mode !== "diagnosis" || typeof job.target_plant_id !== "string" ||
+        !uuid.test(job.target_plant_id) || typeof job.photo_asset_id !== "string" ||
+        !uuid.test(job.photo_asset_id))) ||
     !["queued", "running", "succeeded", "failed", "expired"].includes(
       job.status,
     ) ||
@@ -112,6 +118,15 @@ export function createDiagnosisJobs(
           : "Operation ID is already in use.",
       );
     }
+    if (error.message === "PHOTO_ALREADY_USED") {
+      throw new ApiHttpError(
+        409,
+        "PHOTO_ALREADY_USED",
+        ctx.locale === "pl"
+          ? "Dodaj nowe zdjęcie tej rośliny."
+          : "Add a new photo of this plant.",
+      );
+    }
     if (error.message === "QUOTA_DENIED") {
       if (error.details === "quota_registration_required") {
         throw new ApiHttpError(
@@ -160,10 +175,12 @@ export function createDiagnosisJobs(
         "mode",
         "photo_asset_id",
         "flow_id",
+        "target_plant_id",
       ]);
       if (
         !body || typeof body !== "object" || Array.isArray(body) ||
         (body.mode !== "diagnosis" && body.mode !== "identification") ||
+        ("target_plant_id" in body && body.mode !== "diagnosis") ||
         Object.keys(body).some((key) => !allowed.has(key))
       ) {
         throw new ApiHttpError(
@@ -179,6 +196,9 @@ export function createDiagnosisJobs(
       const flow = body.flow_id == null
         ? null
         : requireUuid(body.flow_id, "flow_id");
+      const target = "target_plant_id" in body
+        ? requireUuid(body.target_plant_id, "target_plant_id")
+        : null;
       const identification = body.mode === "identification";
       const guestIdentification = identification && ctx.isAnonymous;
       const credentialHash = guestIdentification
@@ -188,6 +208,8 @@ export function createDiagnosisJobs(
         ? "create_bound_photo_analysis_job"
         : identification
         ? "create_photo_analysis_job"
+        : target
+        ? "create_plant_diagnosis_job"
         : "create_diagnosis_job";
       const result = await rpc(ctx, command, {
         p_owner_id: owner,
@@ -198,10 +220,16 @@ export function createDiagnosisJobs(
         p_can_dispatch: worker.ready(),
         ...(identification && { p_mode: body.mode }),
         ...(guestIdentification && { p_credential_hash: credentialHash }),
+        ...(target && { p_target_plant_id: target }),
       });
       if (typeof result?.replayed !== "boolean") throw unavailable(ctx);
       const job = parseJob(result.job, ctx);
-      if (job.mode !== body.mode) throw unavailable(ctx);
+      if (
+        job.mode !== body.mode ||
+        (target
+          ? job.target_plant_id !== target || job.photo_asset_id !== photo
+          : job.target_plant_id !== undefined)
+      ) throw unavailable(ctx);
       if (worker.ready() && job.status === "queued") {
         // A retry can recover an undelivered dispatch. The database grants only one lease.
         const task = worker.run(job.job_id).catch(() => undefined);

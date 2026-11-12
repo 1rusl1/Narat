@@ -26,6 +26,12 @@ const species = "be350000-0000-4000-8000-000000000010";
 const savedPlant = "be350000-0000-4000-8000-000000000012";
 const outsider = "be350000-0000-4000-8000-000000000011";
 const host = "https://diagnosis.example.test";
+const repeatContext = {
+  light: "bright_indirect",
+  watering_frequency: "less_often",
+  drainage: "yes",
+  care_history: [{ action_code: "water", occurred_local_date: "2026-11-11" }],
+};
 const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 const hash = Array.from(
   new Uint8Array(await crypto.subtle.digest("SHA-256", jpeg)),
@@ -39,6 +45,7 @@ function fixture(
     providerHttpStatus?: number;
     missingKey?: boolean;
     registrationRequired?: boolean;
+    repeatDiagnosis?: boolean;
     identificationReply?: {
       text: string;
       stopReason?: string;
@@ -60,6 +67,9 @@ function fixture(
   const openRouter = options.provider === "openrouter";
   const identification = options.identificationReply;
   const mode = identification ? "identification" : "diagnosis";
+  const repeatBinding = options.repeatDiagnosis
+    ? { target_plant_id: savedPlant, photo_asset_id: photo }
+    : {};
   const expectedError = identification?.errorCode ??
     (options.providerHttpStatus
       ? "PROVIDER_TIMEOUT_OR_ERROR"
@@ -89,6 +99,7 @@ function fixture(
     state: ready ? "ready" : "initialized",
   });
   const status = () => ({
+    ...repeatBinding,
     job_id: job,
     mode,
     quota_kind: `starter_${mode}`,
@@ -162,6 +173,7 @@ function fixture(
         !("temperature" in body) && !("top_p" in body) && !("top_k" in body),
       );
       const [image, text] = body.messages[0].content;
+      assertEquals(body.messages[0].content.length, 2);
       assertEquals(image, {
         type: "image",
         source: {
@@ -179,7 +191,13 @@ function fixture(
           content: [{ type: "text", text: identification.text }],
         });
       }
-      assertEquals(JSON.parse(text.text).allowed_plants, [[
+      const providerContext = JSON.parse(text.text);
+      assertEquals(providerContext.repeat_context, options.repeatDiagnosis ? repeatContext : undefined);
+      if (options.repeatDiagnosis) {
+        assert(body.system.includes("Do not compare images"));
+        assert(!text.text.includes(savedPlant) && !text.text.includes(owner));
+      }
+      assertEquals(providerContext.allowed_plants, [[
         "monstera_deliciosa",
         "Monstera deliciosa",
       ]]);
@@ -277,6 +295,7 @@ function fixture(
         ready = true;
         return Response.json(row());
       case "create_photo_analysis_job":
+      case "create_plant_diagnosis_job":
       case "create_diagnosis_job": {
         const requested = path.endsWith("/create_photo_analysis_job")
           ? body.p_mode
@@ -288,6 +307,15 @@ function fixture(
           }, { status: 409 });
         }
         assertEquals(requested, mode);
+        if (options.repeatDiagnosis) {
+          assert(path.endsWith("/create_plant_diagnosis_job"));
+          if (body.p_target_plant_id !== savedPlant || body.p_owner_id !== owner) {
+            return Response.json({ code: "P0002", message: "PLANT_NOT_FOUND" }, { status: 400 });
+          }
+          if (created && body.p_operation_id !== jobOperation) {
+            return Response.json({ code: "23505", message: "PHOTO_ALREADY_USED" }, { status: 409 });
+          }
+        }
         assertEquals(body.p_owner_id, owner);
         assertEquals(body.p_photo_asset_id, photo);
         if (ticketIssued && body.p_operation_id === uploadOperation) {
@@ -338,6 +366,13 @@ function fixture(
           quota_kind: `starter_${mode}`,
           deadline_at: new Date(Date.now() + 55_000).toISOString(),
           upload: row(),
+          ...(options.repeatDiagnosis && {
+            repeat_context: {
+              ...repeatContext,
+              target_plant_id: savedPlant,
+              care_history: repeatContext.care_history.map((entry) => ({ ...entry, owner_id: owner })),
+            },
+          }),
         });
       case "read_identification_catalog":
         assert(identification);
@@ -455,6 +490,47 @@ function fixture(
     },
   };
 }
+
+Deno.test("saved plant repeat diagnosis sends one new photo and factual context through the ordinary worker", async () => {
+  const f = fixture({ repeatDiagnosis: true });
+  const upload = await f.ticket();
+  assertEquals(upload.status, 200);
+  assertEquals((await f.put((await upload.json()).signed_upload_url)).status, 200);
+
+  const body = {
+    operation_id: jobOperation,
+    mode: "diagnosis",
+    photo_asset_id: photo,
+    target_plant_id: savedPlant,
+  };
+  assertEquals((await f.api("/analysis/jobs", { ...body, mode: "identification" })).status, 400);
+  assertEquals((await f.api("/analysis/jobs", { ...body, target_plant_id: null })).status, 400);
+  assertEquals((await f.api("/analysis/jobs", { ...body, care_history: [] })).status, 400);
+  assertEquals((await f.api("/analysis/jobs", body, "fixture-other")).status, 404);
+
+  const accepted = await f.api("/analysis/jobs", body);
+  assertEquals(accepted.status, 202);
+  const admission = await accepted.json();
+  assertEquals(admission.target_plant_id, savedPlant);
+  assertEquals(admission.photo_asset_id, photo);
+  const replay = await f.api("/analysis/jobs", body);
+  assertEquals(replay.status, 200);
+  assertEquals(await replay.json(), admission);
+  const reuse = await f.api("/analysis/jobs", { ...body, operation_id: crypto.randomUUID() });
+  assertEquals(reuse.status, 409);
+  assertEquals((await reuse.json()).error.code, "PHOTO_ALREADY_USED");
+  await Promise.all(f.work);
+  assertEquals(f.providerCalls(), 1);
+  assertEquals((await f.api("/analysis/jobs/" + job, undefined, "fixture-other")).status, 404);
+  const status = await f.api("/analysis/jobs/" + job);
+  assertEquals(status.status, 200);
+  const result = await status.json();
+  assertEquals(result.status, "succeeded");
+  assertEquals(result.target_plant_id, savedPlant);
+  assertEquals(result.photo_asset_id, photo);
+  assertEquals(result.result.plant_id, "monstera_deliciosa");
+  assert(!("repeat_context" in result));
+});
 
 for (
   const scenario of [
