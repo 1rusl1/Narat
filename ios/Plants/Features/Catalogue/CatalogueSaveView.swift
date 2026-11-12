@@ -11,15 +11,76 @@ private enum CatalogueViewNotice {
     case invalidInput, unavailable, sessionChanged, nativeCancelled, authenticationFailed
 }
 
+/// Only the current account may load or render the private image for a canonical card.
+@MainActor
+struct CataloguePlantPhotoView: View {
+    private struct Read: Equatable {
+        let scope: CatalogueSDKSnapshot
+        let attempt: Int
+    }
+
+    let connection: CatalogueConnection
+    let expected: CatalogueSDKSnapshot
+    let plantId: UUID
+    let polish: Bool
+
+    @State private var image: UIImage?
+    @State private var loadedScope: CatalogueSDKSnapshot?
+    @State private var failed = false
+    @State private var attempt = 0
+
+    private var read: Read { Read(scope: expected, attempt: attempt) }
+
+    var body: some View {
+        if connection.snapshot == expected {
+            Group {
+                if let image, loadedScope == expected {
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .frame(maxHeight: 260)
+                        .accessibilityLabel(polish ? "Twoje zdjęcie rośliny" : "Your plant photo")
+                        .accessibilityIdentifier("catalogue.saved.photo")
+                } else if failed, loadedScope == expected {
+                    Button(polish ? "Wczytaj zdjęcie ponownie" : "Retry photo") { attempt += 1 }
+                        .accessibilityIdentifier("catalogue.saved.photo.retry")
+                } else {
+                    ProgressView(polish ? "Wczytywanie zdjęcia…" : "Loading photo…")
+                }
+            }
+            .task(id: read) { await load(read) }
+        }
+    }
+
+    private func load(_ requested: Read) async {
+        guard !Task.isCancelled, read == requested else { return }
+        loadedScope = nil
+        image = nil
+        failed = false
+        do {
+            guard let api = connection.apiClient else { throw CatalogueConnectionUnavailable.configurationMissing }
+            let lease = try await connection.collectionLease(expected: requested.scope)
+            let bytes = try await api.fetchPlantPhoto(plantId: plantId, context: lease)
+            guard !Task.isCancelled, read == requested, connection.snapshot == requested.scope else { return }
+            guard let decoded = UIImage(data: bytes) else { throw URLError(.cannotDecodeContentData) }
+            image = decoded
+        } catch {
+            guard !Task.isCancelled, read == requested, connection.snapshot == requested.scope else { return }
+            failed = true
+        }
+        loadedScope = requested.scope
+    }
+}
+
 @MainActor
 struct CatalogueResumeSelection {
     let speciesSlug: String
     let flowId: UUID
+    let identification: CatalogueInput.Identification?
 
     init?(_ model: CatalogueSaveModel) {
         guard let input = model.input, let checkpoint = model.checkpoint else { return nil }
-        speciesSlug = input.speciesSlug
+        speciesSlug = input.speciesIdentifier
         flowId = checkpoint.flowId
+        identification = input.identification
     }
 }
 
@@ -46,6 +107,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let scientificName: String
     let polish: Bool
     var analysisSaveIdentity: UUID? = nil
+    var identification: CatalogueInput.Identification? = nil
+    var expectedPhotoId: UUID? = nil
     @Binding var selectionLocked: Bool
     @ViewBuilder let speciesDetails: () -> SpeciesDetails
 
@@ -77,6 +140,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     private var scopeIsCurrent: Bool {
         scope != nil && connection.snapshot == scope
     }
+
+    private var speciesIdentifier: String { identification?.taxonId.uuidString.lowercased() ?? speciesSlug }
 
     private var shouldLockSelection: Bool {
         if working || nativeInFlight || restoreFailed || !scopeIsCurrent { return true }
@@ -284,16 +349,21 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         // No receipt or captured private summary is passed to a destination.
         Text(polish ? "Roślina zapisana" : "Plant saved").font(.headline)
             .accessibilityIdentifier("catalogue.save.saved")
-        if let summary = model.cardSummary {
+        if let summary = model.cardSummary, expectedPhotoId == nil || expectedPhotoId == summary.mainPhotoId {
+            let selected = identification.map { $0.taxonId == summary.taxonId } ?? (summary.speciesSlug == speciesSlug)
             VStack(alignment: .leading, spacing: 12) {
                 Text(summary.personalName ?? (polish ? "Roślina" : "Plant")).font(.title)
                     .accessibilityIdentifier("catalogue.saved.name")
-                Text(summary.speciesSlug == speciesSlug ? displayName : (summary.speciesSlug ?? ""))
+                Text(selected ? displayName : (summary.speciesSlug ?? ""))
                     .accessibilityIdentifier("catalogue.saved.species")
-                if summary.speciesSlug == speciesSlug {
+                if selected {
                     Text(scientificName).italic()
                         .accessibilityIdentifier("catalogue.selected.scientific")
                     speciesDetails()
+                }
+                if let photo = summary.mainPhotoId, let scope {
+                    CataloguePlantPhotoView(connection: connection, expected: scope, plantId: summary.id, polish: polish)
+                        .id(photo)
                 }
             }
             .accessibilityElement(children: .contain)
@@ -318,7 +388,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .disabled(working)
                     .accessibilityIdentifier("catalogue.saved.retry")
             case .loaded:
-                EmptyView()
+                Text(polish ? "Nie udało się potwierdzić zdjęcia." : "Couldn’t verify the saved photo.")
+                    .accessibilityIdentifier("catalogue.saved.photo.error")
             }
         }
     }
@@ -452,9 +523,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     switch result {
                     case let .restored(restored):
                         if CatalogueSaveIdentity.canRestore(
-                            selectedSpecies: speciesSlug, restoredSpecies: restored.input?.speciesSlug,
+                            selectedSpecies: speciesIdentifier, restoredSpecies: restored.input?.speciesIdentifier,
                             analysisFlow: analysisSaveIdentity, restoredFlow: restored.checkpoint?.flowId
-                        ) {
+                        ), restored.input?.identification == identification {
                             model = restored
                             switch restored.state {
                             case .ready, .collectionLimitNotEnqueued:
@@ -529,7 +600,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
         nameFocused = false
         if model == nil && intent == nil {
-            let input = CatalogueInput(speciesSlug: speciesSlug, personalName: name.isEmpty ? nil : name)
+            let personalName = name.isEmpty ? nil : name
+            let input = identification.map { CatalogueInput(identification: $0, personalName: personalName) }
+                ?? CatalogueInput(speciesSlug: speciesSlug, personalName: personalName)
             let chosen = CatalogueViewIntent(input: input, flowId: analysisSaveIdentity ?? UUID(), operationId: UUID())
             do { _ = try input.makeEnvelope(operationId: chosen.operationId) }
             catch { notice = .invalidInput; return }
@@ -672,7 +745,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         try verified.validateScope(
             of: store, apiClient: api, session: expected.session, isAnonymous: expected.isAnonymous
         )
-        guard connection.snapshot == expected, verified.input?.speciesSlug == speciesSlug else {
+        guard connection.snapshot == expected, verified.input?.speciesIdentifier == speciesIdentifier,
+              verified.input?.identification == identification else {
             throw CatalogueSaveUnavailable.sessionChanged
         }
         if let old = model, old !== verified { old.cancel() }

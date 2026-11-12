@@ -625,6 +625,7 @@ public struct CommandResponseDTO: Codable, Sendable, Equatable {
 /// The raw SQL boundary must be retained: Date cannot represent every microsecond exactly.
 public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
     public let plantId: UUID
+    public let photoId: UUID?
     public let careRevision: Int
     public let contextState: String
     public let nextAvailableStep: String
@@ -636,6 +637,7 @@ public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case plantId = "plant_id"
+        case photoId = "photo_id"
         case careRevision = "care_revision"
         case contextState = "context_state"
         case nextAvailableStep = "next_available_step"
@@ -647,6 +649,7 @@ public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         plantId = try values.decode(UUID.self, forKey: .plantId)
+        photoId = try values.decodeIfPresent(UUID.self, forKey: .photoId)
         careRevision = try values.decode(Int.self, forKey: .careRevision)
         contextState = try values.decode(String.self, forKey: .contextState)
         nextAvailableStep = try values.decode(String.self, forKey: .nextAvailableStep)
@@ -668,6 +671,7 @@ public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
     public func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(plantId, forKey: .plantId)
+        try values.encodeIfPresent(photoId, forKey: .photoId)
         try values.encode(careRevision, forKey: .careRevision)
         try values.encode(contextState, forKey: .contextState)
         try values.encode(nextAvailableStep, forKey: .nextAvailableStep)

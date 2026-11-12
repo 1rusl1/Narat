@@ -257,7 +257,7 @@ final class CatalogueSaveModelTests: XCTestCase {
 
     private func assertCanonicalCard(_ model: CatalogueSaveModel, name: String? = " Canonical fern ") {
         let expected = CatalogueCardSummary(
-            id: cardID, speciesSlug: "server-reclassified-fern",
+            id: cardID, speciesSlug: "server-reclassified-fern", taxonId: nil, mainPhotoId: nil,
             personalName: name, revision: 7, careRevision: 4
         )
         XCTAssertEqual(model.cardState, .loaded(expected))

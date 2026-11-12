@@ -336,8 +336,10 @@ final class FirstHelpUnitTests: XCTestCase {
             XCTAssertNil(model.router.flowState.confirmedPlantId)
             model.confirmPhotoIdentification()
             if index == 2 {
+                let identification = try XCTUnwrap(result.identification)
+                let taxon = try XCTUnwrap(identification.species?.taxonId)
                 XCTAssertEqual(model.confirmedPhotoIdentification, PhotoIdentificationSelection(
-                    jobId: try XCTUnwrap(result.identification).jobId, photoAssetId: photoId, speciesSlug: "fixture-species"
+                    jobId: identification.jobId, photoAssetId: photoId, speciesSlug: "fixture-species", taxonId: taxon, ownerId: nil
                 ))
                 XCTAssertEqual(model.router.flowState.confirmedPlantId, "fixture-species")
                 XCTAssertEqual(service.requests.count, 1)

@@ -419,6 +419,7 @@ extension CollectionWireTests {
 private actor CatalogueTransport: PlantsAPITransport {
     enum Reply: Sendable {
         case http(Int, String)
+        case photo(Data, mime: String)
         case network
         case cancelled
         case urlCancelled
@@ -452,6 +453,9 @@ private actor CatalogueTransport: PlantsAPITransport {
                 Data(json.utf8),
                 HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
             )
+        case let .photo(bytes, mime):
+            return (bytes, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                           headerFields: ["Content-Type": mime])!)
         }
     }
 }
@@ -755,7 +759,7 @@ extension CollectionWireTests {
         let plant: [String: Any] = [
             "entity_type": "plants", "id": serverPlantId.uuidString,
             "updated_at": syncUntil, "deleted_at": NSNull(),
-            "data": ["id": serverPlantId.uuidString, "plant_id": input.speciesSlug,
+            "data": ["id": serverPlantId.uuidString, "plant_id": input.speciesIdentifier,
                      "personal_name": "Saved plant", "revision": 1, "care_revision": 1]
         ]
         var changes = [
@@ -2731,6 +2735,94 @@ extension CollectionWireTests {
 }
 
 extension CollectionWireTests {
+    @MainActor
+    func testIdentifiedPlantSaveRestoresSameCommandAndReadsPrivatePhoto() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let flow = UUID(), photo = UUID(), taxon = UUID()
+        let input = CatalogueInput(identification: .init(jobId: flow, taxonId: taxon), personalName: "My Monstera")
+        let envelope = try input.makeEnvelope(operationId: operationId)
+        let expected = ["creation_source": "catalogue", "add_method": "scan", "creation_intent": "care",
+                        "identification_job_id": flow.uuidString.lowercased(), "taxon_id": taxon.uuidString.lowercased(),
+                        "personal_name": "My Monstera"]
+        let payload = try JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8))
+        XCTAssertEqual(payload, expected)
+        let schema = Schema([
+            LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
+            CatalogueInputCheckpointRecord.self, GuestDraftCacheRecord.self,
+            SyncedEntityRecord.self, SyncCheckpointRecord.self
+        ])
+        func openStore() throws -> LocalStore {
+            LocalStore(modelContainer: try ModelContainer(for: schema, configurations: [
+                ModelConfiguration(schema: schema, url: url)
+            ]))
+        }
+        func restore(_ store: LocalStore, _ api: PlantsAPIClient) async throws -> CatalogueSaveModel {
+            let repository = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            let outcome = await CatalogueSaveModel.restore(store: store, apiClient: api, repository: repository,
+                ownerId: syncOwner, flowId: flow, session: syncSession, isAnonymous: false)
+            guard case let .restored(model) = outcome else { throw SyncWireValidationError.invalidPage }
+            return model
+        }
+        let original: URLRequest
+        do {
+            let transport = CatalogueTransport([.http(200, try syncJSON(syncObject())), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = try openStore()
+            _ = try await store.checkpointCatalogueInput(input, flowId: flow, operationId: operationId,
+                context: lease, authority: api.syncAuthority)
+            let model = try await restore(store, api)
+            await model.save()
+            guard case .pending = model.state else { return XCTFail("Lost receipt must leave the write pending") }
+            let requests = await transport.capturedRequests()
+            original = try XCTUnwrap(requests.last)
+            model.cancel()
+        }
+
+        var page = syncObject()
+        page["changes"] = [["entity_type": "plants", "id": serverPlantId.uuidString,
+                            "updated_at": syncUntil, "deleted_at": NSNull(),
+                            "data": ["id": serverPlantId.uuidString, "plant_id": "monstera_deliciosa",
+                                     "taxon_id": taxon.uuidString, "main_photo_id": photo.uuidString,
+                                     "personal_name": "My Monstera", "revision": 1, "care_revision": 1]]]
+        let receipt = try decodedCreateReceipt(["photo_id": photo.uuidString])
+        let receiptWire = String(decoding: try JSONEncoder().encode(receipt), as: UTF8.self)
+        let image = Data([0xff, 0xd8, 0xff])
+        let transport = CatalogueTransport([.http(200, receiptWire), .http(200, try syncJSON(page)),
+                                            .photo(image, mime: "image/jpeg"), .photo(image, mime: "text/html")])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let store = try openStore()
+        let model = try await restore(store, api)
+        XCTAssertEqual(model.input, input)
+        XCTAssertEqual(model.envelope, envelope)
+        await model.save()
+        guard case let .saved(saved) = model.state else { return XCTFail("Typed receipt was not persisted") }
+        XCTAssertEqual(saved.receipt.photoId, photo)
+        await model.loadCard()
+        XCTAssertEqual(model.cardSummary?.id, serverPlantId)
+        XCTAssertEqual(model.cardSummary?.mainPhotoId, photo)
+
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let bytes = try await api.fetchPlantPhoto(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(bytes, image)
+        do {
+            _ = try await api.fetchPlantPhoto(plantId: serverPlantId, context: lease)
+            XCTFail("Non-image data reached the card")
+        } catch AnalysisHTTPError.invalidResponse {}
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.first?.httpBody, original.httpBody)
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET", "GET", "GET"])
+        XCTAssertEqual(requests.last?.url?.path, "/functions/v1/plants-api/plants/\(serverPlantId.uuidString.lowercased())/photo")
+        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer \(syncSession.accessToken)")
+        XCTAssertNil(requests.last?.value(forHTTPHeaderField: "X-Installation-Credential"))
+        let nonRedirecting = await transport.nonRedirectingRequests
+        XCTAssertEqual(nonRedirecting, 2)
+        try XCTAssertThrowsError(CatalogueCreateWire.validate(decodedCreateReceipt(), for: envelope))
+    }
+
     private func manualWateringReceipt(
         entryId: UUID, state: String, reversalId: UUID? = nil
     ) -> [String: Any] {
@@ -2773,7 +2865,7 @@ extension CollectionWireTests {
             let plant: [String: Any] = [
                 "entity_type": "plants", "id": serverPlantId.uuidString,
                 "updated_at": syncUntil, "deleted_at": NSNull(),
-                "data": ["id": serverPlantId.uuidString, "plant_id": input.speciesSlug,
+                "data": ["id": serverPlantId.uuidString, "plant_id": input.speciesIdentifier,
                          "personal_name": "Saved plant", "revision": 1, "care_revision": 1]
             ]
             var rows = [plant]

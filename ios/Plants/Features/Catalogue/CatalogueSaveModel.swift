@@ -274,9 +274,7 @@ final class CatalogueSaveModel {
                 return try apiClient.syncAuthority.withBoundValid(context) { .absent }
             }
             try apiClient.syncAuthority.withBoundValid(context) {}
-            let input = try JSONDecoder().decode(
-                CheckpointInput.self, from: Data(checkpoint.envelope.payloadJSON.utf8)
-            )
+            let input = try CatalogueInput.fromCheckpoint(checkpoint.envelope)
             let journal = try await store.catalogueCreateJournal(
                 checkpoint.envelope, mode: .checkOnly,
                 context: context, authority: apiClient.syncAuthority
@@ -297,7 +295,7 @@ final class CatalogueSaveModel {
                 return .restored(CatalogueSaveModel(
                     store: store, apiClient: apiClient, repository: repository,
                     context: context, isAnonymous: isAnonymous, checkpoint: checkpoint,
-                    input: CatalogueInput(speciesSlug: input.plant_id, personalName: input.personal_name),
+                    input: input,
                     state: state
                 ))
             }
@@ -315,12 +313,6 @@ final class CatalogueSaveModel {
             }
             return .unavailable(.storageOrServiceUnavailable)
         }
-    }
-
-    // LocalStore has already validated the minimal input and its exact identity.
-    private struct CheckpointInput: Decodable {
-        let plant_id: String
-        let personal_name: String?
     }
 
     /// Exact connection scope plus the ORIGINAL bound lease, not merely an equal owner.

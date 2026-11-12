@@ -580,20 +580,12 @@ public actor LocalStore {
         _ record: CatalogueInputCheckpointRecord
     ) throws -> CatalogueInputCheckpointSnapshot {
         guard record.compositeKey ==
-                "\(record.ownerId.uuidString.lowercased()):\(record.flowId.uuidString.lowercased())",
-              let payload = try? JSONSerialization.jsonObject(with: Data(record.payloadJSON.utf8)) as? [String: Any],
-              let slug = payload["plant_id"] as? String,
-              payload["creation_source"] as? String == "catalogue",
-              Set(payload.keys).isSubset(of: ["creation_source", "plant_id", "personal_name"]),
-              payload["personal_name"] == nil || payload["personal_name"] is String else {
+                "\(record.ownerId.uuidString.lowercased()):\(record.flowId.uuidString.lowercased())" else {
             throw CatalogueInputCheckpointError.invalidStoredInput
         }
-        let envelope = try CatalogueInput(
-            speciesSlug: slug, personalName: payload["personal_name"] as? String
-        ).makeEnvelope(operationId: record.operationId)
-        guard envelope.payloadJSON.utf8.elementsEqual(record.payloadJSON.utf8) else {
-            throw CatalogueInputCheckpointError.invalidStoredInput
-        }
+        let envelope = CommandEnvelopeDTO(operationId: record.operationId, commandName: "plant.create",
+                                          payloadJSON: record.payloadJSON)
+        _ = try CatalogueInput.fromCheckpoint(envelope)
         return CatalogueInputCheckpointSnapshot(
             ownerId: record.ownerId, flowId: record.flowId, envelope: envelope, createdAt: record.createdAt
         )

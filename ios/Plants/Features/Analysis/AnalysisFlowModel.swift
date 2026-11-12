@@ -32,6 +32,7 @@ public struct AnalysisServiceResult: Sendable {
     public let speciesLabel: String?
     public let conditionLabel: String?
     public let uploadedPhotoId: UUID?
+    let photoOwnerId: UUID?
 
     public init(
         analysis: PreliminaryAnalysis,
@@ -44,14 +45,16 @@ public struct AnalysisServiceResult: Sendable {
         self.speciesLabel = speciesLabel
         self.conditionLabel = conditionLabel
         self.uploadedPhotoId = uploadedPhotoId
+        photoOwnerId = nil
     }
 
-    init(identification: PhotoIdentificationResult, uploadedPhotoId: UUID?) {
+    init(identification: PhotoIdentificationResult, uploadedPhotoId: UUID?, photoOwnerId: UUID? = nil) {
         analysis = nil
         self.identification = identification
         speciesLabel = identification.species?.displayName
         conditionLabel = nil
         self.uploadedPhotoId = uploadedPhotoId
+        self.photoOwnerId = photoOwnerId
     }
 }
 
@@ -59,6 +62,8 @@ struct PhotoIdentificationSelection: Equatable, Sendable {
     let jobId: UUID
     let photoAssetId: UUID
     let speciesSlug: String
+    let taxonId: UUID
+    let ownerId: UUID?
 }
 
 public enum AnalysisServiceFailure: Error, Sendable, Equatable {
@@ -142,6 +147,7 @@ public final class AnalysisFlowModel {
               frozenRequest.photo == preparedPhoto,
               let result = identificationResult, let species = result.species, speciesLabel != nil,
               let identifiedPhoto, identifiedPhoto.jobId == result.jobId,
+              identifiedPhoto.taxonId == species.taxonId,
               identifiedPhoto.speciesSlug == species.slug else { return nil }
         return identifiedPhoto
     }
@@ -293,7 +299,8 @@ public final class AnalysisFlowModel {
                         self.speciesLabel = Self.nonempty(species.displayName)
                         if let photoId = result.uploadedPhotoId {
                             self.identifiedPhoto = PhotoIdentificationSelection(
-                                jobId: identification.jobId, photoAssetId: photoId, speciesSlug: species.slug
+                                jobId: identification.jobId, photoAssetId: photoId, speciesSlug: species.slug,
+                                taxonId: species.taxonId, ownerId: result.photoOwnerId
                             )
                         }
                     }

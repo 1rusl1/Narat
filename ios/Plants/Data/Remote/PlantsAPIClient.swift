@@ -349,7 +349,9 @@ public actor PlantsAPIClient {
         // Build and dispatch with the captured token in the same actor turn.
         let result: OutboxCommandResult
         if catalogueCreate {
-            result = .catalogueCreate(try await execute(request, as: PlantCreateReceiptDTO.self, expectedStatus: 200))
+            let receipt = try await execute(request, as: PlantCreateReceiptDTO.self, expectedStatus: 200)
+            try CatalogueCreateWire.validate(receipt, for: envelope)
+            result = .catalogueCreate(receipt)
         } else if let manualWatering {
             let receipt = try await execute(request, as: ManualWateringReceipt.self, expectedStatus: 200)
             try receipt.validate(plantId: envelope.plantId, action: manualWatering)
@@ -452,7 +454,9 @@ public actor PlantsAPIClient {
             operationId: envelope.operationId,
             body: body
         )
-        return try await execute(request, as: PlantCreateReceiptDTO.self)
+        let receipt = try await execute(request, as: PlantCreateReceiptDTO.self)
+        try CatalogueCreateWire.validate(receipt, for: envelope)
+        return receipt
     }
 
     /// Explicit legacy DTO/Date compatibility API. Bound SyncEngine uses the overload above.
@@ -651,16 +655,41 @@ enum CatalogueCreateWire {
         }
         guard let data = envelope.payloadJSON.data(using: .utf8),
               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              payload["creation_source"] as? String == "catalogue",
-              fields(payload, kind: "payload") else {
+              payload["creation_source"] as? String == "catalogue" else {
             throw CatalogueCreateValidationError.invalidPayload
         }
+        if payload["add_method"] as? String == "scan" {
+            guard Set(payload.keys).isSubset(of: ["creation_source", "add_method", "creation_intent",
+                                                 "identification_job_id", "taxon_id", "origin_flow_id", "personal_name"]),
+                  payload["creation_intent"] as? String == "care",
+                  uuid(payload["identification_job_id"]) != nil, uuid(payload["taxon_id"]) != nil,
+                  payload["origin_flow_id"] == nil || uuid(payload["origin_flow_id"]) != nil,
+                  payload["personal_name"] == nil || payload["personal_name"] is String else {
+                throw CatalogueCreateValidationError.invalidPayload
+            }
+            return
+        }
+        guard fields(payload, kind: "payload") else { throw CatalogueCreateValidationError.invalidPayload }
         let overrides = payload["overrides"] as? [String: Any] ?? [:]
         guard [payload["plant_id"], payload["taxon_id"], overrides["plant_id"], overrides["taxon_id"]]
             .contains(where: { ($0 as? String)?.isEmpty == false }) else {
             throw CatalogueCreateValidationError.invalidPayload
         }
     }
+
+    static func identificationTaxon(_ envelope: CommandEnvelopeDTO) -> UUID? {
+        guard let payload = try? JSONSerialization.jsonObject(with: Data(envelope.payloadJSON.utf8)) as? [String: Any],
+              payload["add_method"] as? String == "scan" else { return nil }
+        return uuid(payload["taxon_id"])
+    }
+
+    static func validate(_ receipt: PlantCreateReceiptDTO, for envelope: CommandEnvelopeDTO) throws {
+        if identificationTaxon(envelope) != nil, receipt.photoId == nil {
+            throw AnalysisHTTPError.invalidResponse
+        }
+    }
+
+    private static func uuid(_ value: Any?) -> UUID? { (value as? String).flatMap(UUID.init(uuidString:)) }
 
     private static func fields(_ object: [String: Any], kind: String) -> Bool {
         for (key, value) in object {
@@ -843,6 +872,24 @@ extension PlantsAPIClient {
             request, locale: .en, context: context, status: [200], forbidRedirects: true
         )
         return try syncAuthority.withBoundValid(context) { try response.validated(for: plantId) }
+    }
+
+    func fetchPlantPhoto(plantId: UUID, context: SyncSessionLease) async throws -> Data {
+        var request = try buildRequest(path: "plants/\(plantId.uuidString.lowercased())/photo", method: "GET")
+        try syncAuthority.withBoundValid(context) {
+            guard let session = context.session else { throw SyncWireValidationError.invalidSession }
+            request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
+        }
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("image/jpeg, image/png, image/webp", forHTTPHeaderField: "Accept")
+        let (data, response) = try await transport.sendWithoutRedirect(request)
+        return try syncAuthority.withBoundValid(context) {
+            guard response.statusCode == 200,
+                  let mime = response.mimeType, ["image/jpeg", "image/png", "image/webp"].contains(mime),
+                  !data.isEmpty, data.count <= 10 * 1024 * 1024 else { throw AnalysisHTTPError.invalidResponse }
+            return data
+        }
     }
 
     private func validateUploadedPhoto(_ photo: AnalysisUploadedPhoto, id: UUID) throws {

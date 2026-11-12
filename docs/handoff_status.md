@@ -23,7 +23,13 @@
 
 **Живой iOS identified.** После выкладки B `a67dca8` (миграция 019 и обе Edge-функции) та же подписанная сборка `9dd1924` отправила лицензированное фото Monstera штатным путём. За 8,62 с экран показал `Swiss Cheese plant`, после нажатия — `Species confirmed.`. PostgreSQL подтвердил новое задание `46ea9380-e9cf-4db6-8422-e5522294454e`, taxon `83f27806-3577-4bdc-9b18-222bedcf06d7`, тот же закреплённый каталог, `succeeded / identified / consumed` и одну квитанцию. Фото `bacf5b42-c5db-4b07-89b1-81f0d92daa7d` принадлежит тому же тестовому владельцу и находится в `ready`. Прежний `unknown / released` сохранился. Снимок и SQL-выборка в `DerivedData/T150Identification/identified.*` и `identified-database.json`. Исходники не менялись, локальная приёмка 216 Swift-тестов выше.
 
-**Точный следующий шаг.** После принятия B контракта прикрепления готового фото подключить сохранение подтверждённого вида с этим asset, проверить совпадение owner/job/photo, повтор без дубля и фото той же карточки после перезапуска. Фото пока не прикреплено. Действительный семидневный draft/claim принимается отдельным этапом. T150 открыта.
+### Сохранение личного фото
+
+Клиент подключён к wire B `0d7a3ea`, принятому локально в `c81343c`. Подтверждённый taxon UUID и точный identification job входят в неизменяемый `plant.create` с `add_method=scan`. `CollectionRepository.swift`, `LocalStore.swift` и `CatalogueSaveModel.swift` сохраняют и восстанавливают тот же SQLite-чекпойнт. `PlantsAPIClient.swift` и `APIModels.swift` требуют `photo_id` в scan-квитанции. Канонические UUID вида и фото сверяются с `/sync`. `AnalysisFlowModel.swift`, `PreliminaryResultView.swift`, `PlantsApp.swift`, `CatalogueSaveView.swift` и `GuestCatalogueView.swift` связывают подтверждение с исходным владельцем и загружают фото по Bearer в рамках текущей сессии.
+
+**Локально.** Diff-check, сборка, welcome и 217 Swift-тестов без пропусков прошли в `ios-t150-personal-photo-20261112-04`. Новый тест в `CollectionWireTests.swift` проверил потерю ответа, повтор того же тела из SQLite, квитанцию с фото, canonical readback и приватное чтение с проверкой MIME. Обновлены существующие фикстуры `CatalogueSaveModelTests.swift`, `CollectionRepositoryTests.swift` и `FirstHelpUnitTests.swift`. До итогового прогона исправлены ошибки компиляции после изменения модели.
+
+**Точный следующий шаг.** После выкладки 020 и успешного теста B проверить сохранение с личным фото на живом Simulator. Проверить ту же карточку после перезапуска, повтор и старую Monstera. Семидневный draft/claim остаётся отдельным этапом T150.
 
 ## T149 — живой каталог и коллекция iOS
 

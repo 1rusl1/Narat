@@ -1827,7 +1827,7 @@ extension CollectionRepositoryTests {
         let exact = CatalogueInput(speciesSlug: "  fixture-fern  ", personalName: " e\u{0301} ")
         let command = try exact.makeEnvelope(operationId: UUID())
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(command.payloadJSON.utf8)) as? [String: String])
-        XCTAssertEqual(Data(try XCTUnwrap(payload["plant_id"]).utf8), Data(exact.speciesSlug.utf8))
+        XCTAssertEqual(Data(try XCTUnwrap(payload["plant_id"]).utf8), Data(try XCTUnwrap(exact.speciesSlug).utf8))
         XCTAssertEqual(Data(try XCTUnwrap(payload["personal_name"]).utf8), Data(try XCTUnwrap(exact.personalName).utf8))
         XCTAssertTrue(command.payloadJSON.hasPrefix(#"{"creation_source":"catalogue","personal_name":"#))
     }

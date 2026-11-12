@@ -2,16 +2,41 @@ import Foundation
 
 /// Minimal catalogue selection. The caller owns the stable operation ID and flow.
 public struct CatalogueInput: Sendable, Equatable {
-    public let speciesSlug: String
+    struct Identification: Sendable, Equatable {
+        let jobId: UUID
+        let taxonId: UUID
+    }
+
+    public let speciesSlug: String?
     public let personalName: String?
+    let identification: Identification?
+
+    var speciesIdentifier: String {
+        identification?.taxonId.uuidString.lowercased() ?? speciesSlug ?? ""
+    }
 
     public init(speciesSlug: String, personalName: String? = nil) {
         self.speciesSlug = speciesSlug
         self.personalName = personalName
+        identification = nil
+    }
+
+    init(identification: Identification, personalName: String? = nil) {
+        speciesSlug = nil
+        self.personalName = personalName
+        self.identification = identification
     }
 
     public func makeEnvelope(operationId: UUID) throws -> CommandEnvelopeDTO {
-        var payload = ["creation_source": "catalogue", "plant_id": speciesSlug]
+        var payload = ["creation_source": "catalogue"]
+        if let identification {
+            payload["add_method"] = "scan"
+            payload["creation_intent"] = "care"
+            payload["identification_job_id"] = identification.jobId.uuidString.lowercased()
+            payload["taxon_id"] = identification.taxonId.uuidString.lowercased()
+        } else if let speciesSlug {
+            payload["plant_id"] = speciesSlug
+        }
         if let personalName { payload["personal_name"] = personalName }
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         let envelope = CommandEnvelopeDTO(
@@ -20,6 +45,27 @@ public struct CatalogueInput: Sendable, Equatable {
         )
         try CatalogueCreateWire.validate(envelope)
         return envelope
+    }
+
+    static func fromCheckpoint(_ envelope: CommandEnvelopeDTO) throws -> Self {
+        guard let payload = try? JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8)) else {
+            throw CatalogueInputCheckpointError.invalidStoredInput
+        }
+        let input: Self
+        if let jobId = payload["identification_job_id"].flatMap(UUID.init(uuidString:)),
+           let taxonId = payload["taxon_id"].flatMap(UUID.init(uuidString:)) {
+            input = Self(identification: Identification(jobId: jobId, taxonId: taxonId), personalName: payload["personal_name"])
+        } else if let slug = payload["plant_id"] {
+            input = Self(speciesSlug: slug, personalName: payload["personal_name"])
+        } else {
+            throw CatalogueInputCheckpointError.invalidStoredInput
+        }
+        let rebuilt = try input.makeEnvelope(operationId: envelope.operationId)
+        guard rebuilt.commandName == envelope.commandName, rebuilt.plantId == envelope.plantId,
+              rebuilt.payloadJSON.utf8.elementsEqual(envelope.payloadJSON.utf8) else {
+            throw CatalogueInputCheckpointError.invalidStoredInput
+        }
+        return input
     }
 }
 
@@ -49,6 +95,8 @@ public enum CatalogueSaveResult: Sendable, Equatable {
 struct CatalogueCardSummary: Decodable, Sendable, Equatable, Identifiable {
     let id: UUID
     let speciesSlug: String?
+    let taxonId: UUID?
+    let mainPhotoId: UUID?
     let personalName: String?
     let revision: Int
     let careRevision: Int
@@ -56,6 +104,8 @@ struct CatalogueCardSummary: Decodable, Sendable, Equatable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, revision
         case speciesSlug = "plant_id"
+        case taxonId = "taxon_id"
+        case mainPhotoId = "main_photo_id"
         case personalName = "personal_name"
         case careRevision = "care_revision"
     }
@@ -201,6 +251,10 @@ public struct CollectionRepository: Sendable {
             let summary = try Self.decodeCard(entity)
             guard summary.speciesSlug?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
                 throw SyncWireValidationError.invalidPage
+            }
+            if let taxon = CatalogueCreateWire.identificationTaxon(envelope) {
+                guard let photo = confirmation.receipt.photoId, photo == summary.mainPhotoId,
+                      taxon == summary.taxonId else { throw SyncWireValidationError.invalidPage }
             }
             return summary
         }

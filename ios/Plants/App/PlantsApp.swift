@@ -82,9 +82,10 @@ struct RootContainerView: View {
                             ScrollView {
                                 CatalogueSaveView(
                                     connection: catalogue, speciesSlug: resumed.speciesSlug,
-                                    displayName: stagingSpecies?.displayName ?? resumed.speciesSlug,
+                                    displayName: stagingSpecies?.displayName ?? (resumed.identification == nil ? resumed.speciesSlug : "Plant"),
                                     scientificName: stagingSpecies?.scientificName ?? "", polish: false,
                                     analysisSaveIdentity: resumed.flowId,
+                                    identification: resumed.identification,
                                     selectionLocked: $stagingResumeLocked
                                 ) { EmptyView() }
                                 .id(resumed.flowId)
@@ -92,9 +93,12 @@ struct RootContainerView: View {
                             }
                             .task(id: resumed.flowId) {
                                 stagingSpecies = nil
-                                let species = try? await catalogue.apiClient?.fetchPublishedSpecies(
-                                    slug: resumed.speciesSlug, locale: .en
-                                )
+                                let species: PublishedSpeciesCard?
+                                if let taxonId = resumed.identification?.taxonId {
+                                    species = try? await catalogue.apiClient?.fetchPublishedSpecies(taxonId: taxonId, locale: .en)
+                                } else {
+                                    species = try? await catalogue.apiClient?.fetchPublishedSpecies(slug: resumed.speciesSlug, locale: .en)
+                                }
                                 guard !Task.isCancelled, stagingResume?.flowId == resumed.flowId else { return }
                                 stagingSpecies = species
                             }
@@ -499,7 +503,7 @@ final class StagingAnalysisService: AnalysisService {
                 }
                 return AnalysisServiceResult(identification: .init(
                     jobId: result.jobId, catalogueReleaseId: result.catalogueReleaseId, species: species
-                ), uploadedPhotoId: photoId)
+                ), uploadedPhotoId: photoId, photoOwnerId: lease.ownerId)
             }
             guard let result = job.result else { throw AnalysisServiceFailure.unavailable }
             return AnalysisServiceResult(

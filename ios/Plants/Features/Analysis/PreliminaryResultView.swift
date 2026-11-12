@@ -28,9 +28,21 @@ public struct PreliminaryResultView: View {
                     exitButtons
                 } else if model.identificationResult != nil {
                     speciesHeading
-                    if model.confirmedPhotoIdentification != nil {
+                    if let confirmed = model.confirmedPhotoIdentification {
                         Text(isPolish ? "Gatunek potwierdzony." : "Species confirmed.")
                             .accessibilityIdentifier("analysis.identification.confirmed")
+                        if let connection = catalogueConnection, let owner = confirmed.ownerId,
+                           let session = connection.snapshot, !session.isAnonymous, session.session.userId == owner,
+                           let label = model.speciesLabel {
+                            CatalogueSaveView(
+                                connection: connection, speciesSlug: confirmed.speciesSlug,
+                                displayName: label, scientificName: "", polish: isPolish,
+                                analysisSaveIdentity: confirmed.jobId,
+                                identification: .init(jobId: confirmed.jobId, taxonId: confirmed.taxonId),
+                                expectedPhotoId: confirmed.photoAssetId, selectionLocked: $saveLocked
+                            ) { EmptyView() }
+                            .id(confirmed.jobId)
+                        }
                     } else if model.canConfirmPhotoIdentification {
                         Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
                             model.confirmPhotoIdentification()

@@ -656,6 +656,10 @@ private struct CatalogueCollectionCardView: View {
                     if let name = species?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
                     }
+                    if let photo = card.mainPhotoId {
+                        CataloguePlantPhotoView(connection: connection, expected: expected, plantId: card.id, polish: polish)
+                            .id(photo)
+                    }
                     if !polish {
                         if let advice {
                             Text(verbatim: advice.text).accessibilityIdentifier("catalogue.saved.care.text")
@@ -903,9 +907,9 @@ struct GuestCatalogueView: View {
                 ownerId: expected.session.userId, flowId: flow, expected: expected
             )
             guard connection.snapshot == expected, !Task.isCancelled, selection == nil,
-                  case let .restored(model) = outcome, let input = model.input else { return }
+                  case let .restored(model) = outcome, let slug = model.input?.speciesSlug else { return }
             restoredSelection = true
-            selection = input.speciesSlug
+            selection = slug
         } catch {
             // Public search is independent of authentication and local restoration.
         }
