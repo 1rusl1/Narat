@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## B — T150/T153 identification started, 12 November 2026
+
+T149 is accepted for the English MVP. iOS `edf05e9` verified permanent test-account sign-in, save/replay, the same plant ID after cold restart, Free cap and owner isolation on the live 606-species catalogue. The saved Monstera retained its recommendation and Undone journal. Paid and native continuation were exercised with fixtures. The accepted iOS result is recorded in `37d1e3b` and reflected in the backend task list.
+
+B audited the current route, worker, catalogue pin and quota storage. The production route accepts diagnosis and its runtime requires a KB even though the old adapter can emit an identification mode. The first T150 server package starts from `7cc1f19` and adds an independent species result on the verified photo upload/jobs route. A received the [proposed identification wire](../specs/001-plants-ios-mvp/contracts/identification-photo-http.md). The wire uses the pinned catalogue UUID and an identified closed species UUID or explicit unknown.
+
+`t150-identification-20261112-01` preflight passed on `codex/plants-backend` with Luna High Developer and Astra High Reviewer/QA. The selected checks are Deno typecheck, diff check, automation tests, Deno tests and the clean/upgrade diagnosis PostgreSQL gate. No new product code or live staging change has landed in this start record. Next run the package against the existing fixtures, then validate signed upload and a real identification on the staging test accounts before handing the wire to A. Personal-photo attachment and seven-day draft/claim follow as separate packages. T150 and T153 remain open.
+
 ## B — T149 server catalogue published on narat-staging, 12 November 2026
 
 The staged release is `skeleton-300-v1-en-85fcaba4`, UUID `81bb49c1-0e39-5a9c-8327-7be12075f4ad`. The accepted T148 `plants.json` SHA-256 `85fcaba4bfe8ef1cf4a3c1f07fdd1ce3517aea7feb8886124dc063a43b2e3887` matches the active database release. `publish_staging_catalogue.py`, `staging_catalogue_activation.sql` and `run_staging_catalogue_rehearsal.py` validate the pinned input, prepare and guard draft batches, upload immutable media, preserve the previous release and rehearse rollback. Tooling acceptance `be7f372` is published in `origin/codex/plants-backend`.

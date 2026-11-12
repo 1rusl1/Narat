@@ -1,0 +1,68 @@
+{
+  "tasks": [
+    {
+      "id": "t150-identification",
+      "description": "Implement and verify the first T150/T153 server slice, catalogue-pinned identification-only using the current production photo jobs and worker.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "tools/automation/tasks.t150-identification.json",
+        "specs/001-plants-ios-mvp/contracts/identification-photo-http.md",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/analysis-worker/diagnosis-persistence.ts",
+        "supabase/functions/plants-api/analysis.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611110014_diagnosis_jobs.sql",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/migrations/202611090009_quota_settlement.sql",
+        "supabase/tests/diagnosis_jobs.test.sql"
+      ],
+      "write_files": [
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/analysis-worker/diagnosis-persistence.ts",
+        "supabase/functions/plants-api/analysis.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/migrations/202611120019_identification_jobs.sql",
+        "supabase/tests/diagnosis_jobs.test.sql"
+      ],
+      "evidence_files": [
+        "specs/001-plants-ios-mvp/contracts/identification-photo-http.md"
+      ],
+      "constraints": [
+        "English Developer, Reviewer and QA reports. Use only local and fixture gates. The controller alone deploys to the fixed narat-staging project and exercises the approved synthetic test accounts. No credentials, production, external image acquisition, iOS edits, guest draft or personal-photo association in any model role.",
+        "The production createDiagnosisJobs route and createDiagnosisWorker entrypoint must support the agreed explicit mode. Do not use the legacy injectable analysis route or produce a diagnosis/receipt/KB reference for identification. The current explicit diagnosis wire and idempotency hash must keep working, including already queued and terminal jobs.",
+        "Use one forward migration and existing verified upload, owner lock, runtime, operation receipts, reservation, expiry, lease, provider cap and finalization. Pin the active nonempty catalogue at creation and validate species and localized name against its published rows on SQL settlement. Identification can run without a published KB. Keep required KB references for other modes. Preserve role grants, SQL locking order, and failure/replay semantics.",
+        "Use the current production SDK and configured provider, request only one allowed species or explicit unknown and use no condition input. Strictly validate the model response, convert an out-of-list species to unknown, and release quota on invalid/refused/truncated responses. Keep existing no-charge behavior for unsuitable/non-plant photos, and bill valid usable identified/unknown. Never accept IDs or names chosen by the client.",
+        "Extend supabase/tests/diagnosis_jobs.test.sql with real PostgreSQL coverage in the existing clean and upgrade diagnosis gate. Exercise no published KB, isolation, cross-mode idempotency, lease pin/rotation, outsider species, explicit unknown, and single settlement. Cover the actual HTTP/worker transport with fixture responses and retain existing regression checks."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T150-I1",
+          "description": "Production HTTP, SDK and worker compile and pass identification and diagnosis fixture regressions.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "T150-I2",
+          "description": "Clean/upgrade SQL, provider and HTTP fixtures verify the pinned independent species-only path and preserve existing diagnosis.",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}
