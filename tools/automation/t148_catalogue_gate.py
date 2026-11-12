@@ -151,6 +151,27 @@ def verify_pipeline(root: Path = ROOT) -> dict:
     names_phal = [n["name"] for n in imp.intro_common_names(p_phal, ["Orchid"], genera)]
     record("intro_rejects_generic_orchid_alias", names_phal == [], f"got={names_phal}")
 
+    media = root / "catalogue/releases/skeleton-300-v1/media/48854fc7b2b6d711a508c396.jpg"
+    raw = media.read_bytes()
+    checksum = hashlib.sha256(raw).hexdigest()
+    record("media_fixture_matches_pinned_bytes",
+           checksum == "bd004e951b155a37235a6dd80c019768db160321b40015ec6b490a1b009bbb3a",
+           media.name)
+
+    class CachedImage:
+        def request(self, url, path, *, binary):
+            assert binary and url == "https://upload.wikimedia.org/example.jpg"
+            return raw, {"retrieved_at": "2026-11-04T00:00:00+00:00"}
+
+    downloaded = imp.download_image(CachedImage(), {
+        "download_url": "https://upload.wikimedia.org/example.jpg",
+        "width": 10, "height": 11, "mime": "image/png",
+    })
+    actual = downloaded["width"], downloaded["height"], downloaded["mime"]
+    record("download_persists_byte_dimensions_and_mime",
+           actual == (960, 1091, "image/jpeg") and downloaded["sha256"] == checksum,
+           f"decoded={actual}")
+
     # 3. Verify validate_catalogue_skeleton.py has --check flag in help
     help_res = subprocess.run(
         [sys.executable, str(root / "knowledge-base/pipeline/validate_catalogue_skeleton.py"), "--help"],
