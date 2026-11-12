@@ -166,6 +166,21 @@ Deno.test("Calendar check adds published days to the factual local day and cites
   }).get()).json();
   assertEquals(corrected.next_check.due_on, "2024-03-08");
   assert(corrected.next_check.basis.startsWith("Na podstawie"));
+
+  // Match the before/after factual anchors from plant_next_check.test.sql.
+  const repeatState = { row: { ...row, last_watered_on: "2025-10-11" } };
+  const repeated = fixture(repeatState);
+  const overdue = (await (await repeated.get()).json()).next_check;
+  assertEquals(overdue.due_on, "2025-10-18");
+  assertEquals((await (await repeated.get()).json()).next_check, overdue);
+  repeatState.row.last_watered_on = "2025-10-21";
+  const next = (await (await repeated.get()).json()).next_check;
+  assertEquals(next, { ...overdue, anchor_on: "2025-10-21", due_on: "2025-10-28" });
+  repeatState.row = { ...repeatState.row, calendar_eligible: false, last_watered_on: "2025-10-30" };
+  const expired = await (await repeated.get()).json();
+  assertEquals(expired.next_check, null);
+  assertEquals(expired.status, "available");
+
   for (const fallback of [
     { ...row, last_watered_on: null },
     { ...row, last_watered_on: "2024-02-30" },
