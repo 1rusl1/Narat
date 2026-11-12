@@ -26,8 +26,15 @@ An accepted fact returns the usual active entry receipt plus `control_id` (UUID 
 
 ## Manual observation for a first-aid control (V19)
 
-`POST /commands` accepts `care.first_aid.observe` with the same envelope. Its decoded `payload_json` has exactly `control_id` (UUID) and `status_code` (`improved`, `unchanged`, `worse`, or `unknown`). The server records the acceptance time in `observed_at`. Photo uploads and attachments have a separate contract pending.
+`POST /commands` accepts `care.first_aid.observe` with the same envelope. Its decoded `payload_json` has `control_id` (UUID), `status_code` (`improved`, `unchanged`, `worse`, or `unknown`), and optional `photo_id` (UUID). Omit `photo_id` to complete the control without a photo. The server records the acceptance time in `observed_at`.
 
 HTTP 200 returns `plant_id`, `control_id`, `observation_id`, `state: "completed"`, and `watermark`. An exact replay by the active permanent owner returns the same receipt even after access expiry or undo. Invalid input returns 400. A missing control or a control outside the selected owner and plant returns 404. A changed operation or a new attempt on a completed, undone, stale, or expired control returns 409.
 
 Owner sync returns the completed `first_aid_followups` row and the `care_observations` row with `first_aid_control_id`. If undo commits first, observation conflicts. If observation commits first, undo preserves the completed control and observation as history. Completion leaves quotas and analysis jobs untouched.
+
+### Private observation photo
+
+1. For an active control, `POST /media/first-aid/upload-ticket` takes the standard `operation_id`, `mime_type`, `byte_size`, `content_sha256`, plus the `plant_id` and `control_id` UUIDs. Use a separate operation ID for the observation. The [upload ticket fields and image limits](diagnosis-photo-http.md) apply. The ticket binds one private photo asset to that owner, plant and control. An exact ticket retry returns the same asset. A changed ticket operation returns 409.
+2. `PUT` the normalized bytes to the returned same-origin `signed_upload_url` with the owner's Bearer and matching `Content-Type`. If the response is lost, use `POST /media/first-aid/complete` with `photo_asset_id`. Either returns `200 {"photo_asset_id":"…","state":"ready"}` when the stored bytes are verified. The existing 60-second upload window applies.
+3. Use that ready asset UUID as `photo_id` in `care.first_aid.observe`. The response shape stays the same. `care_observations.photo_id` in owner sync confirms the attachment. The observation, photo link and control completion commit together. A missing photo, foreign photo or photo for another control returns 404. A matching unfinished photo returns 409. Exact observation replay requires the same photo UUID or the same omission.
+4. `GET /care/observations/{observation_id}/photo` streams the verified bytes to the active permanent owner with `Cache-Control: private, no-store`. Read access to completed history survives undo and entitlement expiry. Unattached photos and other owners' observations return 404. Observation photos are ineligible for `/analysis/jobs`.

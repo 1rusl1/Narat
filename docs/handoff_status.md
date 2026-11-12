@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — V19 контракт приватного фото, 12 ноября 2026
+
+Опубликован wire для отдельного ticket, повторного подтверждения загрузки, атомарного `photo_id` в наблюдении и чтения по UUID наблюдения. План переиспользует проверку байтов и приватный Storage, привязывает ticket к одному контролю и изолирует его от маршрута анализа. [Контракт](../specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md#private-observation-photo).
+
+Проверка этапа — `git diff --check`. Следующий шаг — миграция и Edge, проверки пути с фото и без, гонок, приватности и живого API с маркированным pending. Недельный остаток — 14%. 024 и StoreKit на паузе.
+
 ## B — V19 ручное наблюдение на staging, 12 ноября 2026
 
 Контракт `bcc9534` передан A. Миграция 030 и `care-journal.ts` добавляют `care.first_aid.observe` в существующий `/commands`. В одной транзакции сохраняются наблюдение, завершённый контроль и квитанция. Изменены HTTP/SQL fixtures, PostgreSQL gate и manifest независимой приёмки. [Контракт](../specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md#manual-observation-for-a-first-aid-control-v19).
