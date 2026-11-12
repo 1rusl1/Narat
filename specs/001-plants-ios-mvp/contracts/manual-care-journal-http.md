@@ -22,4 +22,12 @@ Invalid input returns 400, unavailable ownership returns 403, and a missing or i
 
 An accepted fact returns the usual active entry receipt plus `control_id` (UUID or null). The same operation returns the same receipt. Another operation for the same diagnosis returns 409. The date of a pending control is the action's local day plus the published interval when that interval has direct approved source evidence and access is current. Without that evidence, the action remains in the journal with a null control ID.
 
-`GET /sync` provides the pending control under `first_aid_followups`. Its `check_policy_snapshot` has `due_on` (calendar date), `interval_days`, and `source` (HTTPS `url` and `locator`). A client presents pending controls only during current access and treats the raw sync row as history after expiry. An exact `care.undo` targets the original entry as usual and changes an unfinished control to `undone` in the same transaction. No reminders, repeat chain or AI are used. Capturing a control observation or photo is a separate packet.
+`GET /sync` provides the pending control under `first_aid_followups`. Its `check_policy_snapshot` has `due_on` (calendar date), `interval_days`, and `source` (HTTPS `url` and `locator`). A client presents pending controls only during current access and treats the raw sync row as history after expiry. An exact `care.undo` targets the original entry as usual and changes an unfinished control to `undone` in the same transaction. No reminders, repeat chain or AI are used.
+
+## Manual observation for a first-aid control (V19)
+
+`POST /commands` accepts `care.first_aid.observe` with the same envelope. Its decoded `payload_json` has exactly `control_id` (UUID) and `status_code` (`improved`, `unchanged`, `worse`, or `unknown`). The server records the acceptance time in `observed_at`. Photo uploads and attachments have a separate contract pending.
+
+HTTP 200 returns `plant_id`, `control_id`, `observation_id`, `state: "completed"`, and `watermark`. An exact replay by the active permanent owner returns the same receipt even after access expiry or undo. Invalid input returns 400. A missing control or a control outside the selected owner and plant returns 404. A changed operation or a new attempt on a completed, undone, stale, or expired control returns 409.
+
+Owner sync returns the completed `first_aid_followups` row and the `care_observations` row with `first_aid_control_id`. If undo commits first, observation conflicts. If observation commits first, undo preserves the completed control and observation as history. Completion leaves quotas and analysis jobs untouched.
