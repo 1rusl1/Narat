@@ -2,20 +2,20 @@
   "records": 606,
   "unique_qids": 606,
   "description_en": 606,
-  "description_pl": 606,
-  "description_pl_native": 190,
+  "description_pl": 603,
+  "description_pl_native": 187,
   "description_pl_translated": 416,
   "common_names_en": 407,
-  "common_names_pl": 430,
+  "common_names_pl": 424,
   "watering_total": 606,
   "watering_species_exact": 278,
-  "watering_species_synonym": 16,
-  "watering_genus_representative": 222,
+  "watering_species_synonym": 15,
+  "watering_genus_representative": 223,
   "watering_botanical_group_representative": 90,
   "watering_missing": 0,
   "downloaded_images": 606,
-  "media_bytes": 165050694,
-  "editorial_review": "pending for all records",
+  "media_bytes": 165569657,
+  "editorial_review": "see editorial-review.json",
   "live_application_integration": "not_run",
   "gaps": [
     {
@@ -378,7 +378,8 @@
     {
       "plant_id": "begonia_maculata",
       "missing": [
-        "common_names_pl"
+        "common_names_pl",
+        "description_pl"
       ]
     },
     {
@@ -451,7 +452,8 @@
     {
       "plant_id": "didymochlaena_truncatula",
       "missing": [
-        "common_names_en"
+        "common_names_en",
+        "common_names_pl"
       ]
     },
     {
@@ -830,7 +832,6 @@
     {
       "plant_id": "dischidia_ovata",
       "missing": [
-        "common_names_en",
         "common_names_pl"
       ]
     },
@@ -1157,6 +1158,12 @@
       ]
     },
     {
+      "plant_id": "echinocactus_platyacanthus",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
       "plant_id": "gymnocalycium_saglionis",
       "missing": [
         "common_names_pl"
@@ -1440,7 +1447,9 @@
     {
       "plant_id": "begonia_corallina",
       "missing": [
-        "common_names_en"
+        "common_names_en",
+        "common_names_pl",
+        "description_pl"
       ]
     },
     {
@@ -1584,6 +1593,12 @@
     },
     {
       "plant_id": "phalaenopsis_bellina",
+      "missing": [
+        "common_names_en"
+      ]
+    },
+    {
+      "plant_id": "phalaenopsis_violacea",
       "missing": [
         "common_names_en"
       ]
@@ -1764,6 +1779,12 @@
       ]
     },
     {
+      "plant_id": "ceropegia_linearis",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
       "plant_id": "rhipsalis_mesembryanthemoides",
       "missing": [
         "common_names_en"
@@ -1773,6 +1794,18 @@
       "plant_id": "begonia_ferox",
       "missing": [
         "common_names_en",
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "cymbidium_goeringii",
+      "missing": [
+        "common_names_pl"
+      ]
+    },
+    {
+      "plant_id": "cymbidium_kanran",
+      "missing": [
         "common_names_pl"
       ]
     },
@@ -1809,7 +1842,9 @@
     {
       "plant_id": "hoya_lanceolata",
       "missing": [
-        "common_names_en"
+        "common_names_en",
+        "common_names_pl",
+        "description_pl"
       ]
     },
     {
@@ -1857,12 +1892,6 @@
     },
     {
       "plant_id": "pinguicula_esseriana",
-      "missing": [
-        "common_names_en"
-      ]
-    },
-    {
-      "plant_id": "crassothonna_capensis",
       "missing": [
         "common_names_en"
       ]

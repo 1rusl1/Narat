@@ -9,8 +9,8 @@
   "watering_coverage": {
     "total_matched": 606,
     "species_exact": 278,
-    "species_synonym": 16,
-    "genus_representative": 222,
+    "species_synonym": 15,
+    "genus_representative": 223,
     "botanical_group_representative": 90,
     "missing": 0
   },
@@ -20,5 +20,5 @@
   "shared_images": [],
   "live_download": "performed separately by importer",
   "live_app_api_storage_ui": "not_tested",
-  "editorial_review": "not_completed"
+  "editorial_review": "see editorial-review.json"
 }

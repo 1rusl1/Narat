@@ -7,9 +7,11 @@ import re
 from pathlib import Path
 import sqlite3
 from contextlib import closing
+from urllib.parse import urlparse
 
 from catalogue_image import parse_image_dimensions_and_mime
-from import_catalogue_300 import eligible_polish_article, polish_name_is_eligible
+from import_catalogue_300 import clean, eligible_polish_article, polish_name_is_eligible
+from import_wikidata import values
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'catalogue/releases/skeleton-300-v1'
@@ -30,6 +32,43 @@ def check_snapshot(metadata):
     return json.loads(path.read_text())
 
 
+def check_image_source(image, source, pilot_authors):
+    assert urlparse(image['license_url']).hostname == 'creativecommons.org', image['file_title']
+    if 'query' not in source:
+        assert source['source_url'] == image['source_page']
+        assert re.fullmatch(r'[0-9a-f]{64}', source['source_sha256'])
+        if 'image' in source:
+            item = source['image']
+            expected = (item['contentUrl'], item['license'], item['creator'][0]['name'], source['taxon_label'])
+        else:
+            expected = (source['image_url'], source['rights'], source['creator'], source['label'])
+        assert expected == (image['download_url'], image['license_url'], image['author'], image['file_title'])
+        assert image['original_url'] == image['download_url']
+        assert image['license_url'] in ('https://creativecommons.org/licenses/by-sa/2.5/',
+                                        'https://creativecommons.org/licenses/by-sa/4.0/')
+        assert image['license'] == 'CC BY-SA ' + image['license_url'].rstrip('/').rsplit('/', 1)[1]
+        return
+    page = next((p for p in source['query']['pages'] if p['title'] == image['file_title']), None)
+    assert page, image['file_title']
+    info = page['imageinfo'][0]
+    ext = info['extmetadata']
+    license_name = clean(ext.get('LicenseShortName', {}).get('value'))
+    license_url = clean(ext.get('LicenseUrl', {}).get('value'))
+    if license_url.startswith('//'):
+        license_url = 'https:' + license_url
+    if not license_url and license_name in ('CC0', 'Public domain'):
+        license_url = ('https://creativecommons.org/publicdomain/zero/1.0/' if license_name == 'CC0'
+                       else 'https://creativecommons.org/publicdomain/mark/1.0/')
+    artist = clean(ext.get('Artist', {}).get('value') or ext.get('Attribution', {}).get('value')
+                   or pilot_authors.get(image['file_title']))
+    assert not clean(ext.get('Restrictions', {}).get('value')), image['file_title']
+    assert (license_name, license_url, artist) == (image['license'], image['license_url'], image['author']), image['file_title']
+    assert image['source_page'] == info['descriptionurl'], image['file_title']
+    assert image['original_url'] == info['url'], image['file_title']
+    assert image.get('original_sha1') == info.get('sha1'), image['file_title']
+    assert image['download_url'] in (info['url'], info.get('thumburl')), image['file_title']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Validate without rewriting validation.json')
@@ -48,6 +87,10 @@ def main():
     pf_by_id = {p['id']: p for p in json.loads(pf_dist_path.read_text()) if 'id' in p}
     pl_translations_path = ROOT / 'knowledge-base/manifests/pl-description-translations.json'
     pl_translations = json.loads(pl_translations_path.read_text()) if pl_translations_path.exists() else {}
+    editorial_path = ROOT / 'catalogue/manifests/skeleton-300-editorial-media.json'
+    editorial = json.loads(editorial_path.read_text())['plants'] if editorial_path.exists() else {}
+    pilot = json.loads((ROOT / 'catalogue/manifests/pilot-media.json').read_text())
+    pilot_authors = {a['file_title']: a['author'] for a in pilot['assets']}
     assert len(plants) == record_count
     assert len({p['plant_id'] for p in plants}) == record_count
     assert len({p['wikidata_id'] for p in plants}) == record_count
@@ -64,13 +107,29 @@ def main():
         assert entity['lastrevid'] == plant['source_revision']
         names = [s['mainsnak'].get('datavalue', {}).get('value') for s in entity['claims']['P225'] if s.get('rank') != 'deprecated']
         expected_corrected = WIKIDATA_P225_CORRECTIONS.get(plant['wikidata_id'])
-        assert plant['scientific_name'] in names or plant['scientific_name'] == expected_corrected
+        curated = editorial.get(plant['plant_id'], {})
+        classification = curated.get('taxon_classification')
+        if classification:
+            assert plant['wikidata_id'] == curated['wikidata_id']
+            assert classification['original_scientific_name'] in names
+            assert (plant['scientific_name'], plant['rank'], plant['scientific_name_status']) == (
+                classification['scientific_name'], classification['rank'], classification['status'])
+            assert plant['name_source']['editorial_classification_url'] == classification['source_url']
+        else:
+            assert plant['scientific_name'] in names or plant['scientific_name'] == expected_corrected
         assert plant['descriptions']['en']['text'].strip()
         normalized_intro = re.sub(r'\s+', ' ', plant['descriptions']['en']['text']).casefold()
+        english_p1843 = {v['text'] for v in values(entity, 'P1843')
+                         if isinstance(v, dict) and v.get('language') == 'en'}
+        english_label = entity.get('labels', {}).get('en', {}).get('value')
         for name in plant['common_names']['en']:
             if name['source_property'] == 'wikipedia_intro':
                 assert name['name'].casefold() in normalized_intro, name
                 assert name['source_revision'] == plant['descriptions']['en']['source_revision']
+            else:
+                assert name['source_entity'] == plant['wikidata_id'], name
+                assert (name['source_property'] == 'P1843' and name['name'] in english_p1843
+                        or name['source_property'] == 'label' and name['name'] == english_label), name
         for language, description in plant['descriptions'].items():
             if not description:
                 assert 'description_' + language in plant['gaps']
@@ -79,6 +138,11 @@ def main():
             assert description['license'] == 'CC-BY-SA-4.0'
             assert description['source_revision']
             assert description['history_url'] and description['attribution']
+            source_language = description.get('translation_source_language', language)
+            assert urlparse(description['source_url']).hostname == f'{source_language}.wikipedia.org'
+            assert description['revision_url'] == (
+                f"https://{source_language}.wikipedia.org/w/index.php?oldid={description['source_revision']}")
+            assert description['history_url'] == description['source_url'] + '?action=history'
             matching = []
             for meta in description['snapshots']:
                 doc = check_snapshot(meta)
@@ -106,11 +170,13 @@ def main():
         assert all(polish_name_is_eligible(alias, plant['wikidata_id']) for alias in plant['search_aliases']['pl'])
         image = plant['hero_image']
         assert image['author'] and image['license_url'] and image['source_page']
+        if curated:
+            assert curated['hero_image'] == image and curated['replaces'] != image['file_title']
         raw = (ROOT / image['local_path']).read_bytes()
         assert hashlib.sha256(raw).hexdigest() == image['sha256'] == media_manifest[image['local_path']]
         assert len(raw) == image['bytes'], image['local_path']
         assert parse_image_dimensions_and_mime(raw) == (image['width'], image['height'], image['mime']), image['local_path']
-        check_snapshot(image['metadata_snapshot'])
+        check_image_source(image, check_snapshot(image['metadata_snapshot']), pilot_authors)
         watering = plant.get('watering')
         if watering is None:
             assert 'watering' in plant['gaps']
@@ -161,7 +227,8 @@ def main():
         'unique_image_files': len(image_counts),
         'shared_images': [[p['plant_id'] for p in plants if p['hero_image']['sha256'] == key] for key, count in image_counts.items() if count > 1],
         'live_download': 'performed separately by importer',
-        'live_app_api_storage_ui': 'not_tested', 'editorial_review': 'not_completed'}
+        'live_app_api_storage_ui': 'not_tested',
+        'editorial_review': 'see editorial-review.json' if editorial else 'not_completed'}
     if args.check:
         assert json.loads((OUT / 'validation.json').read_text()) == report, 'Stored validation report differs'
     else:

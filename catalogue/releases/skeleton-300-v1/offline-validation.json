@@ -1,6 +1,12 @@
 {
   "offline_rebuild": "pass",
   "plants_sha256_unchanged": true,
-  "plants_sha256": "f794332044b7041e6a8d3ddf2247dac86283a490d6875ec11da65b1734ba9486",
+  "plants_sha256": "85fcaba4bfe8ef1cf4a3c1f07fdd1ce3517aea7feb8886124dc063a43b2e3887",
+  "coverage_sha256": "14c864e4043f020dd860047ab26dab6dd44ac4c6eb30fdc6e492d29a82ff9872",
+  "manifest_sha256": "c775f51155752cd86bbe59dceb5174318f68872d54702a113ef3984c4787f18a",
+  "hash_seeds": [
+    19,
+    83
+  ],
   "network_required": false
 }

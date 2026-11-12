@@ -666,6 +666,21 @@ def download_image(client, image):
             'retrieved_at': meta['retrieved_at']}
 
 
+def reviewed_image(plant_id, qid, original, review):
+    if review['wikidata_id'] != qid or review['replaces'] != original['file_title']:
+        raise ValueError(f'Editorial source changed for {plant_id}')
+    image = review['hero_image']
+    target = Path(image['local_path'])
+    if target.parent != (OUT / 'media').relative_to(ROOT) or target.stem != image['sha256'][:24]:
+        raise ValueError(f'Invalid editorial image path for {plant_id}')
+    raw = (ROOT / target).read_bytes()
+    if sha(raw) != image['sha256'] or len(raw) != image['bytes']:
+        raise ValueError(f'Editorial image hash or size mismatch for {plant_id}')
+    if parse_image_dimensions_and_mime(raw) != (image['width'], image['height'], image['mime']):
+        raise ValueError(f'Editorial image metadata mismatch for {plant_id}')
+    return image
+
+
 def strip_parens(text):
     out = []
     depth = 0
@@ -909,6 +924,16 @@ def run(args):
     plantfolio_index = load_plantfolio_index()
     pl_translations_path = ROOT / 'knowledge-base/manifests/pl-description-translations.json'
     pl_translations = json.loads(pl_translations_path.read_text()) if pl_translations_path.exists() else {}
+    editorial_path = ROOT / 'catalogue/manifests/skeleton-300-editorial-media.json'
+    editorial = json.loads(editorial_path.read_text()) if editorial_path.exists() else None
+    if editorial and editorial.get('version') != 1:
+        raise ValueError('Unsupported catalogue editorial media format')
+    replacements = editorial['plants'] if editorial else {}
+    for entry in replacements.values():
+        source = require_operations(registry, entry['source_id'], ['store_raw', 'commercial_use', 'download_media'])
+        allowed_assets = source.get('allowed_asset_urls')
+        if allowed_assets is not None and entry['hero_image']['download_url'] not in allowed_assets:
+            raise ValueError(f"Editorial asset is outside the rights scope for {entry['source_id']}")
     client = Client(args.user_agent, args.offline)
     titles = discover(client)
     base_titles = titles[:604]
@@ -1048,8 +1073,11 @@ def run(args):
     scientific_genera = {name.split()[0].casefold() for e in items.values() for name in values(e, 'P225') if isinstance(name, str)}
     for item, page, images in selected:
         name = resolved_taxon(item)
+        plant_id = name.lower().replace(' ', '_').replace('-', '_')
         image = next(metadata[i] for i in images[:3] if i in metadata)
-        image = download_image(client, image)
+        editorial_entry = replacements.get(plant_id)
+        image = (reviewed_image(plant_id, item['id'], image, editorial_entry)
+                 if editorial_entry else download_image(client, image))
         names = common_names(item, name, scientific_genera)
         existing_en = {norm(n['name']) for n in names['en']}
         for extracted in intro_common_names(page, [a['value'] for a in item.get('aliases', {}).get('en', [])], scientific_genera):
@@ -1058,7 +1086,6 @@ def run(args):
                 existing_en.add(norm(extracted['name']))
         pl_title = item.get('sitelinks', {}).get('plwiki', {}).get('title')
         pl_page = eligible_polish_article(item, polish.get(pl_title))
-        plant_id = name.lower().replace(' ', '_').replace('-', '_')
         pl_entry = pl_translations.get(plant_id)
         pl_desc = description(pl_page, 'pl') or translated_description(page, pl_entry)
         names['pl'].extend(translated_pl_common_names(page, pl_entry, item, name, names['pl'], scientific_genera))
@@ -1073,6 +1100,12 @@ def run(args):
             'hero_image': image, 'watering': None, 'care_profile_available': False,
             'status': 'imported_editorial_review_pending',
             'name_source': {'url': f'https://www.wikidata.org/wiki/{item["id"]}', 'license': 'CC0-1.0', 'snapshot': item['_snapshot']}}
+        classification = (editorial_entry or {}).get('taxon_classification')
+        if classification:
+            record['scientific_name'] = classification['scientific_name']
+            record['scientific_name_status'] = classification['status']
+            record['rank'] = classification['rank']
+            record['name_source']['editorial_classification_url'] = classification['source_url']
         en_qid = record['descriptions']['en']['article_wikidata_id']
         record['descriptions']['en']['taxon_scope'] = ('species' if en_qid == item['id']
             else 'monotypic_genus_article_explicitly_names_species')
@@ -1088,6 +1121,8 @@ def run(args):
         dump(OUT / 'progress.json', {'completed': len(records), 'target': target_count})
     if len({r['plant_id'] for r in records}) != target_count:
         raise ValueError('Plant ID collision')
+    if args.count == 0 and replacements.keys() - {r['plant_id'] for r in records}:
+        raise ValueError('The full import did not include all editorial replacements')
     report = {'records': len(records), 'unique_qids': len({r['wikidata_id'] for r in records}),
         'description_en': sum(bool(r['descriptions']['en']) for r in records),
         'description_pl': sum(bool(r['descriptions']['pl']) for r in records),
@@ -1102,7 +1137,8 @@ def run(args):
         'watering_botanical_group_representative': sum((r['watering'] or {}).get('match_level') == 'botanical_group_representative' for r in records),
         'watering_missing': sum(not r['watering'] for r in records),
         'downloaded_images': len(records), 'media_bytes': sum(r['hero_image']['bytes'] for r in records),
-        'editorial_review': 'pending for all records', 'live_application_integration': 'not_run',
+        'editorial_review': 'see editorial-review.json' if replacements else 'pending for all records',
+        'live_application_integration': 'not_run',
         'gaps': [{'plant_id': r['plant_id'], 'missing': r['gaps']} for r in records if r['gaps']],
         'eligible_candidates': len(eligible), 'excluded': rejected}
     dump(OUT / 'plants.json', {'schema_version': 'catalogue-skeleton-1.1', 'version': 'skeleton-300-v1',
