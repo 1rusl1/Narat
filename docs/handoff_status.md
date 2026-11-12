@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## B — V13 локальное SQL-ядро plant.delete, 12 ноября 2026
+
+Миграция `202611120033_plant_delete_core.sql` добавляет служебный `execute_plant_delete_command`. Под блокировками владельца и карточки он сохраняет одну квитанцию, одну `deletion_jobs` и tombstones связанных строк на одном watermark. Legacy-триггер basic care сохраняет прежний путь пересчёта для живых правил и пропускает строки, уже обработанные командой. Добавлены `plant_delete_core.test.sql` и вызов в `parallel_backend_quota_gate.py`. [HTTP-контракт](../specs/001-plants-ios-mvp/contracts/collection-http.md#post-commands--plantdelete-v13-целевой-контракт-t082t083).
+
+**Фикстуры.** `git diff --check` и по 881 pgTAP на clean/upgrade прошли, включая 18 новых. Проверены service-only, чужая и отсутствующая карточка, точный replay после смены статуса job, откат при сбое очереди, единый watermark и закрытие owner photo resolver. Соседняя и чужая карточки сохранились. Отдельный gate `--cap-regression --bind --installations --access` прошёл на clean/upgrade, включая прежние проверки basic care и гонки лимита коллекции.
+
+**Открыто.** HTTP-маршрут, запрет чтения связанного диагноза и прямого Data API, фоновые Storage/DB purge и клиентская приёмка. HTTP, RLS, Storage и живые проверки `plant.delete` не запускались. 033 не выкладывалась, живые данные не удалялись. T082/T083 открыты. На контрольной точке недельный остаток достиг 10%, продуктовая работа остановлена.
+
+Команда продолжения — `python3 tools/automation/parallel_backend_quota_gate.py --bind --installations --access --diagnosis-upload --diagnosis-jobs`. После локального прогона подключить `plant.delete` в `/commands` и проверить HTTP, защиту связанного диагноза и Data API до отдельной приёмки purge worker.
+
 ## B — V13 HTTP-контракт plant.delete, 12 ноября 2026
 
 В `collection-http.md` закреплён целевой wire `plant.delete`. Сверены envelope и Auth из `plant.create` и команд ухода, owner sync из действующих миграций и состояния `deletion_jobs` из `202610200008_deletion.sql`. Описаны 200 и ошибки, неизменная квитанция при replay, атомарные tombstones на одном watermark и граница фоновой очистки. [Контракт](../specs/001-plants-ios-mvp/contracts/collection-http.md#post-commands--plantdelete-v13-целевой-контракт-t082t083).
