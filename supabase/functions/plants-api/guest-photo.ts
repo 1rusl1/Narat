@@ -119,6 +119,11 @@ export function createGuestPhotoApi(
     };
   }
 
+  async function removeStoredPhotos(paths: string[]) {
+    const { error } = await client().storage.from(DIAGNOSIS_PHOTO_BUCKET).remove(paths);
+    return !error;
+  }
+
   async function cleanup(draftId: string | null) {
     const entries = await rpc("read_guest_photo_cleanup", {
       p_draft_id: draftId,
@@ -137,9 +142,7 @@ export function createGuestPhotoApi(
       }
       const paths = [entry.source];
       if (entry.abandoned_target) paths.push(entry.abandoned_target);
-      const { error } = await client().storage.from(DIAGNOSIS_PHOTO_BUCKET)
-        .remove(paths);
-      if (error) continue;
+      if (!await removeStoredPhotos(paths)) continue;
       if (
         typeof entry.draft_id === "string" && entry.source_photo_id === null
       ) {
@@ -153,6 +156,24 @@ export function createGuestPhotoApi(
       } else {
         throw unavailable();
       }
+      cleaned++;
+    }
+    return cleaned;
+  }
+
+  async function cleanupFirstAid(photoId: string | null) {
+    const entries = await rpc("claim_first_aid_photo_cleanup", { p_photo_id: photoId });
+    if (!Array.isArray(entries)) throw unavailable();
+    let cleaned = 0;
+    for (const entry of entries) {
+      if (
+        !entry || typeof entry.photo_id !== "string" ||
+        (photoId !== null && entry.photo_id !== photoId) ||
+        typeof entry.source !== "string" || !objectKey.test(entry.source) ||
+        !entry.source.endsWith("/" + entry.photo_id)
+      ) throw unavailable();
+      if (!await removeStoredPhotos([entry.source])) continue;
+      await rpc("finish_first_aid_photo_cleanup", { p_photo_id: entry.photo_id });
       cleaned++;
     }
     return cleaned;
@@ -348,7 +369,15 @@ export function createGuestPhotoApi(
       if (difference) {
         throw new ApiHttpError(401, "UNAUTHORIZED", "Unauthorized.");
       }
-      return jsonResponse({ cleaned: await cleanup(null) });
+      const query = new URL(req.url).searchParams;
+      if (query.size === 0) {
+        return jsonResponse({ cleaned: await cleanup(null) + await cleanupFirstAid(null) });
+      }
+      if (query.size !== 1 || !query.has("first_aid_photo_id")) {
+        throw new ApiHttpError(400, "VALIDATION_ERROR", "Invalid photo cleanup scope.");
+      }
+      const photoId = requireUuid(query.get("first_aid_photo_id"), "first_aid_photo_id");
+      return jsonResponse({ cleaned: await cleanupFirstAid(photoId) });
     },
   };
 }

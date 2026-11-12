@@ -211,3 +211,74 @@ Deno.test("Production guest route transfers verified private bytes once and repl
   assertEquals(denied.status, 410);
   assertEquals((await denied.json()).error.code, "DRAFT_EXPIRED");
 });
+
+Deno.test("Photo maintenance isolates a scoped cleanup and retries Storage removal before finishing", async () => {
+  const source = `${owner}/${photo}`;
+  const path = "/internal/guest-drafts/cleanup";
+  const scoped = path + "?first_aid_photo_id=" + photo;
+  const calls: string[] = [];
+  let failedRemoval = true;
+  let alreadyCleaned = false;
+  const handler = createProductionPlantsApiHandler({}, {
+    env: (name) => ({ SUPABASE_URL: host, SUPABASE_SERVICE_ROLE_KEY: serviceKey })[name],
+    fetch: async (input, init) => {
+      const req = new Request(input, init);
+      assertEquals(req.headers.get("authorization"), `Bearer ${serviceKey}`);
+      const url = new URL(req.url);
+      const body = await req.json();
+      const operation = url.pathname.split("/").at(-1)!;
+      calls.push(operation);
+      switch (operation) {
+        case "analysis-inputs":
+          assertEquals(req.method, "DELETE");
+          assertEquals(body, { prefixes: [source] });
+          if (failedRemoval) {
+            failedRemoval = false;
+            return Response.json({ message: "fixture Storage failure" }, { status: 503 });
+          }
+          return Response.json([{ name: source }]);
+        case "claim_first_aid_photo_cleanup":
+          assertEquals(body, { p_photo_id: photo });
+          return Response.json(alreadyCleaned ? [] : [{ photo_id: photo, source }]);
+        case "finish_first_aid_photo_cleanup":
+          assertEquals(body, { p_photo_id: photo });
+          alreadyCleaned = true;
+          return Response.json(null);
+        default:
+          throw new Error("Unexpected scoped maintenance operation: " + operation);
+      }
+    },
+  });
+  const post = (route: string, bearer = serviceKey) =>
+    handler(new Request(host + route, { method: "POST", headers: { authorization: "Bearer " + bearer } }));
+
+  assertEquals((await post(scoped, owner)).status, 401);
+  assertEquals((await post(scoped + "&first_aid_photo_id=" + draft)).status, 400);
+  assertEquals((await post(path + "?first_aid_photo_id=")).status, 400);
+  assertEquals(calls, []);
+  assertEquals(await (await post(scoped)).json(), { cleaned: 0 });
+  assertEquals(calls, ["claim_first_aid_photo_cleanup", "analysis-inputs"]);
+  assertEquals(await (await post(scoped)).json(), { cleaned: 1 });
+  assertEquals(calls.slice(-3), ["claim_first_aid_photo_cleanup", "analysis-inputs", "finish_first_aid_photo_cleanup"]);
+  assertEquals(await (await post(scoped)).json(), { cleaned: 0 });
+});
+
+Deno.test("Unscoped photo maintenance keeps guest cleanup and runs the bounded first-aid sweep", async () => {
+  const calls: string[] = [];
+  const handler = createProductionPlantsApiHandler({}, {
+    env: (name) => ({ SUPABASE_URL: host, SUPABASE_SERVICE_ROLE_KEY: serviceKey })[name],
+    fetch: async (input, init) => {
+      const req = new Request(input, init);
+      const rpc = new URL(req.url).pathname.split("/").at(-1)!;
+      calls.push(rpc);
+      assertEquals(await req.json(), rpc === "read_guest_photo_cleanup" ? { p_draft_id: null } : { p_photo_id: null });
+      return Response.json([]);
+    },
+  });
+  const response = await handler(new Request(host + "/internal/guest-drafts/cleanup", {
+    method: "POST", headers: { authorization: "Bearer " + serviceKey },
+  }));
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), { cleaned: 0 });
+  assertEquals(calls, ["read_guest_photo_cleanup", "claim_first_aid_photo_cleanup"]);
+});

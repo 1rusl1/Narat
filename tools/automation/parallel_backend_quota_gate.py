@@ -243,7 +243,7 @@ def main():
         check(db, f"(SELECT quota_state='{quota}' FROM public.analysis_jobs WHERE id='{leased_job}')",
               f'guest bind and {expected} settlement keep the correct original quota')
 
-    def first_aid_observation_race(db, winner, offset, with_photo=False):
+    def first_aid_race_fixture(db, offset, with_photo):
         owner, plant, diagnosis, entry, control, observe_op, undo_op = map(job, range(offset, offset + 7))
         sql(db, f"""
             INSERT INTO public.profiles(id,anonymous) VALUES('{owner}',false);
@@ -270,6 +270,11 @@ def main():
             payload += f" || jsonb_build_object('photo_id','{asset}')"
         observe = (f"SELECT public.complete_first_aid_control('{owner}','{observe_op}','{plant}',"
                    f"{payload})->>'state';")
+        return owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset if with_photo else None
+
+    def first_aid_observation_race(db, winner, offset, with_photo=False):
+        owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset = first_aid_race_fixture(
+            db, offset, with_photo)
         undo = (f"SELECT public.execute_manual_care_command('{owner}','{undo_op}','{plant}','care.undo',"
                 f"jsonb_build_object('entry_id','{entry}'))->>'state';")
         expire = f"UPDATE public.entitlements SET valid_until=clock_timestamp() WHERE owner_id='{owner}';"
@@ -332,6 +337,65 @@ def main():
             check(db, f"(SELECT {attached} FROM public.photo_assets WHERE id='{asset}') "
                   f"AND (SELECT count(*)={count} FROM public.care_observations WHERE photo_id='{asset}')",
                   f'photo attachment is atomic when {winner} wins')
+
+    def first_aid_cleanup_race(db, cleanup_first, offset):
+        owner, plant, _, _, control, observe_op, _, observe, asset = first_aid_race_fixture(db, offset, True)
+        sql(db, f"UPDATE public.first_aid_photo_upload_tickets SET expires_at=clock_timestamp()-interval '1 second' WHERE photo_asset_id='{asset}';")
+        claim = f"SELECT public.claim_first_aid_photo_cleanup('{asset}');"
+        first = claim if cleanup_first else observe
+        blocker = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        application = 'observe_after_cleanup_claim'
+
+        def stop_blocker():
+            if blocker.poll() is None:
+                blocker.kill()
+                blocker.communicate(timeout=10)
+
+        def commit_blocker():
+            blocker.stdin.write('COMMIT;\n\\q\n')
+            blocker.stdin.flush()
+            _, error = blocker.communicate(timeout=15)
+            assert blocker.returncode == 0, error
+
+        try:
+            blocker.stdin.write(f"BEGIN; {first}\n\\echo READY\n")
+            blocker.stdin.flush()
+            result = blocker.stdout.readline().strip()
+            assert blocker.stdout.readline().strip() == 'READY'
+            if cleanup_first:
+                assert json.loads(result)[0]['photo_id'] == asset
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(sql, db, f"SET application_name='{application}';\n{observe}")
+                    try:
+                        deadline = time.monotonic() + 10
+                        while sql(db, f"SELECT count(*) FROM pg_stat_activity WHERE application_name='{application}' AND wait_event_type='Lock'") != '1':
+                            assert not future.done(), 'Attach did not wait for the cleanup asset lock'
+                            assert time.monotonic() < deadline, 'Did not observe the competing attach'
+                            time.sleep(.03)
+                        commit_blocker()
+                        try:
+                            future.result(timeout=15)
+                        except RuntimeError as error:
+                            assert 'PHOTO_NOT_READY' in str(error), error
+                        else:
+                            raise AssertionError('Attach succeeded after the cleanup claim')
+                    finally:
+                        stop_blocker()
+                check(db, f"(SELECT state='deleting' AND plant_id IS NULL FROM public.photo_assets WHERE id='{asset}') "
+                      f"AND (SELECT state='active' FROM public.first_aid_followups WHERE id='{control}') "
+                      f"AND NOT EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{observe_op}')",
+                      'cleanup wins the asset lock and leaves observation uncommitted')
+            else:
+                assert result == 'completed'
+                assert sql(db, claim) == '[]', 'cleanup must skip the asset locked by an uncommitted attach'
+                commit_blocker()
+                assert sql(db, claim) == '[]', 'cleanup must preserve the committed attachment'
+                check(db, f"(SELECT state='ready' AND plant_id='{plant}' FROM public.photo_assets WHERE id='{asset}') "
+                      f"AND EXISTS (SELECT 1 FROM public.care_observations WHERE photo_id='{asset}' AND first_aid_control_id='{control}')",
+                      'attach wins the asset lock and preserves the photo')
+        finally:
+            stop_blocker()
 
     def legacy_guard(db):
         if db == 'upgrade':
@@ -438,7 +502,7 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
             sql('postgres', f'CREATE DATABASE {case};')
             sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean,created_at timestamptz NOT NULL DEFAULT clock_timestamp());")
             if args.diagnosis_upload:
-                sql(case, 'CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY, name text NOT NULL, public boolean, file_size_limit bigint, allowed_mime_types text[]);')
+                sql(case, 'CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY, name text NOT NULL, public boolean, file_size_limit bigint, allowed_mime_types text[]); CREATE TABLE storage.objects(bucket_id text, name text, PRIMARY KEY(bucket_id,name));')
             for migration in selected:
                 if case == 'clean' or migration.name < FIRST:
                     sql(case, migration.read_text())
@@ -527,6 +591,10 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                         tap(case, ROOT/'supabase/tests/first_aid_observation_photo.test.sql')
                     for offset, winner in enumerate(('observe', 'undo', 'expiry'), start=1):
                         first_aid_observation_race(case, winner, 900 + offset * 10, with_photo)
+                if any(migration.name == '202611120032_first_aid_photo_cleanup.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/first_aid_photo_cleanup.test.sql')
+                    first_aid_cleanup_race(case, cleanup_first=True, offset=940)
+                    first_aid_cleanup_race(case, cleanup_first=False, offset=950)
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:

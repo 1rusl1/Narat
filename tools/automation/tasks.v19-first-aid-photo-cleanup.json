@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "v19-first-aid-photo-cleanup",
+      "description": "Independently review bounded cleanup of expired unattached first-aid photo uploads through existing private maintenance.",
+      "candidate_base": "778991c8fbb028c052c1a78c7f5238320a443aa2",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "supabase/functions/_shared/tests/guest_photo_http_test.ts",
+        "supabase/functions/plants-api/guest-photo.ts",
+        "supabase/migrations/202611120032_first_aid_photo_cleanup.sql",
+        "supabase/tests/first_aid_photo_cleanup.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v19-first-aid-photo-cleanup.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Independent Review and QA, local gates only. Controller owns live staging checks and usage limits.",
+        "Preserve existing retention and guest cleanup. Claim the photo asset before Storage removal, preserve attached and historical photos, retry failures and late objects without reopening deleted assets.",
+        "No bulk staging operation, 024 or StoreKit changes. Verify the scoped service-only maintenance path."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19-C1",
+          "description": "Production entrypoints type-check and exact diff is clean.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V19-C2",
+          "description": "HTTP and SQL fixtures cover both lock orders with attach, orphan retry, preserved history, scoped auth and guest cleanup.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}
