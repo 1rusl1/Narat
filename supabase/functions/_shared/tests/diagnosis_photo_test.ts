@@ -38,6 +38,58 @@ const hash = Array.from(
   (n) => n.toString(16).padStart(2, "0"),
 ).join("");
 
+Deno.test("Diagnosis status exposes only a valid action bound to the current job and plant", async () => {
+  const base = {
+    job_id: job,
+    target_plant_id: savedPlant,
+    photo_asset_id: photo,
+    status: "succeeded",
+    mode: "diagnosis",
+    quota_kind: "starter_diagnosis",
+    quota_state: "consumed",
+    result: { job_id: job, mode: "diagnosis", diagnosis_status: "problem_detected" },
+  };
+  const firstAid = {
+    job_id: job,
+    plant_id: savedPlant,
+    action_id: "check_moisture",
+    action_code: "check_soil",
+    source: { url: "https://example.test/first-aid", locator: "Published action" },
+  };
+  let row: unknown = base;
+  const handler = createProductionPlantsApiHandler({
+    resolveRequestContext: async () => ({
+      ownerId: owner,
+      accountState: "active",
+      isAnonymous: false,
+      locale: "en",
+      installationCredential: null,
+      operationId: null,
+    }),
+  }, {
+    env: (name) =>
+      ({ SUPABASE_URL: host, SUPABASE_SERVICE_ROLE_KEY: "fixture-service-role" })[name],
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      assertEquals(request.url, host + "/rest/v1/rpc/read_diagnosis_job");
+      assertEquals(await request.json(), { p_owner_id: owner, p_job_id: job });
+      return Response.json(row);
+    },
+  });
+  const get = () => handler(new Request(host + "/functions/v1/plants-api/analysis/jobs/" + job));
+  assertEquals(await (await get()).json(), base);
+  row = { ...base, first_aid_action: firstAid };
+  assertEquals(await (await get()).json(), row);
+  for (const invalid of [
+    { ...firstAid, plant_id: outsider },
+    { ...firstAid, job_id: outsider },
+    { ...firstAid, source: { ...firstAid.source, url: "http://example.test" } },
+  ]) {
+    row = { ...base, first_aid_action: invalid };
+    assertEquals((await get()).status, 503);
+  }
+});
+
 function fixture(
   options: {
     providerFailure?: boolean;

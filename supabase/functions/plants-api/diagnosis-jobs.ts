@@ -14,6 +14,13 @@ type PhotoJobStatus = Omit<AnalysisJobStatusResponse, "result"> & {
   result: AnalysisJobStatusResponse["result"] | PhotoIdentificationResult;
   target_plant_id?: string;
   photo_asset_id?: string;
+  first_aid_action?: {
+    job_id: string;
+    plant_id: string;
+    action_id: string;
+    action_code: "check_soil";
+    source: { url: string; locator: string };
+  };
 };
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -71,6 +78,19 @@ function parseJob(
         job.result.mode !== job.mode
       : job.result !== null)
   ) throw unavailable(ctx);
+  if ("first_aid_action" in job) {
+    const action = job.first_aid_action;
+    if (
+      !action || job.mode !== "diagnosis" || job.status !== "succeeded" ||
+      !job.result || !("diagnosis_status" in job.result) ||
+      job.result.diagnosis_status !== "problem_detected" ||
+      !job.target_plant_id || action.job_id !== job.job_id ||
+      action.plant_id !== job.target_plant_id || action.action_code !== "check_soil" ||
+      typeof action.action_id !== "string" || !/^[a-z][a-z0-9_]*$/.test(action.action_id) ||
+      typeof action.source?.url !== "string" || !action.source.url.startsWith("https://") ||
+      typeof action.source.locator !== "string" || !action.source.locator.trim()
+    ) throw unavailable(ctx);
+  }
   return job;
 }
 

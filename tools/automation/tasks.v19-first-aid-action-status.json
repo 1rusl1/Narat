@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "v19-first-aid-action-status",
+      "description": "Independently review the owner-bound recordable first-aid action projection and shared command source check.",
+      "candidate_base": "9235a849dafaef3b459e01033dc3355a1b862611",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/diagnosis-photo-http.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/migrations/202611120029_first_aid_action_status.sql",
+        "supabase/tests/first_aid_control.test.sql",
+        "tools/automation/tasks.v19-first-aid-action-status.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Local gates only. Controller owns staging and usage limits.",
+        "Expose an additive field on owner status for an unused canonical sourced action. Preserve POST receipts and legacy, guest and foreign reads. Status and command share action eligibility and source checks. Interval proof remains separate.",
+        "No observation, photos, recurrence, 024, KB publication or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19-S1",
+          "description": "Production entrypoints type-check and exact diff is clean.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V19-S2",
+          "description": "Fixtures prove positive binding, source requirements, historical and foreign isolation, post-record hiding and command recheck.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}
