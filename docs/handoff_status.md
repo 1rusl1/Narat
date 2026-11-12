@@ -1,10 +1,12 @@
 # Narat — текущий статус и передача работы
 
-## B — T154 Auth registration candidate, 12 November 2026
+## B — T154 live Auth and upgrade accepted, 12 November 2026
 
 The installed Auth trigger previously provisioned anonymous inserts only. The forward migration 022 wires new permanent Auth inserts and the same UUID transitioning from anonymous to permanent into the existing profile and quota anchor triggers. It preserves historical profiles, NULL anchors, starter state and active leases. The controller's clean/upgrade run passed 681 pgTAP per database, including 26 new Auth trigger and quota assertions. Auth in these PostgreSQL checks was a fixture.
 
-On staging, a real anonymous session started with identification and diagnosis starters both 1. The licensed Monstera photo settled `starter_identification / consumed` in job `e9cdc1a1-5266-4d24-80b7-d4066a2a1011`. A second fresh anonymous UUID with the same installation still saw identification 0 and diagnosis 1. A received this T036 evidence. Next independently review the exact migration, deploy only 022 to `narat-staging`, then verify permanent registration and the same-ID conversion without manually inserting a profile. Record the Auth confirmation method and compare the reset, original job and installation spend.
+On staging, a real anonymous session started with identification and diagnosis starters both 1. The licensed Monstera photo settled `starter_identification / consumed` in job `e9cdc1a1-5266-4d24-80b7-d4066a2a1011`. A second fresh anonymous UUID with the same installation still saw identification 0 and diagnosis 1. A received this T036 evidence. The exact candidate passed Review and QA and was published as `049b536`. Only migration 022 was applied to `narat-staging`. A new permanent account confirmed a synthetic signup link through the public Auth verify endpoint and obtained a profile and Free 3 through the installed triggers. The original guest was converted through Auth Admin confirmation for a synthetic address, with the same Auth UUID and no manual profile insert. A fresh password login and refresh returned the same registration anchor, monthly reset, identification starter 0 and diagnosis starter 1. Linked SQL confirmed all 43 staged versions, both anchor sources and the original installation-bound starter spend. SMTP delivery and native providers remain separate.
+
+The [integration report](validation/integrations.md) closes T154. A received the live T036 guest and converted-session evidence. Next T165 starts with retirement of server notification claim writes before changing the read contract.
 
 ## B — T154 integration baseline started, 12 November 2026
 
