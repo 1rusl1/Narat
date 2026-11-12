@@ -1838,9 +1838,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-v02-repeat-plant-diagnosis: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 154.76 с, проверки — 77.52 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [v02-repeat-plant-diagnosis](validation/automation/tasks/v02-repeat-plant-diagnosis.md).
+v11-manual-care-date-correction: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 139.17 с, проверки — 81.39 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [v11-manual-care-date-correction](validation/automation/tasks/v11-manual-care-date-correction.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
