@@ -72,7 +72,7 @@
 
 - [ ] T028 Написать конкурентные проверки в `supabase/tests/quota_admission.test.sql`: два starter, Free=3/paid=100 от регистрации, короткие месяцы, переход тарифа и сохранение расхода; 20 реальных одновременных запросов на последний остаток, technical failure/replay. Не выдавать последовательные fixtures за конкурентный прогон. Покрытие: FR-005, FR-017, FR-050, FR-065, SC-008.
 
-- [ ] T029 Обновить `analysis_result_test.ts`: identification/diagnosis, closed IDs, healthy/unknown/out-of-scope, нет advice generation/questions/scores/follow_up. Повторная диагностика использует текущие условия/фактическую историю. **V02:** серверный кандидат прошёл fixtures HTTP и clean/upgrade SQL, общий live-прогон открыт. Зависимость: T157. Покрытие: FR-005, FR-006, FR-007, FR-044, FR-050, FR-054.
+- [ ] T029 Обновить `analysis_result_test.ts`: identification/diagnosis, closed IDs, healthy/unknown/out-of-scope, нет advice generation/questions/scores/follow_up. Повторная диагностика использует текущие условия/фактическую историю. **V02:** серверный срез `2f45aa9` прошёл Review/QA, HTTP и clean/upgrade SQL. На `narat-staging` применена 025, общий live-прогон открыт. Зависимость: T157. Покрытие: FR-005, FR-006, FR-007, FR-044, FR-050, FR-054.
 
 - [ ] T030 Обновить `quota_operations.sql`, `_shared/AnalysisAccess.ts` и `plants-api/{installations,analysis-access}.ts`: два starter; Free=3 и paid=100 с общим anchor регистрации; месячный Free доступен сразу после регистрации. Атомарный bind/резерв/retry без повторной выдачи; период не сдвигается при покупке. Покрытие: FR-005, FR-017, FR-050, FR-065, SC-008.
 
