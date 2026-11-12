@@ -1,10 +1,16 @@
 # Narat — текущий статус и передача работы
 
-## B — T165 sync read projection in review, 12 November 2026
+## B — Стенд для общего прогона A/B, 12 ноября 2026
+
+Зафиксирован `narat-staging` с 44 миграциями до `202611120023`, `plants-api` v14, `analysis-worker` v7, опубликованными `skeleton-300-v1-en-85fcaba4` и `staging-monstera-care-v2`, приватным `analysis-inputs`. Проверка живого `/sync` отдельного тестового владельца вернула семь изменений и обе preference. GET Monstera подтвердил условную проверку грунта с источником UW Extension. Baseline передан A. [Прогон и открытые сценарии](validation/staging-basic-path-2026-11-12.md).
+
+Следующий шаг — сверить job/plant/photo UUID и receipt операции ухода общего прогона после записи из iOS, затем повторить только уже принятую операцию в новой сессии. T052 отложена. Стенд зафиксирован до окончания общего прогона.
+
+## B — T165 sync read projection принята, выкладка отложена, 12 ноября 2026
 
 T036 is accepted in iOS `bd408bd` and reflected in the checklist. The T165 client read compatibility was accepted in `145b5a2` and recorded in `f74f12f`. The two fields were sent to A before deployment. Migration 024 omits `profile.report_notifications_enabled` and excludes `notification_claim_summaries` before pagination. Stored preferences, historical rows and receipts, trial preference and entitlement dates remain. A saved legacy cursor still resumes the original window. The Edge parser accepts old and new SQL profile shapes to allow the Edge-first rollout.
 
-Controller checks passed 21 targeted Deno and 701 pgTAP in each clean and populated upgrade database. Upgrade preserved historical rows and the true preference. Next independently accept the exact diff, deploy the Edge function then 024 on `narat-staging`, and compare the live sync payload. Hand the deployment to A for signed iOS verification. T165 remains open for the local trial reminder and any remaining cache/read work.
+Изменены миграция 024, парсер `collection.ts`, SQL/HTTP-фикстуры, gate PostgreSQL и checklist T036. Controller прошёл 21 целевую Deno-проверку и по 701 pgTAP на чистой базе и upgrade с историей. Независимые Review и QA приняли точный diff, пять gates прошли (370 Deno, 149 automation, по 701 pgTAP). `3b234cf` опубликован в `origin/codex/plants-backend`. На стенде осталась 023. После общего прогона продолжить с Edge-first и миграции 024, сравнить живой `/sync` и передать результат A. T165 открыта для live readback и локального trial reminder.
 
 ## B — T165 server notification writes retired on staging, 12 November 2026
 
