@@ -1075,6 +1075,7 @@ struct AnalysisJobWire: Decodable, Sendable {
     let quotaKind: String
     let quotaState: QuotaState
     let result: AnalysisProjectionWire?
+    let identificationResult: PhotoIdentificationWire?
     let errorCode: String?
     let errorMessage: String?
 
@@ -1087,9 +1088,39 @@ struct AnalysisJobWire: Decodable, Sendable {
         case errorMessage = "error_message"
     }
 
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try values.decode(UUID.self, forKey: .jobId)
+        mode = try values.decode(AnalysisMode.self, forKey: .mode)
+        status = try values.decode(Status.self, forKey: .status)
+        quotaKind = try values.decode(String.self, forKey: .quotaKind)
+        quotaState = try values.decode(QuotaState.self, forKey: .quotaState)
+        result = mode == .diagnosis ? try values.decodeIfPresent(AnalysisProjectionWire.self, forKey: .result) : nil
+        identificationResult = mode == .identification ? try values.decode(PhotoIdentificationWire?.self, forKey: .result) : nil
+        errorCode = try values.decodeIfPresent(String.self, forKey: .errorCode)
+        errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+    }
+
     func validate(mode expectedMode: AnalysisMode, jobId expectedId: UUID? = nil) throws {
         guard mode == expectedMode, expectedId == nil || expectedId == jobId else {
             throw AnalysisHTTPError.invalidResponse
+        }
+        if mode == .identification {
+            guard ["starter_identification", "free_monthly", "paid_monthly"].contains(quotaKind) else {
+                throw AnalysisHTTPError.invalidResponse
+            }
+            switch status {
+            case .succeeded:
+                guard let identificationResult, identificationResult.jobId == jobId,
+                      quotaState == (identificationResult.plant == nil ? .released : .consumed) else {
+                    throw AnalysisHTTPError.invalidResponse
+                }
+            case .queued, .running:
+                guard identificationResult == nil, quotaState == .reserved else { throw AnalysisHTTPError.invalidResponse }
+            case .failed, .expired:
+                guard identificationResult == nil, quotaState == .released else { throw AnalysisHTTPError.invalidResponse }
+            }
+            return
         }
         if status == .succeeded {
             guard let result, result.jobId == jobId, result.mode == mode,
@@ -1102,6 +1133,52 @@ struct AnalysisJobWire: Decodable, Sendable {
             else { throw AnalysisHTTPError.invalidResponse }
         } else if result != nil {
             throw AnalysisHTTPError.invalidResponse
+        }
+    }
+}
+
+struct PhotoIdentificationWire: Decodable, Sendable {
+    struct Plant: Sendable {
+        let taxonId: UUID
+        let displayName: String
+    }
+
+    private enum Status: String, Decodable { case identified, unknown }
+
+    let jobId: UUID
+    let catalogueReleaseId: UUID
+    let plant: Plant?
+
+    private enum CodingKeys: String, CodingKey {
+        case version = "schema_version"
+        case jobId = "job_id"
+        case mode
+        case catalogueReleaseId = "catalogue_release_id"
+        case status = "identification_status"
+        case taxonId = "plant_id"
+        case displayName = "plant_display_name"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        guard try values.decode(String.self, forKey: .version) == "1.0",
+              try values.decode(AnalysisMode.self, forKey: .mode) == .identification else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        jobId = try values.decode(UUID.self, forKey: .jobId)
+        catalogueReleaseId = try values.decode(UUID.self, forKey: .catalogueReleaseId)
+        let taxonId = try values.decode(UUID?.self, forKey: .taxonId)
+        let displayName = try values.decode(String?.self, forKey: .displayName)
+        switch try values.decode(Status.self, forKey: .status) {
+        case .identified:
+            guard let taxonId, let displayName,
+                  !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AnalysisHTTPError.invalidResponse
+            }
+            plant = Plant(taxonId: taxonId, displayName: displayName)
+        case .unknown:
+            guard taxonId == nil, displayName == nil else { throw AnalysisHTTPError.invalidResponse }
+            plant = nil
         }
     }
 }

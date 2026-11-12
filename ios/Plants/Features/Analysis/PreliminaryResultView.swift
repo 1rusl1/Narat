@@ -26,12 +26,21 @@ public struct PreliminaryResultView: View {
                     ProgressView(isPolish ? "Analizowanie zdjęcia" : "Analyzing photo")
                         .accessibilityIdentifier("analysis.progress")
                     exitButtons
+                } else if model.identificationResult != nil {
+                    speciesHeading
+                    if model.confirmedPhotoIdentification != nil {
+                        Text(isPolish ? "Gatunek potwierdzony." : "Species confirmed.")
+                            .accessibilityIdentifier("analysis.identification.confirmed")
+                    } else if model.canConfirmPhotoIdentification {
+                        Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
+                            model.confirmPhotoIdentification()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("analysis.identification.confirm")
+                    }
+                    exitButtons
                 } else if let result = model.preliminaryResult {
-                    Text(model.speciesLabel ?? (isPolish
-                         ? "Nie udało się ustalić gatunku."
-                         : "Species could not be determined."))
-                        .font(.headline)
-                        .accessibilityIdentifier("analysis.result.species")
+                    speciesHeading
                     if result.mode == .diagnosis {
                         if let condition = model.conditionLabel {
                             Text(isPolish ? "Możliwa przyczyna — \(condition)" : "Possible condition — \(condition)")
@@ -48,18 +57,6 @@ public struct PreliminaryResultView: View {
                     }
                     ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
-                    }
-                    if result.mode == .identification {
-                        if model.confirmedPhotoIdentification != nil {
-                            Text(isPolish ? "Gatunek potwierdzony." : "Species confirmed.")
-                                .accessibilityIdentifier("analysis.identification.confirmed")
-                        } else if model.canConfirmPhotoIdentification {
-                            Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
-                                model.confirmPhotoIdentification()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .accessibilityIdentifier("analysis.identification.confirm")
-                        }
                     }
                     if let connection = catalogueConnection,
                        connection.snapshot?.isAnonymous == false,
@@ -86,6 +83,12 @@ public struct PreliminaryResultView: View {
             .padding()
         }
         .navigationTitle(isPolish ? "Analiza" : "Analysis")
+    }
+
+    private var speciesHeading: some View {
+        Text(model.speciesLabel ?? (isPolish ? "Nie udało się ustalić gatunku." : "Species could not be determined."))
+            .font(.headline)
+            .accessibilityIdentifier("analysis.result.species")
     }
 
     private var exitButtons: some View {
@@ -121,6 +124,10 @@ struct AnalysisUnavailableSection: View {
             return isPolish
                 ? "Usługa analizy nie ukończyła zadania. Wróć do wyboru zdjęcia."
                 : "The provider could not complete the analysis. Go back to choose a photo."
+        case "analysis.error.quota_registration":
+            return isPolish
+                ? "Nie można potwierdzić daty rejestracji konta, aby rozpocząć kolejną analizę."
+                : "We couldn’t verify your account registration date to start another analysis."
         case "analysis.error.failed":
             return isPolish
                 ? "Nie udało się przeanalizować zdjęcia. Spróbuj ponownie."
@@ -138,7 +145,8 @@ struct AnalysisUnavailableSection: View {
                 .font(.headline)
                 .accessibilityIdentifier("analysis.unavailable.title")
 
-            if model.analysisError != "analysis.error.provider_terminal" {
+            if model.analysisError != "analysis.error.provider_terminal",
+               model.analysisError != "analysis.error.quota_registration" {
                 Button(isPolish ? "Spróbuj ponownie" : "Retry") {
                     model.submitAnalysis(locale: languageStore.currentLocale)
                 }

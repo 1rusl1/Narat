@@ -257,6 +257,14 @@ final class FirstHelpUnitTests: XCTestCase {
         uploadedPhotoId: UUID? = nil
     ) -> AnalysisServiceResult {
         let resolved = status == .resolved
+        if mode == .identification {
+            let species: PhotoIdentificationResult.Species? = resolved ? .init(
+                taxonId: UUID(), slug: "fixture-species", displayName: labels ? "Fixture species" : ""
+            ) : nil
+            return AnalysisServiceResult(identification: .init(
+                jobId: UUID(), catalogueReleaseId: UUID(), species: species
+            ), uploadedPhotoId: uploadedPhotoId)
+        }
         return AnalysisServiceResult(
             analysis: PreliminaryAnalysis(
                 id: UUID(), jobId: UUID(), kbReleaseId: UUID(), mode: mode,
@@ -296,6 +304,7 @@ final class FirstHelpUnitTests: XCTestCase {
             XCTAssertEqual(request.mode, mode)
             XCTAssertEqual(request.locale, .pl)
             XCTAssertEqual(model.preliminaryResult, response.analysis)
+            XCTAssertEqual(model.identificationResult, response.identification)
             XCTAssertEqual(model.speciesLabel, "Fixture species")
             XCTAssertEqual(model.conditionLabel, mode == .diagnosis ? "Fixture condition" : nil)
             XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
@@ -328,7 +337,7 @@ final class FirstHelpUnitTests: XCTestCase {
             model.confirmPhotoIdentification()
             if index == 2 {
                 XCTAssertEqual(model.confirmedPhotoIdentification, PhotoIdentificationSelection(
-                    jobId: result.analysis.jobId, photoAssetId: photoId, speciesSlug: "fixture-species"
+                    jobId: try XCTUnwrap(result.identification).jobId, photoAssetId: photoId, speciesSlug: "fixture-species"
                 ))
                 XCTAssertEqual(model.router.flowState.confirmedPlantId, "fixture-species")
                 XCTAssertEqual(service.requests.count, 1)

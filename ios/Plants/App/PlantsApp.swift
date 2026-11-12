@@ -273,7 +273,8 @@ struct RootContainerView: View {
     @MainActor
     private func installStagingAnalysis(connection: CatalogueConnection, owner: UUID) {
         guard let api = connection.apiClient else { return }
-        analysisModel.installAnalysisService(StagingAnalysisService(api: api) {
+        let identificationEnabled = ProcessInfo.processInfo.arguments.contains("--narat-staging-identification")
+        analysisModel.installAnalysisService(StagingAnalysisService(api: api, identificationEnabled: identificationEnabled) {
             let snapshot = try await connection.sessionSnapshot()
             guard !snapshot.isAnonymous, snapshot.session.userId == owner else {
                 throw AnalysisServiceFailure.unavailable
@@ -379,7 +380,7 @@ struct RootContainerView: View {
 @MainActor
 final class StagingAnalysisService: AnalysisService {
     private struct Progress {
-        let operationId: UUID
+        let request: AnalysisServiceRequest
         let ownerId: UUID
         var photoId: UUID?
         var uploadAttempted = false
@@ -388,12 +389,15 @@ final class StagingAnalysisService: AnalysisService {
     }
 
     private let api: PlantsAPIClient
+    private let identificationEnabled: Bool
     private let session: @MainActor () async throws -> SyncSessionLease
     private var previous: Progress?
     private var activeAttempt: UUID?
 
-    init(api: PlantsAPIClient, session: @escaping @MainActor () async throws -> SyncSessionLease) {
+    init(api: PlantsAPIClient, identificationEnabled: Bool = false,
+         session: @escaping @MainActor () async throws -> SyncSessionLease) {
         self.api = api
+        self.identificationEnabled = identificationEnabled
         self.session = session
     }
 
@@ -409,7 +413,9 @@ final class StagingAnalysisService: AnalysisService {
     }
 
     func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
-        guard request.mode == .diagnosis else { throw AnalysisServiceFailure.unavailable }
+        guard request.mode == .diagnosis || (identificationEnabled && request.mode == .identification) else {
+            throw AnalysisServiceFailure.unavailable
+        }
         try Task.checkCancellation()
         let attempt = UUID()
         activeAttempt = attempt
@@ -417,9 +423,11 @@ final class StagingAnalysisService: AnalysisService {
         let lease = try await session()
         try verify(lease, attempt: attempt)
 
-        var progress = Progress(operationId: request.operationId, ownerId: lease.ownerId)
-        if let previous, previous.operationId == request.operationId {
-            guard previous.ownerId == lease.ownerId else { throw AnalysisServiceFailure.unavailable }
+        var progress = Progress(request: request, ownerId: lease.ownerId)
+        if let previous, previous.request.operationId == request.operationId {
+            guard previous.ownerId == lease.ownerId, previous.request == request else {
+                throw AnalysisServiceFailure.unavailable
+            }
             progress = previous
         }
         defer { if activeAttempt == attempt { previous = progress } }
@@ -462,6 +470,7 @@ final class StagingAnalysisService: AnalysisService {
             } else {
                 job = try await api.createAnalysisJob(
                     operationId: request.operationId, mode: request.mode, photoAssetId: photoId,
+                    flowId: request.mode == .identification ? request.flowId : nil,
                     locale: locale, context: lease
                 )
             }
@@ -480,15 +489,27 @@ final class StagingAnalysisService: AnalysisService {
             if job.status == .failed, job.errorCode?.hasPrefix("PROVIDER_") == true {
                 throw AnalysisServiceFailure.providerFailed
             }
-            guard job.status == .succeeded, let result = job.result else {
-                throw AnalysisServiceFailure.unavailable
+            guard job.status == .succeeded else { throw AnalysisServiceFailure.unavailable }
+            if let result = job.identificationResult {
+                var species: PhotoIdentificationResult.Species?
+                if let plant = result.plant {
+                    let card = try await api.fetchPublishedSpecies(taxonId: plant.taxonId, locale: locale)
+                    try verify(lease, attempt: attempt)
+                    species = .init(taxonId: card.taxonId, slug: card.id, displayName: plant.displayName)
+                }
+                return AnalysisServiceResult(identification: .init(
+                    jobId: result.jobId, catalogueReleaseId: result.catalogueReleaseId, species: species
+                ), uploadedPhotoId: photoId)
             }
+            guard let result = job.result else { throw AnalysisServiceFailure.unavailable }
             return AnalysisServiceResult(
                 analysis: result.domainValue,
                 speciesLabel: result.plantDisplayName,
                 conditionLabel: result.conditionDisplayName,
                 uploadedPhotoId: photoId
             )
+        } catch let error as APIErrorResponse where error.error.code == "QUOTA_REGISTRATION_REQUIRED" {
+            throw AnalysisServiceFailure.quotaRegistrationRequired
         } catch let error as APIErrorResponse where error.error.code.hasPrefix("PROVIDER_") {
             throw AnalysisServiceFailure.retryableProvider
         }

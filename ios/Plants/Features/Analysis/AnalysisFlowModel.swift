@@ -14,8 +14,21 @@ public struct AnalysisServiceRequest: Sendable, Equatable {
     public let locale: SupportedLocale
 }
 
+public struct PhotoIdentificationResult: Equatable, Sendable {
+    public struct Species: Equatable, Sendable {
+        let taxonId: UUID
+        let slug: String
+        let displayName: String
+    }
+
+    let jobId: UUID
+    let catalogueReleaseId: UUID
+    let species: Species?
+}
+
 public struct AnalysisServiceResult: Sendable {
-    public let analysis: PreliminaryAnalysis
+    public let analysis: PreliminaryAnalysis?
+    public let identification: PhotoIdentificationResult?
     public let speciesLabel: String?
     public let conditionLabel: String?
     public let uploadedPhotoId: UUID?
@@ -27,8 +40,17 @@ public struct AnalysisServiceResult: Sendable {
         uploadedPhotoId: UUID? = nil
     ) {
         self.analysis = analysis
+        identification = nil
         self.speciesLabel = speciesLabel
         self.conditionLabel = conditionLabel
+        self.uploadedPhotoId = uploadedPhotoId
+    }
+
+    init(identification: PhotoIdentificationResult, uploadedPhotoId: UUID?) {
+        analysis = nil
+        self.identification = identification
+        speciesLabel = identification.species?.displayName
+        conditionLabel = nil
         self.uploadedPhotoId = uploadedPhotoId
     }
 }
@@ -42,6 +64,7 @@ struct PhotoIdentificationSelection: Equatable, Sendable {
 public enum AnalysisServiceFailure: Error, Sendable, Equatable {
     case retryableProvider
     case providerFailed
+    case quotaRegistrationRequired
     case unavailable
 }
 
@@ -61,6 +84,7 @@ public final class AnalysisFlowModel {
     public var isAnalyzing: Bool = false
     public var analysisError: String?
     public var preliminaryResult: PreliminaryAnalysis?
+    private(set) var identificationResult: PhotoIdentificationResult?
     public var currentOperationId: UUID?
     public private(set) var frozenRequest: AnalysisServiceRequest?
     public private(set) var speciesLabel: String?
@@ -101,6 +125,7 @@ public final class AnalysisFlowModel {
         currentOperationId = nil
         frozenRequest = nil
         preliminaryResult = nil
+        identificationResult = nil
         speciesLabel = nil
         conditionLabel = nil
         identifiedPhoto = nil
@@ -115,10 +140,9 @@ public final class AnalysisFlowModel {
               frozenRequest.flowId == router.flowState.flowId,
               frozenRequest.operationId == currentOperationId,
               frozenRequest.photo == preparedPhoto,
-              let result = preliminaryResult, result.mode == .identification,
-              result.identificationStatus == .resolved, speciesLabel != nil,
+              let result = identificationResult, let species = result.species, speciesLabel != nil,
               let identifiedPhoto, identifiedPhoto.jobId == result.jobId,
-              identifiedPhoto.speciesSlug == result.plantId else { return nil }
+              identifiedPhoto.speciesSlug == species.slug else { return nil }
         return identifiedPhoto
     }
 
@@ -225,7 +249,7 @@ public final class AnalysisFlowModel {
     /// Returns the active task so tests and callers can await completion deterministically.
     @discardableResult
     public func submitAnalysis(locale: SupportedLocale) -> Task<Void, Never>? {
-        guard !isPreparingPhoto, !isAnalyzing, preliminaryResult == nil else {
+        guard !isPreparingPhoto, !isAnalyzing, preliminaryResult == nil, identificationResult == nil else {
             return analysisTask
         }
         guard let service else {
@@ -263,25 +287,27 @@ public final class AnalysisFlowModel {
             do {
                 let result = try await service.analyze(request)
                 guard let self, self.accepts(request, generation: submittedGeneration) else { return }
-                guard result.analysis.mode == request.mode else {
+                if request.mode == .identification, let identification = result.identification {
+                    self.identificationResult = identification
+                    if let species = identification.species {
+                        self.speciesLabel = Self.nonempty(species.displayName)
+                        if let photoId = result.uploadedPhotoId {
+                            self.identifiedPhoto = PhotoIdentificationSelection(
+                                jobId: identification.jobId, photoAssetId: photoId, speciesSlug: species.slug
+                            )
+                        }
+                    }
+                } else if request.mode == .diagnosis, let diagnosis = result.analysis, diagnosis.mode == .diagnosis {
+                    self.preliminaryResult = diagnosis
+                    if diagnosis.identificationStatus == .resolved, diagnosis.plantId != nil {
+                        self.speciesLabel = Self.nonempty(result.speciesLabel)
+                    }
+                    if diagnosis.diagnosisStatus == .conditionDetected, diagnosis.selectedConditionId != nil {
+                        self.conditionLabel = Self.nonempty(result.conditionLabel)
+                    }
+                } else {
                     self.finishFailure("analysis.error.failed")
                     return
-                }
-                self.preliminaryResult = result.analysis
-                if request.mode == .identification, result.analysis.identificationStatus == .resolved,
-                   let slug = Self.nonempty(result.analysis.plantId), let photoId = result.uploadedPhotoId {
-                    self.identifiedPhoto = PhotoIdentificationSelection(
-                        jobId: result.analysis.jobId, photoAssetId: photoId, speciesSlug: slug
-                    )
-                }
-                if result.analysis.identificationStatus == .resolved,
-                   result.analysis.plantId != nil {
-                    self.speciesLabel = Self.nonempty(result.speciesLabel)
-                }
-                if request.mode == .diagnosis,
-                   result.analysis.diagnosisStatus == .conditionDetected,
-                   result.analysis.selectedConditionId != nil {
-                    self.conditionLabel = Self.nonempty(result.conditionLabel)
                 }
                 self.isAnalyzing = false
                 self.analysisTask = nil
@@ -292,6 +318,7 @@ public final class AnalysisFlowModel {
                 switch error as? AnalysisServiceFailure {
                 case .retryableProvider?: key = "analysis.error.provider"
                 case .providerFailed?: key = "analysis.error.provider_terminal"
+                case .quotaRegistrationRequired?: key = "analysis.error.quota_registration"
                 default: key = "analysis.error.failed"
                 }
                 self.finishFailure(key)

@@ -3042,6 +3042,60 @@ extension CollectionWireTests {
         #"{"job_id":"\#(id.uuidString)","mode":"diagnosis","status":"\#(status)","quota_kind":"free_monthly","quota_state":"reserved","result":\#(result),"error_code":\#(errorCode),"error_message":null}"#
     }
 
+    private func identificationJob(id: UUID, status: String, quota: String, result: String = "null") -> String {
+        #"{"job_id":"\#(id.uuidString)","mode":"identification","status":"\#(status)","quota_kind":"starter_identification","quota_state":"\#(quota)","result":\#(result),"error_code":null,"error_message":null}"#
+    }
+
+    private func identificationResult(
+        jobId: UUID, releaseId: UUID, plantId: UUID?, name: String? = nil
+    ) throws -> String {
+        try syncJSON([
+            "schema_version": "1.0", "mode": "identification", "job_id": jobId.uuidString,
+            "catalogue_release_id": releaseId.uuidString, "identification_status": plantId == nil ? "unknown" : "identified",
+            "plant_id": plantId.map { $0.uuidString as Any } ?? NSNull(),
+            "plant_display_name": name.map { $0 as Any } ?? NSNull()
+        ])
+    }
+
+    func testIdentificationWireRejectsWrongIdentityShapeAndQuota() async throws {
+        let release = UUID()
+        let unknown = try identificationResult(jobId: operationId, releaseId: release, plantId: nil)
+        let identified = try identificationResult(
+            jobId: operationId, releaseId: release, plantId: serverPlantId, name: "Swiss cheese plant"
+        )
+        let mismatched = try identificationResult(jobId: UUID(), releaseId: release, plantId: nil)
+        let falseUnknown = try identificationResult(jobId: operationId, releaseId: release, plantId: nil, name: "Wrong")
+        let nameless = try identificationResult(jobId: operationId, releaseId: release, plantId: serverPlantId)
+        let invalid: [(result: String, quota: String)] = [
+            (mismatched, "released"), (falseUnknown, "released"), (nameless, "consumed"),
+            (unknown, "consumed"), (identified, "released"),
+            (unknown.replacingOccurrences(of: "1.0", with: "2.0"), "released"),
+            (identified.replacingOccurrences(of: serverPlantId.uuidString, with: "monstera_deliciosa"), "consumed")
+        ]
+        let transport = CatalogueTransport([
+            .http(200, identificationJob(id: operationId, status: "succeeded", quota: "released", result: unknown)),
+            .http(200, identificationJob(id: operationId, status: "succeeded", quota: "consumed", result: identified))
+        ] + invalid.map {
+            .http(200, identificationJob(id: operationId, status: "succeeded", quota: $0.quota, result: $0.result))
+        })
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let lease = try await api.captureSyncContext(ownerId: accessOwner)
+        let unresolved = try await api.fetchAnalysisJob(id: operationId, mode: .identification, locale: .en, context: lease)
+        XCTAssertEqual(unresolved.identificationResult?.catalogueReleaseId, release)
+        XCTAssertNil(unresolved.identificationResult?.plant)
+        XCTAssertNil(unresolved.result)
+        let resolved = try await api.fetchAnalysisJob(id: operationId, mode: .identification, locale: .en, context: lease)
+        XCTAssertEqual(resolved.identificationResult?.plant?.taxonId, serverPlantId)
+        for _ in invalid {
+            do {
+                _ = try await api.fetchAnalysisJob(id: operationId, mode: .identification, locale: .en, context: lease)
+                XCTFail("Invalid identification reached the caller")
+            } catch AnalysisHTTPError.invalidResponse {
+            } catch is DecodingError {}
+        }
+    }
+
     func testDiagnosisUploadAndReplaySendCanonicalWireWithBoundToken() async throws {
         let photo = serverPlantId
         let uploadOperationId = UUID()
@@ -3301,6 +3355,61 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testStagingIdentificationRecoversUploadAndResolvesExactTaxon() async throws {
+        let photo = UUID(), jobId = UUID(), releaseId = UUID()
+        let upload = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+        let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+        let result = try identificationResult(jobId: jobId, releaseId: releaseId, plantId: serverPlantId, name: "Pinned Monstera")
+        let card = try syncJSON([
+            "plant_id": "monstera_deliciosa", "taxon_id": serverPlantId.uuidString,
+            "display_name": "Current Monstera", "scientific_name": "Monstera deliciosa", "care_profile_available": true
+        ])
+        let transport = CatalogueTransport([
+            .http(200, diagnosisTicket(url: upload, photoId: photo)), .network, .http(200, ready),
+            .http(202, identificationJob(id: jobId, status: "queued", quota: "reserved")),
+            .http(200, identificationJob(id: jobId, status: "succeeded", quota: "consumed", result: result)),
+            .http(200, card)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let owner = accessOwner
+        let service = StagingAnalysisService(api: api, identificationEnabled: true) {
+            try await api.captureSyncContext(ownerId: owner)
+        }
+        let input = AnalysisServiceRequest(
+            operationId: operationId, flowId: UUID(), mode: .identification, intent: .care,
+            photo: PreparedAnalysisPhoto(cloudNormalizedJPEG: Data([1]), aiVisionJPEG: Data([1]),
+                                         aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 1),
+            conditions: CareConditionsInput(), locale: .en
+        )
+        do {
+            _ = try await service.analyze(input)
+            XCTFail("Expected a lost PUT response")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .networkConnectionLost)
+        }
+        let finished = try await service.analyze(input)
+        XCTAssertNil(finished.analysis)
+        XCTAssertEqual(finished.uploadedPhotoId, photo)
+        XCTAssertEqual(finished.identification?.jobId, jobId)
+        XCTAssertEqual(finished.identification?.catalogueReleaseId, releaseId)
+        XCTAssertEqual(finished.identification?.species, .init(
+            taxonId: serverPlantId, slug: "monstera_deliciosa", displayName: "Pinned Monstera"
+        ))
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "POST", "GET", "GET"])
+        guard requests.count == 6 else { return }
+        let complete = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[2].httpBody))
+        XCTAssertEqual(complete, ["photo_asset_id": photo.uuidString.lowercased()])
+        let create = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[3].httpBody))
+        XCTAssertEqual(create, ["operation_id": operationId.uuidString.lowercased(), "mode": "identification",
+                                "photo_asset_id": photo.uuidString.lowercased(), "flow_id": input.flowId.uuidString.lowercased()])
+        XCTAssertEqual(requests[4].url?.lastPathComponent, jobId.uuidString.lowercased())
+        XCTAssertEqual(requests[5].url?.lastPathComponent, serverPlantId.uuidString.lowercased())
+        XCTAssertNil(requests[5].value(forHTTPHeaderField: "Authorization"))
+    }
+
+    @MainActor
     func testStagingAnalysisRecoversLostUploadAndJobRepliesWithDistinctStableOperations() async throws {
         let photo = serverPlantId
         let id = operationId
@@ -3340,7 +3449,7 @@ extension CollectionWireTests {
         let finished = try await service.analyze(input)
         XCTAssertEqual(finished.speciesLabel, "Monstera deliciosa")
         XCTAssertEqual(finished.conditionLabel, "Root rot")
-        XCTAssertEqual(finished.analysis.jobId, jobId)
+        XCTAssertEqual(finished.analysis?.jobId, jobId)
         let requests = await transport.capturedRequests()
         XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "PUT", "POST", "POST", "POST", "GET"])
         XCTAssertEqual(requests.map { $0.url?.lastPathComponent }, [

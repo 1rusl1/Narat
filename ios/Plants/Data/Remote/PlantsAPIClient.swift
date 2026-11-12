@@ -798,17 +798,19 @@ extension PlantsAPIClient {
 
     func createAnalysisJob(
         operationId: UUID, mode: AnalysisMode, photoAssetId: UUID,
-        locale: SupportedLocale, context: SyncSessionLease
+        flowId: UUID? = nil, locale: SupportedLocale, context: SyncSessionLease
     ) async throws -> AnalysisJobWire {
         guard mode == .diagnosis || mode == .identification else {
             throw AnalysisHTTPError.invalidResponse
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let body = try encoder.encode([
+        var fields = [
             "operation_id": operationId.uuidString.lowercased(), "mode": mode.rawValue,
             "photo_asset_id": photoAssetId.uuidString.lowercased()
-        ])
+        ]
+        if let flowId { fields["flow_id"] = flowId.uuidString.lowercased() }
+        let body = try encoder.encode(fields)
         let request = try buildRequest(path: "analysis/jobs", method: "POST", body: body)
         let job: AnalysisJobWire = try await analysisRequest(
             request, locale: locale, context: context, status: [200, 202]

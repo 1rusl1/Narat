@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-12.** T149 принята для английского MVP на живом каталоге из 606 видов. Начат клиентский пакет T150.
+**Обновлено 2026-11-12.** T149 принята для английского MVP на живом каталоге из 606 видов. Подключён клиентский wire T150, локальная проверка прошла.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -13,7 +13,13 @@
 
 `PlantsAPIClient.swift` и `GuestCatalogueView.swift` читают выбранный вид по публичному taxon UUID и сверяют UUID и slug. Старое восстановление по slug сохранено. `CatalogueUIFixtures.swift` и `CatalogueUIFixtureTests.swift` проверяют оба способа lookup. Два целевых Swift-теста и один XCUITest открытия карточки после перезапуска прошли в `t150-published-taxon-id-01`. Отдельный живой GET по UUID `83f27806-3577-4bdc-9b18-222bedcf06d7` вернул `monstera_deliciosa` и `Swiss Cheese plant`.
 
-**Точный следующий шаг.** B готовит отдельный `identification` результат с taxon UUID, `catalogue_release_id` и `identified|unknown`. После утверждения и выкладки декодировать этот результат отдельно от диагноза, преобразовать `identified` в клиентский определённый вид через проверенный UUID lookup и включить режим в `StagingAnalysisService`. Затем прогнать живое фото → upload → job → результат и подключить сохранение фото и действительный draft/claim. Проверенный стендовый обработчик `diagnosis-jobs.ts` принимает только `diagnosis`.
+### Отдельный wire identification
+
+Контракт B из `03ac0c1`, backend Review/QA приняты в `8ba3756`. `APIModels.swift` и `PlantsAPIClient.swift` декодируют отдельный результат `identified|unknown`, проверяют версию, UUID задания/каталога/вида, наличие имени и состояние квоты. `PlantsApp.swift` повторно использует upload-ticket, PUT, complete и polling, передаёт `flow_id` для identification, читает публичную карточку по точному taxon UUID и сохраняет имя из закреплённого результата. Включение только для выделенного staging Simulator с `--narat-staging-analysis --narat-staging-identification`. `AnalysisFlowModel.swift` и `PreliminaryResultView.swift` показывают отдельный результат, подтверждение вида с ID фото и отказ `QUOTA_REGISTRATION_REQUIRED`.
+
+**Локально.** `ios-t150-identification-wire-20261112-01`: diff-check, сборка, welcome и 216 Swift-тестов без пропусков. `CollectionWireTests.swift` проверяет ошибочные UUID, версию, unknown/identified и квоту, восстановление после потери PUT через complete, точный create и публичный lookup. `FirstHelpUnitTests.swift` проверяет выбор и очистку подтверждения. Диагностические тесты прошли.
+
+**Точный следующий шаг.** После публикации B прогнать живое фото → upload → job → identification и проверить результат на экране выделенного Simulator. Прикрепление личного фото к экземпляру и семидневный draft/claim требуют отдельного контракта и сквозной проверки. T150 открыта.
 
 ## T149 — живой каталог и коллекция iOS
 
