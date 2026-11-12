@@ -831,7 +831,7 @@ public struct SyncWireChangeDTO: Decodable, Sendable, Equatable {
 public struct SyncWireProfileDTO: Codable, Sendable, Equatable {
     public let preferredLocale: String
     public let reminderHourLocal: Int
-    public let reportNotificationsEnabled: Bool
+    public let reportNotificationsEnabled: Bool?
     public let trialReminderEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -845,7 +845,10 @@ public struct SyncWireProfileDTO: Codable, Sendable, Equatable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         preferredLocale = try values.decode(String.self, forKey: .preferredLocale)
         reminderHourLocal = try values.decode(Int.self, forKey: .reminderHourLocal)
-        reportNotificationsEnabled = try values.decode(Bool.self, forKey: .reportNotificationsEnabled)
+        // Older pages and checkpoints retain the Boolean. New pages can omit it.
+        reportNotificationsEnabled = values.contains(.reportNotificationsEnabled)
+            ? try values.decode(Bool.self, forKey: .reportNotificationsEnabled)
+            : nil
         trialReminderEnabled = try values.decode(Bool.self, forKey: .trialReminderEnabled)
         guard ["en", "pl"].contains(preferredLocale), (0...23).contains(reminderHourLocal) else {
             throw SyncWireValidationError.invalidPage

@@ -1135,6 +1135,7 @@ extension CollectionWireTests {
         for (projection, fields) in [("profile", profile), ("entitlement", entitlement), ("change", syncChange())] {
             for key in fields.keys {
                 for replacement in [nil, ["unexpected": true]] as [Any?] {
+                    if projection == "profile", key == "report_notifications_enabled", replacement == nil { continue }
                     var malformed = fields
                     malformed[key] = key == "data" && replacement != nil ? true : replacement
                     var object = valid
@@ -1146,7 +1147,8 @@ extension CollectionWireTests {
         }
         for (field, value) in [
             ("preferred_locale", "de" as Any), ("reminder_hour_local", 24),
-            ("reminder_hour_local", 1.5), ("report_notifications_enabled", 1)
+            ("reminder_hour_local", 1.5), ("report_notifications_enabled", 1),
+            ("report_notifications_enabled", NSNull())
         ] {
             var malformed = profile
             malformed[field] = value
@@ -1376,6 +1378,47 @@ extension CollectionWireTests {
             XCTAssertEqual(items.map(\.payloadJSON), [#"{"name":"confirmed"}"#])
             XCTAssertEqual(pending, [outbox[index]] + (index == 0 ? extraA : []))
         }
+    }
+
+    @MainActor
+    func testSyncWithoutReportSettingPreservesHistoricalClaimOnDisk() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let entity = "notification_claim_summaries"
+        var historical = syncObject()
+        var claim = syncChange(entity: entity)
+        claim["data"] = ["kind": "trial_ending", "state": "cancelled"]
+        historical["changes"] = [claim]
+        let nextWatermark = "2026-11-03T10:00:00.000001Z"
+        var current = syncObject()
+        current["until"] = nextWatermark
+        current["next_since"] = nextWatermark
+        current["profile"] = ["preferred_locale": "en", "reminder_hour_local": 17, "trial_reminder_enabled": true]
+        let transport = CatalogueTransport([.http(200, try syncJSON(historical)), .http(200, try syncJSON(current))])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+
+        let previousClaim: SyncItemDTO
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let engine = SyncEngine(store: store, apiClient: api)
+            _ = try await engine.pullDelta(for: syncOwner)
+            let previous = try await store.syncedProfile(ownerId: syncOwner)
+            XCTAssertEqual(previous?.reportNotificationsEnabled, true)
+            let claims = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: entity)
+            previousClaim = try XCTUnwrap(claims.first)
+            _ = try await engine.pullDelta(for: syncOwner)
+        }
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let profile = try await reopened.syncedProfile(ownerId: syncOwner)
+        let claims = try await reopened.activeSyncedEntities(ownerId: syncOwner, entityType: entity)
+        let watermark = try await reopened.currentWatermarkRaw(ownerId: syncOwner)
+        XCTAssertNil(profile?.reportNotificationsEnabled)
+        XCTAssertEqual(profile?.trialReminderEnabled, true)
+        XCTAssertEqual(profile?.reminderHourLocal, 17)
+        XCTAssertEqual(claims.map(\.id), [previousClaim.id])
+        XCTAssertEqual(claims.first?.payloadJSON, previousClaim.payloadJSON)
+        XCTAssertEqual(watermark, nextWatermark)
     }
 
     @MainActor

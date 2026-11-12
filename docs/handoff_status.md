@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-12.** T149–T151 и T036 приняты для английского MVP на `narat-staging`. T036 подтвердила квоты до скана, каталог при сбое и сохранение гостевого расхода.
+**Обновлено 2026-11-12.** T149–T151 и T036 приняты для английского MVP на `narat-staging`. В T165 начата совместимость `/sync` перед снятием старых полей отчётных уведомлений.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -73,7 +73,13 @@
 
 **Приёмка.** `parallel-ios-t036-prescan-20261112-02` прошёл сборку, welcome, 220 Swift-тестов, Simulator smoke и Review. QA запросила доказательства нового экрана. В `parallel-ios-t036-prescan-20261112-03` повторились те же локальные gates, независимые Review и QA приняли живые PNG и JSON из `DerivedData/T036Validation/`. Принятый коммит `462976b`. Постоянный Paid использовал выделенный серверный entitlement, проверка StoreKit относится к биллингу. [Отчёт](validation/automation/tasks/parallel-ios-t036-prescan.md).
 
-**Следующий шаг.** Подключить совместимое чтение `/sync` для T165 с отсутствующим `report_notifications_enabled`, сохранив декодирование прежних записей `notification_claim_summaries`. Серверные записи сняты в `838d9ff`, живое подтверждение B `f23d571`.
+## T165 — совместимость iOS при снятии отчётной проекции
+
+B `838d9ff` снял запись server notification claims. На стенде оба старых POST вернули 404, `/sync` сохранил прежние ключи (`f23d571`). `APIModels.swift` читает прежний Boolean `report_notifications_enabled` и допускает отсутствие ключа. Если поле присутствует, неправильный тип и `null` отклоняются. `trial_reminder_enabled` остаётся обязательным, прежний `notification_claim_summaries` читается.
+
+**Локально.** `T165SyncCompatibility01`: 63 `CollectionWireTests` прошли. `CollectionWireTests.swift` проверил старую страницу и новую страницу без ключа через штатный `SyncEngine`, сохранение прежней claim-записи и `trial_reminder_enabled` после открытия SQLite. Diff-check прошёл. **Живой стенд:** реальный профиль из действующего `/sync` после миграции 023 с прежним Boolean прошёл новый Swift-декодер. Обновлены handoff и `tasks.md`.
+
+**Следующий шаг.** Независимая приёмка iOS-декодера. После неё B может снять read-проекцию, затем iOS должен проверить живой `/sync` без старых ключей. Локальный trial reminder зависит от подтверждённой даты и отдельной приёмки T133. Полная T165 открыта.
 
 ## T149 — живой каталог и коллекция iOS
 
