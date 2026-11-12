@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-12.** T149 принята для английского MVP на живом каталоге из 606 видов. Живой iOS identification T150 прошёл для `unknown` и Monstera. Следующий этап — прикрепление личного фото.
+**Обновлено 2026-11-12.** T149 принята для английского MVP на живом каталоге из 606 видов. На стенде T150 подтверждены распознавание и сохранение личного фото. Живой гостевой перенос ждёт выкладки миграции 021.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -36,6 +36,8 @@
 В iOS подключён wire B `2f5a895`. Выделенный staging Simulator получает настоящую анонимную сессию, регистрирует установку и использует один Keychain credential для загрузки, распознавания, черновика и переноса. `PlantsApp.swift`, `PreliminaryResultView.swift` и `GuestCatalogueView.swift` сохраняют идентификаторы черновика и операций перед входом и привязывают перенос только к подтверждённой постоянной сессии. `PlantsAPIClient.swift` и `APIModels.swift` проверяют ответ bind/prepare/commit. При потере ответа commit повторяется с исходным operation ID. Серверный `DRAFT_EXPIRED` очищает локальное продолжение. Окончание proof обновляется тем же prepare после retryable conflict, с тем же claim ID и commit.
 
 **Локально.** Diff-check, сборка, welcome и 218 Swift-тестов без пропусков прошли в `ios-t150-guest-transfer-20261112-03`. Новый тест `CollectionWireTests.swift` проверяет смену Bearer при том же installation credential, отказ устаревшей гостевой lease, точный повтор commit и типизированный plant/photo receipt. Локальные тесты используют фикстуры.
+
+Первый независимый Review (`parallel-ios-t150-guest-transfer-20261112-01`) выявил блокировку продолжения после потери ответа `POST /drafts` и холодного запуска. `PlantsApp.swift` теперь восстанавливает запрос из журнала по исходному ID и показывает `Continue saving` только тому же гостю и установке. Тест `CatalogueConnectionTests.swift` прошёл в `T150GuestDraftRestart01` (1/1). Он проверяет повтор точного запроса через новый координатор, получение сохранённого черновика и очистку журнала при `DRAFT_EXPIRED`. Следом запускается повторная независимая приёмка.
 
 **Точный следующий шаг.** После выкладки B migration 021 запустить живой anonymous → draft → test sign-in → claim, проверить повтор и ту же карточку с фото после холодного запуска. После полной приёмки T150 начать T151 на английском. Физическая камера и нативный Apple/Google остаются отдельными проверками.
 
