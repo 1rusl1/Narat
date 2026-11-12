@@ -1,6 +1,6 @@
 # Narat — текущий статус и передача работы
 
-**Обновлено 2026-11-12.** T149–T151 и T036 приняты для английского MVP на `narat-staging`. В T165 начата совместимость `/sync` перед снятием старых полей отчётных уведомлений.
+**Обновлено 2026-11-12.** T149–T151 и T036 приняты для английского MVP на `narat-staging`. Клиентский срез T165 принят для совместимого `/sync` перед снятием старых полей отчётных уведомлений.
 
 **Workspace A:** `/Users/ruslansabirov/.codex/worktrees/d09a/Plants`, ветка `codex/plants-ios`, исходный HEAD `4bbd35a`. Общий Simulator — только A; backend/SQL/contracts — B. Интеграция в main — только после повторных gates из отдельного чистого checkout.
 **Источники:** [spec](../specs/001-plants-ios-mvp/spec.md), [tasks](../specs/001-plants-ios-mvp/tasks.md), [решения](validation/spec-simplification-2026-11-09.md), [аудит и карта зависимостей](validation/overengineering-review-2026-11-09.md).
@@ -79,7 +79,9 @@ B `838d9ff` снял запись server notification claims. На стенде 
 
 **Локально.** `T165SyncCompatibility01`: 63 `CollectionWireTests` прошли. `CollectionWireTests.swift` проверил старую страницу и новую страницу без ключа через штатный `SyncEngine`, сохранение прежней claim-записи и `trial_reminder_enabled` после открытия SQLite. Diff-check прошёл. **Живой стенд:** реальный профиль из действующего `/sync` после миграции 023 с прежним Boolean прошёл новый Swift-декодер. Обновлены handoff и `tasks.md`.
 
-**Следующий шаг.** Независимая приёмка iOS-декодера. После неё B может снять read-проекцию, затем iOS должен проверить живой `/sync` без старых ключей. Локальный trial reminder зависит от подтверждённой даты и отдельной приёмки T133. Полная T165 открыта.
+**Приёмка.** `parallel-ios-t165-sync-compatibility-20261112-01` принят и опубликован в `145b5a2`: diff-check, сборка, welcome, 221 Swift-тест, Simulator smoke и независимые Review/QA прошли. [Отчёт](validation/automation/tasks/parallel-ios-t165-sync-compatibility.md).
+
+**Следующий шаг.** B снимает серверную read-проекцию, затем iOS проверяет живой `/sync` без старых ключей. Локальный trial reminder зависит от подтверждённой даты и отдельной приёмки T133. Полная T165 открыта.
 
 ## T149 — живой каталог и коллекция iOS
 
