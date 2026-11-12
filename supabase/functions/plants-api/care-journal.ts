@@ -47,7 +47,8 @@ export async function handleCollectionCommand(
   const body: unknown = await req.clone().json().catch(() => null);
   if (
     !record(body) ||
-    (body.command_name !== "care.record" && body.command_name !== "care.undo")
+    (body.command_name !== "care.record" && body.command_name !== "care.undo" &&
+      body.command_name !== "care.correct_date")
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
@@ -75,16 +76,14 @@ export async function handleCollectionCommand(
   }
   if (!record(payload)) throw invalid();
   const isRecord = body.command_name === "care.record";
-  if (isRecord) {
-    if (
-      Object.keys(payload).length !== 3 || payload.action_code !== "water" ||
-      typeof payload.occurred_at !== "string" ||
-      typeof payload.timezone !== "string"
-    ) throw invalid();
-  } else {
-    if (Object.keys(payload).length !== 1) throw invalid();
-    requireUuid(payload.entry_id, "entry_id");
-  }
+  const isUndo = body.command_name === "care.undo";
+  if (
+    Object.keys(payload).length !== (isUndo ? 1 : 3) ||
+    (isRecord && payload.action_code !== "water") ||
+    (!isUndo && (typeof payload.occurred_at !== "string" ||
+      typeof payload.timezone !== "string"))
+  ) throw invalid();
+  const entryId = isRecord ? null : requireUuid(payload.entry_id, "entry_id");
 
   let response;
   try {
@@ -133,11 +132,11 @@ export async function handleCollectionCommand(
     typeof data.entry_id !== "string" ||
     !uuid.test(data.entry_id) || typeof data.watermark !== "string" ||
     !Number.isFinite(Date.parse(data.watermark)) ||
-    (isRecord
-      ? data.state !== "active" || data.reversal_id !== null
-      : data.state !== "voided" ||
-        data.entry_id !== String(payload.entry_id).toLowerCase() ||
-        typeof data.reversal_id !== "string" || !uuid.test(data.reversal_id))
+    (entryId !== null && data.entry_id !== entryId) ||
+    (isUndo
+      ? data.state !== "voided" || typeof data.reversal_id !== "string" ||
+        !uuid.test(data.reversal_id)
+      : data.state !== "active" || data.reversal_id !== null)
   ) throw unavailable();
 
   return jsonResponse(data);

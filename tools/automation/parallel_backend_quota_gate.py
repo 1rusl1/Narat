@@ -422,6 +422,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     guest_settlement_bind_race(case, release, timed_out=True)
                 if any(migration.name == CARE_JOURNAL for migration in selected):
                     tap(case, ROOT/'supabase/tests/manual_care_journal.test.sql')
+                if any(migration.name == '202611120026_manual_care_date_correction.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/manual_care_date_correction.test.sql')
                 if any(migration.name == CARE_PROFILE_READ for migration in selected):
                     tap(case, ROOT/'supabase/tests/plant_care_profile_read.test.sql')
             if not args.accounting and not args.anchors:

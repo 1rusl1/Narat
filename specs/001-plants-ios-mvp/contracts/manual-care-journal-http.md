@@ -5,9 +5,12 @@ An active permanent owner submits a manual watering fact for an existing plant t
 | `command_name` | Decoded `payload_json` | Receipt `state` |
 | --- | --- | --- |
 | `care.record` | `{"action_code":"water","occurred_at":"2026-11-11T18:00:00+03:00","timezone":"Europe/Moscow"}` | `active` |
+| `care.correct_date` | `{"entry_id":"17000000-0000-4000-8000-000000000031","occurred_at":"2026-11-10T18:00:00+03:00","timezone":"Europe/Moscow"}` | `active` |
 | `care.undo` | `{"entry_id":"17000000-0000-4000-8000-000000000031"}` | `voided` |
 
 Send `occurred_at` as a calendar-valid timestamp with an offset and up to six fractional digits. The database rejects future events and derives the journal day in the given IANA time zone. Undo targets the same owner's manual watering entry on the selected plant.
+
+Date correction targets an active manual watering entry on the selected plant. It uses a new operation ID and keeps the entry ID, original record operation and recorded time. The updated date appears in owner sync. A correction for an already voided entry returns 409. A previously accepted correction still replays its original receipt after undo.
 
 HTTP 200 returns `plant_id`, `entry_id`, `reversal_id`, `state` and `watermark`. `reversal_id` is null for record. An exact replay returns its original receipt. Read current state from owner `GET /sync`, with `care_entries` for the fact and `care_reversals` for the undo history. An undone fact has `state: "voided"`.
 

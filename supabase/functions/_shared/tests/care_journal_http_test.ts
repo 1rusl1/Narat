@@ -5,6 +5,7 @@ const owner = "17000000-0000-4000-8000-000000000001";
 const plant = "17000000-0000-4000-8000-000000000011";
 const recordOp = "17000000-0000-4000-8000-000000000021";
 const undoOp = "17000000-0000-4000-8000-000000000022";
+const correctionOp = "17000000-0000-4000-8000-000000000023";
 const entry = "17000000-0000-4000-8000-000000000031";
 const reversal = "17000000-0000-4000-8000-000000000032";
 const payload = {
@@ -23,6 +24,17 @@ const undoBody = {
   plant_id: plant,
   command_name: "care.undo",
   payload_json: JSON.stringify({ entry_id: entry }),
+};
+const correctionPayload = {
+  entry_id: entry,
+  occurred_at: "2025-10-10T23:30:00Z",
+  timezone: "Europe/Warsaw",
+};
+const correctionBody = {
+  operation_id: correctionOp,
+  plant_id: plant,
+  command_name: "care.correct_date",
+  payload_json: JSON.stringify(correctionPayload),
 };
 
 function fixture(options: { anonymous?: boolean; errorCode?: string } = {}) {
@@ -147,6 +159,38 @@ Deno.test("Manual care rejects injected owner, invalid payload and guest before 
   const guest = fixture({ anonymous: true });
   assertEquals((await guest.send(recordBody)).status, 403);
   assertEquals(guest.calls, []);
+});
+
+Deno.test("Manual care correction uses the original entry and preserves its replay envelope", async () => {
+  const f = fixture();
+  const response = await f.send(correctionBody, { "x-operation-id": correctionOp });
+  assertEquals(response.status, 200);
+  const receipt = await response.json();
+  assertEquals(receipt, {
+    plant_id: plant,
+    entry_id: entry,
+    reversal_id: null,
+    state: "active",
+    watermark: "2026-11-11T19:40:00.123456+03:00",
+  });
+  assertEquals(await (await f.send(correctionBody)).json(), receipt);
+  assertEquals(f.calls[0], {
+    p_owner_id: owner,
+    p_plant_id: plant,
+    p_operation_id: correctionOp,
+    p_command_name: "care.correct_date",
+    p_payload: correctionPayload,
+  });
+  assertEquals(f.calls[1], f.calls[0]);
+
+  const malformed = await f.send({
+    ...correctionBody,
+    payload_json: JSON.stringify({ ...correctionPayload, entry_id: null }),
+  });
+  assertEquals(malformed.status, 400);
+  assertEquals(f.calls.length, 2);
+  assertEquals((await fixture({ anonymous: true }).send(correctionBody)).status, 403);
+  assertEquals((await fixture({ errorCode: "23505" }).send(correctionBody)).status, 409);
 });
 
 Deno.test("Manual care maps SQL errors without exposing the original message", async () => {
