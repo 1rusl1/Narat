@@ -237,6 +237,12 @@ public actor SyncEngine {
                             )
                             guard saved?.drainage == drainage || (card.currentConditionSnapshotId == nil && drainage == .unknown)
                             else { throw SyncWireValidationError.invalidPage }
+                        case let .watering(watering):
+                            let saved = try await store.syncedPlantConditions(
+                                for: card, context: context, authority: apiClient.syncAuthority
+                            )
+                            guard saved?.watering == watering || (card.currentConditionSnapshotId == nil && watering == .unknown)
+                            else { throw SyncWireValidationError.invalidPage }
                         }
                     } else {
                         guard let deleted = try await store.plantDeletionWatermark(

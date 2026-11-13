@@ -4782,6 +4782,11 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testPlantWateringFrequencyEditReplaysAndRetainsPreviousAnalysis() async throws {
+        try await verifyPlantConditionEdit(.watering(.weekly), key: "watering_code", code: "weekly")
+    }
+
+    @MainActor
     private func verifyPlantConditionEdit(_ change: PlantEditCommand.Change, key: String, code: String) async throws {
         let plant = serverPlantId
         let originalSnapshot = UUID()
@@ -4841,7 +4846,13 @@ extension CollectionWireTests {
         XCTAssertEqual(updated.mainPhotoId, photo)
         XCTAssertEqual(updated.currentConditionSnapshotId, updatedSnapshot)
         let confirmed = try await repo.syncedPlantConditions(for: updated, context: lease)
-        XCTAssertEqual(key == "light_code" ? confirmed?.light?.rawValue : confirmed?.drainage?.rawValue, code)
+        let confirmedCode = switch change {
+        case .light: confirmed?.light?.rawValue
+        case .drainage: confirmed?.drainage?.rawValue
+        case .watering: confirmed?.watering?.rawValue
+        case .name: nil as String?
+        }
+        XCTAssertEqual(confirmedCode, code)
         let after = try await repo.collectionAnalysisHistory(plantId: plant, context: lease)
         XCTAssertEqual(after.map(\.id), [analysis])
         XCTAssertEqual(after.first?.previousConditions, true)

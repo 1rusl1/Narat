@@ -826,6 +826,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var rejectedNameInput: String?
     @State private var editingLight = false
     @State private var editingDrainage = false
+    @State private var editingWatering = false
     @State private var currentConditions: PlantConditionCodes?
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
@@ -988,6 +989,12 @@ private struct CatalogueCollectionCardView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
+            .confirmationDialog("Edit watering frequency", isPresented: $editingWatering, titleVisibility: .visible) {
+                ForEach(PlantWateringCode.choices, id: \.self) { watering in
+                    Button(watering.label) { Task { await editPlant(.watering(watering)) } }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
             .alert(
                 polish ? "Usunąć tę roślinę?" : "Delete this plant?", isPresented: $deleteConfirmation
             ) {
@@ -1108,6 +1115,7 @@ private struct CatalogueCollectionCardView: View {
             case .name: ("Plant name pending sync.", "Retry name change")
             case .light: ("Light change pending sync.", "Retry light change")
             case .drainage: ("Drainage change pending sync.", "Retry drainage change")
+            case .watering: ("Watering frequency pending sync.", "Retry watering frequency")
             }
             Text(labels.0)
                 .accessibilityIdentifier("collection.rename.pending")
@@ -1129,6 +1137,11 @@ private struct CatalogueCollectionCardView: View {
             }
             Button("Edit drainage") { editingDrainage = true }
                 .accessibilityIdentifier("collection.drainage.open")
+            if let watering = currentConditions?.watering {
+                Text(watering.label).accessibilityIdentifier("collection.watering.frequency.current")
+            }
+            Button("Edit watering frequency") { editingWatering = true }
+                .accessibilityIdentifier("collection.watering.frequency.open")
         }
         if renameFailed {
             Text("Couldn’t save the plant edit.")
@@ -1200,6 +1213,8 @@ private struct CatalogueCollectionCardView: View {
                 renameFailed = updated == nil || (savedConditions?.light ?? .unknown) != requested
             case let .drainage(requested):
                 renameFailed = updated == nil || (savedConditions?.drainage ?? .unknown) != requested
+            case let .watering(requested):
+                renameFailed = updated == nil || (savedConditions?.watering ?? .unknown) != requested
             }
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }

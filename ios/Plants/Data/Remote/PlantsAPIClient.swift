@@ -237,17 +237,38 @@ enum PlantDrainageCode: String, Codable, Sendable, CaseIterable {
     }
 }
 
+enum PlantWateringCode: String, Codable, Sendable, CaseIterable {
+    case severalWeekly = "several_weekly", weekly, lessOften = "less_often"
+    case frequent, moderate, sparse, unknown
+
+    static let choices: [Self] = [.severalWeekly, .weekly, .lessOften, .unknown]
+
+    var label: String {
+        switch self {
+        case .severalWeekly: "Several times a week"
+        case .weekly: "Once a week"
+        case .lessOften: "Less often"
+        case .frequent: "Frequent watering"
+        case .moderate: "Moderate watering"
+        case .sparse: "Sparse watering"
+        case .unknown: "Unknown watering frequency"
+        }
+    }
+}
+
 struct PlantConditionCodes: Decodable, Sendable {
     let id: UUID
     let plantId: UUID
     let light: PlantLightCode?
     let drainage: PlantDrainageCode?
+    let watering: PlantWateringCode?
 
     enum CodingKeys: String, CodingKey {
         case id
         case plantId = "plant_id"
         case light = "light_code"
         case drainage = "drainage_code"
+        case watering = "watering_code"
     }
 
     init(from decoder: Decoder) throws {
@@ -256,6 +277,7 @@ struct PlantConditionCodes: Decodable, Sendable {
         plantId = try values.decode(UUID.self, forKey: .plantId)
         light = (try? values.decode(String.self, forKey: .light)).flatMap(PlantLightCode.init(rawValue:))
         drainage = (try? values.decode(String.self, forKey: .drainage)).flatMap(PlantDrainageCode.init(rawValue:))
+        watering = (try? values.decode(String.self, forKey: .watering)).flatMap(PlantWateringCode.init(rawValue:))
     }
 }
 
@@ -264,6 +286,7 @@ struct PlantEditCommand: Sendable {
         case name(String)
         case light(PlantLightCode)
         case drainage(PlantDrainageCode)
+        case watering(PlantWateringCode)
     }
 
     static let name = "plant.edit"
@@ -286,6 +309,8 @@ struct PlantEditCommand: Sendable {
             fields = ["conditions": ["light_code": light.rawValue]]
         case let .drainage(drainage):
             fields = ["conditions": ["drainage_code": drainage.rawValue]]
+        case let .watering(watering):
+            fields = ["conditions": ["watering_code": watering.rawValue]]
         }
         let payload = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
         let envelope = CommandEnvelopeDTO(
@@ -308,6 +333,9 @@ struct PlantEditCommand: Sendable {
         } else if let conditions = fields["conditions"] as? [String: String], conditions.count == 1,
                   let drainage = conditions["drainage_code"].flatMap(PlantDrainageCode.init(rawValue:)) {
             change = .drainage(drainage)
+        } else if let conditions = fields["conditions"] as? [String: String], conditions.count == 1,
+                  let watering = conditions["watering_code"].flatMap(PlantWateringCode.init(rawValue:)) {
+            change = .watering(watering)
         } else {
             return nil
         }

@@ -69,7 +69,9 @@ T057 сохранена в отдельной ветке `origin/codex/plants-io
 
 **Дренаж.** `GuestCatalogueView.swift` добавляет EN-редактор дренажа. `PlantsAPIClient.swift`, `LocalStore.swift`, `CollectionRepository.swift` и `SyncEngine.swift` используют существующий outbox, отправляют только `conditions.drainage_code` и сверяют значение с каноническим snapshot. Поддержаны `yes`, `no` и `unknown`. `V10PlantDrainage01` прошёл 3/3 XCTest и 1/1 EN XCUITest освещения. `CollectionWireTests.swift` подтвердил новый snapshot, точный повтор и сохранность фото и диагноза. `V10DrainageUI01` прошёл 1/1 EN XCUITest. `CatalogueUIFixtures.swift` отбросил первый 200 и принял только исходный повтор. `CatalogueSaveUITests.swift` после перезапуска подтвердил новое значение дренажа, прежнее освещение, UUID карточки, фото и прежний диагноз. Diff-check прошёл.
 
-**Открыто.** Стенд не менялся. Следующий шаг — добавить полив и горшок по подтверждённым кодам B. Правка вида и живая проверка V10 открыты. После выкладки проверить отсутствие AI jobs, сохранность истории и паузу неприменимых проверок.
+**Частота полива.** `GuestCatalogueView.swift` добавляет EN-редактор. `PlantsAPIClient.swift` отправляет частичную правку только с `conditions.watering_code` и читает исторические коды `frequent`, `moderate` и `sparse`. `SyncEngine.swift` подтверждает частоту из канонического snapshot. `CatalogueUIFixtures.swift`, `CollectionWireTests.swift` и `CatalogueSaveUITests.swift` проверили точный повтор и сохранность карточки, фото и анализа. `V10WateringFrequency01` прошёл 3/3 XCTest и 1/1 EN XCUITest. После потери ответа и перезапуска новый `weekly` подтверждён, освещение и дренаж сохранены. Diff-check прошёл.
+
+**Открыто.** Стенд не менялся. Следующий шаг — добавить тип горшка по подтверждённым кодам B. Правка вида и живая проверка V10 открыты. После выкладки проверить отсутствие AI jobs, сохранность истории и паузу неприменимых проверок.
 
 ### V11 — чтение сохранённой карточки без сети
 

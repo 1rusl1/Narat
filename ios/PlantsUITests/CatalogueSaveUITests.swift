@@ -344,6 +344,36 @@ final class CatalogueSaveUITests: XCTestCase {
         require(previous)
     }
 
+    @MainActor func testPlantWateringFrequencyEditReplaysAndKeepsOtherConditions() {
+        let run = Run("plantWateringEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let frequency = run.app.staticTexts["collection.watering.frequency.current"]
+        require(frequency)
+        XCTAssertEqual(frequency.label, "Moderate watering")
+        tap(run, "collection.watering.frequency.open", "Edit watering frequency")
+        let weekly = run.app.buttons.matching(identifier: "Once a week").firstMatch
+        enabled(weekly)
+        weekly.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry watering frequency")
+        require(frequency)
+        XCTAssertEqual(frequency.label, "Once a week")
+        XCTAssertEqual(run.app.staticTexts["collection.light.current"].label, "Medium light")
+        XCTAssertEqual(run.app.staticTexts["collection.drainage.current"].label, "Drainage holes")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"])
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }
