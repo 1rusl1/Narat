@@ -409,6 +409,51 @@ final class CatalogueSaveUITests: XCTestCase {
         require(previous)
     }
 
+    @MainActor func testPlantTaxonEditUsesPublishedCatalogueAndReplays() {
+        let run = Run("plantTaxonEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let species = run.app.staticTexts["catalogue.saved.species"]
+        let photo = run.app.images["catalogue.saved.photo"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(run.app.staticTexts["Fern"])
+        require(photo)
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        let change = run.app.buttons["collection.species.open"]
+        require(change)
+        if !change.isHittable { run.app.swipeUp() }
+        tap(run, "collection.species.open", "Change species")
+        let current = run.app.buttons["catalogue.species.fixture_fern"]
+        require(current)
+        XCTAssertFalse(current.isEnabled)
+        let search = run.app.textFields["catalogue.search"]
+        require(search)
+        search.tap()
+        search.typeText("Chamaedorea")
+        tap(run, "catalogue.species.fixture_palm")
+        require(run.app.staticTexts["Chamaedorea elegans"])
+        tap(run, "collection.species.confirm", "Confirm species change")
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry species change")
+        require(run.app.staticTexts["Palm"])
+        XCTAssertEqual(species.label, "Palm")
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertEqual(run.app.staticTexts["collection.light.current"].label, "Medium light")
+        XCTAssertEqual(run.app.staticTexts["collection.pot.type.current"].label, "Plastic")
+        require(photo)
+        require(previous)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }

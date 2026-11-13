@@ -8,10 +8,11 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
-    case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit
+    case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
-    var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || testsConditionEdit }
+    var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
+    var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || changesCareContext }
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -337,6 +338,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         return owner
     }
 
+    private static let fernTaxon = "32e72c49-4e06-434a-86dd-bbf8a5cb209e"
+    private static let palmTaxon = "42e72c49-4e06-434a-86dd-bbf8a5cb209e"
     private static let historyObservationIDs = [
         UUID(uuidString: "12340000-0000-4000-8000-000000000001")!,
         UUID(uuidString: "12340000-0000-4000-8000-000000000002")!
@@ -409,28 +412,42 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                       request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
                       let locale = request.value(forHTTPHeaderField: "X-Client-Locale"),
                       ["pl", "en"].contains(locale) else { throw CatalogueUIFixtureError.invalidRequest }
-                let taxon = "32e72c49-4e06-434a-86dd-bbf8a5cb209e"
                 let fern: [String: Any] = [
-                    "plant_id": "fixture_fern", "taxon_id": taxon,
+                    "plant_id": "fixture_fern", "taxon_id": Self.fernTaxon,
                     "display_name": locale == "pl" ? "Paproć" : "Fern",
                     "scientific_name": "Nephrolepis exaltata", "description": NSNull(),
                     "hero_image": NSNull(), "care_profile_available": false
                 ]
-                if [path + "/fixture_fern", path + "/" + taxon].contains(url.path), query.isEmpty {
+                if [path + "/fixture_fern", path + "/" + Self.fernTaxon].contains(url.path), query.isEmpty {
                     return Reply(status: 200, data: try json(fern))
+                }
+                let palm: [String: Any] = [
+                    "plant_id": "fixture_palm", "taxon_id": Self.palmTaxon,
+                    "display_name": locale == "pl" ? "Palma" : "Palm",
+                    "scientific_name": "Chamaedorea elegans", "description": NSNull(),
+                    "hero_image": NSNull(), "care_profile_available": false
+                ]
+                if ledger.scenario == .plantTaxonEdit, query.isEmpty,
+                   [path + "/fixture_palm", path + "/" + Self.palmTaxon].contains(url.path) {
+                    return Reply(status: 200, data: try json(palm))
                 }
                 guard url.path == path, query.map(\.name) == ["q", "limit", "offset"],
                       let term = query[0].value, let limit = query[1].value.flatMap(Int.init),
                       let offset = query[2].value.flatMap(Int.init), (1...200).contains(limit), offset >= 0 else {
                     throw CatalogueUIFixtureError.invalidRequest
                 }
-                let matches = term.isEmpty || ["Fern", "Paproć", "Nephrolepis exaltata"].contains {
-                    $0.localizedStandardContains(term)
+                let published = ledger.scenario == .plantTaxonEdit ? [fern, palm] : [fern]
+                let matches = published.filter { card in
+                    term.isEmpty || ["display_name", "scientific_name"].contains {
+                        (card[$0] as? String)?.localizedStandardContains(term) == true
+                    } || (card["plant_id"] as? String == "fixture_fern" && ["Fern", "Paproć"].contains {
+                        $0.localizedStandardContains(term)
+                    })
                 }
                 return Reply(status: 200, data: try json([
                     "release_version": "fixture", "kb_release_id": NSNull(), "locale": locale,
-                    "total": matches ? 1 : 0, "limit": limit, "offset": offset,
-                    "items": matches && offset == 0 ? [fern] : []
+                    "total": matches.count, "limit": limit, "offset": offset,
+                    "items": Array(matches.dropFirst(offset).prefix(limit))
                 ]))
             }
             let caller = try owner(request)
@@ -485,11 +502,14 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                    let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),
                    var data = changes[index]["data"] as? [String: Any] {
                     data["revision"] = 4 + ledger.tick
-                    let conditionsChanged = ledger.scenario.testsConditionEdit && ledger.tick > 0
+                    let conditionsChanged = ledger.scenario.changesCareContext && ledger.tick > 0
                     let snapshot = conditionsChanged ? Self.historyObservationIDs[1] : plant.id
                     data["care_revision"] = conditionsChanged ? 3 : 2
                     data["current_condition_snapshot_id"] = snapshot.uuidString
                     if ledger.scenario.testsPlantEdit { data["main_photo_id"] = plant.id.uuidString }
+                    if ledger.scenario == .plantTaxonEdit {
+                        data["taxon_id"] = plant.species == "fixture_palm" ? Self.palmTaxon : Self.fernTaxon
+                    }
                     changes[index]["data"] = data
                     for (index, id) in Self.historyObservationIDs.enumerated() {
                         let older = index == 0
@@ -503,7 +523,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                                      "created_at": older ? "2026-10-29T12:00:00Z" : "2026-10-30T12:00:00Z"]
                         ])
                     }
-                    if ledger.scenario.testsConditionEdit {
+                    if ledger.scenario.changesCareContext {
                         let lightChanged = conditionsChanged && ledger.scenario == .plantLightEdit
                         let drainageChanged = conditionsChanged && ledger.scenario == .plantDrainageEdit
                         let wateringChanged = conditionsChanged && ledger.scenario == .plantWateringEdit
@@ -680,11 +700,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             }
         }
         let name: String?
+        var species = first.species
         let snapshot: UUID
         let careRevision: Int
         switch edit.change {
         case let .name(requested):
-            guard !ledger.scenario.testsConditionEdit else { throw CatalogueUIFixtureError.invalidRequest }
+            guard !ledger.scenario.changesCareContext else { throw CatalogueUIFixtureError.invalidRequest }
             name = requested
             snapshot = first.id
             careRevision = 2
@@ -695,12 +716,17 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             name = first.name
             snapshot = Self.historyObservationIDs[1]
             careRevision = 3
+        case let .taxon(taxon) where ledger.scenario == .plantTaxonEdit && taxon.uuidString.lowercased() == Self.palmTaxon:
+            species = "fixture_palm"
+            name = first.name
+            snapshot = Self.historyObservationIDs[1]
+            careRevision = 3
         default:
             throw CatalogueUIFixtureError.invalidRequest
         }
         next.tick += 1
         let stamp = Self.time(next.tick)
-        next.plants[0] = Plant(owner: caller, id: first.id, species: first.species, name: name, timestamp: stamp)
+        next.plants[0] = Plant(owner: caller, id: first.id, species: species, name: name, timestamp: stamp)
         let receipt = try json(["plant_id": first.id.uuidString, "revision": 4 + next.tick, "care_revision": careRevision,
                                 "condition_snapshot_id": snapshot.uuidString, "watermark": stamp])
         next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: first.id)

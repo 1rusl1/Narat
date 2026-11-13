@@ -779,6 +779,12 @@ struct CatalogueCollectionView: View {
 }
 
 private struct CatalogueCollectionCardView: View {
+    private struct SpeciesRead: Equatable {
+        let slug: String?
+        let taxonId: UUID?
+        let locale: SupportedLocale
+    }
+
     private enum CorrectionPhase: Equatable {
         case loading, ready, saving, pending(CommandEnvelopeDTO), blocked, failed
     }
@@ -824,6 +830,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var editingName = false
     @State private var nameInput = ""
     @State private var rejectedNameInput: String?
+    @State private var editingSpecies = false
     @State private var editingLight = false
     @State private var editingDrainage = false
     @State private var editingWatering = false
@@ -854,19 +861,26 @@ private struct CatalogueCollectionCardView: View {
     @State private var showingWateringUndo = false
 
     private var locale: SupportedLocale { polish ? .pl : .en }
+    private var speciesRead: SpeciesRead { SpeciesRead(slug: card.speciesSlug, taxonId: card.taxonId, locale: locale) }
+    private var currentSpecies: PublishedSpeciesCard? {
+        guard let species, species.id == card.speciesSlug,
+              card.taxonId == nil || species.taxonId == card.taxonId else { return nil }
+        return species
+    }
 
     var body: some View {
         let requestedAdvice = adviceRequest
+        let requestedSpecies = speciesRead
         if connection.snapshot == expected {
             if checkingDeletion || deleting || pendingDeletion != nil {
                 deletionStatus
             } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(card.personalName ?? species?.displayName ?? (polish ? "Roślina" : "Plant"))
+                    Text(card.personalName ?? currentSpecies?.displayName ?? (polish ? "Roślina" : "Plant"))
                         .font(.title)
                         .accessibilityIdentifier("catalogue.saved.name")
-                    if let name = species?.displayName ?? card.speciesSlug {
+                    if let name = currentSpecies?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
                     }
                     if !polish {
@@ -950,10 +964,7 @@ private struct CatalogueCollectionCardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
-            .task(id: locale) {
-                guard let slug = card.speciesSlug, let api = connection.apiClient else { return }
-                species = try? await api.fetchPublishedSpecies(slug: slug, locale: locale)
-            }
+            .task(id: requestedSpecies) { await loadCardSpecies(requestedSpecies) }
             .task(id: attempt) { await loadCare() }
             .task(id: [attempt, card.careRevision]) { await loadFirstAidJournal() }
             .task(id: card.careRevision) { await loadAnalysisHistory() }
@@ -1001,6 +1012,23 @@ private struct CatalogueCollectionCardView: View {
                     Button(potType.label) { Task { await editPlant(.potType(potType)) } }
                 }
                 Button("Cancel", role: .cancel) {}
+            }
+            .sheet(isPresented: $editingSpecies) {
+                if connection.snapshot == expected {
+                    NavigationStack {
+                        GuestCatalogueView(
+                            connection: connection, polish: false,
+                            speciesPicker: .init(taxonId: card.taxonId, slug: card.speciesSlug) { taxonId in
+                                guard connection.snapshot == expected else { return }
+                                editingSpecies = false
+                                Task { await editPlant(.taxon(taxonId)) }
+                            },
+                            back: { editingSpecies = false }
+                        )
+                        .navigationTitle("Change species")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                }
             }
             .alert(
                 polish ? "Usunąć tę roślinę?" : "Delete this plant?", isPresented: $deleteConfirmation
@@ -1156,11 +1184,27 @@ private struct CatalogueCollectionCardView: View {
             }
             Button("Edit pot type") { editingPotType = true }
                 .accessibilityIdentifier("collection.pot.type.open")
+            Button("Change species") { editingSpecies = true }
+                .accessibilityIdentifier("collection.species.open")
         }
         if renameFailed {
             Text("Couldn’t save the plant edit.")
                 .accessibilityIdentifier("collection.rename.failed")
         }
+    }
+
+    private func loadCardSpecies(_ requested: SpeciesRead) async {
+        guard let api = connection.apiClient else { return }
+        let loaded: PublishedSpeciesCard?
+        if let taxonId = requested.taxonId {
+            loaded = try? await api.fetchPublishedSpecies(taxonId: taxonId, locale: requested.locale)
+        } else if let slug = requested.slug {
+            loaded = try? await api.fetchPublishedSpecies(slug: slug, locale: requested.locale)
+        } else {
+            loaded = nil
+        }
+        guard !Task.isCancelled, connection.snapshot == expected else { return }
+        species = loaded
     }
 
     private func loadRename() async {
@@ -1678,6 +1722,16 @@ private struct WateringDateEditor: View {
 }
 
 struct GuestCatalogueView: View {
+    struct SpeciesPicker {
+        let taxonId: UUID?
+        let slug: String?
+        let select: (UUID) -> Void
+
+        func isCurrent(_ card: PublishedSpeciesCard) -> Bool {
+            taxonId.map { card.taxonId == $0 } ?? (card.id == slug)
+        }
+    }
+
     private struct Search: Equatable {
         let locale: SupportedLocale
         let query: String
@@ -1693,6 +1747,7 @@ struct GuestCatalogueView: View {
 
     let connection: CatalogueConnection
     let polish: Bool
+    var speciesPicker: SpeciesPicker? = nil
     let back: () -> Void
     @State private var cards: [PublishedSpeciesCard] = []
     @State private var page: PublishedCataloguePage?
@@ -1724,10 +1779,10 @@ struct GuestCatalogueView: View {
             } else {
                 searchResults
             }
-            Button(polish ? "Wstecz" : "Back", action: back)
+            Button(speciesPicker == nil ? (polish ? "Wstecz" : "Back") : "Cancel", action: back)
                 .accessibilityIdentifier("catalogue.back")
         }
-        .task { await restoreSelection() }
+        .task { if speciesPicker == nil { await restoreSelection() } }
         .task(id: search) { await loadCatalogue(search) }
         .task(id: detail) { await loadSpecies(detail) }
     }
@@ -1759,6 +1814,7 @@ struct GuestCatalogueView: View {
                         }
                     }
                     .accessibilityIdentifier("catalogue.species." + card.id)
+                    .disabled(speciesPicker?.isCurrent(card) == true)
                 }
                 if searchFailed {
                     catalogueError { Task { await loadMore() } }
@@ -1773,7 +1829,21 @@ struct GuestCatalogueView: View {
 
     @ViewBuilder
     private func selectedSpecies(_ slug: String) -> some View {
-        if selectedCard?.id == slug || restoredSelection {
+        if let speciesPicker, let card = selectedCard, card.id == slug {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(card.displayName).font(.title)
+                    Text(card.scientificName).font(.subheadline)
+                    speciesDetails(card)
+                    Button("Confirm species change") { speciesPicker.select(card.taxonId) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(speciesPicker.isCurrent(card))
+                        .accessibilityIdentifier("collection.species.confirm")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+            }
+        } else if selectedCard?.id == slug || restoredSelection {
             let card = selectedCard
             ScrollView {
                 CatalogueSaveView(
@@ -1842,7 +1912,7 @@ struct GuestCatalogueView: View {
     private func beginNewPlantIntent() {
         guard !selectionLocked else { return }
         do {
-            if let expected = connection.snapshot,
+            if speciesPicker == nil, let expected = connection.snapshot,
                let flow = try connection.resumableFlow(expected: expected) {
                 guard try connection.forgetResumableFlow(
                     ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
@@ -1886,7 +1956,7 @@ struct GuestCatalogueView: View {
         do {
             if !requested.query.isEmpty { try await Task.sleep(for: .milliseconds(250)) }
             guard let api = connection.apiClient else { throw NativeAuthFailure.configurationMissing }
-            try await connection.updateClientLocale(requested.locale.rawValue)
+            if speciesPicker == nil { try await connection.updateClientLocale(requested.locale.rawValue) }
             let first = try await api.searchPublishedCatalogue(
                 query: requested.query, locale: requested.locale, limit: 50, offset: 0
             )
