@@ -2020,9 +2020,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-v13-plant-delete-data-pass: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 93.47 с, проверки — 86.99 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [v13-plant-delete-data-pass](validation/automation/tasks/v13-plant-delete-data-pass.md).
+v13-plant-delete-queue: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 97.32 с, проверки — 89.30 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [v13-plant-delete-queue](validation/automation/tasks/v13-plant-delete-queue.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
