@@ -128,6 +128,50 @@ END;
 $$;
 SELECT '# V10_EDIT_GET ' || wire::text FROM v10_edit_get;
 
+-- Exercise the private refresh prerequisite on the same sourced test profile.
+DO $$
+DECLARE
+    v_owner UUID := '17300000-0000-4000-8000-000000000001';
+    v_plant UUID := '17300000-0000-4000-8000-000000000011';
+    v_evidence JSONB;
+BEGIN
+    IF to_regprocedure('public.resolve_basic_care_refresh_evidence(uuid,uuid,integer)') IS NULL THEN
+        RETURN;
+    END IF;
+    IF public.resolve_basic_care_refresh_evidence(v_owner,v_plant,2) IS NOT NULL THEN
+        RAISE EXCEPTION 'Unsourced refresh context must be rejected';
+    END IF;
+    UPDATE public.care_profiles
+    SET validation_report='{"refresh_conditions":{"fixture_soil_check":{"light_code":"low","light_source":"manual",
+        "light_confirmed":true,"watering_code":"unknown","drainage_code":"unknown","pot_type":"unknown"}}}',
+        profile=jsonb_set(profile,ARRAY['provenance','field_evidence','/actions/0/refresh_conditions'],
+            profile#>ARRAY['provenance','field_evidence','/actions/0'])
+    WHERE version='repeat-fixture';
+    v_evidence := public.resolve_basic_care_refresh_evidence(v_owner,v_plant,2);
+    IF v_evidence->>'action_id' IS DISTINCT FROM 'fixture_soil_check'
+       OR v_evidence->>'interval_days' IS DISTINCT FROM '7'
+       OR v_evidence->'applicability_source'->>'url' IS DISTINCT FROM 'https://example.test/repeat-fixture' THEN
+        RAISE EXCEPTION 'Expected sourced evidence for the current snapshot';
+    END IF;
+    BEGIN
+        PERFORM public.resolve_basic_care_refresh_evidence(v_owner,v_plant,1);
+        RAISE EXCEPTION 'Expected stale revision rejection';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+    BEGIN
+        PERFORM public.resolve_basic_care_refresh_evidence(
+            '17300000-0000-4000-8000-000000000002',v_plant,2);
+        RAISE EXCEPTION 'Expected foreign owner rejection';
+    EXCEPTION WHEN no_data_found THEN NULL;
+    END;
+    PERFORM public.execute_plant_edit_command(v_owner,gen_random_uuid(),v_plant,
+        '{"conditions":{"light_code":"medium"}}');
+    IF public.resolve_basic_care_refresh_evidence(v_owner,v_plant,3) IS NOT NULL THEN
+        RAISE EXCEPTION 'Changed conditions must invalidate the evidence';
+    END IF;
+END;
+$$;
+
 UPDATE public.care_profiles SET state='draft' WHERE version='repeat-fixture';
 SELECT is(pg_temp.check_read()->'profile', 'null'::jsonb, 'withdrawn profile cannot support the next repeat');
 SELECT is(pg_temp.check_read()->>'last_watered_on', '2025-10-21', 'withdrawal leaves journal history available');
