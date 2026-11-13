@@ -182,7 +182,7 @@
 - [ ] T082 [P] [US7] Написать тесты удаления растения/аккаунта, отзыва Apple-токена и изоляции данных при смене пользователя в `supabase/tests/account_deletion.test.sql` и `supabase/functions/_shared/tests/deletion_worker_test.ts`. Покрытие: FR-040, FR-041, SC-009.
 
 - [ ] T083 [US7] Реализовать удаление растения/аккаунта и обновление настроек профиля в `supabase/migrations/202610200020_deletion_commands.sql`, `supabase/functions/plants-api/account.ts` и `supabase/functions/maintenance/deletions.ts`. Команда profile.update валидирует reminder_hour_local целым 0..23, default 9, возвращает профиль через GET /me и sync. Покрытие: FR-039, FR-040, FR-041.
-  - V13: iOS подтверждает plant.delete через квитанцию и owner sync. Swift и EN XCUITest на фикстурах проверили потерю ответа, точный replay, сохранение соседней карточки и очистку формы удалённой карточки после закрытия коллекции и после перезапуска. Живое удаление и Storage purge открыты. [Handoff](../../docs/handoff_status.md#v13t083--удаление-карточки-в-ios).
+  - V13: iOS подтверждает plant.delete через квитанцию и owner sync. Swift и EN XCUITest на фикстурах проверили потерю ответа, точный replay, сохранение соседней карточки и очистку формы удалённой карточки. B подтвердил живое серверное удаление и точечную очистку Storage. Подписанный EN-прогон ждёт разрешённого входа и свежей выделенной карточки. [Handoff](../../docs/handoff_status.md#v13t083--удаление-карточки-в-ios).
 
 - [ ] T084 Обновить `ProfileView.swift`: аккаунт/подписка/квоты/период, язык, care reminder hour, локальный trial opt-in, управление покупкой/выход/удаление. Нет report/slots/room/season controls. Покрытие: FR-015, FR-016, FR-017, FR-018, FR-021, FR-035, FR-039, FR-040, FR-045.
 
