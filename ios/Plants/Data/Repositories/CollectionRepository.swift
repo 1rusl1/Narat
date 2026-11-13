@@ -98,6 +98,7 @@ struct CatalogueCardSummary: Decodable, Sendable, Equatable, Identifiable {
     let taxonId: UUID?
     let mainPhotoId: UUID?
     let personalName: String?
+    let currentConditionSnapshotId: UUID?
     let revision: Int
     let careRevision: Int
 
@@ -107,8 +108,48 @@ struct CatalogueCardSummary: Decodable, Sendable, Equatable, Identifiable {
         case taxonId = "taxon_id"
         case mainPhotoId = "main_photo_id"
         case personalName = "personal_name"
+        case currentConditionSnapshotId = "current_condition_snapshot_id"
         case careRevision = "care_revision"
     }
+}
+
+struct CatalogueAnalysisHistoryEntry: Decodable, Sendable {
+    enum Mode: String, Decodable, Sendable {
+        case identification, diagnosis, followUp = "follow_up"
+    }
+
+    enum Context: String, Decodable, Sendable {
+        case current, stale
+    }
+
+    let id: UUID
+    let plantId: UUID
+    let mode: Mode
+    let sourceSnapshotId: UUID
+    let sourceCareRevision: Int
+    let context: Context
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, mode
+        case plantId = "plant_id"
+        case sourceSnapshotId = "source_snapshot_id"
+        case sourceCareRevision = "source_care_revision"
+        case context = "context_state"
+        case createdAt = "created_at"
+    }
+
+    func usesPreviousConditions(of card: CatalogueCardSummary) -> Bool {
+        context == .stale || sourceCareRevision < card.careRevision
+            || card.currentConditionSnapshotId.map { $0 != sourceSnapshotId } == true
+    }
+}
+
+struct CatalogueAnalysisHistoryRow: Identifiable, Sendable {
+    let id: UUID
+    let mode: CatalogueAnalysisHistoryEntry.Mode
+    let date: Date
+    let previousConditions: Bool
 }
 
 struct CatalogueCollectionSnapshot: Sendable {
@@ -513,6 +554,33 @@ public struct CollectionRepository: Sendable {
 
     func collectionFirstAidHistory(plantId: UUID, context: SyncSessionLease) async throws -> [CatalogueCareJournalEntry] {
         try await collectionCareHistory(plantId: plantId, actionCode: "check_soil", context: context)
+    }
+
+    func collectionAnalysisHistory(
+        plantId: UUID, context: SyncSessionLease
+    ) async throws -> [CatalogueAnalysisHistoryRow] {
+        let snapshot = try await store.analysisHistorySnapshot(
+            plantId: plantId, context: context, authority: apiClient.syncAuthority
+        )
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            try Task.checkCancellation()
+            let card = try Self.decodeCard(snapshot.plant)
+            let decoder = JSONDecoder()
+            return snapshot.analyses.compactMap { row -> (row: CatalogueAnalysisHistoryRow, instant: Int64)? in
+                guard let entry = try? decoder.decode(CatalogueAnalysisHistoryEntry.self, from: Data(row.payloadJSON.utf8)),
+                      entry.id == row.id, entry.plantId == card.id,
+                      (1...card.careRevision).contains(entry.sourceCareRevision),
+                      let instant = SQLTimestamp.microseconds(from: entry.createdAt) else { return nil }
+                let date = Date(timeIntervalSince1970: Double(instant) / 1_000_000)
+                let item = CatalogueAnalysisHistoryRow(
+                    id: entry.id, mode: entry.mode, date: date, previousConditions: entry.usesPreviousConditions(of: card)
+                )
+                return (item, instant)
+            }.sorted {
+                if $0.instant == $1.instant { return $0.row.id.uuidString < $1.row.id.uuidString }
+                return $0.instant > $1.instant
+            }.map(\.row)
+        }
     }
 
     private func collectionCareHistory(

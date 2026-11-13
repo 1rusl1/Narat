@@ -813,6 +813,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
     @State private var history: [CatalogueCareJournalEntry]?
+    @State private var analysisHistory: [CatalogueAnalysisHistoryRow] = []
     @State private var firstAid: CatalogueFirstAidSnapshot?
     @State private var firstAidHistory: [CatalogueCareJournalEntry] = []
     @State private var pendingFirstAid: FirstAidRecordCommand?
@@ -915,6 +916,7 @@ private struct CatalogueCollectionCardView: View {
                                 adviceRequest += 1
                             }
                         }
+                        analysisHistorySection
                     }
                     Button(polish ? "Usuń roślinę" : "Delete plant", role: .destructive) {
                         deleteConfirmation = true
@@ -932,6 +934,7 @@ private struct CatalogueCollectionCardView: View {
             }
             .task(id: attempt) { await loadCare() }
             .task(id: attempt) { await loadFirstAidJournal() }
+            .task { await loadAnalysisHistory() }
             .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
             .task(id: firstAid?.accessUntil) {
                 guard let expiry = firstAid?.accessUntil else { return }
@@ -1048,6 +1051,46 @@ private struct CatalogueCollectionCardView: View {
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             deletionFailed = true
+        }
+    }
+
+    @ViewBuilder
+    private var analysisHistorySection: some View {
+        if !analysisHistory.isEmpty {
+            Text("Analysis history").font(.headline)
+            ForEach(analysisHistory) { item in
+                let title = switch item.mode {
+                case .identification: "Species identification"
+                case .diagnosis: "Diagnosis"
+                case .followUp: "Follow-up analysis"
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                    Text(item.date, format: .dateTime.month(.abbreviated).day().year().locale(locale.locale))
+                        .font(.caption)
+                    if item.previousConditions {
+                        Text("Based on previous conditions")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("collection.analysis.previous." + item.id.uuidString.lowercased())
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("collection.analysis.history." + item.id.uuidString.lowercased())
+            }
+        }
+    }
+
+    private func loadAnalysisHistory() async {
+        guard !polish, let repository = connection.repository else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let rows = try await repository.collectionAnalysisHistory(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            analysisHistory = rows
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            analysisHistory = []
         }
     }
 

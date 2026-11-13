@@ -174,6 +174,36 @@ final class CatalogueSaveUITests: XCTestCase {
         }
     }
 
+    @MainActor func testAnalysisHistoryMarksOnlyPreviousConditionsAfterRestart() {
+        let run = Run("analysisHistory", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["Analysis history"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let olderId = "12340000-0000-4000-8000-000000000001"
+        let currentId = "12340000-0000-4000-8000-000000000002"
+        let older = run.app.otherElements["collection.analysis.history." + olderId]
+        let current = run.app.otherElements["collection.analysis.history." + currentId]
+        require(older.staticTexts["Species identification"])
+        require(older.staticTexts["Oct 29, 2026"])
+        require(older.staticTexts["collection.analysis.previous." + olderId])
+        require(current.staticTexts["Diagnosis"])
+        require(current.staticTexts["Oct 30, 2026"])
+        XCTAssertFalse(current.staticTexts["collection.analysis.previous." + currentId].exists)
+        XCTAssertLessThan(current.frame.minY, older.frame.minY)
+
+        tap(run, "collection.back", "Back")
+        tap(run, "Fixture 2")
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertFalse(older.exists)
+        XCTAssertFalse(current.exists)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }

@@ -7,7 +7,7 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
-    case firstAidControl, trialReminder, plantDeletion, photoHistory
+    case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -474,6 +474,31 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "revision": 1, "care_revision": 1,
                         "created_at": plant.timestamp
                      ]]
+                }
+                if ledger.scenario == .analysisHistory,
+                   let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
+                   let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),
+                   var data = changes[index]["data"] as? [String: Any] {
+                    data["revision"] = 4
+                    data["care_revision"] = 2
+                    data["current_condition_snapshot_id"] = plant.id.uuidString
+                    changes[index]["data"] = data
+                    for (index, id) in Self.historyObservationIDs.enumerated() {
+                        let older = index == 0
+                        changes.append([
+                            "entity_type": "analysis_summaries", "id": id.uuidString,
+                            "updated_at": plant.timestamp, "deleted_at": NSNull(),
+                            "data": ["id": id.uuidString, "plant_id": plant.id.uuidString,
+                                     "mode": older ? "identification" : "diagnosis",
+                                     "source_snapshot_id": older ? id.uuidString : plant.id.uuidString,
+                                     "source_care_revision": older ? 1 : 2, "context_state": "current",
+                                     "created_at": older ? "2026-10-29T12:00:00Z" : "2026-10-30T12:00:00Z"]
+                        ])
+                    }
+                    changes.sort {
+                        ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
+                            < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
+                    }
                 }
                 if ledger.scenario == .photoHistory, let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
                    let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),

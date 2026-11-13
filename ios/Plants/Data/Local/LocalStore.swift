@@ -1644,6 +1644,20 @@ public actor LocalStore {
         }
     }
 
+    func analysisHistorySnapshot(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> (plant: SyncItemDTO, analyses: [SyncItemDTO]) {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            let ownerId = context.ownerId
+            let plants = try activeSyncedEntities(ownerId: ownerId, entityType: "plants", in: disk)
+            guard let plant = plants.first(where: { $0.id == plantId })
+            else { throw SyncWireValidationError.invalidPage }
+            let analyses = try activeSyncedEntities(ownerId: ownerId, entityType: "analysis_summaries", in: disk)
+            return (plant, analyses)
+        }
+    }
+
     func firstAidControlSnapshot(
         plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> (entitlement: SyncWireEntitlementDTO?, controls: [SyncItemDTO], observations: [SyncItemDTO])? {
