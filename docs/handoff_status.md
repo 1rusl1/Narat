@@ -121,21 +121,17 @@ Live-проверка доставки охватила открытие кар�
 
 **Подписанный EN-прогон.** На выделенном Simulator для сборки `ca73040` через `simctl privacy revoke camera` выставлен запрет. Точечное чтение TCC подтвердило `kTCCServiceCamera|0` перед обоими холодными запусками и после навигации. По ветке `Identify species from photo` открылся системный picker с 13 изображениями. По независимой ветке каталога найден и выбран `Monstera deliciosa`. Доказательства в `DerivedData/TV13CameraDenial/`. Запрет тестовой сборки сброшен, отсутствие строки TCC проверено. Изменены handoff, отчёт приёмки и `tasks.md`. Diff-check прошёл, прежние сборка и тесты переиспользованы.
 
-**Следующий шаг.** В текущем клиенте есть системный `PhotosPicker` и отдельный маршрут каталога. Вход съёмки отсутствует. Для полного FR-003/FR-033 подключить съёмку к выбору фото, затем на физическом iPhone проверить системный запрос, отказ из приложения, галерею, каталог и успешный захват. Покрытие V13/V17 и T098 частичное. StoreKit и 024 на паузе. Недельный остаток Codex 11%. [Отчёт](validation/mvp-acceptance.md#v13v17--галерея-и-каталог-при-запрете-camera).
+В сборке `ca73040` входа съёмки ещё не было. Его реализация и новая проверка системного запроса описаны ниже. [Отчёт](validation/mvp-acceptance.md#v13v17--галерея-и-каталог-при-запрете-camera).
 
-### V17/T031 — вход съёмки, остановка на пороге 10%
+### V17/T031 — вход съёмки в iOS
 
-В `ios/Plants/Features/Analysis/CareQuestionsView.swift` начато подключение EN-кнопки `Take photo`, проверки разрешения и доступности и возврата к галерее. Выбранный снимок направляется в существующий `AnalysisFlowModel.selectPhotoData`. Работа остановлена по команде координатора при 10%. Адаптер `PlantCameraPicker` и его `Result` ещё отсутствуют. Изменённый исходник пока не собирается из-за этих ссылок.
+В `CareQuestionsView.swift` завершён EN-вход `Take photo`. Системное разрешение проверяется через AVFoundation, съёмка использует `UIImagePickerController`. Снимок направляется в существующий `AnalysisFlowModel.selectPhotoData`. При отказе или отсутствии камеры экран сохраняет доступ к галерее. Текст системного разрешения уточнён в `ios/project.yml` и Xcode project.
 
-**Проверки.** Сверены маршруты выбора фото, API модели и существующий `NSCameraUsageDescription`. После правки прошёл `git diff --check`. Сборка, тесты и Simulator в этом этапе не запускались. Предыдущий EN-прогон галереи и каталога с системным запретом Camera относится к `dccfbe5`. Физический iPhone открыт. Включение живого анализа в текущем приложении ограничено DEBUG Simulator, для проверки захвата потребуется подписанная конфигурация устройства с доступным существующим фото-маршрутом.
+**Фикстуры.** `V17Camera01` прошёл, включая 16 FirstHelp XCTest и один XCUITest welcome. Новый тест в `FirstHelpUnitTests.swift` покрывает разрешение, системный отказ, restriction и отсутствие оборудования. Diff-check прошёл.
 
-**Следующий шаг.** В том же Swift-файле добавить `PlantCameraPicker` на `UIImagePickerController` с результатами `.photo(Data)`, `.unreadable` и `.unavailable` и выходом при отмене. Добавить адресную проверку `PhotoCameraAccess`, затем выполнить команду:
+**Simulator.** 13 ноября 2026 подписанная EN-сборка с актуальным `NSCameraUsageDescription` показала штатный системный запрос после нажатия `Take photo`. После отказа показала уведомление и открыла системную галерею с 13 изображениями. После прогона разрешение тестовой сборки сброшено. Доказательства в `DerivedData/TV17Camera/`. Успешный захват, отсутствие оборудования в UI и live-анализ с камеры не проверялись. Ветку отсутствия оборудования покрывает XCTest.
 
-```sh
-xcodebuild -project ios/Plants.xcodeproj -scheme Plants -destination 'platform=iOS Simulator,id=32009F39-32EF-426B-A91E-31B368D6C27E' -derivedDataPath DerivedData/Automation -clonedSourcePackagesDirPath DerivedData/Automation/SourcePackages -packageCachePath DerivedData/Automation/PackageCache -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO -only-testing:PlantsTests/FirstHelpUnitTests test
-```
-
-V17, T031 и T098 открыты. StoreKit и 024 на паузе.
+**Следующий шаг.** Собрать подписанную конфигурацию для физического iPhone с доступным маршрутом анализа и проверить разрешение, отмену съёмки и успешный захват с передачей снимка в анализ. V17, T031 и T098 открыты. StoreKit и 024 на паузе.
 
 ### V12/T133 — локальное напоминание об окончании trial
 

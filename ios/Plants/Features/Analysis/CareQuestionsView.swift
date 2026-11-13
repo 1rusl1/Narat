@@ -9,6 +9,61 @@ struct AnalysisAccessSource {
     let guestCredential: String?
 }
 
+private struct PlantCameraPicker: UIViewControllerRepresentable {
+    enum Result {
+        case photo(Data)
+        case unreadable
+        case unavailable
+    }
+
+    let finish: @MainActor (Result?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(finish: finish) }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            let coordinator = context.coordinator
+            Task { @MainActor in coordinator.complete(.unavailable) }
+            return UIViewController()
+        }
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        private var finish: (@MainActor (Result?) -> Void)?
+
+        init(finish: @escaping @MainActor (Result?) -> Void) {
+            self.finish = finish
+        }
+
+        @MainActor
+        func complete(_ result: Result?) {
+            let callback = finish
+            finish = nil
+            callback?(result)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            complete(nil)
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            let image = info[.originalImage] as? UIImage
+            let data = image?.jpegData(compressionQuality: 0.95)
+            complete(data.map(Result.photo) ?? .unreadable)
+        }
+    }
+}
+
 private struct AnalysisQuotaGate<Content: View>: View {
     let source: AnalysisAccessSource
     let mode: AnalysisAccessWireDTO.AnalysisMode

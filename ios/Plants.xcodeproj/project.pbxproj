@@ -731,7 +731,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Configuration/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Narat;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to identify plants, inspect symptoms, and estimate lighting conditions.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to photograph plants for identification or symptom analysis.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Narat saves your plant diary photos to your photo library when requested.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Narat accesses your photo library to analyze plant photos and attach diary pictures.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -881,7 +881,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Configuration/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Narat;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to identify plants, inspect symptoms, and estimate lighting conditions.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to photograph plants for identification or symptom analysis.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Narat saves your plant diary photos to your photo library when requested.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Narat accesses your photo library to analyze plant photos and attach diary pictures.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

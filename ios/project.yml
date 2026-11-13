@@ -69,7 +69,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_NSCameraUsageDescription: "Narat uses the camera to identify plants, inspect symptoms, and estimate lighting conditions."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Narat uses the camera to photograph plants for identification or symptom analysis."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Narat accesses your photo library to analyze plant photos and attach diary pictures."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Narat saves your plant diary photos to your photo library when requested."
         GENERATE_INFOPLIST_FILE: YES

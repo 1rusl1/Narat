@@ -5,6 +5,16 @@ import ImageIO
 
 @MainActor
 final class FirstHelpUnitTests: XCTestCase {
+    func testPhotoCameraAccessRequiresBothHardwareAndPermission() {
+        XCTAssertEqual(PhotoCameraAccess(available: true, authorization: .authorized), .ready)
+        XCTAssertEqual(PhotoCameraAccess(available: true, authorization: .notDetermined), .request)
+        XCTAssertEqual(PhotoCameraAccess(available: true, authorization: .denied), .denied)
+        XCTAssertEqual(PhotoCameraAccess(available: true, authorization: .restricted), .denied)
+        XCTAssertEqual(PhotoCameraAccess(available: false, authorization: .authorized), .unavailable)
+        XCTAssertEqual(PhotoCameraAccess(available: false, authorization: .notDetermined), .unavailable)
+        XCTAssertEqual(PhotoCameraAccess(available: false, authorization: .denied), .denied)
+    }
+
     // Image data is a test fixture only; production must never offer generated photos.
     private func photoFixture(largeOver10MB: Bool = false) -> Data {
         let size = CGSize(width: 600, height: 800)
