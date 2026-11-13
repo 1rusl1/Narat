@@ -823,6 +823,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var renameFailed = false
     @State private var editingName = false
     @State private var nameInput = ""
+    @State private var rejectedNameInput: String?
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
     @State private var history: [CatalogueCareJournalEntry]?
@@ -1093,7 +1094,7 @@ private struct CatalogueCollectionCardView: View {
                 .accessibilityIdentifier("collection.rename.retry")
         } else if !loadingRename {
             Button("Edit name") {
-                nameInput = card.personalName ?? ""
+                nameInput = rejectedNameInput ?? card.personalName ?? ""
                 editingName = true
             }
             .accessibilityIdentifier("collection.rename.open")
@@ -1138,16 +1139,15 @@ private struct CatalogueCollectionCardView: View {
             let remaining = try await repository.pendingPlantRename(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             pendingRename = remaining
-            if let updated {
-                onRenamed(updated)
-                let requested = PlantRenameCommand(command)?.personalName
-                renameFailed = updated.personalName != requested
-            } else if remaining == nil {
-                renameFailed = true
-            }
+            guard remaining == nil else { return }
+            let requested = PlantRenameCommand(command)?.personalName
+            if let updated { onRenamed(updated) }
+            renameFailed = updated == nil || updated?.personalName != requested
+            rejectedNameInput = renameFailed ? input ?? requested : nil
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             renameFailed = true
+            if pendingRename == nil, let input { rejectedNameInput = input }
         }
     }
 

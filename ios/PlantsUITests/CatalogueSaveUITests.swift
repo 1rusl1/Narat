@@ -213,14 +213,14 @@ final class CatalogueSaveUITests: XCTestCase {
         let cardId = identity(run, "catalogue.saved.card.")
         require(run.app.images["catalogue.saved.photo"])
         tap(run, "collection.rename.open", "Edit name")
-        let alert = run.app.alerts["Edit plant name"]
+        let alert = run.app.alerts["Edit plant name"].firstMatch
         require(alert)
         let input = alert.textFields.firstMatch
         enabled(input)
         XCTAssertEqual(input.value as? String, "Fixture 1")
         input.tap()
         input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Fixture 1".count))
-        let save = alert.buttons["Save name"].firstMatch
+        let save = run.app.buttons.matching(identifier: "collection.rename.save").firstMatch
         XCTAssertFalse(save.isEnabled)
         input.typeText("  North window fern  ")
         save.tap()
@@ -242,6 +242,42 @@ final class CatalogueSaveUITests: XCTestCase {
         tap(run, "collection.back", "Back")
         enabled(run.app.buttons["North window fern"])
         enabled(run.app.buttons["Fixture 2"])
+    }
+
+    @MainActor func testPlantRenameReopensRejectedInputAndSendsCorrectedName() {
+        let run = Run("plantRenameRejected", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        tap(run, "collection.rename.open", "Edit name")
+        let alert = run.app.alerts["Edit plant name"].firstMatch
+        let input = alert.textFields.firstMatch
+        let save = run.app.buttons.matching(identifier: "collection.rename.save").firstMatch
+        enabled(input)
+        input.tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Fixture 1".count))
+        let rejected = "  North window fern  "
+        input.typeText(rejected)
+        save.tap()
+        require(run.app.staticTexts["collection.rename.failed"])
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+        XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
+
+        tap(run, "collection.rename.open", "Edit name")
+        enabled(input)
+        XCTAssertEqual(input.value as? String, rejected)
+        input.tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: rejected.count))
+        input.typeText("Window fern")
+        save.tap()
+        let name = run.app.staticTexts["catalogue.saved.name"]
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Window fern"), object: name)
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 15), .completed)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(run.app.staticTexts["collection.rename.failed"].exists)
+        XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
     }
 
     private enum Language: String {
