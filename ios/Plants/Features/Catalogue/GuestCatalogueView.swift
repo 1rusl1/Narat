@@ -773,8 +773,8 @@ struct CatalogueCollectionView: View {
 }
 
 private struct CatalogueCollectionCardView: View {
-    private enum CorrectionPhase {
-        case loading, ready, saving, pending, blocked, failed
+    private enum CorrectionPhase: Equatable {
+        case loading, ready, saving, pending(CommandEnvelopeDTO), blocked, failed
     }
 
     private enum FirstAidWrite {
@@ -830,6 +830,8 @@ private struct CatalogueCollectionCardView: View {
     @State private var adviceResponse: Int?
     @State private var correction: CorrectionPhase = .loading
     @State private var dateEdit: WateringDateEdit?
+    @State private var wateringUndoEntry: UUID?
+    @State private var showingWateringUndo = false
 
     private var locale: SupportedLocale { polish ? .pl : .en }
 
@@ -897,6 +899,13 @@ private struct CatalogueCollectionCardView: View {
                                 if correction == .ready, let edit = WateringDateEdit(entry) {
                                     Button("Correct watering date") { dateEdit = edit }
                                         .accessibilityIdentifier("collection.watering.correct." + entry.id.uuidString.lowercased())
+                                }
+                                if correction == .ready, entry.state == "active" {
+                                    Button("Undo watering") {
+                                        wateringUndoEntry = entry.id
+                                        showingWateringUndo = true
+                                    }
+                                    .accessibilityIdentifier("collection.watering.undo." + entry.id.uuidString.lowercased())
                                 }
                             }
                         }
@@ -967,6 +976,13 @@ private struct CatalogueCollectionCardView: View {
                     dateEdit = nil
                     Task { await correctDate(edit, to: date) }
                 }
+            }
+            .alert("Undo this watering?", isPresented: $showingWateringUndo, presenting: wateringUndoEntry) { entryId in
+                Button("Undo watering", role: .destructive) {
+                    Task { await enqueueWateringEdit(.undo(entryId)) }
+                }
+                .accessibilityIdentifier("collection.watering.undo.confirm")
+                Button("Cancel", role: .cancel) {}
             }
             }
         }
@@ -1182,10 +1198,11 @@ private struct CatalogueCollectionCardView: View {
         switch correction {
         case .saving:
             ProgressView("Saving watering date…")
-        case .pending:
-            Text("Watering date pending sync.")
+        case let .pending(command):
+            let undo = command.commandName == ManualWateringAction.undoCommand
+            Text(undo ? "Watering undo pending sync." : "Watering date pending sync.")
                 .accessibilityIdentifier("collection.watering.pending")
-            Button("Retry watering date") { Task { await retryCorrection() } }
+            Button(undo ? "Retry watering undo" : "Retry watering date") { Task { await retryCorrection() } }
                 .accessibilityIdentifier("collection.watering.retry")
         case .blocked:
             Text("Another watering change is pending.")
@@ -1235,22 +1252,24 @@ private struct CatalogueCollectionCardView: View {
         history = result
         historyFailed = false
         if let queued {
-            correction = queued.commandName == ManualWateringAction.correctionCommand ? .pending : .blocked
+            correction = queued.commandName == ManualWateringAction.correctionCommand
+                || queued.commandName == ManualWateringAction.undoCommand ? .pending(queued) : .blocked
         } else {
             correction = .ready
         }
     }
 
     private func correctDate(_ edit: WateringDateEdit, to date: Date) async {
+        await enqueueWateringEdit(.correction(entryId: edit.id, date: date, timezone: edit.timezone))
+    }
+
+    private func enqueueWateringEdit(_ action: ManualWateringAction) async {
         guard correction == .ready, let repository = connection.repository else { return }
         correction = .saving
         do {
             let lease = try await connection.collectionLease(expected: expected)
-            try await repository.enqueueWateringDateCorrection(
-                plantId: card.id, entryId: edit.id, date: date, timezone: edit.timezone, context: lease
-            )
-            guard connection.snapshot == expected else { return }
-            correction = .pending
+            try await repository.enqueueWateringEdit(action, plantId: card.id, context: lease)
+            try await loadHistory(repository, lease: lease)
             await retryCorrection()
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
@@ -1259,16 +1278,16 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func retryCorrection() async {
-        guard correction == .pending, let repository = connection.repository else { return }
+        guard case let .pending(command) = correction, let repository = connection.repository else { return }
         correction = .saving
         do {
             let lease = try await connection.collectionLease(expected: expected)
-            try await repository.retryWateringDateCorrection(plantId: card.id, context: lease)
+            try await repository.retryWateringEdit(command, context: lease)
             try await loadHistory(repository, lease: lease)
             if correction == .ready { adviceRequest += 1 }
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
-            correction = .pending
+            correction = .pending(command)
         }
     }
 

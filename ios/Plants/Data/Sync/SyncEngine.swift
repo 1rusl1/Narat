@@ -181,11 +181,19 @@ public actor SyncEngine {
                           ) == receipt.entryId else {
                         throw SyncWireValidationError.invalidPage
                     }
-                case let .careUndone(reversalId, watermark) where firstAidUndo:
+                case let .careUndone(reversalId, watermark):
                     try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
-                    guard try await store.confirmedFirstAidUndo(
-                        envelope, context: context, authority: apiClient.syncAuthority
-                    ) == reversalId else { throw SyncWireValidationError.invalidPage }
+                    let confirmed: UUID?
+                    if firstAidUndo {
+                        confirmed = try await store.confirmedFirstAidUndo(
+                            envelope, context: context, authority: apiClient.syncAuthority
+                        )
+                    } else {
+                        confirmed = try await store.confirmedWateringUndo(
+                            envelope, context: context, authority: apiClient.syncAuthority
+                        )
+                    }
+                    guard confirmed == reversalId else { throw SyncWireValidationError.invalidPage }
                 case let .firstAidObserved(receipt):
                     try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
                     guard let command = FirstAidObservationCommand(envelope: envelope),
@@ -208,7 +216,8 @@ public actor SyncEngine {
                 if let apiError = error as? APIErrorResponse {
                     let observation = envelope.commandName == FirstAidObservationCommand.name
                     let deletion = envelope.commandName == PlantDeleteReceipt.commandName
-                    if !receivedReceipt, (firstAidUndo || entry.commandName == FirstAidRecordCommand.name || observation || deletion),
+                    if !receivedReceipt, (entry.commandName == ManualWateringAction.undoCommand
+                                          || entry.commandName == FirstAidRecordCommand.name || observation || deletion),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
@@ -220,6 +229,10 @@ public actor SyncEngine {
                             } else {
                                 _ = try? await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
                             }
+                        }
+                        if entry.commandName == ManualWateringAction.undoCommand, !firstAidUndo {
+                            // Keep the existing journal until the current owner window is available.
+                            _ = try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
                         }
                         try await store.finishOutboxEntry(
                             operationId: entry.operationId, context: context, authority: apiClient.syncAuthority

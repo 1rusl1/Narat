@@ -452,6 +452,19 @@ public actor LocalStore {
         }
     }
 
+    func enqueueCollectionWateringUndo(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            guard let plantId = command.plantId,
+                  try activeSyncRow("plants", id: plantId, ownerId: context.ownerId, in: disk) != nil,
+                  try manualUndoEntry(command, actionCode: "water", ownerId: context.ownerId, in: disk)?.state == "active"
+            else { throw SyncWireValidationError.invalidPage }
+        }
+        try enqueueManualWatering(command, context: context, authority: authority)
+    }
+
     func pendingFirstAidRecord(
         plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> FirstAidRecordCommand? {
@@ -558,12 +571,18 @@ public actor LocalStore {
     private func firstAidUndoEntry(
         _ command: CommandEnvelopeDTO, ownerId: UUID, in disk: ModelContext
     ) throws -> CatalogueCareJournalEntry? {
+        try manualUndoEntry(command, actionCode: "check_soil", ownerId: ownerId, in: disk)
+    }
+
+    private func manualUndoEntry(
+        _ command: CommandEnvelopeDTO, actionCode: String, ownerId: UUID, in disk: ModelContext
+    ) throws -> CatalogueCareJournalEntry? {
         guard let plantId = command.plantId, case let .undo(entryId) = ManualWateringAction(envelope: command)
         else { return nil }
         guard let row = try activeSyncRow("care_entries", id: entryId, ownerId: ownerId, in: disk),
               let entry = try? JSONDecoder().decode(CatalogueCareJournalEntry.self, from: Data(row.payloadJSON.utf8)),
               entry.id == entryId, entry.plantId == plantId, entry.taskId == nil,
-              entry.actionCode == "check_soil", entry.hasCanonicalDatesAndState else { return nil }
+              entry.actionCode == actionCode, entry.hasCanonicalDatesAndState else { return nil }
         return entry
     }
 
@@ -669,13 +688,32 @@ public actor LocalStore {
                 else { return false }
                 return link.plantId == entry.plantId && link.actionEntryId == entry.id && link.state == "active"
             }) else { return nil }
-            let reversals = try activeSyncedEntities(ownerId: ownerId, entityType: "care_reversals", in: disk)
-            return reversals.first(where: { row in
-                guard let reversal = try? decoder.decode(CareJournalReversal.self, from: Data(row.payloadJSON.utf8))
-                else { return false }
-                return reversal.id == row.id && reversal.entryId == entry.id && reversal.operationId == command.operationId
-            })?.id
+            return try confirmedCareReversal(command, entryId: entry.id, ownerId: ownerId, in: disk)
         }
+    }
+
+    func confirmedWateringUndo(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> UUID? {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            let ownerId = context.ownerId
+            guard let entry = try manualUndoEntry(command, actionCode: "water", ownerId: ownerId, in: disk),
+                  entry.state == "voided" else { return nil }
+            return try confirmedCareReversal(command, entryId: entry.id, ownerId: ownerId, in: disk)
+        }
+    }
+
+    private func confirmedCareReversal(
+        _ command: CommandEnvelopeDTO, entryId: UUID, ownerId: UUID, in disk: ModelContext
+    ) throws -> UUID? {
+        let decoder = JSONDecoder()
+        let reversals = try activeSyncedEntities(ownerId: ownerId, entityType: "care_reversals", in: disk)
+        return reversals.first(where: { row in
+            guard let reversal = try? decoder.decode(CareJournalReversal.self, from: Data(row.payloadJSON.utf8))
+            else { return false }
+            return reversal.id == row.id && reversal.entryId == entryId && reversal.operationId == command.operationId
+        })?.id
     }
 
     func pendingFirstAidObservation(

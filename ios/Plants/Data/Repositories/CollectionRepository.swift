@@ -431,14 +431,40 @@ public struct CollectionRepository: Sendable {
         plantId: UUID, entryId: UUID, date: Date, timezone: TimeZone, context: SyncSessionLease
     ) async throws {
         guard date <= Date() else { throw SyncWireValidationError.invalidRequest }
-        let action = ManualWateringAction.correction(entryId: entryId, date: date, timezone: timezone)
+        try await enqueueWateringEdit(
+            .correction(entryId: entryId, date: date, timezone: timezone), plantId: plantId, context: context
+        )
+    }
+
+    func enqueueWateringUndo(plantId: UUID, entryId: UUID, context: SyncSessionLease) async throws {
+        try await enqueueWateringEdit(.undo(entryId), plantId: plantId, context: context)
+    }
+
+    func enqueueWateringEdit(_ action: ManualWateringAction, plantId: UUID, context: SyncSessionLease) async throws {
         let command = try action.envelope(plantId: plantId)
-        try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
+        switch action {
+        case .undo:
+            try await store.enqueueCollectionWateringUndo(command, context: context, authority: apiClient.syncAuthority)
+        case let .correctDate(_, occurredAt, _):
+            guard let date = SQLTimestamp.date(from: occurredAt), date <= Date()
+            else { throw SyncWireValidationError.invalidRequest }
+            try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
+        case .record:
+            throw SyncWireValidationError.invalidRequest
+        }
     }
 
     func retryWateringDateCorrection(plantId: UUID, context: SyncSessionLease) async throws {
-        guard let pending = try await pendingManualWatering(plantId: plantId, context: context),
-              pending.commandName == ManualWateringAction.correctionCommand else { return }
+        guard let command = try await pendingManualWatering(plantId: plantId, context: context),
+              command.commandName == ManualWateringAction.correctionCommand else { return }
+        try await retryWateringEdit(command, context: context)
+    }
+
+    func retryWateringEdit(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+        guard let plantId = command.plantId,
+              command.commandName == ManualWateringAction.correctionCommand
+                || command.commandName == ManualWateringAction.undoCommand,
+              try await pendingManualWatering(plantId: plantId, context: context) == command else { return }
         _ = try await syncEngine.flushOutbox(context: context)
     }
 
