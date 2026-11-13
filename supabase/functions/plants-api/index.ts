@@ -33,7 +33,7 @@ import {
   handleCreateAnalysisJob,
   handleGetAnalysisJob,
 } from "./analysis.ts";
-import { runPlantAnalysisPurge, runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
+import { runPlantDataPurge, runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
 import { createDiagnosisWorker } from "../analysis-worker/index.ts";
 import { createGuestPhotoApi } from "./guest-photo.ts";
 import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
@@ -58,7 +58,7 @@ export interface PlantsApiDependencies {
   diagnosisJobs?: ReturnType<typeof createDiagnosisJobs>;
   guestPhoto?: ReturnType<typeof createGuestPhotoApi>;
   handlePlantPurge?: (
-    req: Request, id: string, phase: "storage" | "analysis-data",
+    req: Request, id: string, phase: "storage" | "data",
   ) => Promise<Response>;
   handleGuestPhotoMaintenance?: (req: Request) => Promise<Response>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
@@ -189,11 +189,11 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     const firstAidMedia = normalizedPath.startsWith("/media/first-aid/");
     const guestRoute = /^\/(drafts|claims)(?:\/|$)/.test(normalizedPath);
     const purgeMatch = req.method === "POST"
-      ? normalizedPath.match(/^\/internal\/plant-deletions\/([^/]+)\/(storage|analysis-data)$/)
+      ? normalizedPath.match(/^\/internal\/plant-deletions\/([^/]+)\/(storage|data)$/)
       : null;
     try {
       if (purgeMatch && deps.handlePlantPurge) {
-        const phase = purgeMatch[2] === "storage" ? "storage" : "analysis-data";
+        const phase = purgeMatch[2] === "storage" ? "storage" : "data";
         return privateResponse(await deps.handlePlantPurge(req, purgeMatch[1], phase));
       }
       if (req.method === "POST" && normalizedPath === "/internal/guest-drafts/cleanup" &&
@@ -422,7 +422,7 @@ export function createProductionPlantsApiHandler(
       const jobId = requireUuid(id, "deletion_job_id");
       const admin = syncClient();
       if (admin) {
-        const runPurge = phase === "storage" ? runPlantStoragePurge : runPlantAnalysisPurge;
+        const runPurge = phase === "storage" ? runPlantStoragePurge : runPlantDataPurge;
         const result = await runPurge(admin, jobId).catch(() => undefined);
         if (result === null || result?.state === "not_found") {
           throw new ApiHttpError(404, "NOT_FOUND", "Plant deletion job not found.");

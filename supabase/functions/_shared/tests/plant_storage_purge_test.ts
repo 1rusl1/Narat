@@ -8,7 +8,7 @@ const host = "https://purge.example.test";
 const service = "fixture-service-role";
 const secret = "sb_secret_fixture";
 
-function fixture(analysisResult?: unknown) {
+function fixture(dataResult?: unknown) {
   const calls: string[] = [];
   let present = true;
   let fail = false;
@@ -39,8 +39,8 @@ function fixture(analysisResult?: unknown) {
         return Response.json([]);
       }
       assertEquals(await req.json(), { p_job_id: job });
-      if (path === "/rest/v1/rpc/purge_plant_deletion_analysis_data") {
-        return Response.json(analysisResult);
+      if (path === "/rest/v1/rpc/purge_plant_deletion_data") {
+        return Response.json(dataResult);
       }
       if (path === "/rest/v1/rpc/read_plant_deletion_storage") {
         if (invisibleJob) return Response.json(null);
@@ -138,9 +138,9 @@ Deno.test("storage purge trusts SQL verification after remove and rejects an inv
   assertEquals(f.calls, [read, remove, finish, read]);
 });
 
-Deno.test("analysis data cleanup only invokes its service RPC and validates its result", async () => {
-  const phase = "analysis-data";
-  const rpc = "/rest/v1/rpc/purge_plant_deletion_analysis_data";
+Deno.test("data cleanup only invokes its service RPC and validates its result", async () => {
+  const phase = "data";
+  const rpc = "/rest/v1/rpc/purge_plant_deletion_data";
   const f = fixture({ state: "cleared", cleared: 2 });
   const unauthorized = await f.run(
     { authorization: "Bearer owner-session" },
