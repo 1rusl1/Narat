@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-personal-text",
+      "description": "Review private text cleanup while preserving plant and observation tombstones.",
+      "candidate_base": "0e32bd1652699945a3d545dd8b513dd97ea53485",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "supabase/migrations/202611130038_plant_delete_personal_text.sql",
+        "supabase/tests/plant_delete_personal_text.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v13-plant-delete-personal-text.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Synthetic local fixtures only. Review owner and job scope, alive plant name guard, sync tombstones, exact replay and idempotency. No deployment, 024 or StoreKit changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-T1",
+          "description": "Clean diff.",
+          "mode": "local",
+          "checks": ["diff-check"]
+        },
+        {
+          "id": "V13-T2",
+          "description": "Clean and seeded upgrade verify scoped text cleanup, replay and unchanged tombstones.",
+          "mode": "fixture",
+          "checks": ["parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}
