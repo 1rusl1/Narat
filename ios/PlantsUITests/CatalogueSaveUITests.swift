@@ -135,6 +135,45 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertEqual(optIn.value as? String, "0")
     }
 
+    @MainActor func testPrivatePhotoHistoryReopensWithDatesAfterAccessExpiry() {
+        let run = Run("photoHistory", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.images["catalogue.saved.photo"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let observations = [
+            ("12340000-0000-4000-8000-000000000002", "Improved", "Oct 30, 2026"),
+            ("12340000-0000-4000-8000-000000000001", "Unchanged", "Oct 29, 2026")
+        ]
+        for (id, status, day) in observations {
+            let row = run.app.staticTexts["catalogue.saved.firstAid.observation." + id]
+            let date = run.app.staticTexts["catalogue.saved.firstAid.observation.date." + id]
+            let photo = run.app.images["catalogue.saved.firstAid.photo." + id]
+            require(row)
+            require(date)
+            require(photo)
+            XCTAssertEqual(row.label, "Observation · " + status)
+            XCTAssertEqual(date.label, day)
+        }
+        let latest = run.app.staticTexts["catalogue.saved.firstAid.observation.date." + observations[0].0]
+        let previous = run.app.staticTexts["catalogue.saved.firstAid.observation.date." + observations[1].0]
+        XCTAssertLessThan(latest.frame.minY, previous.frame.minY)
+        require(run.app.images["catalogue.saved.photo"])
+
+        tap(run, "collection.back", "Back")
+        tap(run, "Fixture 2")
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertFalse(run.app.images["catalogue.saved.photo"].exists)
+        for (id, _, _) in observations {
+            XCTAssertFalse(run.app.images["catalogue.saved.firstAid.photo." + id].exists)
+        }
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }

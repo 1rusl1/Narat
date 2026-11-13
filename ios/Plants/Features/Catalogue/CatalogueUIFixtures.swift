@@ -7,7 +7,7 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
-    case firstAidControl, trialReminder, plantDeletion
+    case firstAidControl, trialReminder, plantDeletion, photoHistory
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -259,7 +259,11 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var tick = 0
         var revoked: Set<UUID> = []
     }
-    struct Reply { let status: Int; let data: Data }
+    struct Reply {
+        let status: Int
+        let data: Data
+        var contentType = "application/json"
+    }
     private let lock = NSLock()
     private let file: URL
     let namespace: String
@@ -328,6 +332,28 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         }), !ledger.revoked.contains(owner) else { throw CatalogueUIFixtureError.invalidRequest }
         return owner
     }
+
+    private static let historyObservationIDs = [
+        UUID(uuidString: "12340000-0000-4000-8000-000000000001")!,
+        UUID(uuidString: "12340000-0000-4000-8000-000000000002")!
+    ]
+
+    private func photoHistory(for plant: Plant) -> [[String: Any]] {
+        Self.historyObservationIDs.enumerated().flatMap { index, id -> [[String: Any]] in
+            let observedAt = index == 0 ? "2026-10-29T12:00:00Z" : "2026-10-30T12:00:00Z"
+            let status = index == 0 ? "unchanged" : "improved"
+            return [
+                ["entity_type": "care_observations", "id": id.uuidString, "updated_at": plant.timestamp,
+                 "deleted_at": NSNull(), "data": ["id": id.uuidString, "plant_id": plant.id.uuidString,
+                    "first_aid_control_id": id.uuidString, "operation_id": id.uuidString,
+                    "photo_id": id.uuidString, "status_code": status, "observed_at": observedAt]],
+                ["entity_type": "first_aid_followups", "id": id.uuidString, "updated_at": plant.timestamp,
+                 "deleted_at": NSNull(), "data": ["id": id.uuidString, "plant_id": plant.id.uuidString,
+                    "action_entry_id": id.uuidString, "action_code": "check_soil", "state": "completed"]]
+            ]
+        }
+    }
+
     fileprivate func handle(_ request: URLRequest) throws -> Reply {
         try lock.withLock {
             guard let url = request.url, url.scheme == "https", url.host == namespace + ".invalid",
@@ -404,6 +430,18 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 ]))
             }
             let caller = try owner(request)
+            if ledger.scenario == .photoHistory, method == "GET", url.lastPathComponent == "photo" {
+                guard query.isEmpty, request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
+                      let plant = ledger.plants.first, caller == plant.owner else {
+                    return try error(404, "NOT_FOUND")
+                }
+                let root = "/functions/v1/plants-api"
+                let paths = [root + "/plants/\(plant.id.uuidString.lowercased())/photo"]
+                    + Self.historyObservationIDs.map { root + "/care/observations/\($0.uuidString.lowercased())/photo" }
+                guard paths.contains(url.path) else { return try error(404, "NOT_FOUND") }
+                let png = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGMQK9bBihiGlgQAqUctQVytyU8AAAAASUVORK5CYII="
+                return Reply(status: 200, data: Data(base64Encoded: png)!, contentType: "image/png")
+            }
             if method == "GET", url.path == "/auth/v1/user", query.isEmpty {
                 return Reply(status: 200, data: try json(user(caller)))
             }
@@ -436,6 +474,17 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "revision": 1, "care_revision": 1,
                         "created_at": plant.timestamp
                      ]]
+                }
+                if ledger.scenario == .photoHistory, let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
+                   let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),
+                   var data = changes[index]["data"] as? [String: Any] {
+                    data["main_photo_id"] = plant.id.uuidString
+                    changes[index]["data"] = data
+                    changes += photoHistory(for: plant)
+                    changes.sort {
+                        ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
+                            < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
+                    }
                 }
                 if ledger.scenario == .plantDeletion {
                     for commit in ledger.commits.values where commit.owner == caller && commit.envelope.commandName == "plant.delete" {
@@ -480,6 +529,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "product_id": "app.narat.plants.pro.yearly", "state": "active", "offer_kind": "trial",
                         "valid_until": "2099-01-08T12:00:00Z", "grace_until": NSNull(),
                         "trial_end_at": "2099-01-08T12:00:00Z", "auto_renew_enabled": true
+                    ] as [String: Any]
+                case .photoHistory:
+                    entitlement = [
+                        "product_id": "fixture-only-paid", "state": "expired", "offer_kind": "paid",
+                        "valid_until": "2026-10-31T12:00:00Z", "grace_until": NSNull(),
+                        "trial_end_at": NSNull(), "auto_renew_enabled": false
                     ] as [String: Any]
                 default:
                     entitlement = NSNull()
@@ -610,7 +665,7 @@ private final class CatalogueFixtureProtocol: URLProtocol, @unchecked Sendable {
             }
             let reply = try server.handle(captured)
             guard let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: nil,
-                                                headerFields: ["Content-Type": "application/json"]) else {
+                                                headerFields: ["Content-Type": reply.contentType, "Cache-Control": "private, no-store"]) else {
                 throw URLError(.badServerResponse)
             }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

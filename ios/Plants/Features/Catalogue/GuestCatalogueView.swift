@@ -1071,6 +1071,12 @@ private struct CatalogueCollectionCardView: View {
             ForEach(firstAid?.observations ?? []) { observation in
                 Text("Observation · \(observation.status.label)")
                     .accessibilityIdentifier("catalogue.saved.firstAid.observation." + observation.id.uuidString.lowercased())
+                if let date = SQLTimestamp.date(from: observation.observedAt) {
+                    Text(date, format: .dateTime.month(.abbreviated).day().year().locale(locale.locale))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("catalogue.saved.firstAid.observation.date." + observation.id.uuidString.lowercased())
+                }
                 if let photoId = observation.photoId {
                     CataloguePrivatePhotoView(
                         connection: connection, expected: expected, subject: .observation(observation.id), polish: polish
