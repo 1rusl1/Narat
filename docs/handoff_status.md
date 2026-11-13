@@ -2056,9 +2056,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-v10-plant-edit-name: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 107.98 с, проверки — 91.55 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [v10-plant-edit-name](validation/automation/tasks/v10-plant-edit-name.md).
+v10-plant-edit-conditions: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 118.01 с, проверки — 98.50 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [v10-plant-edit-conditions](validation/automation/tasks/v10-plant-edit-conditions.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
