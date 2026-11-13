@@ -219,6 +219,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             guard !nativeInFlight, current != scope else { return }
             synchronize()
         }
+        .onChange(of: connection.lastDeletedPlant) { _, deleted in
+            guard let deleted, scopeIsCurrent, case let .saved(confirmation) = model?.state,
+                  confirmation.receipt.plantId == deleted else { return }
+            synchronize()
+        }
         .onChange(of: shouldLockSelection, initial: true) { _, locked in
             selectionLocked = locked
         }

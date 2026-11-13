@@ -77,6 +77,7 @@ final class CatalogueConnection {
     let unavailable: CatalogueConnectionUnavailable?
     private var observedSnapshot: CatalogueSDKSnapshot?
     private(set) var hasResolvedAuth = false
+    private(set) var lastDeletedPlant: UUID?
     @ObservationIgnored private let sdkEpoch: CatalogueSDKEpoch
     @ObservationIgnored private var observer: Task<any AuthStateChangeListenerRegistration, Never>?
     @ObservationIgnored private var pending: Task<UUID, Error>?
@@ -178,6 +179,11 @@ final class CatalogueConnection {
     var snapshot: CatalogueSDKSnapshot? {
         guard let observedSnapshot, (try? validate(observedSnapshot)) != nil else { return nil }
         return observedSnapshot
+    }
+
+    func didDeletePlant(_ plantId: UUID, expected: CatalogueSDKSnapshot) {
+        guard snapshot == expected else { return }
+        lastDeletedPlant = plantId
     }
 
     private func observeCurrentSession() async {
@@ -648,6 +654,7 @@ struct CatalogueCollectionView: View {
                                 guard currentSelection == selected else { return }
                                 cards.removeAll { $0.id == selected.card.id }
                                 self.selected = nil
+                                connection.didDeletePlant(selected.card.id, expected: selected.scope)
                             }
                         )
                     }

@@ -1315,7 +1315,7 @@ extension CollectionWireTests {
         let schema = Schema([
             LocalOutboxRecord.self, GuestDraftCacheRecord.self,
             SyncedEntityRecord.self, SyncCheckpointRecord.self,
-            CatalogueCreateConfirmationRecord.self
+            CatalogueCreateConfirmationRecord.self, CatalogueInputCheckpointRecord.self
         ])
         return try ModelContainer(for: schema, configurations: [
             ModelConfiguration(schema: schema, url: url, allowsSave: allowsSave)
@@ -4683,7 +4683,10 @@ extension CollectionWireTests {
             var page = syncObject()
             page["until"] = until
             page["next_since"] = until
-            page["changes"] = changes.sorted { ($0["id"] as! String) < ($1["id"] as! String) }
+            page["changes"] = changes.sorted {
+                ($0["updated_at"] as! String, $0["id"] as! String)
+                    < ($1["updated_at"] as! String, $1["id"] as! String)
+            }
             return try syncJSON(page)
         }
         let baseline = try page(syncUntil, changes: [active(serverPlantId), active(neighbour)])
@@ -4696,6 +4699,26 @@ extension CollectionWireTests {
             store: initialStore, apiClient: initialAPI, syncEngine: SyncEngine(store: initialStore, apiClient: initialAPI)
         )
         _ = try await initialRepo.collectionCards(context: firstLease)
+        let targetFlow = UUID()
+        let neighbourFlow = UUID()
+        let unsentFlow = UUID()
+        let input = CatalogueInput(speciesSlug: "fixture_collection_cap", personalName: "Saved plant")
+        func saveCatalogueInput(flow: UUID, plantId: UUID?) async throws -> UUID {
+            let checkpoint = try await initialStore.checkpointCatalogueInput(
+                input, flowId: flow, operationId: UUID(), context: firstLease, authority: initialAPI.syncAuthority
+            )
+            if let plantId {
+                _ = try await queueCreate(checkpoint.envelope, ownerId: syncOwner, in: initialStore)
+                try await initialStore.acknowledgeCatalogueCreate(
+                    checkpoint.envelope, receipt: decodedCreateReceipt(["plant_id": plantId.uuidString]),
+                    context: firstLease, authority: initialAPI.syncAuthority
+                )
+            }
+            return checkpoint.operationId
+        }
+        let targetCreate = try await saveCatalogueInput(flow: targetFlow, plantId: serverPlantId)
+        let neighbourCreate = try await saveCatalogueInput(flow: neighbourFlow, plantId: neighbour)
+        _ = try await saveCatalogueInput(flow: unsentFlow, plantId: nil)
         let localCare = try await initialStore.enqueueCommand(
             ownerId: syncOwner, plantId: serverPlantId, commandName: "care.record", payloadJSON: "{}"
         )
@@ -4737,11 +4760,32 @@ extension CollectionWireTests {
             guard case .pending = try await repo.retryPlantDeletion(command, context: lease)
             else { return XCTFail("A foreign receipt or sync without the tombstone cannot acknowledge deletion") }
         }
+        let pendingConfirmation = try await store.catalogueCreateConfirmation(ownerId: syncOwner, operationId: targetCreate)
+        XCTAssertNotNil(pendingConfirmation)
         let finalSnapshot = try await repo.collectionCards(context: lease)
         XCTAssertEqual(finalSnapshot.cards.map(\.id), [neighbour])
         let remaining = try await store.pendingOutboxEntries(for: syncOwner)
         XCTAssertEqual(remaining.map(\.operationId), [otherCare.operationId])
         XCTAssertFalse(remaining.contains { $0.operationId == localCare.operationId })
+        let deletedConfirmation = try await store.catalogueCreateConfirmation(
+            ownerId: syncOwner, operationId: targetCreate
+        )
+        XCTAssertNil(deletedConfirmation)
+        let neighbourConfirmation = try await store.catalogueCreateConfirmation(
+            ownerId: syncOwner, operationId: neighbourCreate
+        )
+        XCTAssertEqual(neighbourConfirmation?.receipt.plantId, neighbour)
+        let deletedFlow = await CatalogueSaveModel.restore(
+            store: store, apiClient: api, repository: repo, ownerId: syncOwner,
+            flowId: targetFlow, session: syncSession, isAnonymous: false
+        )
+        guard case .absent = deletedFlow else { return XCTFail("Deleted input must not resume after restart") }
+        for flow in [neighbourFlow, unsentFlow] {
+            let checkpoint = try await store.catalogueInputCheckpoint(
+                flowId: flow, context: lease, authority: api.syncAuthority
+            )
+            XCTAssertNotNil(checkpoint)
+        }
         let requests = await transport.capturedRequests()
         XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "GET", "GET", "POST", "GET"])
         for request in requests where request.httpMethod == "POST" {

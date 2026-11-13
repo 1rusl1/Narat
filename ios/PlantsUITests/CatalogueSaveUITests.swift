@@ -72,6 +72,35 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 2")
     }
 
+    @MainActor func testDeletedCatalogueSaveDoesNotResumeAfterRestart() {
+        let run = Run("plantDeletion", .en)
+        defer { run.app.terminate() }
+        openCatalogue(run)
+        enterName(run, run.language.input)
+        submit(run)
+        let saved = assertCard(run, name: run.language.canonicalName)
+        tap(run, "collection.open", "My plants")
+        let plantId = saved.dropFirst("catalogue.saved.card.".count)
+        tap(run, "collection.plant." + plantId, run.language.canonicalName)
+        let delete = run.app.buttons["collection.delete"]
+        require(delete)
+        if !delete.isHittable { run.app.swipeUp() }
+        delete.tap()
+        let alert = run.app.alerts["Delete this plant?"]
+        require(alert)
+        alert.buttons["collection.delete.confirm"].firstMatch.tap()
+        require(run.app.staticTexts["collection.delete.pending"])
+        tap(run, "collection.delete.retry")
+        enabled(run.app.buttons["Fixture 2"])
+        tap(run, "collection.back", "Close")
+        enabled(run.app.textFields["catalogue.save.name"])
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        restart(run)
+        tap(run, "welcome.intent.care", "Set up care and schedule")
+        tap(run, "care.method.catalogue", "Choose species from catalogue (no photo)")
+        chooseSpecies(run)
+    }
+
     @MainActor func testCollectionShowsOnlyThePendingFirstAidControl() {
         let run = Run("firstAidControl", .en)
         defer { run.app.terminate() }

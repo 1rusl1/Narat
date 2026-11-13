@@ -617,6 +617,8 @@ public actor LocalStore {
         context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws {
         try authority.withBoundValid(context) {
+            Self.catalogueInputLock.lock()
+            defer { Self.catalogueInputLock.unlock() }
             let disk = makeSyncContext()
             let ownerId = context.ownerId
             let plantId = receipt.plantId
@@ -632,6 +634,21 @@ public actor LocalStore {
                     && $0.payloadJSON == command.payloadJSON
             }) else { throw OutboxEnqueueError.operationIdentityMismatch }
             for entry in entries { disk.delete(entry) }
+            let confirmations = FetchDescriptor<CatalogueCreateConfirmationRecord>(
+                predicate: #Predicate { $0.ownerId == ownerId }
+            )
+            let decoder = JSONDecoder()
+            for confirmation in try disk.fetch(confirmations) {
+                guard let creation = try? decoder.decode(
+                    PlantCreateReceiptDTO.self, from: Data(confirmation.receiptJSON.utf8)
+                ), creation.plantId == plantId else { continue }
+                let operationId = confirmation.operationId
+                let inputs = FetchDescriptor<CatalogueInputCheckpointRecord>(
+                    predicate: #Predicate { $0.ownerId == ownerId && $0.operationId == operationId }
+                )
+                for input in try disk.fetch(inputs) { disk.delete(input) }
+                disk.delete(confirmation)
+            }
             try Task.checkCancellation()
             try disk.save()
         }
