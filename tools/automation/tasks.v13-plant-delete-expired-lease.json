@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-expired-lease",
+      "description": "Review recovery of expired analysis leases blocking a deleted plant's Storage cleanup.",
+      "candidate_base": "396a92a3a7f8822128255d6b4e7e2e87e32cd816",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "supabase/migrations/202611130037_plant_delete_expired_lease.sql",
+        "supabase/tests/plant_delete_expired_lease.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v13-plant-delete-expired-lease.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Use synthetic fixtures only. Check owner/lease ordering, unchanged siblings and provider budget, and exact once quota settlement. No deployment, 024, scheduler or StoreKit changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-L1",
+          "description": "Clean diff.",
+          "mode": "local",
+          "checks": ["diff-check"]
+        },
+        {
+          "id": "V13-L2",
+          "description": "Clean and seeded upgrade verify lease timeout, safe retry, quota settlement, and worker replay.",
+          "mode": "fixture",
+          "checks": ["parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

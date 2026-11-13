@@ -1,8 +1,14 @@
 # Narat — текущий статус и передача работы
 
+## B — V13 восстановление после истечения анализа, 13 ноября 2026
+
+037 дополняет `finish_plant_deletion_storage`: под owner lock применяет штатный timeout settlement для просроченного анализа удалённой карточки. Живой lease сохраняет резерв, соседние анализы остаются вне операции. Тайм-аут освобождает исходную квоту один раз. Поздний ответ worker не возвращает job к работе. Суточный счётчик вызовов провайдера сохраняется. SQL-фикстуры не вызывают AI.
+
+Локальный gate прошёл по 954 pgTAP clean/upgrade, включая 12 новых проверок. Независимая приёмка в работе. Плановый запуск, оставшаяся очистка приватных полей, живая Storage-приёмка и T082/T083 открыты. 024 и StoreKit на паузе.
+
 ## B — V13 служебный HTTP для очистки проекций, 13 ноября 2026
 
-Служебный `POST /internal/plant-deletions/{deletion_job_id}/analysis-data` вызывает RPC 036 по точному UUID. Путь Storage сохраняется. HTTP-фикстура проверяет 401 для сессии владельца до RPC, служебный ключ, `pending` и `cleared`, 404 и 503. Обновлены `index.ts`, `plant-deletions.ts`, Deno-тест, wire и T083. Прошли typecheck двух entrypoints, diff-check и 389 Deno. Review/QA в работе. Живые проверки не запускались.
+Служебный `POST /internal/plant-deletions/{deletion_job_id}/analysis-data` вызывает RPC 036 по точному UUID. Путь Storage сохраняется. HTTP-фикстура проверяет 401 для сессии владельца до RPC, служебный ключ, `pending` и `cleared`, 404 и 503. Обновлены `index.ts`, `plant-deletions.ts`, Deno-тест, wire и T083. Прошли typecheck двух entrypoints, diff-check и 389 Deno. Review/QA приняли `396a92a`, также прошли 149 automation-тестов. Живые проверки не запускались. [Отчёт](validation/automation/tasks/v13-plant-delete-analysis-http.md).
 
 Точный следующий шаг — принять HTTP, затем обработать истёкшие анализы под owner lock через штатный quota settlement, пока процесс 035 ожидает завершения worker. Плановый запуск, оставшаяся очистка БД и T082/T083 открыты.
 
