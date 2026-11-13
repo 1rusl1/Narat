@@ -632,20 +632,15 @@ public actor LocalStore {
         }
     }
 
-    func syncedPlantLight(
+    func syncedPlantConditions(
         for card: CatalogueCardSummary, context: SyncSessionLease, authority: SyncSessionAuthority
-    ) throws -> PlantLightCode? {
+    ) throws -> PlantConditionCodes? {
         try authority.withBoundValid(context) {
-            struct Conditions: Decodable {
-                let id: UUID
-                let plant_id: UUID
-                let light_code: PlantLightCode
-            }
             guard let snapshot = card.currentConditionSnapshotId,
                   let row = try activeSyncRow("condition_snapshots", id: snapshot, ownerId: context.ownerId, in: makeSyncContext()),
-                  let conditions = try? JSONDecoder().decode(Conditions.self, from: Data(row.payloadJSON.utf8)),
-                  conditions.id == snapshot, conditions.plant_id == card.id else { return nil }
-            return conditions.light_code
+                  let conditions = try? JSONDecoder().decode(PlantConditionCodes.self, from: Data(row.payloadJSON.utf8)),
+                  conditions.id == snapshot, conditions.plantId == card.id else { return nil }
+            return conditions
         }
     }
 

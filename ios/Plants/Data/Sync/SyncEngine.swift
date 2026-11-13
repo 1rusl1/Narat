@@ -226,10 +226,16 @@ public actor SyncEngine {
                             guard card.personalName?.utf8.elementsEqual(name.utf8) == true
                             else { throw SyncWireValidationError.invalidPage }
                         case let .light(light):
-                            let saved = try await store.syncedPlantLight(
+                            let saved = try await store.syncedPlantConditions(
                                 for: card, context: context, authority: apiClient.syncAuthority
                             )
-                            guard saved == light || (card.currentConditionSnapshotId == nil && light == .unknown)
+                            guard saved?.light == light || (card.currentConditionSnapshotId == nil && light == .unknown)
+                            else { throw SyncWireValidationError.invalidPage }
+                        case let .drainage(drainage):
+                            let saved = try await store.syncedPlantConditions(
+                                for: card, context: context, authority: apiClient.syncAuthority
+                            )
+                            guard saved?.drainage == drainage || (card.currentConditionSnapshotId == nil && drainage == .unknown)
                             else { throw SyncWireValidationError.invalidPage }
                         }
                     } else {

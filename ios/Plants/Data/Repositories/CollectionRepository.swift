@@ -463,8 +463,8 @@ public struct CollectionRepository: Sendable {
         return try await store.enqueuePlantEdit(command, context: context, authority: apiClient.syncAuthority)
     }
 
-    func syncedPlantLight(for card: CatalogueCardSummary, context: SyncSessionLease) async throws -> PlantLightCode? {
-        try await store.syncedPlantLight(for: card, context: context, authority: apiClient.syncAuthority)
+    func syncedPlantConditions(for card: CatalogueCardSummary, context: SyncSessionLease) async throws -> PlantConditionCodes? {
+        try await store.syncedPlantConditions(for: card, context: context, authority: apiClient.syncAuthority)
     }
 
     func retryPlantEdit(

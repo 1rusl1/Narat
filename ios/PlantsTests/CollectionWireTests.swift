@@ -4773,6 +4773,16 @@ extension CollectionWireTests {
 
     @MainActor
     func testPlantLightEditReplaysAndRetainsPreviousAnalysis() async throws {
+        try await verifyPlantConditionEdit(.light(.directSun), key: "light_code", code: "direct_sun")
+    }
+
+    @MainActor
+    func testPlantDrainageEditReplaysAndRetainsPreviousAnalysis() async throws {
+        try await verifyPlantConditionEdit(.drainage(.no), key: "drainage_code", code: "no")
+    }
+
+    @MainActor
+    private func verifyPlantConditionEdit(_ change: PlantEditCommand.Change, key: String, code: String) async throws {
         let plant = serverPlantId
         let originalSnapshot = UUID()
         let updatedSnapshot = UUID()
@@ -4806,7 +4816,7 @@ extension CollectionWireTests {
         let receipt = try syncJSON(["plant_id": plant.uuidString, "revision": 2, "care_revision": 2,
                                     "condition_snapshot_id": updatedSnapshot.uuidString, "watermark": updatedAt])
         let light = row("condition_snapshots", updatedSnapshot, updatedAt, [
-            "id": updatedSnapshot.uuidString, "plant_id": plant.uuidString, "light_code": "direct_sun"
+            "id": updatedSnapshot.uuidString, "plant_id": plant.uuidString, key: code
         ])
         let delta = try page(updatedAt, [light, card(updatedSnapshot, updatedAt, 2)])
         let transport = CatalogueTransport([.http(200, baseline), .network, .http(200, receipt), .http(200, delta)])
@@ -4820,8 +4830,8 @@ extension CollectionWireTests {
         _ = try await repo.collectionCards(context: lease)
         let before = try await repo.collectionAnalysisHistory(plantId: plant, context: lease)
         XCTAssertEqual(before.first?.previousConditions, false)
-        let command = try await repo.enqueuePlantEdit(plantId: plant, change: .light(.directSun), context: lease)
-        XCTAssertEqual(command.payloadJSON, #"{"conditions":{"light_code":"direct_sun"}}"#)
+        let command = try await repo.enqueuePlantEdit(plantId: plant, change: change, context: lease)
+        XCTAssertEqual(command.payloadJSON, "{\"conditions\":{\"\(key)\":\"\(code)\"}}")
         let pending = try await repo.retryPlantEdit(command, context: lease)
         XCTAssertNil(pending)
         let queued = try await repo.pendingPlantEdit(plantId: plant, context: lease)
@@ -4830,8 +4840,8 @@ extension CollectionWireTests {
         let updated = try XCTUnwrap(result)
         XCTAssertEqual(updated.mainPhotoId, photo)
         XCTAssertEqual(updated.currentConditionSnapshotId, updatedSnapshot)
-        let confirmedLight = try await repo.syncedPlantLight(for: updated, context: lease)
-        XCTAssertEqual(confirmedLight, .directSun)
+        let confirmed = try await repo.syncedPlantConditions(for: updated, context: lease)
+        XCTAssertEqual(key == "light_code" ? confirmed?.light?.rawValue : confirmed?.drainage?.rawValue, code)
         let after = try await repo.collectionAnalysisHistory(plantId: plant, context: lease)
         XCTAssertEqual(after.map(\.id), [analysis])
         XCTAssertEqual(after.first?.previousConditions, true)

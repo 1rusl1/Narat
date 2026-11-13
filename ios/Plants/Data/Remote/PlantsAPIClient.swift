@@ -225,10 +225,45 @@ enum PlantLightCode: String, Codable, Sendable, CaseIterable {
     }
 }
 
+enum PlantDrainageCode: String, Codable, Sendable, CaseIterable {
+    case yes, no, unknown
+
+    var label: String {
+        switch self {
+        case .yes: "Drainage holes"
+        case .no: "No drainage holes"
+        case .unknown: "Unknown drainage"
+        }
+    }
+}
+
+struct PlantConditionCodes: Decodable, Sendable {
+    let id: UUID
+    let plantId: UUID
+    let light: PlantLightCode?
+    let drainage: PlantDrainageCode?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case plantId = "plant_id"
+        case light = "light_code"
+        case drainage = "drainage_code"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        plantId = try values.decode(UUID.self, forKey: .plantId)
+        light = (try? values.decode(String.self, forKey: .light)).flatMap(PlantLightCode.init(rawValue:))
+        drainage = (try? values.decode(String.self, forKey: .drainage)).flatMap(PlantDrainageCode.init(rawValue:))
+    }
+}
+
 struct PlantEditCommand: Sendable {
     enum Change: Sendable {
         case name(String)
         case light(PlantLightCode)
+        case drainage(PlantDrainageCode)
     }
 
     static let name = "plant.edit"
@@ -249,6 +284,8 @@ struct PlantEditCommand: Sendable {
             fields = ["personal_name": name]
         case let .light(light):
             fields = ["conditions": ["light_code": light.rawValue]]
+        case let .drainage(drainage):
+            fields = ["conditions": ["drainage_code": drainage.rawValue]]
         }
         let payload = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
         let envelope = CommandEnvelopeDTO(
@@ -268,6 +305,9 @@ struct PlantEditCommand: Sendable {
         } else if let conditions = fields["conditions"] as? [String: String], conditions.count == 1,
                   let light = conditions["light_code"].flatMap(PlantLightCode.init(rawValue:)) {
             change = .light(light)
+        } else if let conditions = fields["conditions"] as? [String: String], conditions.count == 1,
+                  let drainage = conditions["drainage_code"].flatMap(PlantDrainageCode.init(rawValue:)) {
+            change = .drainage(drainage)
         } else {
             return nil
         }
