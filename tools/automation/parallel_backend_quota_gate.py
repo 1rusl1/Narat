@@ -740,6 +740,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     tap(case, ROOT/'supabase/tests/plant_delete_data_pass.test.sql')
                 if any(migration.name == '202611130040_plant_delete_queue.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/plant_delete_queue.test.sql')
+                if any(migration.name == '202611130041_plant_edit_name.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_edit_name.test.sql')
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:

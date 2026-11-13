@@ -199,14 +199,14 @@ save/outbox и полный объём T019/T044/T149/T162 этим срезом
 
 ## POST /commands — plant.edit (V10, целевой контракт T069/T070/T071)
 
-Команда описана для реализации. Текущий Edge возвращает 400 для `plant.edit`. Используется тот же `/commands`, что у `plant.create`, с Auth постоянного активного владельца.
+Локальный серверный срез принимает правку только `personal_name`. `taxon_id` и `conditions` описаны как следующий срез. Запрос с любым из них возвращает 400 целиком. Используется тот же `/commands`, что у `plant.create`, с Auth постоянного активного владельца.
 
 ```json
 {
   "operation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "plant_id": "22222222-2222-4222-8222-222222222222",
   "command_name": "plant.edit",
-  "payload_json": "{\"personal_name\":\"Living room Monstera\",\"conditions\":{\"light_code\":\"bright_indirect\",\"drainage_code\":\"yes\"}}"
+  "payload_json": "{\"personal_name\":\"Living room Monstera\"}"
 }
 ```
 

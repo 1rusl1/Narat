@@ -20,20 +20,24 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function unavailable(deletion = false) {
+function unavailable(plantCommand?: "plant.delete" | "plant.edit") {
   return new ApiHttpError(
     503,
     "INTERNAL_ERROR",
-    deletion ? "Plant deletion is temporarily unavailable." : "The care journal is temporarily unavailable.",
+    plantCommand === "plant.edit" ? "Plant editing is temporarily unavailable."
+      : plantCommand === "plant.delete" ? "Plant deletion is temporarily unavailable."
+      : "The care journal is temporarily unavailable.",
     true,
   );
 }
 
-function invalid(deletion = false) {
+function invalid(plantCommand?: "plant.delete" | "plant.edit") {
   return new ApiHttpError(
     400,
     "VALIDATION_ERROR",
-    deletion ? "Invalid plant deletion command." : "Invalid manual care command.",
+    plantCommand === "plant.edit" ? "Invalid plant editing command."
+      : plantCommand === "plant.delete" ? "Invalid plant deletion command."
+      : "Invalid manual care command.",
   );
 }
 
@@ -51,17 +55,20 @@ export async function handleCollectionCommand(
     (body.command_name !== "care.record" && body.command_name !== "care.undo" &&
       body.command_name !== "care.correct_date" &&
       body.command_name !== "care.first_aid.record" &&
-      body.command_name !== "care.first_aid.observe" && body.command_name !== "plant.delete")
+      body.command_name !== "care.first_aid.observe" &&
+      body.command_name !== "plant.delete" && body.command_name !== "plant.edit")
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
 
   const isDeletion = body.command_name === "plant.delete";
+  const isEdit = body.command_name === "plant.edit";
+  const plantCommand = isEdit ? "plant.edit" : isDeletion ? "plant.delete" : undefined;
   if (
     new URL(req.url).search ||
     Object.keys(body).some((key) => !envelopeFields.has(key)) ||
     typeof body.payload_json !== "string"
-  ) throw invalid(isDeletion);
+  ) throw invalid(plantCommand);
   const operationId = requireUuid(body.operation_id, "operation_id");
   const plantId = requireUuid(body.plant_id, "plant_id");
   const header = req.headers.get("x-operation-id");
@@ -76,9 +83,9 @@ export async function handleCollectionCommand(
   try {
     payload = JSON.parse(body.payload_json);
   } catch {
-    throw invalid(isDeletion);
+    throw invalid(plantCommand);
   }
-  if (!record(payload)) throw invalid(isDeletion);
+  if (!record(payload)) throw invalid(plantCommand);
   const isRecord = body.command_name === "care.record";
   const isFirstAid = body.command_name === "care.first_aid.record";
   const isUndo = body.command_name === "care.undo";
@@ -86,7 +93,11 @@ export async function handleCollectionCommand(
   let controlId: string | null = null;
   let entryId: string | null = null;
   if (isDeletion) {
-    if (Object.keys(payload).length !== 0) throw invalid(true);
+    if (Object.keys(payload).length !== 0) throw invalid(plantCommand);
+  } else if (isEdit) {
+    if (Object.keys(payload).length !== 1 || typeof payload.personal_name !== "string") {
+      throw invalid(plantCommand);
+    }
   } else if (isObservation) {
     if (
       Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||
@@ -110,19 +121,20 @@ export async function handleCollectionCommand(
   let response;
   try {
     const client = clientFactory();
-    if (!client) throw unavailable(isDeletion);
-    const rpc = isDeletion ? "execute_plant_delete_command" : isObservation
+    if (!client) throw unavailable(plantCommand);
+    const rpc = isEdit ? "execute_plant_edit_command"
+      : isDeletion ? "execute_plant_delete_command" : isObservation
       ? "complete_first_aid_control"
       : "execute_manual_care_command";
     response = await client.rpc(rpc, {
       p_owner_id: ownerId,
       p_operation_id: operationId,
       p_plant_id: plantId,
-      ...(!isObservation && !isDeletion && { p_command_name: body.command_name }),
+      ...(!isObservation && !plantCommand && { p_command_name: body.command_name }),
       p_payload: payload,
     });
   } catch {
-    throw unavailable(isDeletion);
+    throw unavailable(plantCommand);
   }
   const { data, error } = response;
   if (error) {
@@ -137,7 +149,7 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         404,
         "NOT_FOUND",
-        isDeletion ? "The plant was not found." : isObservation ? "The plant, first-aid control or photo was not found." : isFirstAid
+        plantCommand ? "The plant was not found." : isObservation ? "The plant, first-aid control or photo was not found." : isFirstAid
           ? "The plant or first-aid action was not found."
           : "The plant or care entry was not found.",
       );
@@ -146,22 +158,34 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         409,
         "CONFLICT",
-        isDeletion ? "The plant is already deleted or the operation conflicts with an existing receipt." : isObservation
+        isEdit ? "The operation conflicts with an existing receipt."
+          : isDeletion ? "The plant is already deleted or the operation conflicts with an existing receipt." : isObservation
           ? "The first-aid control is unavailable or the operation conflicts with an existing receipt."
           : "The operation conflicts with an existing care entry or receipt.",
       );
     }
     if (["22007", "22008", "22023", "22P02"].includes(error.code)) {
-      throw invalid(isDeletion);
+      throw invalid(plantCommand);
     }
-    throw unavailable(isDeletion);
+    throw unavailable(plantCommand);
+  }
+  if (isEdit) {
+    if (
+      !record(data) || data.plant_id !== plantId ||
+      typeof data.revision !== "number" || !Number.isInteger(data.revision) || data.revision < 1 ||
+      typeof data.care_revision !== "number" || !Number.isInteger(data.care_revision) || data.care_revision < 1 ||
+      (data.condition_snapshot_id !== null &&
+        (typeof data.condition_snapshot_id !== "string" || !uuid.test(data.condition_snapshot_id))) ||
+      timestamp(data.watermark) === null
+    ) throw unavailable(plantCommand);
+    return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
   }
   if (isDeletion) {
     if (
       !record(data) || data.plant_id !== plantId || data.state !== "deleting" ||
       typeof data.deletion_job_id !== "string" || !uuid.test(data.deletion_job_id) ||
       timestamp(data.watermark) === null
-    ) throw unavailable(true);
+    ) throw unavailable(plantCommand);
     return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
   }
   if (

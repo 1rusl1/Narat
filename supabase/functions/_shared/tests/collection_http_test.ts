@@ -615,7 +615,7 @@ Deno.test("T162 catalogue production: invalid envelope/payload/query never reach
     commandEnvelope(createPayload(), { owner_id: ownerB }),
     commandEnvelope(createPayload(), { p_owner_id: ownerB }),
     commandEnvelope(createPayload(), { plant_id: ownerB }),
-    ...["plant.edit", "free_care.select", "room.create", "photo.set_main", "unknown"]
+    ...["free_care.select", "room.create", "photo.set_main", "unknown"]
       .map((command_name) => commandEnvelope(createPayload(), { command_name })),
     ...[
       {}, { creation_source: "catalogue" }, createPayload({ creation_source: "local_fallback" }),
