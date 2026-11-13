@@ -211,10 +211,29 @@ struct FirstAidRecordReceipt: Decodable, Sendable {
     }
 }
 
-struct PlantRenameCommand: Sendable {
+enum PlantLightCode: String, Codable, Sendable, CaseIterable {
+    case low, medium, brightIndirect = "bright_indirect", directSun = "direct_sun", unknown
+
+    var label: String {
+        switch self {
+        case .low: "Low light"
+        case .medium: "Medium light"
+        case .brightIndirect: "Bright indirect light"
+        case .directSun: "Direct sunlight"
+        case .unknown: "Unknown"
+        }
+    }
+}
+
+struct PlantEditCommand: Sendable {
+    enum Change: Sendable {
+        case name(String)
+        case light(PlantLightCode)
+    }
+
     static let name = "plant.edit"
     let envelope: CommandEnvelopeDTO
-    let personalName: String
+    let change: Change
 
     static func normalizedName(_ input: String) -> String? {
         let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -222,30 +241,41 @@ struct PlantRenameCommand: Sendable {
         return name
     }
 
-    static func make(plantId: UUID, personalName: String) throws -> Self {
-        guard let name = normalizedName(personalName) else { throw SyncWireValidationError.invalidRequest }
-        let payload = try JSONEncoder().encode(["personal_name": name])
+    static func make(plantId: UUID, change: Change) throws -> Self {
+        let fields: [String: Any]
+        switch change {
+        case let .name(input):
+            guard let name = normalizedName(input) else { throw SyncWireValidationError.invalidRequest }
+            fields = ["personal_name": name]
+        case let .light(light):
+            fields = ["conditions": ["light_code": light.rawValue]]
+        }
+        let payload = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
         let envelope = CommandEnvelopeDTO(
             operationId: UUID(), commandName: Self.name, plantId: plantId,
             payloadJSON: String(decoding: payload, as: UTF8.self)
         )
-        return Self(envelope: envelope, personalName: name)
-    }
-
-    private init(envelope: CommandEnvelopeDTO, personalName: String) {
-        self.envelope = envelope
-        self.personalName = personalName
+        guard let command = Self(envelope) else { throw SyncWireValidationError.invalidRequest }
+        return command
     }
 
     init?(_ envelope: CommandEnvelopeDTO) {
         guard envelope.commandName == Self.name, envelope.plantId != nil,
-              let fields = try? JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8)),
-              fields.count == 1, let name = fields["personal_name"], Self.normalizedName(name) == name else { return nil }
-        self.init(envelope: envelope, personalName: name)
+              let fields = try? JSONSerialization.jsonObject(with: Data(envelope.payloadJSON.utf8)) as? [String: Any],
+              fields.count == 1 else { return nil }
+        if let name = fields["personal_name"] as? String, Self.normalizedName(name) == name {
+            change = .name(name)
+        } else if let conditions = fields["conditions"] as? [String: String], conditions.count == 1,
+                  let light = conditions["light_code"].flatMap(PlantLightCode.init(rawValue:)) {
+            change = .light(light)
+        } else {
+            return nil
+        }
+        self.envelope = envelope
     }
 }
 
-struct PlantRenameReceipt: Decodable, Sendable {
+struct PlantEditReceipt: Decodable, Sendable {
     let plantId: UUID
     let revision: Int
     let careRevision: Int
@@ -566,7 +596,7 @@ enum OutboxCommandResult: Sendable {
     case careUndone(reversalId: UUID, watermark: Int64)
     case firstAidRecorded(FirstAidRecordReceipt)
     case firstAidObserved(FirstAidObservationReceipt)
-    case plantRenamed(PlantRenameReceipt)
+    case plantEdited(PlantEditReceipt)
     case plantDeleting(PlantDeleteReceipt)
 }
 
@@ -650,7 +680,7 @@ public actor PlantsAPIClient {
         guard envelope.commandName != FirstAidObservationPhotoDraft.name else { throw SyncWireValidationError.invalidRequest }
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         let plantDelete = envelope.commandName == PlantDeleteReceipt.commandName
-        let plantRename = envelope.commandName == PlantRenameCommand.name
+        let plantEdit = envelope.commandName == PlantEditCommand.name
         let manualWatering = context.session == nil ? nil : ManualWateringAction(envelope: envelope)
         let firstAid = envelope.commandName == FirstAidRecordCommand.name
         let observation = FirstAidObservationCommand(envelope: envelope)
@@ -659,9 +689,9 @@ public actor PlantsAPIClient {
             guard envelope.plantId != nil, envelope.payloadJSON == "{}"
             else { throw SyncWireValidationError.invalidRequest }
         }
-        if plantRename {
+        if plantEdit {
             try syncAuthority.withBoundValid(context) {}
-            guard PlantRenameCommand(envelope) != nil else { throw SyncWireValidationError.invalidRequest }
+            guard PlantEditCommand(envelope) != nil else { throw SyncWireValidationError.invalidRequest }
         }
         if firstAid {
             try syncAuthority.withBoundValid(context) {}
@@ -676,7 +706,7 @@ public actor PlantsAPIClient {
         }
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
-        if catalogueCreate || plantDelete || plantRename || manualWatering != nil || firstAid || observation != nil {
+        if catalogueCreate || plantDelete || plantEdit || manualWatering != nil || firstAid || observation != nil {
             encoder.outputFormatting = [.sortedKeys]
         }
         encoder.dateEncodingStrategy = .iso8601
@@ -691,7 +721,7 @@ public actor PlantsAPIClient {
             request.setValue("en", forHTTPHeaderField: "X-Client-Locale")
             request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
         }
-        if plantDelete || plantRename {
+        if plantDelete || plantEdit {
             request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
         }
         // Build and dispatch with the captured token in the same actor turn.
@@ -704,10 +734,10 @@ public actor PlantsAPIClient {
             let receipt = try await execute(request, as: PlantDeleteReceipt.self, expectedStatus: 200)
             guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }
             result = .plantDeleting(receipt)
-        } else if plantRename {
-            let receipt = try await execute(request, as: PlantRenameReceipt.self, expectedStatus: 200)
+        } else if plantEdit {
+            let receipt = try await execute(request, as: PlantEditReceipt.self, expectedStatus: 200)
             guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }
-            result = .plantRenamed(receipt)
+            result = .plantEdited(receipt)
         } else if firstAid {
             let receipt = try await execute(request, as: FirstAidRecordReceipt.self, expectedStatus: 200)
             guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }

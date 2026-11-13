@@ -280,6 +280,36 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
     }
 
+    @MainActor func testPlantLightEditReplaysAndMarksEarlierDiagnosis() {
+        let run = Run("plantLightEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let light = run.app.staticTexts["collection.light.current"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        require(light)
+        XCTAssertEqual(light.label, "Medium light")
+        tap(run, "collection.light.open", "Edit light")
+        let direct = run.app.buttons.matching(identifier: "collection.light.direct_sun").firstMatch
+        enabled(direct)
+        direct.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry light change")
+        require(light)
+        XCTAssertEqual(light.label, "Direct sunlight")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(previous)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }

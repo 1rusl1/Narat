@@ -124,7 +124,7 @@ public actor SyncEngine {
         _ = try await flushOutbox(for: context.ownerId, context: context, commandName: PlantDeleteReceipt.commandName)
     }
 
-    func flushPlantRename(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+    func flushPlantEdit(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
         try apiClient.syncAuthority.withBoundValid(context) {}
         _ = try await flushOutbox(for: context.ownerId, context: context, onlyOperation: command.operationId)
     }
@@ -211,17 +211,27 @@ public actor SyncEngine {
                     guard let deleted = try await store.plantDeletionWatermark(
                         plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
                     ), deleted >= receipt.watermark else { throw SyncWireValidationError.invalidPage }
-                case let .plantRenamed(receipt):
-                    guard let rename = PlantRenameCommand(envelope) else { throw SyncWireValidationError.invalidRequest }
+                case let .plantEdited(receipt):
+                    guard let edit = PlantEditCommand(envelope) else { throw SyncWireValidationError.invalidRequest }
                     try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
                     if let card = try await store.syncedCollectionCard(
                         plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
                     ) {
-                        guard (card.revision > receipt.revision && card.careRevision >= receipt.careRevision) || (
-                            card.revision == receipt.revision && card.careRevision == receipt.careRevision
-                                && card.currentConditionSnapshotId == receipt.conditionSnapshotId
-                                && card.personalName?.utf8.elementsEqual(rename.personalName.utf8) == true
-                        ) else { throw SyncWireValidationError.invalidPage }
+                        if card.revision > receipt.revision, card.careRevision >= receipt.careRevision { break }
+                        guard card.revision == receipt.revision, card.careRevision == receipt.careRevision,
+                              card.currentConditionSnapshotId == receipt.conditionSnapshotId
+                        else { throw SyncWireValidationError.invalidPage }
+                        switch edit.change {
+                        case let .name(name):
+                            guard card.personalName?.utf8.elementsEqual(name.utf8) == true
+                            else { throw SyncWireValidationError.invalidPage }
+                        case let .light(light):
+                            let saved = try await store.syncedPlantLight(
+                                for: card, context: context, authority: apiClient.syncAuthority
+                            )
+                            guard saved == light || (card.currentConditionSnapshotId == nil && light == .unknown)
+                            else { throw SyncWireValidationError.invalidPage }
+                        }
                     } else {
                         guard let deleted = try await store.plantDeletionWatermark(
                             plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
@@ -240,7 +250,7 @@ public actor SyncEngine {
                     let deletion = envelope.commandName == PlantDeleteReceipt.commandName
                     if !receivedReceipt, (entry.commandName == ManualWateringAction.undoCommand
                                           || entry.commandName == FirstAidRecordCommand.name || observation || deletion
-                                          || entry.commandName == PlantRenameCommand.name),
+                                          || entry.commandName == PlantEditCommand.name),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
@@ -291,7 +301,7 @@ public actor SyncEngine {
                 try await store.acknowledgePlantDeletion(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantRenamed:
+            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantEdited:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )

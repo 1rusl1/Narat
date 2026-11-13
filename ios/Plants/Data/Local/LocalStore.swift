@@ -595,20 +595,20 @@ public actor LocalStore {
         return try disk.fetch(descriptor).first
     }
 
-    func enqueuePlantRename(
-        _ rename: PlantRenameCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    func enqueuePlantEdit(
+        _ edit: PlantEditCommand, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> CommandEnvelopeDTO {
         try authority.withBoundValid(context) {
             let ownerId = context.ownerId
-            let command = rename.envelope
+            let command = edit.envelope
             guard let plantId = command.plantId,
                   try activeSyncRow("plants", id: plantId, ownerId: ownerId, in: makeSyncContext()) != nil
             else { throw SyncWireValidationError.invalidRequest }
             let pending = try pendingOutboxEntries(for: ownerId).filter { $0.plantId == plantId }
             guard !pending.contains(where: { $0.commandName == PlantDeleteReceipt.commandName })
             else { throw OutboxEnqueueError.operationIdentityMismatch }
-            if let existing = pending.first(where: { $0.commandName == PlantRenameCommand.name }) {
-                guard PlantRenameCommand(existing.envelope)?.personalName.utf8.elementsEqual(rename.personalName.utf8) == true
+            if let existing = pending.first(where: { $0.commandName == PlantEditCommand.name }) {
+                guard existing.payloadJSON.utf8.elementsEqual(command.payloadJSON.utf8)
                 else { throw OutboxEnqueueError.operationIdentityMismatch }
                 return existing.envelope
             }
@@ -629,6 +629,23 @@ public actor LocalStore {
             guard card.id == plantId, card.revision > 0, card.careRevision > 0
             else { throw SyncWireValidationError.invalidPage }
             return card
+        }
+    }
+
+    func syncedPlantLight(
+        for card: CatalogueCardSummary, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> PlantLightCode? {
+        try authority.withBoundValid(context) {
+            struct Conditions: Decodable {
+                let id: UUID
+                let plant_id: UUID
+                let light_code: PlantLightCode
+            }
+            guard let snapshot = card.currentConditionSnapshotId,
+                  let row = try activeSyncRow("condition_snapshots", id: snapshot, ownerId: context.ownerId, in: makeSyncContext()),
+                  let conditions = try? JSONDecoder().decode(Conditions.self, from: Data(row.payloadJSON.utf8)),
+                  conditions.id == snapshot, conditions.plant_id == card.id else { return nil }
+            return conditions.light_code
         }
     }
 

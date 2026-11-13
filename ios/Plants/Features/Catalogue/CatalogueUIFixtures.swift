@@ -7,9 +7,9 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
-    case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
+    case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected, plantLightEdit
 
-    var testsPlantRename: Bool { self == .plantRename || self == .plantRenameRejected }
+    var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || self == .plantLightEdit }
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -432,7 +432,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 ]))
             }
             let caller = try owner(request)
-            if ledger.scenario == .photoHistory || ledger.scenario.testsPlantRename,
+            if ledger.scenario == .photoHistory || ledger.scenario.testsPlantEdit,
                method == "GET", url.lastPathComponent == "photo" {
                 guard query.isEmpty, request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
                       let plant = ledger.plants.first, caller == plant.owner else {
@@ -478,14 +478,17 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "created_at": plant.timestamp
                      ]]
                 }
-                if ledger.scenario == .analysisHistory || ledger.scenario.testsPlantRename,
+                if ledger.scenario == .analysisHistory || ledger.scenario.testsPlantEdit,
                    let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
                    let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),
                    var data = changes[index]["data"] as? [String: Any] {
                     data["revision"] = 4 + ledger.tick
-                    data["care_revision"] = 2
-                    data["current_condition_snapshot_id"] = plant.id.uuidString
-                    if ledger.scenario.testsPlantRename { data["main_photo_id"] = plant.id.uuidString }
+                    let lightEdit = ledger.scenario == .plantLightEdit
+                    let lightChanged = lightEdit && ledger.tick > 0
+                    let snapshot = lightChanged ? Self.historyObservationIDs[1] : plant.id
+                    data["care_revision"] = lightChanged ? 3 : 2
+                    data["current_condition_snapshot_id"] = snapshot.uuidString
+                    if ledger.scenario.testsPlantEdit { data["main_photo_id"] = plant.id.uuidString }
                     changes[index]["data"] = data
                     for (index, id) in Self.historyObservationIDs.enumerated() {
                         let older = index == 0
@@ -497,6 +500,14 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                                      "source_snapshot_id": older ? id.uuidString : plant.id.uuidString,
                                      "source_care_revision": older ? 1 : 2, "context_state": "current",
                                      "created_at": older ? "2026-10-29T12:00:00Z" : "2026-10-30T12:00:00Z"]
+                        ])
+                    }
+                    if lightEdit {
+                        changes.append([
+                            "entity_type": "condition_snapshots", "id": snapshot.uuidString,
+                            "updated_at": plant.timestamp, "deleted_at": NSNull(),
+                            "data": ["id": snapshot.uuidString, "plant_id": plant.id.uuidString,
+                                     "light_code": lightChanged ? "direct_sun" : "medium"]
                         ])
                     }
                     if let since {
@@ -588,8 +599,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             if ledger.scenario == .plantDeletion, envelope.commandName == "plant.delete" {
                 return try deletePlant(envelope, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
             }
-            if ledger.scenario.testsPlantRename, let rename = PlantRenameCommand(envelope) {
-                return try renamePlant(rename, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
+            if ledger.scenario.testsPlantEdit, let edit = PlantEditCommand(envelope) {
+                return try editPlant(edit, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
             }
             try CatalogueCreateWire.validate(envelope)
             guard request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased(),
@@ -637,8 +648,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         }
     }
 
-    private func renamePlant(_ rename: PlantRenameCommand, body: Data, caller: UUID, header: String?) throws -> Reply {
-        let envelope = rename.envelope
+    private func editPlant(_ edit: PlantEditCommand, body: Data, caller: UUID, header: String?) throws -> Reply {
+        let envelope = edit.envelope
         guard let first = ledger.plants.first, envelope.plantId == first.id, first.owner == caller,
               header == envelope.operationId.uuidString.lowercased() else { throw CatalogueUIFixtureError.invalidRequest }
         let key = caller.uuidString + ":" + envelope.operationId.uuidString
@@ -660,14 +671,31 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 return try error(400, "VALIDATION_ERROR")
             }
         }
+        let name: String?
+        let snapshot: UUID
+        let careRevision: Int
+        switch edit.change {
+        case let .name(requested):
+            guard ledger.scenario != .plantLightEdit else { throw CatalogueUIFixtureError.invalidRequest }
+            name = requested
+            snapshot = first.id
+            careRevision = 2
+        case .light(.directSun):
+            guard ledger.scenario == .plantLightEdit else { throw CatalogueUIFixtureError.invalidRequest }
+            name = first.name
+            snapshot = Self.historyObservationIDs[1]
+            careRevision = 3
+        default:
+            throw CatalogueUIFixtureError.invalidRequest
+        }
         next.tick += 1
         let stamp = Self.time(next.tick)
-        next.plants[0] = Plant(owner: caller, id: first.id, species: first.species, name: rename.personalName, timestamp: stamp)
-        let receipt = try json(["plant_id": first.id.uuidString, "revision": 4 + next.tick, "care_revision": 2,
-                                "condition_snapshot_id": first.id.uuidString, "watermark": stamp])
+        next.plants[0] = Plant(owner: caller, id: first.id, species: first.species, name: name, timestamp: stamp)
+        let receipt = try json(["plant_id": first.id.uuidString, "revision": 4 + next.tick, "care_revision": careRevision,
+                                "condition_snapshot_id": snapshot.uuidString, "watermark": stamp])
         next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: first.id)
         try persist(next)
-        if ledger.scenario == .plantRename { throw URLError(.networkConnectionLost) }
+        if ledger.scenario != .plantRenameRejected { throw URLError(.networkConnectionLost) }
         return Reply(status: 200, data: receipt)
     }
 

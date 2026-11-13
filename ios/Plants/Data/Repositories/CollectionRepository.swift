@@ -447,25 +447,33 @@ public struct CollectionRepository: Sendable {
         }
     }
 
-    func pendingPlantRename(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
+    func pendingPlantEdit(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
         let entries = try await store.pendingOutboxEntries(for: context.ownerId)
         return try apiClient.syncAuthority.withBoundValid(context) {
-            entries.first { $0.plantId == plantId && $0.commandName == PlantRenameCommand.name }?.envelope
+            entries.first { $0.plantId == plantId && $0.commandName == PlantEditCommand.name }?.envelope
         }
     }
 
     func enqueuePlantRename(plantId: UUID, personalName: String, context: SyncSessionLease) async throws -> CommandEnvelopeDTO {
-        let command = try PlantRenameCommand.make(plantId: plantId, personalName: personalName)
-        return try await store.enqueuePlantRename(command, context: context, authority: apiClient.syncAuthority)
+        try await enqueuePlantEdit(plantId: plantId, change: .name(personalName), context: context)
     }
 
-    func retryPlantRename(
+    func enqueuePlantEdit(plantId: UUID, change: PlantEditCommand.Change, context: SyncSessionLease) async throws -> CommandEnvelopeDTO {
+        let command = try PlantEditCommand.make(plantId: plantId, change: change)
+        return try await store.enqueuePlantEdit(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func syncedPlantLight(for card: CatalogueCardSummary, context: SyncSessionLease) async throws -> PlantLightCode? {
+        try await store.syncedPlantLight(for: card, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryPlantEdit(
         _ command: CommandEnvelopeDTO, context: SyncSessionLease
     ) async throws -> CatalogueCardSummary? {
-        guard let plantId = command.plantId, PlantRenameCommand(command) != nil
+        guard let plantId = command.plantId, PlantEditCommand(command) != nil
         else { throw SyncWireValidationError.invalidRequest }
-        try await syncEngine.flushPlantRename(command, context: context)
-        guard try await pendingPlantRename(plantId: plantId, context: context) == nil else { return nil }
+        try await syncEngine.flushPlantEdit(command, context: context)
+        guard try await pendingPlantEdit(plantId: plantId, context: context) == nil else { return nil }
         return try await store.syncedCollectionCard(plantId: plantId, context: context, authority: apiClient.syncAuthority)
     }
 

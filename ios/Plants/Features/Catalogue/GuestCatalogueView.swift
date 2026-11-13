@@ -824,6 +824,8 @@ private struct CatalogueCollectionCardView: View {
     @State private var editingName = false
     @State private var nameInput = ""
     @State private var rejectedNameInput: String?
+    @State private var editingLight = false
+    @State private var currentLight: PlantLightCode?
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
     @State private var history: [CatalogueCareJournalEntry]?
@@ -950,7 +952,7 @@ private struct CatalogueCollectionCardView: View {
                 species = try? await api.fetchPublishedSpecies(slug: slug, locale: locale)
             }
             .task(id: attempt) { await loadCare() }
-            .task(id: attempt) { await loadFirstAidJournal() }
+            .task(id: [attempt, card.careRevision]) { await loadFirstAidJournal() }
             .task(id: card.careRevision) { await loadAnalysisHistory() }
             .task { await loadRename() }
             .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
@@ -966,10 +968,17 @@ private struct CatalogueCollectionCardView: View {
                     .accessibilityIdentifier("collection.rename.input")
                 Button("Save name") {
                     let input = nameInput
-                    Task { await renamePlant(input: input) }
+                    Task { await editPlant(.name(input)) }
                 }
-                .disabled(PlantRenameCommand.normalizedName(nameInput) == nil)
+                .disabled(PlantEditCommand.normalizedName(nameInput) == nil)
                 .accessibilityIdentifier("collection.rename.save")
+                Button("Cancel", role: .cancel) {}
+            }
+            .confirmationDialog("Edit light", isPresented: $editingLight, titleVisibility: .visible) {
+                ForEach(PlantLightCode.allCases, id: \.self) { light in
+                    Button(light.label) { Task { await editPlant(.light(light)) } }
+                        .accessibilityIdentifier("collection.light.\(light.rawValue)")
+                }
                 Button("Cancel", role: .cancel) {}
             }
             .alert(
@@ -1086,11 +1095,12 @@ private struct CatalogueCollectionCardView: View {
     @ViewBuilder
     private var renameControls: some View {
         if savingRename {
-            ProgressView("Saving plant name…")
-        } else if pendingRename != nil {
-            Text("Plant name pending sync.")
+            ProgressView("Saving plant edit…")
+        } else if let pendingRename, let edit = PlantEditCommand(pendingRename) {
+            let isLight = if case .light = edit.change { true } else { false }
+            Text(isLight ? "Light change pending sync." : "Plant name pending sync.")
                 .accessibilityIdentifier("collection.rename.pending")
-            Button("Retry name change") { Task { await renamePlant() } }
+            Button(isLight ? "Retry light change" : "Retry name change") { Task { await editPlant() } }
                 .accessibilityIdentifier("collection.rename.retry")
         } else if !loadingRename {
             Button("Edit name") {
@@ -1098,9 +1108,14 @@ private struct CatalogueCollectionCardView: View {
                 editingName = true
             }
             .accessibilityIdentifier("collection.rename.open")
+            if let currentLight {
+                Text(currentLight.label).accessibilityIdentifier("collection.light.current")
+            }
+            Button("Edit light") { editingLight = true }
+                .accessibilityIdentifier("collection.light.open")
         }
         if renameFailed {
-            Text("Couldn’t save the plant name.")
+            Text("Couldn’t save the plant edit.")
                 .accessibilityIdentifier("collection.rename.failed")
         }
     }
@@ -1109,9 +1124,11 @@ private struct CatalogueCollectionCardView: View {
         guard !polish, let repository = connection.repository else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
-            let pending = try await repository.pendingPlantRename(plantId: card.id, context: lease)
+            let pending = try await repository.pendingPlantEdit(plantId: card.id, context: lease)
+            let light = try await repository.syncedPlantLight(for: card, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             pendingRename = pending
+            currentLight = light
             loadingRename = false
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
@@ -1119,7 +1136,7 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
-    private func renamePlant(input: String? = nil) async {
+    private func editPlant(_ change: PlantEditCommand.Change? = nil) async {
         guard !savingRename, let repository = connection.repository else { return }
         savingRename = true
         renameFailed = false
@@ -1129,25 +1146,47 @@ private struct CatalogueCollectionCardView: View {
             let command: CommandEnvelopeDTO
             if let pendingRename {
                 command = pendingRename
-            } else if let input {
-                command = try await repository.enqueuePlantRename(plantId: card.id, personalName: input, context: lease)
+            } else if let change {
+                command = try await repository.enqueuePlantEdit(plantId: card.id, change: change, context: lease)
             } else {
                 return
             }
             pendingRename = command
-            let updated = try await repository.retryPlantRename(command, context: lease)
-            let remaining = try await repository.pendingPlantRename(plantId: card.id, context: lease)
+            let updated = try await repository.retryPlantEdit(command, context: lease)
+            let remaining = try await repository.pendingPlantEdit(plantId: card.id, context: lease)
+            let savedLight: PlantLightCode?
+            if let updated {
+                savedLight = try await repository.syncedPlantLight(for: updated, context: lease)
+            } else {
+                savedLight = nil
+            }
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             pendingRename = remaining
-            guard remaining == nil else { return }
-            let requested = PlantRenameCommand(command)?.personalName
-            if let updated { onRenamed(updated) }
-            renameFailed = updated == nil || updated?.personalName != requested
-            rejectedNameInput = renameFailed ? input ?? requested : nil
+            guard remaining == nil, let edit = PlantEditCommand(command) else { return }
+            if let updated {
+                currentLight = savedLight
+                if updated.careRevision != card.careRevision {
+                    firstAid?.controls.removeAll()
+                    advice = nil
+                    adviceRequest += 1
+                }
+                onRenamed(updated)
+            }
+            switch edit.change {
+            case let .name(requested):
+                renameFailed = updated?.personalName != requested
+                if case let .name(input) = change, renameFailed {
+                    rejectedNameInput = input
+                } else {
+                    rejectedNameInput = renameFailed ? requested : nil
+                }
+            case let .light(requested):
+                renameFailed = updated == nil || (savedLight ?? .unknown) != requested
+            }
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             renameFailed = true
-            if pendingRename == nil, let input { rejectedNameInput = input }
+            if pendingRename == nil, case let .name(input) = change { rejectedNameInput = input }
         }
     }
 
