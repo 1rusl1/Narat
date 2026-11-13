@@ -98,6 +98,36 @@ SELECT is((SELECT state FROM public.care_entries WHERE id=(SELECT id FROM first_
 SELECT is((SELECT state FROM public.care_entries WHERE id=(SELECT id FROM second_water)),
     'voided', 'repeat preserves previously voided history');
 
+-- Use the real edit command before replaying its read projections through Edge.
+CREATE TEMP TABLE v10_edit_get(wire JSONB);
+DO $$
+DECLARE
+    v_owner UUID := '17300000-0000-4000-8000-000000000001';
+    v_plant UUID := '17300000-0000-4000-8000-000000000011';
+    v_snapshot UUID;
+    v_plan UUID;
+    v_before JSONB;
+BEGIN
+    IF to_regprocedure('public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)') IS NULL THEN
+        RETURN;
+    END IF;
+    INSERT INTO public.condition_snapshots(owner_id,plant_id)
+    VALUES (v_owner,v_plant) RETURNING id INTO v_snapshot;
+    UPDATE public.plants SET current_condition_snapshot_id=v_snapshot WHERE id=v_plant;
+    INSERT INTO public.care_plans(operation_id,owner_id,plant_id,locale,plan_kind,access_tier,
+        source_kind,snapshot_id,kb_release_id,context_revision,full_body)
+    SELECT gen_random_uuid(),v_owner,v_plant,'en','routine','basic','catalogue',v_snapshot,id,1,'{}'
+    FROM public.kb_releases WHERE state='published' RETURNING id INTO v_plan;
+    INSERT INTO public.task_rules(plan_id,owner_id,plant_id,access_class,action_code,condition_code,interval_days)
+    VALUES(v_plan,v_owner,v_plant,'basic_care','check_soil','check_soil_first',7);
+    v_before := pg_temp.check_read();
+    PERFORM public.execute_plant_edit_command(v_owner,gen_random_uuid(),v_plant,'{"conditions":{"light_code":"low"}}');
+    INSERT INTO v10_edit_get SELECT jsonb_build_object(
+        'owner',v_owner,'plant',v_plant,'before',v_before,'after',pg_temp.check_read());
+END;
+$$;
+SELECT '# V10_EDIT_GET ' || wire::text FROM v10_edit_get;
+
 UPDATE public.care_profiles SET state='draft' WHERE version='repeat-fixture';
 SELECT is(pg_temp.check_read()->'profile', 'null'::jsonb, 'withdrawn profile cannot support the next repeat');
 SELECT is(pg_temp.check_read()->>'last_watered_on', '2025-10-21', 'withdrawal leaves journal history available');

@@ -90,6 +90,7 @@ def main():
                                     if line.startswith(('not ok', '#')))
             raise RuntimeError(str(error) + '\nTAP diagnostics:\n' + diagnostics[-5000:]) from error
         print(f'PASS {db}: {path.name}, {len(assertions)} pgTAP assertions', flush=True)
+        return result
 
     def snapshot(db):
         tables = sql(db, "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename").splitlines()
@@ -710,7 +711,14 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 if any(migration.name == CARE_PROFILE_READ for migration in selected):
                     tap(case, ROOT/'supabase/tests/plant_care_profile_read.test.sql')
                 if any(migration.name == '202611120027_plant_next_check.sql' for migration in selected):
-                    tap(case, ROOT/'supabase/tests/plant_next_check.test.sql')
+                    result = tap(case, ROOT/'supabase/tests/plant_next_check.test.sql')
+                    if any(migration.name == '202611130042_plant_edit_conditions.sql' for migration in selected):
+                        marker = '# V10_EDIT_GET '
+                        wire = [line.removeprefix(marker) for line in result.splitlines() if line.startswith(marker)]
+                        assert len(wire) == 1, 'Missing SQL projections for V10 recommendation regression'
+                        command(['deno', 'run', '--config', str(ROOT/'supabase/functions/deno.json'),
+                                 str(ROOT/'tools/automation/v10_edit_recommendation_wire.ts')], wire[0])
+                        print(f'PASS {case}: real edit preserves the recommendation and suppresses its date through Edge', flush=True)
                 if any(migration.name == '202611120028_first_aid_control.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/first_aid_control.test.sql')
                 if any(migration.name == '202611120030_first_aid_observation.sql' for migration in selected):
