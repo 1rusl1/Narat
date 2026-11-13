@@ -1976,9 +1976,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-v19-first-aid-photo-cleanup-auth: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 77.19 с, проверки — 88.82 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [v19-first-aid-photo-cleanup-auth](validation/automation/tasks/v19-first-aid-photo-cleanup-auth.md).
+v13-plant-delete-access: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 141.88 с, проверки — 84.94 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [v13-plant-delete-access](validation/automation/tasks/v13-plant-delete-access.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
