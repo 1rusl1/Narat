@@ -114,6 +114,15 @@ export function errorResponse(err: unknown, locale: SupportedLocale = "en"): Res
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export function matchesSecret(expected: string | undefined, supplied: string | null): boolean {
+  if (!expected || supplied?.length !== expected.length) return false;
+  let difference = 0;
+  for (let i = 0; i < expected.length; i++) {
+    difference |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return difference === 0;
+}
+
 export function requireUuid(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || !UUID_REGEX.test(value)) {
     throw new ApiHttpError(

@@ -629,7 +629,7 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
         for case in ('clean','upgrade'):
             sql('postgres', f'CREATE DATABASE {case};')
             sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean,created_at timestamptz NOT NULL DEFAULT clock_timestamp());")
-            if args.diagnosis_upload:
+            if args.diagnosis_upload or any(m.name == '202611130035_plant_delete_storage.sql' for m in selected):
                 sql(case, 'CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY, name text NOT NULL, public boolean, file_size_limit bigint, allowed_mime_types text[]); CREATE TABLE storage.objects(bucket_id text, name text, PRIMARY KEY(bucket_id,name));')
             for migration in selected:
                 if case == 'clean' or migration.name < FIRST:
@@ -728,6 +728,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     tap(case, ROOT/'supabase/tests/plant_delete_core.test.sql')
                 if any(migration.name == '202611130034_plant_delete_access.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/plant_delete_access.test.sql')
+                if any(migration.name == '202611130035_plant_delete_storage.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_storage.test.sql')
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ApiHttpError,
   jsonResponse,
+  matchesSecret,
   type RequestContext,
   requireActiveOwner,
   requireUuid,
@@ -10,15 +11,6 @@ import { installationCredentialHash } from "./analysis-access.ts";
 import { DIAGNOSIS_PHOTO_BUCKET } from "./diagnosis-media.ts";
 
 const objectKey = /^[a-f0-9-]{36}\/[a-f0-9-]{36}$/;
-
-function matchesSecret(expected: string | undefined, supplied: string | null): boolean {
-  if (!expected || supplied?.length !== expected.length) return false;
-  let difference = 0;
-  for (let i = 0; i < expected.length; i++) {
-    difference |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return difference === 0;
-}
 
 export function createGuestPhotoApi(
   clientFactory: () => SupabaseClient | null,
