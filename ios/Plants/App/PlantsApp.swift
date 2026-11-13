@@ -1,5 +1,5 @@
 import SwiftUI
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 import Observation
 import Supabase
 #endif
@@ -40,7 +40,7 @@ struct RootContainerView: View {
     @State private var showingCollection = false
     @State private var starting = false
     @State private var startupFailed = false
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
     @State private var analysisAccessRepository = AnalysisAccessRepository()
     @State private var stagingAccount: StagingAccountPresentation?
     @State private var stagingResume: CatalogueResumeSelection?
@@ -59,7 +59,7 @@ struct RootContainerView: View {
     }
 
     private var isStagingAnalysis: Bool {
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis")
 #else
         false
@@ -95,7 +95,7 @@ struct RootContainerView: View {
                     careMethodPickerSection
                 case .selectCatalogueSpecies:
                     if let catalogue {
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
                         if isStagingAnalysis, let resumed = stagingResume {
                             ScrollView {
                                 CatalogueSaveView(
@@ -161,7 +161,7 @@ struct RootContainerView: View {
                     Button(isPolish ? "Moje rośliny" : "My plants") { showingCollection = true }
                         .accessibilityIdentifier("collection.open")
                 }
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
                 if analysisModel.router.flowState.currentStep == .selectIntent,
                    let claim = stagingGuestClaim, let scope = catalogue?.snapshot, claim.canResumeDraft(for: scope) {
                     Button("Continue saving") {
@@ -191,7 +191,7 @@ struct RootContainerView: View {
                 )
             }
         }
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         .sheet(item: $stagingAccount, onDismiss: showPendingGuestTransfer) { account in
             StagingAccountView(
                 connection: account.connection,
@@ -236,7 +236,7 @@ struct RootContainerView: View {
     }
 
     private var analysisAccessSource: AnalysisAccessSource? {
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         if isStagingAnalysis, let catalogue {
             return AnalysisAccessSource(
                 connection: catalogue, repository: analysisAccessRepository, guestCredential: stagingGuestClaim?.credential
@@ -247,7 +247,7 @@ struct RootContainerView: View {
     }
 
     private func repeatDiagnosisEntry(for connection: CatalogueConnection) -> RepeatDiagnosisEntry? {
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         guard isStagingAnalysis, !isPolish, let api = connection.apiClient else { return nil }
         return RepeatDiagnosisEntry(
             languageStore: languageStore,
@@ -266,7 +266,7 @@ struct RootContainerView: View {
     }
 
     private var guestIdentificationActions: GuestIdentificationActions? {
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         guard let claim = stagingGuestClaim, catalogue?.snapshot?.isAnonymous == true else { return nil }
         return GuestIdentificationActions(busy: claim.busy, failed: claim.failed) { selection in
             Task { @MainActor in
@@ -282,7 +282,7 @@ struct RootContainerView: View {
     private func prepareCatalogue() async {
         guard !starting else { return }
         starting = true
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
             await prepareStagingAnalysis()
             return
@@ -345,7 +345,7 @@ struct RootContainerView: View {
         }
     }
 
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
     private func handleGuestDraft(_ outcome: StagingGuestPhotoClaim.DraftOutcome, claim: StagingGuestPhotoClaim) {
         switch outcome {
         case .ready:
@@ -564,7 +564,7 @@ struct RootContainerView: View {
     }
 }
 
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 @MainActor
 final class StagingAnalysisService: AnalysisService {
     private struct Progress {

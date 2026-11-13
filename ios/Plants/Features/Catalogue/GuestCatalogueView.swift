@@ -449,7 +449,7 @@ final class CatalogueConnection {
         return access
     }
 
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
     func guestPhotoClaimData() -> Data? { resumeDefaults.data(forKey: "staging.guest.photo.claim") }
 
     func storeGuestPhotoClaimData(_ data: Data?) {

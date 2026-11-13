@@ -151,7 +151,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @FocusState private var nameFocused: Bool
 
     private var showsManualWateringActions: Bool {
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         analysisSaveIdentity != nil && !polish
             && ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis")
 #else
@@ -396,7 +396,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("catalogue.saved.card." + summary.id.uuidString.lowercased())
             if analysisSaveIdentity != nil && !polish {
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
                 if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
                     careRecommendation(model)
                         .task(id: summary.id) { await model.loadCareRecommendation() }
