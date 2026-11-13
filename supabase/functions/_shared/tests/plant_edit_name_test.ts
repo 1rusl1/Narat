@@ -140,3 +140,35 @@ Deno.test("plant.edit rejects a malformed SQL receipt", async () => {
     assertEquals((await fixture(result).run()).status, 503);
   }
 });
+
+Deno.test("plant.edit forwards partial conditions and rejects mixed or retired fields", async () => {
+  const f = fixture();
+  const conditions = { light_code: "unknown", drainage_code: "yes" };
+  const response = await f.run({
+    ...body,
+    payload_json: JSON.stringify({ conditions }),
+  });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), receipt);
+  assertEquals(f.calls, [{
+    p_owner_id: owner,
+    p_operation_id: operation,
+    p_plant_id: plant,
+    p_payload: { conditions },
+  }]);
+  for (
+    const payload of [
+      { conditions, personal_name: "Mixed" },
+      { conditions, taxon_id: snapshot },
+      { conditions: { light_source: "camera_estimate" } },
+      { conditions: { season_override: "summer" } },
+      { conditions: { drainage_code: null } },
+    ]
+  ) {
+    assertEquals(
+      (await f.run({ ...body, payload_json: JSON.stringify(payload) })).status,
+      400,
+    );
+  }
+  assertEquals(f.calls.length, 1);
+});

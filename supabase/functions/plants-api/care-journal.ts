@@ -14,6 +14,7 @@ const envelopeFields = new Set([
   "payload_json",
 ]);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const conditionFields = new Set(["light_code", "watering_code", "drainage_code", "pot_type"]);
 const observationStatuses = new Set(["improved", "unchanged", "worse", "unknown"]);
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -95,9 +96,15 @@ export async function handleCollectionCommand(
   if (isDeletion) {
     if (Object.keys(payload).length !== 0) throw invalid(plantCommand);
   } else if (isEdit) {
-    if (Object.keys(payload).length !== 1 || typeof payload.personal_name !== "string") {
-      throw invalid(plantCommand);
-    }
+    const conditions = payload.conditions;
+    const validConditions = record(conditions) && Object.keys(conditions).length > 0 &&
+      Object.entries(conditions).every(([key, value]) =>
+        conditionFields.has(key) && typeof value === "string"
+      );
+    if (
+      Object.keys(payload).length !== 1 ||
+      (typeof payload.personal_name !== "string" && !validConditions)
+    ) throw invalid(plantCommand);
   } else if (isObservation) {
     if (
       Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||
