@@ -303,6 +303,7 @@ struct PlantConditionCodes: Decodable, Sendable {
 struct PlantEditCommand: Sendable {
     enum Change: Sendable {
         case name(String)
+        case taxon(UUID)
         case light(PlantLightCode)
         case drainage(PlantDrainageCode)
         case watering(PlantWateringCode)
@@ -325,6 +326,8 @@ struct PlantEditCommand: Sendable {
         case let .name(input):
             guard let name = normalizedName(input) else { throw SyncWireValidationError.invalidRequest }
             fields = ["personal_name": name]
+        case let .taxon(id):
+            fields = ["taxon_id": id.uuidString.lowercased()]
         case let .light(light):
             fields = ["conditions": ["light_code": light.rawValue]]
         case let .drainage(drainage):
@@ -349,6 +352,8 @@ struct PlantEditCommand: Sendable {
               fields.count == 1 else { return nil }
         if let name = fields["personal_name"] as? String, Self.normalizedName(name) == name {
             change = .name(name)
+        } else if let taxon = fields["taxon_id"] as? String, let id = UUID(uuidString: taxon) {
+            change = .taxon(id)
         } else if let conditions = fields["conditions"] as? [String: String], conditions.count == 1,
                   let light = conditions["light_code"].flatMap(PlantLightCode.init(rawValue:)) {
             change = .light(light)

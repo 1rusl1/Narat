@@ -225,6 +225,8 @@ public actor SyncEngine {
                         case let .name(name):
                             guard card.personalName?.utf8.elementsEqual(name.utf8) == true
                             else { throw SyncWireValidationError.invalidPage }
+                        case let .taxon(id):
+                            guard card.taxonId == id else { throw SyncWireValidationError.invalidPage }
                         case let .light(light):
                             let saved = try await store.syncedPlantConditions(
                                 for: card, context: context, authority: apiClient.syncAuthority

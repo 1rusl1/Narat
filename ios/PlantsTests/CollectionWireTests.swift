@@ -4792,6 +4792,84 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testPlantTaxonEditReplaysExactCommandAndWaitsForCanonicalTaxon() async throws {
+        let plant = serverPlantId
+        let originalTaxon = UUID()
+        let targetTaxon = UUID()
+        let photo = UUID()
+        let snapshot = UUID()
+        let nextSnapshot = UUID()
+        let editedAt = "2026-11-03T09:10:00.000001+00:00"
+        let confirmedAt = "2026-11-03T09:10:00.000002+00:00"
+        func page(_ at: String, taxon: UUID, slug: String, snapshot: UUID, revision: Int) throws -> String {
+            var row = syncChange(at, id: plant.uuidString)
+            row["data"] = ["id": plant.uuidString, "taxon_id": taxon.uuidString, "plant_id": slug,
+                           "personal_name": "Fixture name", "main_photo_id": photo.uuidString,
+                           "current_condition_snapshot_id": snapshot.uuidString,
+                           "revision": revision, "care_revision": revision] as [String: Any]
+            var page = syncObject()
+            page["until"] = at
+            page["next_since"] = at
+            page["changes"] = [row]
+            return try syncJSON(page)
+        }
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command: CommandEnvelopeDTO
+        let firstPost: Data
+        do {
+            let baseline = try page(syncUntil, taxon: originalTaxon, slug: "fixture_fern", snapshot: snapshot, revision: 1)
+            let transport = CatalogueTransport([.http(200, baseline), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            command = try await repo.enqueuePlantEdit(plantId: plant, change: .taxon(targetTaxon), context: lease)
+            XCTAssertEqual(command.payloadJSON, "{\"taxon_id\":\"\(targetTaxon.uuidString.lowercased())\"}")
+            let pending = try await repo.retryPlantEdit(command, context: lease)
+            XCTAssertNil(pending)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+            firstPost = try XCTUnwrap(requests.last?.httpBody)
+        }
+        let receipt = try syncJSON(["plant_id": plant.uuidString, "revision": 2, "care_revision": 2,
+                                    "condition_snapshot_id": nextSnapshot.uuidString, "watermark": editedAt])
+        let wrong = try page(editedAt, taxon: originalTaxon, slug: "fixture_fern", snapshot: nextSnapshot, revision: 2)
+        let canonical = try page(confirmedAt, taxon: targetTaxon, slug: "fixture_palm", snapshot: nextSnapshot, revision: 2)
+        let transport = CatalogueTransport([.http(200, receipt), .http(200, wrong),
+                                            .http(200, receipt), .http(200, canonical)])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        let stored = try await repo.pendingPlantEdit(plantId: plant, context: lease)
+        let replay = try XCTUnwrap(stored)
+        XCTAssertEqual(replay, command)
+        let unconfirmed = try await repo.retryPlantEdit(replay, context: lease)
+        XCTAssertNil(unconfirmed)
+        let stillPending = try await repo.pendingPlantEdit(plantId: plant, context: lease)
+        XCTAssertEqual(stillPending, replay)
+        let confirmed = try await repo.retryPlantEdit(replay, context: lease)
+        XCTAssertEqual(confirmed?.id, plant)
+        XCTAssertEqual(confirmed?.taxonId, targetTaxon)
+        XCTAssertEqual(confirmed?.speciesSlug, "fixture_palm")
+        XCTAssertEqual(confirmed?.personalName, "Fixture name")
+        XCTAssertEqual(confirmed?.mainPhotoId, photo)
+        XCTAssertEqual(confirmed?.currentConditionSnapshotId, nextSnapshot)
+        let remaining = try await repo.pendingPlantEdit(plantId: plant, context: lease)
+        XCTAssertNil(remaining)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET", "POST", "GET"])
+        for request in requests where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, firstPost)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), command.operationId.uuidString.lowercased())
+        }
+    }
+
+    @MainActor
     private func verifyPlantConditionEdit(_ change: PlantEditCommand.Change, key: String, code: String) async throws {
         let plant = serverPlantId
         let originalSnapshot = UUID()
@@ -4856,7 +4934,7 @@ extension CollectionWireTests {
         case .drainage: confirmed?.drainage?.rawValue
         case .watering: confirmed?.watering?.rawValue
         case .potType: confirmed?.potType?.rawValue
-        case .name: nil as String?
+        case .name, .taxon: nil as String?
         }
         XCTAssertEqual(confirmedCode, code)
         let after = try await repo.collectionAnalysisHistory(plantId: plant, context: lease)

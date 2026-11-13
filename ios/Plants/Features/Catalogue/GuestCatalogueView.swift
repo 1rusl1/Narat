@@ -1120,6 +1120,7 @@ private struct CatalogueCollectionCardView: View {
         } else if let pendingRename, let edit = PlantEditCommand(pendingRename) {
             let labels = switch edit.change {
             case .name: ("Plant name pending sync.", "Retry name change")
+            case .taxon: ("Species change pending sync.", "Retry species change")
             case .light: ("Light change pending sync.", "Retry light change")
             case .drainage: ("Drainage change pending sync.", "Retry drainage change")
             case .watering: ("Watering frequency pending sync.", "Retry watering frequency")
@@ -1222,6 +1223,8 @@ private struct CatalogueCollectionCardView: View {
                 } else {
                     rejectedNameInput = renameFailed ? requested : nil
                 }
+            case let .taxon(requested):
+                renameFailed = updated?.taxonId != requested
             case let .light(requested):
                 renameFailed = updated == nil || (savedConditions?.light ?? .unknown) != requested
             case let .drainage(requested):
