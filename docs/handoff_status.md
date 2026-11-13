@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## B — V13 plant.delete и отзыв доступа, 13 ноября 2026
+
+`care-journal.ts` подключает `plant.delete` к существующему `/commands`. `collection.ts` переиспользуется для проверки watermark. Миграция 034 закрывает SQL и Data API чтение удалённой карточки, фото и связанного диагноза, включая старое задание идентификации, связанное через главное фото. Replay анализа после удаления возвращает 404. Ожидающий worker не получит lease или разрешение старта. В ещё не выложенную 033 добавлено штатное освобождение неиспользованного резерва. Обновлены HTTP/SQL fixtures, PG gate, wire и T083.
+
+**Локально.** Исходный gate `b87784d` прошёл по 881 pgTAP на clean/upgrade. После подключения маршрута прошли typecheck двух entrypoints, 56 целевых Deno, по 901 pgTAP clean/upgrade и по 888 в локальной репетиции без 024 с проверками owner/replay, рекомендаций, обоих фото, диагноза, изоляции соседней карточки и прямых SELECT от роли `authenticated`. [Wire](../specs/001-plants-ios-mvp/contracts/collection-http.md#post-commands--plantdelete-v13-целевой-контракт-t082t083).
+
+Точный следующий шаг — независимая приёмка кандидата и отдельный Storage/DB purge worker. Живые удаления и выкладка не запускались. T082/T083 открыты. 024 и StoreKit на паузе. Недельный остаток перед репетицией — 9%.
+
 ## B — V13 локальное SQL-ядро plant.delete, 12 ноября 2026
 
 Миграция `202611120033_plant_delete_core.sql` добавляет служебный `execute_plant_delete_command`. Под блокировками владельца и карточки он сохраняет одну квитанцию, одну `deletion_jobs` и tombstones связанных строк на одном watermark. Legacy-триггер basic care сохраняет прежний путь пересчёта для живых правил и пропускает строки, уже обработанные командой. Добавлены `plant_delete_core.test.sql` и вызов в `parallel_backend_quota_gate.py`. [HTTP-контракт](../specs/001-plants-ios-mvp/contracts/collection-http.md#post-commands--plantdelete-v13-целевой-контракт-t082t083).

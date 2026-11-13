@@ -22,7 +22,7 @@ const queryKeys = new Set([
 
 // Validate calendar dates, require a timezone, and compare at PostgreSQL's
 // microsecond precision. Never round/serialize a caller's watermark through Date.
-function timestamp(value: unknown): bigint | null {
+export function timestamp(value: unknown): bigint | null {
   if (typeof value !== "string") return null;
   const match = value.match(
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/,

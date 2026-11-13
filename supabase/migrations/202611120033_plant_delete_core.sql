@@ -29,6 +29,7 @@ DECLARE
     v_deleted_at TIMESTAMPTZ;
     v_watermark TIMESTAMPTZ;
     v_job_id UUID;
+    v_unstarted_job UUID;
     v_hash TEXT;
     v_result JSONB;
 BEGIN
@@ -92,6 +93,18 @@ BEGIN
     WHERE owner_id = p_owner_id AND plant_id = p_plant_id AND deleted_at IS NULL;
     UPDATE public.plants SET deleted_at = v_watermark, updated_at = v_watermark
     WHERE id = p_plant_id AND owner_id = p_owner_id;
+
+    -- Revocation prevents a new provider start. Release undispatched reservations
+    -- through the existing settlement path while the owner lock is still held.
+    FOR v_unstarted_job IN
+        SELECT j.id FROM public.analysis_jobs j
+        WHERE j.owner_id = p_owner_id AND j.plant_id = p_plant_id
+          AND j.state IN ('queued', 'running') AND j.quota_state = 'reserved'
+          AND j.provider_started_at IS NULL
+        ORDER BY j.id
+    LOOP
+        PERFORM public.finalize_analysis_quota(v_unstarted_job, 'failed', true, v_watermark);
+    END LOOP;
 
     INSERT INTO public.deletion_jobs(owner_id, scope, target_id, state, operation_id)
     VALUES (p_owner_id, 'plant', p_plant_id, 'purge_storage', p_operation_id)

@@ -726,6 +726,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     first_aid_cleanup_race(case, cleanup_first=False, offset=950)
                 if any(migration.name == '202611120033_plant_delete_core.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/plant_delete_core.test.sql')
+                if any(migration.name == '202611130034_plant_delete_access.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_access.test.sql')
             if not args.accounting and not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
                 if not args.reserve:

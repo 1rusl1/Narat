@@ -5,7 +5,7 @@ import {
   requireActiveOwner,
   requireUuid,
 } from "../_shared/http.ts";
-import { handlePlantCreate, type SyncClientFactory } from "./collection.ts";
+import { handlePlantCreate, type SyncClientFactory, timestamp } from "./collection.ts";
 
 const envelopeFields = new Set([
   "operation_id",
@@ -20,20 +20,20 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function unavailable() {
+function unavailable(deletion = false) {
   return new ApiHttpError(
     503,
     "INTERNAL_ERROR",
-    "The care journal is temporarily unavailable.",
+    deletion ? "Plant deletion is temporarily unavailable." : "The care journal is temporarily unavailable.",
     true,
   );
 }
 
-function invalid() {
+function invalid(deletion = false) {
   return new ApiHttpError(
     400,
     "VALIDATION_ERROR",
-    "Invalid manual care command.",
+    deletion ? "Invalid plant deletion command." : "Invalid manual care command.",
   );
 }
 
@@ -51,16 +51,17 @@ export async function handleCollectionCommand(
     (body.command_name !== "care.record" && body.command_name !== "care.undo" &&
       body.command_name !== "care.correct_date" &&
       body.command_name !== "care.first_aid.record" &&
-      body.command_name !== "care.first_aid.observe")
+      body.command_name !== "care.first_aid.observe" && body.command_name !== "plant.delete")
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
 
+  const isDeletion = body.command_name === "plant.delete";
   if (
     new URL(req.url).search ||
     Object.keys(body).some((key) => !envelopeFields.has(key)) ||
     typeof body.payload_json !== "string"
-  ) throw invalid();
+  ) throw invalid(isDeletion);
   const operationId = requireUuid(body.operation_id, "operation_id");
   const plantId = requireUuid(body.plant_id, "plant_id");
   const header = req.headers.get("x-operation-id");
@@ -75,16 +76,18 @@ export async function handleCollectionCommand(
   try {
     payload = JSON.parse(body.payload_json);
   } catch {
-    throw invalid();
+    throw invalid(isDeletion);
   }
-  if (!record(payload)) throw invalid();
+  if (!record(payload)) throw invalid(isDeletion);
   const isRecord = body.command_name === "care.record";
   const isFirstAid = body.command_name === "care.first_aid.record";
   const isUndo = body.command_name === "care.undo";
   const isObservation = body.command_name === "care.first_aid.observe";
   let controlId: string | null = null;
   let entryId: string | null = null;
-  if (isObservation) {
+  if (isDeletion) {
+    if (Object.keys(payload).length !== 0) throw invalid(true);
+  } else if (isObservation) {
     if (
       Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||
       typeof payload.status_code !== "string" ||
@@ -107,16 +110,19 @@ export async function handleCollectionCommand(
   let response;
   try {
     const client = clientFactory();
-    if (!client) throw unavailable();
-    response = await client.rpc(isObservation ? "complete_first_aid_control" : "execute_manual_care_command", {
+    if (!client) throw unavailable(isDeletion);
+    const rpc = isDeletion ? "execute_plant_delete_command" : isObservation
+      ? "complete_first_aid_control"
+      : "execute_manual_care_command";
+    response = await client.rpc(rpc, {
       p_owner_id: ownerId,
       p_operation_id: operationId,
       p_plant_id: plantId,
-      ...(!isObservation && { p_command_name: body.command_name }),
+      ...(!isObservation && !isDeletion && { p_command_name: body.command_name }),
       p_payload: payload,
     });
   } catch {
-    throw unavailable();
+    throw unavailable(isDeletion);
   }
   const { data, error } = response;
   if (error) {
@@ -131,7 +137,7 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         404,
         "NOT_FOUND",
-        isObservation ? "The plant, first-aid control or photo was not found." : isFirstAid
+        isDeletion ? "The plant was not found." : isObservation ? "The plant, first-aid control or photo was not found." : isFirstAid
           ? "The plant or first-aid action was not found."
           : "The plant or care entry was not found.",
       );
@@ -140,15 +146,23 @@ export async function handleCollectionCommand(
       throw new ApiHttpError(
         409,
         "CONFLICT",
-        isObservation
+        isDeletion ? "The plant is already deleted or the operation conflicts with an existing receipt." : isObservation
           ? "The first-aid control is unavailable or the operation conflicts with an existing receipt."
           : "The operation conflicts with an existing care entry or receipt.",
       );
     }
     if (["22007", "22008", "22023", "22P02"].includes(error.code)) {
-      throw invalid();
+      throw invalid(isDeletion);
     }
-    throw unavailable();
+    throw unavailable(isDeletion);
+  }
+  if (isDeletion) {
+    if (
+      !record(data) || data.plant_id !== plantId || data.state !== "deleting" ||
+      typeof data.deletion_job_id !== "string" || !uuid.test(data.deletion_job_id) ||
+      timestamp(data.watermark) === null
+    ) throw unavailable(true);
+    return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
   }
   if (
     !record(data) || data.plant_id !== plantId ||
