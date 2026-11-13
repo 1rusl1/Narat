@@ -204,6 +204,55 @@ BEGIN
 END;
 $$;
 
+DO $$
+DECLARE
+    v_owner UUID := '17300000-0000-4000-8000-000000000001';
+    v_plant UUID := '17300000-0000-4000-8000-000000000011';
+    v_op UUID := gen_random_uuid();
+    v_receipt JSONB;
+    v_before JSONB;
+BEGIN
+    IF to_regprocedure('public.execute_care_recommendation_refresh(uuid,uuid,uuid,jsonb)') IS NULL THEN
+        RETURN;
+    END IF;
+    SELECT to_jsonb(r) INTO STRICT v_before FROM public.task_rules r WHERE plant_id=v_plant;
+    IF v_before->>'rule_state' IS DISTINCT FROM 'paused' THEN
+        RAISE EXCEPTION 'Expected the old rule to be paused by edit';
+    END IF;
+    v_receipt := public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":3}');
+    IF v_receipt->>'state' IS DISTINCT FROM 'paused'
+       OR v_receipt->>'reason' IS DISTINCT FROM 'insufficient_evidence' THEN
+        RAISE EXCEPTION 'Expected pause without evidence for the edited conditions';
+    END IF;
+    IF (SELECT to_jsonb(r) FROM public.task_rules r WHERE plant_id=v_plant) IS DISTINCT FROM v_before
+       OR EXISTS (SELECT 1 FROM public.care_tasks WHERE plant_id=v_plant)
+       OR pg_temp.check_read()->>'last_watered_on' IS DISTINCT FROM '2025-10-21' THEN
+        RAISE EXCEPTION 'Paused refresh changed automation or the watering anchor';
+    END IF;
+    PERFORM public.execute_plant_edit_command(v_owner,gen_random_uuid(),v_plant,'{"conditions":{"light_code":"low"}}');
+    IF public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":3}')
+       IS DISTINCT FROM v_receipt THEN
+        RAISE EXCEPTION 'Exact refresh retry changed the stored receipt';
+    END IF;
+    BEGIN
+        PERFORM public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":4}');
+        RAISE EXCEPTION 'Expected conflict on changed refresh payload';
+    EXCEPTION WHEN unique_violation THEN
+        IF SQLERRM <> 'IDEMPOTENCY_CONFLICT' THEN RAISE; END IF;
+    END;
+    v_op := gen_random_uuid();
+    BEGIN
+        PERFORM public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":4}');
+        RAISE EXCEPTION 'Expected unavailable writer for eligible refresh';
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN
+        IF SQLERRM <> 'CARE_REFRESH_WRITER_UNAVAILABLE' THEN RAISE; END IF;
+    END;
+    IF EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_op) THEN
+        RAISE EXCEPTION 'Eligible refresh without writer recorded a receipt';
+    END IF;
+END;
+$$;
+
 UPDATE public.care_profiles SET state='draft' WHERE version='repeat-fixture';
 SELECT is(pg_temp.check_read()->'profile', 'null'::jsonb, 'withdrawn profile cannot support the next repeat');
 SELECT is(pg_temp.check_read()->>'last_watered_on', '2025-10-21', 'withdrawal leaves journal history available');
