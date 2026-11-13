@@ -63,7 +63,8 @@ SELECT ok((SELECT public.read_diagnosis_job(owner,(receipt#>>'{job,job_id}')::uu
 SELECT ok((SELECT public.read_diagnosis_job(owner,(receipt#>>'{job,job_id}')::uuid) IS NOT NULL
     FROM saved_identification),'owner sees the original saved identification');
 
-SELECT public.execute_plant_delete_command(owner,operation,plant,'{}') FROM revoke_case;
+CREATE TEMP TABLE revoke_receipt AS
+SELECT public.execute_plant_delete_command(owner,operation,plant,'{}') AS body FROM revoke_case;
 SELECT ok((SELECT public.read_owned_plant_photo(owner,plant) IS NULL
     AND public.read_owned_first_aid_observation_photo(owner,observation) IS NULL
     AND public.read_plant_care_profile(owner,plant) IS NULL FROM revoke_case),'owner photo and care readers revoke access');
@@ -87,6 +88,20 @@ SELECT is((SELECT public.start_diagnosis_provider((body->>'job_id')::uuid,(body-
     FROM revoke_lease),'false','pre-existing lease cannot start a provider');
 SELECT is((SELECT j.quota_state FROM public.analysis_jobs j JOIN revoke_lease r ON j.id=(r.body->>'job_id')::uuid),
     'released','deletion settles the undispatched reservation exactly once');
+SELECT is((SELECT j.quota_state FROM public.analysis_jobs j JOIN saved_identification s
+    ON j.id=(s.receipt#>>'{job,job_id}')::uuid),'released','photo-only identification releases the starter reservation');
+CREATE TEMP TABLE revoked_quota_before AS
+SELECT p.starter_identification_job_id,p.starter_identification_consumed,
+    (SELECT to_jsonb(u) FROM public.account_quota_usage u JOIN revoke_lease r
+       ON u.job_id=(r.body->>'job_id')::uuid) AS monthly_usage
+FROM public.profiles p JOIN revoke_case f ON p.id=f.owner;
+SELECT is((SELECT public.execute_plant_delete_command(owner,operation,plant,'{}') FROM revoke_case),
+    (SELECT body FROM revoke_receipt),'delete replay returns the original receipt after quota release');
+SELECT results_eq($q$SELECT p.starter_identification_job_id,p.starter_identification_consumed,
+    (SELECT to_jsonb(u) FROM public.account_quota_usage u JOIN revoke_lease r
+       ON u.job_id=(r.body->>'job_id')::uuid)
+    FROM public.profiles p JOIN revoke_case f ON p.id=f.owner$q$,
+    'SELECT * FROM revoked_quota_before','delete replay does not settle quota again');
 
 GRANT SELECT ON public.plants,public.photo_assets,public.analysis_jobs,public.care_observations TO authenticated;
 SELECT set_config('request.jwt.claim.sub',(SELECT owner::text FROM revoke_case),true);

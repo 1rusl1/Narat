@@ -98,7 +98,12 @@ BEGIN
     -- through the existing settlement path while the owner lock is still held.
     FOR v_unstarted_job IN
         SELECT j.id FROM public.analysis_jobs j
-        WHERE j.owner_id = p_owner_id AND j.plant_id = p_plant_id
+        WHERE j.owner_id = p_owner_id AND (
+            j.plant_id = p_plant_id OR EXISTS (
+                SELECT 1 FROM public.photo_assets a
+                WHERE a.owner_id = p_owner_id AND a.plant_id = p_plant_id AND a.id = ANY(j.photo_ids)
+            )
+        )
           AND j.state IN ('queued', 'running') AND j.quota_state = 'reserved'
           AND j.provider_started_at IS NULL
         ORDER BY j.id
