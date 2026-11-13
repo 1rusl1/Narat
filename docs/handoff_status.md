@@ -4,9 +4,9 @@
 
 `care-journal.ts` подключает `plant.delete` к существующему `/commands`. `collection.ts` переиспользуется для проверки watermark. Миграция 034 закрывает SQL и Data API чтение удалённой карточки, фото и связанного диагноза, включая старое задание идентификации, связанное через главное фото. Replay анализа после удаления возвращает 404. Ожидающий worker не получит lease или разрешение старта. В ещё не выложенную 033 добавлено штатное освобождение неиспользованного резерва. Обновлены HTTP/SQL fixtures, PG gate, wire и T083.
 
-**Локально.** Исходный gate `b87784d` прошёл по 881 pgTAP на clean/upgrade. После подключения маршрута прошли typecheck двух entrypoints, 56 целевых Deno, по 901 pgTAP clean/upgrade и по 888 в локальной репетиции без 024 с проверками owner/replay, рекомендаций, обоих фото, диагноза, изоляции соседней карточки и прямых SELECT от роли `authenticated`. [Wire](../specs/001-plants-ios-mvp/contracts/collection-http.md#post-commands--plantdelete-v13-целевой-контракт-t082t083).
+**Локально.** Исходный gate `b87784d` прошёл по 881 pgTAP на clean/upgrade. Независимые Review/QA приняли исправленный кандидат в `06ee8de`. Прошли typecheck двух entrypoints, diff-check, 385 Deno, 149 automation-тестов, по 904 pgTAP clean/upgrade и по 891 в локальной репетиции без 024 с проверками owner/replay, рекомендаций, обоих фото, диагноза, изоляции соседней карточки и прямых SELECT от роли `authenticated`. [Wire](../specs/001-plants-ios-mvp/contracts/collection-http.md#post-commands--plantdelete-v13-целевой-контракт-t082t083).
 
-Точный следующий шаг — независимая приёмка кандидата и отдельный Storage/DB purge worker. Живые удаления и выкладка не запускались. T082/T083 открыты. 024 и StoreKit на паузе. Недельный остаток перед репетицией — 9%.
+Точный следующий шаг — отдельный Storage purge для синтетических объектов с проверками повторов, общих ссылок и поздней загрузки. Очистка строк БД остаётся отдельной. Живые удаления и выкладка не запускались. T082/T083 открыты. 024 и StoreKit на паузе. Недельный остаток после приёмки — 8%. [Отчёт Review/QA](validation/automation/tasks/v13-plant-delete-access.md).
 
 ## B — V13 локальное SQL-ядро plant.delete, 12 ноября 2026
 
