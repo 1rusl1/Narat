@@ -71,7 +71,7 @@ T057 сохранена в отдельной ветке `origin/codex/plants-io
 
 **Частота полива.** `GuestCatalogueView.swift` добавляет EN-редактор. `PlantsAPIClient.swift` отправляет частичную правку только с `conditions.watering_code` и читает исторические коды `frequent`, `moderate` и `sparse`. `SyncEngine.swift` подтверждает частоту из канонического snapshot. `CatalogueUIFixtures.swift`, `CollectionWireTests.swift` и `CatalogueSaveUITests.swift` проверили точный повтор и сохранность карточки, фото и анализа. `V10WateringFrequency01` прошёл 3/3 XCTest и 1/1 EN XCUITest. После потери ответа и перезапуска новый `weekly` подтверждён, освещение и дренаж сохранены. Diff-check прошёл.
 
-**Открыто.** Стенд не менялся. Следующий шаг — добавить тип горшка по подтверждённым кодам B. Правка вида и живая проверка V10 открыты. После выкладки проверить отсутствие AI jobs, сохранность истории и паузу неприменимых проверок.
+**Тип горшка, контрольная точка.** `GuestCatalogueView.swift` добавляет EN-редактор, `PlantsAPIClient.swift` кодирует только `conditions.pot_type` по 042, `SyncEngine.swift` сверяет значение в owner sync. В `CollectionWireTests.swift` добавлен адресный тест точного повтора. Diff-check прошёл. Сборка и новый тест на этой контрольной точке ещё не запускались. Стенд не менялся. Следующий шаг — запустить адресный XCTest. UI-прогон типа горшка, правка вида и живая проверка V10 открыты.
 
 ### V11 — чтение сохранённой карточки без сети
 

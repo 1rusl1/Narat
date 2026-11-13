@@ -4787,6 +4787,11 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testPlantPotTypeEditReplaysAndRetainsPreviousAnalysis() async throws {
+        try await verifyPlantConditionEdit(.potType(.glazedCeramic), key: "pot_type", code: "glazed_ceramic")
+    }
+
+    @MainActor
     private func verifyPlantConditionEdit(_ change: PlantEditCommand.Change, key: String, code: String) async throws {
         let plant = serverPlantId
         let originalSnapshot = UUID()
@@ -4850,6 +4855,7 @@ extension CollectionWireTests {
         case .light: confirmed?.light?.rawValue
         case .drainage: confirmed?.drainage?.rawValue
         case .watering: confirmed?.watering?.rawValue
+        case .potType: confirmed?.potType?.rawValue
         case .name: nil as String?
         }
         XCTAssertEqual(confirmedCode, code)

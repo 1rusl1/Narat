@@ -827,6 +827,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var editingLight = false
     @State private var editingDrainage = false
     @State private var editingWatering = false
+    @State private var editingPotType = false
     @State private var currentConditions: PlantConditionCodes?
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
@@ -995,6 +996,12 @@ private struct CatalogueCollectionCardView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
+            .confirmationDialog("Edit pot type", isPresented: $editingPotType, titleVisibility: .visible) {
+                ForEach(PlantPotType.allCases, id: \.self) { potType in
+                    Button(potType.label) { Task { await editPlant(.potType(potType)) } }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
             .alert(
                 polish ? "Usunąć tę roślinę?" : "Delete this plant?", isPresented: $deleteConfirmation
             ) {
@@ -1116,6 +1123,7 @@ private struct CatalogueCollectionCardView: View {
             case .light: ("Light change pending sync.", "Retry light change")
             case .drainage: ("Drainage change pending sync.", "Retry drainage change")
             case .watering: ("Watering frequency pending sync.", "Retry watering frequency")
+            case .potType: ("Pot type pending sync.", "Retry pot type change")
             }
             Text(labels.0)
                 .accessibilityIdentifier("collection.rename.pending")
@@ -1142,6 +1150,11 @@ private struct CatalogueCollectionCardView: View {
             }
             Button("Edit watering frequency") { editingWatering = true }
                 .accessibilityIdentifier("collection.watering.frequency.open")
+            if let potType = currentConditions?.potType {
+                Text(potType.label).accessibilityIdentifier("collection.pot.type.current")
+            }
+            Button("Edit pot type") { editingPotType = true }
+                .accessibilityIdentifier("collection.pot.type.open")
         }
         if renameFailed {
             Text("Couldn’t save the plant edit.")
@@ -1215,6 +1228,8 @@ private struct CatalogueCollectionCardView: View {
                 renameFailed = updated == nil || (savedConditions?.drainage ?? .unknown) != requested
             case let .watering(requested):
                 renameFailed = updated == nil || (savedConditions?.watering ?? .unknown) != requested
+            case let .potType(requested):
+                renameFailed = updated == nil || (savedConditions?.potType ?? .unknown) != requested
             }
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
