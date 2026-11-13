@@ -33,7 +33,7 @@ import {
   handleCreateAnalysisJob,
   handleGetAnalysisJob,
 } from "./analysis.ts";
-import { runPlantDataPurge, runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
+import { runPlantDataPurge, runPlantPurgePage, runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
 import { createDiagnosisWorker } from "../analysis-worker/index.ts";
 import { createGuestPhotoApi } from "./guest-photo.ts";
 import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
@@ -58,7 +58,7 @@ export interface PlantsApiDependencies {
   diagnosisJobs?: ReturnType<typeof createDiagnosisJobs>;
   guestPhoto?: ReturnType<typeof createGuestPhotoApi>;
   handlePlantPurge?: (
-    req: Request, id: string, phase: "storage" | "data",
+    req: Request, id: string | null, phase: "storage" | "data" | "sweep",
   ) => Promise<Response>;
   handleGuestPhotoMaintenance?: (req: Request) => Promise<Response>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
@@ -191,7 +191,12 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     const purgeMatch = req.method === "POST"
       ? normalizedPath.match(/^\/internal\/plant-deletions\/([^/]+)\/(storage|data)$/)
       : null;
+    const purgeSweep = req.method === "POST" &&
+      normalizedPath === "/internal/plant-deletions/sweep";
     try {
+      if (purgeSweep && deps.handlePlantPurge) {
+        return privateResponse(await deps.handlePlantPurge(req, null, "sweep"));
+      }
       if (purgeMatch && deps.handlePlantPurge) {
         const phase = purgeMatch[2] === "storage" ? "storage" : "data";
         return privateResponse(await deps.handlePlantPurge(req, purgeMatch[1], phase));
@@ -359,7 +364,7 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       );
     } catch (err) {
       const response = errorResponse(err, locale);
-      return careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute || purgeMatch
+      return careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute || purgeMatch || purgeSweep
         ? privateResponse(response)
         : response;
     }
@@ -419,15 +424,27 @@ export function createProductionPlantsApiHandler(
       ) {
         throw new ApiHttpError(401, "UNAUTHORIZED", "Unauthorized.");
       }
-      const jobId = requireUuid(id, "deletion_job_id");
+      const query = new URL(req.url).searchParams;
+      if (phase === "sweep" && query.size > 0 && (query.size !== 1 || !query.has("after"))) {
+        throw new ApiHttpError(400, "VALIDATION_ERROR", "Invalid deletion queue cursor.");
+      }
+      const after = phase === "sweep" && query.has("after")
+        ? requireUuid(query.get("after"), "after")
+        : null;
+      const jobId = phase === "sweep" ? null : requireUuid(id, "deletion_job_id");
       const admin = syncClient();
       if (admin) {
-        const runPurge = phase === "storage" ? runPlantStoragePurge : runPlantDataPurge;
-        const result = await runPurge(admin, jobId).catch(() => undefined);
-        if (result === null || result?.state === "not_found") {
-          throw new ApiHttpError(404, "NOT_FOUND", "Plant deletion job not found.");
+        if (jobId === null) {
+          const page = await runPlantPurgePage(admin, after).catch(() => null);
+          if (page) return jsonResponse(page);
+        } else {
+          const runPurge = phase === "storage" ? runPlantStoragePurge : runPlantDataPurge;
+          const result = await runPurge(admin, jobId).catch(() => undefined);
+          if (result === null || result?.state === "not_found") {
+            throw new ApiHttpError(404, "NOT_FOUND", "Plant deletion job not found.");
+          }
+          if (result) return jsonResponse(result);
         }
-        if (result) return jsonResponse(result);
       }
       throw new ApiHttpError(503, "INTERNAL_ERROR", "Plant cleanup is temporarily unavailable.", true);
     }),

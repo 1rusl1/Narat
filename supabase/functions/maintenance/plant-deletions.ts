@@ -79,3 +79,49 @@ export async function runPlantDataPurge(
   }
   return { state: data.state, cleared: data.cleared };
 }
+
+export async function runPlantPurgePage(
+  client: SupabaseClient,
+  after: string | null,
+) {
+  const { data, error } = await client.rpc("list_plant_deletion_jobs", {
+    p_after: after,
+  });
+  if (
+    error || !Array.isArray(data) || data.length > 10 || !data.every(isUuid)
+  ) {
+    throw new Error("Invalid plant deletion queue page.");
+  }
+  const ids: string[] = data;
+  if (
+    ids.some((id, index) => id <= (index === 0 ? after ?? "" : ids[index - 1]))
+  ) {
+    throw new Error("Plant deletion queue cursor did not advance.");
+  }
+
+  let dataCleared = 0;
+  let pending = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      const storage = await runPlantStoragePurge(client, id);
+      if (storage.state === "not_found") continue;
+      if (storage.state === "purge_storage") {
+        pending++;
+        continue;
+      }
+      const result = await runPlantDataPurge(client, id);
+      if (result?.state === "cleared") dataCleared++;
+      if (result?.state === "pending") pending++;
+    } catch {
+      failed++;
+    }
+  }
+  return {
+    processed: ids.length,
+    data_cleared: dataCleared,
+    pending,
+    failed,
+    next_after: ids.length === 10 ? ids.at(-1)! : null,
+  };
+}
