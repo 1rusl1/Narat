@@ -40,6 +40,38 @@ final class CatalogueSaveUITests: XCTestCase {
         localizedText(run, "catalogue.saved.name", run.language.canonicalName, run.language.canonicalName)
     }
 
+    @MainActor func testPlantDeletionLostReplyKeepsNeighbourAfterRestart() {
+        let run = Run("plantDeletion", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let first = run.app.buttons["Fixture 1"]
+        let second = run.app.buttons["Fixture 2"]
+        enabled(first)
+        first.tap()
+        let delete = run.app.buttons["collection.delete"]
+        require(delete)
+        if !delete.isHittable { run.app.swipeUp() }
+        enabled(delete)
+        delete.tap()
+        let alert = run.app.alerts["Delete this plant?"]
+        require(alert)
+        alert.buttons["Cancel"].tap()
+        enabled(delete)
+        delete.tap()
+        require(alert)
+        alert.buttons["collection.delete.confirm"].firstMatch.tap()
+        require(run.app.staticTexts["collection.delete.pending"])
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        enabled(second)
+        XCTAssertFalse(first.exists)
+        second.tap()
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 2")
+    }
+
     @MainActor func testCollectionShowsOnlyThePendingFirstAidControl() {
         let run = Run("firstAidControl", .en)
         defer { run.app.terminate() }

@@ -643,6 +643,11 @@ struct CatalogueCollectionView: View {
                             connection: connection, card: selected.card, expected: selected.scope, polish: polish,
                             startRepeatDiagnosis: repeatDiagnosis.map { entry in
                                 { repeatModel = entry.makeModel(selected.card, selected.scope) }
+                            },
+                            onDeleted: {
+                                guard currentSelection == selected else { return }
+                                cards.removeAll { $0.id == selected.card.id }
+                                self.selected = nil
                             }
                         )
                     }
@@ -792,6 +797,12 @@ private struct CatalogueCollectionCardView: View {
     let expected: CatalogueSDKSnapshot
     let polish: Bool
     var startRepeatDiagnosis: (() -> Void)? = nil
+    let onDeleted: () -> Void
+    @State private var deleteConfirmation = false
+    @State private var pendingDeletion: CommandEnvelopeDTO?
+    @State private var checkingDeletion = true
+    @State private var deleting = false
+    @State private var deletionFailed = false
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
     @State private var history: [CatalogueCareJournalEntry]?
@@ -818,6 +829,9 @@ private struct CatalogueCollectionCardView: View {
     var body: some View {
         let requestedAdvice = adviceRequest
         if connection.snapshot == expected {
+            if checkingDeletion || deleting || pendingDeletion != nil {
+                deletionStatus
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(card.personalName ?? species?.displayName ?? (polish ? "Roślina" : "Plant"))
@@ -825,6 +839,10 @@ private struct CatalogueCollectionCardView: View {
                         .accessibilityIdentifier("catalogue.saved.name")
                     if let name = species?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
+                    }
+                    if deletionFailed {
+                        Text(polish ? "Nie udało się usunąć rośliny." : "Couldn’t delete this plant.")
+                            .accessibilityIdentifier("collection.delete.failed")
                     }
                     firstAidJournal
                     if let startRepeatDiagnosis {
@@ -882,6 +900,10 @@ private struct CatalogueCollectionCardView: View {
                             }
                         }
                     }
+                    Button(polish ? "Usuń roślinę" : "Delete plant", role: .destructive) {
+                        deleteConfirmation = true
+                    }
+                    .accessibilityIdentifier("collection.delete")
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("catalogue.saved.card." + card.id.uuidString.lowercased())
@@ -902,6 +924,18 @@ private struct CatalogueCollectionCardView: View {
                 if firstAid?.accessUntil == expiry { firstAid?.controls.removeAll() }
             }
             .task { await retryWhenConnected() }
+            .alert(
+                polish ? "Usunąć tę roślinę?" : "Delete this plant?", isPresented: $deleteConfirmation
+            ) {
+                Button(polish ? "Usuń" : "Delete", role: .destructive) {
+                    Task { await deletePlant(retry: nil) }
+                }
+                .accessibilityIdentifier("collection.delete.confirm")
+                Button(polish ? "Anuluj" : "Cancel", role: .cancel) {}
+            } message: {
+                Text(polish ? "Zdjęcia i historia tej rośliny zostaną usunięte."
+                     : "This plant’s photos and history will be deleted.")
+            }
             .confirmationDialog(
                 firstAidSelection?.title ?? "", isPresented: $showingFirstAidDialog, titleVisibility: .visible,
                 presenting: firstAidSelection
@@ -927,6 +961,70 @@ private struct CatalogueCollectionCardView: View {
                     Task { await correctDate(edit, to: date) }
                 }
             }
+            }
+        }
+    }
+
+    private var deletionStatus: some View {
+        Group {
+            if checkingDeletion || deleting {
+                ProgressView()
+                    .task { await loadDeletion() }
+            } else if let pendingDeletion {
+                VStack(spacing: 12) {
+                    Text(polish ? "Usunięcie oczekuje na synchronizację." : "Deletion pending sync.")
+                        .accessibilityIdentifier("collection.delete.pending")
+                    Button(polish ? "Ponów usunięcie" : "Retry deletion") {
+                        Task { await deletePlant(retry: pendingDeletion) }
+                    }
+                    .accessibilityIdentifier("collection.delete.retry")
+                }
+                .padding()
+            }
+        }
+    }
+
+    private func loadDeletion() async {
+        guard checkingDeletion else { return }
+        defer { checkingDeletion = false }
+        do {
+            guard let repository = connection.repository else { throw SyncWireValidationError.invalidSession }
+            let lease = try await connection.collectionLease(expected: expected)
+            let pending = try await repository.pendingPlantDeletion(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingDeletion = pending
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            deletionFailed = true
+        }
+    }
+
+    private func deletePlant(retry: CommandEnvelopeDTO?) async {
+        guard !deleting, let repository = connection.repository else { return }
+        deleting = true
+        deletionFailed = false
+        defer { deleting = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let command: CommandEnvelopeDTO
+            if let retry {
+                command = retry
+            } else {
+                command = try await repository.enqueuePlantDeletion(plantId: card.id, context: lease)
+            }
+            pendingDeletion = command
+            let outcome = try await repository.retryPlantDeletion(command, context: lease)
+            guard connection.snapshot == expected else { return }
+            switch outcome {
+            case .pending: break
+            case .confirmed: onDeleted()
+            case .rejected:
+                pendingDeletion = nil
+                deletionFailed = true
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            deletionFailed = true
         }
     }
 

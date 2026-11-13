@@ -148,6 +148,10 @@ enum FirstAidWriteOutcome {
     case pending, confirmed, rejected
 }
 
+enum PlantDeletionOutcome {
+    case pending, confirmed, rejected
+}
+
 struct CatalogueFirstAidControl: Decodable, Sendable, Identifiable {
     struct Policy: Decodable, Sendable {
         let dueOn: String
@@ -370,6 +374,8 @@ public struct CollectionRepository: Sendable {
         let isCached: Bool
         do {
             _ = try await syncEngine.performFullRefresh(context: context)
+            // A server-accepted deletion can already be absent from the refreshed list after restart.
+            try await syncEngine.flushPlantDeletions(context: context)
             isCached = false
         } catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost, .timedOut].contains(error.code) {
             try Task.checkCancellation()
@@ -391,6 +397,28 @@ public struct CollectionRepository: Sendable {
             throw SyncWireValidationError.invalidPage
         }
         return card
+    }
+
+    func pendingPlantDeletion(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
+        let entries = try await store.pendingOutboxEntries(for: context.ownerId)
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            entries.first { $0.plantId == plantId && $0.commandName == PlantDeleteReceipt.commandName }?.envelope
+        }
+    }
+
+    func enqueuePlantDeletion(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO {
+        try await store.enqueuePlantDeletion(plantId: plantId, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryPlantDeletion(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws -> PlantDeletionOutcome {
+        guard let plantId = command.plantId, command.commandName == PlantDeleteReceipt.commandName
+        else { throw SyncWireValidationError.invalidRequest }
+        try await syncEngine.flushPlantDeletions(context: context)
+        if try await pendingPlantDeletion(plantId: plantId, context: context) == command { return .pending }
+        let tombstone = try await store.plantDeletionWatermark(
+            plantId: plantId, context: context, authority: apiClient.syncAuthority
+        )
+        return tombstone == nil ? .rejected : .confirmed
     }
 
     func pendingManualWatering(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {

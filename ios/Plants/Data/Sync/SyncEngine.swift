@@ -119,7 +119,14 @@ public actor SyncEngine {
         return try await flushOutbox(for: context.ownerId, context: context)
     }
 
-    private func flushOutbox(for ownerId: UUID, context: SyncSessionLease) async throws -> Int {
+    func flushPlantDeletions(context: SyncSessionLease) async throws {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        _ = try await flushOutbox(for: context.ownerId, context: context, deletionsOnly: true)
+    }
+
+    private func flushOutbox(
+        for ownerId: UUID, context: SyncSessionLease, deletionsOnly: Bool = false
+    ) async throws -> Int {
         guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
         // Actor reentrancy must not dispatch a second copy of this owner's snapshot.
@@ -132,10 +139,15 @@ public actor SyncEngine {
         var blockedPlantIds = Set<UUID>()
         var GlobalChainBlocked = false
         var committedCount = 0
+        let deletingPlants = Set(pending.compactMap { entry in
+            entry.commandName == PlantDeleteReceipt.commandName ? entry.plantId : nil
+        })
 
         for entry in pending {
+            if deletionsOnly, entry.commandName != PlantDeleteReceipt.commandName { continue }
             if let plantId = entry.plantId {
-                if blockedPlantIds.contains(plantId) {
+                if blockedPlantIds.contains(plantId)
+                    || (deletingPlants.contains(plantId) && entry.commandName != PlantDeleteReceipt.commandName) {
                     continue
                 }
             } else if GlobalChainBlocked {
@@ -160,9 +172,9 @@ public actor SyncEngine {
                 receivedReceipt = true
                 switch result {
                 case let .wateringDateCorrection(watermark):
-                    try await refreshCareJournal(ownerId: ownerId, watermark: watermark, context: context)
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
                 case let .firstAidRecorded(receipt):
-                    try await refreshCareJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
                     guard let command = FirstAidRecordCommand(envelope: envelope),
                           try await store.confirmedFirstAidEntry(
                               command, context: context, authority: apiClient.syncAuthority
@@ -170,16 +182,21 @@ public actor SyncEngine {
                         throw SyncWireValidationError.invalidPage
                     }
                 case let .careUndone(reversalId, watermark) where firstAidUndo:
-                    try await refreshCareJournal(ownerId: ownerId, watermark: watermark, context: context)
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
                     guard try await store.confirmedFirstAidUndo(
                         envelope, context: context, authority: apiClient.syncAuthority
                     ) == reversalId else { throw SyncWireValidationError.invalidPage }
                 case let .firstAidObserved(receipt):
-                    try await refreshCareJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
                     guard let command = FirstAidObservationCommand(envelope: envelope),
                           try await store.confirmedFirstAidObservation(
                               command, context: context, authority: apiClient.syncAuthority
                           ) == receipt.observationId else { throw SyncWireValidationError.invalidPage }
+                case let .plantDeleting(receipt):
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    guard let deleted = try await store.plantDeletionWatermark(
+                        plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                    ), deleted >= receipt.watermark else { throw SyncWireValidationError.invalidPage }
                 default:
                     break
                 }
@@ -190,7 +207,8 @@ public actor SyncEngine {
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
                     let observation = envelope.commandName == FirstAidObservationCommand.name
-                    if !receivedReceipt, (firstAidUndo || entry.commandName == FirstAidRecordCommand.name || observation),
+                    let deletion = envelope.commandName == PlantDeleteReceipt.commandName
+                    if !receivedReceipt, (firstAidUndo || entry.commandName == FirstAidRecordCommand.name || observation || deletion),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
@@ -231,6 +249,10 @@ public actor SyncEngine {
             switch result {
             case let .catalogueCreate(receipt):
                 try await store.acknowledgeCatalogueCreate(
+                    envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
+                )
+            case let .plantDeleting(receipt):
+                try await store.acknowledgePlantDeletion(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
             case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved:
@@ -307,7 +329,7 @@ public actor SyncEngine {
         }
     }
 
-    private func refreshCareJournal(ownerId: UUID, watermark: Int64, context: SyncSessionLease) async throws {
+    private func refreshCanonicalJournal(ownerId: UUID, watermark: Int64, context: SyncSessionLease) async throws {
         _ = try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
         guard let raw = try await store.currentWatermarkRaw(ownerId: ownerId),
               let confirmed = SQLTimestamp.microseconds(from: raw), confirmed >= watermark else {

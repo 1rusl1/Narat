@@ -576,6 +576,67 @@ public actor LocalStore {
         return try disk.fetch(descriptor).first
     }
 
+    func enqueuePlantDeletion(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CommandEnvelopeDTO {
+        try authority.withBoundValid(context) {
+            let ownerId = context.ownerId
+            if let queued = try pendingOutboxEntries(for: ownerId).first(where: {
+                $0.plantId == plantId && $0.commandName == PlantDeleteReceipt.commandName
+            }) {
+                return queued.envelope
+            }
+            guard try activeSyncRow("plants", id: plantId, ownerId: ownerId, in: makeSyncContext()) != nil
+            else { throw SyncWireValidationError.invalidRequest }
+            return try enqueueCommand(
+                ownerId: ownerId, plantId: plantId, commandName: PlantDeleteReceipt.commandName, payloadJSON: "{}"
+            ).envelope
+        }
+    }
+
+    func plantDeletionWatermark(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> Int64? {
+        try authority.withBoundValid(context) {
+            try plantDeletionWatermark(plantId: plantId, ownerId: context.ownerId, in: makeSyncContext())
+        }
+    }
+
+    private func plantDeletionWatermark(plantId: UUID, ownerId: UUID, in disk: ModelContext) throws -> Int64? {
+        let descriptor = FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+            $0.ownerId == ownerId && $0.entityType == "plants" && $0.entityId == plantId && $0.deletedAt != nil
+        })
+        guard let row = try disk.fetch(descriptor).first, row.payloadJSON == "null",
+              let stamp = row.updatedAtRaw, let deletedAt = row.deletedAt,
+              SQLTimestamp.date(from: stamp) == deletedAt else { return nil }
+        return SQLTimestamp.microseconds(from: stamp)
+    }
+
+    func acknowledgePlantDeletion(
+        _ command: CommandEnvelopeDTO, receipt: PlantDeleteReceipt,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            let disk = makeSyncContext()
+            let ownerId = context.ownerId
+            let plantId = receipt.plantId
+            guard command.plantId == plantId,
+                  let deleted = try plantDeletionWatermark(plantId: plantId, ownerId: ownerId, in: disk),
+                  deleted >= receipt.watermark else { throw SyncWireValidationError.invalidPage }
+            let descriptor = FetchDescriptor<LocalOutboxRecord>(
+                predicate: #Predicate { $0.ownerId == ownerId && $0.plantId == plantId }
+            )
+            let entries = try disk.fetch(descriptor)
+            guard entries.contains(where: {
+                $0.operationId == command.operationId && $0.commandName == PlantDeleteReceipt.commandName
+                    && $0.payloadJSON == command.payloadJSON
+            }) else { throw OutboxEnqueueError.operationIdentityMismatch }
+            for entry in entries { disk.delete(entry) }
+            try Task.checkCancellation()
+            try disk.save()
+        }
+    }
+
     func confirmedFirstAidUndo(
         _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> UUID? {

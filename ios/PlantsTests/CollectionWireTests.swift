@@ -4662,6 +4662,95 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testPlantDeletionReplaysAfterRestartAndWaitsForTheSelectedTombstone() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let neighbour = UUID()
+        let deletionJob = UUID()
+        let deletionTime = "2026-11-03T09:10:00.000001+00:00"
+        func active(_ id: UUID) -> [String: Any] {
+            var row = syncChange(id: id.uuidString)
+            row["data"] = ["id": id.uuidString, "plant_id": "monstera_deliciosa", "revision": 1, "care_revision": 1] as [String: Any]
+            return row
+        }
+        func tombstone(_ id: UUID) -> [String: Any] {
+            var row = syncChange(deletionTime, id: id.uuidString)
+            row["data"] = NSNull()
+            row["deleted_at"] = deletionTime
+            return row
+        }
+        func page(_ until: String, changes: [[String: Any]]) throws -> String {
+            var page = syncObject()
+            page["until"] = until
+            page["next_since"] = until
+            page["changes"] = changes.sorted { ($0["id"] as! String) < ($1["id"] as! String) }
+            return try syncJSON(page)
+        }
+        let baseline = try page(syncUntil, changes: [active(serverPlantId), active(neighbour)])
+        let initial = CatalogueTransport([.http(200, baseline), .network])
+        let initialAPI = client(initial)
+        await initialAPI.bindSyncSession(syncSession)
+        let firstLease = try await initialAPI.captureSyncContext(ownerId: syncOwner)
+        let initialStore = LocalStore(modelContainer: try diskContainer(url))
+        let initialRepo = CollectionRepository(
+            store: initialStore, apiClient: initialAPI, syncEngine: SyncEngine(store: initialStore, apiClient: initialAPI)
+        )
+        _ = try await initialRepo.collectionCards(context: firstLease)
+        let localCare = try await initialStore.enqueueCommand(
+            ownerId: syncOwner, plantId: serverPlantId, commandName: "care.record", payloadJSON: "{}"
+        )
+        let otherCare = try await initialStore.enqueueCommand(
+            ownerId: syncOwner, plantId: neighbour, commandName: "care.record", payloadJSON: "{}"
+        )
+        let command = try await initialRepo.enqueuePlantDeletion(plantId: serverPlantId, context: firstLease)
+        let reused = try await initialRepo.enqueuePlantDeletion(plantId: serverPlantId, context: firstLease)
+        XCTAssertEqual(reused, command)
+        guard case .pending = try await initialRepo.retryPlantDeletion(command, context: firstLease)
+        else { return XCTFail("Lost response must retain the delete envelope") }
+        let initialRequests = await initial.capturedRequests()
+        XCTAssertEqual(initialRequests.map(\.httpMethod), ["GET", "POST"])
+        XCTAssertEqual(try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(initialRequests.last?.httpBody)), command)
+
+        let receipt = try syncJSON([
+            "plant_id": serverPlantId.uuidString, "deletion_job_id": deletionJob.uuidString,
+            "state": "deleting", "watermark": deletionTime
+        ])
+        let wrongReceipt = try syncJSON([
+            "plant_id": neighbour.uuidString, "deletion_job_id": deletionJob.uuidString,
+            "state": "deleting", "watermark": deletionTime
+        ])
+        let empty = try page(deletionTime, changes: [])
+        let complete = try page(deletionTime, changes: [tombstone(serverPlantId), active(neighbour)])
+        let transport = CatalogueTransport([
+            .http(200, wrongReceipt),
+            .http(200, receipt), .http(200, empty),
+            .http(200, complete), .http(200, receipt), .http(200, empty)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        let restored = try await repo.pendingPlantDeletion(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(restored, command)
+        for _ in 0..<2 {
+            guard case .pending = try await repo.retryPlantDeletion(command, context: lease)
+            else { return XCTFail("A foreign receipt or sync without the tombstone cannot acknowledge deletion") }
+        }
+        let finalSnapshot = try await repo.collectionCards(context: lease)
+        XCTAssertEqual(finalSnapshot.cards.map(\.id), [neighbour])
+        let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(remaining.map(\.operationId), [otherCare.operationId])
+        XCTAssertFalse(remaining.contains { $0.operationId == localCare.operationId })
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "GET", "GET", "POST", "GET"])
+        for request in requests where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, initialRequests.last?.httpBody)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), command.operationId.uuidString.lowercased())
+        }
+    }
+
+    @MainActor
     func testBoundDiagnosisShowsQuotaExhaustionAndReturnsToPlantWithoutResult() async throws {
         let photo = UUID()
         let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"

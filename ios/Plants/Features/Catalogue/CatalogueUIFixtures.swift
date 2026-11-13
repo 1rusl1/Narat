@@ -7,7 +7,7 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
-    case firstAidControl, trialReminder
+    case firstAidControl, trialReminder, plantDeletion
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -427,7 +427,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 }.sorted {
                     $0.timestamp == $1.timestamp ? $0.id.uuidString < $1.id.uuidString : $0.timestamp < $1.timestamp
                 }
-                let changes: [[String: Any]] = plants.map { plant in
+                var changes: [[String: Any]] = plants.map { plant in
                     ["entity_type": "plants", "id": plant.id.uuidString, "updated_at": plant.timestamp,
                      "deleted_at": NSNull(), "data": [
                         "id": plant.id.uuidString, "plant_id": plant.species,
@@ -436,6 +436,21 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "revision": 1, "care_revision": 1,
                         "created_at": plant.timestamp
                      ]]
+                }
+                if ledger.scenario == .plantDeletion {
+                    for commit in ledger.commits.values where commit.owner == caller && commit.envelope.commandName == "plant.delete" {
+                        let data = try JSONSerialization.jsonObject(with: commit.receipt) as? [String: String]
+                        guard let stamp = data?["watermark"], let time = SQLTimestamp.microseconds(from: stamp) else {
+                            throw CatalogueUIFixtureError.invalidRequest
+                        }
+                        if let since, time <= SQLTimestamp.microseconds(from: since)! { continue }
+                        changes.append(["entity_type": "plants", "id": commit.plantID.uuidString,
+                                        "updated_at": stamp, "deleted_at": stamp, "data": NSNull()])
+                    }
+                    changes.sort {
+                        ($0["updated_at"] as! String, $0["id"] as! String)
+                            < ($1["updated_at"] as! String, $1["id"] as! String)
+                    }
                 }
                 let firstAid: [[String: Any]] = ledger.scenario == .firstAidControl ? plants.map { plant in
                     [
@@ -480,6 +495,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             guard method == "POST", url.path == "/functions/v1/plants-api/commands", query.isEmpty,
                   caller == ledger.permanent else { throw CatalogueUIFixtureError.invalidRequest }
             let envelope = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+            if ledger.scenario == .plantDeletion, envelope.commandName == "plant.delete" {
+                return try deletePlant(envelope, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
+            }
             try CatalogueCreateWire.validate(envelope)
             guard request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased(),
                   Set(object.keys).isSubset(of: ["operation_id", "command_name", "plant_id", "payload_json"]),
@@ -524,6 +542,30 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             if lose { throw URLError(.networkConnectionLost) }
             return Reply(status: 200, data: receipt)
         }
+    }
+
+    private func deletePlant(_ envelope: CommandEnvelopeDTO, body: Data, caller: UUID, header: String?) throws -> Reply {
+        guard let plant = envelope.plantId, envelope.payloadJSON == "{}",
+              header == envelope.operationId.uuidString.lowercased() else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        let key = caller.uuidString + ":" + envelope.operationId.uuidString
+        var next = ledger
+        next.attempts.append(Attempt(owner: caller, body: body))
+        if let commit = ledger.commits[key] {
+            guard commit.body == body, commit.envelope == envelope else { throw CatalogueUIFixtureError.invalidRequest }
+            try persist(next)
+            return Reply(status: 200, data: commit.receipt)
+        }
+        guard next.plants.contains(where: { $0.owner == caller && $0.id == plant })
+        else { return try error(404, "NOT_FOUND") }
+        next.plants.removeAll { $0.owner == caller && $0.id == plant }
+        next.tick += 1
+        let receipt = try json(["plant_id": plant.uuidString, "deletion_job_id": UUID().uuidString,
+                                "state": "deleting", "watermark": Self.time(next.tick)])
+        next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant)
+        try persist(next)
+        throw URLError(.networkConnectionLost)
     }
 }
 
