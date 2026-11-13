@@ -8,9 +8,9 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
-    case plantLightEdit, plantDrainageEdit, plantWateringEdit
+    case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit
 
-    var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit }
+    var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || testsConditionEdit }
 
     var startsAnonymous: Bool {
@@ -507,13 +507,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         let lightChanged = conditionsChanged && ledger.scenario == .plantLightEdit
                         let drainageChanged = conditionsChanged && ledger.scenario == .plantDrainageEdit
                         let wateringChanged = conditionsChanged && ledger.scenario == .plantWateringEdit
+                        let potChanged = conditionsChanged && ledger.scenario == .plantPotTypeEdit
                         changes.append([
                             "entity_type": "condition_snapshots", "id": snapshot.uuidString,
                             "updated_at": plant.timestamp, "deleted_at": NSNull(),
                             "data": ["id": snapshot.uuidString, "plant_id": plant.id.uuidString,
                                      "light_code": lightChanged ? "direct_sun" : "medium",
                                      "drainage_code": drainageChanged ? "no" : "yes",
-                                     "watering_code": wateringChanged ? "weekly" : "moderate"]
+                                     "watering_code": wateringChanged ? "weekly" : "moderate",
+                                     "pot_type": potChanged ? "glazed_ceramic" : "plastic"]
                         ])
                     }
                     if let since {
@@ -688,7 +690,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             careRevision = 2
         case .light(.directSun) where ledger.scenario == .plantLightEdit,
              .drainage(.no) where ledger.scenario == .plantDrainageEdit,
-             .watering(.weekly) where ledger.scenario == .plantWateringEdit:
+             .watering(.weekly) where ledger.scenario == .plantWateringEdit,
+             .potType(.glazedCeramic) where ledger.scenario == .plantPotTypeEdit:
             name = first.name
             snapshot = Self.historyObservationIDs[1]
             careRevision = 3

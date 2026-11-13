@@ -374,6 +374,41 @@ final class CatalogueSaveUITests: XCTestCase {
         require(run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"])
     }
 
+    @MainActor func testPlantPotTypeEditReplaysAndKeepsPhotoAndHistory() {
+        let run = Run("plantPotTypeEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let potType = run.app.staticTexts["collection.pot.type.current"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(potType)
+        XCTAssertEqual(potType.label, "Plastic")
+        require(run.app.images["catalogue.saved.photo"])
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        tap(run, "collection.pot.type.open", "Edit pot type")
+        let ceramic = run.app.buttons.matching(identifier: "Glazed ceramic").firstMatch
+        enabled(ceramic)
+        ceramic.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry pot type change")
+        require(potType)
+        XCTAssertEqual(potType.label, "Glazed ceramic")
+        XCTAssertEqual(run.app.staticTexts["collection.light.current"].label, "Medium light")
+        XCTAssertEqual(run.app.staticTexts["collection.drainage.current"].label, "Drainage holes")
+        XCTAssertEqual(run.app.staticTexts["collection.watering.frequency.current"].label, "Moderate watering")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(previous)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }
