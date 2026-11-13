@@ -33,7 +33,7 @@ import {
   handleCreateAnalysisJob,
   handleGetAnalysisJob,
 } from "./analysis.ts";
-import { runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
+import { runPlantAnalysisPurge, runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
 import { createDiagnosisWorker } from "../analysis-worker/index.ts";
 import { createGuestPhotoApi } from "./guest-photo.ts";
 import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
@@ -57,7 +57,9 @@ export interface PlantsApiDependencies {
   analysisJobAdapter?: AnalysisJobStoreAdapter;
   diagnosisJobs?: ReturnType<typeof createDiagnosisJobs>;
   guestPhoto?: ReturnType<typeof createGuestPhotoApi>;
-  handlePlantStoragePurge?: (req: Request, id: string) => Promise<Response>;
+  handlePlantPurge?: (
+    req: Request, id: string, phase: "storage" | "analysis-data",
+  ) => Promise<Response>;
   handleGuestPhotoMaintenance?: (req: Request) => Promise<Response>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
@@ -187,11 +189,12 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     const firstAidMedia = normalizedPath.startsWith("/media/first-aid/");
     const guestRoute = /^\/(drafts|claims)(?:\/|$)/.test(normalizedPath);
     const purgeMatch = req.method === "POST"
-      ? normalizedPath.match(/^\/internal\/plant-deletions\/([^/]+)\/storage$/)
+      ? normalizedPath.match(/^\/internal\/plant-deletions\/([^/]+)\/(storage|analysis-data)$/)
       : null;
     try {
-      if (purgeMatch && deps.handlePlantStoragePurge) {
-        return privateResponse(await deps.handlePlantStoragePurge(req, purgeMatch[1]));
+      if (purgeMatch && deps.handlePlantPurge) {
+        const phase = purgeMatch[2] === "storage" ? "storage" : "analysis-data";
+        return privateResponse(await deps.handlePlantPurge(req, purgeMatch[1], phase));
       }
       if (req.method === "POST" && normalizedPath === "/internal/guest-drafts/cleanup" &&
         deps.handleGuestPhotoMaintenance) {
@@ -407,7 +410,7 @@ export function createProductionPlantsApiHandler(
     ...deps,
     diagnosisMedia,
     guestPhoto,
-    handlePlantStoragePurge: deps.handlePlantStoragePurge ?? (async (req, id) => {
+    handlePlantPurge: deps.handlePlantPurge ?? (async (req, id, phase) => {
       const legacyKey = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
       const secretKey = defaultServiceSecret(env("SUPABASE_SECRET_KEYS"));
       if (
@@ -419,13 +422,14 @@ export function createProductionPlantsApiHandler(
       const jobId = requireUuid(id, "deletion_job_id");
       const admin = syncClient();
       if (admin) {
-        const result = await runPlantStoragePurge(admin, jobId).catch(() => null);
-        if (result?.state === "not_found") {
+        const runPurge = phase === "storage" ? runPlantStoragePurge : runPlantAnalysisPurge;
+        const result = await runPurge(admin, jobId).catch(() => undefined);
+        if (result === null || result?.state === "not_found") {
           throw new ApiHttpError(404, "NOT_FOUND", "Plant deletion job not found.");
         }
         if (result) return jsonResponse(result);
       }
-      throw new ApiHttpError(503, "INTERNAL_ERROR", "Plant storage cleanup is temporarily unavailable.", true);
+      throw new ApiHttpError(503, "INTERNAL_ERROR", "Plant cleanup is temporarily unavailable.", true);
     }),
     handleGuestPhotoMaintenance: deps.handleGuestPhotoMaintenance ??
       ((req) => guestPhoto.maintenance(

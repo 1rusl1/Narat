@@ -55,3 +55,27 @@ export async function runPlantStoragePurge(
   }
   return { state, blocked: plan.blocked, waiting: plan.waiting };
 }
+
+type AnalysisPurgeResult = { state: "pending" | "cleared"; cleared: number };
+
+export async function runPlantAnalysisPurge(
+  client: SupabaseClient,
+  jobId: string,
+): Promise<AnalysisPurgeResult | null> {
+  if (!isUuid(jobId)) throw new Error("Invalid plant deletion job ID.");
+  const { data, error } = await client.rpc(
+    "purge_plant_deletion_analysis_data",
+    {
+      p_job_id: jobId,
+    },
+  );
+  if (error) throw new Error("Could not clear deleted plant analysis data.");
+  if (data === null) return null;
+  if (
+    (data?.state !== "pending" && data?.state !== "cleared") ||
+    !isCount(data.cleared) || (data.state === "pending" && data.cleared !== 0)
+  ) {
+    throw new Error("Invalid plant analysis deletion result.");
+  }
+  return { state: data.state, cleared: data.cleared };
+}

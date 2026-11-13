@@ -8,7 +8,7 @@ const host = "https://purge.example.test";
 const service = "fixture-service-role";
 const secret = "sb_secret_fixture";
 
-function fixture() {
+function fixture(analysisResult?: unknown) {
   const calls: string[] = [];
   let present = true;
   let fail = false;
@@ -39,6 +39,9 @@ function fixture() {
         return Response.json([]);
       }
       assertEquals(await req.json(), { p_job_id: job });
+      if (path === "/rest/v1/rpc/purge_plant_deletion_analysis_data") {
+        return Response.json(analysisResult);
+      }
       if (path === "/rest/v1/rpc/read_plant_deletion_storage") {
         if (invisibleJob) return Response.json(null);
         return Response.json({
@@ -52,10 +55,10 @@ function fixture() {
       return Response.json(present ? "purge_storage" : "purge_data");
     },
   });
-  const run = (headers: HeadersInit, id = job) =>
+  const run = (headers: HeadersInit, id = job, phase = "storage") =>
     handler(
       new Request(
-        `${host}/functions/v1/plants-api/internal/plant-deletions/${id}/storage`,
+        `${host}/functions/v1/plants-api/internal/plant-deletions/${id}/${phase}`,
         {
           method: "POST",
           headers,
@@ -133,4 +136,34 @@ Deno.test("storage purge trusts SQL verification after remove and rejects an inv
   f.breakPlan();
   assertEquals((await f.run(auth)).status, 503);
   assertEquals(f.calls, [read, remove, finish, read]);
+});
+
+Deno.test("analysis data cleanup only invokes its service RPC and validates its result", async () => {
+  const phase = "analysis-data";
+  const rpc = "/rest/v1/rpc/purge_plant_deletion_analysis_data";
+  const f = fixture({ state: "cleared", cleared: 2 });
+  const unauthorized = await f.run(
+    { authorization: "Bearer owner-session" },
+    job,
+    phase,
+  );
+  assertEquals(unauthorized.status, 401);
+  assertEquals(f.calls, []);
+  const response = await f.run({ apikey: secret }, job, phase);
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get("cache-control"), "private, no-store");
+  assertEquals(await response.json(), { state: "cleared", cleared: 2 });
+  assertEquals(f.calls, [rpc]);
+
+  const pending = fixture({ state: "pending", cleared: 0 });
+  assertEquals(await (await pending.run(auth, job, phase)).json(), {
+    state: "pending",
+    cleared: 0,
+  });
+  assertEquals((await fixture(null).run(auth, job, phase)).status, 404);
+  assertEquals(
+    (await fixture({ state: "pending", cleared: 2 }).run(auth, job, phase))
+      .status,
+    503,
+  );
 });

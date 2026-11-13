@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## B — V13 служебный HTTP для очистки проекций, 13 ноября 2026
+
+Служебный `POST /internal/plant-deletions/{deletion_job_id}/analysis-data` вызывает RPC 036 по точному UUID. Путь Storage сохраняется. HTTP-фикстура проверяет 401 для сессии владельца до RPC, служебный ключ, `pending` и `cleared`, 404 и 503. Обновлены `index.ts`, `plant-deletions.ts`, Deno-тест, wire и T083. Прошли typecheck двух entrypoints, diff-check и 389 Deno. Review/QA в работе. Живые проверки не запускались.
+
+Точный следующий шаг — принять HTTP, затем обработать истёкшие анализы под owner lock через штатный quota settlement, пока процесс 035 ожидает завершения worker. Плановый запуск, оставшаяся очистка БД и T082/T083 открыты.
+
 ## B — V13 очистка проекций анализа, 13 ноября 2026
 
 036 добавляет service-only RPC `purge_plant_deletion_analysis_data`. После проверки Storage он под блокировкой владельца очищает `projection` и `repeat_context` у завершённых анализов удалённой карточки, включая исходную идентификацию главного фото. Job, ledger, ссылки для позднего Storage sweep, sync tombstones и receipt сохраняются. Добавлены 15 SQL-фикстур и gate.
