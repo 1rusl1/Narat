@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-analysis-data",
+      "description": "Review terminal analysis data cleanup for a deleted plant while retaining accounting, tombstones and media references.",
+      "candidate_base": "d6e557ac25a30bf0addded2daf827c50a25ac1fc",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "supabase/migrations/202611130036_plant_delete_analysis_data.sql",
+        "supabase/tests/plant_delete_analysis_data.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v13-plant-delete-analysis-data.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Only local fixture acceptance of service RPC, no live execution, public endpoint, scheduler, account deletion, 024 or StoreKit changes.",
+        "Verify bounded scope to a single tombstoned plant, owner lock, late Storage deferral, terminal state, exact preserved ledger, jobs, sync and receipts."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-D1",
+          "description": "Clean diff.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V13-D2",
+          "description": "PostgreSQL clean and seeded upgrade verify the service RPC and replay.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
