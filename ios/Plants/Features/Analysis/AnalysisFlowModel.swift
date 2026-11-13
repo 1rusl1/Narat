@@ -100,6 +100,7 @@ public enum AnalysisServiceFailure: Error, Sendable, Equatable {
     case retryableProvider
     case providerFailed
     case quotaRegistrationRequired
+    case quotaExhausted
     case unavailable
 }
 
@@ -385,6 +386,7 @@ public final class AnalysisFlowModel {
                 case .retryableProvider?: key = "analysis.error.provider"
                 case .providerFailed?: key = "analysis.error.provider_terminal"
                 case .quotaRegistrationRequired?: key = "analysis.error.quota_registration"
+                case .quotaExhausted?: key = "analysis.error.quota_exhausted"
                 default: key = "analysis.error.failed"
                 }
                 self.finishFailure(key)

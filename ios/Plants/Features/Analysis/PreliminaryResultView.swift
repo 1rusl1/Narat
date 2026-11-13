@@ -265,6 +265,10 @@ struct AnalysisUnavailableSection: View {
             return isPolish
                 ? "Nie można potwierdzić daty rejestracji konta, aby rozpocząć kolejną analizę."
                 : "We couldn’t verify your account registration date to start another analysis."
+        case "analysis.error.quota_exhausted":
+            return isPolish
+                ? "Limit analiz zdjęć został wyczerpany."
+                : "You’ve reached your photo analysis limit."
         case "analysis.error.failed":
             return isPolish
                 ? "Nie udało się przeanalizować zdjęcia. Spróbuj ponownie."
@@ -283,7 +287,8 @@ struct AnalysisUnavailableSection: View {
                 .accessibilityIdentifier("analysis.unavailable.title")
 
             if model.analysisError != "analysis.error.provider_terminal",
-               model.analysisError != "analysis.error.quota_registration" {
+               model.analysisError != "analysis.error.quota_registration",
+               model.analysisError != "analysis.error.quota_exhausted" {
                 Button(isPolish ? "Spróbuj ponownie" : "Retry") {
                     model.submitAnalysis(locale: languageStore.currentLocale)
                 }

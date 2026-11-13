@@ -4662,6 +4662,43 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testBoundDiagnosisShowsQuotaExhaustionAndReturnsToPlantWithoutResult() async throws {
+        let photo = UUID()
+        let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+        let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+        let exhausted = #"{"error":{"code":"QUOTA_EXHAUSTED","message":"Analysis quota is exhausted.","retryable":false}}"#
+        let transport = CatalogueTransport([
+            .http(200, diagnosisTicket(url: url, photoId: photo)), .http(200, ready), .http(429, exhausted)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let owner = accessOwner
+        let target = RepeatDiagnosisTarget(plantId: serverPlantId, ownerId: owner)
+        let service = StagingAnalysisService(api: api, repeatDiagnosisTarget: target) {
+            try await api.captureSyncContext(ownerId: owner)
+        }
+        let model = AnalysisFlowModel(repeatDiagnosisTarget: target, service: service)
+        model.preparedPhoto = PreparedAnalysisPhoto(
+            cloudNormalizedJPEG: Data([1, 2]), aiVisionJPEG: Data([1, 2]),
+            aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 2
+        )
+        let analysis = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await analysis.value
+
+        XCTAssertEqual(model.analysisError, "analysis.error.quota_exhausted")
+        XCTAssertEqual(model.repeatDiagnosisTarget, target)
+        XCTAssertNil(model.preliminaryResult)
+        XCTAssertNil(model.recordableFirstAid)
+        XCTAssertFalse(model.isAnalyzing)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST"])
+        let create = try XCTUnwrap(requests.last?.httpBody)
+        let body = try JSONDecoder().decode([String: String].self, from: create)
+        XCTAssertEqual(body["target_plant_id"], target.plantId.uuidString.lowercased())
+        XCTAssertEqual(body["photo_asset_id"], photo.uuidString.lowercased())
+    }
+
+    @MainActor
     func testStagingRepeatDiagnosisReplaysSameUploadAndRejectsOtherPhotoOrOwner() async throws {
         let target = RepeatDiagnosisTarget(plantId: serverPlantId, ownerId: accessOwner)
         let photo = UUID(), jobId = UUID()

@@ -737,6 +737,8 @@ final class StagingAnalysisService: AnalysisService {
             )
         } catch let error as APIErrorResponse where error.error.code == "QUOTA_REGISTRATION_REQUIRED" {
             throw AnalysisServiceFailure.quotaRegistrationRequired
+        } catch let error as APIErrorResponse where error.error.code == "QUOTA_EXHAUSTED" {
+            throw AnalysisServiceFailure.quotaExhausted
         } catch let error as APIErrorResponse where error.error.code.hasPrefix("PROVIDER_") {
             throw AnalysisServiceFailure.retryableProvider
         }
