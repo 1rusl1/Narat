@@ -211,6 +211,67 @@ struct FirstAidRecordReceipt: Decodable, Sendable {
     }
 }
 
+struct PlantRenameCommand: Sendable {
+    static let name = "plant.edit"
+    let envelope: CommandEnvelopeDTO
+    let personalName: String
+
+    static func normalizedName(_ input: String) -> String? {
+        let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1...120).contains(name.unicodeScalars.count), !name.utf8.contains(0) else { return nil }
+        return name
+    }
+
+    static func make(plantId: UUID, personalName: String) throws -> Self {
+        guard let name = normalizedName(personalName) else { throw SyncWireValidationError.invalidRequest }
+        let payload = try JSONEncoder().encode(["personal_name": name])
+        let envelope = CommandEnvelopeDTO(
+            operationId: UUID(), commandName: Self.name, plantId: plantId,
+            payloadJSON: String(decoding: payload, as: UTF8.self)
+        )
+        return Self(envelope: envelope, personalName: name)
+    }
+
+    private init(envelope: CommandEnvelopeDTO, personalName: String) {
+        self.envelope = envelope
+        self.personalName = personalName
+    }
+
+    init?(_ envelope: CommandEnvelopeDTO) {
+        guard envelope.commandName == Self.name, envelope.plantId != nil,
+              let fields = try? JSONDecoder().decode([String: String].self, from: Data(envelope.payloadJSON.utf8)),
+              fields.count == 1, let name = fields["personal_name"], Self.normalizedName(name) == name else { return nil }
+        self.init(envelope: envelope, personalName: name)
+    }
+}
+
+struct PlantRenameReceipt: Decodable, Sendable {
+    let plantId: UUID
+    let revision: Int
+    let careRevision: Int
+    let conditionSnapshotId: UUID?
+    let watermark: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case revision, watermark
+        case careRevision = "care_revision"
+        case conditionSnapshotId = "condition_snapshot_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        plantId = try values.decode(UUID.self, forKey: .plantId)
+        revision = try values.decode(Int.self, forKey: .revision)
+        careRevision = try values.decode(Int.self, forKey: .careRevision)
+        conditionSnapshotId = try values.decode(UUID?.self, forKey: .conditionSnapshotId)
+        guard (1...9_007_199_254_740_991).contains(revision), (1...revision).contains(careRevision),
+              let micros = SQLTimestamp.microseconds(from: try values.decode(String.self, forKey: .watermark))
+        else { throw SyncWireValidationError.invalidPage }
+        watermark = micros
+    }
+}
+
 struct PlantDeleteReceipt: Decodable, Sendable {
     static let commandName = "plant.delete"
     let plantId: UUID
@@ -505,6 +566,7 @@ enum OutboxCommandResult: Sendable {
     case careUndone(reversalId: UUID, watermark: Int64)
     case firstAidRecorded(FirstAidRecordReceipt)
     case firstAidObserved(FirstAidObservationReceipt)
+    case plantRenamed(PlantRenameReceipt)
     case plantDeleting(PlantDeleteReceipt)
 }
 
@@ -588,6 +650,7 @@ public actor PlantsAPIClient {
         guard envelope.commandName != FirstAidObservationPhotoDraft.name else { throw SyncWireValidationError.invalidRequest }
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         let plantDelete = envelope.commandName == PlantDeleteReceipt.commandName
+        let plantRename = envelope.commandName == PlantRenameCommand.name
         let manualWatering = context.session == nil ? nil : ManualWateringAction(envelope: envelope)
         let firstAid = envelope.commandName == FirstAidRecordCommand.name
         let observation = FirstAidObservationCommand(envelope: envelope)
@@ -595,6 +658,10 @@ public actor PlantsAPIClient {
             try syncAuthority.withBoundValid(context) {}
             guard envelope.plantId != nil, envelope.payloadJSON == "{}"
             else { throw SyncWireValidationError.invalidRequest }
+        }
+        if plantRename {
+            try syncAuthority.withBoundValid(context) {}
+            guard PlantRenameCommand(envelope) != nil else { throw SyncWireValidationError.invalidRequest }
         }
         if firstAid {
             try syncAuthority.withBoundValid(context) {}
@@ -609,7 +676,7 @@ public actor PlantsAPIClient {
         }
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
-        if catalogueCreate || plantDelete || manualWatering != nil || firstAid || observation != nil {
+        if catalogueCreate || plantDelete || plantRename || manualWatering != nil || firstAid || observation != nil {
             encoder.outputFormatting = [.sortedKeys]
         }
         encoder.dateEncodingStrategy = .iso8601
@@ -624,7 +691,7 @@ public actor PlantsAPIClient {
             request.setValue("en", forHTTPHeaderField: "X-Client-Locale")
             request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
         }
-        if plantDelete {
+        if plantDelete || plantRename {
             request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
         }
         // Build and dispatch with the captured token in the same actor turn.
@@ -637,6 +704,10 @@ public actor PlantsAPIClient {
             let receipt = try await execute(request, as: PlantDeleteReceipt.self, expectedStatus: 200)
             guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }
             result = .plantDeleting(receipt)
+        } else if plantRename {
+            let receipt = try await execute(request, as: PlantRenameReceipt.self, expectedStatus: 200)
+            guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }
+            result = .plantRenamed(receipt)
         } else if firstAid {
             let receipt = try await execute(request, as: FirstAidRecordReceipt.self, expectedStatus: 200)
             guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }

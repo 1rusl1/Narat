@@ -4772,6 +4772,87 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testPlantRenameWaitsForCanonicalCardAndPreservesExactOperation() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let snapshot = UUID()
+        let photo = UUID()
+        let renamedAt = "2026-11-03T09:10:00.000001+00:00"
+        let plant = serverPlantId
+        func page(_ at: String, name: String?, revision: Int) throws -> String {
+            var page = syncObject()
+            page["until"] = at
+            page["next_since"] = at
+            if let name {
+                var row = syncChange(at, id: plant.uuidString)
+                row["data"] = ["id": plant.uuidString, "personal_name": name, "revision": revision,
+                               "care_revision": 1, "main_photo_id": photo.uuidString,
+                               "current_condition_snapshot_id": snapshot.uuidString] as [String: Any]
+                page["changes"] = [row]
+            }
+            return try syncJSON(page)
+        }
+        let command: CommandEnvelopeDTO
+        let original: Data
+        do {
+            let transport = CatalogueTransport([.http(200, try page(syncUntil, name: "Original", revision: 1)), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            command = try await repo.enqueuePlantRename(plantId: plant, personalName: "  New name  ", context: lease)
+            let reused = try await repo.enqueuePlantRename(plantId: plant, personalName: "New name", context: lease)
+            XCTAssertEqual(command, reused)
+            let pending = try await repo.retryPlantRename(command, context: lease)
+            XCTAssertNil(pending)
+            let requests = await transport.capturedRequests()
+            original = try XCTUnwrap(requests.last?.httpBody)
+        }
+        let receipt: [String: Any] = ["plant_id": plant.uuidString, "revision": 2, "care_revision": 1,
+                                     "condition_snapshot_id": snapshot.uuidString, "watermark": renamedAt]
+        var foreign = receipt
+        foreign["plant_id"] = UUID().uuidString
+        var invalid = receipt
+        invalid.removeValue(forKey: "condition_snapshot_id")
+        let accepted = try syncJSON(receipt)
+        let empty = try page(renamedAt, name: nil, revision: 2)
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(foreign)), .http(200, try syncJSON(invalid)),
+            .http(200, accepted), .http(200, empty),
+            .http(200, try page(renamedAt, name: "New name", revision: 2)),
+            .http(200, accepted), .http(200, empty)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        for _ in 0..<3 {
+            let pending = try await repo.pendingPlantRename(plantId: plant, context: lease)
+            XCTAssertEqual(pending, command)
+            let result = try await repo.retryPlantRename(command, context: lease)
+            XCTAssertNil(result)
+        }
+        _ = try await repo.collectionCards(context: lease)
+        let renamed = try await repo.retryPlantRename(command, context: lease)
+        XCTAssertEqual(renamed?.personalName, "New name")
+        XCTAssertEqual(renamed?.mainPhotoId, photo)
+        XCTAssertEqual(renamed?.currentConditionSnapshotId, snapshot)
+        XCTAssertEqual(renamed?.careRevision, 1)
+        let remaining = try await repo.pendingPlantRename(plantId: plant, context: lease)
+        XCTAssertNil(remaining)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "POST", "GET", "GET", "POST", "GET"])
+        for request in requests where request.httpMethod == "POST" {
+            XCTAssertEqual(request.httpBody, original)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), command.operationId.uuidString.lowercased())
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Installation-Credential"))
+        }
+    }
+
+    @MainActor
     func testPlantDeletionReplaysAfterRestartAndWaitsForTheSelectedTombstone() async throws {
         let url = try diskURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

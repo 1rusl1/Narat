@@ -650,6 +650,12 @@ struct CatalogueCollectionView: View {
                             startRepeatDiagnosis: repeatDiagnosis.map { entry in
                                 { repeatModel = entry.makeModel(selected.card, selected.scope) }
                             },
+                            onRenamed: { updated in
+                                guard currentSelection == selected, updated.id == selected.card.id,
+                                      let index = cards.firstIndex(where: { $0.id == updated.id }) else { return }
+                                cards[index] = updated
+                                self.selected = Selected(card: updated, scope: selected.scope)
+                            },
                             onDeleted: {
                                 guard currentSelection == selected else { return }
                                 cards.removeAll { $0.id == selected.card.id }
@@ -804,12 +810,19 @@ private struct CatalogueCollectionCardView: View {
     let expected: CatalogueSDKSnapshot
     let polish: Bool
     var startRepeatDiagnosis: (() -> Void)? = nil
+    let onRenamed: (CatalogueCardSummary) -> Void
     let onDeleted: () -> Void
     @State private var deleteConfirmation = false
     @State private var pendingDeletion: CommandEnvelopeDTO?
     @State private var checkingDeletion = true
     @State private var deleting = false
     @State private var deletionFailed = false
+    @State private var pendingRename: CommandEnvelopeDTO?
+    @State private var loadingRename = true
+    @State private var savingRename = false
+    @State private var renameFailed = false
+    @State private var editingName = false
+    @State private var nameInput = ""
     @State private var species: PublishedSpeciesCard?
     @State private var advice: PlantCareRecommendation?
     @State private var history: [CatalogueCareJournalEntry]?
@@ -849,6 +862,9 @@ private struct CatalogueCollectionCardView: View {
                         .accessibilityIdentifier("catalogue.saved.name")
                     if let name = species?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
+                    }
+                    if !polish {
+                        renameControls
                     }
                     if deletionFailed {
                         Text(polish ? "Nie udało się usunąć rośliny." : "Couldn’t delete this plant.")
@@ -934,7 +950,8 @@ private struct CatalogueCollectionCardView: View {
             }
             .task(id: attempt) { await loadCare() }
             .task(id: attempt) { await loadFirstAidJournal() }
-            .task { await loadAnalysisHistory() }
+            .task(id: card.careRevision) { await loadAnalysisHistory() }
+            .task { await loadRename() }
             .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
             .task(id: firstAid?.accessUntil) {
                 guard let expiry = firstAid?.accessUntil else { return }
@@ -943,6 +960,17 @@ private struct CatalogueCollectionCardView: View {
                 if firstAid?.accessUntil == expiry { firstAid?.controls.removeAll() }
             }
             .task { await retryWhenConnected() }
+            .alert("Edit plant name", isPresented: $editingName) {
+                TextField("Plant name", text: $nameInput)
+                    .accessibilityIdentifier("collection.rename.input")
+                Button("Save name") {
+                    let input = nameInput
+                    Task { await renamePlant(input: input) }
+                }
+                .disabled(PlantRenameCommand.normalizedName(nameInput) == nil)
+                .accessibilityIdentifier("collection.rename.save")
+                Button("Cancel", role: .cancel) {}
+            }
             .alert(
                 polish ? "Usunąć tę roślinę?" : "Delete this plant?", isPresented: $deleteConfirmation
             ) {
@@ -1051,6 +1079,75 @@ private struct CatalogueCollectionCardView: View {
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             deletionFailed = true
+        }
+    }
+
+    @ViewBuilder
+    private var renameControls: some View {
+        if savingRename {
+            ProgressView("Saving plant name…")
+        } else if pendingRename != nil {
+            Text("Plant name pending sync.")
+                .accessibilityIdentifier("collection.rename.pending")
+            Button("Retry name change") { Task { await renamePlant() } }
+                .accessibilityIdentifier("collection.rename.retry")
+        } else if !loadingRename {
+            Button("Edit name") {
+                nameInput = card.personalName ?? ""
+                editingName = true
+            }
+            .accessibilityIdentifier("collection.rename.open")
+        }
+        if renameFailed {
+            Text("Couldn’t save the plant name.")
+                .accessibilityIdentifier("collection.rename.failed")
+        }
+    }
+
+    private func loadRename() async {
+        guard !polish, let repository = connection.repository else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let pending = try await repository.pendingPlantRename(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingRename = pending
+            loadingRename = false
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            renameFailed = true
+        }
+    }
+
+    private func renamePlant(input: String? = nil) async {
+        guard !savingRename, let repository = connection.repository else { return }
+        savingRename = true
+        renameFailed = false
+        defer { savingRename = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let command: CommandEnvelopeDTO
+            if let pendingRename {
+                command = pendingRename
+            } else if let input {
+                command = try await repository.enqueuePlantRename(plantId: card.id, personalName: input, context: lease)
+            } else {
+                return
+            }
+            pendingRename = command
+            let updated = try await repository.retryPlantRename(command, context: lease)
+            let remaining = try await repository.pendingPlantRename(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingRename = remaining
+            if let updated {
+                onRenamed(updated)
+                let requested = PlantRenameCommand(command)?.personalName
+                renameFailed = updated.personalName != requested
+            } else if remaining == nil {
+                renameFailed = true
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            renameFailed = true
         }
     }
 

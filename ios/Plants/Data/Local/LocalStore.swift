@@ -595,6 +595,43 @@ public actor LocalStore {
         return try disk.fetch(descriptor).first
     }
 
+    func enqueuePlantRename(
+        _ rename: PlantRenameCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CommandEnvelopeDTO {
+        try authority.withBoundValid(context) {
+            let ownerId = context.ownerId
+            let command = rename.envelope
+            guard let plantId = command.plantId,
+                  try activeSyncRow("plants", id: plantId, ownerId: ownerId, in: makeSyncContext()) != nil
+            else { throw SyncWireValidationError.invalidRequest }
+            let pending = try pendingOutboxEntries(for: ownerId).filter { $0.plantId == plantId }
+            guard !pending.contains(where: { $0.commandName == PlantDeleteReceipt.commandName })
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            if let existing = pending.first(where: { $0.commandName == PlantRenameCommand.name }) {
+                guard PlantRenameCommand(existing.envelope)?.personalName.utf8.elementsEqual(rename.personalName.utf8) == true
+                else { throw OutboxEnqueueError.operationIdentityMismatch }
+                return existing.envelope
+            }
+            return try enqueueCommand(
+                operationId: command.operationId, ownerId: ownerId, plantId: plantId,
+                commandName: command.commandName, payloadJSON: command.payloadJSON
+            ).envelope
+        }
+    }
+
+    func syncedCollectionCard(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CatalogueCardSummary? {
+        try authority.withBoundValid(context) {
+            guard let row = try activeSyncRow("plants", id: plantId, ownerId: context.ownerId, in: makeSyncContext())
+            else { return nil }
+            let card = try JSONDecoder().decode(CatalogueCardSummary.self, from: Data(row.payloadJSON.utf8))
+            guard card.id == plantId, card.revision > 0, card.careRevision > 0
+            else { throw SyncWireValidationError.invalidPage }
+            return card
+        }
+    }
+
     func enqueuePlantDeletion(
         plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> CommandEnvelopeDTO {

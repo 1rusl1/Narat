@@ -7,7 +7,7 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
-    case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory
+    case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -430,7 +430,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 ]))
             }
             let caller = try owner(request)
-            if ledger.scenario == .photoHistory, method == "GET", url.lastPathComponent == "photo" {
+            if [.photoHistory, .plantRename].contains(ledger.scenario), method == "GET", url.lastPathComponent == "photo" {
                 guard query.isEmpty, request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
                       let plant = ledger.plants.first, caller == plant.owner else {
                     return try error(404, "NOT_FOUND")
@@ -475,25 +475,32 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "created_at": plant.timestamp
                      ]]
                 }
-                if ledger.scenario == .analysisHistory,
+                if [.analysisHistory, .plantRename].contains(ledger.scenario),
                    let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
                    let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),
                    var data = changes[index]["data"] as? [String: Any] {
-                    data["revision"] = 4
+                    data["revision"] = ledger.scenario == .plantRename ? 4 + ledger.tick : 4
                     data["care_revision"] = 2
                     data["current_condition_snapshot_id"] = plant.id.uuidString
+                    if ledger.scenario == .plantRename { data["main_photo_id"] = plant.id.uuidString }
                     changes[index]["data"] = data
                     for (index, id) in Self.historyObservationIDs.enumerated() {
                         let older = index == 0
                         changes.append([
                             "entity_type": "analysis_summaries", "id": id.uuidString,
-                            "updated_at": plant.timestamp, "deleted_at": NSNull(),
+                            "updated_at": Self.time(0), "deleted_at": NSNull(),
                             "data": ["id": id.uuidString, "plant_id": plant.id.uuidString,
                                      "mode": older ? "identification" : "diagnosis",
                                      "source_snapshot_id": older ? id.uuidString : plant.id.uuidString,
                                      "source_care_revision": older ? 1 : 2, "context_state": "current",
                                      "created_at": older ? "2026-10-29T12:00:00Z" : "2026-10-30T12:00:00Z"]
                         ])
+                    }
+                    if let since {
+                        changes.removeAll {
+                            SQLTimestamp.microseconds(from: $0["updated_at"] as! String)!
+                                <= SQLTimestamp.microseconds(from: since)!
+                        }
                     }
                     changes.sort {
                         ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
@@ -578,6 +585,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             if ledger.scenario == .plantDeletion, envelope.commandName == "plant.delete" {
                 return try deletePlant(envelope, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
             }
+            if ledger.scenario == .plantRename, let rename = PlantRenameCommand(envelope) {
+                return try renamePlant(rename, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
+            }
             try CatalogueCreateWire.validate(envelope)
             guard request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased(),
                   Set(object.keys).isSubset(of: ["operation_id", "command_name", "plant_id", "payload_json"]),
@@ -622,6 +632,29 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             if lose { throw URLError(.networkConnectionLost) }
             return Reply(status: 200, data: receipt)
         }
+    }
+
+    private func renamePlant(_ rename: PlantRenameCommand, body: Data, caller: UUID, header: String?) throws -> Reply {
+        let envelope = rename.envelope
+        guard let first = ledger.plants.first, envelope.plantId == first.id, first.owner == caller,
+              header == envelope.operationId.uuidString.lowercased() else { throw CatalogueUIFixtureError.invalidRequest }
+        let key = caller.uuidString + ":" + envelope.operationId.uuidString
+        var next = ledger
+        next.attempts.append(Attempt(owner: caller, body: body))
+        if let commit = ledger.commits[key] {
+            guard commit.body == body, commit.envelope == envelope else { throw CatalogueUIFixtureError.invalidRequest }
+            try persist(next)
+            return Reply(status: 200, data: commit.receipt)
+        }
+        guard ledger.commits.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }
+        next.tick += 1
+        let stamp = Self.time(next.tick)
+        next.plants[0] = Plant(owner: caller, id: first.id, species: first.species, name: rename.personalName, timestamp: stamp)
+        let receipt = try json(["plant_id": first.id.uuidString, "revision": 4 + next.tick, "care_revision": 2,
+                                "condition_snapshot_id": first.id.uuidString, "watermark": stamp])
+        next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: first.id)
+        try persist(next)
+        throw URLError(.networkConnectionLost)
     }
 
     private func deletePlant(_ envelope: CommandEnvelopeDTO, body: Data, caller: UUID, header: String?) throws -> Reply {

@@ -447,6 +447,28 @@ public struct CollectionRepository: Sendable {
         }
     }
 
+    func pendingPlantRename(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
+        let entries = try await store.pendingOutboxEntries(for: context.ownerId)
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            entries.first { $0.plantId == plantId && $0.commandName == PlantRenameCommand.name }?.envelope
+        }
+    }
+
+    func enqueuePlantRename(plantId: UUID, personalName: String, context: SyncSessionLease) async throws -> CommandEnvelopeDTO {
+        let command = try PlantRenameCommand.make(plantId: plantId, personalName: personalName)
+        return try await store.enqueuePlantRename(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryPlantRename(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> CatalogueCardSummary? {
+        guard let plantId = command.plantId, PlantRenameCommand(command) != nil
+        else { throw SyncWireValidationError.invalidRequest }
+        try await syncEngine.flushPlantRename(command, context: context)
+        guard try await pendingPlantRename(plantId: plantId, context: context) == nil else { return nil }
+        return try await store.syncedCollectionCard(plantId: plantId, context: context, authority: apiClient.syncAuthority)
+    }
+
     func enqueuePlantDeletion(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO {
         try await store.enqueuePlantDeletion(plantId: plantId, context: context, authority: apiClient.syncAuthority)
     }

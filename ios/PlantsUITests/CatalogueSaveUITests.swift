@@ -204,6 +204,46 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(current.exists)
     }
 
+    @MainActor func testPlantRenameReplaysAfterRestartAndKeepsPhotoAndAnalysis() {
+        let run = Run("plantRename", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        require(run.app.images["catalogue.saved.photo"])
+        tap(run, "collection.rename.open", "Edit name")
+        let alert = run.app.alerts["Edit plant name"]
+        require(alert)
+        let input = alert.textFields.firstMatch
+        enabled(input)
+        XCTAssertEqual(input.value as? String, "Fixture 1")
+        input.tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Fixture 1".count))
+        let save = alert.buttons["Save name"].firstMatch
+        XCTAssertFalse(save.isEnabled)
+        input.typeText("  North window fern  ")
+        save.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "North window fern")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry name change")
+        enabled(run.app.buttons["collection.rename.open"])
+        XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000001"])
+        require(run.app.staticTexts["Diagnosis"])
+
+        tap(run, "collection.back", "Back")
+        enabled(run.app.buttons["North window fern"])
+        enabled(run.app.buttons["Fixture 2"])
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }
