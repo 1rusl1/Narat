@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-access",
+      "description": "Review plant.delete atomic revocation and production owner paths on isolated fixtures.",
+      "candidate_base": "b87784defab6463248c24ec0644e28fa75230936",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/plants-api/collection.ts",
+        "supabase/migrations/202611120033_plant_delete_core.sql",
+        "supabase/migrations/202611130034_plant_delete_access.sql",
+        "supabase/tests/plant_delete_access.test.sql",
+        "supabase/functions/_shared/tests/plant_delete_http_test.ts",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v13-plant-delete-access.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Independent Review and QA, local fixtures only. Storage and hard deletion are separate. No staging, 024 or StoreKit changes.",
+        "Validate owner lock, exact delete replay, RLS and private media, old identification links, and protection against replay, lease or provider dispatch after deletion."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-A1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V13-A2",
+          "description": "HTTP and PostgreSQL fixtures verify the command, owner/replay, tombstones and read and dispatch revocation.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
