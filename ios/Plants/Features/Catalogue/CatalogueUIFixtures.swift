@@ -7,9 +7,11 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
-    case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected, plantLightEdit
+    case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
+    case plantLightEdit, plantDrainageEdit
 
-    var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || self == .plantLightEdit }
+    var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit }
+    var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || testsConditionEdit }
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
@@ -483,10 +485,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                    let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),
                    var data = changes[index]["data"] as? [String: Any] {
                     data["revision"] = 4 + ledger.tick
-                    let lightEdit = ledger.scenario == .plantLightEdit
-                    let lightChanged = lightEdit && ledger.tick > 0
-                    let snapshot = lightChanged ? Self.historyObservationIDs[1] : plant.id
-                    data["care_revision"] = lightChanged ? 3 : 2
+                    let conditionsChanged = ledger.scenario.testsConditionEdit && ledger.tick > 0
+                    let snapshot = conditionsChanged ? Self.historyObservationIDs[1] : plant.id
+                    data["care_revision"] = conditionsChanged ? 3 : 2
                     data["current_condition_snapshot_id"] = snapshot.uuidString
                     if ledger.scenario.testsPlantEdit { data["main_photo_id"] = plant.id.uuidString }
                     changes[index]["data"] = data
@@ -502,12 +503,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                                      "created_at": older ? "2026-10-29T12:00:00Z" : "2026-10-30T12:00:00Z"]
                         ])
                     }
-                    if lightEdit {
+                    if ledger.scenario.testsConditionEdit {
+                        let lightChanged = conditionsChanged && ledger.scenario == .plantLightEdit
+                        let drainageChanged = conditionsChanged && ledger.scenario == .plantDrainageEdit
                         changes.append([
                             "entity_type": "condition_snapshots", "id": snapshot.uuidString,
                             "updated_at": plant.timestamp, "deleted_at": NSNull(),
                             "data": ["id": snapshot.uuidString, "plant_id": plant.id.uuidString,
-                                     "light_code": lightChanged ? "direct_sun" : "medium"]
+                                     "light_code": lightChanged ? "direct_sun" : "medium",
+                                     "drainage_code": drainageChanged ? "no" : "yes"]
                         ])
                     }
                     if let since {
@@ -676,12 +680,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         let careRevision: Int
         switch edit.change {
         case let .name(requested):
-            guard ledger.scenario != .plantLightEdit else { throw CatalogueUIFixtureError.invalidRequest }
+            guard !ledger.scenario.testsConditionEdit else { throw CatalogueUIFixtureError.invalidRequest }
             name = requested
             snapshot = first.id
             careRevision = 2
-        case .light(.directSun):
-            guard ledger.scenario == .plantLightEdit else { throw CatalogueUIFixtureError.invalidRequest }
+        case .light(.directSun) where ledger.scenario == .plantLightEdit,
+             .drainage(.no) where ledger.scenario == .plantDrainageEdit:
             name = first.name
             snapshot = Self.historyObservationIDs[1]
             careRevision = 3

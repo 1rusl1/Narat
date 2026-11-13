@@ -310,6 +310,40 @@ final class CatalogueSaveUITests: XCTestCase {
         require(previous)
     }
 
+    @MainActor func testPlantDrainageEditReplaysAndKeepsLightAndHistory() {
+        let run = Run("plantDrainageEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let drainage = run.app.staticTexts["collection.drainage.current"]
+        let light = run.app.staticTexts["collection.light.current"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(drainage)
+        XCTAssertEqual(drainage.label, "Drainage holes")
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        tap(run, "collection.drainage.open", "Edit drainage")
+        let noDrainage = run.app.buttons.matching(identifier: "No drainage holes").firstMatch
+        enabled(noDrainage)
+        noDrainage.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry drainage change")
+        require(drainage)
+        XCTAssertEqual(drainage.label, "No drainage holes")
+        require(light)
+        XCTAssertEqual(light.label, "Medium light")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(previous)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }
