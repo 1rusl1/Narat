@@ -164,6 +164,38 @@ BEGIN
         RAISE EXCEPTION 'Expected foreign owner rejection';
     EXCEPTION WHEN no_data_found THEN NULL;
     END;
+    IF to_regprocedure('public.resolve_basic_care_refresh_candidate(uuid,uuid,integer)') IS NOT NULL THEN
+        IF public.resolve_basic_care_refresh_candidate(v_owner,v_plant,2)
+           IS DISTINCT FROM v_evidence || '{"state":"eligible","anchor_on":"2025-10-21"}'::jsonb THEN
+            RAISE EXCEPTION 'Expected a candidate tied to the existing watering fact';
+        END IF;
+        UPDATE public.entitlements SET valid_until=now()-interval '1 day' WHERE owner_id=v_owner;
+        IF public.resolve_basic_care_refresh_candidate(v_owner,v_plant,2)->>'reason'
+           IS DISTINCT FROM 'automatic_care_unavailable' THEN
+            RAISE EXCEPTION 'Expected paused candidate after expiry';
+        END IF;
+        UPDATE public.entitlements SET valid_until=now()+interval '1 day' WHERE owner_id=v_owner;
+        BEGIN
+            UPDATE public.care_entries SET state='voided' WHERE owner_id=v_owner AND plant_id=v_plant;
+            IF public.resolve_basic_care_refresh_candidate(v_owner,v_plant,2)->>'reason'
+               IS DISTINCT FROM 'missing_watering_anchor' THEN
+                RAISE EXCEPTION 'Expected pause without an active watering fact';
+            END IF;
+            RAISE SQLSTATE 'Z1001';
+        EXCEPTION WHEN SQLSTATE 'Z1001' THEN NULL;
+        END;
+        BEGIN
+            UPDATE public.care_profiles SET profile=profile #- ARRAY[
+                'provenance','field_evidence','/actions/0/next_check_interval_days']
+            WHERE version='repeat-fixture';
+            IF public.resolve_basic_care_refresh_candidate(v_owner,v_plant,2)->>'reason'
+               IS DISTINCT FROM 'insufficient_evidence' THEN
+                RAISE EXCEPTION 'Expected pause without interval evidence';
+            END IF;
+            RAISE SQLSTATE 'Z1001';
+        EXCEPTION WHEN SQLSTATE 'Z1001' THEN NULL;
+        END;
+    END IF;
     PERFORM public.execute_plant_edit_command(v_owner,gen_random_uuid(),v_plant,
         '{"conditions":{"light_code":"medium"}}');
     IF public.resolve_basic_care_refresh_evidence(v_owner,v_plant,3) IS NOT NULL THEN
