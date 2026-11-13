@@ -103,8 +103,10 @@ export async function handleCollectionCommand(
       );
     if (
       Object.keys(payload).length !== 1 ||
-      (typeof payload.personal_name !== "string" && !validConditions)
+      (typeof payload.personal_name !== "string" && !validConditions &&
+        typeof payload.taxon_id !== "string")
     ) throw invalid(plantCommand);
+    if ("taxon_id" in payload) payload.taxon_id = requireUuid(payload.taxon_id, "taxon_id");
   } else if (isObservation) {
     if (
       Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||

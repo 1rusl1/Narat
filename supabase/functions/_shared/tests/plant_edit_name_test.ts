@@ -172,3 +172,26 @@ Deno.test("plant.edit forwards partial conditions and rejects mixed or retired f
   }
   assertEquals(f.calls.length, 1);
 });
+
+Deno.test("plant.edit accepts a single canonical taxon UUID", async () => {
+  const f = fixture();
+  const taxon = "53000000-0000-4000-8000-0000000000ab";
+  const response = await f.run({
+    ...body,
+    payload_json: JSON.stringify({ taxon_id: taxon.toUpperCase() }),
+  });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), receipt);
+  assertEquals(f.calls, [{
+    p_owner_id: owner,
+    p_operation_id: operation,
+    p_plant_id: plant,
+    p_payload: { taxon_id: taxon },
+  }]);
+  assertEquals(
+    (await f.run({ ...body, payload_json: '{"taxon_id":"not-a-uuid"}' }))
+      .status,
+    400,
+  );
+  assertEquals(f.calls.length, 1);
+});
