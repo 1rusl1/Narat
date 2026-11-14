@@ -273,6 +273,77 @@ def main():
                    f"{payload})->>'state';")
         return owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset if with_photo else None
 
+    def v10_refresh_race(db):
+        owner, plant, snapshot, first_op, second_op = (job(n) for n in range(9470, 9475))
+        sql(db, f"""
+            INSERT INTO public.profiles(id,anonymous) VALUES('{owner}',false);
+            INSERT INTO public.plants(id,owner_id,taxon_id,plant_id,creation_source,display_name)
+            SELECT '{plant}','{owner}',t.id,t.plant_id,'identification','Refresh race'
+            FROM public.catalogue_taxa t JOIN public.catalogue_releases r ON r.id=t.release_id
+            WHERE t.plant_id='monstera_deliciosa' AND t.status='published' AND r.state='published';
+            INSERT INTO public.condition_snapshots(id,owner_id,plant_id) VALUES('{snapshot}','{owner}','{plant}');
+            UPDATE public.plants SET current_condition_snapshot_id='{snapshot}' WHERE id='{plant}';
+            INSERT INTO public.basic_care_memberships(owner_id,plant_id,enabled) VALUES('{owner}','{plant}',true);
+            SELECT public.execute_manual_care_command('{owner}',gen_random_uuid(),'{plant}','care.record',
+                '{{"action_code":"water","occurred_at":"2025-10-20T23:30:00Z","timezone":"Europe/Warsaw"}}');
+            INSERT INTO public.care_profiles(kb_release_id,taxon_id,version,profile,field_evidence,validation_report,state)
+            SELECT '{K}',taxon_id,'refresh-race-fixture',jsonb_build_object('kb_release_id','{K}',
+                'plant_id',plant_id,'actions','[{{"action_id":"fixture_soil_check","action_code":"check_soil",
+                "purpose":"routine_care","prerequisite_check_ids":[],"contraindication_check_ids":[],
+                "next_check_interval_days":7}}]'::jsonb,'provenance',jsonb_build_object(
+                    'source_documents','[{{"source_id":"fixture","url":"https://example.test/refresh-race",
+                        "allowed_for":["derived_records"]}}]'::jsonb,
+                    'field_evidence',jsonb_object_agg(path,'[{{"source_id":"fixture","locator":"Test"}}]'::jsonb)
+                )), '{{}}', '{{"refresh_conditions":{{"fixture_soil_check":{{"light_code":"unknown",
+                    "light_source":"unknown","light_confirmed":false,"watering_code":"unknown",
+                    "drainage_code":"unknown","pot_type":"unknown"}}}}}}', 'published'
+            FROM public.plants CROSS JOIN (VALUES ('/actions/0'),('/actions/0/next_check_interval_days'),
+                ('/actions/0/refresh_conditions')) evidence(path) WHERE id='{plant}' GROUP BY taxon_id,plant_id;
+        """)
+
+        def refresh(op):
+            return (f"SELECT public.execute_care_recommendation_refresh('{owner}','{op}','{plant}',"
+                    """'{"expected_care_revision":1}');""")
+
+        lock_session = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            lock_session.stdin.write(f"BEGIN; {refresh(first_op)}\n")
+            lock_session.stdin.flush()
+            first = json.loads(lock_session.stdout.readline())
+            assert first['state'] == 'refreshed', first
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                second = pool.submit(sql, db, "SET application_name='v10_refresh_distinct';\n" + refresh(second_op))
+                replay = pool.submit(sql, db, "SET application_name='v10_refresh_replay';\n" + refresh(first_op))
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN "
+                              "('v10_refresh_distinct','v10_refresh_replay') AND wait_event_type='Lock'") != '2':
+                        assert not second.done() and not replay.done(), 'Concurrent refresh did not wait for owner lock'
+                        assert time.monotonic() < deadline, 'Did not observe concurrent refresh waiting'
+                        time.sleep(.03)
+                    lock_session.stdin.write('COMMIT;\n\\q\n')
+                    lock_session.stdin.flush()
+                    _, error = lock_session.communicate(timeout=15)
+                    assert lock_session.returncode == 0, error
+                    assert json.loads(second.result(timeout=15)) == first
+                    assert json.loads(replay.result(timeout=15)) == first
+                finally:
+                    if lock_session.poll() is None:
+                        lock_session.kill()
+                        lock_session.communicate(timeout=10)
+        finally:
+            if lock_session.poll() is None:
+                lock_session.kill()
+                lock_session.communicate(timeout=10)
+        check(db, f"""(SELECT count(*) FROM public.care_plans WHERE plant_id='{plant}')=1
+            AND (SELECT count(*) FROM public.task_rules WHERE plant_id='{plant}' AND rule_state='active')=1
+            AND (SELECT count(*) FROM public.operation_receipts WHERE owner_id='{owner}'
+                AND command_name='care.recommendation.refresh')=2
+            AND (SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}' AND state='active')=1
+            AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V10 concurrent distinct refresh and exact retry create one rule without new journal or quota usage')
+
     def first_aid_observation_race(db, winner, offset, with_photo=False):
         owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset = first_aid_race_fixture(
             db, offset, with_photo)
@@ -727,6 +798,7 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                         print(f'PASS {case}: real edit preserves the recommendation and suppresses its date through Edge', flush=True)
                         if 'refresh' in projections:
                             print(f'PASS {case}: Edge validates refresh receipt and shows the expected next check', flush=True)
+                            v10_refresh_race(case)
                 if any(migration.name == '202611120028_first_aid_control.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/first_aid_control.test.sql')
                 if any(migration.name == '202611120030_first_aid_observation.sql' for migration in selected):
