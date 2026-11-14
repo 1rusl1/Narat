@@ -21,23 +21,33 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function unavailable(plantCommand?: "plant.delete" | "plant.edit") {
+const refreshCommand = "care.recommendation.refresh";
+const refreshReasons = new Set([
+  "insufficient_evidence",
+  "missing_watering_anchor",
+  "automatic_care_unavailable",
+]);
+type PlantCommand = "plant.delete" | "plant.edit" | typeof refreshCommand;
+
+function unavailable(plantCommand?: PlantCommand) {
   return new ApiHttpError(
     503,
     "INTERNAL_ERROR",
     plantCommand === "plant.edit" ? "Plant editing is temporarily unavailable."
       : plantCommand === "plant.delete" ? "Plant deletion is temporarily unavailable."
+      : plantCommand === refreshCommand ? "Recommendation refresh is temporarily unavailable."
       : "The care journal is temporarily unavailable.",
     true,
   );
 }
 
-function invalid(plantCommand?: "plant.delete" | "plant.edit") {
+function invalid(plantCommand?: PlantCommand) {
   return new ApiHttpError(
     400,
     "VALIDATION_ERROR",
     plantCommand === "plant.edit" ? "Invalid plant editing command."
       : plantCommand === "plant.delete" ? "Invalid plant deletion command."
+      : plantCommand === refreshCommand ? "Invalid recommendation refresh command."
       : "Invalid manual care command.",
   );
 }
@@ -57,14 +67,19 @@ export async function handleCollectionCommand(
       body.command_name !== "care.correct_date" &&
       body.command_name !== "care.first_aid.record" &&
       body.command_name !== "care.first_aid.observe" &&
-      body.command_name !== "plant.delete" && body.command_name !== "plant.edit")
+      body.command_name !== "plant.delete" && body.command_name !== "plant.edit" &&
+      body.command_name !== refreshCommand)
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
 
   const isDeletion = body.command_name === "plant.delete";
   const isEdit = body.command_name === "plant.edit";
-  const plantCommand = isEdit ? "plant.edit" : isDeletion ? "plant.delete" : undefined;
+  const isRefresh = body.command_name === refreshCommand;
+  const plantCommand = isEdit ? "plant.edit"
+    : isDeletion ? "plant.delete"
+    : isRefresh ? refreshCommand
+    : undefined;
   if (
     new URL(req.url).search ||
     Object.keys(body).some((key) => !envelopeFields.has(key)) ||
@@ -107,6 +122,13 @@ export async function handleCollectionCommand(
         typeof payload.taxon_id !== "string")
     ) throw invalid(plantCommand);
     if ("taxon_id" in payload) payload.taxon_id = requireUuid(payload.taxon_id, "taxon_id");
+  } else if (isRefresh) {
+    if (
+      Object.keys(payload).length !== 1 ||
+      typeof payload.expected_care_revision !== "number" ||
+      !Number.isInteger(payload.expected_care_revision) ||
+      payload.expected_care_revision < 1 || payload.expected_care_revision > 2147483647
+    ) throw invalid(plantCommand);
   } else if (isObservation) {
     if (
       Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||
@@ -132,7 +154,8 @@ export async function handleCollectionCommand(
     const client = clientFactory();
     if (!client) throw unavailable(plantCommand);
     const rpc = isEdit ? "execute_plant_edit_command"
-      : isDeletion ? "execute_plant_delete_command" : isObservation
+      : isDeletion ? "execute_plant_delete_command"
+      : isRefresh ? "execute_care_recommendation_refresh" : isObservation
       ? "complete_first_aid_control"
       : "execute_manual_care_command";
     response = await client.rpc(rpc, {
@@ -168,7 +191,9 @@ export async function handleCollectionCommand(
         409,
         "CONFLICT",
         isEdit ? "The operation conflicts with an existing receipt."
-          : isDeletion ? "The plant is already deleted or the operation conflicts with an existing receipt." : isObservation
+          : isDeletion ? "The plant is already deleted or the operation conflicts with an existing receipt."
+          : isRefresh ? "The care revision has changed or the operation conflicts with an existing receipt."
+          : isObservation
           ? "The first-aid control is unavailable or the operation conflicts with an existing receipt."
           : "The operation conflicts with an existing care entry or receipt.",
       );
@@ -186,6 +211,16 @@ export async function handleCollectionCommand(
       (data.condition_snapshot_id !== null &&
         (typeof data.condition_snapshot_id !== "string" || !uuid.test(data.condition_snapshot_id))) ||
       timestamp(data.watermark) === null
+    ) throw unavailable(plantCommand);
+    return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
+  }
+  if (isRefresh) {
+    if (
+      !record(data) || data.plant_id !== plantId ||
+      data.care_revision !== payload.expected_care_revision ||
+      timestamp(data.watermark) === null ||
+      !(data.state === "refreshed" && data.reason === null ||
+        data.state === "paused" && typeof data.reason === "string" && refreshReasons.has(data.reason))
     ) throw unavailable(plantCommand);
     return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
   }

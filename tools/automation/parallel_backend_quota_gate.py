@@ -716,9 +716,17 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                         marker = '# V10_EDIT_GET '
                         wire = [line.removeprefix(marker) for line in result.splitlines() if line.startswith(marker)]
                         assert len(wire) == 1, 'Missing SQL projections for V10 recommendation regression'
+                        projections = json.loads(wire[0])
+                        if any(migration.name == '202611140047_care_refresh_rule.sql' for migration in selected):
+                            prefix = '# V10_REFRESH_WIRE '
+                            refresh = [line.removeprefix(prefix) for line in result.splitlines() if line.startswith(prefix)]
+                            assert len(refresh) == 1, 'Missing SQL receipt and projection for V10 refresh'
+                            projections['refresh'] = json.loads(refresh[0])
                         command(['deno', 'run', '--config', str(ROOT/'supabase/functions/deno.json'),
-                                 str(ROOT/'tools/automation/v10_edit_recommendation_wire.ts')], wire[0])
+                                 str(ROOT/'tools/automation/v10_edit_recommendation_wire.ts')], json.dumps(projections))
                         print(f'PASS {case}: real edit preserves the recommendation and suppresses its date through Edge', flush=True)
+                        if 'refresh' in projections:
+                            print(f'PASS {case}: Edge validates refresh receipt and shows the expected next check', flush=True)
                 if any(migration.name == '202611120028_first_aid_control.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/first_aid_control.test.sql')
                 if any(migration.name == '202611120030_first_aid_observation.sql' for migration in selected):

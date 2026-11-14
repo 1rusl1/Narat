@@ -240,19 +240,132 @@ BEGIN
     EXCEPTION WHEN unique_violation THEN
         IF SQLERRM <> 'IDEMPOTENCY_CONFLICT' THEN RAISE; END IF;
     END;
-    v_op := gen_random_uuid();
-    BEGIN
-        PERFORM public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":4}');
-        RAISE EXCEPTION 'Expected unavailable writer for eligible refresh';
-    EXCEPTION WHEN object_not_in_prerequisite_state THEN
-        IF SQLERRM <> 'CARE_REFRESH_WRITER_UNAVAILABLE' THEN RAISE; END IF;
-    END;
-    IF EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_op) THEN
-        RAISE EXCEPTION 'Eligible refresh without writer recorded a receipt';
+    IF to_regprocedure('public.write_basic_care_refresh_rule(uuid,uuid,uuid,jsonb,timestamptz)') IS NULL THEN
+        v_op := gen_random_uuid();
+        BEGIN
+            PERFORM public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":4}');
+            RAISE EXCEPTION 'Expected unavailable writer for eligible refresh';
+        EXCEPTION WHEN object_not_in_prerequisite_state THEN
+            IF SQLERRM <> 'CARE_REFRESH_WRITER_UNAVAILABLE' THEN RAISE; END IF;
+        END;
+        IF EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_op) THEN
+            RAISE EXCEPTION 'Eligible refresh without writer recorded a receipt';
+        END IF;
     END IF;
 END;
 $$;
 
+SELECT to_regprocedure('public.write_basic_care_refresh_rule(uuid,uuid,uuid,jsonb,timestamptz)') IS NOT NULL
+    AS has_refresh_rule \gset
+\if :has_refresh_rule
+CREATE TEMP TABLE v10_refresh_check(receipt JSONB, retry JSONB, second_receipt JSONB, operation_id UUID,
+    old_rule UUID, open_task UUID, completed_task UUID, completed_before JSONB,
+    journal_before JSONB, quota_before JSONB);
+DO $$
+DECLARE
+    v_owner UUID := '17300000-0000-4000-8000-000000000001';
+    v_plant UUID := '17300000-0000-4000-8000-000000000011';
+    v_op UUID := gen_random_uuid();
+    v_rule UUID;
+    v_open UUID;
+    v_completed UUID;
+    v_journal JSONB;
+    v_quota JSONB;
+    v_receipt JSONB;
+    v_retry JSONB;
+    v_second JSONB;
+BEGIN
+    SELECT id INTO STRICT v_rule FROM public.task_rules WHERE plant_id=v_plant;
+    INSERT INTO public.care_tasks(owner_id,plant_id,rule_id,occurrence_key,action_code,due_local_date)
+    VALUES(v_owner,v_plant,v_rule,'refresh-old-open','check_soil','2025-10-28') RETURNING id INTO v_open;
+    INSERT INTO public.care_tasks(owner_id,plant_id,rule_id,occurrence_key,action_code,due_local_date,state,
+        reminder_eligible,inactive_reason)
+    VALUES(v_owner,v_plant,v_rule,'refresh-old-completed','check_soil','2025-10-14','completed',false,'completed')
+    RETURNING id INTO v_completed;
+
+    SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) INTO v_journal
+    FROM public.care_entries e WHERE e.owner_id=v_owner;
+    SELECT coalesce(jsonb_agg(to_jsonb(q) ORDER BY to_jsonb(q)), '[]') INTO v_quota
+    FROM public.account_quota_usage q WHERE q.owner_id=v_owner;
+
+    INSERT INTO v10_refresh_check(old_rule,open_task,completed_task,completed_before,journal_before,quota_before)
+    SELECT v_rule,v_open,v_completed,to_jsonb(t),v_journal,v_quota FROM public.care_tasks t WHERE id=v_completed;
+
+    -- GET selects the first routine action. Never unpause on evidence for a different action.
+    BEGIN
+        UPDATE public.care_profiles
+        SET profile=jsonb_set(profile,'{actions}',jsonb_build_array(
+            profile#>'{actions,0}' || '{"action_id":"other_soil_check"}'::jsonb,
+            profile#>'{actions,0}'
+        )) || jsonb_build_object('provenance',
+            jsonb_set(profile->'provenance','{field_evidence}',
+                profile#>'{provenance,field_evidence}' || jsonb_build_object(
+                    '/actions/1',profile#>ARRAY['provenance','field_evidence','/actions/0'],
+                    '/actions/1/next_check_interval_days',
+                        profile#>ARRAY['provenance','field_evidence','/actions/0/next_check_interval_days'],
+                    '/actions/1/refresh_conditions',
+                        profile#>ARRAY['provenance','field_evidence','/actions/0/refresh_conditions']
+                )))
+        WHERE version='repeat-fixture';
+        IF public.resolve_basic_care_refresh_candidate(v_owner,v_plant,4)->>'state'
+           IS DISTINCT FROM 'eligible' THEN
+            RAISE EXCEPTION 'Expected eligible evidence for the second action';
+        END IF;
+        IF public.execute_care_recommendation_refresh(v_owner,gen_random_uuid(),v_plant,
+                '{"expected_care_revision":4}')->>'reason' IS DISTINCT FROM 'insufficient_evidence'
+           OR pg_temp.check_read()->'calendar_eligible' IS DISTINCT FROM 'false'::jsonb THEN
+            RAISE EXCEPTION 'Refresh must not unpause the date for a different action';
+        END IF;
+        RAISE SQLSTATE 'Z1001';
+    EXCEPTION WHEN SQLSTATE 'Z1001' THEN NULL;
+    END;
+
+    v_receipt := public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":4}');
+    v_retry := public.execute_care_recommendation_refresh(v_owner,v_op,v_plant,'{"expected_care_revision":4}');
+    v_second := public.execute_care_recommendation_refresh(v_owner,gen_random_uuid(),v_plant,
+        '{"expected_care_revision":4}');
+    UPDATE v10_refresh_check SET receipt=v_receipt,retry=v_retry,second_receipt=v_second,operation_id=v_op;
+END;
+$$;
+SELECT is((SELECT receipt->>'state' FROM v10_refresh_check),'refreshed','sourced refresh commits');
+SELECT is((SELECT retry FROM v10_refresh_check),(SELECT receipt FROM v10_refresh_check),'exact replay');
+SELECT is((SELECT second_receipt FROM v10_refresh_check),(SELECT receipt FROM v10_refresh_check),
+    'an identical refresh with a new operation ID does not change the watermark');
+SELECT is((SELECT count(*) FROM public.task_rules r JOIN public.care_plans cp ON cp.id=r.plan_id
+    JOIN public.plants p ON p.id=r.plant_id
+    WHERE p.id='17300000-0000-4000-8000-000000000011' AND r.rule_state='active'
+      AND r.action_code='check_soil' AND r.interval_days=7 AND cp.snapshot_id=p.current_condition_snapshot_id
+      AND cp.context_revision=p.care_revision AND cp.full_body#>>'{refresh_evidence,action_id}'='fixture_soil_check'),
+    1::bigint,'one active rule binds the current snapshot and published evidence');
+SELECT is((SELECT count(*) FROM public.task_rules
+    WHERE plant_id='17300000-0000-4000-8000-000000000011' AND rule_state='active'),
+    1::bigint,'repeat with a different operation ID never adds an active rule');
+SELECT is((SELECT r.rule_state FROM public.task_rules r JOIN v10_refresh_check c ON c.old_rule=r.id),
+    'superseded','replaced rule stays in history');
+SELECT ok((SELECT t.state='superseded' AND NOT t.reminder_eligible
+    FROM public.care_tasks t JOIN v10_refresh_check c ON c.open_task=t.id),'old open reminder is retired');
+SELECT is((SELECT to_jsonb(t) FROM public.care_tasks t JOIN v10_refresh_check c ON c.completed_task=t.id),
+    (SELECT completed_before FROM v10_refresh_check),'completed task remains unchanged');
+SELECT is((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM public.care_entries e
+    WHERE e.owner_id='17300000-0000-4000-8000-000000000001'),
+    (SELECT journal_before FROM v10_refresh_check),'refresh preserves the journal');
+SELECT is((SELECT coalesce(jsonb_agg(to_jsonb(q) ORDER BY to_jsonb(q)), '[]') FROM public.account_quota_usage q
+    WHERE q.owner_id='17300000-0000-4000-8000-000000000001'),
+    (SELECT quota_before FROM v10_refresh_check),'refresh preserves quota usage');
+SELECT is(pg_temp.check_read()->>'last_watered_on','2025-10-21','refresh retains the existing watering anchor');
+SELECT is(pg_temp.check_read()->'calendar_eligible','true'::jsonb,'refresh clears the replaced rule pause');
+SELECT '# V10_REFRESH_WIRE ' || jsonb_build_object('receipt',receipt,'operation',operation_id,
+    'after_refresh',pg_temp.check_read())::text FROM v10_refresh_check;
+SELECT ok(has_function_privilege('service_role',
+    'public.execute_care_recommendation_refresh(uuid,uuid,uuid,jsonb)','execute'), 'trusted transport can call refresh');
+SELECT ok(NOT has_function_privilege('authenticated',
+    'public.execute_care_recommendation_refresh(uuid,uuid,uuid,jsonb)','execute'), 'authenticated cannot call refresh directly');
+SELECT ok(NOT has_function_privilege('service_role','public.write_basic_care_refresh_rule(uuid,uuid,uuid,jsonb,timestamptz)',
+    'execute'), 'transport cannot bypass candidate resolution');
+\endif
+
+CREATE TEMP TABLE scheduled_before_withdrawal AS
+SELECT id FROM public.care_tasks WHERE plant_id='17300000-0000-4000-8000-000000000011';
 UPDATE public.care_profiles SET state='draft' WHERE version='repeat-fixture';
 SELECT is(pg_temp.check_read()->'profile', 'null'::jsonb, 'withdrawn profile cannot support the next repeat');
 SELECT is(pg_temp.check_read()->>'last_watered_on', '2025-10-21', 'withdrawal leaves journal history available');
@@ -267,7 +380,8 @@ SELECT is(pg_temp.check_read()->>'last_watered_on', '2025-10-30',
     'manual journal still records an actual watering after expiry');
 SELECT is((SELECT pg_temp.care(op, 'care.record', payload) FROM repeat_request),
     (SELECT body FROM repeat_receipt), 'the existing repeat receipt survives expiry');
-SELECT ok(NOT EXISTS (SELECT 1 FROM public.care_tasks WHERE plant_id = '17300000-0000-4000-8000-000000000011'),
+SELECT is((SELECT array_agg(id ORDER BY id) FROM public.care_tasks WHERE plant_id='17300000-0000-4000-8000-000000000011'),
+    (SELECT array_agg(id ORDER BY id) FROM scheduled_before_withdrawal),
     'repeat, withdrawal and expiry create no scheduled tasks');
 
 SELECT * FROM finish();
