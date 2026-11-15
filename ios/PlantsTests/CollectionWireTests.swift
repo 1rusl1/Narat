@@ -3,6 +3,169 @@ import SwiftData
 @testable import Plants
 
 extension CollectionWireTests {
+    private func routineUndoReceipt(_ command: RoutineSoilCheckUndoCommand) -> [String: Any] {
+        [
+            "plant_id": serverPlantId.uuidString, "task_id": command.taskId.uuidString,
+            "entry_id": command.entryId.uuidString,
+            "reversal_id": "19190000-0000-4000-8000-000000000004",
+            "state": "voided", "watermark": timestamp
+        ]
+    }
+
+    @MainActor
+    func testRoutineUndoExactTypedRetryUsesBoundOwnerAndEN() async throws {
+        let command = try RoutineSoilCheckUndoCommand.make(
+            plantId: serverPlantId, taskId: UUID(), entryId: UUID(), operationId: operationId
+        )
+        let restored = try XCTUnwrap(RoutineSoilCheckUndoCommand(
+            JSONDecoder().decode(CommandEnvelopeDTO.self, from: JSONEncoder().encode(command.envelope)),
+            taskId: command.taskId
+        ))
+        let receipt = try syncJSON(routineUndoReceipt(command))
+        let transport = CatalogueTransport([.network, .http(200, receipt), .http(200, receipt)])
+        let api = client(transport)
+        try await api.updateClientLocale("pl")
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        do {
+            _ = try await api.sendOutboxCommand(command, context: lease)
+            XCTFail("Lost response must propagate")
+        } catch is URLError {}
+        for _ in 0..<2 {
+            let result = try await api.sendOutboxCommand(restored, context: lease)
+            XCTAssertEqual(result.plantId, serverPlantId)
+            XCTAssertEqual(result.taskId, command.taskId)
+            XCTAssertEqual(result.entryId, command.entryId)
+            XCTAssertEqual(result.reversalId, UUID(uuidString: "19190000-0000-4000-8000-000000000004"))
+            XCTAssertEqual(result.state, .voided)
+            XCTAssertEqual(result.watermark, SQLTimestamp.microseconds(from: timestamp))
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 3)
+        let body = try XCTUnwrap(requests.first?.httpBody)
+        for request in requests {
+            XCTAssertEqual(request.url?.absoluteString, "https://example.invalid/functions/v1/plants-api/commands")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.httpBody, body)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(syncSession.accessToken)")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), operationId.uuidString.lowercased())
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Accept-Language"), "en")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Locale"), "en")
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Installation-Credential"))
+            let envelope = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(request.httpBody))
+            XCTAssertEqual(envelope, command.envelope)
+            XCTAssertEqual(envelope.commandName, "care.check_soil.undo")
+            XCTAssertEqual(envelope.plantId, serverPlantId)
+            XCTAssertEqual(envelope.operationId, operationId)
+            let payload = try JSONDecoder().decode([String: UUID].self, from: Data(envelope.payloadJSON.utf8))
+            XCTAssertEqual(payload, ["entry_id": command.entryId])
+        }
+        for payload in ["{}", #"{"entry_id":"bad"}"#,
+                        String(command.envelope.payloadJSON.dropLast()) + #","extra":true}"#] {
+            XCTAssertNil(RoutineSoilCheckUndoCommand(CommandEnvelopeDTO(
+                operationId: operationId, commandName: RoutineSoilCheckUndoCommand.name,
+                plantId: serverPlantId, payloadJSON: payload
+            ), taskId: command.taskId))
+        }
+        XCTAssertNil(RoutineSoilCheckUndoCommand(CommandEnvelopeDTO(
+            operationId: operationId, commandName: "care.undo", plantId: serverPlantId,
+            payloadJSON: command.envelope.payloadJSON
+        ), taskId: command.taskId))
+        XCTAssertNil(RoutineSoilCheckUndoCommand(CommandEnvelopeDTO(
+            operationId: operationId, commandName: RoutineSoilCheckUndoCommand.name,
+            payloadJSON: command.envelope.payloadJSON
+        ), taskId: command.taskId))
+    }
+
+    @MainActor
+    func testRoutineUndoRejectsMalformedUnrelatedAndNonVoidedReceipts() async throws {
+        let command = try RoutineSoilCheckUndoCommand.make(
+            plantId: serverPlantId, taskId: UUID(), entryId: UUID()
+        )
+        let canonical = routineUndoReceipt(command)
+        var invalid: [[String: Any]] = []
+        for key in canonical.keys {
+            var missing = canonical
+            missing.removeValue(forKey: key)
+            invalid.append(missing)
+            var null = canonical
+            null[key] = NSNull()
+            invalid.append(null)
+        }
+        let changes: [(String, Any)] = [
+            ("plant_id", UUID().uuidString), ("task_id", UUID().uuidString),
+            ("entry_id", UUID().uuidString), ("plant_id", "bad"), ("task_id", "bad"),
+            ("entry_id", "bad"), ("reversal_id", "bad"), ("state", "completed"),
+            ("state", "active"), ("watermark", "2026-11-03"), ("watermark", 123),
+            ("watermark", "1969-12-31T23:59:59.999999+00:00")
+        ]
+        for (key, value) in changes {
+            var changed = canonical
+            changed[key] = value
+            invalid.append(changed)
+        }
+        for object in invalid {
+            let transport = CatalogueTransport([.http(200, try syncJSON(object))])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            do {
+                _ = try await api.sendOutboxCommand(command, context: lease)
+                XCTFail("Malformed or unrelated undo receipt must fail")
+            } catch {}
+        }
+        var epoch = canonical
+        epoch["watermark"] = "1970-01-01T00:00:00+00:00"
+        let decoded = try JSONDecoder().decode(
+            RoutineSoilCheckUndoReceipt.self, from: Data(try syncJSON(epoch).utf8)
+        )
+        try decoded.validate(for: command)
+        XCTAssertEqual(decoded.watermark, 0)
+    }
+
+    @MainActor
+    func testRoutineUndoRequiresBoundOwnerAndDedicatedRoute() async throws {
+        let transport = CatalogueTransport([])
+        let api = client(transport)
+        let command = try RoutineSoilCheckUndoCommand.make(
+            plantId: serverPlantId, taskId: UUID(), entryId: UUID()
+        )
+        let unbound = try await api.captureSyncContext(ownerId: syncOwner)
+        do {
+            _ = try await api.sendOutboxCommand(command, context: unbound)
+            XCTFail("Unbound request must fail")
+        } catch SyncWireValidationError.invalidSession {}
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let otherAPI = client(transport)
+        await otherAPI.bindSyncSession(syncSession)
+        let foreign = try await otherAPI.captureSyncContext(ownerId: syncOwner)
+        do {
+            _ = try await api.sendOutboxCommand(command, context: foreign)
+            XCTFail("Foreign authority must fail")
+        } catch SyncWireValidationError.invalidSession {}
+        do {
+            _ = try await api.sendOutboxCommand(command.envelope, context: lease)
+            XCTFail("Generic route must reject typed undo")
+        } catch SyncWireValidationError.invalidRequest {}
+        await api.bindSyncSession(NativeAuthSession(
+            userId: otherSyncOwner, accessToken: "other-owner-token", expiresAt: .distantFuture
+        ))
+        do {
+            _ = try await api.sendOutboxCommand(command, context: lease)
+            XCTFail("Account switch must invalidate captured owner")
+        } catch SyncWireValidationError.invalidSession {}
+        await api.bindSyncSession(nil)
+        do {
+            _ = try await api.sendOutboxCommand(command, context: lease)
+            XCTFail("Signed-out retry must fail")
+        } catch SyncWireValidationError.invalidSession {}
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+}
+
+extension CollectionWireTests {
     private var routineRuleId: UUID { UUID(uuidString: "19190000-0000-4000-8000-000000000001")! }
 
     private func routineCompletionContext(
