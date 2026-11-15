@@ -8,7 +8,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
-    case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit
+    case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
@@ -472,6 +472,22 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 var next = ledger; next.revoked.insert(caller); try persist(next)
                 return Reply(status: 204, data: Data())
             }
+            if ledger.scenario == .careRecommendationRefresh, method == "GET", query.isEmpty,
+               let plant = ledger.plants.first, caller == plant.owner,
+               url.path == "/functions/v1/plants-api/plants/\(plant.id.uuidString.lowercased())/care/recommendation" {
+                let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
+                let check: Any = ledger.commits.isEmpty ? NSNull() : [
+                    "due_on": "2026-10-28", "anchor_on": "2026-10-21", "interval_days": 7,
+                    "basis": "Based on your last watering.", "source": source
+                ] as [String: Any]
+                return Reply(status: 200, data: try json([
+                    "plant_id": plant.id.uuidString, "status": "available", "next_check": check,
+                    "recommendation": [
+                        "action_id": "fixture_soil_check", "action_code": "check_soil",
+                        "text": "Check the soil before watering.", "next_check_interval_days": 7, "source": source
+                    ] as [String: Any]
+                ]))
+            }
             if method == "GET", url.path == "/functions/v1/plants-api/sync" {
                 guard Set(query.map(\.name)).count == query.count,
                       Set(query.map(\.name)).isSubset(of: ["limit", "since"]),
@@ -629,6 +645,27 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             }
             if ledger.scenario.testsPlantEdit, let edit = PlantEditCommand(envelope) {
                 return try editPlant(edit, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
+            }
+            if ledger.scenario == .careRecommendationRefresh, let refresh = CareRecommendationRefreshCommand(envelope) {
+                guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
+                      refresh.careRevision == 1,
+                      request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
+                else { throw CatalogueUIFixtureError.invalidRequest }
+                let key = caller.uuidString + ":" + envelope.operationId.uuidString
+                if let commit = ledger.commits[key] {
+                    guard commit.envelope == envelope, commit.body == body else { throw CatalogueUIFixtureError.invalidRequest }
+                    return Reply(status: 200, data: commit.receipt)
+                }
+                guard ledger.commits.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }
+                var next = ledger
+                next.tick += 1
+                let receipt = try json([
+                    "plant_id": plant.id.uuidString, "care_revision": refresh.careRevision,
+                    "state": "refreshed", "reason": NSNull(), "watermark": Self.time(next.tick)
+                ])
+                next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)
+                try persist(next)
+                throw URLError(.networkConnectionLost)
             }
             try CatalogueCreateWire.validate(envelope)
             guard request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased(),

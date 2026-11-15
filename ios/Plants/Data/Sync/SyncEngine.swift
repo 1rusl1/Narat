@@ -124,7 +124,7 @@ public actor SyncEngine {
         _ = try await flushOutbox(for: context.ownerId, context: context, commandName: PlantDeleteReceipt.commandName)
     }
 
-    func flushPlantEdit(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+    func flushPlantCommand(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
         try apiClient.syncAuthority.withBoundValid(context) {}
         _ = try await flushOutbox(for: context.ownerId, context: context, onlyOperation: command.operationId)
     }
@@ -177,7 +177,7 @@ public actor SyncEngine {
                 result = try await apiClient.sendOutboxCommand(envelope, context: context)
                 receivedReceipt = true
                 switch result {
-                case let .wateringDateCorrection(watermark):
+                case let .wateringDateCorrection(watermark), let .careRecommendationRefreshed(watermark):
                     try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
                 case let .firstAidRecorded(receipt):
                     try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
@@ -270,7 +270,8 @@ public actor SyncEngine {
                     let deletion = envelope.commandName == PlantDeleteReceipt.commandName
                     if !receivedReceipt, (entry.commandName == ManualWateringAction.undoCommand
                                           || entry.commandName == FirstAidRecordCommand.name || observation || deletion
-                                          || entry.commandName == PlantEditCommand.name),
+                                          || entry.commandName == PlantEditCommand.name
+                                          || entry.commandName == CareRecommendationRefreshCommand.name),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
@@ -321,7 +322,8 @@ public actor SyncEngine {
                 try await store.acknowledgePlantDeletion(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantEdited:
+            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantEdited,
+                 .careRecommendationRefreshed:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )

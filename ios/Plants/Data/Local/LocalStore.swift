@@ -619,6 +619,27 @@ public actor LocalStore {
         }
     }
 
+    func enqueueCareRecommendationRefresh(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CommandEnvelopeDTO {
+        guard let card = try syncedCollectionCard(plantId: plantId, context: context, authority: authority)
+        else { throw SyncWireValidationError.invalidRequest }
+        return try authority.withBoundValid(context) {
+            let pending = try pendingOutboxEntries(for: context.ownerId).filter { $0.plantId == plantId }
+            guard !pending.contains(where: {
+                $0.commandName == PlantDeleteReceipt.commandName || $0.commandName == PlantEditCommand.name
+            }) else { throw OutboxEnqueueError.operationIdentityMismatch }
+            if let existing = pending.first(where: { $0.commandName == CareRecommendationRefreshCommand.name }) {
+                return existing.envelope
+            }
+            let command = try CareRecommendationRefreshCommand.make(plantId: plantId, careRevision: card.careRevision)
+            return try enqueueCommand(
+                operationId: command.envelope.operationId, ownerId: context.ownerId, plantId: plantId,
+                commandName: command.envelope.commandName, payloadJSON: command.envelope.payloadJSON
+            ).envelope
+        }
+    }
+
     func syncedCollectionCard(
         plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> CatalogueCardSummary? {

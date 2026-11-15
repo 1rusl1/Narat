@@ -4772,6 +4772,76 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testCareRecommendationRefreshReplaysAfterRestartAndWaitsForCanonicalSync() async throws {
+        let plant = serverPlantId
+        let snapshot = UUID()
+        let refreshedAt = "2026-11-03T09:10:00.000001+00:00"
+        var row = syncChange(syncUntil, id: plant.uuidString)
+        row["data"] = ["id": plant.uuidString, "revision": 2, "care_revision": 2,
+                       "current_condition_snapshot_id": snapshot.uuidString] as [String: Any]
+        var baseline = syncObject()
+        baseline["changes"] = [row]
+        var delta = syncObject()
+        delta["changes"] = []
+        delta["until"] = refreshedAt
+        delta["next_since"] = refreshedAt
+        let receipt: [String: Any] = [
+            "plant_id": plant.uuidString, "care_revision": 2, "state": "refreshed",
+            "reason": NSNull(), "watermark": refreshedAt
+        ]
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command: CommandEnvelopeDTO
+        let firstPost: Data
+        do {
+            let transport = CatalogueTransport([.http(200, try syncJSON(baseline)), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            command = try await repo.enqueueCareRecommendationRefresh(plantId: plant, context: lease)
+            XCTAssertEqual(command.payloadJSON, "{\"expected_care_revision\":2}")
+            try await repo.retryCareRecommendationRefresh(command, context: lease)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+            firstPost = try XCTUnwrap(requests.last?.httpBody)
+        }
+        var wrong = receipt
+        wrong["care_revision"] = 3
+        let projection = careProjection(anchor: "2026-10-29", due: "2026-11-05")
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(wrong)), .http(200, try syncJSON(receipt)),
+            .http(200, try syncJSON(delta)), .http(200, try syncJSON(projection))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        let replay = try await repo.enqueueCareRecommendationRefresh(plantId: plant, context: lease)
+        XCTAssertEqual(replay, command)
+        try await repo.retryCareRecommendationRefresh(replay, context: lease)
+        let pending = try await repo.pendingCareRecommendationRefresh(plantId: plant, context: lease)
+        XCTAssertEqual(pending, command)
+        try await repo.retryCareRecommendationRefresh(replay, context: lease)
+        let remaining = try await repo.pendingCareRecommendationRefresh(plantId: plant, context: lease)
+        XCTAssertNil(remaining)
+        let recommendation = try await api.fetchCareRecommendation(plantId: plant, context: lease)
+        XCTAssertEqual(recommendation?.nextCheck?.dueOn, "2026-11-05")
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "POST", "GET", "GET"])
+        XCTAssertEqual(requests.prefix(2).compactMap(\.httpBody), [firstPost, firstPost])
+        XCTAssertTrue(requests.prefix(2).allSatisfy {
+            $0.value(forHTTPHeaderField: "X-Operation-Id")?.lowercased() == command.operationId.uuidString.lowercased()
+                && $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(syncSession.accessToken)"
+                && $0.value(forHTTPHeaderField: "X-Client-Locale") == "en"
+                && $0.value(forHTTPHeaderField: "X-Installation-Credential") == nil
+        })
+    }
+
+    @MainActor
     func testPlantLightEditReplaysAndRetainsPreviousAnalysis() async throws {
         try await verifyPlantConditionEdit(.light(.directSun), key: "light_code", code: "direct_sun")
     }

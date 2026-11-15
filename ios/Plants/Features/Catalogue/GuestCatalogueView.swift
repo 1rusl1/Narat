@@ -852,6 +852,11 @@ private struct CatalogueCollectionCardView: View {
     @State private var firstAidFailed = false
     @State private var historyFailed = false
     @State private var adviceFailed = false
+    @State private var pendingAdviceRefresh: CommandEnvelopeDTO?
+    @State private var checkingAdviceRefresh = true
+    @State private var adviceRefreshRead: Int?
+    @State private var refreshingAdvice = false
+    @State private var adviceRefreshFailed = false
     @State private var attempt = 0
     @State private var adviceRequest = 0
     @State private var adviceResponse: Int?
@@ -903,9 +908,11 @@ private struct CatalogueCollectionCardView: View {
                     if !polish {
                         if let advice {
                             PlantCareRecommendationContent(
-                                recommendation: advice, showNextCheck: adviceResponse == requestedAdvice
+                                recommendation: advice,
+                                showNextCheck: adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil
                             )
                         }
+                        adviceRefreshControls
                         if let firstAid, firstAid.accessUntil.map({ $0 > Date() }) ?? true {
                             ForEach(firstAid.controls) { control in
                                 VStack(alignment: .leading, spacing: 8) {
@@ -969,6 +976,7 @@ private struct CatalogueCollectionCardView: View {
             .task(id: [attempt, card.careRevision]) { await loadFirstAidJournal() }
             .task(id: card.careRevision) { await loadAnalysisHistory() }
             .task { await loadRename() }
+            .task { await loadPendingAdviceRefresh() }
             .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
             .task(id: firstAid?.accessUntil) {
                 guard let expiry = firstAid?.accessUntil else { return }
@@ -1507,6 +1515,72 @@ private struct CatalogueCollectionCardView: View {
                 historyFailed = true
                 correction = .failed
             }
+        }
+    }
+
+    @ViewBuilder
+    private var adviceRefreshControls: some View {
+        if refreshingAdvice {
+            ProgressView("Updating care recommendation…")
+        } else if pendingAdviceRefresh != nil {
+            Text("Care recommendation update pending.")
+                .accessibilityIdentifier("collection.care.refresh.pending")
+            Button("Retry recommendation update") {
+                Task { await refreshAdvice() }
+            }
+            .accessibilityIdentifier("collection.care.refresh.retry")
+        } else if !checkingAdviceRefresh, adviceResponse == adviceRequest, let advice,
+                  advice.nextCheckIntervalDays != nil, advice.nextCheck == nil,
+                  !loadingRename, !savingRename, pendingRename == nil {
+            Button("Update care recommendation") {
+                Task { await refreshAdvice() }
+            }
+            .accessibilityIdentifier("collection.care.refresh")
+        }
+        if adviceRefreshFailed {
+            Text("Couldn’t update the care recommendation.")
+        } else if let request = adviceRefreshRead, request == adviceResponse, request == adviceRequest,
+                  advice?.nextCheck == nil {
+            Text("No next soil check is available yet.")
+        }
+    }
+
+    private func loadPendingAdviceRefresh() async {
+        defer { checkingAdviceRefresh = false }
+        guard !polish, let repository = connection.repository else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let pending = try await repository.pendingCareRecommendationRefresh(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected, !refreshingAdvice else { return }
+            pendingAdviceRefresh = pending
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected, !refreshingAdvice else { return }
+            adviceRefreshFailed = true
+        }
+    }
+
+    private func refreshAdvice() async {
+        guard !refreshingAdvice, !savingRename, let repository = connection.repository else { return }
+        refreshingAdvice = true
+        adviceRefreshFailed = false
+        adviceRefreshRead = nil
+        defer { refreshingAdvice = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let command = try await repository.enqueueCareRecommendationRefresh(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingAdviceRefresh = command
+            try await repository.retryCareRecommendationRefresh(command, context: lease)
+            let pending = try await repository.pendingCareRecommendationRefresh(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingAdviceRefresh = pending
+            if pending == nil {
+                adviceRequest += 1
+                adviceRefreshRead = adviceRequest
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            adviceRefreshFailed = true
         }
     }
 
