@@ -91,6 +91,13 @@ SELECT public.execute_care_recommendation_refresh('19510000-0000-4000-8000-00000
 UPDATE soil_fixture SET rule_id=(SELECT id FROM public.task_rules
     WHERE plant_id='19510000-0000-4000-8000-000000000011' AND rule_state='active');
 SELECT ok((SELECT rule_id IS NOT NULL FROM soil_fixture),'explicit refresh stored a real rule');
+SELECT is(public.read_plant_care_profile('19510000-0000-4000-8000-000000000001',
+    '19510000-0000-4000-8000-000000000011')->'routine_check',
+    jsonb_build_object('rule_id',rule_id,'care_revision',1,
+        'due_local_date','2025-10-18','anchor_local_date','2025-10-11','anchor_kind','water'),
+    'routine projection starts from the stored watering local day')
+FROM soil_fixture
+WHERE to_regprocedure('public.resolve_routine_soil_check(uuid,uuid)') IS NOT NULL;
 UPDATE soil_fixture SET before_state=pg_temp.soil_state(),
     history_before=pg_temp.soil_state()->'entries',quota_before=pg_temp.soil_state()->'quota';
 SELECT throws_ok('SELECT pg_temp.soil(rev=>2)','23505','CARE_REVISION_CHANGED','stale revision is rejected');
@@ -150,7 +157,9 @@ SELECT is((SELECT response_payload FROM public.operation_receipts
       AND operation_id=(SELECT operation_id FROM soil_fixture)),
     (SELECT receipt FROM soil_fixture),'exact response is stored in the owner receipt');
 UPDATE soil_fixture SET before_state=pg_temp.soil_state();
-SELECT throws_ok('SELECT pg_temp.soil()','23505','SOIL_CHECK_OCCURRENCE_CONFLICT',
+SELECT throws_ok('SELECT pg_temp.soil()','23505',
+    CASE WHEN to_regprocedure('public.resolve_routine_soil_check(uuid,uuid)') IS NULL
+        THEN 'SOIL_CHECK_OCCURRENCE_CONFLICT' ELSE 'SOIL_CHECK_OCCURRENCE_CHANGED' END,
     'distinct operation cannot duplicate a completed occurrence');
 SELECT throws_ok($$SELECT pg_temp.soil(op=>operation_id,zone=>'UTC') FROM soil_fixture$$,
     '23505','IDEMPOTENCY_CONFLICT','changed payload cannot reuse the operation');
@@ -172,5 +181,134 @@ SELECT ok(NOT EXISTS(
     WHERE p.oid='public.execute_routine_soil_check(uuid,uuid,uuid,integer,uuid,date,timestamp with time zone,text)'::regprocedure
       AND a.grantee=0 AND a.privilege_type='EXECUTE'
 ),'PUBLIC has no execute permission');
+-- Additional recurrence checks are skipped at historical 051-only cutoffs.
+CREATE FUNCTION pg_temp.routine() RETURNS JSONB LANGUAGE SQL AS $$
+    SELECT public.read_plant_care_profile('19510000-0000-4000-8000-000000000001',
+        '19510000-0000-4000-8000-000000000011')->'routine_check'
+$$;
+CREATE FUNCTION pg_temp.recurrence_checks() RETURNS SETOF TEXT LANGUAGE plpgsql AS $test$
+DECLARE
+    v_owner_id CONSTANT UUID := '19510000-0000-4000-8000-000000000001';
+    v_plant_id CONSTANT UUID := '19510000-0000-4000-8000-000000000011';
+    second_entry UUID;
+    second_task UUID;
+    historical_rule UUID;
+    watering UUID;
+    tied_water UUID;
+    saved_profile JSONB;
+    saved_history JSONB;
+    before_replay JSONB;
+BEGIN
+    IF to_regprocedure('public.resolve_routine_soil_check(uuid,uuid)') IS NULL THEN
+        RETURN;
+    END IF;
+    SELECT to_jsonb(e) INTO saved_history FROM public.care_entries e
+        WHERE id=(SELECT (receipt->>'entry_id')::uuid FROM soil_fixture);
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-26',
+        'actual first completion advances the ordinary due date');
+    RETURN NEXT is(pg_temp.routine()->>'anchor_local_date','2025-10-19',
+        'completion uses its stored local day');
+    RETURN NEXT is(pg_temp.routine()->>'anchor_kind','check_soil','completion explains the next date');
+    RETURN NEXT lives_ok(
+        $$SELECT pg_temp.soil(due=>'2025-10-26',happened=>'2025-10-26T23:30:00Z')$$,
+        'a second operation completes the projected occurrence');
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-11-03',
+        'second completion advances again without creating a future task');
+    SELECT e.id,e.task_id INTO second_entry,second_task FROM public.care_entries e
+        WHERE e.plant_id=v_plant_id AND e.action_code='check_soil'
+        ORDER BY e.occurred_at DESC LIMIT 1;
+
+    INSERT INTO public.task_rules(plan_id,owner_id,plant_id,access_class,rule_state,
+        action_code,condition_code,interval_days)
+    SELECT plan_id,owner_id,plant_id,access_class,'superseded',action_code,condition_code,interval_days
+    FROM public.task_rules WHERE id=(SELECT rule_id FROM soil_fixture)
+    RETURNING id INTO historical_rule;
+    UPDATE public.care_tasks SET rule_id=historical_rule WHERE id=second_task;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-26',
+        'completed history from another rule cannot anchor the current rule');
+    UPDATE public.care_tasks SET rule_id=(SELECT rule_id FROM soil_fixture) WHERE id=second_task;
+    DELETE FROM public.task_rules WHERE id=historical_rule;
+
+    UPDATE public.care_entries SET state='voided' WHERE id=second_entry;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-26','voided completion is excluded');
+    UPDATE public.care_entries SET state='active',deleted_at=now() WHERE id=second_entry;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-26','deleted completion is excluded');
+    UPDATE public.care_entries SET deleted_at=NULL WHERE id=second_entry;
+    UPDATE public.care_tasks SET deleted_at=now() WHERE id=second_task;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-26','deleted completed task is excluded');
+    UPDATE public.care_tasks SET deleted_at=NULL WHERE id=second_task;
+    UPDATE public.care_tasks SET state='superseded' WHERE id=second_task;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-26','only completed tasks anchor recurrence');
+    UPDATE public.care_tasks SET state='completed' WHERE id=second_task;
+
+    UPDATE public.care_entries SET state='voided'
+        WHERE plant_id=v_plant_id AND owner_id=v_owner_id AND action_code='water';
+    RETURN NEXT ok(pg_temp.routine() IS NULL,'checks alone cannot replace a qualifying initial watering');
+    UPDATE public.care_entries SET state='active'
+        WHERE plant_id=v_plant_id AND owner_id=v_owner_id AND action_code='water';
+
+    UPDATE public.basic_care_memberships SET enabled=false WHERE plant_id=v_plant_id AND owner_id=v_owner_id;
+    RETURN NEXT ok(pg_temp.routine() IS NULL,'disabled membership suppresses the routine projection');
+    RETURN NEXT throws_ok(
+        $$SELECT pg_temp.soil(due=>'2025-11-03',happened=>'2025-11-03T12:00:00Z')$$,
+        '55000','ROUTINE_SOIL_CHECK_UNAVAILABLE','disabled membership also blocks recurrence writes');
+    UPDATE public.basic_care_memberships SET enabled=true WHERE plant_id=v_plant_id AND owner_id=v_owner_id;
+
+    INSERT INTO public.entitlements(owner_id,product_id,state,offer_kind,valid_until)
+    VALUES(v_owner_id,'app.narat.plants.pro.monthly','active','paid',now()-interval '1 day');
+    RETURN NEXT ok(pg_temp.routine() IS NULL,'expired access suppresses the routine projection');
+    RETURN NEXT throws_ok(
+        $$SELECT pg_temp.soil(due=>'2025-11-03',happened=>'2025-11-03T12:00:00Z')$$,
+        '55000','ROUTINE_SOIL_CHECK_UNAVAILABLE','expired access also blocks recurrence writes');
+    DELETE FROM public.entitlements e WHERE e.owner_id=v_owner_id;
+
+    SELECT profile INTO saved_profile FROM public.care_profiles WHERE version='soil-check-fixture';
+    UPDATE public.care_profiles SET profile=profile #- '{provenance,field_evidence,/actions/0}'
+        WHERE version='soil-check-fixture';
+    RETURN NEXT ok(pg_temp.routine() IS NULL,'revoked action source suppresses the routine projection');
+    RETURN NEXT throws_ok(
+        $$SELECT pg_temp.soil(due=>'2025-11-03',happened=>'2025-11-03T12:00:00Z')$$,
+        '55000','ROUTINE_SOIL_CHECK_UNAVAILABLE','revoked source also blocks recurrence writes');
+    UPDATE public.care_profiles SET profile=saved_profile WHERE version='soil-check-fixture';
+
+    UPDATE public.plants SET care_revision=2 WHERE id=v_plant_id;
+    RETURN NEXT ok(pg_temp.routine() IS NULL,'previous context cannot project a routine date');
+    UPDATE public.plants SET care_revision=1 WHERE id=v_plant_id;
+
+    watering := (public.execute_manual_care_command(v_owner_id,gen_random_uuid(),v_plant_id,'care.record',
+        '{"action_code":"water","occurred_at":"2025-11-05T23:30:00Z","timezone":"Europe/Warsaw"}')
+        ->>'entry_id')::uuid;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-11-13','newer actual watering wins');
+    RETURN NEXT is(pg_temp.routine()->>'anchor_kind','water','newer watering explains the date');
+    PERFORM public.execute_manual_care_command(v_owner_id,gen_random_uuid(),v_plant_id,'care.record',
+        '{"action_code":"water","occurred_at":"2025-11-01T23:30:00Z","timezone":"Europe/Warsaw"}');
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-11-13',
+        'later-recorded backdated watering cannot displace a newer actual occurrence');
+    RETURN NEXT throws_ok(
+        $$SELECT pg_temp.soil(due=>'2025-11-03',happened=>'2025-11-13T12:00:00Z')$$,
+        '23505','SOIL_CHECK_OCCURRENCE_CHANGED','write rejects a due date displaced by newer watering');
+    tied_water := (public.execute_manual_care_command(v_owner_id,gen_random_uuid(),v_plant_id,'care.record',
+        '{"action_code":"water","occurred_at":"2025-11-05T23:30:00Z","timezone":"UTC"}')
+        ->>'entry_id')::uuid;
+    RETURN NEXT is(pg_temp.routine()->>'anchor_local_date','2025-11-05',
+        'equal actual timestamps use recorded time and retain the winning stored local day');
+    UPDATE public.care_entries SET state='voided' WHERE id=tied_water;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-11-13','voided watering is excluded');
+    UPDATE public.care_entries SET deleted_at=now() WHERE id=watering;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-11-09','deleted watering is excluded');
+    UPDATE public.care_entries SET deleted_at=NULL WHERE id=watering;
+
+    before_replay := pg_temp.soil_state();
+    RETURN NEXT is((SELECT pg_temp.soil(op=>operation_id) FROM soil_fixture),
+        (SELECT receipt FROM soil_fixture),'original receipt replays after multiple anchor advances');
+    RETURN NEXT is(pg_temp.soil_state(),before_replay,'advanced replay writes no duplicate facts or receipts');
+    RETURN NEXT is((SELECT to_jsonb(e) FROM public.care_entries e
+        WHERE id=(SELECT (receipt->>'entry_id')::uuid FROM soil_fixture)),
+        saved_history,'older completed history is retained verbatim');
+    RETURN NEXT is((SELECT count(*) FROM public.care_tasks t WHERE t.plant_id=v_plant_id),
+        2::bigint,'exactly two factual occurrences and no future task exist');
+END;
+$test$;
+SELECT * FROM pg_temp.recurrence_checks();
 SELECT * FROM finish();
 ROLLBACK;
