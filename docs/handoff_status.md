@@ -1,5 +1,18 @@
 # Narat — текущий статус и передача работы
 
+## T169 — сезонное поле owner sync — 15 ноября 2026
+
+Приняты и отправлены 057 и pgTAP `1bc0696`. Локальные PostgreSQL,
+Deno, Review/QA прошли. Точная репетиция без 024 дала по 29 проверок
+условий и 136 обычного ухода на clean/upgrade. Dry-run и push выявили
+только 057. Живой SQL в откатываемой транзакции подтвердил одинаковый
+full/delta без сезонного поля, прежний `winter` в базе, сохранение
+исторического camera light и пустой sync для другого владельца.
+Синтетические строки откатились. Изменены контракт, T169 и handoff.
+Следующий шаг — узкий T168/058 guard новых входов create после lookup
+исторической квитанции. Полная iOS-приёмка остаётся открытой.
+
+
 ## V19 — опубликованная дата и живой HTTP — 15 ноября 2026
 
 Профиль Monstera v3 `7cd1bf9` и рендерер `1b7a593` отправлены в backend.
@@ -2396,10 +2409,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend; iOS/integration publishes to codex/plants-ios and owns Simulator. Stop threshold is 85% weekly Codex consumed.
-- Backend c8ad7d6 documents the live staging release and owner acceptance. 051–056, plants-api v27, worker v8, Monstera v3. Actual live HTTP exercised published date, mark, exact replay, undo, mismatch, preservation of watering and cleanup.
-- The independent staged expiry test created one disposable owner and synthetic verified entitlement. Expiry hid the date and blocked new completion, manual watering and correction remained available, exact receipt survived. No extra task was created and owner sync kept history. Cleanup verified. StoreKit and iOS expiry remain open.
-- Next local task 057 is scope-restricted to retiring season_override from the owner sync projection. Preserve old snapshots, all other data, ACL and capability on the no-024 staging source. Return unified Git diff in JSON. No live deploy or catalogue edits. T160/T164/T169/T171 remain open. iOS durable undo is in progress.
+- Two Codex-only project orchestrators run separately and publish to codex/plants-backend and codex/plants-ios. iOS owns Simulator. Stop threshold is 85% weekly consumed.
+- 057 in 1bc0696 removed season_override from owner condition projections only. Deno, PostgreSQL clean/upgrade, reviewer and QA passed. Exact staging rehearsal without 024 passed with 29 condition and 136 routine TAP checks per database. 057 deployed alone to narat-staging. Live rolled-back SQL verified full/delta, legacy winter storage, historical camera light and owner isolation. Catalogue, provider and other sync fields retained.
+- Monstera v3 is active on staging with 051–057, plants-api v27, worker v8. Live owner HTTP marks, undo, replay and synthetic expiry validated. iOS outbox undo c073844 accepted and UI is in progress.
+- Next: forward 058 rejects newly supplied camera or season keys in the canonical plant.create service writer after checking exact receipt replay. Preserve historical contexts. No Edge, live deployment, rewrite or staging in this task. Return unified git diff in JSON. T168/T169 and broader care acceptance stay open.
 
 <!-- /orchestrator:project-state -->
 

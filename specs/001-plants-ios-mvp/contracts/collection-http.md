@@ -128,7 +128,7 @@ conditions/overrides — объекты; overrides дополнительно д
 Условия — существующие SQL light_level/light_code, light_source ("manual"|"unknown"),
 light_confirmed (boolean), watering_habit/watering_code, last_watered/drainage_code,
 pot_type; nullable значения сохраняются. Коды соответствуют существующим SQL CHECK.
-Ввод camera_estimate и season_override не включён; историческая sync data сохраняется.
+Новые вводы `camera_estimate` и `season_override` не допускаются. Начиная с 057, активные owner sync snapshots сохраняют историческое происхождение света и исключают `season_override` из JSON. Сами сохранённые значения, публичные сезонные факты и привязанные диагнозы остались в истории.
 Пустые conditions/overrides допустимы. Семантические ограничения SQL остаются
 authoritative. Owner/user/p_owner_id, rooms, origin_draft_id/analysis_receipt,
 local_fallback/guest/identification source, клиентский plan_availability и

@@ -310,7 +310,7 @@
 
 - [ ] T168 OLD-02: удалить новый ввод камеры света из Swift/TS/SQL; manual/unknown согласованы, старое происхождение не меняется. Зависимости: —. Покрытие: FR-049, FR-050. Принят только клиентский estimator/manual-writer срез `dadfcb1`: 29 PlantsTests/build/Simulator и combined Review/QA PASS; SQL/API guards и legacy resubmission ещё не выполнены, задача остаётся открытой.
 
-- [ ] T169 T160: убрать сезонные overrides из новых inputs/prompt/sync, сохранив snapshots и опубликованные сезонные факты каталога. Зависимости: T166, T168. Покрытие: FR-028, FR-049, FR-063.
+- [ ] T169 T160: убрать сезонные overrides из новых inputs/prompt/sync, сохранив snapshots и опубликованные сезонные факты каталога. **057:** поле исключено из активной owner sync проекции, PostgreSQL clean/upgrade и staged full/delta с откатом прошли; таблицы и каталог сохранены. SQL guard новых create и общая клиентская приёмка открыты. Зависимости: T166, T168. Покрытие: FR-028, FR-049, FR-063.
 
 - [ ] T170 OE-13: основной вход «Проверить растение», единый результат/сохранение, без обязательного intent и старых refinement/pre/post-save состояний; обновить UI gates. Зависимости: T162, T166, T168. Покрытие: FR-001, FR-007, FR-008, FR-049, SC-001, SC-011.
 
