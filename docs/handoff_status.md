@@ -2231,8 +2231,8 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-profile-reminder-hour-ios-outbox: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 3, reviewer 2, qa 1. Модели — 1273.44 с, проверки — 244.51 с. Повторы моделей — 3, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-profile-reminder-hour-ios-outbox](validation/automation/tasks/t083-profile-reminder-hour-ios-outbox.md).
+t083-profile-reminder-hour-ios-settings-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 110.33 с, проверки — 226.63 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-profile-reminder-hour-ios-settings-acceptance](validation/automation/tasks/t083-profile-reminder-hour-ios-settings-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
