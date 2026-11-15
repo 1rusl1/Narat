@@ -2150,10 +2150,10 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:project-state -->
 ## Project State
 
-- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios. Backend/data independently publishes to codex/plants-backend. The weekly Codex ceiling is 85% used, provider routes are Codex only.
-- 6eef71e accepted the typed care.check_soil.undo owner-bound transport and CollectionWireTests. Swift, Simulator smoke, Review, QA and push passed, including exact entry payload, replay and malformed receipt rejection. Existing manual undo paths unchanged. 8046790 and b028902 previously accepted mark completion, canonical sync, lost response, restart and new due date. These are fixture results.
-- Backend 051–056 are on staging, Edge plants-api v27, worker v8. Live date requires accepted v3 data; active v2 has no cadence. T160/T171 remain open.
-- Current iOS task is the durable typed reversal outbox. Validate voided entry and operation-scoped reversal after authorized canonical sync, including valid replay after a different device re-completes the same task. Developer returns a valid unified Git diff in JSON; controller applies and verifies. Visible routine history and reversal UI are the next iOS package. Signed live acceptance follows backend/data.
+- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios. Backend/data independently publishes to codex/plants-backend. Weekly Codex stop threshold is 85% used and all model routes are Codex only.
+- c073844 accepted durable typed undo, canonical owner sync, persisted entry/task/reversal evidence, exact retry after a lost response and restart, and re-completed task handling. Swift, Simulator smoke, Review, QA and push passed. The initial negative fixture ordering was fixed. A separate macOS SwiftData probe compiled the six actual post/pre model types, seeded old SQLite and confirmed opening and preserving rows and outbox bytes with the new optional field.
+- b028902 accepted EN mark and next date after restart. Backend 051–056, Edge v27/worker v8 and real published Monstera v3 passed staging HTTP for date, completion, exact replay, reversal, mismatch and synthetic expiry. Staging synthetic identities were cleaned. iOS live V19 remains open.
+- Current task adds routine history and guarded undo on the saved EN card, plus a fixture for undo loss and restart. Preserve manual and first-aid paths. Developer returns a valid unified Git diff in JSON; controller applies and runs both targeted UI tests. T160/T164/T171 remain open. Next is signed EN staging path.
 
 <!-- /orchestrator:project-state -->
 
