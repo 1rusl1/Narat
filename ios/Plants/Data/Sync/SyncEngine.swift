@@ -211,6 +211,18 @@ public actor SyncEngine {
                     guard let deleted = try await store.plantDeletionWatermark(
                         plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
                     ), deleted >= receipt.watermark else { throw SyncWireValidationError.invalidPage }
+                case let .basicCareEnabled(receipt):
+                    guard let watermark = SQLTimestamp.microseconds(from: receipt.enabledAt)
+                    else { throw SyncWireValidationError.invalidPage }
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
+                    let enabledAt = try await store.syncedBasicCareEnabledAt(
+                        plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                    )
+                    if enabledAt != watermark {
+                        guard let deleted = try await store.plantDeletionWatermark(
+                            plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                        ), deleted >= watermark else { throw SyncWireValidationError.invalidPage }
+                    }
                 case let .plantEdited(receipt):
                     guard let edit = PlantEditCommand(envelope) else { throw SyncWireValidationError.invalidRequest }
                     try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
@@ -271,7 +283,8 @@ public actor SyncEngine {
                     if !receivedReceipt, (entry.commandName == ManualWateringAction.undoCommand
                                           || entry.commandName == FirstAidRecordCommand.name || observation || deletion
                                           || entry.commandName == PlantEditCommand.name
-                                          || entry.commandName == CareRecommendationRefreshCommand.name),
+                                          || entry.commandName == CareRecommendationRefreshCommand.name
+                                          || entry.commandName == BasicCareEnableReceipt.commandName),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
@@ -323,7 +336,7 @@ public actor SyncEngine {
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
             case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantEdited,
-                 .careRecommendationRefreshed:
+                 .careRecommendationRefreshed, .basicCareEnabled:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )

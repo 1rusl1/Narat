@@ -8,7 +8,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
-    case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh
+    case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
@@ -472,11 +472,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 var next = ledger; next.revoked.insert(caller); try persist(next)
                 return Reply(status: 204, data: Data())
             }
-            if ledger.scenario == .careRecommendationRefresh, method == "GET", query.isEmpty,
+            if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .basicCareEnable),
+               method == "GET", query.isEmpty,
                let plant = ledger.plants.first, caller == plant.owner,
                url.path == "/functions/v1/plants-api/plants/\(plant.id.uuidString.lowercased())/care/recommendation" {
                 let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
-                let check: Any = ledger.commits.isEmpty ? NSNull() : [
+                let check: Any = ledger.scenario != .careRecommendationRefresh || ledger.commits.isEmpty ? NSNull() : [
                     "due_on": "2026-10-28", "anchor_on": "2026-10-21", "interval_days": 7,
                     "basis": "Based on your last watering.", "source": source
                 ] as [String: Any]
@@ -606,6 +607,20 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         ] as [String: Any]
                     ]
                 } : []
+                if let plant = ledger.plants.first, plant.owner == caller,
+                   let enabledAt = basicCareEnabledAt(for: plant),
+                   since.map({ $0 < enabledAt }) ?? true {
+                    changes.append([
+                        "entity_type": "basic_care_memberships", "id": plant.id.uuidString,
+                        "updated_at": enabledAt, "deleted_at": NSNull(),
+                        "data": ["id": plant.id.uuidString, "plant_id": plant.id.uuidString,
+                                 "enabled": true, "enabled_at": enabledAt] as [String: Any]
+                    ])
+                    changes.sort {
+                        ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
+                            < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
+                    }
+                }
                 let entitlement: Any
                 switch ledger.scenario {
                 case .paid4 where caller == ledger.permanent:
@@ -645,6 +660,26 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             }
             if ledger.scenario.testsPlantEdit, let edit = PlantEditCommand(envelope) {
                 return try editPlant(edit, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
+            }
+            if ledger.scenario == .basicCareEnable, envelope.commandName == BasicCareEnableReceipt.commandName {
+                guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
+                      envelope.payloadJSON == "{}",
+                      request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
+                else { throw CatalogueUIFixtureError.invalidRequest }
+                let key = caller.uuidString + ":" + envelope.operationId.uuidString
+                if let commit = ledger.commits[key] {
+                    guard commit.envelope == envelope, commit.body == body else { throw CatalogueUIFixtureError.invalidRequest }
+                    return Reply(status: 200, data: commit.receipt)
+                }
+                guard ledger.commits.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }
+                var next = ledger
+                next.tick += 1
+                let receipt = try json([
+                    "plant_id": plant.id.uuidString, "enabled": true, "enabled_at": Self.time(next.tick)
+                ])
+                next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)
+                try persist(next)
+                throw URLError(.networkConnectionLost)
             }
             if ledger.scenario == .careRecommendationRefresh, let refresh = CareRecommendationRefreshCommand(envelope) {
                 guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
@@ -711,6 +746,14 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             if lose { throw URLError(.networkConnectionLost) }
             return Reply(status: 200, data: receipt)
         }
+    }
+
+    private func basicCareEnabledAt(for plant: Plant) -> String? {
+        if ledger.scenario == .careRecommendationRefresh { return plant.timestamp }
+        guard ledger.scenario == .basicCareEnable,
+              let receipt = ledger.commits.values.first(where: { $0.plantID == plant.id })?.receipt
+        else { return nil }
+        return (try? JSONDecoder().decode(BasicCareEnableReceipt.self, from: receipt))?.enabledAt
     }
 
     private func editPlant(_ edit: PlantEditCommand, body: Data, caller: UUID, header: String?) throws -> Reply {

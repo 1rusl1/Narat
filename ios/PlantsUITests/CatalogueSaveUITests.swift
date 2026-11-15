@@ -280,6 +280,25 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
     }
 
+    @MainActor func testBasicCareEnableReplaysWithoutRecordingWatering() {
+        let run = Run("basicCareEnable", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        tap(run, "collection.care.enable", "Enable basic care")
+        let pending = run.app.staticTexts["collection.care.enable.pending"]
+        require(pending)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(pending)
+        tap(run, "collection.care.enable.retry", "Retry enabling basic care")
+        enabled(run.app.buttons["collection.care.refresh"])
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+    }
+
     @MainActor func testCareRecommendationRefreshReplaysAfterRestart() {
         let run = Run("careRecommendationRefresh", .en)
         defer { run.app.terminate() }

@@ -477,6 +477,25 @@ public struct CollectionRepository: Sendable {
         return try await store.syncedCollectionCard(plantId: plantId, context: context, authority: apiClient.syncAuthority)
     }
 
+    func basicCareEnableState(
+        plantId: UUID, context: SyncSessionLease
+    ) async throws -> (enabled: Bool, pending: Bool) {
+        let entries = try await store.pendingOutboxEntries(for: context.ownerId)
+        let enabledAt = try await store.syncedBasicCareEnabledAt(
+            plantId: plantId, context: context, authority: apiClient.syncAuthority
+        )
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            (enabledAt != nil, entries.contains { $0.plantId == plantId && $0.commandName == BasicCareEnableReceipt.commandName })
+        }
+    }
+
+    func enableBasicCare(plantId: UUID, context: SyncSessionLease) async throws {
+        let command = try await store.enqueueBasicCareEnable(
+            plantId: plantId, context: context, authority: apiClient.syncAuthority
+        )
+        try await syncEngine.flushPlantCommand(command, context: context)
+    }
+
     func pendingCareRecommendationRefresh(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {
         let entries = try await store.pendingOutboxEntries(for: context.ownerId)
         return try apiClient.syncAuthority.withBoundValid(context) {

@@ -619,6 +619,52 @@ public actor LocalStore {
         }
     }
 
+    private struct SyncedBasicCareMembership: Decodable {
+        let plantId: UUID
+        let enabled: Bool
+        let enabledAt: String
+
+        enum CodingKeys: String, CodingKey {
+            case plantId = "plant_id"
+            case enabled
+            case enabledAt = "enabled_at"
+        }
+    }
+
+    func syncedBasicCareEnabledAt(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> Int64? {
+        try authority.withBoundValid(context) {
+            let rows = try activeSyncedEntities(ownerId: context.ownerId, entityType: "basic_care_memberships")
+            let decoder = JSONDecoder()
+            let memberships = try rows.map { try decoder.decode(SyncedBasicCareMembership.self, from: Data($0.payloadJSON.utf8)) }
+            guard let membership = memberships.first(where: { $0.plantId == plantId && $0.enabled })
+            else { return nil }
+            guard let timestamp = SQLTimestamp.microseconds(from: membership.enabledAt)
+            else { throw SyncWireValidationError.invalidPage }
+            return timestamp
+        }
+    }
+
+    func enqueueBasicCareEnable(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CommandEnvelopeDTO {
+        try authority.withBoundValid(context) {
+            let owner = context.ownerId
+            guard try activeSyncRow("plants", id: plantId, ownerId: owner, in: makeSyncContext()) != nil
+            else { throw SyncWireValidationError.invalidRequest }
+
+            let pending = try pendingOutboxEntries(for: owner).filter { $0.plantId == plantId }
+            guard !pending.contains(where: { $0.commandName == PlantDeleteReceipt.commandName })
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            let name = BasicCareEnableReceipt.commandName
+            if let existing = pending.first(where: { $0.commandName == name }) { return existing.envelope }
+            return try enqueueCommand(
+                operationId: UUID(), ownerId: owner, plantId: plantId, commandName: name, payloadJSON: "{}"
+            ).envelope
+        }
+    }
+
     func enqueueCareRecommendationRefresh(
         plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> CommandEnvelopeDTO {

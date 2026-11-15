@@ -400,6 +400,20 @@ struct PlantEditReceipt: Decodable, Sendable {
     }
 }
 
+struct BasicCareEnableReceipt: Decodable, Sendable {
+    static let commandName = "basic_care.enable"
+
+    let plantId: UUID
+    let enabled: Bool
+    let enabledAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case enabled
+        case enabledAt = "enabled_at"
+    }
+}
+
 struct CareRecommendationRefreshCommand: Sendable {
     static let name = "care.recommendation.refresh"
     let envelope: CommandEnvelopeDTO
@@ -761,6 +775,7 @@ enum OutboxCommandResult: Sendable {
     case firstAidObserved(FirstAidObservationReceipt)
     case plantEdited(PlantEditReceipt)
     case careRecommendationRefreshed(watermark: Int64)
+    case basicCareEnabled(BasicCareEnableReceipt)
     case plantDeleting(PlantDeleteReceipt)
 }
 
@@ -846,6 +861,12 @@ public actor PlantsAPIClient {
         let plantDelete = envelope.commandName == PlantDeleteReceipt.commandName
         let plantEdit = envelope.commandName == PlantEditCommand.name
         let recommendationRefresh = CareRecommendationRefreshCommand(envelope)
+        let basicCareEnable = envelope.commandName == BasicCareEnableReceipt.commandName
+        if basicCareEnable {
+            try syncAuthority.withBoundValid(context) {}
+            guard envelope.plantId != nil, envelope.payloadJSON == "{}"
+            else { throw SyncWireValidationError.invalidRequest }
+        }
         if envelope.commandName == CareRecommendationRefreshCommand.name {
             try syncAuthority.withBoundValid(context) {}
             guard recommendationRefresh != nil else { throw SyncWireValidationError.invalidRequest }
@@ -875,7 +896,7 @@ public actor PlantsAPIClient {
         }
         if catalogueCreate { try CatalogueCreateWire.validate(envelope) }
         let encoder = JSONEncoder()
-        if catalogueCreate || plantDelete || plantEdit || recommendationRefresh != nil
+        if catalogueCreate || plantDelete || plantEdit || recommendationRefresh != nil || basicCareEnable
             || manualWatering != nil || firstAid || observation != nil {
             encoder.outputFormatting = [.sortedKeys]
         }
@@ -887,7 +908,7 @@ public actor PlantsAPIClient {
         if let session = context.session {
             request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         }
-        if manualWatering != nil || firstAid || observation != nil || recommendationRefresh != nil {
+        if manualWatering != nil || firstAid || observation != nil || recommendationRefresh != nil || basicCareEnable {
             request.setValue("en", forHTTPHeaderField: "X-Client-Locale")
             request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
         }
@@ -911,6 +932,12 @@ public actor PlantsAPIClient {
         } else if let recommendationRefresh {
             let receipt = try await execute(request, as: CareRecommendationRefreshReceipt.self, expectedStatus: 200)
             result = .careRecommendationRefreshed(watermark: try receipt.validate(for: recommendationRefresh))
+        } else if basicCareEnable {
+            let receipt = try await execute(request, as: BasicCareEnableReceipt.self, expectedStatus: 200)
+            guard receipt.plantId == envelope.plantId, receipt.enabled,
+                  SQLTimestamp.microseconds(from: receipt.enabledAt) != nil
+            else { throw SyncWireValidationError.invalidPage }
+            result = .basicCareEnabled(receipt)
         } else if firstAid {
             let receipt = try await execute(request, as: FirstAidRecordReceipt.self, expectedStatus: 200)
             guard receipt.plantId == envelope.plantId else { throw SyncWireValidationError.invalidPage }

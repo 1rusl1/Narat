@@ -854,6 +854,10 @@ private struct CatalogueCollectionCardView: View {
     @State private var adviceFailed = false
     @State private var pendingAdviceRefresh: CommandEnvelopeDTO?
     @State private var checkingAdviceRefresh = true
+    @State private var basicCareEnabled: Bool?
+    @State private var basicCarePending = false
+    @State private var enablingBasicCare = false
+    @State private var basicCareEnableFailed = false
     @State private var adviceRefreshRead: Int?
     @State private var refreshingAdvice = false
     @State private var adviceRefreshFailed = false
@@ -912,6 +916,7 @@ private struct CatalogueCollectionCardView: View {
                                 showNextCheck: adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil
                             )
                         }
+                        basicCareEnableControls
                         adviceRefreshControls
                         if let firstAid, firstAid.accessUntil.map({ $0 > Date() }) ?? true {
                             ForEach(firstAid.controls) { control in
@@ -976,7 +981,10 @@ private struct CatalogueCollectionCardView: View {
             .task(id: [attempt, card.careRevision]) { await loadFirstAidJournal() }
             .task(id: card.careRevision) { await loadAnalysisHistory() }
             .task { await loadRename() }
-            .task { await loadPendingAdviceRefresh() }
+            .task {
+                await loadPendingAdviceRefresh()
+                await loadBasicCareState()
+            }
             .task(id: requestedAdvice) { await loadAdvice(requestedAdvice) }
             .task(id: firstAid?.accessUntil) {
                 guard let expiry = firstAid?.accessUntil else { return }
@@ -1519,6 +1527,62 @@ private struct CatalogueCollectionCardView: View {
     }
 
     @ViewBuilder
+    private var basicCareEnableControls: some View {
+        if enablingBasicCare {
+            ProgressView("Enabling basic care…")
+        } else if basicCarePending {
+            Text("Basic care is pending sync.")
+                .accessibilityIdentifier("collection.care.enable.pending")
+            Button("Retry enabling basic care") { Task { await enableBasicCare() } }
+                .accessibilityIdentifier("collection.care.enable.retry")
+        } else if basicCareEnabled == false, adviceResponse == adviceRequest,
+                  advice?.nextCheckIntervalDays != nil, !savingRename, pendingRename == nil {
+            Button("Enable basic care") { Task { await enableBasicCare() } }
+                .accessibilityIdentifier("collection.care.enable")
+        }
+        if basicCareEnableFailed {
+            Text("Couldn’t enable basic care.")
+        }
+    }
+
+    private func loadBasicCareState() async {
+        guard !polish, let repository = connection.repository else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let state = try await repository.basicCareEnableState(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected, !enablingBasicCare else { return }
+            basicCareEnabled = state.enabled
+            basicCarePending = state.pending
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            basicCareEnableFailed = true
+        }
+    }
+
+    private func enableBasicCare() async {
+        guard !enablingBasicCare, let repository = connection.repository else { return }
+        enablingBasicCare = true
+        basicCareEnableFailed = false
+        defer { enablingBasicCare = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            try await repository.enableBasicCare(plantId: card.id, context: lease)
+            let state = try await repository.basicCareEnableState(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            basicCareEnabled = state.enabled
+            basicCarePending = state.pending
+            if state.enabled && !state.pending {
+                adviceRequest += 1
+            } else if !state.pending {
+                basicCareEnableFailed = true
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            basicCareEnableFailed = true
+        }
+    }
+
+    @ViewBuilder
     private var adviceRefreshControls: some View {
         if refreshingAdvice {
             ProgressView("Updating care recommendation…")
@@ -1531,6 +1595,7 @@ private struct CatalogueCollectionCardView: View {
             .accessibilityIdentifier("collection.care.refresh.retry")
         } else if !checkingAdviceRefresh, adviceResponse == adviceRequest, let advice,
                   advice.nextCheckIntervalDays != nil, advice.nextCheck == nil,
+                  basicCareEnabled == true, !basicCarePending, !enablingBasicCare,
                   !loadingRename, !savingRename, pendingRename == nil {
             Button("Update care recommendation") {
                 Task { await refreshAdvice() }
