@@ -6,6 +6,7 @@ import {
   requireUuid,
 } from "../_shared/http.ts";
 import { handlePlantCreate, type SyncClientFactory, timestamp } from "./collection.ts";
+import { handleProfileUpdate } from "./profile-settings.ts";
 
 const envelopeFields = new Set([
   "operation_id",
@@ -66,6 +67,9 @@ export async function handleCollectionCommand(
   // Retain the existing guard and response for anonymous command callers.
   if (ctx.isAnonymous) return await handlePlantCreate(req, ctx, clientFactory);
   const body: unknown = await req.clone().json().catch(() => null);
+  if (record(body) && body.command_name === "profile.update") {
+    return await handleProfileUpdate(req, ctx, body, clientFactory);
+  }
   if (
     !record(body) ||
     (body.command_name !== "care.record" && body.command_name !== "care.undo" &&

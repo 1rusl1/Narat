@@ -42,6 +42,7 @@ import { handleGetSync } from "./collection.ts";
 import { handleCollectionCommand } from "./care-journal.ts";
 import { handleCareRecommendation } from "./care-recommendation.ts";
 import { handlePublishedCatalogue } from "./catalogue.ts";
+import { handleGetProfileSettings } from "./profile-settings.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
 // a real client with a mocked transport without reading credentials or using the network.
@@ -61,6 +62,7 @@ export interface PlantsApiDependencies {
     req: Request, id: string | null, phase: "storage" | "data" | "sweep",
   ) => Promise<Response>;
   handleGuestPhotoMaintenance?: (req: Request) => Promise<Response>;
+  handleProfileSettings?: (req: Request, ctx: RequestContext) => Promise<Response>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
   handleCareRecommendation?: (req: Request, ctx: RequestContext, plantId: string) => Promise<Response>;
@@ -325,6 +327,17 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         return privateResponse(await deps.handleCareRecommendation(req, ctx, careMatch[1]));
       }
 
+      if (req.method === "GET" && normalizedPath === "/me") {
+        requireActiveOwner(ctx);
+        if (ctx.isAnonymous) {
+          throw new ApiHttpError(403, "FORBIDDEN", "An active permanent account is required.");
+        }
+        if (deps.handleProfileSettings) {
+          return privateResponse(await deps.handleProfileSettings(req, ctx));
+        }
+        throw new ApiHttpError(503, "INTERNAL_ERROR", "Profile settings are temporarily unavailable.", true);
+      }
+
       if (req.method === "GET" && normalizedPath === "/sync") {
         requireActiveOwner(ctx);
         if (deps.handleSync) {
@@ -364,7 +377,8 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
       );
     } catch (err) {
       const response = errorResponse(err, locale);
-      return careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute || purgeMatch || purgeSweep
+      return normalizedPath === "/me" || normalizedPath === "/commands" ||
+          careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute || purgeMatch || purgeSweep
         ? privateResponse(response)
         : response;
     }
@@ -457,6 +471,8 @@ export function createProductionPlantsApiHandler(
       options.scheduleDiagnosis,
     ),
     analysisAccessAdapter: deps.analysisAccessAdapter ?? createAnalysisAccessQueryAdapter(syncClient),
+    handleProfileSettings: deps.handleProfileSettings ??
+      ((req, ctx) => handleGetProfileSettings(req, ctx, syncClient)),
     handleSync: deps.handleSync ??
       ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),
     handleCommand: deps.handleCommand ??
