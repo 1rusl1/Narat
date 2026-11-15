@@ -357,6 +357,75 @@ public actor LocalStore {
 
     // MARK: Outbox Operations
 
+    func pendingProfileReminderHour(
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> ProfileReminderHourCommand? {
+        try authority.withPermanentBoundValid(context) {
+            let rows = try pendingOutboxEntries(for: context.ownerId).filter { $0.commandName == "profile.update" }
+            guard !rows.isEmpty else { return nil }
+            guard rows.count == 1, let command = ProfileReminderHourCommand(rows[0].envelope)
+            else { throw SyncWireValidationError.invalidRequest }
+            return command
+        }
+    }
+
+    func enqueueProfileReminderHour(
+        _ command: ProfileReminderHourCommand, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> ProfileReminderHourCommand {
+        try authority.withPermanentBoundValid(context) {
+            let rows = try pendingOutboxEntries(for: context.ownerId).filter { $0.commandName == "profile.update" }
+            if !rows.isEmpty {
+                guard rows.count == 1, let saved = ProfileReminderHourCommand(rows[0].envelope)
+                else { throw SyncWireValidationError.invalidRequest }
+                guard saved.reminderHourLocal == command.reminderHourLocal
+                else { throw OutboxEnqueueError.operationIdentityMismatch }
+                return saved
+            }
+            let envelope = command.envelope
+            _ = try enqueueCommand(
+                operationId: envelope.operationId, ownerId: context.ownerId, plantId: nil,
+                commandName: envelope.commandName, payloadJSON: envelope.payloadJSON
+            )
+            return command
+        }
+    }
+
+    /// Receipt proof and canonical profile read share the transaction that removes the exact command.
+    /// A newer synchronized profile supersedes the hour in an older, correctly replayed receipt.
+    func finishProfileReminderHour(
+        _ command: ProfileReminderHourCommand, receipt: ProfileReminderHourReceipt?,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> Int? {
+        try authority.withPermanentBoundValid(context) {
+            let disk = makeSyncContext()
+            let ownerId = context.ownerId
+            let operationId = command.envelope.operationId
+            let rows = try disk.fetch(FetchDescriptor<LocalOutboxRecord>(predicate: #Predicate {
+                $0.ownerId == ownerId && $0.commandName == "profile.update"
+            }))
+            guard rows.count == 1, let row = rows.first, row.operationId == operationId,
+                  row.plantId == nil, row.payloadJSON == command.envelope.payloadJSON
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            let hour: Int?
+            if let receipt {
+                let checkpoints = FetchDescriptor<SyncCheckpointRecord>(predicate: #Predicate { $0.ownerId == ownerId })
+                guard receipt.profile.reminderHourLocal == command.reminderHourLocal,
+                      let checkpoint = try disk.fetch(checkpoints).first,
+                      let raw = checkpoint.watermarkRaw, let watermark = SQLTimestamp.microseconds(from: raw),
+                      watermark >= receipt.watermark, let json = checkpoint.syncProfileJSON
+                else { throw SyncWireValidationError.invalidPage }
+                hour = try JSONDecoder().decode(SyncWireProfileDTO.self, from: Data(json.utf8)).reminderHourLocal
+            } else {
+                // Only an explicit permanent server rejection may discard without canonical proof.
+                hour = nil
+            }
+            disk.delete(row)
+            try Task.checkCancellation()
+            try disk.save()
+            return hour
+        }
+    }
+
     public func enqueueCommand(
         operationId: UUID = UUID(),
         ownerId: UUID,
@@ -2017,7 +2086,8 @@ public actor LocalStore {
                     record.retryCount += 1
                     record.lastError = failure
                 } else {
-                    guard context.session == nil || record.commandName != "plant.create" else {
+                    guard record.commandName != "profile.update",
+                          context.session == nil || record.commandName != "plant.create" else {
                         throw CatalogueCreateAcknowledgementError.invalidCommand
                     }
                     modelContext.delete(record)

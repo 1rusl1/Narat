@@ -193,6 +193,11 @@ enum PlantDeletionOutcome {
     case pending, confirmed, rejected
 }
 
+enum ProfileReminderHourOutcome: Sendable, Equatable {
+    case confirmed(hour: Int)
+    case pending, rejected, unconfirmed
+}
+
 enum RoutineUndoOutcome: Sendable, Equatable {
     case pending, confirmed, rejected, unconfirmed
 }
@@ -506,6 +511,23 @@ public struct CollectionRepository: Sendable {
             plantId: plantId, context: context, authority: apiClient.syncAuthority
         )
         try await syncEngine.flushPlantCommand(command, context: context)
+    }
+
+    func pendingProfileReminderHour(context: SyncSessionLease) async throws -> ProfileReminderHourCommand? {
+        try await store.pendingProfileReminderHour(context: context, authority: apiClient.syncAuthority)
+    }
+
+    func enqueueProfileReminderHour(
+        reminderHourLocal: Int, context: SyncSessionLease
+    ) async throws -> ProfileReminderHourCommand {
+        let command = try ProfileReminderHourCommand.make(reminderHourLocal: reminderHourLocal)
+        return try await store.enqueueProfileReminderHour(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryProfileReminderHour(
+        _ command: ProfileReminderHourCommand, context: SyncSessionLease
+    ) async throws -> ProfileReminderHourOutcome {
+        try await syncEngine.flushProfileReminderHour(command, context: context)
     }
 
     func pendingRoutineUndo(plantId: UUID, context: SyncSessionLease) async throws -> RoutineSoilCheckUndoCommand? {

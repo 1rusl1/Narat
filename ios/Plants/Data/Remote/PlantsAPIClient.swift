@@ -29,6 +29,17 @@ struct ProfileReminderHourCommand: Sendable {
         self.reminderHourLocal = reminderHourLocal
     }
 
+    /// Only the exact persisted representation made by this type can be retried.
+    init?(_ envelope: CommandEnvelopeDTO) {
+        guard envelope.commandName == "profile.update", envelope.plantId == nil,
+              let object = try? JSONSerialization.jsonObject(with: Data(envelope.payloadJSON.utf8)),
+              let payload = object as? [String: Any], payload.count == 1,
+              let hour = payload["reminder_hour_local"] as? Int,
+              let expected = try? Self.make(reminderHourLocal: hour, operationId: envelope.operationId),
+              expected.envelope == envelope else { return nil }
+        self = expected
+    }
+
     static func make(reminderHourLocal: Int, operationId: UUID = UUID()) throws -> Self {
         guard (0...23).contains(reminderHourLocal) else {
             throw SyncWireValidationError.invalidRequest
@@ -997,12 +1008,38 @@ final class SyncSessionAuthority: @unchecked Sendable {
     private var generation: UInt64 = 0
     private var canonical = false
     private var session: NativeAuthSession?
+    private var permanentOwnerId: UUID?
+
+    private struct AccountClaims: Decodable {
+        let sub: UUID
+        let isAnonymous: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case sub
+            case isAnonymous = "is_anonymous"
+        }
+    }
+
+    /// Inspect the bearer supplied by the auth SDK, not a caller's guest/permanent guess.
+    /// This is a fail-closed client gate; the server still authenticates the JWT.
+    private static func permanentOwner(for session: NativeAuthSession) -> UUID? {
+        let parts = session.accessToken.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty }) else { return nil }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let data = Data(base64Encoded: payload),
+              let claims = try? JSONDecoder().decode(AccountClaims.self, from: data),
+              !claims.isAnonymous, claims.sub == session.userId else { return nil }
+        return claims.sub
+    }
 
     func bind(_ session: NativeAuthSession?) {
         lock.withLock {
             generation &+= 1
             canonical = true
             self.session = session
+            permanentOwnerId = session.flatMap { Self.permanentOwner(for: $0) }
         }
     }
 
@@ -1010,6 +1047,7 @@ final class SyncSessionAuthority: @unchecked Sendable {
         lock.withLock {
             generation &+= 1
             session = nil
+            permanentOwnerId = nil
         }
     }
 
@@ -1048,6 +1086,19 @@ final class SyncSessionAuthority: @unchecked Sendable {
         try lock.withLock {
             try validateLocked(lease)
             guard canonical, session != nil, lease.authority === self else {
+                throw SyncWireValidationError.invalidSession
+            }
+            return try body()
+        }
+    }
+
+    /// Permanent-account proof belongs to this binding and generation, including ABA.
+    /// Keep the proof check and the protected disk action in the same critical section.
+    func withPermanentBoundValid<T>(_ lease: SyncSessionLease, _ body: () throws -> T) throws -> T {
+        try lock.withLock {
+            try validateLocked(lease)
+            guard canonical, session != nil, lease.authority === self,
+                  permanentOwnerId == lease.ownerId else {
                 throw SyncWireValidationError.invalidSession
             }
             return try body()
@@ -1143,7 +1194,7 @@ public actor PlantsAPIClient {
     func updateProfileReminderHour(
         _ command: ProfileReminderHourCommand, context: SyncSessionLease
     ) async throws -> ProfileReminderHourReceipt {
-        try syncAuthority.withBoundValid(context) {}
+        try syncAuthority.withPermanentBoundValid(context) {}
         guard let locale = SupportedLocale(rawValue: clientLocale) else {
             throw LocaleError.unsupportedLocale
         }
@@ -1157,7 +1208,7 @@ public actor PlantsAPIClient {
             request, locale: locale, context: context,
             status: [200], forbidRedirects: true
         ) as ProfileReminderHourReceipt
-        return try syncAuthority.withBoundValid(context) {
+        return try syncAuthority.withPermanentBoundValid(context) {
             guard receipt.profile.reminderHourLocal == command.reminderHourLocal else {
                 throw SyncWireValidationError.invalidPage
             }
@@ -1242,7 +1293,8 @@ public actor PlantsAPIClient {
         try validateSyncContext(context)
         guard envelope.commandName != FirstAidObservationPhotoDraft.name,
               envelope.commandName != RoutineSoilCheckCompletionCommand.name,
-              envelope.commandName != RoutineSoilCheckUndoCommand.name
+              envelope.commandName != RoutineSoilCheckUndoCommand.name,
+              envelope.commandName != "profile.update"
         else { throw SyncWireValidationError.invalidRequest }
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         let plantDelete = envelope.commandName == PlantDeleteReceipt.commandName
