@@ -557,5 +557,165 @@ SELECT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
 SELECT is(pg_temp.media_inventory_snapshot(),(SELECT body FROM t083_media_before),
     'projection leaves source rows, leases, objects, quota, receipts and watermarks unchanged');
 
+-- Keep the fixture usable when the migration selector stops at 061.
+CREATE FUNCTION pg_temp.namespace_hold_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0620000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0620000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0620000-0000-4000-8000-000000000003';
+    v_receipt public.operation_receipts%ROWTYPE;
+    v_body jsonb;
+    v_before jsonb;
+    v_variant integer;
+    v_role text;
+BEGIN
+    IF to_regprocedure('public.read_account_deletion_namespace_holds(uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('062 namespace projection is outside selected migration version',1);
+        RETURN;
+    END IF;
+
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(NULL),NULL::jsonb,
+        'namespace projection rejects a null owner');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(pg_temp.owner_id(1299)),NULL::jsonb,
+        'namespace projection rejects an unavailable owner');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'active owner has no namespace projection');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'deleting owner without a persisted request has no namespace projection');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    PERFORM public.request_account_deletion_internal(v_owner,pg_temp.owner_id(1199));
+    SELECT * INTO STRICT v_receipt FROM public.operation_receipts
+    WHERE owner_id=v_owner AND operation_id=pg_temp.owner_id(1199);
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),
+        jsonb_build_object('orphan_objects',0,'guest_draft_sources',0,
+            'guest_identification_sources',0,'incoming_claims',0),
+        'empty queued owner exposes aggregate zero counts only');
+
+    FOR v_variant IN 1..4 LOOP
+        UPDATE public.operation_receipts SET
+            command_name=CASE WHEN v_variant=1 THEN 'forged' ELSE v_receipt.command_name END,
+            payload_hash=CASE WHEN v_variant=2 THEN 'forged' ELSE v_receipt.payload_hash END,
+            committed_at=CASE WHEN v_variant=3 THEN v_receipt.committed_at+interval '1 second'
+                ELSE v_receipt.committed_at END,
+            response_payload=CASE WHEN v_variant=4 THEN v_receipt.response_payload || '{"extra":true}'::jsonb
+                ELSE v_receipt.response_payload END
+        WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+        RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+            'namespace projection rejects forged receipt component '||v_variant);
+    END LOOP;
+    UPDATE public.operation_receipts SET command_name=v_receipt.command_name,
+        payload_hash=v_receipt.payload_hash,committed_at=v_receipt.committed_at,
+        response_payload=v_receipt.response_payload
+    WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+    UPDATE public.account_deletion_requests SET operation_id=pg_temp.owner_id(1198)
+    WHERE owner_id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'request with no matching receipt is unavailable');
+    UPDATE public.account_deletion_requests SET operation_id=v_receipt.operation_id WHERE owner_id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(pg_temp.owner_id(902)),NULL::jsonb,
+        'anonymous owner cannot acquire a namespace projection from a queued receipt');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'queued receipt requires a deleting owner');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+
+    INSERT INTO public.photo_assets(id,owner_id,purpose,original_key,content_hash)
+    VALUES
+        (pg_temp.owner_id(1200),v_owner,'initial',v_owner::text||'/'||pg_temp.owner_id(1200),repeat('a',64)),
+        (pg_temp.owner_id(1201),v_owner,'initial',v_owner::text||'/legacy/unsafe.jpg',repeat('a',64)),
+        (pg_temp.owner_id(1202),v_neighbor,'initial',v_owner::text||'/'||pg_temp.owner_id(1202),repeat('a',64)),
+        (pg_temp.owner_id(1203),v_guest,'initial',v_guest::text||'/'||pg_temp.owner_id(1203),repeat('a',64)),
+        (pg_temp.owner_id(1204),v_owner,'initial','legacy/outside-owner.jpg',repeat('a',64));
+    INSERT INTO storage.objects(bucket_id,name) VALUES
+        ('analysis-inputs',v_owner::text||'/'||pg_temp.owner_id(1200)),
+        ('analysis-inputs',v_owner::text||'/unknown'),
+        ('analysis-inputs',v_owner::text||'/legacy/unsafe.jpg'),
+        ('analysis-inputs',v_owner::text||'/'||pg_temp.owner_id(1202)),
+        ('analysis-inputs',v_owner::text||'-neighbor/unknown'),
+        ('analysis-inputs',v_neighbor::text||'/unknown'),
+        ('analysis-inputs',upper(v_owner::text)||'/unknown'),
+        ('analysis-inputs','legacy/outside-owner.jpg'),
+        ('t083-catalogue',v_owner::text||'/catalogue-only');
+    -- Canonical tombstones still track their original keys.
+    UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp()
+    WHERE id=pg_temp.owner_id(1200);
+    INSERT INTO public.installation_access(id,credential_hash,linked_owner_ids)
+    VALUES(pg_temp.owner_id(1250),'namespace-hold-fixture',ARRAY[v_owner,v_neighbor,v_guest]);
+    INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,
+        photo_id,source_storage_key,installation_id,expires_at,deleted_at,claimed_at,storage_cleaned_at)
+    SELECT pg_temp.owner_id(n),CASE WHEN n=1213 THEN v_neighbor ELSE v_owner END,
+        pg_temp.owner_id(n+100),'care','scan',
+        CASE WHEN n=1211 THEN pg_temp.owner_id(1202) ELSE pg_temp.owner_id(1200) END,
+        'legacy/guest-source-'||n,pg_temp.owner_id(1250),clock_timestamp()-interval '1 day',
+        CASE WHEN n=1210 THEN clock_timestamp() END,
+        CASE WHEN n=1211 THEN clock_timestamp() END,
+        CASE WHEN n=1212 THEN clock_timestamp() END
+    FROM generate_series(1210,1213) n;
+    INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at,storage_cleaned_at)
+    SELECT pg_temp.owner_id(n),clock_timestamp()-interval '2 days',clock_timestamp()-interval '1 day',
+        CASE WHEN n=1201 THEN clock_timestamp() END
+    FROM generate_series(1200,1202) n;
+    -- Shared installation binding establishes no additional source ownership.
+    -- These guest targets have no destination object yet.
+    INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,
+        photo_id,source_storage_key,installation_id,storage_cleaned_at)
+    SELECT pg_temp.owner_id(n),v_guest,pg_temp.owner_id(n+100),'care','scan',
+        pg_temp.owner_id(1203),v_guest::text||'/'||pg_temp.owner_id(1203),pg_temp.owner_id(1250),
+        CASE WHEN n=1225 THEN clock_timestamp() END
+    FROM generate_series(1220,1226) n;
+    INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+    SELECT pg_temp.owner_id(n),'namespace-fixture',
+        CASE WHEN n=1226 THEN v_neighbor ELSE v_owner END,pg_temp.owner_id(n+200),
+        CASE WHEN n IN (1221,1225) THEN 'copying' WHEN n=1223 THEN 'published'
+            WHEN n=1224 THEN 'cleanup_done' ELSE 'prepared' END,
+        CASE WHEN n IN (1221,1222) THEN clock_timestamp()-interval '1 day'
+            ELSE clock_timestamp()+interval '1 day' END
+    FROM generate_series(1220,1226) n;
+
+    v_before := pg_temp.media_inventory_snapshot();
+    v_body := public.read_account_deletion_namespace_holds(v_owner);
+    RETURN NEXT is(v_body,jsonb_build_object('orphan_objects',3,'guest_draft_sources',2,
+        'guest_identification_sources',1,'incoming_claims',2),
+        'only owner namespace orphans, unresolved direct sources and live/copying targets count');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM jsonb_each(v_body) e
+        WHERE jsonb_typeof(e.value)<>'number'),
+        'namespace projection emits counts only without IDs or storage paths');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_neighbor),NULL::jsonb,
+        'neighbor sharing installation binding has no queued projection');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),v_body,
+        'repeated namespace reads retain every unresolved hold');
+    RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,
+        'namespace reads leave rows, objects, jobs, receipts, quotas and watermarks unchanged');
+
+    UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp()
+    WHERE id IN (pg_temp.owner_id(1210),pg_temp.owner_id(1211),pg_temp.owner_id(1221));
+    UPDATE public.guest_identification_sources SET storage_cleaned_at=clock_timestamp()
+    WHERE photo_id=pg_temp.owner_id(1200);
+    UPDATE public.draft_claims SET state='published' WHERE draft_id=pg_temp.owner_id(1220);
+    v_before := pg_temp.media_inventory_snapshot();
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),
+        jsonb_build_object('orphan_objects',3,'guest_draft_sources',0,
+            'guest_identification_sources',0,'incoming_claims',0),
+        'settled targets and confirmed cleaned sources release holds without hiding orphans');
+    RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,
+        'settled projection also preserves all source data');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        RETURN NEXT ok(NOT has_function_privilege(v_role,
+            'public.read_account_deletion_namespace_holds(uuid)','EXECUTE'),
+            'namespace projection denies execution to '||v_role);
+    END LOOP;
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.read_account_deletion_namespace_holds(uuid)'::regprocedure
+          AND a.grantee=0 AND a.privilege_type='EXECUTE'),
+        'PUBLIC cannot execute namespace projection');
+END;
+$$;
+SELECT * FROM pg_temp.namespace_hold_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
