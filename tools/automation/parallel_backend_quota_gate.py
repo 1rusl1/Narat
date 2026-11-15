@@ -273,7 +273,7 @@ def main():
                    f"{payload})->>'state';")
         return owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset if with_photo else None
 
-    def v10_refresh_race(db):
+    def v10_refresh_race(db, check_completion=False):
         owner, plant, snapshot, first_op, second_op = (job(n) for n in range(9470, 9475))
         sql(db, f"""
             INSERT INTO public.profiles(id,anonymous) VALUES('{owner}',false);
@@ -343,6 +343,68 @@ def main():
             AND (SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}' AND state='active')=1
             AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
               'V10 concurrent distinct refresh and exact retry create one rule without new journal or quota usage')
+
+
+        if check_completion:
+            v19_routine_completion_race(db, owner, plant)
+
+    def v19_routine_completion_race(db, owner, plant):
+        rule = sql(db, f"SELECT public.read_plant_care_profile('{owner}','{plant}')#>>'{{routine_check,rule_id}}';")
+        assert re.fullmatch(r'[0-9a-f-]{36}', rule), 'Expected a grounded routine rule in the V10 race fixture'
+        operation, contender = job(9475), job(9476)
+
+        def complete(op):
+            return (f"SELECT public.execute_routine_soil_check('{owner}','{op}','{plant}',1,'{rule}',"
+                    "'2025-10-28','2025-10-28T12:00:00Z','UTC');")
+
+        def compete():
+            try:
+                sql(db, "SET application_name='v19_completion_distinct';\n" + complete(contender))
+            except RuntimeError as error:
+                assert 'SOIL_CHECK_OCCURRENCE_CHANGED' in str(error), str(error)
+                return
+            raise AssertionError('Distinct operation duplicated the completed occurrence')
+
+        session = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            session.stdin.write(f"BEGIN; {complete(operation)}\n")
+            session.stdin.flush()
+            winner = json.loads(session.stdout.readline())
+            assert winner['state'] == 'completed', winner
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                other = pool.submit(compete)
+                replay = pool.submit(sql, db, "SET application_name='v19_completion_replay';\n" + complete(operation))
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN "
+                              "('v19_completion_distinct','v19_completion_replay') AND wait_event_type='Lock'") != '2':
+                        assert not other.done() and not replay.done(), 'Competing completion did not wait for owner lock'
+                        assert time.monotonic() < deadline, 'Did not observe both routine waiters'
+                        time.sleep(.03)
+                    session.stdin.write('COMMIT;\n\\q\n')
+                    session.stdin.flush()
+                    _, error = session.communicate(timeout=15)
+                    assert session.returncode == 0, error
+                    other.result(timeout=15)
+                    assert json.loads(replay.result(timeout=15)) == winner
+                finally:
+                    if session.poll() is None:
+                        session.kill()
+                        session.communicate(timeout=10)
+        finally:
+            if session.poll() is None:
+                session.kill()
+                session.communicate(timeout=10)
+        check(db, f"""(SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}'
+                AND action_code='check_soil' AND state='active')=1
+            AND (SELECT count(*) FROM public.care_tasks WHERE plant_id='{plant}' AND state='completed')=1
+            AND (SELECT count(*) FROM public.operation_receipts WHERE owner_id='{owner}'
+                AND command_name='care.check_soil.complete')=1
+            AND (SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}'
+                AND action_code='water' AND state='active')=1
+            AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V19 concurrent exact retry and stale distinct completion create one fact and no quota usage')
 
     def first_aid_observation_race(db, winner, offset, with_photo=False):
         owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset = first_aid_race_fixture(
@@ -798,7 +860,9 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                         print(f'PASS {case}: real edit preserves the recommendation and suppresses its date through Edge', flush=True)
                         if 'refresh' in projections:
                             print(f'PASS {case}: Edge validates refresh receipt and shows the expected next check', flush=True)
-                            v10_refresh_race(case)
+                            v10_refresh_race(case, check_completion=any(
+                                migration.name == '202611150052_routine_soil_check_recurrence.sql'
+                                for migration in selected))
                 if any(migration.name == '202611150051_routine_soil_check_record.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/routine_soil_check.test.sql')
                 if any(migration.name == '202611120028_first_aid_control.sql' for migration in selected):
