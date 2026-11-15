@@ -1,5 +1,19 @@
 # Narat — текущий статус и передача работы
 
+## T083 — живой час профиля — 15 ноября 2026
+
+`c842f13` (059) и `a411fc2` (HTTP) приняты и отправлены.
+Exact staging без 024 прошёл по 104 профильных pgTAP на clean/upgrade.
+Выложены 059 и только `plants-api` v28. Worker остался v8. Первый
+bundle отклонён без import map, повтор с `supabase/functions/deno.json`
+прошёл. Живой HTTP на отдельном владельце подтвердил 401, default 09,
+0/23, 400 неверного ввода, 409 изменённой операции, сохранность текущего
+часа при точном старом повторе, no-op и owner sync. Проверен private cache.
+Временная Auth-учётка и профиль удалены. Обновлены контракт, T083 и handoff.
+Клиент и расписание открыты. Backend продолжает только локальный core
+запроса удаления аккаунта без включения внешнего маршрута.
+
+
 ## T083 — час напоминаний в SQL — 15 ноября 2026
 
 Приняты и отправлены 059 и тест `auth_registration_profile` в
@@ -2434,10 +2448,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend, iOS/integration to codex/plants-ios. iOS owns Simulator. Weekly stop threshold 85% consumed.
-- c842f13 accepted migration 059 with canonical SQL profile.update hour and owner settings projection. PostgreSQL clean/upgrade, Deno, Review, QA and push passed. Tests cover default 09, all valid hours, invalid updates, exact replay, owner binding, ACL and sync watermark. SQL is on the backend branch. Staging remains 051–058/plants-api v27 for now.
-- Staging V19 Monstera v3 accepted published dates, same-occurrence re-completion, synthetic expiry, exact receipt and unchanged journal. Temporary identities were cleaned. iOS durable undo c073844 accepted and canonical routine history is being verified.
-- Next T083 HTTP profile.update and GET /me delegate to the accepted private RPCs. Return a valid unified diff in JSON. Controller applies and verifies. No deployment, iOS, new roles or scheduling changes in this packet. T083/T084 remain open.
+- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend, iOS/integration to codex/plants-ios. iOS owns Simulator. Weekly stop at 85% consumed.
+- c842f13 accepted 059 and a411fc2 accepted GET /me and profile.update. Exact no-024 clean/upgrade had 104 profile TAP tests each. Deno and independent Review/QA passed. 059 and plants-api v28 are live on narat-staging, worker v8. Re-ran deploy with explicit import map after first bundle rejection. Live disposable owner verified default 9, 0/23, validation, exact replay, /me and /sync. Cleanup verified.
+- Staging Monstera v3 and 051–059. Live V19 dates, mark, undo, re-completion and synthetic expiry accepted. iOS c073844/c92db81 accepted durable undo and history, UI and signed staging pending.
+- Next 060 adds the internal private account deletion request transaction only. No service-role grant, HTTP, worker, real account/Storage deletion, RLS work or staging in this packet. Return valid unified diff in JSON. Existing inaccessibility and worker must be verified before exposure. T082/T083 remain open.
 
 <!-- /orchestrator:project-state -->
 

@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-deletion-intent-core",
+      "description": "Record one internal, idempotent account deletion request and retire the active owner state for later purge integration.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150060_account_deletion_intent.sql",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202611120022_auth_registration_profile.sql",
+        "supabase/migrations/202611130033_plant_delete_core.sql",
+        "supabase/tests/auth_registration_profile.test.sql",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150060_account_deletion_intent.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Internal local SQL precursor only. Return valid Git unified patch with exact context in JSON. Controller applies and verifies. No HTTP route or grants for the writer to service_role in this packet. No app, staging, real owner actions, Auth/Storage deletion, token revocation, billing, workers, schedules or table-policy changes.",
+        "After locking an existing permanent owner with the normal profile lock, public.request_account_deletion_internal(p_owner_id uuid,p_operation_id uuid) should create one private queue intent and exact owner-scoped operation_receipts response for account.delete, and flip only that owner's authoritative account_state to deleting at the canonical monotonic watermark in one transaction. Minimal queue schema with one record per owner and enough identity/timestamp for later worker; no personal data or speculative purge phases. Enable RLS and deny ordinary direct access. An exact same-owner replay remains valid in deleting state; reject foreign/same-operation-other-command, nonexistent, anonymous and nonreplay inactive owners without disclosure or changes. Do not let auth profile sync revive the deleting owner. No deletion or mutation of old catalogue, journals, quota and purchases.",
+        "Use a version-compatible, scoped pgTAP addition to the already gate-covered auth_registration_profile.test.sql demonstrating one intent/receipt, disabling active service read paths, auth trigger irreversibility, exact retry, absence of cross-owner effects and preservation of fixture history. Explicitly characterize this as internal only; direct authenticated table-access protection, workers and auth revocation must be reviewed before exposing a product route. T082/T083 remain open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083D1",
+          "description": "Diff limited to internal SQL and covered fixture.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T083D2",
+          "description": "PostgreSQL clean and upgrade exercise the owner state and exact local request semantics.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
