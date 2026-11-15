@@ -2150,10 +2150,10 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:project-state -->
 ## Project State
 
-- 15 Nov 2026. iOS/integration publishes to codex/plants-ios and is the only Simulator user; backend/data independently publishes to codex/plants-backend. Weekly Codex ceiling is 85% used, model routes use Codex.
-- iOS b028902 accepted the EN saved-card action for ordinary soil check. Swift tests, Simulator smoke, the exact EN XCUITest for lost response / restart / exact retry / advanced date, Reviewer, QA and push passed. Changes: card, DEBUG transport fixture, targeted UI test and report. 8046790 covered owner-synced care task/entry and watermark before ACK.
-- Backend 051–055 are on staging, plants-api v27, worker v8. Real SQL rollback fixture passed completion/undo/next date; existing published Monstera paused on live HTTP. 056 and dated published data are pending. Live staging end-to-end, routine journal row presentation and iOS undo are still open.
-- Next: implement the typed owner-bound care.check_soil.undo transport and CollectionWireTests. Return a valid unified Git diff in JSON. Controller writes and verifies. Durable undo, dedicated routine journal visuals, real service and broader UX are later packages. Keep T160/T171 open.
+- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios. Backend/data independently publishes to codex/plants-backend. The weekly Codex ceiling is 85% used, provider routes are Codex only.
+- 6eef71e accepted the typed care.check_soil.undo owner-bound transport and CollectionWireTests. Swift, Simulator smoke, Review, QA and push passed, including exact entry payload, replay and malformed receipt rejection. Existing manual undo paths unchanged. 8046790 and b028902 previously accepted mark completion, canonical sync, lost response, restart and new due date. These are fixture results.
+- Backend 051–056 are on staging, Edge plants-api v27, worker v8. Live date requires accepted v3 data; active v2 has no cadence. T160/T171 remain open.
+- Current iOS task is the durable typed reversal outbox. Validate voided entry and operation-scoped reversal after authorized canonical sync, including valid replay after a different device re-completes the same task. Developer returns a valid unified Git diff in JSON; controller applies and verifies. Visible routine history and reversal UI are the next iOS package. Signed live acceptance follows backend/data.
 
 <!-- /orchestrator:project-state -->
 
