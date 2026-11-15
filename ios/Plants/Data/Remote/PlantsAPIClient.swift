@@ -452,6 +452,120 @@ struct BasicCareEnableReceipt: Decodable, Sendable {
     }
 }
 
+/// Fixture-only transport command. Keep the captured envelope unchanged on replay.
+struct RoutineSoilCheckCompletionCommand: Sendable {
+    static let name = "care.check_soil.complete"
+    let envelope: CommandEnvelopeDTO
+    let ruleId: UUID
+    let careRevision: Int
+    let dueLocalDate: String
+
+    private struct Payload: Codable {
+        let ruleId: UUID
+        let expectedCareRevision: Int32
+        let dueLocalDate: String
+        let occurredAt: String
+        let timezone: String
+
+        enum CodingKeys: String, CodingKey {
+            case ruleId = "rule_id"
+            case expectedCareRevision = "expected_care_revision"
+            case dueLocalDate = "due_local_date"
+            case occurredAt = "occurred_at"
+            case timezone
+        }
+    }
+
+    static func make(
+        plantId: UUID, routineContext: PlantCareRecommendation.RoutineContext,
+        occurredAt: String, timezone: String, operationId: UUID = UUID()
+    ) throws -> Self {
+        guard routineContext.plantId == plantId,
+              let revision = Int32(exactly: routineContext.check.careRevision)
+        else { throw SyncWireValidationError.invalidRequest }
+        let payload = Payload(
+            ruleId: routineContext.check.ruleId, expectedCareRevision: revision,
+            dueLocalDate: routineContext.check.dueLocalDate, occurredAt: occurredAt, timezone: timezone
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(payload)
+        let envelope = CommandEnvelopeDTO(
+            operationId: operationId, commandName: name, plantId: plantId,
+            payloadJSON: String(decoding: data, as: UTF8.self)
+        )
+        guard let command = Self(envelope) else { throw SyncWireValidationError.invalidRequest }
+        return command
+    }
+
+    init?(_ envelope: CommandEnvelopeDTO) {
+        let data = Data(envelope.payloadJSON.utf8)
+        guard envelope.commandName == Self.name, envelope.plantId != nil,
+              let fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              fields.count == 5,
+              let payload = try? JSONDecoder().decode(Payload.self, from: data),
+              payload.expectedCareRevision > 0,
+              SQLCalendarDay.date(from: payload.dueLocalDate) != nil,
+              SQLTimestamp.microseconds(from: payload.occurredAt) != nil,
+              payload.timezone == "UTC" || payload.timezone == "GMT"
+                || TimeZone.knownTimeZoneIdentifiers.contains(payload.timezone)
+        else { return nil }
+        self.envelope = envelope
+        ruleId = payload.ruleId
+        careRevision = Int(payload.expectedCareRevision)
+        dueLocalDate = payload.dueLocalDate
+    }
+}
+
+struct RoutineSoilCheckCompletionReceipt: Decodable, Sendable {
+    enum State: String, Decodable, Sendable { case completed }
+
+    let plantId: UUID
+    let ruleId: UUID
+    let careRevision: Int32
+    let occurrenceKey: String
+    let dueLocalDate: String
+    let taskId: UUID
+    let entryId: UUID
+    let state: State
+    let watermark: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case ruleId = "rule_id"
+        case careRevision = "care_revision"
+        case occurrenceKey = "occurrence_key"
+        case dueLocalDate = "due_local_date"
+        case taskId = "task_id"
+        case entryId = "entry_id"
+        case state, watermark
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        plantId = try values.decode(UUID.self, forKey: .plantId)
+        ruleId = try values.decode(UUID.self, forKey: .ruleId)
+        careRevision = try values.decode(Int32.self, forKey: .careRevision)
+        occurrenceKey = try values.decode(String.self, forKey: .occurrenceKey)
+        dueLocalDate = try values.decode(String.self, forKey: .dueLocalDate)
+        taskId = try values.decode(UUID.self, forKey: .taskId)
+        entryId = try values.decode(UUID.self, forKey: .entryId)
+        state = try values.decode(State.self, forKey: .state)
+        guard careRevision > 0,
+              !occurrenceKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              SQLCalendarDay.date(from: dueLocalDate) != nil,
+              let micros = SQLTimestamp.microseconds(from: try values.decode(String.self, forKey: .watermark))
+        else { throw SyncWireValidationError.invalidPage }
+        watermark = micros
+    }
+
+    func validate(for command: RoutineSoilCheckCompletionCommand) throws {
+        guard plantId == command.envelope.plantId, ruleId == command.ruleId,
+              Int(careRevision) == command.careRevision, dueLocalDate == command.dueLocalDate
+        else { throw SyncWireValidationError.invalidPage }
+    }
+}
+
 struct CareRecommendationRefreshCommand: Sendable {
     static let name = "care.recommendation.refresh"
     let envelope: CommandEnvelopeDTO
@@ -890,11 +1004,37 @@ public actor PlantsAPIClient {
         return result
     }
 
+    /// Fixture-only until durable acknowledgement is implemented by the next package.
+    func sendOutboxCommand(
+        _ command: RoutineSoilCheckCompletionCommand, context: SyncSessionLease
+    ) async throws -> RoutineSoilCheckCompletionReceipt {
+        let session = try syncAuthority.withBoundValid(context) {
+            guard let session = context.session else { throw SyncWireValidationError.invalidSession }
+            return session
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let body = try encoder.encode(command.envelope)
+        var request = try buildRequest(
+            path: "commands", method: "POST", operationId: command.envelope.operationId, body: body
+        )
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("en", forHTTPHeaderField: "X-Client-Locale")
+        request.setValue(nil, forHTTPHeaderField: "X-Installation-Credential")
+        let receipt = try await execute(request, as: RoutineSoilCheckCompletionReceipt.self, expectedStatus: 200)
+        return try syncAuthority.withBoundValid(context) {
+            try receipt.validate(for: command)
+            return receipt
+        }
+    }
+
     func sendOutboxCommand(
         _ envelope: CommandEnvelopeDTO, context: SyncSessionLease
     ) async throws -> OutboxCommandResult {
         try validateSyncContext(context)
-        guard envelope.commandName != FirstAidObservationPhotoDraft.name else { throw SyncWireValidationError.invalidRequest }
+        guard envelope.commandName != FirstAidObservationPhotoDraft.name,
+              envelope.commandName != RoutineSoilCheckCompletionCommand.name
+        else { throw SyncWireValidationError.invalidRequest }
         let catalogueCreate = context.session != nil && envelope.commandName == "plant.create"
         let plantDelete = envelope.commandName == PlantDeleteReceipt.commandName
         let plantEdit = envelope.commandName == PlantEditCommand.name

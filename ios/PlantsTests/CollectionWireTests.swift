@@ -3,6 +3,258 @@ import SwiftData
 @testable import Plants
 
 extension CollectionWireTests {
+    private var routineRuleId: UUID { UUID(uuidString: "19190000-0000-4000-8000-000000000001")! }
+
+    private func routineCompletionContext(
+        plantId: UUID? = nil, revision: Int = 2, due: String = "2026-11-03"
+    ) -> PlantCareRecommendation.RoutineContext {
+        .init(plantId: plantId ?? serverPlantId, check: .init(
+            ruleId: routineRuleId, careRevision: revision, dueLocalDate: due,
+            anchorLocalDate: "2026-11-01", anchorKind: .water
+        ))
+    }
+
+    private func routineCompletionCommand() throws -> RoutineSoilCheckCompletionCommand {
+        try .make(
+            plantId: serverPlantId, routineContext: routineCompletionContext(),
+            occurredAt: timestamp, timezone: "Europe/Warsaw", operationId: operationId
+        )
+    }
+
+    private func routineCompletionReceipt() -> [String: Any] {
+        [
+            "plant_id": serverPlantId.uuidString, "rule_id": routineRuleId.uuidString,
+            "care_revision": 2, "occurrence_key": "fixture-routine-occurrence",
+            "due_local_date": "2026-11-03",
+            "task_id": "19190000-0000-4000-8000-000000000002",
+            "entry_id": "19190000-0000-4000-8000-000000000003",
+            "state": "completed", "watermark": timestamp
+        ]
+    }
+
+    func testRoutineCompletionValidatesCardAndExactPayloadBeforeTransport() throws {
+        let command = try routineCompletionCommand()
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(command.envelope.payloadJSON.utf8)
+        ) as? [String: Any])
+        XCTAssertEqual(Set(fields.keys), Set([
+            "rule_id", "expected_care_revision", "due_local_date", "occurred_at", "timezone"
+        ]))
+        XCTAssertEqual(fields["rule_id"] as? String, routineRuleId.uuidString)
+        XCTAssertEqual(fields["expected_care_revision"] as? Int, 2)
+        XCTAssertEqual(fields["due_local_date"] as? String, "2026-11-03")
+        XCTAssertEqual(fields["occurred_at"] as? String, timestamp)
+        XCTAssertEqual(fields["timezone"] as? String, "Europe/Warsaw")
+        XCTAssertEqual(command.envelope.operationId, operationId)
+        XCTAssertEqual(command.envelope.plantId, serverPlantId)
+        for context in [
+            routineCompletionContext(plantId: UUID()),
+            routineCompletionContext(revision: 0),
+            routineCompletionContext(revision: Int(Int32.max) + 1),
+            routineCompletionContext(due: "2026-02-30")
+        ] {
+            XCTAssertThrowsError(try RoutineSoilCheckCompletionCommand.make(
+                plantId: serverPlantId, routineContext: context,
+                occurredAt: timestamp, timezone: "Europe/Warsaw"
+            ))
+        }
+        let invalid: [(String, Any)] = [
+            ("rule_id", "bad-uuid"), ("expected_care_revision", 0),
+            ("expected_care_revision", -1), ("expected_care_revision", Int(Int32.max) + 1),
+            ("expected_care_revision", true), ("expected_care_revision", 1.5),
+            ("expected_care_revision", "2"), ("due_local_date", "2026-11-3"),
+            ("due_local_date", "2026-02-30"), ("occurred_at", "2026-11-03T09:00:00"),
+            ("timezone", "GMT+0300"), ("timezone", "invalid/zone"), ("extra", "unexpected")
+        ]
+        for (key, value) in invalid {
+            var changed = fields
+            changed[key] = value
+            let envelope = CommandEnvelopeDTO(
+                operationId: operationId, commandName: RoutineSoilCheckCompletionCommand.name,
+                plantId: serverPlantId, payloadJSON: try syncJSON(changed)
+            )
+            XCTAssertNil(RoutineSoilCheckCompletionCommand(envelope), key)
+        }
+        for key in fields.keys {
+            for value in [nil, NSNull()] as [Any?] {
+                var changed = fields
+                changed[key] = value
+                XCTAssertNil(RoutineSoilCheckCompletionCommand(CommandEnvelopeDTO(
+                    operationId: operationId, commandName: RoutineSoilCheckCompletionCommand.name,
+                    plantId: serverPlantId, payloadJSON: try syncJSON(changed)
+                )), key)
+            }
+        }
+        XCTAssertNil(RoutineSoilCheckCompletionCommand(CommandEnvelopeDTO(
+            operationId: operationId, commandName: "care.record", plantId: serverPlantId,
+            payloadJSON: command.envelope.payloadJSON
+        )))
+        XCTAssertNil(RoutineSoilCheckCompletionCommand(CommandEnvelopeDTO(
+            operationId: operationId, commandName: RoutineSoilCheckCompletionCommand.name,
+            payloadJSON: command.envelope.payloadJSON
+        )))
+    }
+
+    @MainActor
+    func testRoutineCompletionExactRetryAndTypedReplayUseBoundOwnerAndEN() async throws {
+        let command = try routineCompletionCommand()
+        let persisted = try JSONEncoder().encode(command.envelope)
+        let restored = try XCTUnwrap(RoutineSoilCheckCompletionCommand(
+            JSONDecoder().decode(CommandEnvelopeDTO.self, from: persisted)
+        ))
+        let receipt = try syncJSON(routineCompletionReceipt())
+        let transport = CatalogueTransport([.http(503, "{}"), .network, .http(200, receipt), .http(200, receipt)])
+        let api = client(transport)
+        try await api.updateClientLocale("pl")
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        for _ in 0..<2 {
+            do {
+                _ = try await api.sendOutboxCommand(command, context: lease)
+                XCTFail("Fixture failure must propagate for exact retry")
+            } catch is URLError {}
+        }
+        for _ in 0..<2 {
+            let result = try await api.sendOutboxCommand(restored, context: lease)
+            XCTAssertEqual(result.plantId, serverPlantId)
+            XCTAssertEqual(result.ruleId, routineRuleId)
+            XCTAssertEqual(result.careRevision, 2)
+            XCTAssertEqual(result.occurrenceKey, "fixture-routine-occurrence")
+            XCTAssertEqual(result.dueLocalDate, "2026-11-03")
+            XCTAssertEqual(result.taskId.uuidString.lowercased(), "19190000-0000-4000-8000-000000000002")
+            XCTAssertEqual(result.entryId.uuidString.lowercased(), "19190000-0000-4000-8000-000000000003")
+            XCTAssertEqual(result.state, .completed)
+            XCTAssertEqual(result.watermark, SQLTimestamp.microseconds(from: timestamp))
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 4)
+        let firstBody = try XCTUnwrap(requests.first?.httpBody)
+        for request in requests {
+            XCTAssertEqual(request.url?.absoluteString, "https://example.invalid/functions/v1/plants-api/commands")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.httpBody, firstBody)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(syncSession.accessToken)")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), operationId.uuidString.lowercased())
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Locale"), "en")
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Installation-Credential"))
+            XCTAssertEqual(try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(request.httpBody)),
+                           command.envelope)
+        }
+    }
+
+    @MainActor
+    func testRoutineCompletionRejectsMalformedAndMismatchedReceipts() async throws {
+        let command = try routineCompletionCommand()
+        let canonical = routineCompletionReceipt()
+        var invalid: [[String: Any]] = []
+        for key in canonical.keys {
+            var missing = canonical
+            missing.removeValue(forKey: key)
+            invalid.append(missing)
+            var null = canonical
+            null[key] = NSNull()
+            invalid.append(null)
+        }
+        let changes: [(String, Any)] = [
+            ("plant_id", UUID().uuidString), ("rule_id", UUID().uuidString),
+            ("care_revision", 3), ("care_revision", 0), ("care_revision", Int(Int32.max) + 1),
+            ("care_revision", true), ("due_local_date", "2026-11-04"),
+            ("due_local_date", "2026-02-30"), ("occurrence_key", " \n"),
+            ("task_id", "bad-uuid"), ("entry_id", "bad-uuid"),
+            ("state", "active"), ("watermark", "2026-11-03")
+        ]
+        for (key, value) in changes {
+            var changed = canonical
+            changed[key] = value
+            invalid.append(changed)
+        }
+        for object in invalid {
+            let transport = CatalogueTransport([.http(200, try syncJSON(object))])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            do {
+                _ = try await api.sendOutboxCommand(command, context: lease)
+                XCTFail("Malformed or mismatched completion must fail")
+            } catch {}
+        }
+    }
+
+    @MainActor
+    func testRoutineCompletionRequiresBoundAuthorityAndDedicatedRoute() async throws {
+        let transport = CatalogueTransport([])
+        let api = client(transport)
+        let command = try routineCompletionCommand()
+        let legacy = try await api.captureSyncContext(ownerId: syncOwner)
+        do {
+            _ = try await api.sendOutboxCommand(command, context: legacy)
+            XCTFail("Unbound request must fail")
+        } catch SyncWireValidationError.invalidSession {}
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let otherAPI = client(transport)
+        await otherAPI.bindSyncSession(syncSession)
+        let foreignLease = try await otherAPI.captureSyncContext(ownerId: syncOwner)
+        do {
+            _ = try await api.sendOutboxCommand(command, context: foreignLease)
+            XCTFail("Foreign authority must fail")
+        } catch SyncWireValidationError.invalidSession {}
+        do {
+            _ = try await api.sendOutboxCommand(command.envelope, context: lease)
+            XCTFail("Generic route must not discard a completion receipt")
+        } catch SyncWireValidationError.invalidRequest {}
+        await api.bindSyncSession(NativeAuthSession(
+            userId: otherSyncOwner, accessToken: "other-owner-token", expiresAt: .distantFuture
+        ))
+        do {
+            _ = try await api.sendOutboxCommand(command, context: lease)
+            XCTFail("Captured owner must fail after account switch")
+        } catch SyncWireValidationError.invalidSession {}
+        await api.bindSyncSession(nil)
+        do {
+            _ = try await api.sendOutboxCommand(command, context: lease)
+            XCTFail("Signed-out replay must fail")
+        } catch SyncWireValidationError.invalidSession {}
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    @MainActor
+    func testRoutineCompletionRejectsInFlightSessionChangesAndCancellation() async throws {
+        let command = try routineCompletionCommand()
+        for mode in 0..<3 {
+            let transport = SuspendedCollectionTransport(try syncJSON(routineCompletionReceipt()))
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let operation = Task { try await api.sendOutboxCommand(command, context: lease) }
+            await transport.waitForRequest()
+            if mode == 2 {
+                operation.cancel()
+            } else {
+                await api.bindSyncSession(NativeAuthSession(
+                    userId: otherSyncOwner, accessToken: "other-owner-token", expiresAt: .distantFuture
+                ))
+                if mode == 1 { await api.bindSyncSession(syncSession) }
+            }
+            await transport.resume()
+            do {
+                _ = try await operation.value
+                XCTFail("Stale or cancelled completion must fail")
+            } catch is CancellationError {
+                XCTAssertEqual(mode, 2)
+            } catch SyncWireValidationError.invalidSession {
+                XCTAssertNotEqual(mode, 2)
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"),
+                           "Bearer \(syncSession.accessToken)")
+        }
+    }
+}
+
+extension CollectionWireTests {
     /// Exact agreed wire6d689b7 responses, embedded for Simulator execution.
     private var accessFixtures: [(name: String, json: String)] {
         [
