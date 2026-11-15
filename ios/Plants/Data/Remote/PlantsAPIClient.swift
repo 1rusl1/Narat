@@ -1,6 +1,72 @@
 import CryptoKit
 import Foundation
 
+struct ProfileSettingsDTO: Decodable, Sendable, Equatable {
+    let preferredLocale: String
+    let reminderHourLocal: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case preferredLocale = "preferred_locale"
+        case reminderHourLocal = "reminder_hour_local"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        preferredLocale = try values.decode(String.self, forKey: .preferredLocale)
+        reminderHourLocal = try values.decode(Int.self, forKey: .reminderHourLocal)
+        guard ["en", "pl"].contains(preferredLocale), (0...23).contains(reminderHourLocal) else {
+            throw SyncWireValidationError.invalidPage
+        }
+    }
+}
+
+struct ProfileReminderHourCommand: Sendable {
+    let envelope: CommandEnvelopeDTO
+    let reminderHourLocal: Int
+
+    private init(envelope: CommandEnvelopeDTO, reminderHourLocal: Int) {
+        self.envelope = envelope
+        self.reminderHourLocal = reminderHourLocal
+    }
+
+    static func make(reminderHourLocal: Int, operationId: UUID = UUID()) throws -> Self {
+        guard (0...23).contains(reminderHourLocal) else {
+            throw SyncWireValidationError.invalidRequest
+        }
+        return Self(
+            envelope: CommandEnvelopeDTO(
+                operationId: operationId, commandName: "profile.update",
+                payloadJSON: "{\"reminder_hour_local\":\(reminderHourLocal)}"
+            ),
+            reminderHourLocal: reminderHourLocal
+        )
+    }
+}
+
+private struct ProfileSettingsResponse: Decodable {
+    let profile: ProfileSettingsDTO
+}
+
+struct ProfileReminderHourReceipt: Decodable, Sendable {
+    let profile: ProfileSettingsDTO
+    let watermarkRaw: String
+    let watermark: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case profile, watermark
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try values.decode(ProfileSettingsDTO.self, forKey: .profile)
+        watermarkRaw = try values.decode(String.self, forKey: .watermark)
+        guard let micros = SQLTimestamp.microseconds(from: watermarkRaw), micros >= 0 else {
+            throw SyncWireValidationError.invalidPage
+        }
+        watermark = micros
+    }
+}
+
 struct PlantCareRecommendation: Decodable, Sendable, Equatable {
     struct Source: Decodable, Sendable, Equatable {
         let url: URL
@@ -1059,6 +1125,44 @@ public actor PlantsAPIClient {
     public func bindSyncSession(_ session: NativeAuthSession?) {
         syncAuthority.bind(session)
         bearerToken = session?.accessToken
+    }
+
+    func fetchProfileSettings(context: SyncSessionLease) async throws -> ProfileSettingsDTO {
+        try syncAuthority.withBoundValid(context) {}
+        guard let locale = SupportedLocale(rawValue: clientLocale) else {
+            throw LocaleError.unsupportedLocale
+        }
+        let request = try buildRequest(path: "me", method: "GET")
+        let response = try await analysisRequest(
+            request, locale: locale, context: context,
+            status: [200], forbidRedirects: true
+        ) as ProfileSettingsResponse
+        return try syncAuthority.withBoundValid(context) { response.profile }
+    }
+
+    func updateProfileReminderHour(
+        _ command: ProfileReminderHourCommand, context: SyncSessionLease
+    ) async throws -> ProfileReminderHourReceipt {
+        try syncAuthority.withBoundValid(context) {}
+        guard let locale = SupportedLocale(rawValue: clientLocale) else {
+            throw LocaleError.unsupportedLocale
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let request = try buildRequest(
+            path: "commands", method: "POST", operationId: command.envelope.operationId,
+            body: encoder.encode(command.envelope)
+        )
+        let receipt = try await analysisRequest(
+            request, locale: locale, context: context,
+            status: [200], forbidRedirects: true
+        ) as ProfileReminderHourReceipt
+        return try syncAuthority.withBoundValid(context) {
+            guard receipt.profile.reminderHourLocal == command.reminderHourLocal else {
+                throw SyncWireValidationError.invalidPage
+            }
+            return receipt
+        }
     }
 
     func captureSyncContext(ownerId: UUID) throws -> SyncSessionLease {

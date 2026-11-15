@@ -2197,8 +2197,8 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-v19-routine-undo-card-en-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 185.10 с, проверки — 305.17 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [v19-routine-undo-card-en-acceptance](validation/automation/tasks/v19-routine-undo-card-en-acceptance.md).
+t083-profile-reminder-hour-ios-wire: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 408.54 с, проверки — 139.15 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-profile-reminder-hour-ios-wire](validation/automation/tasks/t083-profile-reminder-hour-ios-wire.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

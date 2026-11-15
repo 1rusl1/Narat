@@ -3,6 +3,215 @@ import SwiftData
 @testable import Plants
 
 extension CollectionWireTests {
+    private func profileResponse(hour: Int = 9, locale: String = "pl", receipt: Bool = false) throws -> String {
+        var object: [String: Any] = [
+            "profile": ["preferred_locale": locale, "reminder_hour_local": hour]
+        ]
+        if receipt { object["watermark"] = timestamp }
+        return try syncJSON(object)
+    }
+
+    @MainActor
+    func testProfileSettingsAuthenticatedReadAndExactUpdateRetry() async throws {
+        let command = try ProfileReminderHourCommand.make(reminderHourLocal: 23, operationId: operationId)
+        let json = try profileResponse(hour: 23, receipt: true)
+        let transport = CatalogueTransport([
+            .http(200, try profileResponse()), .network, .http(200, json), .http(200, json)
+        ])
+        let api = client(transport)
+        try await api.updateClientLocale("pl")
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let settings = try await api.fetchProfileSettings(context: lease)
+        XCTAssertEqual(settings.preferredLocale, "pl")
+        XCTAssertEqual(settings.reminderHourLocal, 9)
+        do {
+            _ = try await api.updateProfileReminderHour(command, context: lease)
+            XCTFail("Network error must propagate")
+        } catch is URLError {}
+        for _ in 0..<2 {
+            let receipt = try await api.updateProfileReminderHour(command, context: lease)
+            XCTAssertEqual(receipt.profile.reminderHourLocal, 23)
+            XCTAssertEqual(receipt.watermarkRaw, timestamp)
+            XCTAssertEqual(receipt.watermark, SQLTimestamp.microseconds(from: timestamp))
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 4)
+        let read = try XCTUnwrap(requests.first)
+        XCTAssertEqual(read.url?.absoluteString, "https://example.invalid/functions/v1/plants-api/me")
+        XCTAssertEqual(read.httpMethod, "GET")
+        XCTAssertNil(read.httpBody)
+        XCTAssertNil(read.value(forHTTPHeaderField: "X-Operation-Id"))
+        for request in requests {
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(syncSession.accessToken)")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Locale"), "pl")
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Installation-Credential"))
+        }
+        let body = try XCTUnwrap(requests[1].httpBody)
+        for request in requests.dropFirst() {
+            XCTAssertEqual(request.url?.absoluteString, "https://example.invalid/functions/v1/plants-api/commands")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Operation-Id"), operationId.uuidString.lowercased())
+            XCTAssertEqual(request.httpBody, body)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(Set(object.keys), Set(["operation_id", "command_name", "payload_json"]))
+            XCTAssertEqual(object["command_name"] as? String, "profile.update")
+            XCTAssertEqual((object["operation_id"] as? String)?.lowercased(), operationId.uuidString.lowercased())
+            let payload = try XCTUnwrap(object["payload_json"] as? String)
+            XCTAssertEqual(payload, #"{"reminder_hour_local":23}"#)
+        }
+    }
+
+    @MainActor
+    func testProfileReminderHourBoundsAndMalformedResponses() async throws {
+        for hour in [Int.min, -1, 24, Int.max] {
+            XCTAssertThrowsError(try ProfileReminderHourCommand.make(reminderHourLocal: hour))
+        }
+        for hour in [0, 23] {
+            let command = try ProfileReminderHourCommand.make(reminderHourLocal: hour)
+            let transport = CatalogueTransport([.http(200, try profileResponse(hour: hour, locale: "en", receipt: true))])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let receipt = try await api.updateProfileReminderHour(command, context: lease)
+            XCTAssertEqual(receipt.profile.reminderHourLocal, hour)
+            XCTAssertEqual(receipt.profile.preferredLocale, "en")
+        }
+        let command = try ProfileReminderHourCommand.make(reminderHourLocal: 9)
+        let profiles: [[String: Any]] = [
+            [:], ["preferred_locale": "en"], ["reminder_hour_local": 9],
+            ["preferred_locale": "EN", "reminder_hour_local": 9],
+            ["preferred_locale": "de", "reminder_hour_local": 9],
+            ["preferred_locale": "en", "reminder_hour_local": -1],
+            ["preferred_locale": "en", "reminder_hour_local": 24],
+            ["preferred_locale": "en", "reminder_hour_local": true],
+            ["preferred_locale": "en", "reminder_hour_local": "9"],
+            ["preferred_locale": "en", "reminder_hour_local": 9.5],
+            ["preferred_locale": NSNull(), "reminder_hour_local": 9]
+        ]
+        for profile in profiles {
+            let transport = CatalogueTransport([
+                .http(200, try syncJSON(["profile": profile])),
+                .http(200, try syncJSON(["profile": profile, "watermark": timestamp]))
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            do {
+                _ = try await api.fetchProfileSettings(context: lease)
+                XCTFail("Malformed profile accepted")
+            } catch {}
+            do {
+                _ = try await api.updateProfileReminderHour(command, context: lease)
+                XCTFail("Malformed receipt accepted")
+            } catch {}
+        }
+        var invalidReceipts = [
+            try profileResponse(hour: 8, receipt: true),
+            try profileResponse(),
+            "{}",
+            #"{"profile":null,"watermark":null}"#
+        ]
+        let watermarks: [Any] = [NSNull(), 123, "2026-11-03", "2026-02-30T09:00:00Z",
+                                 "1969-12-31T23:59:59.999999Z"]
+        for watermark in watermarks {
+            invalidReceipts.append(try syncJSON([
+                "profile": ["preferred_locale": "en", "reminder_hour_local": 9],
+                "watermark": watermark
+            ]))
+        }
+        for json in invalidReceipts {
+            let api = client(CatalogueTransport([.http(200, json)]))
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            do {
+                _ = try await api.updateProfileReminderHour(command, context: lease)
+                XCTFail("Stale hour or malformed receipt accepted")
+            } catch {}
+        }
+    }
+
+    @MainActor
+    func testProfileRequiresCurrentBoundOwnerBeforeHTTP() async throws {
+        let command = try ProfileReminderHourCommand.make(reminderHourLocal: 9)
+        for writing in [false, true] {
+            let transport = CatalogueTransport([])
+            let api = client(transport)
+            let unbound = try await api.captureSyncContext(ownerId: syncOwner)
+            let other = client(transport)
+            await other.bindSyncSession(syncSession)
+            let foreign = try await other.captureSyncContext(ownerId: syncOwner)
+            await api.bindSyncSession(syncSession)
+            let stale = try await api.captureSyncContext(ownerId: syncOwner)
+            await api.bindSyncSession(NativeAuthSession(
+                userId: otherSyncOwner, accessToken: "other-owner-token", expiresAt: .distantFuture
+            ))
+            for lease in [unbound, foreign, stale] {
+                do {
+                    if writing {
+                        _ = try await api.updateProfileReminderHour(command, context: lease)
+                    } else {
+                        _ = try await api.fetchProfileSettings(context: lease)
+                    }
+                    XCTFail("Invalid owner lease accepted")
+                } catch SyncWireValidationError.invalidSession {}
+            }
+            await api.bindSyncSession(nil)
+            do {
+                if writing {
+                    _ = try await api.updateProfileReminderHour(command, context: stale)
+                } else {
+                    _ = try await api.fetchProfileSettings(context: stale)
+                }
+                XCTFail("Signed-out lease accepted")
+            } catch SyncWireValidationError.invalidSession {}
+            let requests = await transport.capturedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testProfileRejectsInFlightOwnerChangesAndCancellation() async throws {
+        let command = try ProfileReminderHourCommand.make(reminderHourLocal: 9)
+        for writing in [false, true] {
+            for mode in 0..<4 {
+                let transport = SuspendedCollectionTransport(try profileResponse(receipt: writing))
+                let api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let operation = Task {
+                    if writing {
+                        _ = try await api.updateProfileReminderHour(command, context: lease)
+                    } else {
+                        _ = try await api.fetchProfileSettings(context: lease)
+                    }
+                }
+                await transport.waitForRequest()
+                if mode == 3 {
+                    operation.cancel()
+                } else if mode == 2 {
+                    await api.bindSyncSession(nil)
+                } else {
+                    await api.bindSyncSession(NativeAuthSession(
+                        userId: otherSyncOwner, accessToken: "other-owner-token", expiresAt: .distantFuture
+                    ))
+                    if mode == 1 { await api.bindSyncSession(syncSession) }
+                }
+                await transport.resume()
+                do {
+                    try await operation.value
+                    XCTFail("Stale or cancelled profile response accepted")
+                } catch is CancellationError {
+                    XCTAssertEqual(mode, 3)
+                } catch SyncWireValidationError.invalidSession {
+                    XCTAssertNotEqual(mode, 3)
+                }
+            }
+        }
+    }
+}
+
+extension CollectionWireTests {
     private func routineUndoReceipt(_ command: RoutineSoilCheckUndoCommand) -> [String: Any] {
         [
             "plant_id": serverPlantId.uuidString, "task_id": command.taskId.uuidString,
