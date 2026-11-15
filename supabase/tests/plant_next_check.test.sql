@@ -98,6 +98,37 @@ SELECT is((SELECT state FROM public.care_entries WHERE id=(SELECT id FROM first_
 SELECT is((SELECT state FROM public.care_entries WHERE id=(SELECT id FROM second_water)),
     'voided', 'repeat preserves previously voided history');
 
+-- The everyday date is read from the journal even before any rule is stored.
+DO $$
+DECLARE
+    v_owner UUID := '17300000-0000-4000-8000-000000000001';
+    v_plant UUID := '17300000-0000-4000-8000-000000000011';
+BEGIN
+    IF pg_get_functiondef('public.read_plant_care_profile(uuid,uuid)'::regprocedure)
+       NOT LIKE '%plan.full_body ? ''refresh_evidence''%' THEN
+        RETURN;
+    END IF;
+
+    IF pg_temp.check_read()->'calendar_eligible' IS DISTINCT FROM 'true'::jsonb
+       OR EXISTS (SELECT 1 FROM public.task_rules WHERE owner_id=v_owner AND plant_id=v_plant) THEN
+        RAISE EXCEPTION 'Expected a calendar without a stored rule before edit';
+    END IF;
+    PERFORM public.execute_plant_edit_command(v_owner,gen_random_uuid(),v_plant,
+        '{"conditions":{"light_code":"low"}}');
+    IF pg_temp.check_read()->'calendar_eligible' IS DISTINCT FROM 'false'::jsonb
+       OR pg_temp.check_read()->>'last_watered_on' IS DISTINCT FROM '2025-10-21' THEN
+        RAISE EXCEPTION 'Edited context must hide the calendar date even without a stored rule';
+    END IF;
+    IF public.execute_care_recommendation_refresh(v_owner,gen_random_uuid(),v_plant,
+        '{"expected_care_revision":2}')->>'reason' IS DISTINCT FROM 'insufficient_evidence'
+       OR pg_temp.check_read()->'calendar_eligible' IS DISTINCT FROM 'false'::jsonb THEN
+        RAISE EXCEPTION 'Unsupported refresh must leave the calendar paused';
+    END IF;
+    RAISE SQLSTATE 'Z1001';
+EXCEPTION WHEN SQLSTATE 'Z1001' THEN NULL;
+END;
+$$;
+
 -- Use the real edit command before replaying its read projections through Edge.
 CREATE TEMP TABLE v10_edit_get(wire JSONB);
 DO $$
