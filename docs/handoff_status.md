@@ -1,5 +1,34 @@
 # Narat — текущий статус и передача работы
 
+## Остановка на 85% остатка недельного лимита — 15 ноября 2026
+
+При 15% расхода оба проектных оркестратора получили SIGINT.
+Каждый сохранил `WAITING / developer` и остановил дочернюю
+группу. Рабочие деревья чистые. Изменения T077 и 067 к моменту
+остановки не применены. Следующий шаг — `run --resume` в тех
+же рабочих деревьях, с теми же manifest/config и ID.
+
+- iOS `origin/codex/plants-ios` `64baf83`.
+  Run `t077-care-local-reminder-plan-codex-20261115-18`.
+  Manifest `tools/automation/tasks.t077-care-local-reminder-plan.json`.
+  Config `/private/tmp/narat-orchestrated.aZQ6ZH/parallel-ios-codex-sol.config.json`.
+  Далее локальный расчёт уведомлений T077, затем подключение ОС.
+- Backend `origin/codex/plants-backend` `dd6cdc9`.
+  Run `t083-account-data-care-journal-purge-codex-20261115-28`.
+  Manifest `tools/automation/tasks.t083-account-data-care-journal-purge.json`.
+  Config `/private/tmp/narat-orchestrated.aZQ6ZH/parallel-backend-codex-sol.config.json`.
+  Далее SQL 067 и проверка входящих ссылок соседнего владельца.
+- `origin/codex/plants-v19-integration` `460832b` опубликована.
+  Снимки iOS и backend объединены с разрешением конфликтов только
+  в handoff и T083. Exact Swift дерево совпадает с подписанным
+  Simulator. Локально прошли Deno typecheck, 421 Deno-тест,
+  149 тестов автоматизации, по 1563 pgTAP clean/upgrade и
+  проверка эквивалентности исходников. Staging остался на v29/064.
+- Живые результаты и ограничения см. в отчётах о времени профиля
+  и Storage. T075/T077/T082/T083/T084 остаются открытыми.
+  В рабочей ветке обновлён только handoff.
+
+
 ## Профильный час и проверка готовности удаления — 15 ноября 2026
 
 - iOS `5acf64e` принят Review/QA. Подписанный iPhone 17 Pro Simulator
