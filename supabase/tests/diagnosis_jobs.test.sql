@@ -230,6 +230,104 @@ UPDATE public.plants SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM s
 SELECT is(public.read_owned_plant_photo(
     '16300000-0000-4000-8000-000000000002',(SELECT id FROM scan_plant)),NULL::jsonb,
     'a deleted plant no longer exposes photo bytes');
+-- 058 is absent during the gate's earlier migration checkpoints.
+-- Capture persisted effects, including quota balances and the owner watermark.
+CREATE TEMP VIEW create_context_state AS SELECT jsonb_build_object(
+    'profiles', (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.profiles p),
+    'plants', (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.plants p),
+    'snapshots', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.condition_snapshots s),
+    'receipts', (SELECT jsonb_agg(to_jsonb(r) ORDER BY owner_id,operation_id) FROM public.operation_receipts r),
+    'quotas', (SELECT jsonb_agg(to_jsonb(q) ORDER BY id) FROM public.monthly_quotas q),
+    'usage', (SELECT jsonb_agg(to_jsonb(u) ORDER BY job_id) FROM public.account_quota_usage u),
+    'installations', (SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM public.installation_access i),
+    'jobs', (SELECT jsonb_agg(to_jsonb(j) ORDER BY id) FROM public.analysis_jobs j),
+    'photos', (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.photo_assets a)
+) body;
+
+CREATE FUNCTION pg_temp.test_create_context_guard() RETURNS SETOF text
+LANGUAGE plpgsql SET search_path = public, extensions, pg_temp AS $test$
+<<fixture>>
+DECLARE
+    owner_id constant uuid := '16310000-0000-4000-8000-000000000081';
+    historical_operation constant uuid := '16310000-0000-4000-8000-000000000082';
+    base jsonb := '{"creation_source":"catalogue","plant_id":"monstera_deliciosa"}';
+    manual jsonb := '{"conditions":{"light_level":"low","light_source":"manual","light_confirmed":true}}';
+    historical jsonb;
+    receipt jsonb;
+    saved jsonb;
+    before_state jsonb;
+    source_payload jsonb;
+    rejected record;
+BEGIN
+    IF position('CAMERA_LIGHT_SOURCE_RETIRED' IN pg_get_functiondef(
+        'public.execute_plant_create_command(uuid,uuid,jsonb,timestamptz)'::regprocedure)) = 0 THEN
+        RETURN QUERY SELECT * FROM skip('058 plant create context guard not installed', 1);
+        RETURN;
+    END IF;
+    INSERT INTO public.profiles(id,anonymous) VALUES (owner_id,false);
+
+    -- Seed an actual plant/snapshot/receipt as a pre-058 historical operation.
+    -- The retired context is fixture history, never submitted as a new operation.
+    receipt := public.execute_plant_create_command(owner_id,historical_operation,base || manual);
+    historical := base || '{"conditions":{"light_level":"low","light_source":"camera_estimate","light_confirmed":true,"season_override":"winter"},
+        "overrides":{"light_source":"camera_estimate","season_override":"summer"},"season_override":null}'::jsonb;
+    UPDATE public.condition_snapshots SET light_source='camera_estimate',season_override='winter'
+    WHERE plant_id=(receipt->>'plant_id')::uuid;
+    UPDATE public.operation_receipts
+    SET payload_hash=encode(digest('plant.create:' || historical::text,'sha256'),'hex')
+    WHERE operation_receipts.owner_id=fixture.owner_id
+      AND operation_id=historical_operation;
+    SELECT body INTO before_state FROM create_context_state;
+    RETURN NEXT is(public.execute_plant_create_command(owner_id,historical_operation,historical),
+        receipt,'exact historical camera/season receipt replays before retirement guard');
+    RETURN NEXT is((SELECT body - 'profiles' FROM create_context_state),before_state - 'profiles',
+        'historical replay preserves plants, snapshots, receipts, photos and quotas');
+    RETURN NEXT throws_ok(format('SELECT public.execute_plant_create_command(%L::uuid,%L::uuid,%L::jsonb)',
+        owner_id,historical_operation,historical || '{"personal_name":"changed"}'::jsonb),
+        '23505','operation_payload_mismatch','changed historical replay conflicts before retirement guard');
+
+    SELECT body INTO before_state FROM create_context_state;
+    -- Exercise catalogue, identification-photo and fallback payload entry paths.
+    FOR source_payload IN
+        SELECT base UNION ALL SELECT body FROM scan_input UNION ALL
+        SELECT base || '{"creation_source":"local_fallback","origin_draft_id":"16310000-0000-4000-8000-000000000083","analysis_receipt":"synthetic"}'::jsonb
+    LOOP
+        FOR rejected IN SELECT * FROM (VALUES
+            ('conditions camera','{"conditions":{"light_level":"low","light_source":"camera_estimate","light_confirmed":true}}'::jsonb,'CAMERA_LIGHT_SOURCE_RETIRED'),
+            ('overrides camera','{"overrides":{"light_level":"low","light_source":"camera_estimate","light_confirmed":true}}'::jsonb,'CAMERA_LIGHT_SOURCE_RETIRED'),
+            ('camera masked by manual','{"conditions":{"light_source":"camera_estimate"},"overrides":{"light_source":"manual"}}'::jsonb,'CAMERA_LIGHT_SOURCE_RETIRED'),
+            ('camera with unknown light','{"conditions":{"light_level":"unknown","light_source":"camera_estimate"}}'::jsonb,'CAMERA_LIGHT_SOURCE_RETIRED'),
+            ('top season','{"season_override":"auto"}'::jsonb,'SEASON_OVERRIDE_RETIRED'),
+            ('top null season','{"season_override":null}'::jsonb,'SEASON_OVERRIDE_RETIRED'),
+            ('conditions season','{"conditions":{"season_override":"winter"}}'::jsonb,'SEASON_OVERRIDE_RETIRED'),
+            ('conditions null season','{"conditions":{"season_override":null}}'::jsonb,'SEASON_OVERRIDE_RETIRED'),
+            ('overrides season','{"overrides":{"season_override":"summer"}}'::jsonb,'SEASON_OVERRIDE_RETIRED'),
+            ('overrides null season','{"overrides":{"season_override":null}}'::jsonb,'SEASON_OVERRIDE_RETIRED')
+        ) AS cases(label,context,error_message)
+        LOOP
+            RETURN NEXT throws_ok(format('SELECT public.execute_plant_create_command(%L::uuid,%L::uuid,%L::jsonb)',
+                owner_id,gen_random_uuid(),source_payload || rejected.context),
+                '22023',rejected.error_message,source_payload->>'creation_source' || ': rejects ' || rejected.label);
+        END LOOP;
+    END LOOP;
+    RETURN NEXT is((SELECT body FROM create_context_state),before_state,
+        'denied inputs leave plants, snapshots, receipts, quotas, photos and watermarks unchanged');
+
+    saved := public.execute_plant_create_command(owner_id,gen_random_uuid(),base || manual);
+    RETURN NEXT is((SELECT jsonb_build_array(light_source,light_code,light_confirmed)
+        FROM public.condition_snapshots WHERE plant_id=(saved->>'plant_id')::uuid),
+        '["manual","low",true]'::jsonb,'manual light saves with canonical source');
+    saved := public.execute_plant_create_command(owner_id,gen_random_uuid(),
+        base || '{"conditions":{"light_level":"unknown","light_source":"unknown","light_confirmed":false}}'::jsonb);
+    RETURN NEXT is((SELECT jsonb_build_array(light_source,light_code,light_confirmed)
+        FROM public.condition_snapshots WHERE plant_id=(saved->>'plant_id')::uuid),
+        '["unknown","unknown",false]'::jsonb,'unknown light saves without invented manual source');
+    RETURN NEXT is((SELECT count(*) FROM public.plants p WHERE p.owner_id=fixture.owner_id),
+        3::bigint,'only historical, manual and unknown plants consume capacity');
+END;
+$test$;
+SELECT * FROM pg_temp.test_create_context_guard();
+
 -- Seven-day anonymous draft and permanent transfer from a real leased fixture job.
 INSERT INTO public.profiles(id,anonymous) VALUES ('16310000-0000-4000-8000-000000000061',true);
 CREATE TEMP TABLE guest_install AS SELECT (public.register_installation_access(

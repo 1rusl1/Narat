@@ -2419,9 +2419,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t169-owner-sync-season-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 3, reviewer 1, qa 1. Модели — 435.45 с, проверки — 52.11 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t169-owner-sync-season-retirement](validation/automation/tasks/t169-owner-sync-season-retirement.md).
+t168-active-plant-create-input-guard: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 323.09 с, проверки — 52.39 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t168-active-plant-create-input-guard](validation/automation/tasks/t168-active-plant-create-input-guard.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
