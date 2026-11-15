@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-soil-check-recurrence",
+      "description": "Advance the next ordinary soil-check date after a factual completion using the same authoritative SQL anchor at read and write.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql",
+        "supabase/tests/routine_soil_check.test.sql",
+        "supabase/migrations/202611150051_routine_soil_check_record.sql",
+        "supabase/migrations/202611150050_revalidate_refreshed_care_calendar.sql",
+        "supabase/migrations/202611130045_care_refresh_candidate.sql",
+        "supabase/tests/plant_next_check.test.sql",
+        "specs/001-plants-ios-mvp/spec.md"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql",
+        "supabase/tests/routine_soil_check.test.sql"
+      ],
+      "constraints": [
+        "Current accepted base d97e55a. Implement the new migration and amend the existing gate-covered fixture. Return a valid unified git diff in the JSON patch field. Missing new files are expected. Do not write the worktree yourself.",
+        "Forward-only local SQL. Add one authoritative routine anchor resolution used by both the new routine read projection and execute_routine_soil_check. Use latest active factual owner/plant watering or active completed soil check of the same refreshed rule, ordered by actual occurrence, with deterministic ties and the stored local day. Keep previous context, first-aid entries, voided checks and deleted rows out. No missing/invalid evidence assumptions. Require a qualifying initial watering/current rule as in accepted 051.",
+        "Expose an additive routine_check projection from read_plant_care_profile containing rule ID, current care revision, due and anchor local days, and anchor kind for a later HTTP adapter. Preserve existing fields and legacy derived watering behavior when there is no refreshed rule. Only include the new projection if the current rule, membership, access and published applicability are still valid.",
+        "Update the private 051 write implementation forward to validate expected due against the same routine anchor. Permit exact receipt replay after advancement; reject a stale due for a new operation. No synthesized journal fact, reminders, future task insert, Edge, scheduled jobs, staging, first-aid or migration 024 changes. T160/T171 remain open.",
+        "Add pgTAP coverage in the existing fixture. Check initial watering-derived date, exact replay after advance, a second valid completion, newer/backdated watering, revoked source or disabled/expired access, retained older history and no duplicates. Keep historical 051-only test cutoffs working by guarding added assertions or adapting expected results only when 052 is present."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19REC1",
+          "description": "Diff remains limited to the forward SQL migration and synthetic fixture.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19REC2",
+          "description": "Read and write agree on next factual routine occurrence under clean and upgrade, with suppression and replay regressions covered.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
