@@ -1,5 +1,16 @@
 # Narat — текущий статус и передача работы
 
+## T083 — час напоминаний в SQL — 15 ноября 2026
+
+Приняты и отправлены 059 и тест `auth_registration_profile` в
+`c842f13`. Clean/upgrade, Deno, Review и QA прошли. Фикстуры
+проверили 09 по умолчанию, часы 0–23, неверный ввод, replay,
+изоляцию, профильный watermark и чтение в sync. В staging
+059 ещё не применялась. Следующий пакет подключит private
+`GET /me` и `profile.update`; после проверки нужна совместная
+выкладка и отдельный живой прогон. Клиент и планировщик открыты.
+
+
 ## T168/058 и живой повтор V19 — 15 ноября 2026
 
 058 и pgTAP применены из принятого `554cb7a`. Deno, PostgreSQL,
@@ -2423,10 +2434,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend and iOS/integration to codex/plants-ios. iOS owns Simulator. Stop threshold is 85% consumed weekly.
-- 554cb7a accepted 058 and diagnosis_jobs coverage. PostgreSQL, Deno, Review/QA and push passed. Exact no-024 rehearsal had 133 diagnosis and 29 condition TAP assertions per database. Only 058 deployed, live rolled-back SQL checked manual create, retired inputs and historical exact replay. T168/T169 remain partially open.
-- narat-staging has 051–058, plants-api v27, worker v8 and published Monstera v3. Live mark, undo, replay, expiry and re-completion accepted: one task, old voided + new active entry, unchanged manual watering. Temporary owners removed.
-- Next T083 059 adds owner-bound SQL profile.update for one valid reminder hour and private read projection. Return unified diff in JSON; controller applies and checks. No Edge, iOS, notifications, billing or staging changes in this packet. iOS c073844 durable undo accepted; history/card work and signed V19 pending.
+- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend, iOS/integration to codex/plants-ios. iOS owns Simulator. Weekly stop threshold 85% consumed.
+- c842f13 accepted migration 059 with canonical SQL profile.update hour and owner settings projection. PostgreSQL clean/upgrade, Deno, Review, QA and push passed. Tests cover default 09, all valid hours, invalid updates, exact replay, owner binding, ACL and sync watermark. SQL is on the backend branch. Staging remains 051–058/plants-api v27 for now.
+- Staging V19 Monstera v3 accepted published dates, same-occurrence re-completion, synthetic expiry, exact receipt and unchanged journal. Temporary identities were cleaned. iOS durable undo c073844 accepted and canonical routine history is being verified.
+- Next T083 HTTP profile.update and GET /me delegate to the accepted private RPCs. Return a valid unified diff in JSON. Controller applies and verifies. No deployment, iOS, new roles or scheduling changes in this packet. T083/T084 remain open.
 
 <!-- /orchestrator:project-state -->
 

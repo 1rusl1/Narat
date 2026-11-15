@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "t083-profile-reminder-hour-http",
+      "description": "Expose the accepted private profile settings read and reminder-hour update on the normal owner HTTP routes.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/plants-api/profile-settings.ts",
+        "supabase/functions/_shared/tests/profile_settings_http_test.ts",
+        "supabase/migrations/202611150059_profile_reminder_hour.sql",
+        "supabase/functions/_shared/http.ts"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/plants-api/profile-settings.ts",
+        "supabase/functions/_shared/tests/profile_settings_http_test.ts"
+      ],
+      "constraints": [
+        "Scope the accepted SQL to owner GET /me and POST /commands profile.update only. Return valid Git diff in JSON with exact source context. Controller applies and checks. No live, iOS, StoreKit, scheduler, notification claims, entitlement/schema changes, or unrelated handlers.",
+        "GET /me uses existing active permanent owner resolution, no other owner injection, reads canonical read_owner_profile_settings via service client and returns {profile:{preferred_locale,reminder_hour_local}}. Preserve strict response validation, private/no-store, 401/403 for unauthenticated/guest and retryable 503 for impossible result/unavailable adapter. Reject unexpected queries. Follow existing path prefix normalization.",
+        "profile.update uses existing command envelope. Require plant_id null or absent, bound operation UUID consistent with headers and p_owner_id from Auth, payload_json only reminder_hour_local integer 0..23. Use accepted execute_profile_reminder_hour_update. Return canonical {profile:{preferred_locale,reminder_hour_local},watermark}, exact receipt replay; map malformed input to 400, mismatch to 409, forbidden owner to 403, unexpected RPC failure or response to retryable 503. No storage or side effects beyond accepted RPC.",
+        "Exercise normal route dispatch in focused Deno fixtures using established mock fetch/client, verifying owner binding, closed envelopes, endpoint privacy, default/current reads, 0/23, stale retry, canonical response failure. Keep existing care and unrelated routes behaving as before. T083/T084 and scheduling remain open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083H1",
+          "description": "Production Deno typing and scoped diff pass.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "deno-check"
+          ]
+        },
+        {
+          "id": "T083H2",
+          "description": "Normal routed owner reads/writes, private responses and invalid input regression pass on fixtures.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}
