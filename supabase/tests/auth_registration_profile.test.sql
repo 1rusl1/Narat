@@ -420,5 +420,142 @@ SELECT ok((SELECT relrowsecurity FROM pg_class
           AND a.grantee=0 AND a.privilege_type='EXECUTE'),
     'private queue enables RLS without policies and PUBLIC has no queue or writer grants');
 
+-- Internal bounded media projection; fixture-only, no purge or product route.
+INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+    (pg_temp.owner_id(900),false,clock_timestamp()),
+    (pg_temp.owner_id(901),false,clock_timestamp()),
+    (pg_temp.owner_id(902),true,clock_timestamp());
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(900)),NULL::jsonb,
+    'active owner without a queued request has no inventory');
+UPDATE public.profiles SET account_state='deleting' WHERE id=pg_temp.owner_id(900);
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(900)),NULL::jsonb,
+    'deleting state alone is not a canonical request');
+UPDATE public.profiles SET account_state='active' WHERE id=pg_temp.owner_id(900);
+
+INSERT INTO public.photo_assets(id,owner_id,purpose,original_key,analysis_key,content_hash)
+SELECT pg_temp.owner_id(n),pg_temp.owner_id(CASE WHEN n IN (1028,1033) THEN 901 ELSE 900 END),
+    'initial',
+    CASE WHEN n=1022 THEN 'legacy/unsafe.jpg' ELSE
+        pg_temp.owner_id(CASE WHEN n IN (1028,1033) THEN 901 ELSE 900 END)::text
+        ||'/'||pg_temp.owner_id(n)::text END,
+    CASE WHEN n=1023 THEN 'private/unsafe-thumbnail.jpg'
+         WHEN n=1033 THEN pg_temp.owner_id(900)::text||'/'||pg_temp.owner_id(1030)::text
+         ELSE NULL END,
+    repeat('a',64)
+FROM (SELECT generate_series(1001,1030) n UNION ALL SELECT 1032 UNION ALL SELECT 1033) ids;
+INSERT INTO public.diagnosis_upload_tickets(photo_asset_id,mime_type,byte_size,expires_at)
+SELECT id,'image/jpeg',4,
+    CASE WHEN id=pg_temp.owner_id(1025) THEN clock_timestamp()+interval '1 day'
+         ELSE clock_timestamp()-interval '1 day' END
+FROM public.photo_assets
+WHERE id BETWEEN pg_temp.owner_id(1001) AND pg_temp.owner_id(1033)
+  AND id<>pg_temp.owner_id(1024);
+INSERT INTO storage.objects(bucket_id,name)
+SELECT 'analysis-inputs',original_key FROM public.photo_assets
+WHERE id BETWEEN pg_temp.owner_id(1001) AND pg_temp.owner_id(1033)
+  AND id<>pg_temp.owner_id(1029);
+-- The same canonical name in a catalogue bucket is never private input evidence.
+INSERT INTO storage.buckets(id,name,public) VALUES('t083-catalogue','t083-catalogue',true);
+INSERT INTO storage.objects(bucket_id,name)
+SELECT 't083-catalogue',original_key FROM public.photo_assets WHERE id=pg_temp.owner_id(1029);
+UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp()
+WHERE id=pg_temp.owner_id(1021);
+INSERT INTO public.plants(id,owner_id,personal_name,creation_source,main_photo_id)
+VALUES(pg_temp.owner_id(950),pg_temp.owner_id(901),'External hold','analysis',pg_temp.owner_id(1027));
+INSERT INTO public.analysis_jobs(id,owner_id,flow_id,intent,add_method,mode,prompt_version,
+    operation_id,payload_hash,locale,quota_kind,quota_state,photo_ids,state,lease_token,
+    provider_started_at,deadline_at)
+VALUES(pg_temp.owner_id(951),pg_temp.owner_id(900),pg_temp.owner_id(952),'care','scan',
+    'identification','fixture',pg_temp.owner_id(953),'inventory','en','none','not_applicable',
+    ARRAY[pg_temp.owner_id(1026)],'running',pg_temp.owner_id(954),
+    clock_timestamp()-interval '2 hours',clock_timestamp()-interval '1 hour');
+INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,photo_id,source_storage_key)
+SELECT pg_temp.owner_id(955),pg_temp.owner_id(900),pg_temp.owner_id(956),'care','scan',id,original_key
+FROM public.photo_assets WHERE id=pg_temp.owner_id(1032);
+INSERT INTO public.draft_claims(id,draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+VALUES(pg_temp.owner_id(957),pg_temp.owner_id(955),'fixture',pg_temp.owner_id(901),
+    pg_temp.owner_id(958),'copying',clock_timestamp()-interval '1 hour');
+SELECT public.request_account_deletion_internal(pg_temp.owner_id(900),pg_temp.owner_id(959));
+UPDATE public.profiles SET account_state='active' WHERE id=pg_temp.owner_id(900);
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(900)),NULL::jsonb,
+    'queued request without deleting state has no inventory');
+UPDATE public.profiles SET account_state='deleting'
+WHERE id IN (pg_temp.owner_id(900),pg_temp.owner_id(902));
+INSERT INTO public.account_deletion_requests(owner_id,operation_id,requested_at)
+VALUES(pg_temp.owner_id(902),pg_temp.owner_id(960),clock_timestamp());
+INSERT INTO public.operation_receipts(
+    owner_id,operation_id,command_name,payload_hash,response_payload,committed_at)
+SELECT owner_id,operation_id,'account.delete',encode(sha256(convert_to(
+    jsonb_build_array('account.delete','{}'::jsonb)::text,'UTF8')),'hex'),
+    jsonb_build_object('owner_id',owner_id,'operation_id',operation_id,
+        'state','deleting','watermark',requested_at),requested_at
+FROM public.account_deletion_requests WHERE owner_id=pg_temp.owner_id(902);
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(902)),NULL::jsonb,
+    'queued anonymous owner has no inventory');
+UPDATE public.operation_receipts SET payload_hash='forged'
+WHERE owner_id=pg_temp.owner_id(900) AND operation_id=pg_temp.owner_id(959);
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(900)),NULL::jsonb,
+    'noncanonical request receipt has no inventory');
+UPDATE public.operation_receipts SET payload_hash=encode(sha256(convert_to(
+    jsonb_build_array('account.delete','{}'::jsonb)::text,'UTF8')),'hex')
+WHERE owner_id=pg_temp.owner_id(900) AND operation_id=pg_temp.owner_id(959);
+
+CREATE FUNCTION pg_temp.media_inventory_snapshot() RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+    relation_name text;
+    rows jsonb;
+    result jsonb := pg_temp.deletion_history();
+BEGIN
+    FOREACH relation_name IN ARRAY ARRAY[
+        'public.profiles','public.operation_receipts','public.account_deletion_requests',
+        'public.diagnosis_upload_tickets','public.first_aid_photo_upload_tickets',
+        'public.draft_claims','public.guest_drafts','public.guest_identification_sources',
+        'public.diagnosis_job_runtime','storage.objects','storage.buckets']
+    LOOP
+        EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),
+            ''[]''::jsonb) FROM %s r',relation_name) INTO rows;
+        result := result || jsonb_build_object(relation_name,rows);
+    END LOOP;
+    RETURN result;
+END;
+$$;
+CREATE TEMP TABLE t083_media_before AS SELECT pg_temp.media_inventory_snapshot() body;
+CREATE TEMP TABLE t083_media_page AS
+SELECT public.read_account_deletion_media_inventory(pg_temp.owner_id(900)) body;
+SELECT is((SELECT body->'photo_ids' FROM t083_media_page),
+    (SELECT jsonb_agg(pg_temp.owner_id(n) ORDER BY n) FROM generate_series(1001,1020) n),
+    'first page contains exactly twenty ordered canonical private original photo IDs');
+SELECT is((SELECT body->>'next_cursor' FROM t083_media_page),pg_temp.owner_id(1020)::text,
+    'cursor is the last emitted UUID');
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(900),
+    pg_temp.owner_id(1020))->'photo_ids',jsonb_build_array(pg_temp.owner_id(1021)),
+    'exclusive second page includes a tombstoned photo whose object still exists');
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(900),
+    pg_temp.owner_id(1033))->'photo_ids','[]'::jsonb,'cursor beyond inventory yields an empty page');
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(900),
+    pg_temp.owner_id(1033))->>'blocked','6','blocked count remains global beyond the cursor');
+SELECT is((SELECT body->>'waiting' FROM t083_media_page),'3',
+    'live upload, unsettled provider lease and expired copying claim remain waiting');
+SELECT is((SELECT body->>'blocked' FROM t083_media_page),'6',
+    'legacy, thumbnail, missing ticket, foreign plant, shared key and draft holds block');
+SELECT ok((SELECT body::text NOT LIKE '%unsafe%' AND body::text NOT LIKE '%legacy/%'
+    AND NOT (body->'photo_ids' @> jsonb_build_array(pg_temp.owner_id(1028)))
+    AND NOT (body->'photo_ids' @> jsonb_build_array(pg_temp.owner_id(1029)))
+    FROM t083_media_page),'unsafe keys, foreign photos and catalogue-only objects never escape');
+SELECT is(public.read_account_deletion_media_inventory(NULL),NULL::jsonb,'null owner has no inventory');
+SELECT is(public.read_account_deletion_media_inventory(pg_temp.owner_id(901)),NULL::jsonb,
+    'foreign active owner has no projection');
+SELECT ok(NOT has_function_privilege(role_name,
+    'public.read_account_deletion_media_inventory(uuid,uuid)','EXECUTE'),
+    'internal inventory grants no execution to '||role_name)
+FROM (VALUES ('anon'),('authenticated'),('service_role')) roles(role_name);
+SELECT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+    LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+    WHERE p.oid='public.read_account_deletion_media_inventory(uuid,uuid)'::regprocedure
+      AND a.grantee=0 AND a.privilege_type='EXECUTE'),
+    'PUBLIC cannot execute inventory');
+SELECT is(pg_temp.media_inventory_snapshot(),(SELECT body FROM t083_media_before),
+    'projection leaves source rows, leases, objects, quota, receipts and watermarks unchanged');
+
 SELECT * FROM finish();
 ROLLBACK;
