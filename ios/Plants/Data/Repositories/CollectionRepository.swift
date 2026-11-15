@@ -193,6 +193,10 @@ enum PlantDeletionOutcome {
     case pending, confirmed, rejected
 }
 
+enum RoutineCompletionOutcome: Sendable, Equatable {
+    case pending, confirmed, rejected, unconfirmed
+}
+
 enum CareRecommendationRefreshOutcome: Sendable, Equatable {
     case pending, confirmed, rejected, unconfirmed
 }
@@ -498,6 +502,35 @@ public struct CollectionRepository: Sendable {
             plantId: plantId, context: context, authority: apiClient.syncAuthority
         )
         try await syncEngine.flushPlantCommand(command, context: context)
+    }
+
+    func pendingRoutineCompletion(plantId: UUID, context: SyncSessionLease) async throws -> RoutineSoilCheckCompletionCommand? {
+        try await store.pendingRoutineCompletion(plantId: plantId, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func enqueueRoutineCompletion(
+        plantId: UUID, routineContext: PlantCareRecommendation.RoutineContext,
+        occurredAt: String, timezone: String, context: SyncSessionLease
+    ) async throws -> RoutineSoilCheckCompletionCommand {
+        let command = try RoutineSoilCheckCompletionCommand.make(
+            plantId: plantId, routineContext: routineContext, occurredAt: occurredAt, timezone: timezone
+        )
+        return try await store.enqueueRoutineCompletion(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryRoutineCompletion(
+        _ command: RoutineSoilCheckCompletionCommand, context: SyncSessionLease
+    ) async throws -> RoutineCompletionOutcome {
+        guard let plantId = command.envelope.plantId,
+              try await pendingRoutineCompletion(plantId: plantId, context: context)?.envelope == command.envelope
+        else { return .unconfirmed }
+        do {
+            if try await syncEngine.flushPlantCommand(command.envelope, context: context) == 1 { return .confirmed }
+        } catch SyncEngine.RoutineCompletionFailure.rejected {
+            return .rejected
+        }
+        let pending = try await pendingRoutineCompletion(plantId: plantId, context: context)
+        return pending?.envelope == command.envelope ? .pending : .unconfirmed
     }
 
     func pendingCareRecommendationRefresh(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO? {

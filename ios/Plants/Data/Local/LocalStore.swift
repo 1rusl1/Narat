@@ -686,6 +686,92 @@ public actor LocalStore {
         }
     }
 
+    func pendingRoutineCompletion(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> RoutineSoilCheckCompletionCommand? {
+        try authority.withBoundValid(context) {
+            guard let row = try pendingOutboxEntries(for: context.ownerId).first(where: {
+                $0.plantId == plantId && $0.commandName == RoutineSoilCheckCompletionCommand.name
+            }) else { return nil }
+            guard let command = RoutineSoilCheckCompletionCommand(row.envelope)
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            return command
+        }
+    }
+
+    func enqueueRoutineCompletion(
+        _ command: RoutineSoilCheckCompletionCommand,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> RoutineSoilCheckCompletionCommand {
+        try authority.withBoundValid(context) {
+            guard let plantId = command.envelope.plantId,
+                  let row = try activeSyncRow("plants", id: plantId, ownerId: context.ownerId, in: makeSyncContext())
+            else { throw SyncWireValidationError.invalidRequest }
+            let card = try JSONDecoder().decode(CatalogueCardSummary.self, from: Data(row.payloadJSON.utf8))
+            guard card.id == plantId, card.revision > 0, card.careRevision == command.careRevision
+            else { throw SyncWireValidationError.invalidRequest }
+            let pending = try pendingOutboxEntries(for: context.ownerId).filter { $0.plantId == plantId }
+            guard !pending.contains(where: { $0.commandName == PlantDeleteReceipt.commandName })
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            if let row = pending.first(where: { $0.commandName == RoutineSoilCheckCompletionCommand.name }) {
+                guard let existing = RoutineSoilCheckCompletionCommand(row.envelope)
+                else { throw OutboxEnqueueError.operationIdentityMismatch }
+                guard existing.ruleId == command.ruleId, existing.careRevision == command.careRevision,
+                      existing.dueLocalDate == command.dueLocalDate
+                else { throw OutboxEnqueueError.operationIdentityMismatch }
+                return existing
+            }
+            _ = try enqueueCommand(
+                operationId: command.envelope.operationId, ownerId: context.ownerId, plantId: plantId,
+                commandName: command.envelope.commandName, payloadJSON: command.envelope.payloadJSON
+            )
+            return command
+        }
+    }
+
+    private struct CompletedRoutineTask: Decodable {
+        let id: UUID
+        let plantId: UUID
+        let ruleId: UUID
+        let occurrenceKey: String
+        let dueLocalDate: String
+        let actionCode: String
+        let state: String
+        let completedEntryId: UUID
+
+        enum CodingKeys: String, CodingKey {
+            case id, state
+            case plantId = "plant_id", ruleId = "rule_id", occurrenceKey = "occurrence_key"
+            case dueLocalDate = "due_local_date", actionCode = "action_code"
+            case completedEntryId = "completed_entry_id"
+        }
+    }
+
+    func validateRoutineCompletion(
+        _ receipt: RoutineSoilCheckCompletionReceipt, command: RoutineSoilCheckCompletionCommand,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            try receipt.validate(for: command)
+            let disk = makeSyncContext()
+            guard let raw = try currentWatermarkRaw(ownerId: context.ownerId),
+                  let watermark = SQLTimestamp.microseconds(from: raw), watermark >= receipt.watermark,
+                  let taskRow = try activeSyncRow("care_tasks", id: receipt.taskId, ownerId: context.ownerId, in: disk),
+                  let entryRow = try activeSyncRow("care_entries", id: receipt.entryId, ownerId: context.ownerId, in: disk)
+            else { throw SyncWireValidationError.invalidPage }
+            let task = try JSONDecoder().decode(CompletedRoutineTask.self, from: Data(taskRow.payloadJSON.utf8))
+            let entry = try JSONDecoder().decode(CatalogueCareJournalEntry.self, from: Data(entryRow.payloadJSON.utf8))
+            guard task.id == receipt.taskId, task.plantId == receipt.plantId, task.ruleId == receipt.ruleId,
+                  task.occurrenceKey == receipt.occurrenceKey, task.dueLocalDate == receipt.dueLocalDate,
+                  task.actionCode == "check_soil", task.state == "completed",
+                  task.completedEntryId == receipt.entryId,
+                  entry.id == receipt.entryId, entry.plantId == receipt.plantId, entry.taskId == receipt.taskId,
+                  entry.actionCode == "check_soil", entry.state == "active", entry.hasCanonicalDatesAndState,
+                  entry.operationId == command.envelope.operationId
+            else { throw SyncWireValidationError.invalidPage }
+        }
+    }
+
     func syncedCollectionCard(
         plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> CatalogueCardSummary? {

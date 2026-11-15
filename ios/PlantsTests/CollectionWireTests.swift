@@ -32,6 +32,209 @@ extension CollectionWireTests {
         ]
     }
 
+    private func routineCompletionPage(
+        operation: UUID, taskChanges: [String: Any] = [:], entryChanges: [String: Any] = [:],
+        time: String = "2026-11-03T09:10:00.000001+00:00"
+    ) -> [String: Any] {
+        let receipt = routineCompletionReceipt()
+        var task: [String: Any] = [
+            "id": receipt["task_id"]!, "plant_id": serverPlantId.uuidString,
+            "rule_id": routineRuleId.uuidString, "occurrence_key": receipt["occurrence_key"]!,
+            "due_local_date": "2026-11-03", "action_code": "check_soil",
+            "state": "completed", "completed_entry_id": receipt["entry_id"]!
+        ]
+        var entry: [String: Any] = [
+            "id": receipt["entry_id"]!, "plant_id": serverPlantId.uuidString,
+            "task_id": receipt["task_id"]!, "operation_id": operation.uuidString,
+            "action_code": "check_soil", "state": "active",
+            "occurred_at": timestamp, "occurred_local_date": "2026-11-03", "timezone": "Europe/Warsaw"
+        ]
+        task.merge(taskChanges) { _, new in new }
+        entry.merge(entryChanges) { _, new in new }
+        var taskRow = syncChange(time, id: receipt["task_id"] as! String, entity: "care_tasks")
+        taskRow["data"] = task
+        var entryRow = syncChange(time, id: receipt["entry_id"] as! String, entity: "care_entries")
+        entryRow["data"] = entry
+        var page = syncObject()
+        page["until"] = time
+        page["next_since"] = time
+        page["changes"] = [entryRow, taskRow]
+        return page
+    }
+
+    private func routineCompletionBaseline() -> [String: Any] {
+        var row = syncChange(syncUntil, id: serverPlantId.uuidString)
+        row["data"] = ["id": serverPlantId.uuidString, "revision": 2, "care_revision": 2] as [String: Any]
+        var page = syncObject()
+        page["changes"] = [row]
+        return page
+    }
+
+    @MainActor
+    func testRoutineCompletionDiskLossReopenExactRetryAndCanonicalLinkage() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command: RoutineSoilCheckCompletionCommand
+        let firstBody: Data
+        do {
+            let transport = CatalogueTransport([.http(200, try syncJSON(routineCompletionBaseline())), .network])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            command = try await repo.enqueueRoutineCompletion(
+                plantId: serverPlantId, routineContext: routineCompletionContext(),
+                occurredAt: timestamp, timezone: "Europe/Warsaw", context: lease
+            )
+            let outcome = try await repo.retryRoutineCompletion(command, context: lease)
+            XCTAssertEqual(outcome, .pending)
+            let requests = await transport.capturedRequests()
+            firstBody = try XCTUnwrap(requests.last?.httpBody)
+        }
+        let mismatches: [([String: Any], [String: Any])] = [
+            (["completed_entry_id": UUID().uuidString], [:]),
+            (["state": "open"], [:]),
+            (["plant_id": UUID().uuidString], [:]),
+            (["rule_id": UUID().uuidString], [:]),
+            (["occurrence_key": "arbitrary"], [:]),
+            (["due_local_date": "2026-11-04"], [:]),
+            ([:], ["operation_id": UUID().uuidString]),
+            ([:], ["task_id": UUID().uuidString]),
+            ([:], ["plant_id": UUID().uuidString]),
+            ([:], ["action_code": "water"]),
+            ([:], ["state": "voided"])
+        ]
+        for (index, mismatch) in mismatches.enumerated() {
+            let (task, entry) = mismatch
+            let transport = CatalogueTransport([
+                .http(200, try syncJSON(routineCompletionReceipt())),
+                .http(200, try syncJSON(routineCompletionPage(
+                    operation: command.envelope.operationId, taskChanges: task, entryChanges: entry,
+                    time: String(format: "2026-11-03T09:%02d:00.000001+00:00", 10 + index)
+                )))
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            let replay = try await repo.enqueueRoutineCompletion(
+                plantId: serverPlantId, routineContext: routineCompletionContext(),
+                occurredAt: "2026-11-03T09:01:00Z", timezone: "UTC", context: lease
+            )
+            XCTAssertEqual(replay.envelope, command.envelope)
+            let outcome = try await repo.retryRoutineCompletion(replay, context: lease)
+            XCTAssertEqual(outcome, .pending)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.first?.httpBody, firstBody)
+            let disk = LocalStore(modelContainer: try diskContainer(url))
+            let rows = try await disk.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(rows.map(\.envelope), [command.envelope])
+        }
+        var arbitrary = routineCompletionReceipt()
+        arbitrary["entry_id"] = UUID().uuidString
+        var future = routineCompletionReceipt()
+        future["watermark"] = "2026-11-03T10:00:00Z"
+        let pages = try (30...32).map { minute in
+            try syncJSON(routineCompletionPage(
+                operation: command.envelope.operationId,
+                time: String(format: "2026-11-03T09:%02d:00.000001+00:00", minute)
+            ))
+        }
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(arbitrary)), .http(200, pages[0]),
+            .http(200, try syncJSON(future)), .http(200, pages[1]),
+            .http(200, try syncJSON(routineCompletionReceipt())), .http(200, pages[2])
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        for expected in [RoutineCompletionOutcome.pending, .pending, .confirmed, .unconfirmed] {
+            let outcome = try await repo.retryRoutineCompletion(command, context: lease)
+            XCTAssertEqual(outcome, expected)
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.filter { $0.httpMethod == "POST" }.compactMap(\.httpBody), [firstBody, firstBody, firstBody])
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let remaining = try await reopened.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(remaining.isEmpty)
+        let receipt = try JSONDecoder().decode(
+            RoutineSoilCheckCompletionReceipt.self, from: Data(try syncJSON(routineCompletionReceipt()).utf8)
+        )
+        try await reopened.validateRoutineCompletion(receipt, command: command, context: lease, authority: api.syncAuthority)
+    }
+
+    @MainActor
+    func testRoutineCompletionRejectsForeignDeadAndChangedContextAndTerminalError() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rejection = try syncJSON(["error": [
+            "code": "CONFLICT", "message": "stale occurrence", "retryable": false
+        ] as [String: Any]])
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(routineCompletionBaseline())), .http(409, rejection)
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        _ = try await repo.collectionCards(context: lease)
+        let command = try await repo.enqueueRoutineCompletion(
+            plantId: serverPlantId, routineContext: routineCompletionContext(),
+            occurredAt: timestamp, timezone: "UTC", context: lease
+        )
+        for changed in [routineCompletionContext(revision: 3), routineCompletionContext(due: "2026-11-04"),
+                        routineCompletionContext(plantId: UUID())] {
+            do {
+                _ = try await repo.enqueueRoutineCompletion(
+                    plantId: serverPlantId, routineContext: changed, occurredAt: timestamp, timezone: "UTC", context: lease
+                )
+                XCTFail("Changed context replaced durable completion")
+            } catch {}
+        }
+        await api.bindSyncSession(NativeAuthSession(
+            userId: otherSyncOwner, accessToken: "other-owner-token", expiresAt: .distantFuture
+        ))
+        let foreign = try await api.captureSyncContext(ownerId: otherSyncOwner)
+        let foreignOutcome = try await repo.retryRoutineCompletion(command, context: foreign)
+        XCTAssertEqual(foreignOutcome, .unconfirmed)
+        do {
+            _ = try await repo.enqueueRoutineCompletion(
+                plantId: serverPlantId, routineContext: routineCompletionContext(),
+                occurredAt: timestamp, timezone: "UTC", context: foreign
+            )
+            XCTFail("Foreign card accepted")
+        } catch {}
+        do {
+            _ = try await repo.retryRoutineCompletion(command, context: lease)
+            XCTFail("Stale lease accepted")
+        } catch {}
+        await api.bindSyncSession(syncSession)
+        let current = try await api.captureSyncContext(ownerId: syncOwner)
+        let rejected = try await repo.retryRoutineCompletion(command, context: current)
+        XCTAssertEqual(rejected, .rejected)
+        let absent = try await repo.retryRoutineCompletion(command, context: current)
+        XCTAssertEqual(absent, .unconfirmed)
+        try await store.applySyncedItems([SyncItemDTO(
+            entityType: "plants", id: serverPlantId, updatedAt: .distantFuture,
+            deletedAt: .distantFuture, payloadJSON: "{}"
+        )], ownerId: syncOwner)
+        do {
+            _ = try await repo.enqueueRoutineCompletion(
+                plantId: serverPlantId, routineContext: routineCompletionContext(),
+                occurredAt: timestamp, timezone: "UTC", context: current
+            )
+            XCTFail("Dead card accepted")
+        } catch {}
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+    }
+
     func testRoutineCompletionValidatesCardAndExactPayloadBeforeTransport() throws {
         let command = try routineCompletionCommand()
         let fields = try XCTUnwrap(JSONSerialization.jsonObject(
