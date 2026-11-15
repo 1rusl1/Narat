@@ -1,5 +1,27 @@
 # Narat — текущий статус и передача работы
 
+## T083 — staging 060–064 и приватный Storage — 15 ноября 2026
+
+`2099637` принят и отправлен. Перед выкладкой clean/upgrade
+по 233 профильным pgTAP, PostgreSQL lock gate, Deno typecheck и
+10 Deno-тестов прошли локально. В narat-staging применены ровно
+060–064 без 024, seeds, ролей и Vault. Развёрнут только plants-api v29,
+analysis-worker остаётся v8.
+
+На живом staging служебный маршрут со штатным secret apikey
+ответил 404 без запроса удаления, 400 на тело и 401 на вызов
+владельца. Адресный батч и повтор вернули ready. Данные Storage
+подтвердили отсутствие точного объекта, сохранность соседнего,
+очереди, Auth и состояния соседа. Первый прогон получил 401
+с legacy bearer. Один повтор запустил SQL вне связанного рабочего
+каталога, две оставшиеся синтетические учётки адресно удалены.
+Ранее прогретая ссылка сразу после удаления ещё вернула HTTP 200.
+Проверка времени распространения продолжается отдельно. Обновлены
+handoff, T083 и manifest. Следующий шаг 065 — внутренняя свежая
+проверка готовности под блокировкой того же запроса. DB/Auth purge
+и пользовательский маршрут остаются открытыми.
+
+
 ## T083 — адресный Storage-батч — 15 ноября 2026
 
 `aecff7f` принял Deno-компонент и fixtures. Проверены предел 20,
@@ -2507,7 +2529,7 @@ T148 остаётся на прежней остановке до запуска
 - Two Codex-only project orchestrators. Backend/data publishes to codex/plants-backend, iOS/integration to codex/plants-ios and owns Simulator. Weekly ceiling 85% consumed.
 - aecff7f accepted the internal Deno one-batch account Storage helper and unit fixtures. It validates exact owner/IDs and limits, derives only canonical private paths, and verifies via a fresh SQL plan. Deno typing/tests, Review, QA and push passed. No routes, grants, staging or actual removal. 060–063 also remain internal/local.
 - Next 064 adds a service-secret-only maintenance route and execute on the one plan RPC. Deny all public/owner execution. Deno mock and PostgreSQL clean/upgrade only. Return exact unified Git diff in JSON. Controller applies and verifies. No worker schedule, user account.delete route or deployment. T082/T083 open.
-- Staging 051–059, plants-api v28/worker v8 and published Monstera v3. Signed EN V19 accepted and combined branch 888217a published. iOS profile durable sync in progress.
+- Staging 051–064, plants-api v29/worker v8 and published Monstera v3. Signed EN V19 accepted and combined branch 888217a published. iOS profile durable sync in progress.
 
 <!-- /orchestrator:project-state -->
 
