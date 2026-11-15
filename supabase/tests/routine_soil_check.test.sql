@@ -312,6 +312,140 @@ BEGIN
         2::bigint,'exactly two factual occurrences and no future task exist');
 END;
 $test$;
+-- The undo core is absent at the supported 051-053 cutoffs.
+CREATE FUNCTION pg_temp.soil_undo(
+    op UUID DEFAULT gen_random_uuid(),
+    owner_id UUID DEFAULT '19510000-0000-4000-8000-000000000001',
+    entry UUID DEFAULT NULL
+) RETURNS JSONB LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN public.execute_routine_soil_check_undo(owner_id,op,
+        '19510000-0000-4000-8000-000000000011',
+        coalesce(entry,(SELECT (receipt->>'entry_id')::uuid FROM soil_fixture)));
+END;
+$$;
+CREATE FUNCTION pg_temp.undo_checks() RETURNS SETOF TEXT LANGUAGE plpgsql AS $test$
+DECLARE
+    v_owner_id CONSTANT UUID := '19510000-0000-4000-8000-000000000001';
+    v_plant_id CONSTANT UUID := '19510000-0000-4000-8000-000000000011';
+    undo_op UUID := gen_random_uuid();
+    redo_op UUID := gen_random_uuid();
+    undone JSONB;
+    redone JSONB;
+    saved_state JSONB;
+    saved_entry JSONB;
+    saved_reversal JSONB;
+    saved_water JSONB;
+    saved_quota JSONB;
+    role_name TEXT;
+BEGIN
+    IF to_regprocedure('public.execute_routine_soil_check_undo(uuid,uuid,uuid,uuid)') IS NULL THEN
+        RETURN;
+    END IF;
+    FOREACH role_name IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        RETURN NEXT ok(NOT has_function_privilege(role_name,
+            'public.execute_routine_soil_check_undo(uuid,uuid,uuid,uuid)','EXECUTE'),
+            role_name||' cannot execute private undo');
+    END LOOP;
+    RETURN NEXT ok(NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_proc p
+        CROSS JOIN LATERAL pg_catalog.aclexplode(coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) a
+        WHERE p.oid='public.execute_routine_soil_check_undo(uuid,uuid,uuid,uuid)'::regprocedure
+          AND a.grantee=0 AND a.privilege_type='EXECUTE'),'PUBLIC cannot execute private undo');
+
+    saved_state := pg_temp.soil_state();
+    saved_quota := saved_state->'quota';
+    SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) INTO saved_water
+        FROM public.care_entries e WHERE e.plant_id=v_plant_id AND e.action_code='water';
+    RETURN NEXT throws_ok(
+        $$SELECT pg_temp.soil_undo(owner_id=>'19510000-0000-4000-8000-000000000002')$$,
+        'P0002','PLANT_NOT_FOUND','foreign owner cannot undo');
+    RETURN NEXT throws_ok(
+        $$SELECT pg_temp.soil_undo(entry=>(SELECT id FROM public.care_entries
+            WHERE plant_id='19510000-0000-4000-8000-000000000011' AND action_code='water'))$$,
+        'P0002','CARE_ENTRY_NOT_FOUND','watering cannot be reversed by soil undo');
+    UPDATE public.care_tasks SET state='open'
+        WHERE id=(SELECT (receipt->>'task_id')::uuid FROM soil_fixture);
+    RETURN NEXT throws_ok('SELECT pg_temp.soil_undo()','55000',
+        'ROUTINE_SOIL_CHECK_ENTRY_REQUIRED','only a completed linked task can be undone');
+    UPDATE public.care_tasks SET state='completed'
+        WHERE id=(SELECT (receipt->>'task_id')::uuid FROM soil_fixture);
+    UPDATE public.task_rules SET access_class='premium'
+        WHERE id=(SELECT rule_id FROM soil_fixture);
+    RETURN NEXT throws_ok('SELECT pg_temp.soil_undo()','55000',
+        'ROUTINE_SOIL_CHECK_ENTRY_REQUIRED','premium rule cannot be undone as basic care');
+    UPDATE public.task_rules SET access_class='basic_care'
+        WHERE id=(SELECT rule_id FROM soil_fixture);
+    RETURN NEXT is(pg_temp.soil_state(),saved_state,'rejected undo leaves state unchanged');
+
+    INSERT INTO public.entitlements(owner_id,product_id,state,offer_kind,valid_until)
+    VALUES(v_owner_id,'app.narat.plants.pro.monthly','active','paid',now()-interval '1 day');
+    undone := pg_temp.soil_undo(op=>undo_op);
+    RETURN NEXT is(undone->>'state','voided','undo remains available after expiry');
+    RETURN NEXT ok(EXISTS (
+        SELECT 1 FROM public.care_tasks t JOIN public.care_entries e ON e.id=t.completed_entry_id
+        JOIN public.care_reversals r ON r.entry_id=e.id
+        WHERE t.id=(undone->>'task_id')::uuid AND e.id=(undone->>'entry_id')::uuid
+          AND e.task_id=t.id AND e.owner_id=t.owner_id AND e.plant_id=t.plant_id
+          AND t.state='superseded' AND NOT t.reminder_eligible
+          AND t.inactive_reason='first_action_undone' AND e.state='voided'
+          AND r.id=(undone->>'reversal_id')::uuid AND r.owner_id=e.owner_id AND r.operation_id=undo_op
+          AND e.updated_at=(undone->>'watermark')::timestamptz
+          AND t.updated_at=e.updated_at AND r.updated_at=e.updated_at AND r.recorded_at=e.updated_at
+          AND e.updated_at=(SELECT updated_at FROM public.profiles WHERE id=e.owner_id)
+    ),'undo atomically retains linkage and records its reversal and watermark');
+    UPDATE public.basic_care_memberships SET enabled=false WHERE plant_id=v_plant_id;
+    RETURN NEXT is(pg_temp.soil_undo(op=>undo_op),undone,'exact undo replay survives later access changes');
+    UPDATE public.basic_care_memberships SET enabled=true WHERE plant_id=v_plant_id;
+    RETURN NEXT is((SELECT pg_temp.soil(op=>operation_id) FROM soil_fixture),
+        (SELECT receipt FROM soil_fixture),'original completion replay survives undo and expiry');
+    RETURN NEXT throws_ok('SELECT pg_temp.soil_undo()','23505',
+        'CARE_ENTRY_ALREADY_VOIDED','different operation cannot reverse the same fact twice');
+    RETURN NEXT throws_ok('SELECT pg_temp.soil()','55000',
+        'ROUTINE_SOIL_CHECK_UNAVAILABLE','undo does not permit completion after expiry');
+    RETURN NEXT ok(pg_temp.routine() IS NULL,'undo does not restart expired automatic care');
+    DELETE FROM public.entitlements e WHERE e.owner_id=v_owner_id;
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-18','undo restores the prior due date');
+    RETURN NEXT is(pg_temp.routine()->>'anchor_kind','water','voided check no longer anchors projection');
+
+    SELECT to_jsonb(e) INTO saved_entry FROM public.care_entries e
+        WHERE e.id=(undone->>'entry_id')::uuid;
+    SELECT to_jsonb(r) INTO saved_reversal FROM public.care_reversals r
+        WHERE r.id=(undone->>'reversal_id')::uuid;
+    UPDATE public.care_reversals SET deleted_at=now() WHERE id=(undone->>'reversal_id')::uuid;
+    RETURN NEXT throws_ok('SELECT pg_temp.soil()','23505',
+        'SOIL_CHECK_OCCURRENCE_CONFLICT','task without its retained reversal cannot be reused');
+    UPDATE public.care_reversals SET deleted_at=NULL WHERE id=(undone->>'reversal_id')::uuid;
+    redone := pg_temp.soil(op=>redo_op);
+    RETURN NEXT is(redone->>'task_id',undone->>'task_id','same due occurrence reuses exactly its task');
+    RETURN NEXT isnt(redone->>'entry_id',undone->>'entry_id','re-completion records a new fact');
+    RETURN NEXT is(pg_temp.soil(op=>redo_op),redone,'re-completion has its own exact receipt');
+    RETURN NEXT is(pg_temp.soil_undo(op=>undo_op),undone,'old undo replay preserves the new completion');
+    RETURN NEXT is((SELECT pg_temp.soil(op=>operation_id) FROM soil_fixture),
+        (SELECT receipt FROM soil_fixture),'original completion receipt remains exact after re-completion');
+    RETURN NEXT throws_ok(
+        format('SELECT pg_temp.soil_undo(op=>%L,entry=>%L)',undo_op,redone->>'entry_id'),
+        '23505','IDEMPOTENCY_CONFLICT','undo operation cannot be reused for a different fact');
+    RETURN NEXT throws_ok('SELECT pg_temp.soil()','23505',
+        'SOIL_CHECK_OCCURRENCE_CHANGED','another operation cannot duplicate the new active fact');
+    RETURN NEXT is((SELECT count(*) FROM public.care_entries e
+        WHERE e.task_id=(redone->>'task_id')::uuid AND e.state='active'),1::bigint,
+        'one active fact remains for the reused task');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM public.care_tasks t
+        WHERE t.id=(redone->>'task_id')::uuid AND t.completed_entry_id=(redone->>'entry_id')::uuid
+          AND t.state='completed' AND NOT t.reminder_eligible AND t.inactive_reason='completed'),
+        're-completion keeps reminders off and links the new fact');
+    RETURN NEXT is((SELECT to_jsonb(e) FROM public.care_entries e
+        WHERE e.id=(undone->>'entry_id')::uuid),saved_entry,'voided journal fact is retained verbatim');
+    RETURN NEXT is((SELECT to_jsonb(r) FROM public.care_reversals r
+        WHERE r.id=(undone->>'reversal_id')::uuid),saved_reversal,'reversal history is retained verbatim');
+    RETURN NEXT is((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM public.care_entries e
+        WHERE e.plant_id=v_plant_id AND e.action_code='water'),saved_water,'undo and re-completion preserve watering');
+    RETURN NEXT is(pg_temp.soil_state()->'quota',saved_quota,'undo and re-completion preserve quota');
+    RETURN NEXT is(pg_temp.routine()->>'due_local_date','2025-10-26','re-completion advances the same rule again');
+END;
+$test$;
+SELECT * FROM pg_temp.undo_checks();
 SELECT * FROM pg_temp.recurrence_checks();
 SELECT * FROM finish();
 ROLLBACK;
