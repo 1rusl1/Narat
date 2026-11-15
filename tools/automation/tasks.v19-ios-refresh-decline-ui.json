@@ -1,0 +1,44 @@
+{
+  "tasks": [
+    {
+      "id": "v19-ios-refresh-decline-ui",
+      "description": "Add a targeted English UI regression for the accepted fix: a permanent refresh rejection surfaces a failure and clears pending without success copy.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "Accepted base b2e1a7c. This is a Developer implementation task in the two test/fixture files. Return a valid unified git diff as patch text in JSON; controller applies and runs all gates.",
+        "Use the existing DEBUG fixture transport and private namespace. Start with enabled membership and recommendation without an active date. Reject exactly care.recommendation.refresh with a permanent 409 using existing fixture errors. Assert production UI shows the existing failure text, no pending, no no-next or next-date success copy and the same card UUID. Name the test testCareRecommendationRefreshRejectionShowsFailure for the gate. All fixture credentials remain synthetic.",
+        "Keep production behavior and existing successful paths unchanged. No live service or staging changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19UI1",
+          "description": "iOS build, diff and application unit tests pass.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "V19UI2",
+          "description": "EN XCUITest verifies permanent rejection UI and the two existing restart scenarios.",
+          "mode": "fixture",
+          "checks": [
+            "v19-care-ui"
+          ]
+        }
+      ]
+    }
+  ]
+}
