@@ -1,0 +1,41 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-data-care-journal-purge",
+      "description": "Remove the deleting owner's journal facts, observations, and tasks after verified Storage and leaf cleanup, with cross-owner FK protection.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202611150065_account_deletion_storage_verification.sql",
+        "supabase/migrations/202611150066_account_deletion_care_leaves.sql",
+        "supabase/migrations/202611150067_account_deletion_care_journal.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150067_account_deletion_care_journal.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Return an exact unified diff in JSON. Local SQL and rollback fixtures. No deployment, public route, role grants, Storage/Edge actions, Auth deletion or broader task closure.",
+        "Add one SQL-owner-only function keyed by the exact owner and request operation. Take the same owner lock and invoke 065 before mutation. Protect the delete set against every current incoming FK from a different owner before performing any deletion or 066 leaf phase: care_reversals and first_aid_followups to care_entries, recovery_transitions to care_observations, care_entries, care_observations and first_aid_followups to care_tasks (verify schema, include any additional real incoming FK). Intentional same-owner FK nulling may occur only on the fields defined by current schema. Treat any historical cross-owner FK as a hard hold. Use targeted row locks/serialization to prevent an incompatible concurrent FK link from changing a neighbor during the delete; inspect snapshot and lock ordering. Do not introduce a whole-table lock.",
+        "On verified clean graph, use 066 and remove only the owner's care_observations, care_entries and care_tasks in an FK-safe order. Leave all other owner parent data, profile/Auth, operation receipts, photos, and subscription/quota records intact. Errors are atomic. Exact successful replay remains harmless; reappearing object or hold blocks progress. Test clean/upgrade, neighbors including malformed cross-owner incoming links and exact retention when held, main-owner request and receipt, real protective ACL, one stale replay and exact second invocation."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083DP1",
+          "description": "Scoped diff and Deno pass.",
+          "mode": "local",
+          "checks": ["diff-check", "deno-check"]
+        },
+        {
+          "id": "T083DP2",
+          "description": "Local clean and upgraded rollback acceptance for canonical and malformed owner graph.",
+          "mode": "fixture",
+          "checks": ["parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

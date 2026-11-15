@@ -557,5 +557,744 @@ SELECT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
 SELECT is(pg_temp.media_inventory_snapshot(),(SELECT body FROM t083_media_before),
     'projection leaves source rows, leases, objects, quota, receipts and watermarks unchanged');
 
+-- Keep the fixture usable when the migration selector stops at 061.
+CREATE FUNCTION pg_temp.namespace_hold_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0620000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0620000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0620000-0000-4000-8000-000000000003';
+    v_receipt public.operation_receipts%ROWTYPE;
+    v_body jsonb;
+    v_before jsonb;
+    v_variant integer;
+    v_role text;
+BEGIN
+    IF to_regprocedure('public.read_account_deletion_namespace_holds(uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('062 namespace projection is outside selected migration version',1);
+        RETURN;
+    END IF;
+
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(NULL),NULL::jsonb,
+        'namespace projection rejects a null owner');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(pg_temp.owner_id(1299)),NULL::jsonb,
+        'namespace projection rejects an unavailable owner');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'active owner has no namespace projection');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'deleting owner without a persisted request has no namespace projection');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    PERFORM public.request_account_deletion_internal(v_owner,pg_temp.owner_id(1199));
+    SELECT * INTO STRICT v_receipt FROM public.operation_receipts
+    WHERE owner_id=v_owner AND operation_id=pg_temp.owner_id(1199);
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),
+        jsonb_build_object('orphan_objects',0,'guest_draft_sources',0,
+            'guest_identification_sources',0,'incoming_claims',0),
+        'empty queued owner exposes aggregate zero counts only');
+
+    FOR v_variant IN 1..4 LOOP
+        UPDATE public.operation_receipts SET
+            command_name=CASE WHEN v_variant=1 THEN 'forged' ELSE v_receipt.command_name END,
+            payload_hash=CASE WHEN v_variant=2 THEN 'forged' ELSE v_receipt.payload_hash END,
+            committed_at=CASE WHEN v_variant=3 THEN v_receipt.committed_at+interval '1 second'
+                ELSE v_receipt.committed_at END,
+            response_payload=CASE WHEN v_variant=4 THEN v_receipt.response_payload || '{"extra":true}'::jsonb
+                ELSE v_receipt.response_payload END
+        WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+        RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+            'namespace projection rejects forged receipt component '||v_variant);
+    END LOOP;
+    UPDATE public.operation_receipts SET command_name=v_receipt.command_name,
+        payload_hash=v_receipt.payload_hash,committed_at=v_receipt.committed_at,
+        response_payload=v_receipt.response_payload
+    WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+    UPDATE public.account_deletion_requests SET operation_id=pg_temp.owner_id(1198)
+    WHERE owner_id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'request with no matching receipt is unavailable');
+    UPDATE public.account_deletion_requests SET operation_id=v_receipt.operation_id WHERE owner_id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(pg_temp.owner_id(902)),NULL::jsonb,
+        'anonymous owner cannot acquire a namespace projection from a queued receipt');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),NULL::jsonb,
+        'queued receipt requires a deleting owner');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+
+    INSERT INTO public.photo_assets(id,owner_id,purpose,original_key,content_hash)
+    VALUES
+        (pg_temp.owner_id(1200),v_owner,'initial',v_owner::text||'/'||pg_temp.owner_id(1200),repeat('a',64)),
+        (pg_temp.owner_id(1201),v_owner,'initial',v_owner::text||'/legacy/unsafe.jpg',repeat('a',64)),
+        (pg_temp.owner_id(1202),v_neighbor,'initial',v_owner::text||'/'||pg_temp.owner_id(1202),repeat('a',64)),
+        (pg_temp.owner_id(1203),v_guest,'initial',v_guest::text||'/'||pg_temp.owner_id(1203),repeat('a',64)),
+        (pg_temp.owner_id(1204),v_owner,'initial','legacy/outside-owner.jpg',repeat('a',64));
+    INSERT INTO storage.objects(bucket_id,name) VALUES
+        ('analysis-inputs',v_owner::text||'/'||pg_temp.owner_id(1200)),
+        ('analysis-inputs',v_owner::text||'/unknown'),
+        ('analysis-inputs',v_owner::text||'/legacy/unsafe.jpg'),
+        ('analysis-inputs',v_owner::text||'/'||pg_temp.owner_id(1202)),
+        ('analysis-inputs',v_owner::text||'-neighbor/unknown'),
+        ('analysis-inputs',v_neighbor::text||'/unknown'),
+        ('analysis-inputs',upper(v_owner::text)||'/unknown'),
+        ('analysis-inputs','legacy/outside-owner.jpg'),
+        ('t083-catalogue',v_owner::text||'/catalogue-only');
+    -- Canonical tombstones still track their original keys.
+    UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp()
+    WHERE id=pg_temp.owner_id(1200);
+    INSERT INTO public.installation_access(id,credential_hash,linked_owner_ids)
+    VALUES(pg_temp.owner_id(1250),'namespace-hold-fixture',ARRAY[v_owner,v_neighbor,v_guest]);
+    INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,
+        photo_id,source_storage_key,installation_id,expires_at,deleted_at,claimed_at,storage_cleaned_at)
+    SELECT pg_temp.owner_id(n),CASE WHEN n=1213 THEN v_neighbor ELSE v_owner END,
+        pg_temp.owner_id(n+100),'care','scan',
+        CASE WHEN n=1211 THEN pg_temp.owner_id(1202) ELSE pg_temp.owner_id(1200) END,
+        'legacy/guest-source-'||n,pg_temp.owner_id(1250),clock_timestamp()-interval '1 day',
+        CASE WHEN n=1210 THEN clock_timestamp() END,
+        CASE WHEN n=1211 THEN clock_timestamp() END,
+        CASE WHEN n=1212 THEN clock_timestamp() END
+    FROM generate_series(1210,1213) n;
+    INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at,storage_cleaned_at)
+    SELECT pg_temp.owner_id(n),clock_timestamp()-interval '2 days',clock_timestamp()-interval '1 day',
+        CASE WHEN n=1201 THEN clock_timestamp() END
+    FROM generate_series(1200,1202) n;
+    -- Shared installation binding establishes no additional source ownership.
+    -- These guest targets have no destination object yet.
+    INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,
+        photo_id,source_storage_key,installation_id,storage_cleaned_at)
+    SELECT pg_temp.owner_id(n),v_guest,pg_temp.owner_id(n+100),'care','scan',
+        pg_temp.owner_id(1203),v_guest::text||'/'||pg_temp.owner_id(1203),pg_temp.owner_id(1250),
+        CASE WHEN n=1225 THEN clock_timestamp() END
+    FROM generate_series(1220,1226) n;
+    INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+    SELECT pg_temp.owner_id(n),'namespace-fixture',
+        CASE WHEN n=1226 THEN v_neighbor ELSE v_owner END,pg_temp.owner_id(n+200),
+        CASE WHEN n IN (1221,1225) THEN 'copying' WHEN n=1223 THEN 'published'
+            WHEN n=1224 THEN 'cleanup_done' ELSE 'prepared' END,
+        CASE WHEN n IN (1221,1222) THEN clock_timestamp()-interval '1 day'
+            ELSE clock_timestamp()+interval '1 day' END
+    FROM generate_series(1220,1226) n;
+
+    v_before := pg_temp.media_inventory_snapshot();
+    v_body := public.read_account_deletion_namespace_holds(v_owner);
+    RETURN NEXT is(v_body,jsonb_build_object('orphan_objects',3,'guest_draft_sources',2,
+        'guest_identification_sources',1,'incoming_claims',2),
+        'only owner namespace orphans, unresolved direct sources and live/copying targets count');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM jsonb_each(v_body) e
+        WHERE jsonb_typeof(e.value)<>'number'),
+        'namespace projection emits counts only without IDs or storage paths');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_neighbor),NULL::jsonb,
+        'neighbor sharing installation binding has no queued projection');
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),v_body,
+        'repeated namespace reads retain every unresolved hold');
+    RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,
+        'namespace reads leave rows, objects, jobs, receipts, quotas and watermarks unchanged');
+
+    UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp()
+    WHERE id IN (pg_temp.owner_id(1210),pg_temp.owner_id(1211),pg_temp.owner_id(1221));
+    UPDATE public.guest_identification_sources SET storage_cleaned_at=clock_timestamp()
+    WHERE photo_id=pg_temp.owner_id(1200);
+    UPDATE public.draft_claims SET state='published' WHERE draft_id=pg_temp.owner_id(1220);
+    v_before := pg_temp.media_inventory_snapshot();
+    RETURN NEXT is(public.read_account_deletion_namespace_holds(v_owner),
+        jsonb_build_object('orphan_objects',3,'guest_draft_sources',0,
+            'guest_identification_sources',0,'incoming_claims',0),
+        'settled targets and confirmed cleaned sources release holds without hiding orphans');
+    RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,
+        'settled projection also preserves all source data');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        RETURN NEXT ok(NOT has_function_privilege(v_role,
+            'public.read_account_deletion_namespace_holds(uuid)','EXECUTE'),
+            'namespace projection denies execution to '||v_role);
+    END LOOP;
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.read_account_deletion_namespace_holds(uuid)'::regprocedure
+          AND a.grantee=0 AND a.privilege_type='EXECUTE'),
+        'PUBLIC cannot execute namespace projection');
+END;
+$$;
+SELECT * FROM pg_temp.namespace_hold_tests();
+
+-- Resolve 063 calls only after the version gate (061/062 selectors still work).
+CREATE FUNCTION pg_temp.storage_work_plan_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0630000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0630000-0000-4000-8000-000000000002';
+    v_body jsonb;
+    v_before jsonb;
+    v_receipt public.operation_receipts%ROWTYPE;
+    v_field text;
+    v_case integer;
+    v_service_enabled boolean;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.read_account_deletion_storage_work_plan(uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('063 work plan is outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(NULL),NULL::jsonb,
+        'work plan rejects null owner');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),NULL::jsonb,
+        'deleting flag alone supplies no work plan');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    PERFORM public.request_account_deletion_internal(v_owner,pg_temp.owner_id(1399));
+    SELECT * INTO STRICT v_receipt FROM public.operation_receipts
+    WHERE owner_id=v_owner AND operation_id=pg_temp.owner_id(1399);
+    FOR v_case IN 1..4 LOOP
+        UPDATE public.operation_receipts SET
+            command_name=CASE WHEN v_case=1 THEN 'forged' ELSE v_receipt.command_name END,
+            payload_hash=CASE WHEN v_case=2 THEN 'forged' ELSE v_receipt.payload_hash END,
+            committed_at=CASE WHEN v_case=3 THEN v_receipt.committed_at+interval '1 second'
+                ELSE v_receipt.committed_at END,
+            response_payload=CASE WHEN v_case=4 THEN v_receipt.response_payload||'{"extra":true}'::jsonb
+                ELSE v_receipt.response_payload END
+        WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+        RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),NULL::jsonb,
+            'work plan rejects forged receipt component '||v_case);
+    END LOOP;
+    UPDATE public.operation_receipts SET command_name=v_receipt.command_name,
+        payload_hash=v_receipt.payload_hash,committed_at=v_receipt.committed_at,
+        response_payload=v_receipt.response_payload
+    WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+    UPDATE public.account_deletion_requests SET operation_id=pg_temp.owner_id(1398)
+    WHERE owner_id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),NULL::jsonb,
+        'work plan requires the exact queued receipt');
+    UPDATE public.account_deletion_requests SET operation_id=v_receipt.operation_id WHERE owner_id=v_owner;
+
+    INSERT INTO public.photo_assets(id,owner_id,purpose,original_key,content_hash)
+    SELECT pg_temp.owner_id(n),v_owner,'initial',v_owner::text||'/'||pg_temp.owner_id(n),repeat('a',64)
+    FROM generate_series(1300,1320) n;
+    INSERT INTO public.diagnosis_upload_tickets(photo_asset_id,mime_type,byte_size,expires_at)
+    SELECT pg_temp.owner_id(n),'image/jpeg',4,clock_timestamp()-interval '1 day'
+    FROM generate_series(1300,1320) n;
+    INSERT INTO storage.objects(bucket_id,name)
+    SELECT 'analysis-inputs',original_key FROM public.photo_assets WHERE owner_id=v_owner;
+    UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp()
+    WHERE id=pg_temp.owner_id(1320);
+    v_before := pg_temp.media_inventory_snapshot();
+    v_body := public.read_account_deletion_storage_work_plan(v_owner);
+    RETURN NEXT is(v_body->'photo_ids',
+        (SELECT jsonb_agg(pg_temp.owner_id(n) ORDER BY n) FROM generate_series(1300,1319) n),
+        'work plan emits at most twenty validated first-page IDs');
+    RETURN NEXT is(v_body->>'storage_ready','false','full work page prevents readiness');
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),v_body,
+        'retry retains all still-owned objects');
+    RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,'work plan reads preserve source rows');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs'
+        AND name IN (SELECT original_key FROM public.photo_assets
+            WHERE owner_id=v_owner AND id<>pg_temp.owner_id(1320));
+    v_body := public.read_account_deletion_storage_work_plan(v_owner);
+    RETURN NEXT is(v_body->'photo_ids',jsonb_build_array(pg_temp.owner_id(1320)),
+        'partial first page retains tombstoned surviving object');
+    RETURN NEXT is(v_body->>'storage_ready','false','partial page cannot signal readiness');
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),v_body,
+        'retry cannot skip the surviving object with a cursor');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs'
+        AND name=v_owner::text||'/'||pg_temp.owner_id(1320);
+    v_body := public.read_account_deletion_storage_work_plan(v_owner);
+    RETURN NEXT is(v_body,jsonb_build_object('owner_id',v_owner,'photo_ids','[]'::jsonb,
+        'blocked',0,'waiting',0,'orphan_objects',0,'guest_draft_sources',0,
+        'guest_identification_sources',0,'incoming_claims',0,'storage_ready',true),
+        'actual canonical object removal supplies clean evidence despite retained photo rows');
+
+    -- Each independent hold is introduced against the otherwise clean owner.
+    FOR v_case IN 1..6 LOOP
+        IF v_case=1 THEN
+            UPDATE public.photo_assets SET analysis_key='unsafe/thumbnail'
+            WHERE id=pg_temp.owner_id(1300);
+            v_field := 'blocked';
+        ELSIF v_case=2 THEN
+            UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()+interval '1 day'
+            WHERE photo_asset_id=pg_temp.owner_id(1300);
+            v_field := 'waiting';
+        ELSIF v_case=3 THEN
+            INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/orphan');
+            v_field := 'orphan_objects';
+        ELSIF v_case=4 THEN
+            INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+            VALUES(pg_temp.owner_id(1340),v_owner,pg_temp.owner_id(1341),'care','scan','legacy/source');
+            v_field := 'guest_draft_sources';
+        ELSIF v_case=5 THEN
+            INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at)
+            VALUES(pg_temp.owner_id(1300),clock_timestamp()-interval '2 days',clock_timestamp()-interval '1 day');
+            v_field := 'guest_identification_sources';
+        ELSE
+            INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+            VALUES(pg_temp.owner_id(1350),v_neighbor,pg_temp.owner_id(1351),'care','scan','legacy/incoming');
+            INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+            VALUES(pg_temp.owner_id(1350),'work-plan',v_owner,pg_temp.owner_id(1352),
+                'copying',clock_timestamp()-interval '1 day');
+            v_field := 'incoming_claims';
+        END IF;
+        v_before := pg_temp.media_inventory_snapshot();
+        v_body := public.read_account_deletion_storage_work_plan(v_owner);
+        RETURN NEXT is(v_body->>v_field,'1','work plan exposes hold '||v_field);
+        RETURN NEXT is(v_body->>'storage_ready','false','hold prevents readiness: '||v_field);
+        RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,'hold read preserves sources: '||v_field);
+        IF v_case=1 THEN
+            UPDATE public.photo_assets SET analysis_key=NULL WHERE id=pg_temp.owner_id(1300);
+        ELSIF v_case=2 THEN
+            UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()-interval '1 day'
+            WHERE photo_asset_id=pg_temp.owner_id(1300);
+        ELSIF v_case=3 THEN
+            DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/orphan';
+        ELSIF v_case=4 THEN
+            UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp() WHERE id=pg_temp.owner_id(1340);
+        ELSIF v_case=5 THEN
+            UPDATE public.guest_identification_sources SET storage_cleaned_at=clock_timestamp()
+            WHERE photo_id=pg_temp.owner_id(1300);
+        ELSE
+            UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp() WHERE id=pg_temp.owner_id(1350);
+        END IF;
+        RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner)->>'storage_ready','true',
+            'confirmed removal of hold restores clean readiness: '||v_field);
+    END LOOP;
+    UPDATE storage.buckets SET public=true WHERE id='analysis-inputs';
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner)->>'storage_ready','false',
+        'public canonical bucket prevents readiness');
+    UPDATE storage.buckets SET public=false WHERE id='analysis-inputs';
+    -- Roll back only this fixture perturbation, including other owners objects.
+    BEGIN
+        DELETE FROM storage.objects WHERE bucket_id='analysis-inputs';
+        DELETE FROM storage.buckets WHERE id='analysis-inputs';
+        RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner)->>'storage_ready','false',
+            'absent canonical bucket prevents readiness');
+        RAISE SQLSTATE 'Z0063';
+    EXCEPTION WHEN SQLSTATE 'Z0063' THEN NULL;
+    END;
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_neighbor),NULL::jsonb,
+        'neighbor cannot acquire a plan from another owners receipt');
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(pg_temp.owner_id(902)),NULL::jsonb,
+        'anonymous forged queue remains unavailable');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM jsonb_each(v_body) e
+        WHERE e.key NOT IN ('owner_id','photo_ids','blocked','waiting','orphan_objects',
+            'guest_draft_sources','guest_identification_sources','incoming_claims','storage_ready')),
+        'work plan exposes no raw names or cursor');
+    -- Explicit marker preserves historical 063-only permission assertions.
+    v_service_enabled := coalesce(obj_description(
+        'public.read_account_deletion_storage_work_plan(uuid)'::regprocedure,'pg_proc')
+        = '064: account storage work plan service-only execution',false);
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.read_account_deletion_storage_work_plan(uuid)'::regprocedure
+          AND a.grantee<>p.proowner AND a.privilege_type='EXECUTE'
+          AND NOT (v_service_enabled AND a.grantee='service_role'::regrole)),
+        'work plan execution is limited to owner and explicitly enabled service role');
+    RETURN NEXT is(has_function_privilege('service_role',
+        'public.read_account_deletion_storage_work_plan(uuid)','EXECUTE'),v_service_enabled,
+        'service execution requires the 064 migration marker');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.read_account_deletion_storage_work_plan(v_owner);
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT is(v_denied,NOT (v_service_enabled AND v_role='service_role'),
+            'actual work plan execution enforces migration scope for '||v_role);
+    END LOOP;
+END;
+$$;
+SELECT * FROM pg_temp.storage_work_plan_tests();
+
+-- Resolve 065 references only after the gate for earlier migration selectors.
+CREATE FUNCTION pg_temp.storage_verification_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0650000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0650000-0000-4000-8000-000000000002';
+    v_operation uuid := pg_temp.owner_id(1599);
+    v_photo uuid := pg_temp.owner_id(1500);
+    v_receipt public.operation_receipts%ROWTYPE;
+    v_stamp timestamptz;
+    v_neighbor_stamp timestamptz;
+    v_tid tid;
+    v_before jsonb;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.verify_account_deletion_storage_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('065 verification is outside selected migration version',1);
+        RETURN;
+    END IF;
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_attribute
+        WHERE attrelid='public.account_deletion_requests'::regclass
+          AND attname='storage_verified_at' AND atttypid='timestamptz'::regtype
+          AND NOT attnotnull AND NOT attisdropped),
+        'verification column is a nullable timestamp on the private request table');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM public.account_deletion_requests
+        WHERE storage_verified_at IS NOT NULL),'preexisting requests start unverified');
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'active owner without request cannot verify');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'deleting flag without request cannot verify');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    PERFORM public.request_account_deletion_internal(v_neighbor,pg_temp.owner_id(1598));
+    v_neighbor_stamp := public.verify_account_deletion_storage_internal(v_neighbor,pg_temp.owner_id(1598));
+    RETURN NEXT ok(v_neighbor_stamp IS NOT NULL,'authentic clean neighbor verifies independently');
+    SELECT * INTO STRICT v_receipt FROM public.operation_receipts
+    WHERE owner_id=v_owner AND operation_id=v_operation;
+
+    INSERT INTO public.photo_assets(id,owner_id,purpose,original_key,content_hash)
+    VALUES(v_photo,v_owner,'initial',v_owner::text||'/'||v_photo,repeat('a',64));
+    INSERT INTO public.diagnosis_upload_tickets(photo_asset_id,mime_type,byte_size,expires_at)
+    VALUES(v_photo,'image/jpeg',4,clock_timestamp()-interval '1 day');
+    INSERT INTO storage.objects(bucket_id,name)
+    VALUES('analysis-inputs',v_owner::text||'/'||v_photo);
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'surviving canonical object leaves request pending');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'pending retry sees the same surviving object');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs'
+        AND name=v_owner::text||'/'||v_photo;
+    v_stamp := public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    RETURN NEXT ok(v_stamp IS NOT NULL,'fresh clean plan persists verification');
+    RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_owner),
+        v_stamp,'returned timestamp is stored on the exact request');
+    SELECT ctid INTO v_tid FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        v_stamp,'clean exact retry returns the original timestamp');
+    RETURN NEXT is((SELECT ctid FROM public.account_deletion_requests WHERE owner_id=v_owner),
+        v_tid,'clean retry performs no request update');
+
+    SELECT jsonb_agg(to_jsonb(q) ORDER BY owner_id) INTO v_before FROM public.account_deletion_requests q;
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,pg_temp.owner_id(1597)),
+        NULL::timestamptz,'wrong operation cannot verify or invalidate');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,NULL),
+        NULL::timestamptz,'null operation cannot verify or invalidate');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(NULL,v_operation),
+        NULL::timestamptz,'null owner cannot verify');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(pg_temp.owner_id(1596),v_operation),
+        NULL::timestamptz,'absent owner cannot verify');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(
+        pg_temp.owner_id(902),pg_temp.owner_id(960)),NULL::timestamptz,
+        'anonymous owner with a matching forged request and receipt cannot verify');
+    RETURN NEXT is((SELECT jsonb_agg(to_jsonb(q) ORDER BY owner_id) FROM public.account_deletion_requests q),
+        v_before,'invalid input preserves every request');
+
+    FOR v_case IN 1..6 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+            ELSIF v_case=2 THEN
+                DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSE
+                UPDATE public.operation_receipts SET
+                    command_name=CASE WHEN v_case=3 THEN 'forged' ELSE v_receipt.command_name END,
+                    payload_hash=CASE WHEN v_case=4 THEN 'forged' ELSE v_receipt.payload_hash END,
+                    committed_at=CASE WHEN v_case=5 THEN v_receipt.committed_at+interval '1 second'
+                        ELSE v_receipt.committed_at END,
+                    response_payload=CASE WHEN v_case=6 THEN v_receipt.response_payload||'{"extra":true}'::jsonb
+                        ELSE v_receipt.response_payload END
+                WHERE owner_id=v_owner AND operation_id=v_operation;
+            END IF;
+            RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+                NULL::timestamptz,'invalid owner or receipt is rejected, case '||v_case);
+            RETURN NEXT is((SELECT jsonb_agg(to_jsonb(q) ORDER BY owner_id)
+                FROM public.account_deletion_requests q),v_before,
+                'invalid owner or receipt preserves requests, case '||v_case);
+            RAISE SQLSTATE 'Z0065';
+        EXCEPTION WHEN SQLSTATE 'Z0065' THEN NULL;
+        END;
+    END LOOP;
+
+    -- Every hold is introduced against the same authentic, verified request.
+    FOR v_case IN 1..9 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO storage.objects(bucket_id,name)
+                VALUES('analysis-inputs',v_owner::text||'/'||v_photo);
+            ELSIF v_case=2 THEN
+                INSERT INTO storage.objects(bucket_id,name)
+                VALUES('analysis-inputs',v_owner::text||'/orphan');
+            ELSIF v_case=3 THEN
+                UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()+interval '1 day'
+                WHERE photo_asset_id=v_photo;
+            ELSIF v_case=4 THEN
+                UPDATE public.photo_assets SET analysis_key='unsafe/thumbnail' WHERE id=v_photo;
+            ELSIF v_case=5 THEN
+                INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+                VALUES(pg_temp.owner_id(1540),v_owner,pg_temp.owner_id(1541),'care','scan','legacy/source');
+            ELSIF v_case=6 THEN
+                INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at)
+                VALUES(v_photo,clock_timestamp()-interval '2 days',clock_timestamp()-interval '1 day');
+            ELSIF v_case=7 THEN
+                INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+                VALUES(pg_temp.owner_id(1550),v_neighbor,pg_temp.owner_id(1551),'care','scan','legacy/incoming');
+                INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+                VALUES(pg_temp.owner_id(1550),'verification',v_owner,pg_temp.owner_id(1552),
+                    'copying',clock_timestamp()-interval '1 day');
+            ELSIF v_case=8 THEN
+                UPDATE storage.buckets SET public=true WHERE id='analysis-inputs';
+            ELSE
+                DELETE FROM storage.objects WHERE bucket_id='analysis-inputs';
+                DELETE FROM storage.buckets WHERE id='analysis-inputs';
+            END IF;
+            RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+                NULL::timestamptz,'fresh failure invalidates verification, case '||v_case);
+            RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_owner),
+                NULL::timestamptz,'stale timestamp is cleared, case '||v_case);
+            SELECT ctid INTO v_tid FROM public.account_deletion_requests WHERE owner_id=v_owner;
+            RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+                NULL::timestamptz,'repeated failure stays unverified, case '||v_case);
+            RETURN NEXT is((SELECT ctid FROM public.account_deletion_requests WHERE owner_id=v_owner),
+                v_tid,'repeated failure avoids redundant update, case '||v_case);
+            RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_neighbor),
+                v_neighbor_stamp,'invalidation preserves neighbor, case '||v_case);
+            -- Restore fixture mutations, including other owners objects in the missing-bucket case.
+            RAISE SQLSTATE 'Z0065';
+        EXCEPTION WHEN SQLSTATE 'Z0065' THEN NULL;
+        END;
+        RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+            v_stamp,'clean exact retry rechecks readiness after fixture rollback, case '||v_case);
+    END LOOP;
+
+    -- A real invalidation followed by cleanup must create fresh evidence.
+    UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC' WHERE owner_id=v_owner;
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/'||v_photo);
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'reappearing object clears previously stored evidence');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/'||v_photo;
+    v_stamp := public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    RETURN NEXT ok(v_stamp>'2000-01-01 UTC'::timestamptz,'cleanup produces a fresh verification timestamp');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        v_stamp,'fresh verification is stable on exact retry');
+    RETURN NEXT is((SELECT account_state FROM public.profiles WHERE id=v_owner),'deleting',
+        'verification leaves DB and Auth finalization pending');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM auth.users WHERE id=v_owner)
+        AND EXISTS (SELECT 1 FROM public.photo_assets WHERE id=v_photo),
+        'verification preserves Auth and application data');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_proc
+        WHERE oid='public.verify_account_deletion_storage_internal(uuid,uuid)'::regprocedure
+          AND prosecdef AND provolatile='v' AND proconfig @> ARRAY['search_path=""']),
+        'internal verifier is definer with fresh snapshots and empty search path');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.verify_account_deletion_storage_internal(uuid,uuid)'::regprocedure
+          AND a.grantee<>p.proowner),'verifier strips PUBLIC and all nonowner default grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual verifier execution denied for '||v_role);
+        RETURN NEXT ok(NOT has_table_privilege(v_role,'public.account_deletion_requests',
+            'SELECT,INSERT,UPDATE,DELETE'),'request table remains private for '||v_role);
+    END LOOP;
+END;
+$$;
+SELECT * FROM pg_temp.storage_verification_tests();
+
+-- Resolve 066 only after the gate so earlier migration fixtures still run.
+CREATE FUNCTION pg_temp.care_leaf_snapshot(p_owner uuid DEFAULT NULL) RETURNS jsonb LANGUAGE sql AS $$
+    SELECT jsonb_build_object(
+        'recovery_transitions',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.recovery_transitions r WHERE p_owner IS NULL OR owner_id=p_owner),
+        'care_reversals',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.care_reversals r WHERE p_owner IS NULL OR owner_id=p_owner),
+        'schedule_changes',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.schedule_changes r WHERE p_owner IS NULL OR owner_id=p_owner),
+        'notification_claims',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.notification_claims r WHERE p_owner IS NULL OR owner_id=p_owner))
+$$;
+
+CREATE FUNCTION pg_temp.care_leaf_retained_snapshot() RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+    v_table text;
+    v_rows jsonb;
+    v_result jsonb := pg_temp.deletion_history();
+BEGIN
+    FOREACH v_table IN ARRAY ARRAY['profiles','condition_snapshots','care_observations',
+        'task_rules','first_aid_followups','basic_care_memberships','operation_receipts',
+        'account_deletion_requests'] LOOP
+        EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),
+            ''[]''::jsonb) FROM public.%I r',v_table) INTO v_rows;
+        v_result := v_result || jsonb_build_object(v_table,v_rows);
+    END LOOP;
+    RETURN v_result || jsonb_build_object('auth_users',
+        (SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM auth.users u));
+END;
+$$;
+
+CREATE FUNCTION pg_temp.reject_care_leaf_purge() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'FIXTURE_LEAF_PURGE_FAILURE' USING ERRCODE='Z0066';
+END;
+$$;
+
+CREATE FUNCTION pg_temp.care_leaf_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0660000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0660000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0660000-0000-4000-8000-000000000003';
+    v_operation uuid := pg_temp.owner_id(1699);
+    v_subject uuid;
+    v_plant uuid;
+    v_snapshot uuid;
+    v_plan uuid;
+    v_observation uuid;
+    v_entry uuid;
+    v_release uuid;
+    v_installation uuid;
+    v_deleted timestamptz;
+    v_leaves jsonb;
+    v_neighbor_leaves jsonb;
+    v_guest_leaves jsonb;
+    v_retained jsonb;
+    v_n integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_care_leaves_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('066 leaf purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    INSERT INTO public.kb_releases(version,state) VALUES('t083-leaf-purge-066','draft')
+        RETURNING id INTO v_release;
+    FOREACH v_subject IN ARRAY ARRAY[v_owner,v_neighbor,v_guest] LOOP
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+        VALUES(encode(sha256(convert_to(v_subject::text,'UTF8')),'hex'),ARRAY[v_subject])
+            RETURNING id INTO v_installation;
+        INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_subject,'Leaf purge fixture','identification') RETURNING id INTO v_plant;
+        INSERT INTO public.condition_snapshots(owner_id,plant_id)
+        VALUES(v_subject,v_plant) RETURNING id INTO v_snapshot;
+        INSERT INTO public.care_plans(owner_id,plant_id,operation_id,locale,plan_kind,
+            access_tier,source_kind,snapshot_id,kb_release_id,context_revision,full_body)
+        VALUES(v_subject,v_plant,gen_random_uuid(),'en','recovery','full','analysis',
+            v_snapshot,v_release,1,'{}') RETURNING id INTO v_plan;
+        FOR v_n IN 1..2 LOOP
+            v_deleted := CASE WHEN v_n=2 THEN clock_timestamp() ELSE NULL END;
+            INSERT INTO public.care_observations(owner_id,plant_id,status_code,operation_id)
+            VALUES(v_subject,v_plant,'improved',gen_random_uuid()) RETURNING id INTO v_observation;
+            INSERT INTO public.care_entries(owner_id,plant_id,action_code,occurred_at,
+                occurred_local_date,timezone,operation_id)
+            VALUES(v_subject,v_plant,'water',clock_timestamp(),current_date,'UTC',gen_random_uuid())
+                RETURNING id INTO v_entry;
+            INSERT INTO public.recovery_transitions(owner_id,plant_id,recovery_plan_id,
+                observation_id,expected_care_revision,operation_id,state,deleted_at)
+            VALUES(v_subject,v_plant,v_plan,v_observation,1,gen_random_uuid(),'confirmed',v_deleted);
+            INSERT INTO public.care_reversals(owner_id,entry_id,operation_id,deleted_at)
+            VALUES(v_subject,v_entry,gen_random_uuid(),v_deleted);
+            INSERT INTO public.schedule_changes(owner_id,plant_id,to_date,cause_code,explanation_code,deleted_at)
+            VALUES(v_subject,v_plant,current_date,'fixture','fixture',v_deleted);
+            INSERT INTO public.notification_claims(owner_id,kind,period_key,installation_id,scheduled_at,deleted_at)
+            VALUES(v_subject,'trial_end','leaf-'||v_n,v_installation,clock_timestamp(),v_deleted);
+        END LOOP;
+    END LOOP;
+    v_leaves := pg_temp.care_leaf_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),false,
+        'active permanent owner cannot purge');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_guest,v_operation),false,
+        'distinct anonymous owner cannot purge');
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    -- A forged matching request/receipt cannot authorize the anonymous fixture.
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_guest;
+    INSERT INTO public.account_deletion_requests(owner_id,operation_id,requested_at)
+        SELECT v_guest,operation_id,requested_at FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload,committed_at)
+        SELECT v_guest,operation_id,command_name,payload_hash,
+            response_payload||jsonb_build_object('owner_id',v_guest),committed_at
+        FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_guest,v_operation),false,
+        'anonymous owner with matching forged receipt remains ineligible');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,pg_temp.owner_id(1698)),false,
+        'wrong operation cannot purge');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(NULL,v_operation),false,
+        'null owner cannot purge');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,NULL),false,
+        'null operation cannot purge');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'invalid callers preserve all leaf rows');
+
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/orphan');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),false,
+        'fresh Storage hold blocks purge');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'failed verification deletes no rows');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/orphan';
+    RETURN NEXT ok(public.verify_account_deletion_storage_internal(v_owner,v_operation) IS NOT NULL,
+        'clean owner has saved verification');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/orphan');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),false,
+        'reappearing object blocks purge despite saved verification');
+    RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_owner),
+        NULL::timestamptz,'fresh failure invalidates saved verification');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'reappearing object preserves all leaves');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/orphan';
+
+    -- Failure on the last table must undo earlier deletes and the new verification.
+    v_retained := pg_temp.care_leaf_retained_snapshot();
+    CREATE TRIGGER t066_reject_leaf BEFORE DELETE ON public.notification_claims
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format('SELECT public.purge_account_deletion_care_leaves_internal(%L::uuid,%L::uuid)',
+        v_owner,v_operation),'Z0066','FIXTURE_LEAF_PURGE_FAILURE','last-table failure propagates');
+    DROP TRIGGER t066_reject_leaf ON public.notification_claims;
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'failure rolls back every earlier leaf deletion');
+    RETURN NEXT is(pg_temp.care_leaf_retained_snapshot(),v_retained,'failure rolls back verification too');
+
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_retained := pg_temp.care_leaf_retained_snapshot();
+    v_neighbor_leaves := pg_temp.care_leaf_snapshot(v_neighbor);
+    v_guest_leaves := pg_temp.care_leaf_snapshot(v_guest);
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),true,
+        'verified owner purges successfully');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(v_owner),
+        '{"recovery_transitions":[],"care_reversals":[],"schedule_changes":[],"notification_claims":[]}'::jsonb,
+        'all four owner leaf sets are empty including live and tombstoned rows');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(v_neighbor),v_neighbor_leaves,'neighbor leaves are unchanged');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(v_guest),v_guest_leaves,'guest leaves are unchanged');
+    RETURN NEXT is(pg_temp.care_leaf_retained_snapshot(),v_retained,
+        'parents, observations, profiles, Auth, requests, receipts, quotas and payments are unchanged');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),true,
+        'exact successful replay is harmless');
+    RETURN NEXT is(pg_temp.care_leaf_retained_snapshot(),v_retained,'replay preserves retained rows');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_leaves_internal(uuid,uuid)'::regprocedure
+          AND prosecdef AND provolatile='v' AND proconfig @> ARRAY['search_path=""']),
+        'purge is volatile SECURITY DEFINER with empty search path');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_care_leaves_internal(uuid,uuid)'::regprocedure
+          AND a.grantee<>p.proowner),'all nonowner default ACL grants are stripped');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_care_leaves_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual purge execution denied for '||v_role);
+    END LOOP;
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_leaves_internal(uuid,uuid)'::regprocedure;
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),true,
+        'actual SQL owner can execute exact replay');
+    RESET ROLE;
+END;
+$$;
+SELECT * FROM pg_temp.care_leaf_purge_tests();
+
 SELECT * FROM finish();
 ROLLBACK;

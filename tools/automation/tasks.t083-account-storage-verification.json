@@ -1,0 +1,40 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-storage-verification",
+      "description": "Persist verified Storage readiness for the exact pending account deletion while leaving DB and Auth finalization disabled.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150060_account_deletion_intent.sql",
+        "supabase/migrations/202611150063_account_deletion_storage_work_plan.sql",
+        "supabase/migrations/202611150065_account_deletion_storage_verification.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150065_account_deletion_storage_verification.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Local SQL-only package. Return an exact unified diff in JSON. No external route, ACL widening, cron, DB/Auth or Storage deletion code, or deployment. Preserve T082/T083 incomplete.",
+        "Add nullable storage_verified_at on the existing private request table. Internal schema-qualified SECURITY DEFINER function keyed by owner UUID and operation UUID. Lock in order: profile then request. Require deleting permanent owner, exact request, and matching authentic 060 operation receipt, and fresh SQL work plan with storage_ready = true. Do not modify requests on invalid owner, wrong operation, or missing/inconsistent receipt. Clean repeated calls return the same timestamp without updating it. When the same authentic request becomes not ready (object, hold, missing/private bucket failure), clear the stored timestamp and return no verification. Callers must run this fresh check under the owner lock again before any destructive finalization. Never accept readiness from an argument or the Edge response.",
+        "Keep function executable only by its SQL owner, including under configured default grants. Add pgTAP for clean and upgrade, pending/clean/exact retry, wrong operation, forged or missing receipt, surviving and reappearing objects, outstanding holds and non-private/missing bucket, invalidation and neighbor isolation, ACL. Existing 060-064 behavior stays intact."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083SV1",
+          "description": "Scoped diff and Deno check.",
+          "mode": "local",
+          "checks": ["diff-check", "deno-check"]
+        },
+        {
+          "id": "T083SV2",
+          "description": "Clean and forward migration pgTAP including authentic request, idempotency, and repeated fresh readiness.",
+          "mode": "fixture",
+          "checks": ["parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

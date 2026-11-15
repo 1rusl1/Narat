@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-private-storage-work-plan",
+      "description": "Compose the private account storage work plan with an authoritative final readiness check.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150063_account_deletion_storage_work_plan.sql",
+        "supabase/migrations/202611150060_account_deletion_intent.sql",
+        "supabase/migrations/202611150061_account_deletion_media_inventory.sql",
+        "supabase/migrations/202611150062_account_deletion_namespace_holds.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150063_account_deletion_storage_work_plan.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Internal forward read-only SQL and focused local fixture. Exact unified diff in JSON; controller applies and tests. No role grants, public deletion route, storage deletion, worker, Auth, staging or changes to prior migrations.",
+        "Combine validated 061 media page and 062 namespace/guest holds into one internal plan suitable for future worker. Take owner ID only; always read the first page so deleted objects naturally disappear and a cursor cannot hide survivors. Return at most 20 validated photo IDs and owner, the blocked/waiting and guest/orphan counts, and a boolean storage_ready. Only true when the canonical private bucket exists, no safe object is left, no blockers, namespace or in-flight counts remain. No deleted_at shortcut, actual metadata evidence required. Return SQL NULL if the exact 060 queue/receipt is absent. Never return raw storage names or mutate state.",
+        "Reuse accepted projections and their scope. Explicitly lock down function execute to internal owner only. Add gate-covered version-compatible pgTAP for partial page, still owned object after retry, clean evidence after canonical fixture object removed, each blocker preventing readiness, absent/public bucket, forged request, isolation and source rows intact. T082/T083 remain open for actual worker/data/Auth."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083P1",
+          "description": "Scoped forward SQL and version-aware fixture diff.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T083P2",
+          "description": "PostgreSQL clean/upgrade prove readiness never bypasses tracked objects or holds.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
