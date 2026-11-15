@@ -1,0 +1,41 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-complete-outbox",
+      "description": "Persist routine soil-check completion and verify the receipt against owner sync before removing the queued operation.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Accepted transport base 4343043. Return only a valid unified Git patch in JSON. Use separate diff --git per file with exact current context around hunks. The controller writes, builds and tests. No changes outside four listed files.",
+        "Use existing RoutineSoilCheckCompletionCommand, its typed sendOutboxCommand overload, operation identity, owner-bound lease and cache. Enqueue at most one routine completion per plant and preserve exact persisted payload across retry/restart. Reject dead/foreign card or invalid context. A second tap may reuse the pending envelope for the same rule/revision/due; never replace it or mix accounts.",
+        "Engine should dispatch the registered command through the typed transport before generic handling. Confirm the synchronized care_tasks completed relationship and care_entries owner/plant/task/action/state/operation and the receipt watermark before ACK. Keep other commands and owner drains unchanged. Treat terminal targeted errors distinctly, keep transport failures pending, and do not report an absent queue record as a successful write without confirmation.",
+        "Add focused disk-backed CollectionWireTests for loss, reopen, exact retry and confirmed journal linkage, plus rejection of arbitrary receipt/journal mismatch. Reuse current tests/helpers and keep scope to persistence; no card UI or live/Edge/undo changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19OB1",
+          "description": "iOS compile and unit gate cover durable exact retry, canonical journal ACK and owner isolation.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}
