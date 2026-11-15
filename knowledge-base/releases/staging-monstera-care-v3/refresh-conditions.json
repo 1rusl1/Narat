@@ -1,0 +1,12 @@
+{
+  "refresh_conditions": {
+    "check_monstera_mix_before_watering": {
+      "light_code": "medium",
+      "light_source": "manual",
+      "light_confirmed": true,
+      "watering_code": "unknown",
+      "drainage_code": "yes",
+      "pot_type": "plastic"
+    }
+  }
+}
