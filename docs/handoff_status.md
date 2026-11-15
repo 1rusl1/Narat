@@ -2150,10 +2150,10 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:project-state -->
 ## Project State
 
-- 15 Nov 2026. Two project orchestrators share the user-requested ceiling of 85% weekly Codex usage. The iOS lane is the only Simulator user and publishes to codex/plants-ios. Backend/data publishes to codex/plants-backend. Current routes use Codex only.
-- iOS c742a92/585e3be added refresh and enable with an owner-bound durable outbox. Both EN fixture scenarios passed. Signed V13 deletion and private-photo revocation on narat-staging passed; account deletion remains open.
-- Backend 6482e30 independently accepted activation/replay and suppression. Staging plants-api v26 and migrations 041–050, excluding 024. Dated user acceptance depends on published evidence. Rest of T071/T160/T171 remains open.
-- Current iOS Developer task fixes terminal rejection UX. Return a unified Git patch in JSON. Controller applies, tests, reviews and publishes. Preserve existing session checks, synthetic tests and write scope.
+- 15 Nov 2026. iOS/integration publishes to codex/plants-ios and is the only Simulator user; backend/data independently publishes to codex/plants-backend. Weekly Codex ceiling is 85% used, model routes use Codex.
+- iOS b028902 accepted the EN saved-card action for ordinary soil check. Swift tests, Simulator smoke, the exact EN XCUITest for lost response / restart / exact retry / advanced date, Reviewer, QA and push passed. Changes: card, DEBUG transport fixture, targeted UI test and report. 8046790 covered owner-synced care task/entry and watermark before ACK.
+- Backend 051–055 are on staging, plants-api v27, worker v8. Real SQL rollback fixture passed completion/undo/next date; existing published Monstera paused on live HTTP. 056 and dated published data are pending. Live staging end-to-end, routine journal row presentation and iOS undo are still open.
+- Next: implement the typed owner-bound care.check_soil.undo transport and CollectionWireTests. Return a valid unified Git diff in JSON. Controller writes and verifies. Durable undo, dedicated routine journal visuals, real service and broader UX are later packages. Keep T160/T171 open.
 
 <!-- /orchestrator:project-state -->
 

@@ -1,0 +1,35 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-undo-ios",
+      "description": "Use a typed session-bound transport for the accepted routine soil-check reversal wire.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Return a valid unified Git diff with exact source context and proper separate diff headers in JSON. Controller applies and tests.",
+        "Exact accepted server wire: POST /commands, command_name=care.check_soil.undo, plant_id and operation_id in existing envelope. payload_json contains only entry_id UUID. Successful response has plant_id, task_id, entry_id, reversal_id UUIDs, state=voided and nonnegative SQL watermark; unrelated/malformed receipt must fail. Exact body and operation ID can be resent by caller. Reuse owner-bound SyncSessionLease auth, EN Accept-Language, and installation credential stripping from routine completion.",
+        "Prefer the existing dedicated approach to sending typed requests. Make unit tests verify the exact owner-bound request, valid receipt and at least mismatched receipt and non-voided rejection. Exclude outbox wiring, UI, real service, local persistence and watering and first-aid undo changes. Leave T160/T171 open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19AUNDO1",
+          "description": "Unit gate passes with exact typed undo and owner-bound command coverage.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}
