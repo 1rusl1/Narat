@@ -1,5 +1,16 @@
 # Narat — текущий статус и передача работы
 
+## T083 — внутренний план Storage и проверка готовности — 15 ноября 2026
+
+Приняты и отправлены 063, pgTAP и отчёт в `bac6af3`. PostgreSQL
+clean/upgrade по 230 профильным проверкам, Deno, Review и QA
+прошли. План перечитывает начало очереди и считает готовность лишь
+при частном bucket, пустой странице и отсутствии проверяемых
+hold. Стенд сохраняет 059. Следующий шаг — изолированный
+компонент одного адресного Storage-батча с повторным чтением
+плана и Deno-моками. Активация, права, Auth/DB purge и T082/T083 открыты.
+
+
 ## T083 — неучтённые объекты и guest-переносы — 15 ноября 2026
 
 В `5194999` приняты 062, SQL-фикстура и отчёт. Clean/upgrade
@@ -2483,10 +2494,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only orchestrators, backend/data to codex/plants-backend and iOS/integration to codex/plants-ios. iOS owns Simulator. Weekly ceiling 85% consumed.
-- 5194999 accepted 062 aggregate namespace/guest holds, 184 profile/deletion pgTAP per clean/upgrade and Deno, Review/QA. Finds owner orphans and unfinished transfers with no raw storage names, grant or write. 060/061 and lock concurrency already accepted. All internal 060–062 are off staging.
-- Next 063 composes the internal first-page photo work plan and exact readiness guard based on canonically private bucket and zero all holds. Return exact Git diff in JSON, controller applies and verifies. No storage writes or public entry point. T082/T083 open for worker, Auth and client.
-- narat-staging 051–059/plants-api v28 and Monstera v3: live V19 and profile hour accepted. Signed EN Simulator c9492c8 passed V19. Combined 888217a published to codex/plants-v19-integration with exact source preservation and local Deno/PostgreSQL. iOS profile wire is in progress.
+- Two Codex-only project orchestrators. Backend/data publishes to codex/plants-backend and iOS/integration to codex/plants-ios and owns Simulator. Weekly stop threshold 85% consumed.
+- bac6af3 accepted 063 internal first-page storage plan and readiness predicate. PostgreSQL clean/upgrade passed 230 profile/deletion tests per DB, Deno, Review/QA and push. Holds, stale objects and nonprivate/missing bucket prevent readiness. No role grants, runtime wiring, storage mutation, staging or actual deletion. 060–063 internal.
+- Next isolated Deno component processes one bounded UUID-only Storage batch and rereads the authoritative private plan. Local mock tests only. No worker activation or grants, no live objects or Auth changes. Return exact Git diff in JSON, controller applies and verifies. T082/T083 remain open.
+- Signed V19 c9492c8 and integrated 888217a accepted. On staging 051–059, plants-api v28/worker v8, published Monstera v3 and profile hour are live. iOS typed hour transport 86a3c51 accepted on fixtures, durable outbox in progress.
 
 <!-- /orchestrator:project-state -->
 
