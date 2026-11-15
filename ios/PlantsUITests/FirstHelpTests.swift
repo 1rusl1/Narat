@@ -24,6 +24,7 @@ final class FirstHelpTests: XCTestCase {
     @MainActor
     private func verifyUnavailableFlow(care: Bool, polish: Bool) {
         let app = XCUIApplication()
+        app.launchArguments = ["--catalogue-fixture", "free2", "--catalogue-namespace", UUID().uuidString]
         app.launch()
         XCTAssertTrue(app.staticTexts["welcome.title"].waitForExistence(timeout: 5))
         let language = app.segmentedControls["welcome.language.picker"]
@@ -60,10 +61,7 @@ final class FirstHelpTests: XCTestCase {
         }
         assertUnavailable(app, polish: polish)
         app.buttons["analysis.catalogue.button"].tap()
-        let catalogueError = app.staticTexts["catalogue.error"]
-        XCTAssertTrue(catalogueError.waitForExistence(timeout: 5))
-        XCTAssertEqual(catalogueError.label, polish
-                       ? "Nie udało się pobrać katalogu." : "Couldn’t load the catalogue.")
+        XCTAssertTrue(app.textFields["catalogue.search"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["catalogue.back"].isHittable)
         app.buttons["catalogue.back"].tap()
         if care {

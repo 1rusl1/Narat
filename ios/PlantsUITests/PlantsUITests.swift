@@ -6,13 +6,16 @@ final class PlantsUITests: XCTestCase {
     }
 
     @MainActor
-    func testWelcomeScreenDisplaysBothEqualIntents() throws {
+    func testOrdinaryLaunchShowsPhotoAndCollectionRoutes() throws {
         let app = XCUIApplication()
         app.launch()
 
         XCTAssertTrue(app.staticTexts["welcome.title"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["welcome.intent.problem"].exists)
-        XCTAssertTrue(app.buttons["welcome.intent.care"].exists)
+        XCTAssertTrue(app.buttons["welcome.check"].exists)
+        XCTAssertTrue(app.buttons["welcome.identify"].exists)
+        XCTAssertTrue(app.buttons["welcome.catalogue"].exists)
+        XCTAssertTrue(app.buttons["collection.open"].exists)
+        XCTAssertFalse(app.segmentedControls["welcome.language.picker"].exists)
     }
 
     @MainActor
@@ -21,8 +24,7 @@ final class PlantsUITests: XCTestCase {
         let app = XCUIApplication()
         func openCatalogue() {
             app.launch()
-            app.buttons["welcome.intent.care"].tap()
-            app.buttons["care.method.catalogue"].tap()
+            app.buttons["welcome.catalogue"].tap()
         }
 
         openCatalogue()

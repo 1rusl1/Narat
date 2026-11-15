@@ -1,7 +1,7 @@
 import SwiftUI
+import Supabase
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 import Observation
-import Supabase
 #endif
 
 @main
@@ -37,11 +37,20 @@ struct RootContainerView: View {
 
     @State private var catalogue: CatalogueConnection?
     @State private var trialReminder = TrialReminderScheduler()
+    private enum AccountDestination: String, Identifiable {
+        case diagnosis, identification, collection
+        var id: Self { self }
+    }
+
     @State private var showingCollection = false
+    @State private var accountDestination: AccountDestination?
+    @State private var collectionAfterSignIn = false
+    @State private var opening: AccountDestination?
+    @State private var analysisOwner: UUID?
+    @State private var analysisAccessRepository = AnalysisAccessRepository()
     @State private var starting = false
     @State private var startupFailed = false
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-    @State private var analysisAccessRepository = AnalysisAccessRepository()
     @State private var stagingAccount: StagingAccountPresentation?
     @State private var stagingResume: CatalogueResumeSelection?
     @State private var stagingResumeLocked = false
@@ -66,6 +75,14 @@ struct RootContainerView: View {
 #endif
     }
 
+    private var usesLegacyWelcome: Bool {
+#if DEBUG
+        isStagingAnalysis || fixtureContext != nil
+#else
+        false
+#endif
+    }
+
     var body: some View {
         let reminderRead = TrialReminderRead(
             snapshot: catalogue?.snapshot, authResolved: catalogue?.hasResolvedAuth == true || catalogue?.unavailable != nil,
@@ -73,24 +90,38 @@ struct RootContainerView: View {
         )
         NavigationStack {
             VStack(spacing: 16) {
-                if !isStagingAnalysis {
-                Picker("profile.language.picker", selection: $languageStore.currentLocale) {
-                    Text("Polski").tag(SupportedLocale.pl)
-                    Text("English").tag(SupportedLocale.en)
+#if DEBUG
+                if fixtureContext != nil {
+                    Picker("profile.language.picker", selection: $languageStore.currentLocale) {
+                        Text("Polski").tag(SupportedLocale.pl)
+                        Text("English").tag(SupportedLocale.en)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .accessibilityIdentifier("welcome.language.picker")
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .accessibilityIdentifier("welcome.language.picker")
-                }
-
-                if startupFailed {
+#endif
+                if startupFailed && usesLegacyWelcome {
                     Text(isPolish ? "Katalog jest niedostępny." : "Catalogue unavailable.")
                         .accessibilityIdentifier("catalogue.error")
                 }
                 switch analysisModel.router.flowState.currentStep {
                 case .selectIntent:
-                    welcomeIntentSection
+                    if usesLegacyWelcome {
+                        welcomeIntentSection
+                    } else {
+                        PlantHomeView(
+                            busy: opening != nil,
+                            unavailable: catalogue?.unavailable != nil || startupFailed,
+                            check: { open(.diagnosis) },
+                            identify: { open(.identification) },
+                            browse: {
+                                analysisModel.router.selectIntent(.care)
+                                analysisModel.router.selectCareMethod(.catalogue)
+                            },
+                            collection: { open(.collection) }
+                        )
+                    }
                 case .selectCareMethod:
                     careMethodPickerSection
                 case .selectCatalogueSpecies:
@@ -127,19 +158,15 @@ struct RootContainerView: View {
                             .disabled(stagingResumeLocked)
                             .accessibilityIdentifier("catalogue.back")
                         } else {
-                            GuestCatalogueView(connection: catalogue, polish: isPolish) {
-                                analysisModel.router.navigateBack()
-                            }
+                            GuestCatalogueView(connection: catalogue, polish: isPolish, back: closeCatalogue)
                         }
 #else
-                        GuestCatalogueView(connection: catalogue, polish: isPolish) {
-                            analysisModel.router.navigateBack()
-                        }
+                        GuestCatalogueView(connection: catalogue, polish: isPolish, back: closeCatalogue)
 #endif
                     } else {
                         if !startupFailed { ProgressView() }
                         Button(isPolish ? "Wstecz" : "Back") {
-                            analysisModel.router.navigateBack()
+                            closeCatalogue()
                         }
                         .accessibilityIdentifier("catalogue.back")
                     }
@@ -150,13 +177,14 @@ struct RootContainerView: View {
                 case .analyzing, .preliminaryResult, .diagnosticRefinement:
                     PreliminaryResultView(
                         model: analysisModel, languageStore: languageStore,
-                        catalogueConnection: isStagingAnalysis ? catalogue : nil,
+                        catalogueConnection: analysisOwner != nil && catalogue?.snapshot?.session.userId == analysisOwner
+                            ? catalogue : nil,
                         guestActions: guestIdentificationActions
                     )
                 default:
                     welcomeIntentSection
                 }
-                if catalogue != nil,
+                if usesLegacyWelcome, catalogue != nil,
                    [.selectIntent, .selectCatalogueSpecies].contains(analysisModel.router.flowState.currentStep) {
                     Button(isPolish ? "Moje rośliny" : "My plants") { showingCollection = true }
                         .accessibilityIdentifier("collection.open")
@@ -191,10 +219,30 @@ struct RootContainerView: View {
                 )
             }
         }
+        .sheet(item: $accountDestination, onDismiss: {
+            if collectionAfterSignIn {
+                collectionAfterSignIn = false
+                showingCollection = true
+            }
+        }) { destination in
+            if let catalogue {
+                AccountSignInView(
+                    connection: catalogue,
+                    cancel: { accountDestination = nil }
+                ) { snapshot in
+                    if destination == .collection {
+                        collectionAfterSignIn = true
+                    } else {
+                        activate(destination, connection: catalogue, snapshot: snapshot)
+                    }
+                    accountDestination = nil
+                }
+            }
+        }
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         .sheet(item: $stagingAccount, onDismiss: showPendingGuestTransfer) { account in
-            StagingAccountView(
-                connection: account.connection,
+            AccountSignInView(
+                connection: account.connection, staging: true,
                 cancel: account.guestTransfer ? { stagingAccount = nil } : nil
             ) { snapshot in finishStagingSignIn(account, snapshot: snapshot) }
         }
@@ -236,33 +284,74 @@ struct RootContainerView: View {
     }
 
     private var analysisAccessSource: AnalysisAccessSource? {
+        guard let catalogue, analysisOwner != nil else { return nil }
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-        if isStagingAnalysis, let catalogue {
-            return AnalysisAccessSource(
-                connection: catalogue, repository: analysisAccessRepository, guestCredential: stagingGuestClaim?.credential
-            )
-        }
+        let credential = isStagingAnalysis ? stagingGuestClaim?.credential : nil
+#else
+        let credential: String? = nil
 #endif
-        return nil
+        return AnalysisAccessSource(
+            connection: catalogue, repository: analysisAccessRepository, guestCredential: credential
+        )
     }
 
     private func repeatDiagnosisEntry(for connection: CatalogueConnection) -> RepeatDiagnosisEntry? {
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-        guard isStagingAnalysis, !isPolish, let api = connection.apiClient else { return nil }
+        guard !isPolish, let api = connection.apiClient else { return nil }
+#if DEBUG
+        guard fixtureContext == nil else { return nil }
+#endif
         return RepeatDiagnosisEntry(
             languageStore: languageStore,
             accessSource: AnalysisAccessSource(connection: connection, repository: analysisAccessRepository, guestCredential: nil)
         ) { card, expected in
             guard connection.snapshot == expected, !expected.isAnonymous else { return nil }
             let target = RepeatDiagnosisTarget(plantId: card.id, ownerId: expected.session.userId)
-            let service = StagingAnalysisService(api: api, repeatDiagnosisTarget: target) {
+            let service = PhotoAnalysisService(api: api, repeatDiagnosisTarget: target) {
                 try await connection.collectionLease(expected: expected)
             }
             return AnalysisFlowModel(repeatDiagnosisTarget: target, service: service)
         }
-#else
-        return nil
-#endif
+    }
+
+    private func closeCatalogue() {
+        if usesLegacyWelcome {
+            analysisModel.router.navigateBack()
+        } else {
+            analysisModel.router.flowState.currentStep = .selectIntent
+        }
+    }
+
+    private func open(_ destination: AccountDestination) {
+        guard opening == nil, accountDestination == nil, let connection = catalogue,
+              connection.apiClient != nil else { return }
+        opening = destination
+        Task { @MainActor in
+            defer { opening = nil }
+            if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
+                activate(destination, connection: connection, snapshot: snapshot)
+            } else if !Task.isCancelled {
+                accountDestination = destination
+            }
+        }
+    }
+
+    private func activate(
+        _ destination: AccountDestination, connection: CatalogueConnection, snapshot: CatalogueSDKSnapshot
+    ) {
+        guard connection.snapshot == snapshot, !snapshot.isAnonymous else { return }
+        if destination == .collection {
+            showingCollection = true
+            return
+        }
+        installAnalysis(
+            connection: connection, owner: snapshot.session.userId, identificationEnabled: true
+        )
+        if destination == .diagnosis {
+            analysisModel.router.selectIntent(.problem)
+        } else {
+            analysisModel.router.selectIntent(.care)
+            analysisModel.router.selectCareMethod(.scan)
+        }
     }
 
     private var guestIdentificationActions: GuestIdentificationActions? {
@@ -319,14 +408,17 @@ struct RootContainerView: View {
                 return
             }
         } else {
-            catalogue = CatalogueConnection()
+            catalogue = CatalogueConnection(clientLocale: "en")
         }
 #else
-        catalogue = CatalogueConnection()
+        catalogue = CatalogueConnection(clientLocale: "en")
 #endif
         guard let catalogue else { return }
+        if !usesLegacyWelcome {
+            languageStore.currentLocale = .en
+        }
         do {
-            _ = try await catalogue.sessionOwner()
+            if usesLegacyWelcome { _ = try await catalogue.sessionOwner() }
             guard analysisModel.router.flowState.currentStep == .selectIntent else { return }
             let expected = try await catalogue.sessionSnapshot()
             guard analysisModel.router.flowState.currentStep == .selectIntent,
@@ -360,7 +452,7 @@ struct RootContainerView: View {
     @MainActor
     private func prepareStagingAnalysis() async {
         guard let config = try? NativeAuthConfiguration(),
-              StagingAnalysisService.isEnabled(
+              PhotoAnalysisService.isEnabled(
                 arguments: ProcessInfo.processInfo.arguments,
                 expectedHost: Bundle.main.object(forInfoDictionaryKey: "NaratStagingAnalysisHost") as? String,
                 apiOrigin: config.supabaseURL
@@ -458,21 +550,30 @@ struct RootContainerView: View {
 
     @MainActor
     private func installStagingAnalysis(connection: CatalogueConnection, owner: UUID, guestCredential: String? = nil) {
+        installAnalysis(
+            connection: connection, owner: owner,
+            identificationEnabled: ProcessInfo.processInfo.arguments.contains("--narat-staging-identification"),
+            guestCredential: guestCredential
+        )
+    }
+#endif
+
+    @MainActor
+    private func installAnalysis(
+        connection: CatalogueConnection, owner: UUID, identificationEnabled: Bool, guestCredential: String? = nil
+    ) {
         guard let api = connection.apiClient else { return }
-        let identificationEnabled = ProcessInfo.processInfo.arguments.contains("--narat-staging-identification")
-        analysisModel.installAnalysisService(StagingAnalysisService(
+        analysisOwner = owner
+        analysisModel.installAnalysisService(PhotoAnalysisService(
             api: api, identificationEnabled: identificationEnabled, guestCredential: guestCredential
         ) {
             let snapshot = try await connection.sessionSnapshot()
             guard snapshot.isAnonymous == (guestCredential != nil), snapshot.session.userId == owner else {
                 throw AnalysisServiceFailure.unavailable
             }
-            let lease = try await api.captureSyncContext(ownerId: owner)
-            guard connection.snapshot == snapshot else { throw SyncWireValidationError.invalidSession }
-            return lease
+            return try await connection.analysisLease(expected: snapshot)
         })
     }
-#endif
 
     private var welcomeIntentSection: some View {
         VStack(spacing: 24) {
@@ -564,9 +665,8 @@ struct RootContainerView: View {
     }
 }
 
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 @MainActor
-final class StagingAnalysisService: AnalysisService {
+final class PhotoAnalysisService: AnalysisService {
     private struct Progress {
         let request: AnalysisServiceRequest
         let ownerId: UUID
@@ -751,6 +851,7 @@ final class StagingAnalysisService: AnalysisService {
     }
 }
 
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 @MainActor
 @Observable
 final class StagingGuestPhotoClaim {
@@ -966,8 +1067,11 @@ private struct StagingAccountPresentation: Identifiable {
     var guestTransfer = false
 }
 
-private struct StagingAccountView: View {
+#endif
+
+private struct AccountSignInView: View {
     let connection: CatalogueConnection
+    var staging = false
     let cancel: (() -> Void)?
     let signedIn: @MainActor (CatalogueSDKSnapshot) -> Void
 
@@ -984,22 +1088,22 @@ private struct StagingAccountView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.emailAddress)
-                    .accessibilityIdentifier("staging.email")
+                    .accessibilityIdentifier(staging ? "staging.email" : "account.email")
                 SecureField("Password", text: $password)
                     .textContentType(.password)
-                    .accessibilityIdentifier("staging.password")
+                    .accessibilityIdentifier(staging ? "staging.password" : "account.password")
                 if failed {
-                    Text("Could not sign in to the test stand. Check the test account.")
+                    Text(staging ? "Could not sign in to the test stand. Check the test account." : "Couldn’t sign in. Check your email and password and try again.")
                         .foregroundStyle(.red)
-                        .accessibilityIdentifier("staging.signin.error")
+                        .accessibilityIdentifier(staging ? "staging.signin.error" : "account.signin.error")
                 }
                 Button(signingIn ? "Signing in…" : "Sign in") {
                     signIn()
                 }
                 .disabled(signingIn || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
-                .accessibilityIdentifier("staging.signin")
+                .accessibilityIdentifier(staging ? "staging.signin" : "account.signin")
             }
-            .navigationTitle("Test account")
+            .navigationTitle(staging ? "Test account" : "Sign in to Narat")
             .toolbar {
                 if let cancel {
                     ToolbarItem(placement: .cancellationAction) {
@@ -1034,4 +1138,100 @@ private struct StagingAccountView: View {
         }
     }
 }
-#endif
+
+private struct PlantHomeView: View {
+    let busy: Bool
+    let unavailable: Bool
+    let check: () -> Void
+    let identify: () -> Void
+    let browse: () -> Void
+    let collection: () -> Void
+
+    private let green = Color(red: 0.13, green: 0.33, blue: 0.22)
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("Narat")
+                        .font(.system(.largeTitle, design: .serif).weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("welcome.title")
+                    Spacer()
+                    Button(action: collection) {
+                        Label("My plants", systemImage: "leaf")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("collection.open").disabled(unavailable)
+                }
+
+                VStack(alignment: .leading, spacing: 16) {
+                    Image(systemName: "leaf.circle")
+                        .font(.system(size: 44, weight: .light))
+                        .accessibilityHidden(true)
+                    Text("How’s your plant doing?")
+                        .font(.system(.largeTitle, design: .serif).weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Use a photo to see what your plant might need.")
+                        .font(.body)
+                    Button(action: check) {
+                        Label("Check a plant", systemImage: "camera")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.white)
+                    .foregroundStyle(green)
+                    .accessibilityIdentifier("welcome.check").disabled(unavailable)
+                }
+                .foregroundStyle(.white)
+                .padding(24)
+                .background(green, in: RoundedRectangle(cornerRadius: 28))
+
+                VStack(spacing: 0) {
+                    destination("Identify a plant", systemImage: "viewfinder", id: "welcome.identify", action: identify)
+                        .disabled(unavailable)
+                    Divider().padding(.leading, 52)
+                    destination("Browse catalogue", systemImage: "books.vertical", id: "welcome.catalogue", action: browse)
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+
+                if unavailable {
+                    Text("Narat can’t connect right now. Check the app’s connection settings.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("welcome.unavailable")
+                }
+                if busy {
+                    ProgressView("Opening…")
+                        .accessibilityIdentifier("welcome.opening")
+                }
+            }
+            .padding(22)
+            .disabled(busy)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+
+    private func destination(_ title: String, systemImage: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+                Text(title).font(.body.weight(.medium))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+}

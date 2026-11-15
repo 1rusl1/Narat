@@ -6264,11 +6264,11 @@ extension CollectionWireTests {
         let flag = ["--narat-staging-analysis"]
         let host = "staging.example.invalid"
         let https = URL(string: "https://\(host)")!
-        XCTAssertTrue(StagingAnalysisService.isEnabled(arguments: flag, expectedHost: host, apiOrigin: https))
-        XCTAssertFalse(StagingAnalysisService.isEnabled(arguments: [], expectedHost: host, apiOrigin: https))
-        XCTAssertFalse(StagingAnalysisService.isEnabled(arguments: flag, expectedHost: nil, apiOrigin: https))
-        XCTAssertFalse(StagingAnalysisService.isEnabled(arguments: flag, expectedHost: "other.invalid", apiOrigin: https))
-        XCTAssertFalse(StagingAnalysisService.isEnabled(
+        XCTAssertTrue(PhotoAnalysisService.isEnabled(arguments: flag, expectedHost: host, apiOrigin: https))
+        XCTAssertFalse(PhotoAnalysisService.isEnabled(arguments: [], expectedHost: host, apiOrigin: https))
+        XCTAssertFalse(PhotoAnalysisService.isEnabled(arguments: flag, expectedHost: nil, apiOrigin: https))
+        XCTAssertFalse(PhotoAnalysisService.isEnabled(arguments: flag, expectedHost: "other.invalid", apiOrigin: https))
+        XCTAssertFalse(PhotoAnalysisService.isEnabled(
             arguments: flag, expectedHost: host, apiOrigin: URL(string: "http://\(host)")!
         ))
     }
@@ -6292,7 +6292,7 @@ extension CollectionWireTests {
         let api = client(transport)
         await api.bindSyncSession(accessSession)
         let owner = accessOwner
-        let service = StagingAnalysisService(api: api, identificationEnabled: true) {
+        let service = PhotoAnalysisService(api: api, identificationEnabled: true) {
             try await api.captureSyncContext(ownerId: owner)
         }
         let input = AnalysisServiceRequest(
@@ -6346,7 +6346,7 @@ extension CollectionWireTests {
         let api = client(transport)
         await api.bindSyncSession(accessSession)
         let owner = accessOwner
-        let service = StagingAnalysisService(api: api) {
+        let service = PhotoAnalysisService(api: api) {
             try await api.captureSyncContext(ownerId: owner)
         }
         let input = AnalysisServiceRequest(
@@ -6407,7 +6407,7 @@ extension CollectionWireTests {
         let api = client(transport)
         await api.bindSyncSession(accessSession)
         let owner = accessOwner
-        let service = StagingAnalysisService(api: api) { try await api.captureSyncContext(ownerId: owner) }
+        let service = PhotoAnalysisService(api: api) { try await api.captureSyncContext(ownerId: owner) }
         let model = AnalysisFlowModel(service: service)
         model.router.selectIntent(.problem)
         model.router.attachPhoto(identifier: "fixture-gallery-photo")
@@ -6987,7 +6987,7 @@ extension CollectionWireTests {
         await api.bindSyncSession(accessSession)
         let owner = accessOwner
         let target = RepeatDiagnosisTarget(plantId: serverPlantId, ownerId: owner)
-        let service = StagingAnalysisService(api: api, repeatDiagnosisTarget: target) {
+        let service = PhotoAnalysisService(api: api, repeatDiagnosisTarget: target) {
             try await api.captureSyncContext(ownerId: owner)
         }
         let model = AnalysisFlowModel(repeatDiagnosisTarget: target, service: service)
@@ -7028,7 +7028,7 @@ extension CollectionWireTests {
         let api = client(transport)
         await api.bindSyncSession(accessSession)
         let owner = accessOwner
-        let service = StagingAnalysisService(api: api, repeatDiagnosisTarget: target) {
+        let service = PhotoAnalysisService(api: api, repeatDiagnosisTarget: target) {
             try await api.captureSyncContext(ownerId: owner)
         }
         let prepared = PreparedAnalysisPhoto(
@@ -7036,7 +7036,7 @@ extension CollectionWireTests {
             aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 2
         )
         let other = RepeatDiagnosisTarget(plantId: target.plantId, ownerId: UUID())
-        let wrongOwnerService = StagingAnalysisService(api: api, repeatDiagnosisTarget: other) {
+        let wrongOwnerService = PhotoAnalysisService(api: api, repeatDiagnosisTarget: other) {
             try await api.captureSyncContext(ownerId: owner)
         }
         let wrongOwner = AnalysisServiceRequest(
