@@ -852,6 +852,11 @@ private struct CatalogueCollectionCardView: View {
     @State private var firstAidFailed = false
     @State private var historyFailed = false
     @State private var adviceFailed = false
+    @State private var pendingRoutine: RoutineSoilCheckCompletionCommand?
+    @State private var checkingRoutine = true
+    @State private var savingRoutine = false
+    @State private var routineFailed = false
+    @State private var routineConfirmed = false
     @State private var pendingAdviceRefresh: CommandEnvelopeDTO?
     @State private var checkingAdviceRefresh = true
     @State private var basicCareEnabled: Bool?
@@ -894,6 +899,7 @@ private struct CatalogueCollectionCardView: View {
                     }
                     if !polish {
                         renameControls
+                            .disabled(checkingRoutine || savingRoutine || pendingRoutine != nil)
                     }
                     if deletionFailed {
                         Text(polish ? "Nie udało się usunąć rośliny." : "Couldn’t delete this plant.")
@@ -913,11 +919,14 @@ private struct CatalogueCollectionCardView: View {
                         if let advice {
                             PlantCareRecommendationContent(
                                 recommendation: advice,
-                                showNextCheck: adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil
+                                showNextCheck: adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !checkingRoutine && pendingRoutine == nil && !savingRoutine
                             )
                         }
+                        routineCompletionControls
                         basicCareEnableControls
+                            .disabled(savingRoutine || pendingRoutine != nil)
                         adviceRefreshControls
+                            .disabled(savingRoutine || pendingRoutine != nil)
                         if let firstAid, firstAid.accessUntil.map({ $0 > Date() }) ?? true {
                             ForEach(firstAid.controls) { control in
                                 VStack(alignment: .leading, spacing: 8) {
@@ -969,6 +978,7 @@ private struct CatalogueCollectionCardView: View {
                     Button(polish ? "Usuń roślinę" : "Delete plant", role: .destructive) {
                         deleteConfirmation = true
                     }
+                    .disabled(savingRoutine)
                     .accessibilityIdentifier("collection.delete")
                 }
                 .accessibilityElement(children: .contain)
@@ -982,6 +992,7 @@ private struct CatalogueCollectionCardView: View {
             .task(id: card.careRevision) { await loadAnalysisHistory() }
             .task { await loadRename() }
             .task {
+                await loadPendingRoutine()
                 await loadPendingAdviceRefresh()
                 await loadBasicCareState()
             }
@@ -1523,6 +1534,113 @@ private struct CatalogueCollectionCardView: View {
                 historyFailed = true
                 correction = .failed
             }
+        }
+    }
+
+    private var routineWriteAvailable: Bool {
+        !checkingDeletion && !deleting && pendingDeletion == nil && !deletionFailed
+            && !loadingRename && !savingRename && pendingRename == nil
+            && !editingName && !editingSpecies && !editingLight && !editingDrainage
+            && !editingWatering && !editingPotType && correction == .ready
+            && dateEdit == nil && !showingWateringUndo && firstAidWriteAvailable
+            && !refreshingAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil
+            && !enablingBasicCare && !basicCarePending
+    }
+
+    private var dueRoutine: PlantCareRecommendation.RoutineContext? {
+        guard !checkingRoutine, !routineFailed, adviceResponse == adviceRequest,
+              !adviceFailed, basicCareEnabled == true,
+              let context = advice?.routineContext, context.plantId == card.id,
+              context.check.careRevision == card.careRevision,
+              let due = SQLCalendarDay.date(from: context.check.dueLocalDate) else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        formatter.timeZone = .current
+        guard let today = SQLCalendarDay.date(from: formatter.string(from: Date())), due <= today else { return nil }
+        return context
+    }
+
+    @ViewBuilder
+    private var routineCompletionControls: some View {
+        if savingRoutine {
+            ProgressView("Saving soil check…")
+        } else if pendingRoutine != nil {
+            Text("Soil check pending sync.")
+                .accessibilityIdentifier("collection.routine.pending")
+            Button("Retry soil check") { Task { await completeRoutine() } }
+                .disabled(!routineWriteAvailable)
+                .accessibilityIdentifier("collection.routine.retry")
+        } else if dueRoutine != nil, routineWriteAvailable {
+            Button("Mark soil checked") { Task { await completeRoutine() } }
+                .accessibilityIdentifier("collection.routine.complete")
+        }
+        if routineFailed {
+            Text("Couldn’t confirm the soil check.")
+                .accessibilityIdentifier("collection.routine.failed")
+        }
+        if routineConfirmed {
+            Text("Soil check saved.")
+                .accessibilityIdentifier("collection.routine.confirmed")
+        }
+    }
+
+    private func loadPendingRoutine() async {
+        guard !polish, let repository = connection.repository else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let pending = try await repository.pendingRoutineCompletion(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingRoutine = pending
+            checkingRoutine = false
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            routineFailed = true
+        }
+    }
+
+    private func completeRoutine() async {
+        guard !savingRoutine, !checkingRoutine, routineWriteAvailable,
+              connection.snapshot == expected, let repository = connection.repository else { return }
+        let captured = dueRoutine
+        guard pendingRoutine != nil || captured != nil else { return }
+        savingRoutine = true
+        routineFailed = false
+        routineConfirmed = false
+        defer { savingRoutine = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let command: RoutineSoilCheckCompletionCommand
+            if let pendingRoutine {
+                command = pendingRoutine
+            } else if let captured {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime]
+                command = try await repository.enqueueRoutineCompletion(
+                    plantId: card.id, routineContext: captured,
+                    occurredAt: formatter.string(from: Date()), timezone: TimeZone.current.identifier, context: lease
+                )
+            } else { return }
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingRoutine = command
+            let outcome = try await repository.retryRoutineCompletion(command, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            switch outcome {
+            case .pending: break
+            case .confirmed:
+                pendingRoutine = nil
+                routineConfirmed = true
+                adviceRequest += 1
+                // The receipt has verified the linked canonical journal entry.
+                // Reload the manual journal without inventing a manual watering fact.
+                await loadFirstAidJournal()
+            case .rejected, .unconfirmed:
+                pendingRoutine = nil
+                routineFailed = true
+                adviceRequest += 1
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            routineFailed = true
         }
     }
 

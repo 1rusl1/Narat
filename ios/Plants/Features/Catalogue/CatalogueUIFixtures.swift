@@ -10,7 +10,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
-    case careRecommendationRefreshRejected
+    case careRecommendationRefreshRejected, routineSoilCheck
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
@@ -475,10 +475,26 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 return Reply(status: 204, data: Data())
             }
             if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected
-                || ledger.scenario == .basicCareEnable),
+                || ledger.scenario == .basicCareEnable || ledger.scenario == .routineSoilCheck),
                method == "GET", query.isEmpty,
                let plant = ledger.plants.first, caller == plant.owner,
                url.path == "/functions/v1/plants-api/plants/\(plant.id.uuidString.lowercased())/care/recommendation" {
+                if ledger.scenario == .routineSoilCheck {
+                    let anchor = try ledger.commits.values.first.map { try routineLocalDate($0) } ?? "1999-12-25"
+                    let due = ledger.commits.isEmpty ? "2000-01-01" : routineNextDate(anchor)
+                    let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
+                    return Reply(status: 200, data: try json([
+                        "plant_id": plant.id.uuidString, "status": "available",
+                        "next_check": ["due_on": due, "anchor_on": anchor, "interval_days": 7,
+                                       "basis": "Based on the last soil check.", "source": source] as [String: Any],
+                        "routine_check": ["rule_id": Self.routineRule, "care_revision": 1,
+                                          "due_local_date": due, "anchor_local_date": anchor,
+                                          "anchor_kind": "check_soil"] as [String: Any],
+                        "recommendation": ["action_id": "fixture_soil_check", "action_code": "check_soil",
+                                           "text": "Check the soil before watering.",
+                                           "next_check_interval_days": 7, "source": source] as [String: Any]
+                    ]))
+                }
                 let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
                 let check: Any = ledger.scenario != .careRecommendationRefresh || ledger.commits.isEmpty ? NSNull() : [
                     "due_on": "2026-10-28", "anchor_on": "2026-10-21", "interval_days": 7,
@@ -624,6 +640,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                             < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
                     }
                 }
+                if ledger.scenario == .routineSoilCheck,
+                   let commit = ledger.commits.values.first, commit.owner == caller,
+                   since.map({ $0 < Self.time(ledger.tick) }) ?? true {
+                    changes += try routineChanges(commit)
+                    changes.sort {
+                        ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
+                            < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
+                    }
+                }
                 let entitlement: Any
                 switch ledger.scenario {
                 case .paid4 where caller == ledger.permanent:
@@ -663,6 +688,31 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             }
             if ledger.scenario.testsPlantEdit, let edit = PlantEditCommand(envelope) {
                 return try editPlant(edit, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
+            }
+            if ledger.scenario == .routineSoilCheck, let command = RoutineSoilCheckCompletionCommand(envelope) {
+                guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
+                      command.ruleId.uuidString.lowercased() == Self.routineRule,
+                      command.careRevision == 1, command.dueLocalDate == "2000-01-01",
+                      request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
+                else { throw CatalogueUIFixtureError.invalidRequest }
+                let key = caller.uuidString + ":" + envelope.operationId.uuidString
+                if let commit = ledger.commits[key] {
+                    guard commit.owner == caller, commit.envelope == envelope, commit.body == body
+                    else { throw CatalogueUIFixtureError.invalidRequest }
+                    return Reply(status: 200, data: commit.receipt)
+                }
+                guard ledger.commits.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }
+                var next = ledger
+                next.tick += 1
+                let receipt = try json([
+                    "plant_id": plant.id.uuidString, "rule_id": Self.routineRule, "care_revision": 1,
+                    "occurrence_key": "fixture-routine-occurrence", "due_local_date": "2000-01-01",
+                    "task_id": Self.routineTask, "entry_id": Self.routineEntry,
+                    "state": "completed", "watermark": Self.time(next.tick)
+                ])
+                next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)
+                try persist(next)
+                throw URLError(.networkConnectionLost)
             }
             if ledger.scenario == .basicCareEnable, envelope.commandName == BasicCareEnableReceipt.commandName {
                 guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
@@ -755,8 +805,51 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         }
     }
 
+    private static let routineRule = "19190000-0000-4000-8000-000000000001"
+    private static let routineTask = "19190000-0000-4000-8000-000000000002"
+    private static let routineEntry = "19190000-0000-4000-8000-000000000003"
+
+    private func routineLocalDate(_ commit: Commit) throws -> String {
+        let payload = try JSONSerialization.jsonObject(with: Data(commit.envelope.payloadJSON.utf8)) as? [String: Any]
+        guard let timestamp = payload?["occurred_at"] as? String,
+              let date = ISO8601DateFormatter().date(from: timestamp),
+              let zone = payload?["timezone"] as? String, let timezone = TimeZone(identifier: zone)
+        else { throw CatalogueUIFixtureError.invalidRequest }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        formatter.timeZone = timezone
+        return formatter.string(from: date)
+    }
+
+    private func routineNextDate(_ anchor: String) -> String {
+        let date = SQLCalendarDay.calendar.date(byAdding: .day, value: 7, to: SQLCalendarDay.date(from: anchor)!)!
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: date)
+    }
+
+    private func routineChanges(_ commit: Commit) throws -> [[String: Any]] {
+        let payload = try JSONSerialization.jsonObject(with: Data(commit.envelope.payloadJSON.utf8)) as! [String: Any]
+        let task: [String: Any] = [
+            "id": Self.routineTask, "plant_id": commit.plantID.uuidString, "rule_id": Self.routineRule,
+            "occurrence_key": "fixture-routine-occurrence", "due_local_date": "2000-01-01",
+            "action_code": "check_soil", "state": "completed", "completed_entry_id": Self.routineEntry
+        ]
+        let entry: [String: Any] = [
+            "id": Self.routineEntry, "plant_id": commit.plantID.uuidString,
+            "task_id": Self.routineTask, "operation_id": commit.envelope.operationId.uuidString,
+            "action_code": "check_soil", "state": "active", "occurred_at": payload["occurred_at"]!,
+            "timezone": payload["timezone"]!, "occurred_local_date": try routineLocalDate(commit)
+        ]
+        return [("care_tasks", Self.routineTask, task), ("care_entries", Self.routineEntry, entry)].map { entity, id, data in
+            ["entity_type": entity, "id": id, "updated_at": Self.time(ledger.tick),
+             "deleted_at": NSNull(), "data": data] as [String: Any]
+        }
+    }
+
     private func basicCareEnabledAt(for plant: Plant) -> String? {
-        if ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected {
+        if ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected || ledger.scenario == .routineSoilCheck {
             return plant.timestamp
         }
         guard ledger.scenario == .basicCareEnable,

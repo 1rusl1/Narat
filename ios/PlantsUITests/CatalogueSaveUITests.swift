@@ -322,6 +322,58 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
     }
 
+    @MainActor func testRoutineSoilCheckCompletesAfterRestart() {
+        let run = Run("routineSoilCheck", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let action = run.app.buttons["collection.routine.complete"]
+        enabled(action)
+        XCTAssertEqual(run.app.buttons.matching(identifier: "collection.routine.complete").count, 1)
+        tap(run, "collection.routine.complete", "Mark soil checked")
+        let pending = run.app.staticTexts["collection.routine.pending"]
+        require(pending)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.confirmed"].exists)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(pending)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.confirmed"].exists)
+        // The fixture accepts only the identical persisted envelope and HTTP body.
+        tap(run, "collection.routine.retry", "Retry soil check")
+        require(run.app.staticTexts["collection.routine.confirmed"])
+        let next = run.app.staticTexts["catalogue.saved.care.next.date"]
+        require(next)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        let expectedDate = formatter.string(from: calendar.date(byAdding: .day, value: 7, to: Date())!)
+        XCTAssertEqual(next.label, "Next soil check · " + expectedDate)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(run.app.buttons["collection.routine.retry"].exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertEqual(run.app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")).count, 0)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(next)
+        XCTAssertEqual(next.label, "Next soil check · " + expectedDate)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(pending.exists)
+    }
+
     @MainActor func testCareRecommendationRefreshRejectionShowsFailure() {
         let run = Run("careRecommendationRefreshRejected", .en)
         defer { run.app.terminate() }
