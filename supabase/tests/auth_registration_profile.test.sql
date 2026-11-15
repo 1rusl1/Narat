@@ -246,5 +246,179 @@ SELECT ok(has_function_privilege('service_role',signature,'EXECUTE')
 FROM (VALUES ('public.read_owner_profile_settings(uuid)'),
     ('public.execute_profile_reminder_hour_update(uuid,uuid,jsonb)')) rpc(signature);
 
+-- T083 internal deletion intent only. Direct authenticated data access, workers and
+-- Auth revocation require review before any product route. T082/T083 remain open.
+INSERT INTO public.plants(id,owner_id,personal_name,creation_source)
+VALUES(pg_temp.owner_id(300),pg_temp.owner_id(1),'Deletion fixture','analysis');
+INSERT INTO public.care_entries(id,owner_id,plant_id,action_code,occurred_at,
+    occurred_local_date,timezone,operation_id)
+VALUES(pg_temp.owner_id(301),pg_temp.owner_id(1),pg_temp.owner_id(300),'water',
+    clock_timestamp(),current_date,'UTC',pg_temp.owner_id(302));
+INSERT INTO public.purchase_ownership(environment,original_transaction_id,owner_id,
+    app_account_token,first_verified_access_at)
+VALUES('Xcode','t083-internal-deletion',pg_temp.owner_id(1),pg_temp.owner_id(303),clock_timestamp());
+SELECT isnt(public.read_owner_profile_settings(pg_temp.owner_id(1)),NULL::jsonb,
+    'deletion fixture initially has active profile service access');
+SELECT lives_ok($q$SELECT public.fetch_sync_delta(pg_temp.owner_id(1))$q$,
+    'deletion fixture initially has active sync access');
+SELECT lives_ok($q$SELECT public.get_analysis_access_snapshot(pg_temp.owner_id(1))$q$,
+    'deletion fixture initially has active quota access');
+
+-- Matching command and matching hash are independently required for replay.
+INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload)
+VALUES
+    (pg_temp.owner_id(81),pg_temp.owner_id(312),'account.delete','wrong','{}'),
+    (pg_temp.owner_id(81),pg_temp.owner_id(313),'plant.edit',
+        encode(sha256(convert_to(jsonb_build_array('account.delete','{}'::jsonb)::text,'UTF8')),'hex'),'{}');
+UPDATE public.profiles SET updated_at=clock_timestamp()+interval '2 days'
+WHERE id=pg_temp.owner_id(1);
+
+-- Snapshot actual rows, including existing clean/upgrade fixture history.
+CREATE FUNCTION pg_temp.deletion_history() RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+    relation_name text;
+    rows jsonb;
+    result jsonb := '{}'::jsonb;
+BEGIN
+    FOREACH relation_name IN ARRAY ARRAY[
+        'catalogue_taxa','plants','care_entries','care_tasks','care_plans',
+        'photo_assets','analysis_results','analysis_jobs','installation_access',
+        'account_quota_anchors','account_quota_usage','monthly_quotas',
+        'purchase_ownership','entitlements']
+    LOOP
+        EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),
+            ''[]''::jsonb) FROM public.%I r',relation_name) INTO rows;
+        result := result || jsonb_build_object(relation_name,rows);
+    END LOOP;
+    RETURN result;
+END;
+$$;
+CREATE TEMP TABLE t083_delete_before AS
+SELECT pg_temp.deletion_history() AS history,
+    (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.profiles p) AS profiles,
+    (SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY owner_id,operation_id),'[]'::jsonb)
+        FROM public.operation_receipts r) AS receipts,
+    (SELECT coalesce(jsonb_agg(to_jsonb(q) ORDER BY owner_id),'[]'::jsonb)
+        FROM public.account_deletion_requests q) AS requests;
+CREATE TEMP TABLE t083_delete_profile AS
+SELECT to_jsonb(p) AS body FROM public.profiles p WHERE id=pg_temp.owner_id(1);
+
+-- A failed queue write must roll back the canonical watermark as well.
+CREATE FUNCTION pg_temp.reject_delete_intent() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'fixture_queue_failure' USING ERRCODE='P0001';
+END;
+$$;
+CREATE TRIGGER t083_reject_delete_intent BEFORE INSERT ON public.account_deletion_requests
+FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_delete_intent();
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(
+    pg_temp.owner_id(1),pg_temp.owner_id(310))$q$,
+    'P0001','fixture_queue_failure','queue failure rolls back the complete request');
+DROP TRIGGER t083_reject_delete_intent ON public.account_deletion_requests;
+SELECT is((SELECT to_jsonb(p) FROM public.profiles p WHERE id=pg_temp.owner_id(1)),
+    (SELECT body FROM t083_delete_profile),'failed intent preserves active state and watermark');
+SELECT is((SELECT count(*) FROM public.operation_receipts
+    WHERE owner_id=pg_temp.owner_id(1) AND operation_id=pg_temp.owner_id(310)),
+    0::bigint,'failed intent writes no receipt');
+SELECT is((SELECT count(*) FROM public.account_deletion_requests WHERE owner_id=pg_temp.owner_id(1)),
+    0::bigint,'failed intent writes no queue record');
+
+CREATE TEMP TABLE t083_delete_result AS
+SELECT public.request_account_deletion_internal(pg_temp.owner_id(1),pg_temp.owner_id(310)) AS body;
+SELECT is((SELECT body FROM t083_delete_result),
+    (SELECT jsonb_build_object('owner_id',p.id,'operation_id',pg_temp.owner_id(310),
+        'state','deleting','watermark',p.updated_at)
+     FROM public.profiles p WHERE p.id=pg_temp.owner_id(1)),
+    'request returns the exact canonical owner, operation, state and watermark');
+SELECT ok((SELECT p.account_state='deleting'
+    AND p.updated_at=(b.body->>'updated_at')::timestamptz+interval '1 microsecond'
+    AND to_jsonb(p)-'account_state'-'updated_at'=b.body-'account_state'-'updated_at'
+    FROM public.profiles p CROSS JOIN t083_delete_profile b WHERE p.id=pg_temp.owner_id(1)),
+    'retirement changes only state and the strictly monotonic owner watermark');
+SELECT ok((SELECT count(*)=1 AND bool_and(q.operation_id=pg_temp.owner_id(310)
+    AND q.requested_at=(r.body->>'watermark')::timestamptz)
+    FROM public.account_deletion_requests q CROSS JOIN t083_delete_result r
+    WHERE q.owner_id=pg_temp.owner_id(1)),'exactly one minimal owner intent is recorded');
+SELECT ok((SELECT count(*)=1 AND bool_and(r.command_name='account.delete'
+    AND r.payload_hash=encode(sha256(convert_to(
+        jsonb_build_array('account.delete','{}'::jsonb)::text,'UTF8')),'hex')
+    AND r.response_payload=d.body
+    AND r.committed_at=(d.body->>'watermark')::timestamptz)
+    FROM public.operation_receipts r CROSS JOIN t083_delete_result d
+    WHERE r.owner_id=pg_temp.owner_id(1) AND r.operation_id=pg_temp.owner_id(310)),
+    'exactly one owner-scoped account.delete receipt stores the original response');
+
+SELECT is(public.read_owner_profile_settings(pg_temp.owner_id(1)),NULL::jsonb,
+    'retired owner loses active profile service access');
+SELECT throws_ok($q$SELECT public.fetch_sync_delta(pg_temp.owner_id(1))$q$,
+    '42501','owner_forbidden','retired owner loses active sync access');
+SELECT throws_ok($q$SELECT public.get_analysis_access_snapshot(pg_temp.owner_id(1))$q$,
+    '42501','ACTIVE_OWNER_REQUIRED','retired owner loses active quota access');
+
+-- Exercise the conversion trigger against the actual retired permanent profile.
+UPDATE auth.users SET is_anonymous=true WHERE id=pg_temp.owner_id(1);
+UPDATE auth.users SET is_anonymous=false WHERE id=pg_temp.owner_id(1);
+SELECT is(public.request_account_deletion_internal(pg_temp.owner_id(1),pg_temp.owner_id(310)),
+    (SELECT body FROM t083_delete_result),'exact retry remains valid after Auth sync in deleting state');
+SELECT ok((SELECT account_state='deleting' AND NOT anonymous
+    AND updated_at=(r.body->>'watermark')::timestamptz
+    FROM public.profiles p CROSS JOIN t083_delete_result r WHERE p.id=pg_temp.owner_id(1)),
+    'Auth profile sync cannot revive or advance the deleting owner');
+
+SELECT throws_ok(format('SELECT public.request_account_deletion_internal(%L::uuid,%L::uuid)',
+    pg_temp.owner_id(n),pg_temp.owner_id(310)),
+    '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','no foreign receipt or inactive owner disclosure: '||n)
+FROM (VALUES (4),(82),(83),(85),(86)) rejected(n);
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(NULL,pg_temp.owner_id(310))$q$,
+    '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','null owner cannot request deletion');
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(pg_temp.owner_id(1),pg_temp.owner_id(311))$q$,
+    '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','new operation cannot retire an already deleting owner');
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(pg_temp.owner_id(81),NULL)$q$,
+    '22023','INVALID_ACCOUNT_DELETE_INPUT','active owner must supply an operation UUID');
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(pg_temp.owner_id(80),pg_temp.owner_id(104))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','existing other-command receipt cannot request account deletion');
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(pg_temp.owner_id(80),pg_temp.owner_id(100))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','profile.update receipt cannot replay as account.delete');
+
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(pg_temp.owner_id(81),pg_temp.owner_id(312))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','matching command with a foreign hash cannot replay');
+SELECT throws_ok($q$SELECT public.request_account_deletion_internal(pg_temp.owner_id(81),pg_temp.owner_id(313))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','matching hash with another command cannot replay');
+
+SELECT is(pg_temp.deletion_history(),(SELECT history FROM t083_delete_before),
+    'deletion preserves catalogue, journal, jobs, quota and purchase fixture history byte for byte');
+SELECT is((SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.profiles p
+    WHERE id<>pg_temp.owner_id(1)),
+    (SELECT jsonb_agg(value ORDER BY value->>'id') FROM t083_delete_before b,
+        LATERAL jsonb_array_elements(b.profiles) WHERE value->>'id'<>pg_temp.owner_id(1)::text),
+    'other owners including rejected owners retain their exact profile and watermark');
+SELECT is((SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY owner_id,operation_id),'[]'::jsonb)
+    FROM public.operation_receipts r
+    WHERE NOT (owner_id=pg_temp.owner_id(1) AND operation_id=pg_temp.owner_id(310))),
+    (SELECT receipts FROM t083_delete_before),'all prior receipts remain unchanged and no rejected receipt appears');
+SELECT is((SELECT coalesce(jsonb_agg(to_jsonb(q) ORDER BY owner_id),'[]'::jsonb)
+    FROM public.account_deletion_requests q WHERE owner_id<>pg_temp.owner_id(1)),
+    (SELECT requests FROM t083_delete_before),'no cross-owner intent is created');
+SELECT is((SELECT count(*) FROM public.account_deletion_requests WHERE owner_id=pg_temp.owner_id(1)),
+    1::bigint,'retries and rejected requests leave exactly one intent');
+
+SELECT ok(NOT has_function_privilege(role_name,
+    'public.request_account_deletion_internal(uuid,uuid)','EXECUTE')
+    AND NOT has_table_privilege(role_name,'public.account_deletion_requests',
+        'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'),
+    'internal writer and queue grant no direct access to '||role_name)
+FROM (VALUES ('anon'),('authenticated'),('service_role')) roles(role_name);
+SELECT ok((SELECT relrowsecurity FROM pg_class
+    WHERE oid='public.account_deletion_requests'::regclass)
+    AND NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid='public.account_deletion_requests'::regclass)
+    AND NOT EXISTS (SELECT 1 FROM pg_class c,
+        LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+        WHERE c.oid='public.account_deletion_requests'::regclass AND a.grantee=0)
+    AND NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.request_account_deletion_internal(uuid,uuid)'::regprocedure
+          AND a.grantee=0 AND a.privilege_type='EXECUTE'),
+    'private queue enables RLS without policies and PUBLIC has no queue or writer grants');
+
 SELECT * FROM finish();
 ROLLBACK;

@@ -2459,9 +2459,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-profile-reminder-hour-http: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 355.04 с, проверки — 5.77 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-profile-reminder-hour-http](validation/automation/tasks/t083-profile-reminder-hour-http.md).
+t083-account-deletion-intent-core: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 509.46 с, проверки — 43.04 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-account-deletion-intent-core](validation/automation/tasks/t083-account-deletion-intent-core.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
