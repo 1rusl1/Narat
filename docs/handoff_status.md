@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## T083 — адресный Storage-батч — 15 ноября 2026
+
+`aecff7f` принял Deno-компонент и fixtures. Проверены предел 20,
+точное соответствие владельца и UUID, изоляция bucket, ошибка remove,
+оставшийся объект и новый план готовности. Deno, Review и QA прошли.
+Внешнего маршрута, изменения прав и реальных вызовов Storage нет.
+Следующий пакет 064 подключает компонент к служебному маршруту на
+локальных фикстурах. Удаление аккаунта для владельца остаётся открытым.
+
+
 ## T083 — внутренний план Storage и проверка готовности — 15 ноября 2026
 
 Приняты и отправлены 063, pgTAP и отчёт в `bac6af3`. PostgreSQL
@@ -2494,10 +2504,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only project orchestrators. Backend/data publishes to codex/plants-backend and iOS/integration to codex/plants-ios and owns Simulator. Weekly stop threshold 85% consumed.
-- bac6af3 accepted 063 internal first-page storage plan and readiness predicate. PostgreSQL clean/upgrade passed 230 profile/deletion tests per DB, Deno, Review/QA and push. Holds, stale objects and nonprivate/missing bucket prevent readiness. No role grants, runtime wiring, storage mutation, staging or actual deletion. 060–063 internal.
-- Next isolated Deno component processes one bounded UUID-only Storage batch and rereads the authoritative private plan. Local mock tests only. No worker activation or grants, no live objects or Auth changes. Return exact Git diff in JSON, controller applies and verifies. T082/T083 remain open.
-- Signed V19 c9492c8 and integrated 888217a accepted. On staging 051–059, plants-api v28/worker v8, published Monstera v3 and profile hour are live. iOS typed hour transport 86a3c51 accepted on fixtures, durable outbox in progress.
+- Two Codex-only project orchestrators. Backend/data publishes to codex/plants-backend, iOS/integration to codex/plants-ios and owns Simulator. Weekly ceiling 85% consumed.
+- aecff7f accepted the internal Deno one-batch account Storage helper and unit fixtures. It validates exact owner/IDs and limits, derives only canonical private paths, and verifies via a fresh SQL plan. Deno typing/tests, Review, QA and push passed. No routes, grants, staging or actual removal. 060–063 also remain internal/local.
+- Next 064 adds a service-secret-only maintenance route and execute on the one plan RPC. Deny all public/owner execution. Deno mock and PostgreSQL clean/upgrade only. Return exact unified Git diff in JSON. Controller applies and verifies. No worker schedule, user account.delete route or deployment. T082/T083 open.
+- Staging 051–059, plants-api v28/worker v8 and published Monstera v3. Signed EN V19 accepted and combined branch 888217a published. iOS profile durable sync in progress.
 
 <!-- /orchestrator:project-state -->
 

@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-storage-maintenance-route",
+      "description": "Bind the accepted single Storage batch helper to a service-only account maintenance route.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/maintenance/account-deletion-storage.ts",
+        "supabase/functions/_shared/tests/account_deletion_storage_test.ts",
+        "supabase/migrations/202611150064_account_deletion_storage_service.sql",
+        "supabase/tests/auth_registration_profile.test.sql",
+        "supabase/migrations/202611150063_account_deletion_storage_work_plan.sql"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/tests/account_deletion_storage_test.ts",
+        "supabase/migrations/202611150064_account_deletion_storage_service.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Local, scoped integration and fixtures. Exact unified Git diff in JSON; controller applies and verifies. No stage/deployment, scheduled jobs, UI, real deletion test, trigger invoking actual service or new account.delete user endpoint.",
+        "Add internal POST /internal/account-deletions/<owner UUID>/storage only. Reuse the exact established service secret authentication pattern in plants-api for internal maintenance (legacy service bearer or configured service apikey). Resolve before public Auth middleware, reject unauthorized before any RPC/Storage, validate canonical owner UUID, reject query/body-provided paths and scope operation to the accepted runAccountStoragePurge helper. Private no-store for all recognized attempts, not_found maps to 404, retryable failure to 503 without raw IDs/paths. Test established internal paths remain unchanged.",
+        "Forward 064 grants only service_role execute on read_account_deletion_storage_work_plan(uuid). Keep 060 writer and detailed 061/062 private, no table grants. Use an explicit migration marker in existing pgTAP so historical 063-only tests still check private behavior, updated tests verify service-only scope. Deno mocked route tests verify access priority, no work on bad auth/owner/body, valid exact helper result and retries. Keep T082/T083 open; scheduling and actual DB/Auth purge separate."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083RTE1",
+          "description": "Scoped diff and production Deno typing pass.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "deno-check"
+          ]
+        },
+        {
+          "id": "T083RTE2",
+          "description": "Deno route fixtures and real PostgreSQL clean/upgrade deny unauthorized execution.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
