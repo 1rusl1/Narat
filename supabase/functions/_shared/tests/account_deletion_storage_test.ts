@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
+import { createProductionPlantsApiHandler } from "../../plants-api/index.ts";
 import { runAccountStoragePurge } from "../../maintenance/account-deletion-storage.ts";
 
 const owner = "53000000-0000-4000-8000-000000000001";
@@ -164,4 +165,146 @@ Deno.test("account storage disappearing or malformed fresh plan is an error afte
     await assertRejects(f.run, Error, "Invalid account storage plan.");
     assertEquals(f.calls, [read, remove, read]);
   }
+});
+
+// Production composition and the real helper use only a mocked transport.
+function routeFixture(plans: unknown[], failAt = 0) {
+  const calls: string[] = [];
+  let reads = 0;
+  let publicAuth = 0;
+  const handler = createProductionPlantsApiHandler({
+    resolveRequestContext: () => {
+      publicAuth++;
+      throw new Error("Unexpected public Auth.");
+    },
+  }, {
+    env: (name) => ({
+      SUPABASE_URL: "https://account-storage.example.test",
+      SUPABASE_SERVICE_ROLE_KEY: "legacy-service",
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: "sb_secret_fixture" }),
+    } as Record<string, string>)[name],
+    fetch: async (input, init) => {
+      const req = new Request(input, init);
+      const path = new URL(req.url).pathname;
+      calls.push(path);
+      if (calls.length === failAt) return Response.json({ message: raw }, { status: 503 });
+      if (path === read) {
+        assertEquals(await req.json(), { p_owner_id: owner });
+        assertEquals(reads < plans.length, true);
+        return Response.json(plans[reads++]);
+      }
+      assertEquals(path, remove);
+      assertEquals(req.method, "DELETE");
+      assertEquals(await req.json(), { prefixes: [owner + "/" + photo(10)] });
+      return Response.json([]);
+    },
+  });
+  return {
+    calls,
+    publicAuth: () => publicAuth,
+    request: async (
+      id = owner,
+      headers: Record<string, string> = { authorization: "Bearer legacy-service" },
+      body?: string,
+      query = "",
+      method = "POST",
+    ) => {
+      const response = await handler(new Request(
+        "https://api.example.test/functions/v1/plants-api/internal/account-deletions/" + id + "/storage" + query,
+        { method, headers, body },
+      ));
+      assertEquals(response.headers.get("cache-control"), "private, no-store");
+      return response;
+    },
+  };
+}
+
+Deno.test("account route authenticates before validation, public Auth and any work", async () => {
+  const f = routeFixture([]);
+  const invalidHeaders: Record<string, string>[] = [
+    {}, { authorization: "Bearer owner-token" }, { apikey: "anon-key" },
+    { authorization: "Bearer sb_secret_fixture" }, { apikey: "legacy-service" },
+  ];
+  for (const headers of invalidHeaders) {
+    assertEquals((await f.request("invalid", headers, '{"path":"other"}', "?path=other")).status, 401);
+  }
+  for (const id of ["invalid", owner.replace("53000000", "ABCDEF00"), owner + "%2Fother"]) {
+    assertEquals((await f.request(id)).status, 400);
+  }
+  for (const body of ['{"path":"other"}', "{}", "null", " "]) {
+    assertEquals((await f.request(owner, undefined, body)).status, 400);
+  }
+  for (const query of ["?path=other", "?owner_id=other"]) {
+    assertEquals((await f.request(owner, undefined, undefined, query)).status, 400);
+  }
+  assertEquals((await f.request(owner, undefined, undefined, "", "GET")).status, 404);
+  assertEquals((await f.request(owner, {}, undefined, "", "OPTIONS")).status, 200);
+  assertEquals(f.calls, []);
+  assertEquals(f.publicAuth(), 0);
+});
+
+Deno.test("account route accepts established service credentials and returns exact helper results", async () => {
+  const credentials: Record<string, string>[] = [
+    { authorization: "Bearer legacy-service" },
+    { apikey: "sb_secret_fixture", authorization: "Bearer owner-token" },
+  ];
+  for (const headers of credentials) {
+    const f = routeFixture([plan([photo(10)]), plan([], { blocked: 1, storage_ready: false }), plan(), plan()]);
+    const pending = await f.request(owner, headers);
+    assertEquals(pending.status, 200);
+    assertEquals(await pending.json(), { state: "pending", ...counts, blocked: 1 });
+    const ready = await f.request(owner, headers, "");
+    assertEquals(ready.status, 200);
+    assertEquals(await ready.json(), { state: "ready", ...counts });
+    assertEquals(f.calls, [read, remove, read, read, read]);
+    assertEquals(f.publicAuth(), 0);
+  }
+  const absent = routeFixture([null]);
+  const response = await absent.request();
+  assertEquals(response.status, 404);
+  assertEquals((await response.text()).includes(owner), false);
+  assertEquals(absent.calls, [read]);
+});
+
+Deno.test("account route sanitizes failures and retries from a fresh plan", async () => {
+  for (const failAt of [1, 2, 3]) {
+    const f = routeFixture([
+      ...(failAt === 1 ? [] : [plan([photo(10)])]),
+      plan([photo(10)]), plan(),
+    ], failAt);
+    const failed = await f.request();
+    assertEquals(failed.status, 503);
+    const error = await failed.json();
+    assertEquals(error.error.retryable, true);
+    assertEquals(JSON.stringify(error).includes(raw), false);
+    assertEquals(JSON.stringify(error).includes(owner), false);
+    const retry = await f.request();
+    assertEquals(retry.status, 200);
+    assertEquals(await retry.json(), { state: "ready", ...counts });
+    assertEquals(f.calls.slice(failAt), [read, remove, read]);
+  }
+});
+
+Deno.test("account route preserves established internal maintenance dispatch", async () => {
+  const calls: unknown[] = [];
+  const handler = createProductionPlantsApiHandler({
+    resolveRequestContext: () => { throw new Error("Unexpected public Auth."); },
+    handlePlantPurge: (_req, id, phase) => {
+      calls.push([id, phase]);
+      return Promise.resolve(Response.json({ state: phase }));
+    },
+    handleGuestPhotoMaintenance: () => {
+      calls.push("guest");
+      return Promise.resolve(Response.json({ state: "guest" }));
+    },
+  }, { env: () => undefined });
+  for (const path of [
+    "plant-deletions/" + owner + "/storage", "plant-deletions/" + owner + "/data",
+    "plant-deletions/sweep", "guest-drafts/cleanup",
+  ]) {
+    const response = await handler(new Request("https://api.example.test/internal/" + path, { method: "POST" }));
+    assertEquals(response.status, 200);
+    assertEquals(response.headers.get("cache-control"), "private, no-store");
+  }
+  assertEquals(calls, [[owner, "storage"], [owner, "data"], [null, "sweep"], "guest"]);
 });

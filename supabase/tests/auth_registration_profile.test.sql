@@ -727,6 +727,9 @@ DECLARE
     v_receipt public.operation_receipts%ROWTYPE;
     v_field text;
     v_case integer;
+    v_service_enabled boolean;
+    v_role text;
+    v_denied boolean;
 BEGIN
     IF to_regprocedure('public.read_account_deletion_storage_work_plan(uuid)') IS NULL THEN
         RETURN QUERY SELECT skip('063 work plan is outside selected migration version',1);
@@ -874,15 +877,31 @@ BEGIN
         WHERE e.key NOT IN ('owner_id','photo_ids','blocked','waiting','orphan_objects',
             'guest_draft_sources','guest_identification_sources','incoming_claims','storage_ready')),
         'work plan exposes no raw names or cursor');
+    -- Explicit marker preserves historical 063-only permission assertions.
+    v_service_enabled := coalesce(obj_description(
+        'public.read_account_deletion_storage_work_plan(uuid)'::regprocedure,'pg_proc')
+        = '064: account storage work plan service-only execution',false);
     RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
         LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
         WHERE p.oid='public.read_account_deletion_storage_work_plan(uuid)'::regprocedure
-          AND a.grantee<>p.proowner AND a.privilege_type='EXECUTE'),
-        'only internal function owner receives execution');
-    RETURN NEXT ok(NOT has_function_privilege('anon','public.read_account_deletion_storage_work_plan(uuid)','EXECUTE')
-        AND NOT has_function_privilege('authenticated','public.read_account_deletion_storage_work_plan(uuid)','EXECUTE')
-        AND NOT has_function_privilege('service_role','public.read_account_deletion_storage_work_plan(uuid)','EXECUTE'),
-        'API roles cannot execute the work plan');
+          AND a.grantee<>p.proowner AND a.privilege_type='EXECUTE'
+          AND NOT (v_service_enabled AND a.grantee='service_role'::regrole)),
+        'work plan execution is limited to owner and explicitly enabled service role');
+    RETURN NEXT is(has_function_privilege('service_role',
+        'public.read_account_deletion_storage_work_plan(uuid)','EXECUTE'),v_service_enabled,
+        'service execution requires the 064 migration marker');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.read_account_deletion_storage_work_plan(v_owner);
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT is(v_denied,NOT (v_service_enabled AND v_role='service_role'),
+            'actual work plan execution enforces migration scope for '||v_role);
+    END LOOP;
 END;
 $$;
 SELECT * FROM pg_temp.storage_work_plan_tests();

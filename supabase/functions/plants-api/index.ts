@@ -34,6 +34,7 @@ import {
   handleGetAnalysisJob,
 } from "./analysis.ts";
 import { runPlantDataPurge, runPlantPurgePage, runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
+import { runAccountStoragePurge } from "../maintenance/account-deletion-storage.ts";
 import { createDiagnosisWorker } from "../analysis-worker/index.ts";
 import { createGuestPhotoApi } from "./guest-photo.ts";
 import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
@@ -61,6 +62,7 @@ export interface PlantsApiDependencies {
   handlePlantPurge?: (
     req: Request, id: string | null, phase: "storage" | "data" | "sweep",
   ) => Promise<Response>;
+  handleAccountStoragePurge?: (req: Request, ownerId: string) => Promise<Response>;
   handleGuestPhotoMaintenance?: (req: Request) => Promise<Response>;
   handleProfileSettings?: (req: Request, ctx: RequestContext) => Promise<Response>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
@@ -170,15 +172,18 @@ function privateResponse(response: Response): Response {
 
 export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
   return async (req: Request): Promise<Response> => {
-    if (req.method === "OPTIONS") {
-      return new Response("ok", { headers: CORS_HEADERS });
-    }
-
     const locale = resolveLocale(req);
     const url = new URL(req.url);
     const normalizedPath = url.pathname
       .replace(/^\/functions\/v1\/plants-api/, "")
       .replace(/^\/plants-api/, "") || "/";
+    const accountStorageMatch = normalizedPath.match(
+      /^\/internal\/account-deletions\/([^/]+)\/storage$/,
+    );
+    if (req.method === "OPTIONS") {
+      const response = new Response("ok", { headers: CORS_HEADERS });
+      return accountStorageMatch ? privateResponse(response) : response;
+    }
     const careMatch = req.method === "GET"
       ? normalizedPath.match(/^\/plants\/([^/]+)\/care\/recommendation$/)
       : null;
@@ -196,6 +201,12 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     const purgeSweep = req.method === "POST" &&
       normalizedPath === "/internal/plant-deletions/sweep";
     try {
+      if (accountStorageMatch) {
+        if (!deps.handleAccountStoragePurge) {
+          throw new ApiHttpError(503, "INTERNAL_ERROR", "Account cleanup is temporarily unavailable.", true);
+        }
+        return privateResponse(await deps.handleAccountStoragePurge(req, accountStorageMatch[1]));
+      }
       if (purgeSweep && deps.handlePlantPurge) {
         return privateResponse(await deps.handlePlantPurge(req, null, "sweep"));
       }
@@ -378,7 +389,7 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
     } catch (err) {
       const response = errorResponse(err, locale);
       return normalizedPath === "/me" || normalizedPath === "/commands" ||
-          careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute || purgeMatch || purgeSweep
+          careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute || purgeMatch || purgeSweep || accountStorageMatch
         ? privateResponse(response)
         : response;
     }
@@ -429,6 +440,32 @@ export function createProductionPlantsApiHandler(
     ...deps,
     diagnosisMedia,
     guestPhoto,
+    handleAccountStoragePurge: deps.handleAccountStoragePurge ?? (async (req, ownerId) => {
+      const legacyKey = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+      const secretKey = defaultServiceSecret(env("SUPABASE_SECRET_KEYS"));
+      if (
+        !matchesSecret(legacyKey && `Bearer ${legacyKey}`, req.headers.get("authorization")) &&
+        !matchesSecret(secretKey, req.headers.get("apikey"))
+      ) {
+        throw new ApiHttpError(401, "UNAUTHORIZED", "Unauthorized.");
+      }
+      if (req.method !== "POST") {
+        throw new ApiHttpError(404, "NOT_FOUND", "Route not found.");
+      }
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(ownerId) ||
+        new URL(req.url).search !== "" || (await req.text()) !== "") {
+        throw new ApiHttpError(400, "VALIDATION_ERROR", "Invalid account cleanup request.");
+      }
+      const admin = syncClient();
+      const result = admin
+        ? await runAccountStoragePurge(admin, ownerId).catch(() => undefined)
+        : undefined;
+      if (result?.state === "not_found") {
+        throw new ApiHttpError(404, "NOT_FOUND", "Account cleanup not found.");
+      }
+      if (result) return jsonResponse(result);
+      throw new ApiHttpError(503, "INTERNAL_ERROR", "Account cleanup is temporarily unavailable.", true);
+    }),
     handlePlantPurge: deps.handlePlantPurge ?? (async (req, id, phase) => {
       const legacyKey = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
       const secretKey = defaultServiceSecret(env("SUPABASE_SECRET_KEYS"));
