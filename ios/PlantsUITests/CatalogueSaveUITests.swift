@@ -322,6 +322,25 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
     }
 
+    @MainActor func testCareRecommendationRefreshRejectionShowsFailure() {
+        let run = Run("careRecommendationRefreshRejected", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let nextCheck = run.app.staticTexts["catalogue.saved.care.next.date"]
+        XCTAssertFalse(nextCheck.exists)
+        tap(run, "collection.care.refresh", "Update care recommendation")
+        require(run.app.staticTexts["Couldn’t update the care recommendation."])
+        enabled(run.app.buttons["collection.care.refresh"])
+        XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
+        XCTAssertFalse(run.app.buttons["collection.care.refresh.retry"].exists)
+        XCTAssertFalse(run.app.staticTexts["No next soil check is available yet."].exists)
+        XCTAssertFalse(nextCheck.exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+    }
+
     @MainActor func testPlantLightEditReplaysAndMarksEarlierDiagnosis() {
         let run = Run("plantLightEdit", .en)
         defer { run.app.terminate() }

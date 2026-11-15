@@ -10,6 +10,8 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
+    case careRecommendationRefreshRejected
+
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
     var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || changesCareContext }
@@ -472,7 +474,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 var next = ledger; next.revoked.insert(caller); try persist(next)
                 return Reply(status: 204, data: Data())
             }
-            if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .basicCareEnable),
+            if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected
+                || ledger.scenario == .basicCareEnable),
                method == "GET", query.isEmpty,
                let plant = ledger.plants.first, caller == plant.owner,
                url.path == "/functions/v1/plants-api/plants/\(plant.id.uuidString.lowercased())/care/recommendation" {
@@ -681,11 +684,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 try persist(next)
                 throw URLError(.networkConnectionLost)
             }
-            if ledger.scenario == .careRecommendationRefresh, let refresh = CareRecommendationRefreshCommand(envelope) {
+            if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected),
+               let refresh = CareRecommendationRefreshCommand(envelope) {
                 guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
                       refresh.careRevision == 1,
                       request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
                 else { throw CatalogueUIFixtureError.invalidRequest }
+                if ledger.scenario == .careRecommendationRefreshRejected {
+                    return try error(409, "CONFLICT", retryable: false)
+                }
                 let key = caller.uuidString + ":" + envelope.operationId.uuidString
                 if let commit = ledger.commits[key] {
                     guard commit.envelope == envelope, commit.body == body else { throw CatalogueUIFixtureError.invalidRequest }
@@ -749,7 +756,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     }
 
     private func basicCareEnabledAt(for plant: Plant) -> String? {
-        if ledger.scenario == .careRecommendationRefresh { return plant.timestamp }
+        if ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected {
+            return plant.timestamp
+        }
         guard ledger.scenario == .basicCareEnable,
               let receipt = ledger.commits.values.first(where: { $0.plantID == plant.id })?.receipt
         else { return nil }

@@ -2124,8 +2124,8 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-v19-ios-refresh-rejection: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 500.57 с, проверки — 262.13 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [v19-ios-refresh-rejection](validation/automation/tasks/v19-ios-refresh-rejection.md).
+v19-ios-refresh-decline-ui: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 320.54 с, проверки — 245.80 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [v19-ios-refresh-decline-ui](validation/automation/tasks/v19-ios-refresh-decline-ui.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
