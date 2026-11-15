@@ -2448,11 +2448,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend, iOS/integration to codex/plants-ios. iOS owns Simulator. Weekly stop at 85% consumed.
-- c842f13 accepted 059 and a411fc2 accepted GET /me and profile.update. Exact no-024 clean/upgrade had 104 profile TAP tests each. Deno and independent Review/QA passed. 059 and plants-api v28 are live on narat-staging, worker v8. Re-ran deploy with explicit import map after first bundle rejection. Live disposable owner verified default 9, 0/23, validation, exact replay, /me and /sync. Cleanup verified.
-- Staging Monstera v3 and 051–059. Live V19 dates, mark, undo, re-completion and synthetic expiry accepted. iOS c073844/c92db81 accepted durable undo and history, UI and signed staging pending.
-- The first 060 run stopped in preflight on a wrongly dated 033 file name before invoking any model. The corrected manifest uses the existing 202611120033 file. Read-only staging catalogue inspection found no authenticated/public RLS policies on the granted owner relations in the inspected scope; signed media and edge status still require later checks.
-- Next 060 adds the internal private account deletion request transaction only. No service-role grant, HTTP, worker, real account/Storage deletion, RLS work or staging in this packet. Return valid unified diff in JSON. Existing inaccessibility and worker must be verified before exposure. T082/T083 remain open.
+- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend; iOS/integration owns Simulator and publishes to codex/plants-ios. Weekly ceiling 85% consumed.
+- 1688652 accepted internal 060, SQL fixture and report. PostgreSQL clean/upgrade, Deno, Review and QA passed. One private account deletion intent and idempotent receipt; only profile state moves to deleting. No service grant, HTTP, Auth/media purge, scheduling, staging 060 or real account deletion. Placeholder filename was corrected at preflight before the accepted run.
+- New controller gate passed exact no-024 PostgreSQL clean/upgrade. Two waiters observed under owner lock; unrelated owner wrote immediately with same operation UUID; same-owner journal rejected, replay/storage preserve original evidence. Next independent Review/QA of the gate. T082/T083 still open, need worker and signed media revocation strategy before exposure.
+- Staging remains 051–059, plants-api v28 and worker v8. V19 Monstera v3 passed live HTTP. iOS exact repaired UI candidate passed both EN tests locally, independent final acceptance in progress.
 
 <!-- /orchestrator:project-state -->
 

@@ -424,6 +424,83 @@ def main():
             AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
               'V19 concurrent exact retry and stale distinct completion create one fact and no quota usage')
 
+    def t083_deletion_intent_race(db):
+        owner, neighbor, plant, neighbor_plant, operation, contender, original = (
+            job(i) for i in range(9601, 9608)
+        )
+        sql(db, f"""INSERT INTO public.profiles(id,anonymous) VALUES ('{owner}',false),('{neighbor}',false);
+            INSERT INTO public.plants(id,owner_id,creation_source,display_name) VALUES
+            ('{plant}','{owner}','identification','Deleting fixture'),
+            ('{neighbor_plant}','{neighbor}','identification','Independent fixture');""")
+
+        def water_command(selected_owner, selected_plant, selected_operation):
+            return f"""SELECT public.execute_manual_care_command(
+                '{selected_owner}','{selected_operation}','{selected_plant}','care.record',
+                '{{"action_code":"water","occurred_at":"2025-10-10T12:00:00Z","timezone":"UTC"}}');"""
+
+        before = json.loads(sql(db, water_command(owner, plant, original)))
+        before_row = json.loads(sql(db, f"SELECT to_jsonb(e) FROM public.care_entries e WHERE id='{before['entry_id']}';"))
+        request = f"SELECT public.request_account_deletion_internal('{owner}','{operation}');"
+
+        def competing_write():
+            try:
+                sql(db, "SET application_name='t083_deletion_write';\n" + water_command(owner, plant, contender))
+            except RuntimeError as error:
+                assert "ACTIVE_PERMANENT_OWNER_REQUIRED" in str(error), str(error)
+                return
+            raise AssertionError("A same-owner write succeeded after the deletion request")
+
+        session = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            session.stdin.write("BEGIN; " + request + '\n')
+            session.stdin.flush()
+            winner = json.loads(session.stdout.readline())
+            assert winner["state"] == "deleting" and winner["owner_id"] == owner
+            assert winner["operation_id"] == operation
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                write = pool.submit(competing_write)
+                retry = pool.submit(sql, db, "SET application_name='t083_deletion_replay';\n" + request)
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN "
+                              "('t083_deletion_write','t083_deletion_replay') AND wait_event_type='Lock'") != '2':
+                        assert not write.done() and not retry.done(), "Same owner bypassed the lock"
+                        assert time.monotonic() < deadline, "Did not observe both owner-blocked requests"
+                        time.sleep(.03)
+                    # The same operation UUID is valid independently in a different owner's scope.
+                    neighbor_result = json.loads(sql(db, water_command(neighbor, neighbor_plant, operation)))
+                    assert neighbor_result["plant_id"] == neighbor_plant
+                    session.stdin.write('COMMIT;\n\\q\n')
+                    session.stdin.flush()
+                    _, error = session.communicate(timeout=15)
+                    assert session.returncode == 0, error
+                    write.result(timeout=15)
+                    assert json.loads(retry.result(timeout=15)) == winner
+                finally:
+                    if session.poll() is None:
+                        session.kill()
+                        session.communicate(timeout=10)
+        finally:
+            if session.poll() is None:
+                session.kill()
+                session.communicate(timeout=10)
+
+        persisted = json.loads(sql(db, f"""SELECT response_payload FROM public.operation_receipts
+            WHERE owner_id='{owner}' AND operation_id='{operation}' AND command_name='account.delete';"""))
+        assert persisted == winner
+        assert json.loads(sql(db, f"SELECT to_jsonb(e) FROM public.care_entries e WHERE id='{before['entry_id']}';")) == before_row
+        check(db, f"""EXISTS (
+                SELECT 1 FROM public.account_deletion_requests q JOIN public.profiles p ON p.id=q.owner_id
+                WHERE q.owner_id='{owner}' AND q.operation_id='{operation}' AND p.account_state='deleting'
+                AND q.requested_at=p.updated_at AND q.requested_at='{winner['watermark']}'::timestamptz
+            ) AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests WHERE owner_id='{neighbor}')
+            AND NOT EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{contender}')
+            AND (SELECT count(*) FROM public.care_entries WHERE owner_id='{owner}')=1
+            AND (SELECT count(*) FROM public.care_entries WHERE owner_id='{neighbor}')=1
+            AND (SELECT account_state FROM public.profiles WHERE id='{neighbor}')='active'""",
+              "T083 concurrent account request blocks same-owner write, replays exactly and preserves history")
+
     def first_aid_observation_race(db, winner, offset, with_photo=False):
         owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset = first_aid_race_fixture(
             db, offset, with_photo)
@@ -833,6 +910,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
             if args.access and any(m.name == '202611120022_auth_registration_profile.sql' for m in selected):
                 tap(case, ROOT/'supabase/tests/auth_registration_profile.test.sql')
+                if any(m.name == '202611150060_account_deletion_intent.sql' for m in selected):
+                    t083_deletion_intent_race(case)
             if args.access and any(m.name == '202611120023_retire_notification_claim_writes.sql' for m in selected):
                 tap(case, ROOT/'supabase/tests/notification_claim_retirement.test.sql')
             if args.access and any(m.name == '202611120024_retire_notification_sync_projection.sql' for m in selected):
