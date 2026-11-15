@@ -1,5 +1,18 @@
 # Narat — текущий статус и передача работы
 
+## Подписанный V19 — EN-журнал, Cancel и Undo — 15 ноября 2026
+
+`c9492c8` принят независимыми Review и QA, оба EN XCUITest прошли.
+Подпись точной сборки проверена. Живой Simulator на narat-staging
+v28 прошёл enable/refresh, отметку, перезапуск, Cancel и Undo.
+Owner sync подтвердил исходный полив, отменённую запись, reversal,
+тот же экземпляр и прежнюю дату после отмены. Временные владельцы
+и тестовое приложение удалены. [Отчёт](validation/staging-signed-routine-2026-11-15.md).
+Потеря ответа проверена локально, остальные напоминания/expiry и
+T160/T171 открыты. Изменены отчёт, tasks и handoff. Следующий
+клиентский пакет — типизированный час профиля.
+
+
 ## A — кандидат EN-журнала и отмены — 15 ноября 2026
 
 Изменены экран, DEBUG-фикстура и XCUITest. Первый прогон прошёл
@@ -2174,10 +2187,10 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:project-state -->
 ## Project State
 
-- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios; backend/data to codex/plants-backend. Codex-only weekly threshold 85% consumed.
-- c92db81 accepted owner-bound routine history and c073844 accepted durable undo. Replay/recompletion validated in Swift and live backend HTTP. 051–059/Edge v28 and published Monstera v3 are active on narat-staging. The private profile hour GET/command also passed on staging.
-- Current exact candidate changes EN card, DEBUG transport fixture and XCUITest. First UI test failed at Cancel in confirmationDialog. Developer moved to a dedicated alert, but the controller kept stale evidence and the new test hit duplicate native accessibility nodes. Controller removed duplicate identifiers and scoped the test to the specific alert controls. Both focused EN XCUITests passed on corrected source with real restart, exact replay and restored date. Fresh independent Review/QA with both tests is next.
-- Signed EN staging verification remains open. A separate previous model timeout/resume was handled in history c92db81. T160/T164/T171 stay open.
+- Two Codex-only orchestrators: iOS/integration owns Simulator and publishes to codex/plants-ios; backend/data to codex/plants-backend. Weekly threshold 85% used; last verified 12%.
+- c9492c8 accepted EN saved card mark and undo with two XCUITest fixtures, durable owner queue and canonical history. Exact signed build and staged V19 passed on iPhone 17 Pro Simulator, with real owner sign-in, enable, explicit refresh, mark, restart, Cancel and Undo. Real GET and sync matched restored due/linkage and unchanged water. Temporary accounts and bundle removed. T160/T171 remain open for wider coverage.
+- narat-staging 051–059 and plants-api v28/worker v8. Profile /me and profile.update verified live. Backend internal account deletion inventory is not on staging.
+- Next scoped Swift transport for profile reminder hour and focused tests. Return valid unified git diff in JSON, controller applies and tests. No notifications, UI, app state, server or live change in this packet. T083/T084 remain open. Later durable profile setting and local reminder scheduling.
 
 <!-- /orchestrator:project-state -->
 
