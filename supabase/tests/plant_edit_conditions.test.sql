@@ -72,6 +72,13 @@ SELECT throws_ok($q$SELECT pg_temp.edit_conditions('{"conditions":{"watering_cod
 SELECT throws_ok($q$SELECT pg_temp.edit_conditions('{"conditions":{"drainage_code":"yes"},"taxon_id":null}')$q$,
     '22023','INVALID_PLANT_EDIT_INPUT','mixed taxon and conditions fail atomically');
 
+-- Keep the same fixture executable at earlier migration cutoffs.
+CREATE TEMP TABLE condition_sync_version AS
+SELECT coalesce(obj_description('public.owner_sync_entries'::regclass, 'pg_class')
+    = 'owner-sync:season-override-retired:057', false) AS retired;
+CREATE TEMP TABLE condition_since AS
+SELECT public.advance_owner_watermark(owner) AS ts FROM condition_edit;
+
 CREATE TEMP TABLE condition_result AS
 SELECT pg_temp.edit_conditions('{"conditions":{"drainage_code":"yes","pot_type":"terracotta"}}') AS receipt;
 SELECT ok((SELECT s.version=2 AND s.watering_code='weekly' AND s.drainage_code='yes'
@@ -111,6 +118,60 @@ SELECT ok((SELECT (public.read_plant_care_profile(owner,plant)->>'calendar_eligi
 SELECT is((SELECT p.updated_at FROM public.plants p JOIN condition_edit f ON p.id=f.plant),
     (SELECT s.updated_at FROM public.condition_snapshots s JOIN condition_result r
      ON s.id=(r.receipt->>'condition_snapshot_id')::uuid),'new snapshot and plant share one watermark');
+
+-- Exercise the canonical service feed, rather than an alternative projection.
+CREATE TEMP TABLE condition_feeds AS
+SELECT 'full'::text AS mode, public.fetch_sync_delta(f.owner,NULL,
+    (r.receipt->>'watermark')::timestamptz) AS body
+FROM condition_edit f CROSS JOIN condition_result r
+UNION ALL
+SELECT 'delta', public.fetch_sync_delta(f.owner,b.ts,
+    (r.receipt->>'watermark')::timestamptz)
+FROM condition_edit f CROSS JOIN condition_since b CROSS JOIN condition_result r;
+CREATE TEMP TABLE condition_feed_rows AS
+SELECT mode,e.value AS entry FROM condition_feeds,
+    LATERAL jsonb_array_elements(body->'changes') e
+WHERE e.value->>'entity_type'='condition_snapshots';
+SELECT is((SELECT count(*) FROM condition_feed_rows WHERE mode='full'),3::bigint,
+    'full feed includes historical, sibling and new snapshots');
+SELECT is((SELECT count(*) FROM condition_feed_rows WHERE mode='delta'),1::bigint,
+    'delta includes only the newly created snapshot');
+SELECT is((SELECT entry->>'id' FROM condition_feed_rows WHERE mode='delta'),
+    (SELECT receipt->>'condition_snapshot_id' FROM condition_result),
+    'delta uses the edited snapshot identity');
+SELECT ok((SELECT bool_and((e.entry->'data') =
+    (jsonb_build_object('id',s.id,'plant_id',s.plant_id,'version',s.version,
+        'light_code',s.light_code,'light_source',s.light_source,'light_confirmed',s.light_confirmed,
+        'watering_code',s.watering_code,'drainage_code',s.drainage_code,'pot_type',s.pot_type,
+        'created_at',s.created_at)
+     || CASE WHEN v.retired THEN '{}'::jsonb
+        ELSE jsonb_build_object('season_override',s.season_override) END))
+    FROM condition_feed_rows e JOIN public.condition_snapshots s ON s.id=(e.entry->>'id')::uuid
+    CROSS JOIN condition_sync_version v),
+    'full and delta preserve every snapshot key and historical confirmed light except retired season');
+SELECT ok((SELECT bool_and(s.season_override='winter')
+    FROM public.condition_snapshots s JOIN condition_edit f ON s.owner_id=f.owner),
+    'old and edited snapshots still store winter');
+
+CREATE TEMP TABLE condition_other AS SELECT gen_random_uuid() AS owner;
+INSERT INTO public.profiles(id,anonymous) SELECT owner,false FROM condition_other;
+SELECT is((SELECT jsonb_array_length(public.fetch_sync_delta(owner,NULL,
+    (SELECT (receipt->>'watermark')::timestamptz FROM condition_result))->'changes')
+    FROM condition_other),0,'another owner receives none of the fixture history');
+SELECT ok(has_function_privilege('service_role',
+    'public.fetch_sync_delta(uuid,timestamptz,timestamptz,timestamptz,text,uuid,integer)','EXECUTE')
+    AND NOT has_function_privilege('authenticated',
+    'public.fetch_sync_delta(uuid,timestamptz,timestamptz,timestamptz,text,uuid,integer)','EXECUTE')
+    AND NOT has_table_privilege('authenticated','public.owner_sync_entries','SELECT')
+    AND NOT has_table_privilege('anon','public.owner_sync_entries','SELECT'),
+    'canonical sync stays service-only');
+GRANT SELECT ON public.condition_snapshots TO authenticated;
+SELECT set_config('request.jwt.claim.sub',(SELECT owner::text FROM condition_other),true);
+SET LOCAL ROLE authenticated;
+SELECT is((SELECT count(*) FROM public.condition_snapshots),0::bigint,
+    'cross-owner direct snapshot reads remain blocked');
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub',(SELECT owner::text FROM condition_edit),true);
 
 SELECT public.reconcile_owner_basic_care(owner) FROM condition_edit;
 SELECT public.execute_manual_care_command(owner,gen_random_uuid(),plant,'care.record',

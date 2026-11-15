@@ -2406,9 +2406,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-v19-monstera-contextual-profile-review: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 140.53 с, проверки — 58.36 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [v19-monstera-contextual-profile-review](validation/automation/tasks/v19-monstera-contextual-profile-review.md).
+t169-owner-sync-season-retirement: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 3, reviewer 1, qa 1. Модели — 435.45 с, проверки — 52.11 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t169-owner-sync-season-retirement](validation/automation/tasks/t169-owner-sync-season-retirement.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
