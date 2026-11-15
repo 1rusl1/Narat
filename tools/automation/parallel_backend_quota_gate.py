@@ -352,6 +352,9 @@ def main():
         rule = sql(db, f"SELECT public.read_plant_care_profile('{owner}','{plant}')#>>'{{routine_check,rule_id}}';")
         assert re.fullmatch(r'[0-9a-f-]{36}', rule), 'Expected a grounded routine rule in the V10 race fixture'
         operation, contender = job(9475), job(9476)
+        water_snapshot = f"""SELECT to_jsonb(e) FROM public.care_entries e
+            WHERE e.owner_id='{owner}' AND e.plant_id='{plant}' AND e.action_code='water';"""
+        original_water = json.loads(sql(db, water_snapshot))
 
         def complete(op):
             return (f"SELECT public.execute_routine_soil_check('{owner}','{op}','{plant}',1,'{rule}',"
@@ -396,7 +399,22 @@ def main():
             if session.poll() is None:
                 session.kill()
                 session.communicate(timeout=10)
-        check(db, f"""(SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}'
+        task_id, entry_id = winner['task_id'], winner['entry_id']
+        assert all(re.fullmatch(r'[0-9a-f-]{36}', key) for key in (task_id, entry_id))
+        receipt = sql(db, f"""SELECT response_payload FROM public.operation_receipts
+            WHERE owner_id='{owner}' AND operation_id='{operation}'
+              AND command_name='care.check_soil.complete';""")
+        assert json.loads(receipt) == winner, 'Stored receipt does not match the completed operation'
+        assert json.loads(sql(db, water_snapshot)) == original_water, 'Routine completion changed the water fact'
+        check(db, f"""EXISTS (
+                SELECT 1 FROM public.care_tasks t JOIN public.care_entries e ON e.id=t.completed_entry_id
+                  AND e.task_id=t.id AND e.owner_id=t.owner_id AND e.plant_id=t.plant_id
+                WHERE t.owner_id='{owner}' AND t.plant_id='{plant}' AND t.id='{task_id}'
+                  AND t.rule_id='{rule}' AND t.due_local_date='2025-10-28'
+                  AND t.state='completed' AND NOT t.reminder_eligible
+                  AND e.id='{entry_id}' AND e.operation_id='{operation}'
+                  AND e.action_code='check_soil' AND e.state='active'
+            ) AND (SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}'
                 AND action_code='check_soil' AND state='active')=1
             AND (SELECT count(*) FROM public.care_tasks WHERE plant_id='{plant}' AND state='completed')=1
             AND (SELECT count(*) FROM public.operation_receipts WHERE owner_id='{owner}'
