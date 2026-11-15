@@ -698,6 +698,14 @@ public struct CollectionRepository: Sendable {
         try await collectionCareHistory(plantId: plantId, actionCode: "check_soil", context: context)
     }
 
+    func collectionRoutineSoilCheckHistory(
+        plantId: UUID, context: SyncSessionLease
+    ) async throws -> [CatalogueCareJournalEntry] {
+        try await store.routineSoilCheckHistory(
+            plantId: plantId, context: context, authority: apiClient.syncAuthority
+        )
+    }
+
     func collectionAnalysisHistory(
         plantId: UUID, context: SyncSessionLease
     ) async throws -> [CatalogueAnalysisHistoryRow] {

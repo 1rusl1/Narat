@@ -228,7 +228,10 @@ extension CollectionWireTests {
     private func routineUndoBaseline(
         taskChanges: [String: Any] = [:], entryChanges: [String: Any] = [:]
     ) -> [String: Any] {
-        var fields: [String: Any] = ["condition_code": "check_soil_first"]
+        var fields: [String: Any] = [
+            "condition_code": "check_soil_first",
+            "occurrence_key": routineRuleId.uuidString.lowercased() + ":2026-11-03"
+        ]
         fields.merge(taskChanges) { _, new in new }
         var page = routineCompletionPage(operation: operationId, taskChanges: fields, entryChanges: entryChanges)
         page["changes"] = (routineCompletionBaseline()["changes"] as! [[String: Any]])
@@ -243,7 +246,8 @@ extension CollectionWireTests {
         let replacementId = UUID(uuidString: "19190000-0000-4000-8000-000000000005")!
         var task: [String: Any] = [
             "condition_code": "check_soil_first", "state": recompleted ? "completed" : "superseded",
-            "completed_entry_id": recompleted ? replacementId.uuidString : command.entryId.uuidString
+            "completed_entry_id": recompleted ? replacementId.uuidString : command.entryId.uuidString,
+            "occurrence_key": routineRuleId.uuidString.lowercased() + ":2026-11-03"
         ]
         if fault == "task" { task["occurrence_key"] = "another-occurrence" }
         var entry: [String: Any] = ["state": "voided"]
@@ -410,11 +414,162 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    private func routineHistoryFixture(
+        _ page: [String: Any], container: ModelContainer, careOwner: UUID? = nil
+    ) async throws -> (repo: CollectionRepository, api: PlantsAPIClient, lease: SyncSessionLease) {
+        let disk = container.mainContext
+        for row in page["changes"] as! [[String: Any]] {
+            let entity = row["entity_type"] as! String
+            disk.insert(SyncedEntityRecord(
+                ownerId: entity == "plants" ? syncOwner : (careOwner ?? syncOwner),
+                entityType: entity, entityId: UUID(uuidString: row["id"] as! String)!,
+                updatedAt: Date(), deletedAt: row["deleted_at"] is String ? Date() : nil,
+                payloadJSON: try syncJSON(row["data"] as? [String: Any] ?? [:])
+            ))
+        }
+        try disk.save()
+        let api = client(CatalogueTransport([]))
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: container)
+        return (CollectionRepository(
+            store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api)
+        ), api, lease)
+    }
+
+    @MainActor
+    func testRoutineHistoryActiveVoidedAndRecompletedWithoutDuplicates() async throws {
+        let identity = routineCompletionReceipt()
+        let taskId = UUID(uuidString: identity["task_id"] as! String)!
+        let entryId = UUID(uuidString: identity["entry_id"] as! String)!
+        let command = try RoutineSoilCheckUndoCommand.make(plantId: serverPlantId, taskId: taskId, entryId: entryId)
+        for scenario in ["active", "voided", "recompleted", "same-instant"] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            var page = routineUndoBaseline()
+            if scenario != "active" {
+                let canonical = routineUndoCanonical(
+                    command, minute: 20, recompleted: scenario != "voided", fault: nil
+                )
+                var changes = canonical["changes"] as! [[String: Any]]
+                if scenario == "same-instant" {
+                    for index in changes.indices where changes[index]["entity_type"] as? String == "care_entries" {
+                        var entry = changes[index]["data"] as! [String: Any]
+                        entry["occurred_at"] = timestamp
+                        changes[index]["data"] = entry
+                    }
+                }
+                page["changes"] = (routineCompletionBaseline()["changes"] as! [[String: Any]]) + changes
+            }
+            let fixture = try await routineHistoryFixture(page, container: diskContainer(url))
+            let history = try await fixture.repo.collectionRoutineSoilCheckHistory(
+                plantId: serverPlantId, context: fixture.lease
+            )
+            let replacementId = UUID(uuidString: "19190000-0000-4000-8000-000000000005")!
+            let expected = scenario == "recompleted" ? [replacementId, entryId]
+                : scenario == "same-instant" ? [entryId, replacementId] : [entryId]
+            XCTAssertEqual(history.map(\.id), expected, scenario)
+            XCTAssertEqual(Set(history.map(\.id)).count, history.count, scenario)
+            XCTAssertTrue(history.allSatisfy { $0.taskId == taskId && $0.occurredLocalDate == "2026-11-03" })
+            XCTAssertEqual(history.first(where: { $0.id == entryId })?.state, scenario == "active" ? "active" : "voided")
+            let repeated = try await fixture.repo.collectionRoutineSoilCheckHistory(
+                plantId: serverPlantId, context: fixture.lease
+            )
+            XCTAssertEqual(repeated, history)
+        }
+    }
+
+    @MainActor
+    func testRoutineHistoryExcludesNonRoutineUnlinkedForeignAndTombstonedRows() async throws {
+        let invalid: [([String: Any], [String: Any])] = [
+            (["condition_code": "manual"], [:]),
+            (["action_code": "water"], [:]),
+            (["rule_id": NSNull()], [:]),
+            (["rule_id": "not-a-uuid"], [:]),
+            (["occurrence_key": "arbitrary"], [:]),
+            (["occurrence_key": routineRuleId.uuidString.lowercased() + ":2026-11-04"], [:]),
+            (["rule_id": "AAAAAAAA-0000-4000-8000-000000000001",
+              "occurrence_key": "AAAAAAAA-0000-4000-8000-000000000001:2026-11-03"], [:]),
+            (["due_local_date": "2026-02-30"], [:]),
+            (["plant_id": UUID().uuidString], [:]),
+            (["id": UUID().uuidString], [:]),
+            (["state": "pending"], [:]),
+            (["completed_entry_id": UUID().uuidString], [:]),
+            ([:], ["action_code": "water"]),
+            ([:], ["task_id": NSNull()]),
+            ([:], ["task_id": UUID().uuidString]),
+            ([:], ["plant_id": UUID().uuidString]),
+            ([:], ["id": UUID().uuidString])
+        ]
+        for (task, entry) in invalid {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fixture = try await routineHistoryFixture(
+                routineUndoBaseline(taskChanges: task, entryChanges: entry), container: diskContainer(url)
+            )
+            let history = try await fixture.repo.collectionRoutineSoilCheckHistory(
+                plantId: serverPlantId, context: fixture.lease
+            )
+            XCTAssertTrue(history.isEmpty, "\(task) / \(entry)")
+        }
+        for exclusion in ["owner", "care_tasks", "care_entries"] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            var page = routineUndoBaseline()
+            var changes = page["changes"] as! [[String: Any]]
+            for index in changes.indices where changes[index]["entity_type"] as? String == exclusion {
+                changes[index]["deleted_at"] = timestamp
+            }
+            page["changes"] = changes
+            let fixture = try await routineHistoryFixture(
+                page, container: diskContainer(url), careOwner: exclusion == "owner" ? otherSyncOwner : nil
+            )
+            let history = try await fixture.repo.collectionRoutineSoilCheckHistory(
+                plantId: serverPlantId, context: fixture.lease
+            )
+            XCTAssertTrue(history.isEmpty, exclusion)
+        }
+    }
+
+    @MainActor
+    func testRoutineHistoryRejectsWrongPlantOwnerStaleLeaseAndCancellation() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let fixture = try await routineHistoryFixture(routineUndoBaseline(), container: diskContainer(url))
+        do {
+            _ = try await fixture.repo.collectionRoutineSoilCheckHistory(plantId: UUID(), context: fixture.lease)
+            XCTFail("Unknown plant accepted")
+        } catch SyncWireValidationError.invalidPage {}
+        let cancelled = Task {
+            try await fixture.repo.collectionRoutineSoilCheckHistory(plantId: serverPlantId, context: fixture.lease)
+        }
+        cancelled.cancel()
+        do {
+            _ = try await cancelled.value
+            XCTFail("Cancelled history read accepted")
+        } catch is CancellationError {}
+        await fixture.api.bindSyncSession(
+            NativeAuthSession(userId: otherSyncOwner, accessToken: "other", expiresAt: .distantFuture)
+        )
+        let foreign = try await fixture.api.captureSyncContext(ownerId: otherSyncOwner)
+        do {
+            _ = try await fixture.repo.collectionRoutineSoilCheckHistory(plantId: serverPlantId, context: foreign)
+            XCTFail("Foreign owner's plant accepted")
+        } catch SyncWireValidationError.invalidPage {}
+        do {
+            _ = try await fixture.repo.collectionRoutineSoilCheckHistory(plantId: serverPlantId, context: fixture.lease)
+            XCTFail("Stale session accepted")
+        } catch SyncWireValidationError.invalidSession {}
+    }
+
+    @MainActor
     func testRoutineUndoRequiresActiveLinkedOrdinaryCheck() async throws {
         let invalid: [([String: Any], [String: Any])] = [
             (["condition_code": "manual"], [:]),
             (["action_code": "water"], [:]),
             (["occurrence_key": " "], [:]),
+            (["occurrence_key": "arbitrary"], [:]),
+            (["occurrence_key": routineRuleId.uuidString.lowercased() + ":2026-11-04"], [:]),
             (["state": "superseded"], [:]),
             (["completed_entry_id": UUID().uuidString], [:]),
             (["plant_id": UUID().uuidString], [:]),

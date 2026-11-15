@@ -732,6 +732,58 @@ public actor LocalStore {
         }
     }
 
+    /// One actor-isolated, session-bound read of the canonical owner cache.
+    func routineSoilCheckHistory(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> [CatalogueCareJournalEntry] {
+        try authority.withBoundValid(context) {
+            try Task.checkCancellation()
+            let disk = makeSyncContext()
+            let ownerId = context.ownerId
+            guard try activeSyncRow("plants", id: plantId, ownerId: ownerId, in: disk) != nil
+            else { throw SyncWireValidationError.invalidPage }
+            let rows = try disk.fetch(FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+                $0.ownerId == ownerId && $0.deletedAt == nil
+                    && ($0.entityType == "care_entries" || $0.entityType == "care_tasks")
+            }))
+            let decoder = JSONDecoder()
+            var tasks: [UUID: RoutineUndoTask] = [:]
+            var entries: [UUID: CatalogueCareJournalEntry] = [:]
+            for row in rows {
+                try Task.checkCancellation()
+                let data = Data(row.payloadJSON.utf8)
+                if row.entityType == "care_tasks" {
+                    if let task = try? decoder.decode(RoutineUndoTask.self, from: data),
+                       task.id == row.entityId, task.plantId == plantId, task.isRoutineCheck {
+                        tasks[task.id] = task
+                    }
+                } else if let entry = try? decoder.decode(CatalogueCareJournalEntry.self, from: data),
+                          entry.id == row.entityId, entry.plantId == plantId,
+                          entry.actionCode == "check_soil", entry.operationId != nil,
+                          entry.hasCanonicalDatesAndState {
+                    entries[entry.id] = entry
+                }
+            }
+            let history = entries.values.filter { entry in
+                guard let taskId = entry.taskId, let task = tasks[taskId] else { return false }
+                if entry.state == "active" {
+                    return task.state == "completed" && task.completedEntryId == entry.id
+                }
+                // A voided fact survives a later completion of the same occurrence.
+                guard let latest = entries[task.completedEntryId], latest.taskId == task.id
+                else { return false }
+                return (task.state == "superseded" && latest.state == "voided")
+                    || (task.state == "completed" && latest.state == "active" && latest.id != entry.id)
+            }.sorted {
+                let left = SQLTimestamp.microseconds(from: $0.occurredAt)!
+                let right = SQLTimestamp.microseconds(from: $1.occurredAt)!
+                return left == right ? $0.id.uuidString < $1.id.uuidString : left > right
+            }
+            try Task.checkCancellation()
+            return history
+        }
+    }
+
     private struct RoutineUndoTask: Decodable {
         let id: UUID
         let plantId: UUID
@@ -752,7 +804,7 @@ public actor LocalStore {
 
         var isRoutineCheck: Bool {
             actionCode == "check_soil" && conditionCode == "check_soil_first"
-                && !occurrenceKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && occurrenceKey == ruleId.uuidString.lowercased() + ":" + dueLocalDate
                 && SQLCalendarDay.date(from: dueLocalDate) != nil
         }
     }
