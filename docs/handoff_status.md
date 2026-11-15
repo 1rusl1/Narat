@@ -1,5 +1,18 @@
 # Narat — текущий статус и передача работы
 
+## A — кандидат EN-журнала и отмены — 15 ноября 2026
+
+Изменены экран, DEBUG-фикстура и XCUITest. Первый прогон прошёл
+отметку, отмена остановилась на Cancel. В исправленном alert SwiftUI
+дублировал узлы. Контроллер убрал идентификаторы у системных кнопок
+и оставил выбор внутри конкретного alert. Повторный точный прогон
+прошёл оба EN-теста: отметка 48.822 с, отмена 57.692 с. Отмена до
+подтверждения сохранила строку, потерянный ответ и холодный запуск
+вернули тот же replay, история и исходная дата восстановились.
+Это Simulator-фикстура. Следом свежие Review/QA и подписанный
+прогон с опубликованной Monstera на staging. T160/T171 открыты.
+
+
 ## A — подтверждённая история обычной проверки — 15 ноября 2026
 
 `c92db81` принят и отправлен. LocalStore и CollectionRepository
@@ -2161,10 +2174,10 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:project-state -->
 ## Project State
 
-- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios. Backend/data independently publishes to codex/plants-backend. All providers are Codex, weekly ceiling 85% used.
-- c92db81 accepted owner-bound routine soil-check history, canonical task occurrence classification, retained active/voided rows after re-completion, and rejection of unrelated check/watering. Changes: LocalStore/CollectionRepository/CollectionWireTests and report. Swift, Simulator smoke, Review and QA passed. Initial run v19-routine-undo-card-codex-20261115-10 stopped before a patch; new history run was resumed after incorrect fingerprint and repaired patch alignment.
-- c073844 accepted durable exact undo, session and canonical linkage. Existing mark UI is b028902. Published Monstera v3 on narat-staging 051–058/Edge v27 passed live HTTP mark, undo, re-completion, exact replay and synthetic expiry. The signed iOS path is still open.
-- Current task changes only EN card, DEBUG fixture and XCUITest. Use accepted collectionRoutineSoilCheckHistory and durable undo. Developer returns valid unified Git diff in JSON; controller applies and tests. Then use the signed production request path against staging. Leave T160/T164/T171 open.
+- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios; backend/data to codex/plants-backend. Codex-only weekly threshold 85% consumed.
+- c92db81 accepted owner-bound routine history and c073844 accepted durable undo. Replay/recompletion validated in Swift and live backend HTTP. 051–059/Edge v28 and published Monstera v3 are active on narat-staging. The private profile hour GET/command also passed on staging.
+- Current exact candidate changes EN card, DEBUG transport fixture and XCUITest. First UI test failed at Cancel in confirmationDialog. Developer moved to a dedicated alert, but the controller kept stale evidence and the new test hit duplicate native accessibility nodes. Controller removed duplicate identifiers and scoped the test to the specific alert controls. Both focused EN XCUITests passed on corrected source with real restart, exact replay and restored date. Fresh independent Review/QA with both tests is next.
+- Signed EN staging verification remains open. A separate previous model timeout/resume was handled in history c92db81. T160/T164/T171 stay open.
 
 <!-- /orchestrator:project-state -->
 
