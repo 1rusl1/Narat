@@ -22,6 +22,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 const enableBasicCareCommand = "basic_care.enable";
+const soilCommand = "care.check_soil.complete";
 const refreshCommand = "care.recommendation.refresh";
 const refreshReasons = new Set([
   "insufficient_evidence",
@@ -71,11 +72,12 @@ export async function handleCollectionCommand(
       body.command_name !== "care.first_aid.record" &&
       body.command_name !== "care.first_aid.observe" &&
       body.command_name !== "plant.delete" && body.command_name !== "plant.edit" &&
-      body.command_name !== refreshCommand && body.command_name !== enableBasicCareCommand)
+      body.command_name !== soilCommand && body.command_name !== refreshCommand && body.command_name !== enableBasicCareCommand)
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
 
+  const isSoil = body.command_name === soilCommand;
   const isDeletion = body.command_name === "plant.delete";
   const isEdit = body.command_name === "plant.edit";
   const isRefresh = body.command_name === refreshCommand;
@@ -134,6 +136,28 @@ export async function handleCollectionCommand(
       !Number.isInteger(payload.expected_care_revision) ||
       payload.expected_care_revision < 1 || payload.expected_care_revision > 2147483647
     ) throw invalid(plantCommand);
+  } else if (isSoil) {
+    if (
+      Object.keys(payload).length !== 5 ||
+      Object.keys(payload).some((key) =>
+        !["rule_id", "expected_care_revision", "due_local_date", "occurred_at", "timezone"].includes(key)
+      ) ||
+      typeof payload.expected_care_revision !== "number" ||
+      !Number.isInteger(payload.expected_care_revision) ||
+      payload.expected_care_revision < 1 || payload.expected_care_revision > 2147483647 ||
+      typeof payload.due_local_date !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(payload.due_local_date) ||
+      timestamp(payload.due_local_date + "T00:00:00Z") === null ||
+      timestamp(payload.occurred_at) === null ||
+      typeof payload.timezone !== "string" || payload.timezone.length > 128 ||
+      !/^[A-Za-z_]+(?:\/[A-Za-z0-9_+.-]+)*$/.test(payload.timezone)
+    ) throw invalid();
+    payload.rule_id = requireUuid(payload.rule_id, "rule_id");
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: payload.timezone });
+    } catch {
+      throw invalid();
+    }
   } else if (isObservation) {
     if (
       Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||
@@ -158,7 +182,8 @@ export async function handleCollectionCommand(
   try {
     const client = clientFactory();
     if (!client) throw unavailable(plantCommand);
-    const rpc = isEdit ? "execute_plant_edit_command"
+    const rpc = isSoil ? "execute_routine_soil_check"
+      : isEdit ? "execute_plant_edit_command"
       : isDeletion ? "execute_plant_delete_command"
       : isRefresh ? "execute_care_recommendation_refresh"
       : isEnableBasicCare ? "execute_basic_care_command"
@@ -168,7 +193,16 @@ export async function handleCollectionCommand(
     response = await client.rpc(rpc, {
       p_owner_id: ownerId,
       p_operation_id: operationId,
-      ...(isEnableBasicCare
+      ...(isSoil
+        ? {
+          p_plant_id: plantId,
+          p_rule_id: payload.rule_id,
+          p_expected_care_revision: payload.expected_care_revision,
+          p_due_local_date: payload.due_local_date,
+          p_occurred_at: payload.occurred_at,
+          p_timezone: payload.timezone,
+        }
+        : isEnableBasicCare
         ? { p_command_type: enableBasicCareCommand, p_payload: { plant_id: plantId } }
         : {
           p_plant_id: plantId,
@@ -197,11 +231,12 @@ export async function handleCollectionCommand(
           : "The plant or care entry was not found.",
       );
     }
-    if (error.code === "23505") {
+    if (error.code === "23505" || (isSoil && error.code === "55000")) {
       throw new ApiHttpError(
         409,
         "CONFLICT",
-        isEdit ? "The operation conflicts with an existing receipt."
+        isSoil ? "The soil check is unavailable or the occurrence has changed."
+          : isEdit ? "The operation conflicts with an existing receipt."
           : isDeletion ? "The plant is already deleted or the operation conflicts with an existing receipt."
           : isRefresh ? "The care revision has changed or the operation conflicts with an existing receipt."
           : isObservation
@@ -213,6 +248,18 @@ export async function handleCollectionCommand(
       throw invalid(plantCommand);
     }
     throw unavailable(plantCommand);
+  }
+  if (isSoil) {
+    if (
+      !record(data) || data.plant_id !== plantId || data.rule_id !== payload.rule_id ||
+      data.care_revision !== payload.expected_care_revision ||
+      data.due_local_date !== payload.due_local_date ||
+      data.occurrence_key !== `${payload.rule_id}:${payload.due_local_date}` ||
+      typeof data.task_id !== "string" || !uuid.test(data.task_id) ||
+      typeof data.entry_id !== "string" || !uuid.test(data.entry_id) ||
+      data.state !== "completed" || timestamp(data.watermark) === null
+    ) throw unavailable();
+    return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
   }
   if (isEdit) {
     if (

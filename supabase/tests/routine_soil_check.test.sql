@@ -171,9 +171,12 @@ SELECT is(pg_temp.soil_state(),(SELECT before_state FROM soil_fixture),'duplicat
 SELECT ok(NOT EXISTS(SELECT 1 FROM public.care_tasks
     WHERE plant_id='19510000-0000-4000-8000-000000000011' AND state<>'completed'),
     'no future task is created');
-SELECT ok(NOT has_function_privilege(role_name,
-    'public.execute_routine_soil_check(uuid,uuid,uuid,integer,uuid,date,timestamp with time zone,text)','EXECUTE'),
-    role_name||' cannot execute the private writer')
+SELECT ok(has_function_privilege(role_name,
+    'public.execute_routine_soil_check(uuid,uuid,uuid,integer,uuid,date,timestamp with time zone,text)','EXECUTE') =
+    (role_name='service_role' AND coalesce(obj_description(
+        'public.execute_routine_soil_check(uuid,uuid,uuid,integer,uuid,date,timestamp with time zone,text)'::regprocedure,
+        'pg_proc')='private:routine-soil-check-owner-http:053',false)),
+    role_name||' has the expected private writer permission')
 FROM unnest(ARRAY['anon','authenticated','service_role']) AS roles(role_name);
 SELECT ok(NOT EXISTS(
     SELECT 1 FROM pg_catalog.pg_proc p
