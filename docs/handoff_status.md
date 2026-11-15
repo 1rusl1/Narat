@@ -2378,12 +2378,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Backend/data and iOS/integration run in separate worktrees and publish to codex/plants-backend and codex/plants-ios. iOS alone uses Simulator. The user set a weekly Codex stop threshold of 85% consumed. Model routes use Codex.
-- a2ddd3a accepted forward migration 056 and contextual SQL tests. Deno and PostgreSQL clean/upgrade passed, 136 routine fixture assertions per database, plus Review and QA. Contextual revision one without an explicit matching refresh, mismatched or withdrawn evidence and malformed metadata fail closed. Legacy without metadata and the qualifying current rule still work. Not deployed at acceptance.
-- Staging has 051–055 and plants-api v27/worker v8. Live v2 manifest 7349299f74a36747e0c6042e581e706e36cb844002e19395fd8edc6448978d80 contains one Monstera profile, no calendar interval and one pinned condition. Published catalogue has null KB pointer. v2 paused HTTP and the isolated live SQL rollback were verified.
-- The v3 candidate adds the compact profile, exact refresh metadata sidecar and evidence README. Initial local run blocked at the controller's Deny dynamic import twice. Static import into the production validator now passes directly with the exact candidate. Review and QA must verify the committed scope before any staging activation.
-- 056 deployed to narat-staging. Exact dry run and PostgreSQL no-024 rehearsal passed. Live rollback confirmed no date without rule, then dated complete/undo/replay without leaving fixtures. v2 active profile remains conditional.
-- Next: read-only Review/QA, atomic v3 rehearsal, live dated owner operations. T160/T171 open.
+- Backend/data and iOS/integration run separately and publish to codex/plants-backend and codex/plants-ios. User stop threshold is 85% consumed weekly. All model routes use Codex.
+- a2ddd3a accepted 056. Local exact staging rehearsal without 024 passed, 136 routine pgTAP assertions on clean/upgrade. 056 deployed alone and a live rolled-back fixture confirmed gating, mark, undo and replay. plants-api v27, worker v8.
+- 7cd1bf9 accepted the v3 Monstera PlantProfile, contextual sidecar and provenance README through independent Review/QA, project KB and production schema gate. Local PG17 exact activation and replay keep the published catalogue, pinned analysis row and old profile/condition content. Negative tests rejected missing 056 or source drift with no target rows. v2 remains active in live staging at the time of this commit.
+- Added the controller's exact v3 SQL renderer. Next is an isolated activation rehearsal with ROLLBACK on staging and then applying the same verified SQL to narat-staging. Verify old KB digests, existing pinned jobs and catalogue, exercise live matching/mismatch, mark, undo and sync. T160/T171 open. iOS b028902 tested EN mark/restart/retry; 6eef71e typed undo accepted, durable iOS undo in progress.
 
 <!-- /orchestrator:project-state -->
 
