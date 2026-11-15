@@ -799,6 +799,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                         if 'refresh' in projections:
                             print(f'PASS {case}: Edge validates refresh receipt and shows the expected next check', flush=True)
                             v10_refresh_race(case)
+                if any(migration.name == '202611150051_routine_soil_check_record.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/routine_soil_check.test.sql')
                 if any(migration.name == '202611120028_first_aid_control.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/first_aid_control.test.sql')
                 if any(migration.name == '202611120030_first_aid_observation.sql' for migration in selected):
