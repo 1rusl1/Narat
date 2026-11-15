@@ -398,6 +398,38 @@ SELECT is(pg_temp.check_read()->>'last_watered_on','2025-10-21','refresh retains
 SELECT is(pg_temp.check_read()->'calendar_eligible','true'::jsonb,'refresh clears the replaced rule pause');
 SELECT '# V10_REFRESH_WIRE ' || jsonb_build_object('receipt',receipt,'operation',operation_id,
     'after_refresh',pg_temp.check_read())::text FROM v10_refresh_check;
+-- Withdrawing applicability leaves the verified general advice and historical watering intact.
+SAVEPOINT refresh_evidence_rollback;
+UPDATE public.care_profiles
+SET profile = profile #- ARRAY['provenance','field_evidence','/actions/0/refresh_conditions']
+WHERE version = 'repeat-fixture';
+DO $$
+BEGIN
+    IF pg_get_functiondef('public.read_plant_care_profile(uuid,uuid)'::regprocedure)
+           LIKE '%refresh_evidence,applicability_source%'
+       AND (pg_temp.check_read()->'calendar_eligible' IS DISTINCT FROM 'false'::jsonb
+           OR pg_temp.check_read()#>>'{profile,actions,0,action_id}' IS DISTINCT FROM 'fixture_soil_check'
+           OR pg_temp.check_read()->>'last_watered_on' IS DISTINCT FROM '2025-10-21') THEN
+        RAISE EXCEPTION 'Withdrawing applicability must hide the date and retain the general advice and journal';
+    END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT refresh_evidence_rollback;
+RELEASE SAVEPOINT refresh_evidence_rollback;
+SAVEPOINT refresh_membership_rollback;
+UPDATE public.basic_care_memberships SET deleted_at = clock_timestamp()
+WHERE plant_id = '17300000-0000-4000-8000-000000000011';
+DO $$
+BEGIN
+    IF pg_get_functiondef('public.read_plant_care_profile(uuid,uuid)'::regprocedure)
+           LIKE '%refresh_evidence,applicability_source%'
+       AND pg_temp.check_read()->'calendar_eligible' IS DISTINCT FROM 'false'::jsonb THEN
+        RAISE EXCEPTION 'A previously refreshed calendar requires current membership';
+    END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT refresh_membership_rollback;
+RELEASE SAVEPOINT refresh_membership_rollback;
 SELECT ok(has_function_privilege('service_role',
     'public.execute_care_recommendation_refresh(uuid,uuid,uuid,jsonb)','execute'), 'trusted transport can call refresh');
 SELECT ok(NOT has_function_privilege('authenticated',
