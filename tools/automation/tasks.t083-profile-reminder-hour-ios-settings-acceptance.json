@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "id": "t083-profile-reminder-hour-ios-settings-acceptance",
+      "description": "Independently verify the exact corrected EN settings candidate using fresh checks.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "docs/handoff_status.md",
+        "tools/automation/tasks.t083-profile-reminder-hour-ios-settings-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only Review and QA of the committed candidate, with fresh mandatory checks. The previous run retained a failing XCUITest from before the isolated DEBUG access token fix. Inspect exact scope and confirm the fixture token is namespace-specific and production Auth remains unchanged. The old failure remains historical evidence.",
+        "From the active permanent owner's existing collection entry, make profile reminder hour accessible without an unrelated navigation or permission prompt. Display the canonical server hour (09:00 for default account); choose in 00:00...23:00 and explicitly save. Bind all actions to captured current owner/snapshot. Restore pending after restart, retry exact envelope, and show canonical synchronized hour only after confirmation. If stale replay yields newer hour display current canonical. Preserve existing trial reminder, collection and other UI. No local scheduling/permissions or API changes.",
+        "Add independent DEBUG fixture and targeted testProfileReminderHourSurvivesRestart: default 09, choose 23, first reply loss, restart, pending and exact retry, synchronized value reappears on reopening. Verify no duplicate action or fake success. Reuse current smoke/fixture helpers. No live work in this packet. T083/T084 stay open for signed setting and scheduling."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083IUI1",
+          "description": "Swift unit, Simulator smoke and scoped diff pass.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "T083IUI2",
+          "description": "Targeted EN XCUITest proves remembered hour and exact retry after restart.",
+          "mode": "fixture",
+          "checks": [
+            "profile-hour-ui"
+          ]
+        }
+      ],
+      "candidate_base": "a98c1314e35dd082309e6bde12dd789dd0aec833"
+    }
+  ]
+}
