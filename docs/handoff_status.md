@@ -1,5 +1,17 @@
 # Narat — текущий статус и передача работы
 
+## B — совместимость хеша basic_care.enable со staging — 15 ноября 2026
+
+Read-only проверка narat-staging показала `extensions.digest` при прежнем
+`search_path=public`. Миграция 049 переключает транзакцию на встроенный
+SHA-256 от тех же UTF-8 байтов. Алгоритм квитанций сохранён.
+
+В изменении — миграция и handoff. Повторно прошли по 1050 pgTAP clean/upgrade
+основного gate, отдельный cap/legacy receipt gate и diff-check. Для
+точного архива Edge прошёл typecheck. Dry-run предложил только 049,
+без seed и roles. Следующий шаг — применить 049 и проверить `basic_care.enable`
+через Edge на одной синтетической учётке с последующей адресной уборкой.
+
 ## B — включение базового ухода в штатном API — 15 ноября 2026
 
 `plants-api/care-journal.ts` принимает `basic_care.enable` в штатном
