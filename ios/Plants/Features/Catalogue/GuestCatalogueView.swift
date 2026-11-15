@@ -853,6 +853,11 @@ private struct CatalogueCollectionCardView: View {
     @State private var historyFailed = false
     @State private var adviceFailed = false
     @State private var pendingRoutine: RoutineSoilCheckCompletionCommand?
+    @State private var routineHistory: [CatalogueCareJournalEntry] = []
+    @State private var pendingRoutineUndo: RoutineSoilCheckUndoCommand?
+    @State private var routineUndoSelection: CatalogueCareJournalEntry?
+    @State private var showingRoutineUndo = false
+    @State private var routineUndoConfirmed = false
     @State private var checkingRoutine = true
     @State private var savingRoutine = false
     @State private var routineFailed = false
@@ -899,13 +904,14 @@ private struct CatalogueCollectionCardView: View {
                     }
                     if !polish {
                         renameControls
-                            .disabled(checkingRoutine || savingRoutine || pendingRoutine != nil)
+                            .disabled(routineBusy)
                     }
                     if deletionFailed {
                         Text(polish ? "Nie udało się usunąć rośliny." : "Couldn’t delete this plant.")
                             .accessibilityIdentifier("collection.delete.failed")
                     }
                     firstAidJournal
+                        .disabled(routineBusy)
                     if let startRepeatDiagnosis {
                         Button("Check plant again", action: startRepeatDiagnosis)
                             .buttonStyle(.bordered)
@@ -919,14 +925,15 @@ private struct CatalogueCollectionCardView: View {
                         if let advice {
                             PlantCareRecommendationContent(
                                 recommendation: advice,
-                                showNextCheck: adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !checkingRoutine && pendingRoutine == nil && !savingRoutine
+                                showNextCheck: adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy
                             )
                         }
                         routineCompletionControls
+                        routineJournal
                         basicCareEnableControls
-                            .disabled(savingRoutine || pendingRoutine != nil)
+                            .disabled(routineBusy)
                         adviceRefreshControls
-                            .disabled(savingRoutine || pendingRoutine != nil)
+                            .disabled(routineBusy)
                         if let firstAid, firstAid.accessUntil.map({ $0 > Date() }) ?? true {
                             ForEach(firstAid.controls) { control in
                                 VStack(alignment: .leading, spacing: 8) {
@@ -941,6 +948,7 @@ private struct CatalogueCollectionCardView: View {
                                             firstAidSelection = .observe(control.id, jpeg)
                                             showingFirstAidDialog = true
                                         }
+                                        .disabled(routineBusy)
                                     }
                                 }
                                 .accessibilityElement(children: .contain)
@@ -954,11 +962,11 @@ private struct CatalogueCollectionCardView: View {
                             ForEach(history) { entry in
                                 Text(entry.occurredLocalDate + (entry.state == "voided" ? " · Undone" : " · Active"))
                                     .accessibilityIdentifier("catalogue.saved.history." + entry.id.uuidString.lowercased())
-                                if correction == .ready, let edit = WateringDateEdit(entry) {
+                                if !routineBusy, correction == .ready, let edit = WateringDateEdit(entry) {
                                     Button("Correct watering date") { dateEdit = edit }
                                         .accessibilityIdentifier("collection.watering.correct." + entry.id.uuidString.lowercased())
                                 }
-                                if correction == .ready, entry.state == "active" {
+                                if !routineBusy, correction == .ready, entry.state == "active" {
                                     Button("Undo watering") {
                                         wateringUndoEntry = entry.id
                                         showingWateringUndo = true
@@ -978,7 +986,7 @@ private struct CatalogueCollectionCardView: View {
                     Button(polish ? "Usuń roślinę" : "Delete plant", role: .destructive) {
                         deleteConfirmation = true
                     }
-                    .disabled(savingRoutine)
+                    .disabled(routineBusy)
                     .accessibilityIdentifier("collection.delete")
                 }
                 .accessibilityElement(children: .contain)
@@ -1004,6 +1012,14 @@ private struct CatalogueCollectionCardView: View {
                 if firstAid?.accessUntil == expiry { firstAid?.controls.removeAll() }
             }
             .task { await retryWhenConnected() }
+            .alert("Undo this soil check?", isPresented: $showingRoutineUndo) {
+                Button("Undo soil check", role: .destructive) {
+                    let entry = routineUndoSelection
+                    routineUndoSelection = nil
+                    Task { await undoRoutine(entry) }
+                }
+                Button("Cancel", role: .cancel) { routineUndoSelection = nil }
+            }
             .alert("Edit plant name", isPresented: $editingName) {
                 TextField("Plant name", text: $nameInput)
                     .accessibilityIdentifier("collection.rename.input")
@@ -1537,6 +1553,10 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
+    private var routineBusy: Bool {
+        !polish && (checkingRoutine || savingRoutine || pendingRoutine != nil || pendingRoutineUndo != nil)
+    }
+
     private var routineWriteAvailable: Bool {
         !checkingDeletion && !deleting && pendingDeletion == nil && !deletionFailed
             && !loadingRename && !savingRename && pendingRename == nil
@@ -1570,7 +1590,7 @@ private struct CatalogueCollectionCardView: View {
             Button("Retry soil check") { Task { await completeRoutine() } }
                 .disabled(!routineWriteAvailable)
                 .accessibilityIdentifier("collection.routine.retry")
-        } else if dueRoutine != nil, routineWriteAvailable {
+        } else if pendingRoutineUndo == nil, dueRoutine != nil, routineWriteAvailable {
             Button("Mark soil checked") { Task { await completeRoutine() } }
                 .accessibilityIdentifier("collection.routine.complete")
         }
@@ -1584,13 +1604,99 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
+    @ViewBuilder
+    private var routineJournal: some View {
+        Text("Soil check history").font(.headline)
+        ForEach(routineHistory) { entry in
+            Text(entry.occurredLocalDate + (entry.state == "voided" ? " · Undone" : " · Active"))
+                .accessibilityIdentifier("collection.routine.history." + entry.id.uuidString.lowercased())
+            if entry.state == "active", entry.taskId != nil, !routineBusy, routineWriteAvailable {
+                Button("Undo soil check") {
+                    routineUndoSelection = entry
+                    showingRoutineUndo = true
+                }
+                .accessibilityIdentifier("collection.routine.undo." + entry.id.uuidString.lowercased())
+            }
+        }
+        if pendingRoutineUndo != nil {
+            Text("Soil check undo pending sync.")
+                .accessibilityIdentifier("collection.routine.undo.pending")
+            Button("Retry soil check undo") { Task { await undoRoutine(nil) } }
+                .disabled(savingRoutine || !routineWriteAvailable)
+                .accessibilityIdentifier("collection.routine.undo.retry")
+        }
+        if routineUndoConfirmed {
+            Text("Soil check undone.")
+                .accessibilityIdentifier("collection.routine.undo.confirmed")
+        }
+        if routineFailed {
+            Button("Reload soil check history") { Task { await loadPendingRoutine() } }
+                .disabled(savingRoutine)
+                .accessibilityIdentifier("collection.routine.history.retry")
+        }
+    }
+
+    private func loadRoutineHistory(_ repository: CollectionRepository, lease: SyncSessionLease) async throws {
+        let rows = try await repository.collectionRoutineSoilCheckHistory(plantId: card.id, context: lease)
+        guard !Task.isCancelled, connection.snapshot == expected else { throw CancellationError() }
+        routineHistory = rows
+    }
+
+    private func undoRoutine(_ entry: CatalogueCareJournalEntry?) async {
+        guard !checkingRoutine, !savingRoutine, pendingRoutine == nil, routineWriteAvailable,
+              connection.snapshot == expected, let repository = connection.repository else { return }
+        guard pendingRoutineUndo != nil || entry.map({ selected in
+            selected.state == "active" && selected.taskId != nil && routineHistory.contains(selected)
+        }) == true else { return }
+        savingRoutine = true
+        routineFailed = false
+        routineConfirmed = false
+        routineUndoConfirmed = false
+        defer { savingRoutine = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let command: RoutineSoilCheckUndoCommand
+            if let pendingRoutineUndo {
+                command = pendingRoutineUndo
+            } else if let entry, let taskId = entry.taskId {
+                command = try await repository.enqueueRoutineUndo(
+                    plantId: card.id, taskId: taskId, entryId: entry.id, context: lease
+                )
+            } else { return }
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            pendingRoutineUndo = command
+            let outcome = try await repository.retryRoutineUndo(command, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            switch outcome {
+            case .pending: break
+            case .confirmed:
+                pendingRoutineUndo = nil
+                routineUndoConfirmed = true
+                adviceRequest += 1
+                try await loadRoutineHistory(repository, lease: lease)
+            case .rejected, .unconfirmed:
+                pendingRoutineUndo = nil
+                routineFailed = true
+                adviceRequest += 1
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            routineFailed = true
+        }
+    }
+
     private func loadPendingRoutine() async {
         guard !polish, let repository = connection.repository else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let pending = try await repository.pendingRoutineCompletion(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
+            let undo = try await repository.pendingRoutineUndo(plantId: card.id, context: lease)
+            try await loadRoutineHistory(repository, lease: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
             pendingRoutine = pending
+            pendingRoutineUndo = undo
+            routineFailed = false
             checkingRoutine = false
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
@@ -1599,13 +1705,14 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func completeRoutine() async {
-        guard !savingRoutine, !checkingRoutine, routineWriteAvailable,
+        guard pendingRoutineUndo == nil, !savingRoutine, !checkingRoutine, routineWriteAvailable,
               connection.snapshot == expected, let repository = connection.repository else { return }
         let captured = dueRoutine
         guard pendingRoutine != nil || captured != nil else { return }
         savingRoutine = true
         routineFailed = false
         routineConfirmed = false
+        routineUndoConfirmed = false
         defer { savingRoutine = false }
         do {
             let lease = try await connection.collectionLease(expected: expected)
@@ -1630,8 +1737,7 @@ private struct CatalogueCollectionCardView: View {
                 pendingRoutine = nil
                 routineConfirmed = true
                 adviceRequest += 1
-                // The receipt has verified the linked canonical journal entry.
-                // Reload the manual journal without inventing a manual watering fact.
+                try await loadRoutineHistory(repository, lease: lease)
                 await loadFirstAidJournal()
             case .rejected, .unconfirmed:
                 pendingRoutine = nil

@@ -10,7 +10,9 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
-    case careRecommendationRefreshRejected, routineSoilCheck
+    case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo
+
+    var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo }
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
@@ -475,13 +477,17 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 return Reply(status: 204, data: Data())
             }
             if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected
-                || ledger.scenario == .basicCareEnable || ledger.scenario == .routineSoilCheck),
+                || ledger.scenario == .basicCareEnable || ledger.scenario.testsRoutine),
                method == "GET", query.isEmpty,
                let plant = ledger.plants.first, caller == plant.owner,
                url.path == "/functions/v1/plants-api/plants/\(plant.id.uuidString.lowercased())/care/recommendation" {
-                if ledger.scenario == .routineSoilCheck {
-                    let anchor = try ledger.commits.values.first.map { try routineLocalDate($0) } ?? "1999-12-25"
-                    let due = ledger.commits.isEmpty ? "2000-01-01" : routineNextDate(anchor)
+                if ledger.scenario.testsRoutine {
+                    let completion = ledger.commits.values.first {
+                        $0.envelope.commandName == RoutineSoilCheckCompletionCommand.name
+                    }
+                    let undone = ledger.commits.values.contains { $0.envelope.commandName == RoutineSoilCheckUndoCommand.name }
+                    let anchor = try (!undone ? completion : nil).map { try routineLocalDate($0) } ?? "1999-12-25"
+                    let due = completion == nil || undone ? "2000-01-01" : routineNextDate(anchor)
                     let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
                     return Reply(status: 200, data: try json([
                         "plant_id": plant.id.uuidString, "status": "available",
@@ -640,10 +646,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                             < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
                     }
                 }
-                if ledger.scenario == .routineSoilCheck,
-                   let commit = ledger.commits.values.first, commit.owner == caller,
+                if ledger.scenario.testsRoutine,
+                   let commit = ledger.commits.values.first(where: {
+                       $0.envelope.commandName == RoutineSoilCheckCompletionCommand.name
+                   }), commit.owner == caller,
                    since.map({ $0 < Self.time(ledger.tick) }) ?? true {
-                    changes += try routineChanges(commit)
+                    let undo = ledger.commits.values.first {
+                        $0.owner == caller && $0.envelope.commandName == RoutineSoilCheckUndoCommand.name
+                    }
+                    changes += try routineChanges(commit, undo: undo)
                     changes.sort {
                         ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
                             < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
@@ -672,12 +683,16 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 default:
                     entitlement = NSNull()
                 }
+                let orderedChanges = (firstAid + changes).sorted {
+                    ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
+                        < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
+                }
                 let until = Self.time(ledger.tick)
                 return Reply(status: 200, data: try json([
                     "until": until, "has_more": false, "last_cursor": NSNull(), "next_since": until,
                     "profile": ["preferred_locale": "pl", "reminder_hour_local": 9,
                                 "report_notifications_enabled": true, "trial_reminder_enabled": false],
-                    "entitlement": entitlement, "changes": firstAid + changes
+                    "entitlement": entitlement, "changes": orderedChanges
                 ]))
             }
             guard method == "POST", url.path == "/functions/v1/plants-api/commands", query.isEmpty,
@@ -689,7 +704,11 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             if ledger.scenario.testsPlantEdit, let edit = PlantEditCommand(envelope) {
                 return try editPlant(edit, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
             }
-            if ledger.scenario == .routineSoilCheck, let command = RoutineSoilCheckCompletionCommand(envelope) {
+            if ledger.scenario == .routineSoilCheckUndo, envelope.commandName == RoutineSoilCheckUndoCommand.name {
+                return try undoRoutine(envelope, body: body, caller: caller,
+                                       header: request.value(forHTTPHeaderField: "X-Operation-Id"))
+            }
+            if ledger.scenario.testsRoutine, let command = RoutineSoilCheckCompletionCommand(envelope) {
                 guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
                       command.ruleId.uuidString.lowercased() == Self.routineRule,
                       command.careRevision == 1, command.dueLocalDate == "2000-01-01",
@@ -706,12 +725,13 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 next.tick += 1
                 let receipt = try json([
                     "plant_id": plant.id.uuidString, "rule_id": Self.routineRule, "care_revision": 1,
-                    "occurrence_key": "fixture-routine-occurrence", "due_local_date": "2000-01-01",
+                    "occurrence_key": Self.routineRule + ":2000-01-01", "due_local_date": "2000-01-01",
                     "task_id": Self.routineTask, "entry_id": Self.routineEntry,
                     "state": "completed", "watermark": Self.time(next.tick)
                 ])
                 next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)
                 try persist(next)
+                if ledger.scenario == .routineSoilCheckUndo { return Reply(status: 200, data: receipt) }
                 throw URLError(.networkConnectionLost)
             }
             if ledger.scenario == .basicCareEnable, envelope.commandName == BasicCareEnableReceipt.commandName {
@@ -809,6 +829,38 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     private static let routineTask = "19190000-0000-4000-8000-000000000002"
     private static let routineEntry = "19190000-0000-4000-8000-000000000003"
 
+    private static let routineReversal = "19190000-0000-4000-8000-000000000004"
+
+    private func undoRoutine(_ envelope: CommandEnvelopeDTO, body: Data, caller: UUID, header: String?) throws -> Reply {
+        guard let plant = ledger.plants.first, plant.owner == caller, plant.id == envelope.plantId,
+              let command = RoutineSoilCheckUndoCommand(envelope, taskId: UUID(uuidString: Self.routineTask)!),
+              command.entryId == UUID(uuidString: Self.routineEntry)!,
+              header == envelope.operationId.uuidString.lowercased(),
+              ledger.commits.values.contains(where: {
+                  $0.owner == caller && $0.plantID == plant.id
+                      && $0.envelope.commandName == RoutineSoilCheckCompletionCommand.name
+              }) else { throw CatalogueUIFixtureError.invalidRequest }
+        let key = caller.uuidString + ":" + envelope.operationId.uuidString
+        if let commit = ledger.commits[key] {
+            guard commit.owner == caller, commit.envelope == envelope, commit.body == body
+            else { throw CatalogueUIFixtureError.invalidRequest }
+            return Reply(status: 200, data: commit.receipt)
+        }
+        guard !ledger.commits.values.contains(where: {
+            $0.envelope.commandName == RoutineSoilCheckUndoCommand.name
+        }) else { throw CatalogueUIFixtureError.invalidRequest }
+        var next = ledger
+        next.tick += 1
+        let receipt = try json([
+            "plant_id": plant.id.uuidString, "task_id": Self.routineTask,
+            "entry_id": Self.routineEntry, "reversal_id": Self.routineReversal,
+            "state": "voided", "watermark": Self.time(next.tick)
+        ])
+        next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)
+        try persist(next)
+        throw URLError(.networkConnectionLost)
+    }
+
     private func routineLocalDate(_ commit: Commit) throws -> String {
         let payload = try JSONSerialization.jsonObject(with: Data(commit.envelope.payloadJSON.utf8)) as? [String: Any]
         guard let timestamp = payload?["occurred_at"] as? String,
@@ -829,27 +881,35 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         return formatter.string(from: date)
     }
 
-    private func routineChanges(_ commit: Commit) throws -> [[String: Any]] {
+    private func routineChanges(_ commit: Commit, undo: Commit? = nil) throws -> [[String: Any]] {
         let payload = try JSONSerialization.jsonObject(with: Data(commit.envelope.payloadJSON.utf8)) as! [String: Any]
         let task: [String: Any] = [
             "id": Self.routineTask, "plant_id": commit.plantID.uuidString, "rule_id": Self.routineRule,
-            "occurrence_key": "fixture-routine-occurrence", "due_local_date": "2000-01-01",
-            "action_code": "check_soil", "state": "completed", "completed_entry_id": Self.routineEntry
+            "occurrence_key": Self.routineRule + ":2000-01-01", "due_local_date": "2000-01-01",
+            "action_code": "check_soil", "condition_code": "check_soil_first",
+            "state": undo == nil ? "completed" : "superseded", "completed_entry_id": Self.routineEntry
         ]
         let entry: [String: Any] = [
             "id": Self.routineEntry, "plant_id": commit.plantID.uuidString,
             "task_id": Self.routineTask, "operation_id": commit.envelope.operationId.uuidString,
-            "action_code": "check_soil", "state": "active", "occurred_at": payload["occurred_at"]!,
+            "action_code": "check_soil", "state": undo == nil ? "active" : "voided", "occurred_at": payload["occurred_at"]!,
             "timezone": payload["timezone"]!, "occurred_local_date": try routineLocalDate(commit)
         ]
-        return [("care_tasks", Self.routineTask, task), ("care_entries", Self.routineEntry, entry)].map { entity, id, data in
+        var rows = [("care_tasks", Self.routineTask, task), ("care_entries", Self.routineEntry, entry)]
+        if let undo {
+            rows.append(("care_reversals", Self.routineReversal, [
+                "id": Self.routineReversal, "plant_id": commit.plantID.uuidString,
+                "entry_id": Self.routineEntry, "operation_id": undo.envelope.operationId.uuidString
+            ]))
+        }
+        return rows.map { entity, id, data in
             ["entity_type": entity, "id": id, "updated_at": Self.time(ledger.tick),
              "deleted_at": NSNull(), "data": data] as [String: Any]
         }
     }
 
     private func basicCareEnabledAt(for plant: Plant) -> String? {
-        if ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected || ledger.scenario == .routineSoilCheck {
+        if ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected || ledger.scenario.testsRoutine {
             return plant.timestamp
         }
         guard ledger.scenario == .basicCareEnable,

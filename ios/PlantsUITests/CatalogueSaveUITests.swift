@@ -322,6 +322,81 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
     }
 
+    @MainActor func testRoutineSoilCheckUndoAfterRestart() {
+        let run = Run("routineSoilCheckUndo", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        tap(run, "collection.routine.complete", "Mark soil checked")
+        require(run.app.staticTexts["collection.routine.confirmed"])
+        let entry = "19190000-0000-4000-8000-000000000003"
+        let row = run.app.staticTexts["collection.routine.history." + entry]
+        require(row)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        let localDate = formatter.string(from: Date())
+        XCTAssertEqual(row.label, localDate + " · Active")
+        let next = run.app.staticTexts["catalogue.saved.care.next.date"]
+        require(next)
+        XCTAssertNotEqual(next.label, "Next soil check · 2000-01-01")
+        let undo = "collection.routine.undo." + entry
+        tap(run, undo, "Undo soil check")
+        let undoDialog = run.app.alerts["Undo this soil check?"]
+        require(undoDialog)
+        let cancelUndo = undoDialog.buttons.matching(identifier: "Cancel").firstMatch
+        enabled(cancelUndo)
+        cancelUndo.tap()
+        XCTAssertEqual(row.label, localDate + " · Active")
+        XCTAssertFalse(run.app.staticTexts["collection.routine.undo.pending"].exists)
+        tap(run, undo, "Undo soil check")
+        require(undoDialog)
+        let confirmUndo = undoDialog.buttons.matching(identifier: "Undo soil check").firstMatch
+        enabled(confirmUndo)
+        confirmUndo.tap()
+        let pending = run.app.staticTexts["collection.routine.undo.pending"]
+        require(pending)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.undo.confirmed"].exists)
+        XCTAssertFalse(next.exists)
+        XCTAssertEqual(row.label, localDate + " · Active")
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(pending)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(next.exists)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.undo.confirmed"].exists)
+        // The fixture rejects a changed operation, envelope or HTTP body.
+        tap(run, "collection.routine.undo.retry", "Retry soil check undo")
+        require(run.app.staticTexts["collection.routine.undo.confirmed"])
+        let voided = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", localDate + " · Undone"), object: row
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [voided], timeout: 15), .completed)
+        require(next)
+        XCTAssertEqual(next.label, "Next soil check · 2000-01-01")
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons[undo].exists)
+        XCTAssertFalse(run.app.buttons["collection.routine.undo.retry"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "collection.routine.history.")
+        ).count, 1)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(row)
+        XCTAssertEqual(row.label, localDate + " · Undone")
+        require(next)
+        XCTAssertEqual(next.label, "Next soil check · 2000-01-01")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons[undo].exists)
+    }
+
     @MainActor func testRoutineSoilCheckCompletesAfterRestart() {
         let run = Run("routineSoilCheck", .en)
         defer { run.app.terminate() }
