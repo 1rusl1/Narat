@@ -3536,6 +3536,103 @@ extension CollectionWireTests {
         }
     }
 
+    func testRoutineCheckValidatesAdditiveContext() async throws {
+        let ruleId = UUID()
+        let dated = careProjection(anchor: "2026-11-16", due: "2026-11-23")
+        let routine: [String: Any] = [
+            "rule_id": ruleId.uuidString, "care_revision": 2,
+            "due_local_date": "2026-11-23", "anchor_local_date": "2026-11-16",
+            "anchor_kind": "water"
+        ]
+        func projection(_ fields: [String: Any]) -> [String: Any] {
+            var result = dated
+            result["routine_check"] = fields
+            return result
+        }
+        var soil = routine
+        soil["anchor_kind"] = "check_soil"
+        var maximum = routine
+        maximum["care_revision"] = 9_007_199_254_740_991
+        var nullRoutine = dated
+        nullRoutine["routine_check"] = NSNull()
+        var invalid: [[String: Any]] = []
+        let badFields: [(String, Any)] = [
+            ("rule_id", "not-a-uuid"), ("care_revision", 0), ("care_revision", -1),
+            ("care_revision", 9_007_199_254_740_992), ("care_revision", 2.5),
+            ("due_local_date", "2026-11-24"), ("anchor_local_date", "2026-11-15"),
+            ("due_local_date", "2026-11-31"),
+            ("anchor_local_date", "2026-11-16T00:00:00Z"), ("anchor_kind", "fertilize")
+        ]
+        for (key, value) in badFields {
+            var fields = routine
+            fields[key] = value
+            invalid.append(projection(fields))
+        }
+        for key in routine.keys {
+            var missing = routine
+            missing.removeValue(forKey: key)
+            invalid.append(projection(missing))
+            var null = routine
+            null[key] = NSNull()
+            invalid.append(projection(null))
+        }
+        var noNext = projection(routine)
+        noNext["next_check"] = NSNull()
+        invalid.append(noNext)
+        noNext.removeValue(forKey: "next_check")
+        invalid.append(noNext)
+        var unsafe = projection(routine)
+        var next = try XCTUnwrap(unsafe["next_check"] as? [String: Any])
+        next["source"] = ["url": "http://example.invalid/interval", "locator": "Interval"]
+        unsafe["next_check"] = next
+        invalid.append(unsafe)
+        var unavailable = projection(routine)
+        unavailable["status"] = "unavailable"
+        unavailable["recommendation"] = NSNull()
+        unavailable["next_check"] = NSNull()
+        invalid.append(unavailable)
+        var missingRecommendation = projection(routine)
+        missingRecommendation["recommendation"] = NSNull()
+        invalid.append(missingRecommendation)
+        var wrongPlant = projection(routine)
+        wrongPlant["plant_id"] = UUID().uuidString
+        invalid.append(wrongPlant)
+        let valid = [projection(routine), projection(soil), projection(maximum)]
+        let transport = CatalogueTransport(try (valid + [dated, nullRoutine] + invalid).map {
+            .http(200, try syncJSON($0))
+        })
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let context = try await api.captureSyncContext(ownerId: accessOwner)
+        let expected: [(PlantCareRecommendation.RoutineCheck.AnchorKind, Int)] = [
+            (.water, 2), (.checkSoil, 2), (.water, 9_007_199_254_740_991)
+        ]
+        for (kind, revision) in expected {
+            let recommendation = try await api.fetchCareRecommendation(plantId: serverPlantId, context: context)
+            let result = try XCTUnwrap(recommendation?.routineContext)
+            XCTAssertEqual(result.plantId, serverPlantId)
+            XCTAssertEqual(result.check.ruleId, ruleId)
+            XCTAssertEqual(result.check.careRevision, revision)
+            XCTAssertEqual(result.check.anchorKind, kind)
+            XCTAssertEqual(result.check.dueLocalDate, "2026-11-23")
+            XCTAssertEqual(result.check.anchorLocalDate, "2026-11-16")
+            XCTAssertEqual(recommendation?.nextCheck?.dueOn, "2026-11-23")
+            XCTAssertEqual(recommendation?.text, "Check the substrate.")
+        }
+        for _ in 0..<2 {
+            let recommendation = try await api.fetchCareRecommendation(plantId: serverPlantId, context: context)
+            XCTAssertNotNil(recommendation?.nextCheck)
+            XCTAssertNil(recommendation?.routineContext)
+        }
+        for (index, _) in invalid.enumerated() {
+            do {
+                _ = try await api.fetchCareRecommendation(plantId: serverPlantId, context: context)
+                XCTFail("Invalid routine projection accepted at index \(index)")
+            } catch AnalysisHTTPError.invalidResponse {
+            } catch is DecodingError {}
+        }
+    }
+
     private func diagnosisTicket(url: String, photoId: UUID) -> String {
         #"{"photo_asset_id":"\#(photoId.uuidString)","storage_bucket":"photos","storage_path":"test.jpg","signed_upload_url":"\#(url)","expires_in_seconds":60,"max_byte_size":10485760}"#
     }

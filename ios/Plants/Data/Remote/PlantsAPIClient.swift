@@ -37,12 +37,39 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
         }
     }
 
+    struct RoutineCheck: Decodable, Sendable, Equatable {
+        enum AnchorKind: String, Decodable, Sendable {
+            case water
+            case checkSoil = "check_soil"
+        }
+
+        let ruleId: UUID
+        let careRevision: Int
+        let dueLocalDate: String
+        let anchorLocalDate: String
+        let anchorKind: AnchorKind
+
+        enum CodingKeys: String, CodingKey {
+            case ruleId = "rule_id"
+            case careRevision = "care_revision"
+            case dueLocalDate = "due_local_date"
+            case anchorLocalDate = "anchor_local_date"
+            case anchorKind = "anchor_kind"
+        }
+    }
+
+    struct RoutineContext: Sendable, Equatable {
+        let plantId: UUID
+        let check: RoutineCheck
+    }
+
     let actionId: String
     let actionCode: String
     let text: String
     let nextCheckIntervalDays: Int?
     let source: Source
     fileprivate(set) var nextCheck: NextCheck? = nil
+    fileprivate(set) var routineContext: RoutineContext? = nil
 
     enum CodingKeys: String, CodingKey {
         case actionId = "action_id"
@@ -59,16 +86,18 @@ private struct PlantCareRecommendationResponse: Decodable {
     let status: Status
     let recommendation: PlantCareRecommendation?
     let nextCheck: PlantCareRecommendation.NextCheck?
+    let routineCheck: PlantCareRecommendation.RoutineCheck?
 
     enum CodingKeys: String, CodingKey {
         case plantId = "plant_id"
         case status, recommendation
         case nextCheck = "next_check"
+        case routineCheck = "routine_check"
     }
 
     func validated(for expectedPlantId: UUID) throws -> PlantCareRecommendation? {
         guard plantId == expectedPlantId else { throw AnalysisHTTPError.invalidResponse }
-        if status == .unavailable, recommendation == nil, nextCheck == nil { return nil }
+        if status == .unavailable, recommendation == nil, nextCheck == nil, routineCheck == nil { return nil }
         guard status == .available, var recommendation,
               recommendation.actionCode == "check_soil",
               recommendation.nextCheckIntervalDays.map({ $0 > 0 }) ?? true,
@@ -78,6 +107,15 @@ private struct PlantCareRecommendationResponse: Decodable {
               recommendation.source.isVerifiedLink,
               nextCheck?.matches(interval: recommendation.nextCheckIntervalDays) ?? true else {
             throw AnalysisHTTPError.invalidResponse
+        }
+        if let routineCheck {
+            guard let nextCheck,
+                  (1...9_007_199_254_740_991).contains(routineCheck.careRevision),
+                  routineCheck.dueLocalDate == nextCheck.dueOn,
+                  routineCheck.anchorLocalDate == nextCheck.anchorOn else {
+                throw AnalysisHTTPError.invalidResponse
+            }
+            recommendation.routineContext = .init(plantId: plantId, check: routineCheck)
         }
         recommendation.nextCheck = nextCheck
         return recommendation
