@@ -906,5 +906,201 @@ END;
 $$;
 SELECT * FROM pg_temp.storage_work_plan_tests();
 
+-- Resolve 065 references only after the gate for earlier migration selectors.
+CREATE FUNCTION pg_temp.storage_verification_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0650000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0650000-0000-4000-8000-000000000002';
+    v_operation uuid := pg_temp.owner_id(1599);
+    v_photo uuid := pg_temp.owner_id(1500);
+    v_receipt public.operation_receipts%ROWTYPE;
+    v_stamp timestamptz;
+    v_neighbor_stamp timestamptz;
+    v_tid tid;
+    v_before jsonb;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.verify_account_deletion_storage_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('065 verification is outside selected migration version',1);
+        RETURN;
+    END IF;
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_attribute
+        WHERE attrelid='public.account_deletion_requests'::regclass
+          AND attname='storage_verified_at' AND atttypid='timestamptz'::regtype
+          AND NOT attnotnull AND NOT attisdropped),
+        'verification column is a nullable timestamp on the private request table');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM public.account_deletion_requests
+        WHERE storage_verified_at IS NOT NULL),'preexisting requests start unverified');
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'active owner without request cannot verify');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'deleting flag without request cannot verify');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    PERFORM public.request_account_deletion_internal(v_neighbor,pg_temp.owner_id(1598));
+    v_neighbor_stamp := public.verify_account_deletion_storage_internal(v_neighbor,pg_temp.owner_id(1598));
+    RETURN NEXT ok(v_neighbor_stamp IS NOT NULL,'authentic clean neighbor verifies independently');
+    SELECT * INTO STRICT v_receipt FROM public.operation_receipts
+    WHERE owner_id=v_owner AND operation_id=v_operation;
+
+    INSERT INTO public.photo_assets(id,owner_id,purpose,original_key,content_hash)
+    VALUES(v_photo,v_owner,'initial',v_owner::text||'/'||v_photo,repeat('a',64));
+    INSERT INTO public.diagnosis_upload_tickets(photo_asset_id,mime_type,byte_size,expires_at)
+    VALUES(v_photo,'image/jpeg',4,clock_timestamp()-interval '1 day');
+    INSERT INTO storage.objects(bucket_id,name)
+    VALUES('analysis-inputs',v_owner::text||'/'||v_photo);
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'surviving canonical object leaves request pending');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'pending retry sees the same surviving object');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs'
+        AND name=v_owner::text||'/'||v_photo;
+    v_stamp := public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    RETURN NEXT ok(v_stamp IS NOT NULL,'fresh clean plan persists verification');
+    RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_owner),
+        v_stamp,'returned timestamp is stored on the exact request');
+    SELECT ctid INTO v_tid FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        v_stamp,'clean exact retry returns the original timestamp');
+    RETURN NEXT is((SELECT ctid FROM public.account_deletion_requests WHERE owner_id=v_owner),
+        v_tid,'clean retry performs no request update');
+
+    SELECT jsonb_agg(to_jsonb(q) ORDER BY owner_id) INTO v_before FROM public.account_deletion_requests q;
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,pg_temp.owner_id(1597)),
+        NULL::timestamptz,'wrong operation cannot verify or invalidate');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,NULL),
+        NULL::timestamptz,'null operation cannot verify or invalidate');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(NULL,v_operation),
+        NULL::timestamptz,'null owner cannot verify');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(pg_temp.owner_id(1596),v_operation),
+        NULL::timestamptz,'absent owner cannot verify');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(
+        pg_temp.owner_id(902),pg_temp.owner_id(960)),NULL::timestamptz,
+        'anonymous owner with a matching forged request and receipt cannot verify');
+    RETURN NEXT is((SELECT jsonb_agg(to_jsonb(q) ORDER BY owner_id) FROM public.account_deletion_requests q),
+        v_before,'invalid input preserves every request');
+
+    FOR v_case IN 1..6 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+            ELSIF v_case=2 THEN
+                DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSE
+                UPDATE public.operation_receipts SET
+                    command_name=CASE WHEN v_case=3 THEN 'forged' ELSE v_receipt.command_name END,
+                    payload_hash=CASE WHEN v_case=4 THEN 'forged' ELSE v_receipt.payload_hash END,
+                    committed_at=CASE WHEN v_case=5 THEN v_receipt.committed_at+interval '1 second'
+                        ELSE v_receipt.committed_at END,
+                    response_payload=CASE WHEN v_case=6 THEN v_receipt.response_payload||'{"extra":true}'::jsonb
+                        ELSE v_receipt.response_payload END
+                WHERE owner_id=v_owner AND operation_id=v_operation;
+            END IF;
+            RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+                NULL::timestamptz,'invalid owner or receipt is rejected, case '||v_case);
+            RETURN NEXT is((SELECT jsonb_agg(to_jsonb(q) ORDER BY owner_id)
+                FROM public.account_deletion_requests q),v_before,
+                'invalid owner or receipt preserves requests, case '||v_case);
+            RAISE SQLSTATE 'Z0065';
+        EXCEPTION WHEN SQLSTATE 'Z0065' THEN NULL;
+        END;
+    END LOOP;
+
+    -- Every hold is introduced against the same authentic, verified request.
+    FOR v_case IN 1..9 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO storage.objects(bucket_id,name)
+                VALUES('analysis-inputs',v_owner::text||'/'||v_photo);
+            ELSIF v_case=2 THEN
+                INSERT INTO storage.objects(bucket_id,name)
+                VALUES('analysis-inputs',v_owner::text||'/orphan');
+            ELSIF v_case=3 THEN
+                UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()+interval '1 day'
+                WHERE photo_asset_id=v_photo;
+            ELSIF v_case=4 THEN
+                UPDATE public.photo_assets SET analysis_key='unsafe/thumbnail' WHERE id=v_photo;
+            ELSIF v_case=5 THEN
+                INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+                VALUES(pg_temp.owner_id(1540),v_owner,pg_temp.owner_id(1541),'care','scan','legacy/source');
+            ELSIF v_case=6 THEN
+                INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at)
+                VALUES(v_photo,clock_timestamp()-interval '2 days',clock_timestamp()-interval '1 day');
+            ELSIF v_case=7 THEN
+                INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+                VALUES(pg_temp.owner_id(1550),v_neighbor,pg_temp.owner_id(1551),'care','scan','legacy/incoming');
+                INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+                VALUES(pg_temp.owner_id(1550),'verification',v_owner,pg_temp.owner_id(1552),
+                    'copying',clock_timestamp()-interval '1 day');
+            ELSIF v_case=8 THEN
+                UPDATE storage.buckets SET public=true WHERE id='analysis-inputs';
+            ELSE
+                DELETE FROM storage.objects WHERE bucket_id='analysis-inputs';
+                DELETE FROM storage.buckets WHERE id='analysis-inputs';
+            END IF;
+            RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+                NULL::timestamptz,'fresh failure invalidates verification, case '||v_case);
+            RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_owner),
+                NULL::timestamptz,'stale timestamp is cleared, case '||v_case);
+            SELECT ctid INTO v_tid FROM public.account_deletion_requests WHERE owner_id=v_owner;
+            RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+                NULL::timestamptz,'repeated failure stays unverified, case '||v_case);
+            RETURN NEXT is((SELECT ctid FROM public.account_deletion_requests WHERE owner_id=v_owner),
+                v_tid,'repeated failure avoids redundant update, case '||v_case);
+            RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_neighbor),
+                v_neighbor_stamp,'invalidation preserves neighbor, case '||v_case);
+            -- Restore fixture mutations, including other owners objects in the missing-bucket case.
+            RAISE SQLSTATE 'Z0065';
+        EXCEPTION WHEN SQLSTATE 'Z0065' THEN NULL;
+        END;
+        RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+            v_stamp,'clean exact retry rechecks readiness after fixture rollback, case '||v_case);
+    END LOOP;
+
+    -- A real invalidation followed by cleanup must create fresh evidence.
+    UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC' WHERE owner_id=v_owner;
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/'||v_photo);
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        NULL::timestamptz,'reappearing object clears previously stored evidence');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/'||v_photo;
+    v_stamp := public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    RETURN NEXT ok(v_stamp>'2000-01-01 UTC'::timestamptz,'cleanup produces a fresh verification timestamp');
+    RETURN NEXT is(public.verify_account_deletion_storage_internal(v_owner,v_operation),
+        v_stamp,'fresh verification is stable on exact retry');
+    RETURN NEXT is((SELECT account_state FROM public.profiles WHERE id=v_owner),'deleting',
+        'verification leaves DB and Auth finalization pending');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM auth.users WHERE id=v_owner)
+        AND EXISTS (SELECT 1 FROM public.photo_assets WHERE id=v_photo),
+        'verification preserves Auth and application data');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_proc
+        WHERE oid='public.verify_account_deletion_storage_internal(uuid,uuid)'::regprocedure
+          AND prosecdef AND provolatile='v' AND proconfig @> ARRAY['search_path=""']),
+        'internal verifier is definer with fresh snapshots and empty search path');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.verify_account_deletion_storage_internal(uuid,uuid)'::regprocedure
+          AND a.grantee<>p.proowner),'verifier strips PUBLIC and all nonowner default grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual verifier execution denied for '||v_role);
+        RETURN NEXT ok(NOT has_table_privilege(v_role,'public.account_deletion_requests',
+            'SELECT,INSERT,UPDATE,DELETE'),'request table remains private for '||v_role);
+    END LOOP;
+END;
+$$;
+SELECT * FROM pg_temp.storage_verification_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
