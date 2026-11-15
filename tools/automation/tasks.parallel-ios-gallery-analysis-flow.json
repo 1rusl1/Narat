@@ -1,0 +1,55 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-gallery-analysis-flow",
+      "description": "Connect the gallery and existing photo preparation to an injectable analysis service, with retry-safe state and honest result rendering. Local fixture package for the test-stand photo-to-diagnosis flow.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/Plants/Integrations/Photos/AnalysisPhotoInput.swift",
+        "ios/Plants/Features/Onboarding/AddPlantRouter.swift",
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/App/PlantsApp.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift"
+      ],
+      "constraints": [
+        "One client package. Edit only the four existing write_files. No new source files, Xcode changes, backend, API transport, auth, CI, fake runtime service, or generated photos in app. Controller will connect the accepted test endpoint separately. Keep existing no-service behavior and current FirstHelp tests.",
+        "Add a small injectable @MainActor async analysis service boundary within AnalysisFlowModel.swift. A frozen request includes operation UUID, flow UUID, mode, intent, prepared photo, conditions and locale. Use existing domain types. Return PreliminaryAnalysis plus optional authoritative display labels (species and condition). Expose localized user-visible failure including retryable provider failure, without displaying secrets, IDs, or raw unexpected errors. Keep existing preliminaryResult usable.",
+        "When a service is installed, valid gallery selection uses PhotosPicker and existing image preparation, then starts analysis. Problem uses diagnosis, care scan uses identification. The first gallery path requires no extra form. Corrupt/failed photo load stays on picker with an error and cannot submit prior bytes. Track photo selection cancellation to prevent a delayed load from launching after Back or a newer selection. Keep existing navigation/legacy questions and fail-closed no-service UI behavior.",
+        "Support one active submission, keep the exact request and operation ID for explicit retry even if locale/conditions later change. New valid photo starts a new operation. Cancel/back/catalogue/replacement invalidates in-flight output, including a late service that ignores cancellation. No fake result on error. Make service installation explicit for future RootContainerView integration. Do not store JWT, result receipt, or photo outside existing in-memory state.",
+        "Result screen shows neutral progress, retry/back/catalogue on failure, authoritative species name and a clearly qualified diagnosis when available, and explicit uncertainty when unresolved/out of scope/labels unavailable. Render only supplied labels and limitations. No raw IDs, guessed labels, suggestions, saving, billing, or auto re-analysis. Keep EN and PL and existing unavailable accessibility IDs.",
+        "Add focused tests in existing FirstHelpUnitTests for injected service success, honest unknown, frozen retry, and obsolete completion after cancel/new selection. Exercise actual model transitions and prepared photo. Keep all previous unit tests. Fixtures are injected only in tests. Swift gates are local, no live acceptance in this package."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Gallery and existing preparation use the injected service for diagnosis/identification, and the result view renders authoritative labels or uncertainty. Existing no-service behavior is preserved.",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Real model tests cover success, unknown, explicit retry with frozen request and stale async completion, and the full Swift suite passes.",
+          "checks": [
+            "ios-tests"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

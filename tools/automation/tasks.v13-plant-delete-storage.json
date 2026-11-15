@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-storage",
+      "description": "Review the separately scoped private Storage phase of plant deletion on synthetic fixtures.",
+      "candidate_base": "da560e8ae4481731539c8b3ca04f23358780f6e2",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/http.ts",
+        "supabase/functions/_shared/tests/plant_storage_purge_test.ts",
+        "supabase/functions/maintenance/plant-deletions.ts",
+        "supabase/functions/plants-api/guest-photo.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/migrations/202611130035_plant_delete_storage.sql",
+        "supabase/tests/plant_delete_storage.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v13-plant-delete-storage.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Review/QA only, use local fixtures. No staging, scheduling, DB hard purge, migration 024 or StoreKit changes.",
+        "Verify the privileged single-job entry point, exact ticket-backed keys, shared and ambiguous references, bounded retries, late writes, and unchanged usage ledger."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-S1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V13-S2",
+          "description": "Production HTTP handler and SQL fixture tests cover authorization, scoped removal, failure and retry, shared keys and late writes.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

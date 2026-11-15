@@ -1,0 +1,437 @@
+{
+  "schema_version": 1,
+  "pilot_task_count": 1,
+  "terminal_status": "COMPLETED",
+  "pilot_stopped_after_terminal": true,
+  "timing": {
+    "received_observed_utc": "2026-11-10T20:00:17Z",
+    "run_id": "parallel-ios-t036-access-wire-pilot-20261110-01",
+    "initial_head": "2aafbdd946212a089be05f4f8fce1e5babbd7091",
+    "authorization": "Exactly one product task; terminal/timeout then stop; no CI/main promotion/config changes beyond authorized context/preflight transfer",
+    "engine_source_commit": "25a5830ca5447a3b25e7abd37350759e3e0841f3",
+    "engine_transferred_merge": "20f49b6",
+    "prerequisite_merge": "4ab2b60",
+    "engine_package_sha256": "7f5f41e41e537612319aa9b702a3d3cfc4a6bde1eca032f3ee36591f4ab1ff2f",
+    "config_sha256": "6bd5008b1fa38b96938a9f82a6eb14d92e309006743fe2db7d27b1bcee88a523",
+    "config": "docs/validation/automation/runs/parallel-ios-t036-pilot.config.json",
+    "manifest": "tools/automation/tasks.parallel-ios-t036-access-wire-pilot.json",
+    "task_id": "parallel-ios-t036-access-wire-pilot",
+    "preflight": "PASSactual5SwiftSources7inputsfixture",
+    "checks": [
+      "diff-check",
+      "ios-tests",
+      "simulator-smoke"
+    ],
+    "transfer_config_gates_ready_utc": "2026-11-10T20:07:38.566Z",
+    "prep_completed_utc": "2026-11-10T20:07:38.566Z",
+    "pilot_preparation_head": "62800b0bda78fc0674a39ea4c82c92718e0e6c90",
+    "run_start_utc": "2026-11-10T20:07:38.582Z",
+    "wrapper_pid": 75324,
+    "orchestrator_pid": 75332,
+    "run_end_publication_utc": "2026-11-10T20:23:14.158Z",
+    "runtime_wall_seconds": 935.649,
+    "controller_exit_code": 0
+  },
+  "prep_wall_seconds_from_first_observation": 441.566,
+  "model_elapsed_seconds_sum": 813.634,
+  "checks_elapsed_seconds_sum": 114.201,
+  "runtime_other_wall_seconds": 7.814,
+  "role_budget_counts": {
+    "developer": 1,
+    "reviewer": 1,
+    "qa": 1
+  },
+  "actual_model_calls": 3,
+  "developer_repairs": 0,
+  "re_reviews": 0,
+  "qa_repeats": 0,
+  "provider_retry_calls": 0,
+  "timeouts": 0,
+  "calls": [
+    {
+      "id": "parallel-ios-t036-access-wire-pilot:1",
+      "agent": "developer",
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "routing_level": "medium",
+      "elapsed_seconds": 630.584,
+      "status": "PASS",
+      "retry": 0,
+      "error_category": null,
+      "prompt_kind": "full",
+      "resumed_session": null,
+      "session_id": "01a1c712-c95a-7a53-a868-ebbea9e703cb",
+      "prompt_bytes": 21179,
+      "estimated_prompt_tokens": 5295
+    },
+    {
+      "id": "parallel-ios-t036-access-wire-pilot:2",
+      "agent": "reviewer",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "routing_level": "high",
+      "elapsed_seconds": 81.336,
+      "status": "PASS",
+      "retry": 0,
+      "error_category": null,
+      "prompt_kind": "full",
+      "resumed_session": null,
+      "session_id": "01a1c71d-cb80-7d53-9419-cbce5d56c5d8",
+      "prompt_bytes": 40161,
+      "estimated_prompt_tokens": 10041
+    },
+    {
+      "id": "parallel-ios-t036-access-wire-pilot:3",
+      "agent": "qa",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "routing_level": "high",
+      "elapsed_seconds": 101.714,
+      "status": "PASS",
+      "retry": 0,
+      "error_category": null,
+      "prompt_kind": "full",
+      "resumed_session": null,
+      "session_id": "01a1c71f-6d95-74d0-93e7-d8e521c53342",
+      "prompt_bytes": 40665,
+      "estimated_prompt_tokens": 10167
+    }
+  ],
+  "checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "elapsed_seconds": 0.024,
+      "exit_code": 0,
+      "mode": "local",
+      "owner": "developer",
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/parallel-ios-t036-access-wire-pilot/check-1-diff-check/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/parallel-ios-t036-access-wire-pilot/check-1-diff-check/stderr.log",
+      "evidence_directory": null
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "elapsed_seconds": 89.339,
+      "exit_code": 0,
+      "mode": "local",
+      "owner": "developer",
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/parallel-ios-t036-access-wire-pilot/check-2-ios-tests/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/parallel-ios-t036-access-wire-pilot/check-2-ios-tests/stderr.log",
+      "evidence_directory": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/q-750c7fa9c2a28d4e30e1430f"
+    },
+    {
+      "name": "simulator-smoke",
+      "status": "PASS",
+      "elapsed_seconds": 24.838,
+      "exit_code": 0,
+      "mode": "local",
+      "owner": "qa",
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/parallel-ios-t036-access-wire-pilot/check-3-simulator-smoke/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/parallel-ios-t036-access-wire-pilot/check-3-simulator-smoke/stderr.log",
+      "evidence_directory": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/q-2cea21a8c64cee163c46a208"
+    }
+  ],
+  "quality_contract": "85e2f9441290fdbaccf431938759c1831fef76be94135d8db6d6e0270b8311f2",
+  "engine_task_fingerprint": "5a8664018513adf2e0e4c45f63096ddc3a34e1d59c6871e7ab53158bae6ced91",
+  "publication_commit": "e04103f41518f524d82fca9e099edf14a6a931c6",
+  "state_identity": "8ace57111a08de2584eed26146baebd6f8c9efb837cea9b2fb1fa91ee302f627",
+  "paths": {
+    "manifest": "tools/automation/tasks.parallel-ios-t036-access-wire-pilot.json",
+    "state": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/state.json",
+    "metrics": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/orchestrator-parallel-ios-t036-access-wire-pilot-20261110-01/metrics.jsonl",
+    "task_report": "docs/validation/automation/tasks/parallel-ios-t036-access-wire-pilot.md",
+    "unit_evidence": "/Users/ruslansabirov/.codex/worktrees/d09a/Plants/docs/validation/automation/runs/q-750c7fa9c2a28d4e30e1430f"
+  },
+  "unit_summary": {
+    "devicesAndConfigurations": [
+      {
+        "device": {
+          "architecture": "arm64",
+          "deviceId": "32009F39-32EF-426B-A91E-31B368D6C27E",
+          "deviceName": "iPhone 17 Pro",
+          "modelName": "iPhone 17 Pro",
+          "osBuildNumber": "23D8133",
+          "osVersion": "26.3.1",
+          "platform": "iOS Simulator"
+        },
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "passedTests": 191,
+        "skippedTests": 0,
+        "testPlanConfiguration": {
+          "configurationId": "1",
+          "configurationName": "Test Scheme Action"
+        }
+      }
+    ],
+    "environmentDescription": "Plants · Built with macOS 26.3.1",
+    "expectedFailures": 0,
+    "failedTests": 0,
+    "finishTime": 1794341978.12,
+    "passedTests": 191,
+    "result": "Passed",
+    "skippedTests": 0,
+    "startTime": 1794341938.61,
+    "statistics": [],
+    "testFailures": [],
+    "title": "Test - Plants",
+    "topInsights": [
+      {
+        "category": "Longest Test Runs",
+        "impact": "13% of duration",
+        "text": "3 longest test runs with outlier durations exceeding 0.47s (three standard deviations)"
+      }
+    ],
+    "totalTestCount": 191
+  },
+  "source_test_coverage": {
+    "status": "PASS",
+    "expected_xctest_methods": 188,
+    "passed_xctest_methods": 188,
+    "total_tests": 191,
+    "missing_methods": [],
+    "mode": "local_fixture_transport_not_live"
+  },
+  "baseline": [
+    {
+      "run_id": "parallel-ios-sync-transport-20261109-01",
+      "task_id": "parallel-ios-sync-transport",
+      "status": "WAITING",
+      "quality_contract": "fdd4c74aada33600ab3d7ab7196a7024cdd71c0ae19d31b3d419d5e34fe4cb03",
+      "counts": {
+        "developer": 3
+      },
+      "recorded_model_seconds": 979.044,
+      "unknown_model_elapsed_calls": 1,
+      "recorded_checks_seconds": 0,
+      "calls": [
+        {
+          "id": "parallel-ios-sync-transport:1",
+          "agent": "developer",
+          "model": "gpt-6.1-sol",
+          "provider": "codex",
+          "reasoning_effort": null,
+          "routing_level": "medium",
+          "elapsed_seconds": 503.746,
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "error": null,
+          "prompt_kind": "full",
+          "resumed_session": null,
+          "session_id": "01a1c150-e480-7481-9015-13bf5fe06034"
+        },
+        {
+          "id": "parallel-ios-sync-transport:2",
+          "agent": "developer",
+          "model": "gpt-6.1-sol",
+          "provider": "codex",
+          "reasoning_effort": null,
+          "routing_level": "medium",
+          "elapsed_seconds": 475.298,
+          "status": "PASS",
+          "retry": 1,
+          "error_category": null,
+          "error": null,
+          "prompt_kind": "full",
+          "resumed_session": null,
+          "session_id": "01a1c158-961e-79d3-a481-e223d6d546bc"
+        },
+        {
+          "id": "parallel-ios-sync-transport:3",
+          "agent": "developer",
+          "model": "gpt-6.1-sol",
+          "provider": "codex",
+          "reasoning_effort": null,
+          "routing_level": "medium",
+          "elapsed_seconds": null,
+          "status": "STARTED",
+          "retry": 2,
+          "error_category": null,
+          "error": null,
+          "prompt_kind": "full",
+          "resumed_session": null,
+          "session_id": null
+        }
+      ],
+      "checks": []
+    },
+    {
+      "run_id": "parallel-ios-sync-transport-20261109-02",
+      "task_id": "parallel-ios-sync-transport-recovery",
+      "status": "BLOCKED",
+      "quality_contract": "8eca58a8cbf8d5b7b670c83a8c16dd9ddd68b032b13dcff66210ffc32c2aacbd",
+      "counts": {},
+      "recorded_model_seconds": 0,
+      "unknown_model_elapsed_calls": 0,
+      "recorded_checks_seconds": 41.029,
+      "calls": [],
+      "checks": [
+        {
+          "name": "diff-check",
+          "status": "PASS",
+          "elapsed_seconds": 0.021,
+          "exit_code": 0,
+          "owner": "developer"
+        },
+        {
+          "name": "deno-tests",
+          "status": "PASS",
+          "elapsed_seconds": 3.007,
+          "exit_code": 0,
+          "owner": "developer"
+        },
+        {
+          "name": "ios-tests",
+          "status": "FAIL",
+          "elapsed_seconds": 38.001,
+          "exit_code": 1,
+          "owner": "developer"
+        }
+      ]
+    },
+    {
+      "run_id": "parallel-ios-sync-transport-20261109-03",
+      "task_id": "parallel-ios-sync-transport-compile-repair",
+      "status": "COMPLETED",
+      "quality_contract": "c5457bd299e77896bcd40d7501cbdff9684f2db743ed6b3e4d5326bb9eac7a2e",
+      "counts": {
+        "developer": 1,
+        "reviewer": 1,
+        "qa": 1
+      },
+      "recorded_model_seconds": 177.103,
+      "unknown_model_elapsed_calls": 0,
+      "recorded_checks_seconds": 71.535,
+      "calls": [
+        {
+          "id": "parallel-ios-sync-transport-compile-repair:1",
+          "agent": "developer",
+          "model": "gpt-6.1-sol",
+          "provider": "codex",
+          "reasoning_effort": null,
+          "routing_level": "medium",
+          "elapsed_seconds": 48.141,
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "error": null,
+          "prompt_kind": "full",
+          "resumed_session": null,
+          "session_id": "01a1c164-7c61-7461-82cc-46cc5926fe5d"
+        },
+        {
+          "id": "parallel-ios-sync-transport-compile-repair:2",
+          "agent": "reviewer",
+          "model": "gpt-6.1-sol",
+          "provider": "codex",
+          "reasoning_effort": null,
+          "routing_level": "low",
+          "elapsed_seconds": 62.761,
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "error": null,
+          "prompt_kind": "full",
+          "resumed_session": null,
+          "session_id": "01a1c165-f220-7ca3-a3b2-c00175b00984"
+        },
+        {
+          "id": "parallel-ios-sync-transport-compile-repair:3",
+          "agent": "qa",
+          "model": "gpt-6.1-sol",
+          "provider": "codex",
+          "reasoning_effort": null,
+          "routing_level": "low",
+          "elapsed_seconds": 66.201,
+          "status": "PASS",
+          "retry": 0,
+          "error_category": null,
+          "error": null,
+          "prompt_kind": "full",
+          "resumed_session": null,
+          "session_id": "01a1c167-4e01-7260-b44d-ad1a97fd2db3"
+        }
+      ],
+      "checks": [
+        {
+          "name": "diff-check",
+          "status": "PASS",
+          "elapsed_seconds": 0.023,
+          "exit_code": 0,
+          "owner": "developer"
+        },
+        {
+          "name": "deno-tests",
+          "status": "PASS",
+          "elapsed_seconds": 1.885,
+          "exit_code": 0,
+          "owner": "developer"
+        },
+        {
+          "name": "ios-tests",
+          "status": "PASS",
+          "elapsed_seconds": 44.222,
+          "exit_code": 0,
+          "owner": "developer"
+        },
+        {
+          "name": "simulator-smoke",
+          "status": "PASS",
+          "elapsed_seconds": 25.405,
+          "exit_code": 0,
+          "owner": "qa"
+        }
+      ]
+    }
+  ],
+  "baseline_limitations": [
+    "Different behavior/quality_contract; oldA1 had35→43units/current184→191",
+    "Old finalrun is mediumrisk compile-repair of a recoveredcandidate withSolReviewQA; thispilot newimplementation/highriskAstra split",
+    "Old firstfeaturecall3elapsedunknown, notzero;oldprep/runtimewall notmeasured",
+    "No causal speedup or quota percentage inferred;ambiguousCLI token counters notsummed"
+  ],
+  "source_after_sha256": "aeb2c2ca849cf4bddc7b8993e4eec43b3a42b488dc80e1eeea157189cee66437",
+  "source_before_sha256": "a785d63abb8e539291a4fc4a73e8bdcc09d878bb46eeb895963345a17ebdbced",
+  "tracked_source_files": 1530,
+  "CI_untouched": true,
+  "main_unchanged": "5d15123e1271f93e7575433d4a09f7f04612e64a",
+  "stopped_processes": {
+    "orchestrator_pid": 75332,
+    "orchestrator_exit": 0,
+    "check_daemon_pid": 80483,
+    "daemon_signal": "SIGINT",
+    "signal_command_exit": 0,
+    "verification": "psafter onlyheader/exit1, bothabsent"
+  },
+  "next_step": "Wait for explicit owner decision; nosecondruntime/repair/CI/mainpromotion. Repository/UI/billing/liveT036 remains separate.",
+  "compactions": [
+    {
+      "role": "reviewer",
+      "reason": "major phase complete",
+      "sequence": 1,
+      "method": "deterministic_checkpoint_new_session",
+      "model_calls": 0
+    },
+    {
+      "role": "qa",
+      "reason": "major phase complete",
+      "sequence": 2,
+      "method": "deterministic_checkpoint_new_session",
+      "model_calls": 0
+    }
+  ],
+  "context_rotation_model_calls": 0,
+  "report_prepared_utc": "2026-11-10T20:28:29.059Z",
+  "post_runtime_reporting": {
+    "first_report_commit": "7011daf7a0690e2d0903b525a911d7637b02cd0f",
+    "first_report_push_completed_observed_utc": "2026-11-10T20:30:16.415Z",
+    "reporting_after_runtime_seconds": 422.257,
+    "total_first_observation_to_first_report_publication_seconds": 1799.415,
+    "scope": "Controller report/JSON/handoff/doc checks/commitpush after terminal, not additional model/product runtime. This confirmation is subsequent metadata."
+  }
+}

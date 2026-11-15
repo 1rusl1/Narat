@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "id": "t154-auth-registration",
+      "description": "Accept the Auth signup and same-identity conversion link to the immutable registration anchor.",
+      "candidate_base": "ac9e2b8442c156989bd486f782d81774e2d4c798",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "tools/automation/tasks.t154-auth-registration.json",
+        "docs/handoff_status.md",
+        "supabase/migrations/202611120022_auth_registration_profile.sql",
+        "supabase/tests/auth_registration_profile.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611060004_guest_profile.sql",
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/migrations/202611090012_analysis_access_snapshot.sql"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Independent English Reviewer and QA, read-only exact-diff inspection with local gates. The controller alone changes the fixed narat-staging project and uses synthetic Auth sessions. No model role receives credentials, invokes live Auth or changes production.",
+        "Review permanent signup and true-to-false Auth conversion, profile owner isolation, immutable anchor, no legacy backfill, no revival of deleting profiles, lock order and original consumed or in-flight starter. No edits to Auth providers, billing, Edge routes or quotas. Existing historical data must survive clean and upgrade paths.",
+        "New tests use actual PostgreSQL triggers and quota RPCs with synthetic auth rows. The live guest provider result and subsequent Auth confirmation are independent controller evidence."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T154-A1",
+          "description": "Diff and Edge entrypoint static checks pass.",
+          "checks": [
+            "diff-check",
+            "deno-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "T154-A2",
+          "description": "Clean/upgrade PostgreSQL trigger, quota settlement and existing Edge transport fixtures pass.",
+          "checks": [
+            "parallel-backend-diagnosis-sql",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

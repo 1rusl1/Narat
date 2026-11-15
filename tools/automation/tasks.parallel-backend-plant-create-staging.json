@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-plant-create-staging",
+      "description": "Restore the existing catalogue plant.create RPC on hosted Supabase, where pgcrypto is installed in extensions.",
+      "risk": "high",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/migrations/202611090002_retire_rooms.sql",
+        "supabase/tests/collection_cap.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md"
+      ],
+      "write_files": [
+        "supabase/migrations/202611110015_plant_create_pgcrypto.sql",
+        "supabase/tests/collection_cap.test.sql"
+      ],
+      "evidence_files": ["docs/handoff_status.md"],
+      "constraints": [
+        "Write Developer, Reviewer and QA reports in English. Return a real unified diff limited to the two write_files. Do not edit or copy entire applied migrations. No live access or deploy by model roles. The controller runs the staging replay only after acceptance.",
+        "The staging rollback-only RPC reproduces 42883 function digest(text, unknown) does not exist. The existing SECURITY DEFINER execute_plant_create_command(uuid,uuid,jsonb,timestamptz) has search_path=public; hosted pgcrypto lives in extensions, while the clean fixture uses public. Add one forward migration scoped to this function so its current digest resolves in both supported layouts. Keep privileges, hash bytes, owner scoping, receipt ordering, free collection cap and existing accepted payload/response unchanged.",
+        "Extend the existing collection_cap.test.sql transaction. Exercise the hosted extensions layout (e.g. ALTER EXTENSION pgcrypto SET SCHEMA extensions after existing assertions), prove fresh create and canonical replay using the actual RPC, and preserve earlier tests. Verify receipt compatibility with the original public layout or equivalent negative control. The regression must fail on the old RPC in the hosted layout. Use only synthetic fixtures.",
+        "Scope is confirmed species to the existing catalogue save with optional origin_flow_id. Do not add a new wire field, result/photo attachment, care, auth, quota, billing or client code. The source diagnosis remains readable through its existing owner route. Full T044/T046-T049/T150 are outside this narrow proof."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Fresh and replayed plant.create succeed when pgcrypto is in extensions and existing public-layout behavior and receipt compatibility are preserved.",
+          "checks": ["parallel-backend-cap-regression"],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Existing command contract and quota/owner regression pass.",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Type and diff checks pass; only the forward RPC setting and regression fixture change.",
+          "checks": ["deno-check", "diff-check"],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "v11-manual-care-date-correction",
+      "description": "Independently review the manual care date correction command, receipt and owner sync.",
+      "candidate_base": "41118bea0d14396ba2e16424c1663e4773828fad",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/care_journal_http_test.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/migrations/202611120026_manual_care_date_correction.sql",
+        "supabase/tests/manual_care_date_correction.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v11-manual-care-date-correction.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Local gates only. The controller alone deploys to narat-staging.",
+        "Keep original record and undo wire, ownership, immutable receipts and watermark semantics. Correction is a date change to the original active manual fact. Check foreign or voided entries, expiry, replay, invalid and future dates, and no care automation changes.",
+        "Keep migration 024, StoreKit and the full T160 schedule outside this packet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V11-C1",
+          "description": "Production entrypoints type-check and exact diff passes.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V11-C2",
+          "description": "Production command transport and clean/upgrade PostgreSQL verify identity, correction/undo, exact replay, owner isolation and canonical local-day sync.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

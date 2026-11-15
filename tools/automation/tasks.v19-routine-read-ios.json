@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-read-ios",
+      "description": "Decode and validate the proposed additive routine_check on the English recommendation response in iOS.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Accepted source 5b6ce9f. Developer returns a valid unified Git patch in JSON. Use exact current source context around each hunk; the controller applies the diff and runs tests.",
+        "Exact additive JSON contract: routine_check = {\"rule_id\":\"UUID\",\"care_revision\":2,\"due_local_date\":\"2026-11-23\",\"anchor_local_date\":\"2026-11-16\",\"anchor_kind\":\"water\"|\"check_soil\"}. Its due/anchor dates agree with outer next_check.due_on/anchor_on. The core GET contract and source are unchanged.",
+        "Use the existing owner-bound fetchCareRecommendation and retain the existing data and UI behavior. Store an optional routine context containing plant target via the recommendation, rule UUID, care revision, due and anchor local days, and watering/soil-check anchor kind. A missing or null field is compatible with older servers.",
+        "For a non-null routine projection require recommendation availability, a verified next_check, matching local due and anchor days, a positive bounded care revision, and a known action kind. Test good response and rejected inconsistent UUID/revision/dates/kind plus older absent payload. Do not assume runtime staging has the new field.",
+        "Scope is transport decoding and CollectionWireTests. No new write command, declaration in project file, UI control, staging, data or reminders."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19A1",
+          "description": "Build and fixture unit tests verify the additive routine payload and rejection cases.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

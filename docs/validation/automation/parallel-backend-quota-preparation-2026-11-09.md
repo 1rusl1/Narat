@@ -109,3 +109,40 @@ Check ID `parallel-backend-cap-regression`, unit/fixture/300s; argv — кома
 не старый shared runner. Root gate дополнительно сравнивает все прежние строки,
 новые таблицы допускает как additions. Самостоятельный negative old upgrade
 probe остаётся FAIL1/55; guard candidate — ещё до независимой приёмки.
+
+
+## Run03 / reserve recovery
+
+Guard a04794c accepted/pushed (55+131pgTAP each/12UTC/4races,336Deno115automation
+ReviewQA). Reserve returned37618-byte patch but74-char malformed fingerprint
+(expected64); correctly rejected, raw answer/state unchanged, settlementPENDING.
+Original answer SHA256 de0ac185a94bff6a88cace5b273c460bed3089d11c625cb6852d3398d829a897.
+Controller applied only008+test afterscope/gitapplychecks, fixed SQL BEGIN; and
+B expected remaining (two existing owncharges, nowadmittedtrue/remaining0).
+Reserve gate78+55+49pgTAP each +4x20 realconnections PASS after honest compile/
+fixture FAILs. Log/tmp/narat-b163-reserve-recovery-v4.log; notsettlement/fullT163.
+Added failing TAP diagnostics toprotectedB gate only. No005/006/007rewrite.
+
+Between runs ordinaryFF72bcccc A integration merged, candidatefilespreserved.
+New manifest tasks.parallel-backend-quota-reserve-recovery.json validate2/context/
+diffPASS. Samebranchconfighash59ed00ee3315c8db379677e7aa0ef1558cc7b9be590b64f626d9cf3f043e31ff,
+samecheckargv/modes/timeouts/routing/budgets/backendpublish. Newrun04 fromclean
+candidatecheckpoint: Developer/Reviewer/QA008 acceptance then009settlement. No03resume.
+All originalchecks required afresh; Deno008 not claimed frompreviousancestor runs.
+
+
+## Run04 результат / run05 подготовка
+
+008 independently accepted/pushed141d548 (1Dev/1Review/1QA),78+55+49pgTAP each,
+4x20 realconnections,336Deno115automation/typecheck/diff. Combined settlement
+Developer timeout900 WITHOUTanswer/patch;009 absent,WAITING,rawstateunchanged.
+Newmanifest tasks.parallel-backend-quota-settle-bind.json validate2/context/help/
+diffPASS:009finalizeONLY →010bindONLY, no combinedgeneration. Confignewhash
+5df700479dc274b65fb61fd76c836251c09594d04ebd0ff122a98010dbd96f49; newcheck
+parallel-backend-quota-bind argv python3 tools/automation/parallel_backend_quota_gate.py --bind,
+unit/fixture/300s. Fullgate additionally includesall78reserve regression, still
+99ACTUALadmit/finalize +6x20connections. Actualbinding10file/suite required,not
+filepresence acceptance. Nofullsettlement/livePASSyet. Samebackendpublish/routing/
+budgets, sharedconfigunchanged. Nextclean-treeactualrun05, old04notresume.
+
+Run05 preparation regression: `python3 tools/automation/parallel_backend_quota_gate.py --reserve` — PASS clean/upgrade55+49+78pgTAP/12UTC/four20-connectionraces, `/tmp/narat-b163-finalize-prep-reserve.log`. Это не settlement acceptance.

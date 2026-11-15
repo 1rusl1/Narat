@@ -1,0 +1,139 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-t163-reserve-recovery",
+      "description": "Independent acceptance/repair of materialized T163 reserve008 candidate after malformed Developer fingerprint; no regeneration if correct. Settlement remains next task.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/monthly-access.md",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202610200006_billing.sql",
+        "supabase/migrations/202610200007_analysis_quota.sql",
+        "supabase/migrations/202610200012_quota_operations.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/migrations/202611090001_analysis_mode_guard.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/migrations/202611090006_registration_ledger.sql",
+        "supabase/migrations/202611090007_registration_state_guard.sql",
+        "supabase/tests/registration_anchors.test.sql",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/tests/registration_reservation.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/tests/registration_reservation.test.sql"
+      ],
+      "constraints": [
+        "Candidate extracted from run03 parallel-backend-t163-reserve/call-1-developer/answer.json. Task ID correct, malformed repeated-substring fingerprint rejected by provider; originalanswer/state/metrics untouched, run03 staysWAITING. Scope andgitapplyverified only008+test. Controller fixed exactly SQL function BEGIN; ->BEGIN and test11 expected ownBremaining0 WITH admitted=true (B fixture already has two ownconsumed charges). Rootreservegate nowPASS78pgTAP/four20connectionraces, NOTsettlement. Inspectthis candidateandrepaironlyactualdefects, returnemptypatchquicklyifcorrect; doNOTregeneratehugeSQL.",
+        "External anchors21ee7a7/ledgere6b1f7c/guarda04794c accepted; integration72bcccc ordinaryFFmergedBETWEENruns, Aclientcode/notouchedbyB. No unknown same-manifest dependencies. Newrun04/fingerprint is authoritative; do not reuse/rewrite rejected fingerprint.",
+        "Only exact write_files. Do not change applied migrations, tools/automation, handoff, tasks.md, collection-http.md, Swift, auth/cap/sync. No network/deploy/prod cleanup. Read FR-005/017/065 and monthly-access.md. External accepted T161 b5f2c8f/01ba170/eb58c03, auth 9551807 and sync c26a4e0 are constraints not manifest dependencies.",
+        "Return unified ordinary git patch with complete new text files; Developer PASS means patch ready. All acceptance checks run by controller. High risk separate Developer/Reviewer/QA. Fixtures not live. Full T163 waits A/T036; no parent checkbox changes.",
+        "Preserve all original public rows/counters/owners/history/receipts/lease fields byte-for-byte during forward migrations. Only add internal tables/indexes/functions and new triggers; no ALTER destructive data rewrites. All new definer functions pin search_path and revoke PUBLIC/anon/authenticated; service_role only. New private tables RLS enabled, no client grants except owner-scoped read if needed later. Preserve provider budget/collection cap; no refresh from purchase/restore/claim.",
+        "Only008+reservation tests. No finalizer, binding, API or worker implementation in this slice. Keep concise enough for900s. Accepted005/006 and manifest guard007 supply anchors/window/import. New admission RPC same signature admit_analysis_quota(text,uuid,uuid,uuid,timestamptz). Read actual columns: analysis_jobs.owner_id/mode/quota_kind/quota_state/quota_installation_id/state; installation_access.linked_owner_ids, no bound_owner_id/status/completed_at.",
+        "Owner active then actual owner update lock (RR/SERIALIZABLE stale snapshots cannot bypass quota), installation if present, job/usage. Existing matching owner+mode job required. Initial queued job none/not_applicable allowed, persist reservation kind/state/installation to job and monthly ledger atomically. Mode only identification/diagnosis; NULL/follow_up/plan reject. Permanent paid owner may omit installation. Anonymous requires own valid installation; unknown/mismatched job/installation rejected. Same job replay reserved returns admitted true without another usage row; consumed/released replay never reserves again. Existing unique(owner_id,operation_id) preserves operation identity; no fabricated receipts.",
+        "Free unused starter for requested mode first, separate mode pointers and markers; paid verified only shared100 and never fallback starter/free on exhaust. Free shared3 immediately after registration, no first-success/calendar-month wait. Both monthly modes share account_quota_usage consumed+reserved in current window. Return admitted,quota_kind,remaining_after_reserve and period_start/end; actual canonical new usage monthly_quota_id nullable, keep old original pointer for legacy. Missing anchor monthly denied reason quota_registration_required; unresolved current history quota_history_unresolved. Old periods not overlapping current must not silently charge/block a clean new period solely because aggregate residual exists in an old known source window. honor reconcile v_unresolved for genuinely unmappable owner/jobs; inspect006 return/rows rather than blanket global residual false success. Tariff/purchase/trial/restore/expiry does not mutate anchor/usage. Owner isolation and provider budget untouched.",
+        "Reservation-only trusted gate seeds99 HISTORICAL consumed job/ledger fixtures, observes20 real simultaneous waiters on last remaining slot, distinct+same job and replay; this is explicitly NOT complete settlement/T163 acceptance. Default full gate still retains99 genuine admit+finalize and six20-connection rounds AFTER009. Developer pgTAP real schema: immediateFree3, mode sharing, starter reservations, paid100/no fallback, owner A/B, missing/history, old/current windows, in-progress and replay, active/inactive; no finalize calls or mocks/skips. Return full unified patch for only008+test."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Clean/upgrade reserve fixtures, meaningful pgTAP and four20-real-connection reserve races; settlement still unaccepted.",
+          "checks": [
+            "parallel-backend-quota-reserve"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Full Deno regressions remain green; no live proof.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Types and diff clean.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    },
+    {
+      "id": "parallel-backend-t163-settlement",
+      "description": "T163 final SQL slice: exactly-once finalize/release and actual installation bind, keep reserve008 stable. Full99-admit/finalize+20-connection gate now mandatory.",
+      "depends_on": [
+        "parallel-backend-t163-reserve-recovery"
+      ],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/monthly-access.md",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202610200006_billing.sql",
+        "supabase/migrations/202610200007_analysis_quota.sql",
+        "supabase/migrations/202610200012_quota_operations.sql",
+        "supabase/migrations/202611060002_service_rpc_permissions.sql",
+        "supabase/migrations/202611090001_analysis_mode_guard.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611090005_registration_quotas.sql",
+        "supabase/migrations/202611090006_registration_ledger.sql",
+        "supabase/migrations/202611090007_registration_state_guard.sql",
+        "supabase/tests/registration_anchors.test.sql",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/tests/registration_reservation.test.sql",
+        "supabase/migrations/202611090009_quota_settlement.sql",
+        "supabase/tests/registration_admission.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611090009_quota_settlement.sql",
+        "supabase/tests/registration_admission.test.sql"
+      ],
+      "constraints": [
+        "Only exact write_files. Do not change applied migrations, tools/automation, handoff, tasks.md, collection-http.md, Swift, auth/cap/sync. No network/deploy/prod cleanup. Read FR-005/017/065 and monthly-access.md. External accepted T161 b5f2c8f/01ba170/eb58c03, auth 9551807 and sync c26a4e0 are constraints not manifest dependencies.",
+        "Return unified ordinary git patch with complete new text files; Developer PASS means patch ready. All acceptance checks run by controller. High risk separate Developer/Reviewer/QA. Fixtures not live. Full T163 waits A/T036; no parent checkbox changes.",
+        "Preserve all original public rows/counters/owners/history/receipts/lease fields byte-for-byte during forward migrations. Only add internal tables/indexes/functions and new triggers; no ALTER destructive data rewrites. All new definer functions pin search_path and revoke PUBLIC/anon/authenticated; service_role only. New private tables RLS enabled, no client grants except owner-scoped read if needed later. Preserve provider budget/collection cap; no refresh from purchase/restore/claim.",
+        "Only009+finalization tests. Implement finalize_analysis_quota(uuid,text,boolean,timestamptz) and bind_installation_to_owner(uuid,uuid,timestamptz) actual signatures; no provider/classification/API changes. Do not recopy whole admission008; smaller package must fit900s. Applied005/006/007/008 frozen. Read actual008 and006 schemas before coding.",
+        "Lock owner first (initial job owner lookup may be nonlocking, then lock/recheck owner), installation then job/usage/legacy counter. No reverse job->owner deadlock. Outcomes succeeded/failed/timed_out only, reject null/unknown and invalid null billing flag. Reserved canonical usage success&&!nonbillable =>consumed; failure/explicitnonbillable=>released exactly once. Unknown classification itself billed. Preserve original reserved window even across month/tariff/expiry. Mark real jobs.state/quota_state/updated_at, actual quota_installation_id, no nonexistent status/installation_id/completed_at. Repeated consumed/released finalize or admission no new charge/release. Original legacy monthly pointer/counters updated consistently ONCE when settling imported lease; aggregate unknown not reset, fail explicitly if inconsistent counters rather than silently losing spend. Same terminal ledger remains terminal even on contradictory retry outcome.",
+        "Starters: consume OR markers across owner/install on success, clear only matching job pointer; technical failure clears same reservation without consuming. Bind actual linked_owner_ids, OR consumed and preserve valid in-progress job leases/earliest success, never reanchor or mutate monthly usage; active permanent owner/installation validation, repeatedbind no refill. Preserve history and cross-owner isolation; full positive guest transfer/media/T166 not claimed.",
+        "Write meaningful pgTAP current-schema coverage of reservation->finalize success/failure/nonbillable, doublefinalize, terminal readmit, old lease source counts once, crossing period/tariff/expiry, two starters/bind markers, A/B and grants. Default trusted gate must use99 ACTUAL admit+finalize then20 observed concurrent connections, distinct IDs/same replay/technical failure in both clean/upgrade; no substitution with fixture-only reserve gate. Both SQL cap/slots and all Deno mandatory. No live claim or parent checkbox closure."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Full trusted accounting+99 real admit/finalize+six20-connection rounds, terminal replay/failure, clean/upgrade retention and behavioral pgTAP.",
+          "checks": [
+            "parallel-backend-quota-admission",
+            "parallel-backend-cap-regression"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Full Deno regressions remain green; no live proof.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Types and diff clean.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

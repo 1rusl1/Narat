@@ -25,6 +25,669 @@ final class CatalogueSaveUITests: XCTestCase {
     @MainActor func testACKFailureRestartEnglish() { verifyACKFailureRestart(.en) }
     @MainActor func testACKFailureRestartPolish() { verifyACKFailureRestart(.pl) }
 
+    @MainActor func testCollectionOpensSameServerCardAfterRestart() {
+        let run = Run("free2", .en)
+        defer { run.app.terminate() }
+        openCatalogue(run)
+        enterName(run, run.language.input)
+        submit(run)
+        let saved = assertCard(run, name: run.language.canonicalName)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        let plantId = saved.dropFirst("catalogue.saved.card.".count)
+        tap(run, "collection.plant." + plantId, run.language.canonicalName)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), saved)
+        localizedText(run, "catalogue.saved.name", run.language.canonicalName, run.language.canonicalName)
+    }
+
+    @MainActor func testPlantDeletionLostReplyKeepsNeighbourAfterRestart() {
+        let run = Run("plantDeletion", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let first = run.app.buttons["Fixture 1"]
+        let second = run.app.buttons["Fixture 2"]
+        enabled(first)
+        first.tap()
+        let delete = run.app.buttons["collection.delete"]
+        require(delete)
+        if !delete.isHittable { run.app.swipeUp() }
+        enabled(delete)
+        delete.tap()
+        let alert = run.app.alerts["Delete this plant?"]
+        require(alert)
+        alert.buttons["Cancel"].tap()
+        enabled(delete)
+        delete.tap()
+        require(alert)
+        alert.buttons["collection.delete.confirm"].firstMatch.tap()
+        require(run.app.staticTexts["collection.delete.pending"])
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        enabled(second)
+        XCTAssertFalse(first.exists)
+        second.tap()
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 2")
+    }
+
+    @MainActor func testDeletedCatalogueSaveDoesNotResumeAfterRestart() {
+        let run = Run("plantDeletion", .en)
+        defer { run.app.terminate() }
+        openCatalogue(run)
+        enterName(run, run.language.input)
+        submit(run)
+        let saved = assertCard(run, name: run.language.canonicalName)
+        tap(run, "collection.open", "My plants")
+        let plantId = saved.dropFirst("catalogue.saved.card.".count)
+        tap(run, "collection.plant." + plantId, run.language.canonicalName)
+        let delete = run.app.buttons["collection.delete"]
+        require(delete)
+        if !delete.isHittable { run.app.swipeUp() }
+        delete.tap()
+        let alert = run.app.alerts["Delete this plant?"]
+        require(alert)
+        alert.buttons["collection.delete.confirm"].firstMatch.tap()
+        require(run.app.staticTexts["collection.delete.pending"])
+        tap(run, "collection.delete.retry")
+        enabled(run.app.buttons["Fixture 2"])
+        tap(run, "collection.back", "Close")
+        enabled(run.app.textFields["catalogue.save.name"])
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        restart(run)
+        tap(run, "welcome.intent.care", "Set up care and schedule")
+        tap(run, "care.method.catalogue", "Choose species from catalogue (no photo)")
+        chooseSpecies(run)
+    }
+
+    @MainActor func testCollectionShowsOnlyThePendingFirstAidControl() {
+        let run = Run("firstAidControl", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let activePlant = run.app.buttons.matching(NSPredicate(format: "label == %@", "Fixture 1")).firstMatch
+        enabled(activePlant)
+        activePlant.tap()
+        let date = run.app.staticTexts["catalogue.saved.firstAid.date"]
+        require(date)
+        XCTAssertEqual(date.label, "First-aid soil check · 2026-11-08")
+        require(run.app.descendants(matching: .any)["catalogue.saved.firstAid.source"].firstMatch)
+        tap(run, "collection.back", "Back")
+        let undonePlant = run.app.buttons.matching(NSPredicate(format: "label == %@", "Fixture 2")).firstMatch
+        enabled(undonePlant)
+        undonePlant.tap()
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertFalse(date.exists)
+        XCTAssertFalse(run.app.descendants(matching: .any)["catalogue.saved.firstAid.source"].firstMatch.exists)
+    }
+
+    @MainActor func testProfileReminderHourSurvivesRestart() {
+        let run = Run("profileReminderHour", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let synced = run.app.staticTexts["profile.hour.synced"]
+        require(synced)
+        XCTAssertEqual(synced.label, "09:00")
+        let picker = run.app.pickerWheels.firstMatch
+        enabled(picker)
+        picker.adjust(toPickerWheelValue: "23:00")
+        tap(run, "profile.hour.save", "Save")
+        let pending = run.app.staticTexts["profile.hour.pending"]
+        require(pending)
+        XCTAssertEqual(pending.label, "Pending: 23:00")
+        enabled(run.app.buttons["profile.hour.retry"])
+        XCTAssertFalse(synced.exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.save"].exists)
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        require(pending)
+        XCTAssertEqual(pending.label, "Pending: 23:00")
+        XCTAssertFalse(synced.exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.save"].exists)
+        // The fixture confirms only attempt two of the identical persisted envelope/body.
+        tap(run, "profile.hour.retry", "Try again")
+        require(synced)
+        XCTAssertEqual(synced.label, "23:00")
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.retry"].exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.save"].isEnabled)
+
+        tap(run, "collection.back", "Close")
+        tap(run, "collection.open", "My plants")
+        require(synced)
+        XCTAssertEqual(synced.label, "23:00")
+        XCTAssertFalse(pending.exists)
+        // Reopening reads /me, whose fixture rejects duplicate or nonidentical attempts.
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        require(synced)
+        XCTAssertEqual(synced.label, "23:00")
+        XCTAssertFalse(pending.exists)
+    }
+
+    @MainActor func testCollectionShowsVerifiedTrialDateWithOptInOffByDefault() {
+        let run = Run("trialReminder", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let end = run.app.staticTexts["trial.reminder.end"]
+        require(end)
+        XCTAssertTrue(end.label.contains("2099"))
+        let optIn = run.app.switches["trial.reminder.optIn"]
+        require(optIn)
+        XCTAssertEqual(optIn.value as? String, "0")
+    }
+
+    @MainActor func testPrivatePhotoHistoryReopensWithDatesAfterAccessExpiry() {
+        let run = Run("photoHistory", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.images["catalogue.saved.photo"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let observations = [
+            ("12340000-0000-4000-8000-000000000002", "Improved", "Oct 30, 2026"),
+            ("12340000-0000-4000-8000-000000000001", "Unchanged", "Oct 29, 2026")
+        ]
+        for (id, status, day) in observations {
+            let row = run.app.staticTexts["catalogue.saved.firstAid.observation." + id]
+            let date = run.app.staticTexts["catalogue.saved.firstAid.observation.date." + id]
+            let photo = run.app.images["catalogue.saved.firstAid.photo." + id]
+            require(row)
+            require(date)
+            require(photo)
+            XCTAssertEqual(row.label, "Observation · " + status)
+            XCTAssertEqual(date.label, day)
+        }
+        let latest = run.app.staticTexts["catalogue.saved.firstAid.observation.date." + observations[0].0]
+        let previous = run.app.staticTexts["catalogue.saved.firstAid.observation.date." + observations[1].0]
+        XCTAssertLessThan(latest.frame.minY, previous.frame.minY)
+        require(run.app.images["catalogue.saved.photo"])
+
+        tap(run, "collection.back", "Back")
+        tap(run, "Fixture 2")
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertFalse(run.app.images["catalogue.saved.photo"].exists)
+        for (id, _, _) in observations {
+            XCTAssertFalse(run.app.images["catalogue.saved.firstAid.photo." + id].exists)
+        }
+    }
+
+    @MainActor func testAnalysisHistoryMarksOnlyPreviousConditionsAfterRestart() {
+        let run = Run("analysisHistory", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["Analysis history"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let olderId = "12340000-0000-4000-8000-000000000001"
+        let currentId = "12340000-0000-4000-8000-000000000002"
+        let older = run.app.otherElements["collection.analysis.history." + olderId]
+        let current = run.app.otherElements["collection.analysis.history." + currentId]
+        require(older.staticTexts["Species identification"])
+        require(older.staticTexts["Oct 29, 2026"])
+        require(older.staticTexts["collection.analysis.previous." + olderId])
+        require(current.staticTexts["Diagnosis"])
+        require(current.staticTexts["Oct 30, 2026"])
+        XCTAssertFalse(current.staticTexts["collection.analysis.previous." + currentId].exists)
+        XCTAssertLessThan(current.frame.minY, older.frame.minY)
+
+        tap(run, "collection.back", "Back")
+        tap(run, "Fixture 2")
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertFalse(older.exists)
+        XCTAssertFalse(current.exists)
+    }
+
+    @MainActor func testPlantRenameReplaysAfterRestartAndKeepsPhotoAndAnalysis() {
+        let run = Run("plantRename", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        require(run.app.images["catalogue.saved.photo"])
+        tap(run, "collection.rename.open", "Edit name")
+        let alert = run.app.alerts["Edit plant name"].firstMatch
+        require(alert)
+        let input = alert.textFields.firstMatch
+        enabled(input)
+        XCTAssertEqual(input.value as? String, "Fixture 1")
+        input.tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Fixture 1".count))
+        let save = run.app.buttons.matching(identifier: "collection.rename.save").firstMatch
+        XCTAssertFalse(save.isEnabled)
+        input.typeText("  North window fern  ")
+        save.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "North window fern")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry name change")
+        enabled(run.app.buttons["collection.rename.open"])
+        XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000001"])
+        require(run.app.staticTexts["Diagnosis"])
+
+        tap(run, "collection.back", "Back")
+        enabled(run.app.buttons["North window fern"])
+        enabled(run.app.buttons["Fixture 2"])
+    }
+
+    @MainActor func testPlantRenameReopensRejectedInputAndSendsCorrectedName() {
+        let run = Run("plantRenameRejected", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        tap(run, "collection.rename.open", "Edit name")
+        let alert = run.app.alerts["Edit plant name"].firstMatch
+        let input = alert.textFields.firstMatch
+        let save = run.app.buttons.matching(identifier: "collection.rename.save").firstMatch
+        enabled(input)
+        input.tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Fixture 1".count))
+        let rejected = "  North window fern  "
+        input.typeText(rejected)
+        save.tap()
+        require(run.app.staticTexts["collection.rename.failed"])
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+        XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
+
+        tap(run, "collection.rename.open", "Edit name")
+        enabled(input)
+        XCTAssertEqual(input.value as? String, rejected)
+        input.tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: rejected.count))
+        input.typeText("Window fern")
+        save.tap()
+        let name = run.app.staticTexts["catalogue.saved.name"]
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Window fern"), object: name)
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 15), .completed)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(run.app.staticTexts["collection.rename.failed"].exists)
+        XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
+    }
+
+    @MainActor func testBasicCareEnableReplaysWithoutRecordingWatering() {
+        let run = Run("basicCareEnable", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        tap(run, "collection.care.enable", "Enable basic care")
+        let pending = run.app.staticTexts["collection.care.enable.pending"]
+        require(pending)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(pending)
+        tap(run, "collection.care.enable.retry", "Retry enabling basic care")
+        enabled(run.app.buttons["collection.care.refresh"])
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+    }
+
+    @MainActor func testCareRecommendationRefreshReplaysAfterRestart() {
+        let run = Run("careRecommendationRefresh", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let nextCheck = run.app.staticTexts["catalogue.saved.care.next.date"]
+        XCTAssertFalse(nextCheck.exists)
+        tap(run, "collection.care.refresh", "Update care recommendation")
+        require(run.app.staticTexts["collection.care.refresh.pending"])
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.care.refresh.pending"])
+        XCTAssertFalse(nextCheck.exists)
+        tap(run, "collection.care.refresh.retry", "Retry recommendation update")
+        require(nextCheck)
+        XCTAssertEqual(nextCheck.label, "Next soil check · 2026-10-28")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
+    }
+
+    @MainActor func testRoutineSoilCheckUndoAfterRestart() {
+        let run = Run("routineSoilCheckUndo", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        tap(run, "collection.routine.complete", "Mark soil checked")
+        require(run.app.staticTexts["collection.routine.confirmed"])
+        let entry = "19190000-0000-4000-8000-000000000003"
+        let row = run.app.staticTexts["collection.routine.history." + entry]
+        require(row)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        let localDate = formatter.string(from: Date())
+        XCTAssertEqual(row.label, localDate + " · Active")
+        let next = run.app.staticTexts["catalogue.saved.care.next.date"]
+        require(next)
+        XCTAssertNotEqual(next.label, "Next soil check · 2000-01-01")
+        let undo = "collection.routine.undo." + entry
+        tap(run, undo, "Undo soil check")
+        let undoDialog = run.app.alerts["Undo this soil check?"]
+        require(undoDialog)
+        let cancelUndo = undoDialog.buttons.matching(identifier: "Cancel").firstMatch
+        enabled(cancelUndo)
+        cancelUndo.tap()
+        XCTAssertEqual(row.label, localDate + " · Active")
+        XCTAssertFalse(run.app.staticTexts["collection.routine.undo.pending"].exists)
+        tap(run, undo, "Undo soil check")
+        require(undoDialog)
+        let confirmUndo = undoDialog.buttons.matching(identifier: "Undo soil check").firstMatch
+        enabled(confirmUndo)
+        confirmUndo.tap()
+        let pending = run.app.staticTexts["collection.routine.undo.pending"]
+        require(pending)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.undo.confirmed"].exists)
+        XCTAssertFalse(next.exists)
+        XCTAssertEqual(row.label, localDate + " · Active")
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(pending)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(next.exists)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.undo.confirmed"].exists)
+        // The fixture rejects a changed operation, envelope or HTTP body.
+        tap(run, "collection.routine.undo.retry", "Retry soil check undo")
+        require(run.app.staticTexts["collection.routine.undo.confirmed"])
+        let voided = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", localDate + " · Undone"), object: row
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [voided], timeout: 15), .completed)
+        require(next)
+        XCTAssertEqual(next.label, "Next soil check · 2000-01-01")
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons[undo].exists)
+        XCTAssertFalse(run.app.buttons["collection.routine.undo.retry"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "collection.routine.history.")
+        ).count, 1)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(row)
+        XCTAssertEqual(row.label, localDate + " · Undone")
+        require(next)
+        XCTAssertEqual(next.label, "Next soil check · 2000-01-01")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons[undo].exists)
+    }
+
+    @MainActor func testRoutineSoilCheckCompletesAfterRestart() {
+        let run = Run("routineSoilCheck", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let action = run.app.buttons["collection.routine.complete"]
+        enabled(action)
+        XCTAssertEqual(run.app.buttons.matching(identifier: "collection.routine.complete").count, 1)
+        tap(run, "collection.routine.complete", "Mark soil checked")
+        let pending = run.app.staticTexts["collection.routine.pending"]
+        require(pending)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.confirmed"].exists)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(pending)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+        XCTAssertFalse(run.app.staticTexts["collection.routine.confirmed"].exists)
+        // The fixture accepts only the identical persisted envelope and HTTP body.
+        tap(run, "collection.routine.retry", "Retry soil check")
+        require(run.app.staticTexts["collection.routine.confirmed"])
+        let next = run.app.staticTexts["catalogue.saved.care.next.date"]
+        require(next)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        let expectedDate = formatter.string(from: calendar.date(byAdding: .day, value: 7, to: Date())!)
+        XCTAssertEqual(next.label, "Next soil check · " + expectedDate)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(run.app.buttons["collection.routine.retry"].exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertEqual(run.app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")).count, 0)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(next)
+        XCTAssertEqual(next.label, "Next soil check · " + expectedDate)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(action.exists)
+        XCTAssertFalse(pending.exists)
+    }
+
+    @MainActor func testCareRecommendationRefreshRejectionShowsFailure() {
+        let run = Run("careRecommendationRefreshRejected", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let nextCheck = run.app.staticTexts["catalogue.saved.care.next.date"]
+        XCTAssertFalse(nextCheck.exists)
+        tap(run, "collection.care.refresh", "Update care recommendation")
+        require(run.app.staticTexts["Couldn’t update the care recommendation."])
+        enabled(run.app.buttons["collection.care.refresh"])
+        XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
+        XCTAssertFalse(run.app.buttons["collection.care.refresh.retry"].exists)
+        XCTAssertFalse(run.app.staticTexts["No next soil check is available yet."].exists)
+        XCTAssertFalse(nextCheck.exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+    }
+
+    @MainActor func testPlantLightEditReplaysAndMarksEarlierDiagnosis() {
+        let run = Run("plantLightEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let light = run.app.staticTexts["collection.light.current"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        require(light)
+        XCTAssertEqual(light.label, "Medium light")
+        tap(run, "collection.light.open", "Edit light")
+        let direct = run.app.buttons.matching(identifier: "collection.light.direct_sun").firstMatch
+        enabled(direct)
+        direct.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry light change")
+        require(light)
+        XCTAssertEqual(light.label, "Direct sunlight")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(previous)
+    }
+
+    @MainActor func testPlantDrainageEditReplaysAndKeepsLightAndHistory() {
+        let run = Run("plantDrainageEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let drainage = run.app.staticTexts["collection.drainage.current"]
+        let light = run.app.staticTexts["collection.light.current"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(drainage)
+        XCTAssertEqual(drainage.label, "Drainage holes")
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        tap(run, "collection.drainage.open", "Edit drainage")
+        let noDrainage = run.app.buttons.matching(identifier: "No drainage holes").firstMatch
+        enabled(noDrainage)
+        noDrainage.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry drainage change")
+        require(drainage)
+        XCTAssertEqual(drainage.label, "No drainage holes")
+        require(light)
+        XCTAssertEqual(light.label, "Medium light")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(previous)
+    }
+
+    @MainActor func testPlantWateringFrequencyEditReplaysAndKeepsOtherConditions() {
+        let run = Run("plantWateringEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let frequency = run.app.staticTexts["collection.watering.frequency.current"]
+        require(frequency)
+        XCTAssertEqual(frequency.label, "Moderate watering")
+        tap(run, "collection.watering.frequency.open", "Edit watering frequency")
+        let weekly = run.app.buttons.matching(identifier: "Once a week").firstMatch
+        enabled(weekly)
+        weekly.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry watering frequency")
+        require(frequency)
+        XCTAssertEqual(frequency.label, "Once a week")
+        XCTAssertEqual(run.app.staticTexts["collection.light.current"].label, "Medium light")
+        XCTAssertEqual(run.app.staticTexts["collection.drainage.current"].label, "Drainage holes")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"])
+    }
+
+    @MainActor func testPlantPotTypeEditReplaysAndKeepsPhotoAndHistory() {
+        let run = Run("plantPotTypeEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let potType = run.app.staticTexts["collection.pot.type.current"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(potType)
+        XCTAssertEqual(potType.label, "Plastic")
+        require(run.app.images["catalogue.saved.photo"])
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        tap(run, "collection.pot.type.open", "Edit pot type")
+        let ceramic = run.app.buttons.matching(identifier: "Glazed ceramic").firstMatch
+        enabled(ceramic)
+        ceramic.tap()
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry pot type change")
+        require(potType)
+        XCTAssertEqual(potType.label, "Glazed ceramic")
+        XCTAssertEqual(run.app.staticTexts["collection.light.current"].label, "Medium light")
+        XCTAssertEqual(run.app.staticTexts["collection.drainage.current"].label, "Drainage holes")
+        XCTAssertEqual(run.app.staticTexts["collection.watering.frequency.current"].label, "Moderate watering")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(run.app.images["catalogue.saved.photo"])
+        require(previous)
+    }
+
+    @MainActor func testPlantTaxonEditUsesPublishedCatalogueAndReplays() {
+        let run = Run("plantTaxonEdit", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let species = run.app.staticTexts["catalogue.saved.species"]
+        let photo = run.app.images["catalogue.saved.photo"]
+        let previous = run.app.staticTexts["collection.analysis.previous.12340000-0000-4000-8000-000000000002"]
+        require(run.app.staticTexts["Fern"])
+        require(photo)
+        require(run.app.staticTexts["Diagnosis"])
+        XCTAssertFalse(previous.exists)
+        let change = run.app.buttons["collection.species.open"]
+        require(change)
+        if !change.isHittable { run.app.swipeUp() }
+        tap(run, "collection.species.open", "Change species")
+        let current = run.app.buttons["catalogue.species.fixture_fern"]
+        require(current)
+        XCTAssertFalse(current.isEnabled)
+        let search = run.app.textFields["catalogue.search"]
+        require(search)
+        search.tap()
+        search.typeText("Chamaedorea")
+        tap(run, "catalogue.species.fixture_palm")
+        require(run.app.staticTexts["Chamaedorea elegans"])
+        tap(run, "collection.species.confirm", "Confirm species change")
+        require(run.app.staticTexts["collection.rename.pending"])
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["collection.rename.pending"])
+        tap(run, "collection.rename.retry", "Retry species change")
+        require(run.app.staticTexts["Palm"])
+        XCTAssertEqual(species.label, "Palm")
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertEqual(run.app.staticTexts["collection.light.current"].label, "Medium light")
+        XCTAssertEqual(run.app.staticTexts["collection.pot.type.current"].label, "Plastic")
+        require(photo)
+        require(previous)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }
@@ -103,7 +766,7 @@ final class CatalogueSaveUITests: XCTestCase {
 
     @MainActor
     private func chooseSpecies(_ run: Run) {
-        tap(run, "catalogue.species.fixture-fern")
+        tap(run, "catalogue.species.fixture_fern")
         localizedText(run, "catalogue.selected.scientific", "Nephrolepis exaltata", "Nephrolepis exaltata")
         let field = run.app.textFields["catalogue.save.name"]
         enabled(field)

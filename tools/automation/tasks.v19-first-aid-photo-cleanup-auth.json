@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    {
+      "id": "v19-first-aid-photo-cleanup-auth",
+      "description": "Verify the configured Supabase default secret for the existing first-aid photo maintenance endpoint.",
+      "candidate_base": "a2c666bd644b04e937cb989558ad5a6693a73c79",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "supabase/functions/_shared/tests/guest_photo_http_test.ts",
+        "supabase/functions/plants-api/guest-photo.ts",
+        "supabase/functions/plants-api/index.ts",
+        "tools/automation/tasks.v19-first-aid-photo-cleanup-auth.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Independent Review and QA. Local gates only. Controller owns narat-staging and usage limits.",
+        "Preserve the legacy Bearer path. Accept only the configured Supabase default secret via apikey. Reject publishable, unknown and named keys.",
+        "Do not change SQL, retention, 024, StoreKit, or the scoped deletion rules."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19-C1",
+          "description": "Production entrypoints type-check and exact diff is clean.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19-C2",
+          "description": "Fixtures preserve legacy and scoped cleanup, accept the configured default secret on apikey, and reject unauthorized requests before Storage or SQL.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

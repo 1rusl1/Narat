@@ -1,0 +1,44 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-read-http-acceptance",
+      "description": "Independently accept the routine_check recommendation projection and its synthetic SQL/Edge fixture.",
+      "candidate_base": "dca4a3ab3069d078cac2a54061f748cd005da666",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/plant-care-recommendation-http.md",
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "supabase/functions/_shared/tests/care_recommendation_http_test.ts",
+        "tools/automation/v10_edit_recommendation_wire.ts",
+        "tools/automation/tasks.v19-routine-read-http-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only, local fixtures, no staging or external services. Expect unchanged former fields and an additive routine_check from current valid rule. Confirm that proof withdrawal does not invent a date; malformed SQL projection is not silently converted to a different anchor."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19RR1",
+          "description": "Deno and diff static checks pass.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19RR2",
+          "description": "SQL/Edge fixture verifies full routine and historic responses; Deno tests cover malformed and paused inputs.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

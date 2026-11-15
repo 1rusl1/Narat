@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    {
+      "id": "v19-ios-refresh-rejection",
+      "description": "Repair reviewer P2: a permanent refresh rejection removes the queue item but is incorrectly shown as a successful refresh in the English card.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "This is a Developer write task from iOS 0aa143f. Author a valid unified Git patch in the JSON patch field; read-only workspace forbids applying it locally. The controller writes and runs the checks.",
+        "Only the matching direct refresh invocation should surface the terminal result; preserve existing outbox handling for unrelated commands and background sync. Permanent CONFLICT/FORBIDDEN/VALIDATION_ERROR/NOT_FOUND clears the discarded refresh and reports failure. An absent queue item alone is not a confirmed refresh. A valid paused receipt remains a confirmed result. Retryable loss leaves the exact operation pending; do not mark it failed permanently.",
+        "Update the EN card state to clear pending for a discarded refresh and show failure, without a success/no-next result. Preserve account/session guard, transport behavior and exact request. Add a focused CollectionWireTests regression for discard failure and exact pending/valid refresh behavior. Do not change staging, Swift project files, backend wire or time/date rules."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19R1",
+          "description": "Build and iOS unit tests prove a terminal rejection has a distinct outcome, clears that pending command, and loss/restart preserves exact replay.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "V19R2",
+          "description": "Both existing EN restart XCUITests still pass on fixtures.",
+          "mode": "fixture",
+          "checks": [
+            "v19-care-ui"
+          ]
+        }
+      ]
+    }
+  ]
+}

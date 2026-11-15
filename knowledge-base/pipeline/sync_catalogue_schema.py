@@ -1,4 +1,4 @@
-"""Embed the canonical catalogue JSON Schema in its SQL migration; --check detects drift."""
+"""Verify the canonical catalogue JSON Schema against its latest SQL migration."""
 import argparse
 import json
 import re
@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / 'specs/001-plants-ios-mvp/contracts/catalogue-skeleton.schema.json'
-MIGRATION = ROOT / 'supabase/migrations/202611050001_catalogue_skeleton.sql'
+MIGRATION = ROOT / 'supabase/migrations/202611120018_catalogue_pl_description_fallback.sql'
 
 def check_keywords(schema):
     """Fail closed if a schema change requires extending the SQL interpreter."""

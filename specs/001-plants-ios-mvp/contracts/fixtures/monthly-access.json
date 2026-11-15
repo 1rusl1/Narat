@@ -1,0 +1,328 @@
+{
+  "fixture_only": true,
+  "wire_version": 1,
+  "description": "Expected access metadata on synthetic data; never production fallback or AI results.",
+  "cases": [
+    {
+      "name": "free_starter_and_shared_month",
+      "response": {
+        "owner_id": "16380000-0000-4000-8000-000000000001",
+        "is_guest": false,
+        "starter": {
+          "identification_remaining": 1,
+          "diagnosis_remaining": 0,
+          "identification_in_progress_job_id": null,
+          "diagnosis_in_progress_job_id": null,
+          "first_starter_success_at": "2026-11-01T10:20:00.123456Z"
+        },
+        "monthly": {
+          "quota_kind": "free_monthly",
+          "registered_at": "2026-10-31T10:20:00.123456Z",
+          "period_start": "2026-10-31T10:20:00.123456Z",
+          "period_end": "2026-11-30T10:20:00.123456Z",
+          "limit": 3,
+          "consumed": 2,
+          "reserved": 0,
+          "remaining": 1,
+          "status": "ready"
+        },
+        "modes": {
+          "identification": {
+            "mode": "identification",
+            "allowed": true,
+            "activeQuotaKind": "starter_identification",
+            "remaining": 1,
+            "limit": 1,
+            "inProgressJobId": null,
+            "nextResetAt": null
+          },
+          "diagnosis": {
+            "mode": "diagnosis",
+            "allowed": true,
+            "activeQuotaKind": "free_monthly",
+            "remaining": 1,
+            "limit": 3,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "trial_or_paid_same_spend",
+      "response": {
+        "owner_id": "16380000-0000-4000-8000-000000000001",
+        "is_guest": false,
+        "starter": {
+          "identification_remaining": 1,
+          "diagnosis_remaining": 0,
+          "identification_in_progress_job_id": null,
+          "diagnosis_in_progress_job_id": null,
+          "first_starter_success_at": "2026-11-01T10:20:00.123456Z"
+        },
+        "monthly": {
+          "quota_kind": "paid_monthly",
+          "registered_at": "2026-10-31T10:20:00.123456Z",
+          "period_start": "2026-10-31T10:20:00.123456Z",
+          "period_end": "2026-11-30T10:20:00.123456Z",
+          "limit": 100,
+          "consumed": 2,
+          "reserved": 0,
+          "remaining": 98,
+          "status": "ready"
+        },
+        "modes": {
+          "identification": {
+            "mode": "identification",
+            "allowed": true,
+            "activeQuotaKind": "paid_monthly",
+            "remaining": 98,
+            "limit": 100,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z"
+          },
+          "diagnosis": {
+            "mode": "diagnosis",
+            "allowed": true,
+            "activeQuotaKind": "paid_monthly",
+            "remaining": 98,
+            "limit": 100,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "expired_paid_no_refill",
+      "response": {
+        "owner_id": "16380000-0000-4000-8000-000000000001",
+        "is_guest": false,
+        "starter": {
+          "identification_remaining": 0,
+          "diagnosis_remaining": 0,
+          "identification_in_progress_job_id": null,
+          "diagnosis_in_progress_job_id": null,
+          "first_starter_success_at": "2026-11-01T10:20:00.123456Z"
+        },
+        "monthly": {
+          "quota_kind": "free_monthly",
+          "registered_at": "2026-10-31T10:20:00.123456Z",
+          "period_start": "2026-10-31T10:20:00.123456Z",
+          "period_end": "2026-11-30T10:20:00.123456Z",
+          "limit": 3,
+          "consumed": 7,
+          "reserved": 0,
+          "remaining": 0,
+          "status": "ready"
+        },
+        "modes": {
+          "identification": {
+            "mode": "identification",
+            "allowed": false,
+            "activeQuotaKind": "free_monthly",
+            "remaining": 0,
+            "limit": 3,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z",
+            "reason": "free_monthly_exhausted"
+          },
+          "diagnosis": {
+            "mode": "diagnosis",
+            "allowed": false,
+            "activeQuotaKind": "free_monthly",
+            "remaining": 0,
+            "limit": 3,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z",
+            "reason": "free_monthly_exhausted"
+          }
+        }
+      }
+    },
+    {
+      "name": "legacy_unknown_starter_still_available",
+      "response": {
+        "owner_id": "16380000-0000-4000-8000-000000000001",
+        "is_guest": false,
+        "starter": {
+          "identification_remaining": 1,
+          "diagnosis_remaining": 0,
+          "identification_in_progress_job_id": null,
+          "diagnosis_in_progress_job_id": null,
+          "first_starter_success_at": "2026-11-01T10:20:00.123456Z"
+        },
+        "monthly": {
+          "quota_kind": "free_monthly",
+          "registered_at": null,
+          "period_start": null,
+          "period_end": null,
+          "limit": null,
+          "consumed": null,
+          "reserved": null,
+          "remaining": null,
+          "status": "registration_required"
+        },
+        "modes": {
+          "identification": {
+            "mode": "identification",
+            "allowed": true,
+            "activeQuotaKind": "starter_identification",
+            "remaining": 1,
+            "limit": 1,
+            "inProgressJobId": null,
+            "nextResetAt": null
+          },
+          "diagnosis": {
+            "mode": "diagnosis",
+            "allowed": false,
+            "activeQuotaKind": "free_monthly",
+            "remaining": 0,
+            "limit": 3,
+            "inProgressJobId": null,
+            "nextResetAt": null,
+            "reason": "quota_registration_required"
+          }
+        }
+      }
+    },
+    {
+      "name": "legacy_spend_unresolved",
+      "response": {
+        "owner_id": "16380000-0000-4000-8000-000000000001",
+        "is_guest": false,
+        "starter": {
+          "identification_remaining": 1,
+          "diagnosis_remaining": 0,
+          "identification_in_progress_job_id": null,
+          "diagnosis_in_progress_job_id": null,
+          "first_starter_success_at": "2026-11-01T10:20:00.123456Z"
+        },
+        "monthly": {
+          "quota_kind": "free_monthly",
+          "registered_at": "2026-10-31T10:20:00.123456Z",
+          "period_start": "2026-10-31T10:20:00.123456Z",
+          "period_end": "2026-11-30T10:20:00.123456Z",
+          "limit": null,
+          "consumed": null,
+          "reserved": null,
+          "remaining": null,
+          "status": "history_unresolved"
+        },
+        "modes": {
+          "identification": {
+            "mode": "identification",
+            "allowed": true,
+            "activeQuotaKind": "starter_identification",
+            "remaining": 1,
+            "limit": 1,
+            "inProgressJobId": null,
+            "nextResetAt": null
+          },
+          "diagnosis": {
+            "mode": "diagnosis",
+            "allowed": false,
+            "activeQuotaKind": "free_monthly",
+            "remaining": 0,
+            "limit": 3,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z",
+            "reason": "quota_history_unresolved"
+          }
+        }
+      }
+    },
+    {
+      "name": "guest_two_independent_starters",
+      "response": {
+        "owner_id": "16380000-0000-4000-8000-000000000001",
+        "is_guest": true,
+        "starter": {
+          "identification_remaining": 1,
+          "diagnosis_remaining": 1,
+          "identification_in_progress_job_id": null,
+          "diagnosis_in_progress_job_id": null,
+          "first_starter_success_at": null
+        },
+        "monthly": {
+          "quota_kind": null,
+          "registered_at": null,
+          "period_start": null,
+          "period_end": null,
+          "limit": null,
+          "consumed": null,
+          "reserved": null,
+          "remaining": null,
+          "status": "not_applicable"
+        },
+        "modes": {
+          "identification": {
+            "mode": "identification",
+            "allowed": true,
+            "activeQuotaKind": "starter_identification",
+            "remaining": 1,
+            "limit": 1,
+            "inProgressJobId": null,
+            "nextResetAt": null
+          },
+          "diagnosis": {
+            "mode": "diagnosis",
+            "allowed": true,
+            "activeQuotaKind": "starter_diagnosis",
+            "remaining": 1,
+            "limit": 1,
+            "inProgressJobId": null,
+            "nextResetAt": null
+          }
+        }
+      }
+    },
+    {
+      "name": "paid_exhausted_no_starter_fallback",
+      "response": {
+        "owner_id": "16380000-0000-4000-8000-000000000001",
+        "is_guest": false,
+        "starter": {
+          "identification_remaining": 1,
+          "diagnosis_remaining": 0,
+          "identification_in_progress_job_id": null,
+          "diagnosis_in_progress_job_id": null,
+          "first_starter_success_at": "2026-11-01T10:20:00.123456Z"
+        },
+        "monthly": {
+          "quota_kind": "paid_monthly",
+          "registered_at": "2026-10-31T10:20:00.123456Z",
+          "period_start": "2026-10-31T10:20:00.123456Z",
+          "period_end": "2026-11-30T10:20:00.123456Z",
+          "limit": 100,
+          "consumed": 100,
+          "reserved": 0,
+          "remaining": 0,
+          "status": "ready"
+        },
+        "modes": {
+          "identification": {
+            "mode": "identification",
+            "allowed": false,
+            "activeQuotaKind": "paid_monthly",
+            "remaining": 0,
+            "limit": 100,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z",
+            "reason": "paid_monthly_exhausted"
+          },
+          "diagnosis": {
+            "mode": "diagnosis",
+            "allowed": false,
+            "activeQuotaKind": "paid_monthly",
+            "remaining": 0,
+            "limit": 100,
+            "inProgressJobId": null,
+            "nextResetAt": "2026-11-30T10:20:00.123456Z",
+            "reason": "paid_monthly_exhausted"
+          }
+        }
+      }
+    }
+  ]
+}

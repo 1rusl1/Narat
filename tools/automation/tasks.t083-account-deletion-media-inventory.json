@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-deletion-media-inventory",
+      "description": "Build an internal, bounded account-deletion media inventory for canonically owned private photos.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150061_account_deletion_media_inventory.sql",
+        "supabase/migrations/202611150060_account_deletion_intent.sql",
+        "supabase/migrations/202611130035_plant_delete_storage.sql",
+        "supabase/migrations/202611130037_plant_delete_expired_lease.sql",
+        "supabase/migrations/202611120021_guest_photo_claim.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150061_account_deletion_media_inventory.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Internal local read-only SQL projection and test only. Return valid exact unified diff in JSON. Controller applies and verifies. No HTTP, storage/media deletion, token revocation, staging, background worker, accounts, billing, or role grants beyond revocation. No existing migration edits.",
+        "Define an internal function taking deleting owner UUID and optional photo UUID cursor, only for a canonical queued 060 request on a permanent deleting profile. Reuse accepted 035/037 storage canonical validation and in-flight diagnostics/upload/claim safety patterns where applicable. Page at most twenty safe, exact owned private analysis-inputs original photo IDs in UUID order, never arbitrary storage paths, other owners or catalogue. Treat noncanonical legacy/ambiguous keys and active transfer/worker/upload lease cases as blocked/waiting with counts so later purge cannot mark complete while media survives. Preserve external holds and no unknown fallback, no writes. Restrict this initial packet to photo_assets inventory; owner installation/draft orphan paths, object cleanup, final DB purge and workers remain open.",
+        "Use version-compatible focused pgTAP in the existing gate-covered auth_registration_profile.test.sql. Verify no projection without a queued deleting owner, canonical owned private photos only, at-most-20 ordered pagination, waiting for a live lease/ticket, blocked unsafe original/thumbnail key without leaking it, foreign and catalogue isolation, no source mutation or client/service execution. Preserve older tests and leave T082/T083 open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083M1",
+          "description": "Read projection change scoped to forward migration and focused fixture.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T083M2",
+          "description": "PostgreSQL clean and upgrade prove safe scope, pagination and no writes.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,12 +1,200 @@
 import SwiftUI
+import PhotosUI
+import AVFoundation
+import UIKit
+
+struct AnalysisAccessSource {
+    let connection: CatalogueConnection
+    let repository: AnalysisAccessRepository
+    let guestCredential: String?
+}
+
+private struct PlantCameraPicker: UIViewControllerRepresentable {
+    enum Result {
+        case photo(Data)
+        case unreadable
+        case unavailable
+    }
+
+    let finish: @MainActor (Result?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(finish: finish) }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            let coordinator = context.coordinator
+            Task { @MainActor in coordinator.complete(.unavailable) }
+            return UIViewController()
+        }
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        private var finish: (@MainActor (Result?) -> Void)?
+
+        init(finish: @escaping @MainActor (Result?) -> Void) {
+            self.finish = finish
+        }
+
+        @MainActor
+        func complete(_ result: Result?) {
+            let callback = finish
+            finish = nil
+            callback?(result)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            complete(nil)
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            let image = info[.originalImage] as? UIImage
+            let data = image?.jpegData(compressionQuality: 0.95)
+            complete(data.map(Result.photo) ?? .unreadable)
+        }
+    }
+}
+
+private struct AnalysisQuotaGate<Content: View>: View {
+    let source: AnalysisAccessSource
+    let mode: AnalysisAccessWireDTO.AnalysisMode
+    let locale: SupportedLocale
+    @ViewBuilder let content: () -> Content
+
+    @State private var attempt = 0
+    @State private var result: Loaded?
+
+    private struct Read: Equatable {
+        let snapshot: CatalogueSDKSnapshot?
+        let attempt: Int
+    }
+
+    private struct Loaded {
+        let read: Read
+        let access: AnalysisAccessWireDTO?
+    }
+
+    private var isPolish: Bool { locale == .pl }
+
+    var body: some View {
+        let read = Read(snapshot: source.connection.snapshot, attempt: attempt)
+        VStack(alignment: .leading, spacing: 8) {
+            if read.snapshot == nil {
+                unavailable
+            } else if let result, result.read == read {
+                if let access = result.access, let quota = access.modes[mode.rawValue] {
+                    summary(access, quota: quota)
+                    if quota.allowed {
+                        content()
+                    } else {
+                        Text(isPolish ? "Analiza zdjęcia jest teraz niedostępna." : "Photo analysis is currently unavailable.")
+                            .accessibilityIdentifier("analysis.access.denied")
+                        retryButton
+                    }
+                } else {
+                    unavailable
+                }
+            } else {
+                ProgressView(isPolish ? "Sprawdzanie limitu analiz" : "Checking analysis quota")
+                    .accessibilityIdentifier("analysis.access.loading")
+            }
+        }
+        .task(id: read) {
+            guard let snapshot = read.snapshot else {
+                _ = try? await source.connection.sessionSnapshot()
+                return
+            }
+            let access = try? await source.connection.analysisAccess(
+                using: source.repository, expected: snapshot, guestCredential: source.guestCredential
+            )
+            guard !Task.isCancelled, source.connection.snapshot == snapshot, attempt == read.attempt else { return }
+            result = Loaded(read: read, access: access)
+        }
+    }
+
+    @ViewBuilder
+    private func summary(_ access: AnalysisAccessWireDTO, quota: AnalysisAccessWireDTO.Mode) -> some View {
+        if quota.activeQuotaKind == .starterIdentification || quota.activeQuotaKind == .starterDiagnosis {
+            Text(isPolish
+                 ? "Analiza startowa: \(quota.remaining) z \(quota.limit)"
+                 : "Starter analysis: \(quota.remaining) of \(quota.limit)")
+                .accessibilityIdentifier("analysis.access.starter")
+        }
+        if let remaining = access.monthly.remaining, let limit = access.monthly.limit {
+            Text(isPolish ? "Analizy miesięczne: \(remaining) z \(limit)" : "Monthly analyses: \(remaining) of \(limit)")
+                .accessibilityIdentifier("analysis.access.monthly")
+        } else if !access.isGuest {
+            Text(isPolish ? "Limit miesięczny niedostępny." : "Monthly quota unavailable.")
+                .accessibilityIdentifier("analysis.access.monthly.unavailable")
+        }
+        if let periodEnd = access.monthly.periodEnd, let date = SQLTimestamp.date(from: periodEnd) {
+            let display = date.formatted(.dateTime.month(.abbreviated).day().year().locale(locale.locale))
+            Text(isPolish ? "Limit odnowi się: \(display)" : "Resets on \(display)")
+                .accessibilityIdentifier("analysis.access.reset")
+        }
+    }
+
+    private var unavailable: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isPolish ? "Nie udało się sprawdzić limitu analiz." : "Couldn’t check analysis quota.")
+                .accessibilityIdentifier("analysis.access.error")
+            retryButton
+        }
+    }
+
+    private var retryButton: some View {
+        Button(isPolish ? "Spróbuj ponownie" : "Retry quota check") { attempt += 1 }
+            .accessibilityIdentifier("analysis.access.retry")
+    }
+}
+
+enum PhotoCameraAccess: Equatable {
+    case ready, request, denied, unavailable
+
+    init(available: Bool, authorization: AVAuthorizationStatus) {
+        switch authorization {
+        case .denied, .restricted: self = .denied
+        case .authorized: self = available ? .ready : .unavailable
+        case .notDetermined: self = available ? .request : .unavailable
+        @unknown default: self = .unavailable
+        }
+    }
+}
 
 public struct CareQuestionsView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
+    private let accessSource: AnalysisAccessSource?
+    private let returnToPlant: (() -> Void)?
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var photoLoadTask: Task<Void, Never>?
+    @State private var cameraPermissionTask: Task<Void, Never>?
+    @State private var cameraNotice: PhotoCameraAccess?
+    @State private var showingCamera = false
+    @State private var cameraScope: CatalogueSDKSnapshot?
+    @State private var cameraResult: PlantCameraPicker.Result?
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
+        self.init(model: model, languageStore: languageStore, accessSource: nil)
+    }
+
+    init(
+        model: AnalysisFlowModel, languageStore: LanguageStore, accessSource: AnalysisAccessSource?,
+        returnToPlant: (() -> Void)? = nil
+    ) {
         self.model = model
         self.languageStore = languageStore
+        self.accessSource = accessSource
+        self.returnToPlant = returnToPlant
     }
 
     private var isPolish: Bool {
@@ -17,7 +205,11 @@ public struct CareQuestionsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if model.router.flowState.currentStep == .selectPhoto {
-                    AnalysisUnavailableSection(model: model, languageStore: languageStore)
+                    if model.hasAnalysisService {
+                        photoSection
+                    } else {
+                        AnalysisUnavailableSection(model: model, languageStore: languageStore, returnToPlant: returnToPlant)
+                    }
                 } else {
                     questionStepSection
                 }
@@ -25,6 +217,151 @@ public struct CareQuestionsView: View {
             .padding()
         }
         .navigationTitle(isPolish ? "Pierwsza pomoc" : "First Help")
+        .fullScreenCover(isPresented: $showingCamera, onDismiss: finishCameraSelection) {
+            PlantCameraPicker { result in
+                cameraResult = result
+                showingCamera = false
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: selectedPhoto) { _, item in
+            guard let item else { return }
+            selectedPhoto = nil
+            cameraNotice = nil
+            photoLoadTask?.cancel()
+            let selectionId = model.beginPhotoSelection()
+            photoLoadTask = Task { @MainActor in
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        model.failPhotoSelection(selectionId)
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                    model.completePhotoSelection(
+                        data, selectionId: selectionId,
+                        locale: languageStore.currentLocale
+                    )
+                } catch {
+                    model.failPhotoSelection(selectionId)
+                }
+            }
+        }
+        .onDisappear {
+            cameraPermissionTask?.cancel()
+            cameraPermissionTask = nil
+            photoLoadTask?.cancel()
+            if model.isPreparingPhoto { model.cancelAnalysis() }
+        }
+    }
+
+    private var photoSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let accessSource {
+                AnalysisQuotaGate(
+                    source: accessSource,
+                    mode: model.router.flowState.intent == .problem ? .diagnosis : .identification,
+                    locale: languageStore.currentLocale
+                ) { photoChoices }
+            } else {
+                photoChoices
+            }
+            if let cameraNotice {
+                Text(cameraNotice == .denied
+                     ? "Camera access is off. You can still choose a photo."
+                     : "Camera is unavailable. You can still choose a photo.")
+                    .accessibilityIdentifier("photo.camera.notice")
+            }
+
+            if model.isPreparingPhoto {
+                ProgressView(isPolish ? "Wczytywanie zdjęcia" : "Loading photo")
+            }
+            if model.photoError != nil {
+                Text(isPolish
+                     ? "Nie można odczytać zdjęcia. Wybierz inne."
+                     : "Unable to read this photo. Choose another.")
+                    .accessibilityIdentifier("photo.error")
+            }
+            AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+        }
+    }
+
+    private var photoChoices: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !isPolish {
+                Button("Take photo", action: openCamera)
+                    .buttonStyle(.bordered)
+                    .disabled(model.isPreparingPhoto || cameraPermissionTask != nil)
+                    .accessibilityIdentifier("photo.select.camera")
+            }
+            photoPicker
+                .disabled(cameraPermissionTask != nil)
+        }
+    }
+
+    private var photoPicker: some View {
+        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+            Text(isPolish ? "Wybierz zdjęcie" : "Choose photo")
+        }
+        .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("photo.select.gallery")
+    }
+
+    private func openCamera() {
+        let scope = accessSource?.connection.snapshot
+        cameraNotice = nil
+        let access = PhotoCameraAccess(
+            available: UIImagePickerController.isSourceTypeAvailable(.camera),
+            authorization: AVCaptureDevice.authorizationStatus(for: .video)
+        )
+        switch access {
+        case .ready:
+            presentCamera(scope: scope)
+        case .request:
+            cameraPermissionTask = Task { @MainActor in
+                let granted = await AVCaptureDevice.requestAccess(for: .video)
+                guard !Task.isCancelled else { return }
+                cameraPermissionTask = nil
+                guard model.router.flowState.currentStep == .selectPhoto,
+                      accessSource?.connection.snapshot == scope else { return }
+                if granted {
+                    presentCamera(scope: scope)
+                } else {
+                    cameraNotice = .denied
+                }
+            }
+        case .denied, .unavailable:
+            cameraNotice = access
+        }
+    }
+
+    private func presentCamera(scope: CatalogueSDKSnapshot?) {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            cameraNotice = .unavailable
+            return
+        }
+        cameraResult = nil
+        cameraScope = scope
+        showingCamera = true
+    }
+
+    private func finishCameraSelection() {
+        let result = cameraResult
+        cameraResult = nil
+        let scope = cameraScope
+        cameraScope = nil
+        guard model.router.flowState.currentStep == .selectPhoto,
+              accessSource?.connection.snapshot == scope else { return }
+        switch result {
+        case let .photo(data):
+            photoLoadTask?.cancel()
+            model.selectPhotoData(data, locale: languageStore.currentLocale)
+        case .unreadable:
+            model.failPhotoSelection(model.beginPhotoSelection())
+        case .unavailable:
+            cameraNotice = .unavailable
+        case .none:
+            break
+        }
     }
 
     private var questionStepSection: some View {
@@ -53,7 +390,7 @@ public struct CareQuestionsView: View {
 
             HStack(spacing: 12) {
                 Button {
-                    model.router.navigateBack()
+                    model.navigateBack()
                 } label: {
                     Text(isPolish ? "Wstecz" : "Back")
                         .frame(maxWidth: .infinity)

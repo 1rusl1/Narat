@@ -17,6 +17,11 @@ FIRST = '202611090005_registration_quotas.sql'
 LEDGER = '202611090006_registration_ledger.sql'
 RESERVE = '202611090008_quota_reservation.sql'
 SECOND = '202611090009_quota_settlement.sql'
+BIND = '202611090010_installation_quota_bind.sql'
+INSTALLATIONS = '202611090011_installation_access_api.sql'
+ACCESS = '202611090012_analysis_access_snapshot.sql'
+CARE_JOURNAL = '202611110016_manual_care_journal.sql'
+CARE_PROFILE_READ = '202611110017_plant_care_profile_read.sql'
 CAP_OWNER = '15800000-0000-4000-8000-000000000001'
 A = '16300000-0000-4000-8000-000000000001'
 B = '16300000-0000-4000-8000-000000000002'
@@ -35,9 +40,17 @@ def main():
     parser.add_argument('--legacy-guard', action='store_true')
     parser.add_argument('--cap-regression', action='store_true')
     parser.add_argument('--reserve', action='store_true')
+    parser.add_argument('--bind', action='store_true')
+    parser.add_argument('--installations', action='store_true')
+    parser.add_argument('--access', action='store_true')
+    parser.add_argument('--diagnosis-upload', action='store_true')
+    parser.add_argument('--diagnosis-jobs', action='store_true')
     parser.add_argument('--accounting', action='store_true')
     parser.add_argument('--baseline', action='store_true', help='Negative control; expected product rejection is NOT acceptance')
     args = parser.parse_args()
+    assert not args.installations or args.bind, '--installations requires --bind'
+    assert not args.access or args.installations, '--access requires --installations'
+    assert not args.diagnosis_jobs or args.diagnosis_upload, '--diagnosis-jobs requires --diagnosis-upload'
     assert BIN.joinpath('initdb').is_file() and PGTAP.is_file(), 'PG17/pgTAP required'
     work = Path(tempfile.mkdtemp(prefix='narat-backend-quota-'))
     sock = work / 'socket'
@@ -70,8 +83,14 @@ def main():
         assert not re.search(r'#\s*(?:SKIP|TODO)\b', result, re.I), 'No skip/TODO'
         path_out = work / (db + path.stem + '.tap')
         path_out.write_text(result + '\n')
-        command(['prove', '--exec', 'cat', str(path_out)])
+        try:
+            command(['prove', '--exec', 'cat', str(path_out)])
+        except RuntimeError as error:
+            diagnostics = '\n'.join(line for line in result.splitlines()
+                                    if line.startswith(('not ok', '#')))
+            raise RuntimeError(str(error) + '\nTAP diagnostics:\n' + diagnostics[-5000:]) from error
         print(f'PASS {db}: {path.name}, {len(assertions)} pgTAP assertions', flush=True)
+        return result
 
     def snapshot(db):
         tables = sql(db, "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename").splitlines()
@@ -165,6 +184,448 @@ def main():
                 first.kill()
                 first.communicate(timeout=10)
 
+    def guest_settlement_bind_race(db, release, timed_out):
+        offset = 600 if timed_out else 610
+        guest, target = job(offset), job(offset + 1)
+        secret_hash = ('1' if timed_out else '2') * 64
+        sql(db, f"INSERT INTO public.profiles(id,anonymous) VALUES('{guest}',true),('{target}',false);")
+        installation = sql(db, f"SELECT public.register_installation_access('{secret_hash}','{guest}')->>'installation_id';")
+        photo = sql(db, f"SELECT public.create_bound_photo_upload('{guest}','{job(offset+2)}','image/jpeg',4,repeat('a',64),'{secret_hash}')->>'photo_asset_id';")
+        sql(db, f"SELECT public.mark_diagnosis_upload_ready('{guest}','{photo}',repeat('a',64));")
+        leased_job = sql(db, f"SELECT public.create_bound_photo_analysis_job('{guest}','{job(offset+3)}','{photo}',NULL,'en',true,'identification','{secret_hash}')->'job'->>'job_id';")
+        lease_token = sql(db, f"SELECT public.lease_diagnosis_job('{leased_job}')->>'lease_token';")
+        assert sql(db, f"SELECT public.start_diagnosis_provider('{leased_job}','{lease_token}')->>'allowed';") == 'true'
+        if timed_out:
+            sql(db, f"UPDATE public.analysis_jobs SET deadline_at=clock_timestamp()-interval '1 second' WHERE id='{leased_job}';")
+            settle = f"SELECT public.read_diagnosis_job('{guest}','{leased_job}')->>'status';"
+            expected = 'expired'
+            quota = 'released'
+        else:
+            result = json.dumps({
+                'schema_version': '1.0', 'mode': 'identification', 'job_id': leased_job,
+                'catalogue_release_id': release, 'identification_status': 'unknown',
+                'plant_id': None, 'plant_display_name': None,
+            })
+            settle = f"SELECT public.finish_diagnosis_job('{leased_job}','{lease_token}',$result${result}$result$::jsonb,false,NULL)->>'outcome';"
+            expected = 'succeeded'
+            quota = 'consumed'
+        application = f'guest_bind_settle_{offset}'
+        blocker = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            blocker.stdin.write(f"BEGIN; SELECT id FROM public.installation_access WHERE id='{installation}' FOR UPDATE;\n\\echo READY\n")
+            blocker.stdin.flush()
+            while blocker.stdout.readline().strip() != 'READY':
+                if blocker.poll() is not None:
+                    raise RuntimeError(blocker.stderr.read())
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(sql, db, f"SET application_name='{application}'; " + settle)
+                deadline = time.monotonic() + 10
+                while sql(db, f"SELECT count(*) FROM pg_stat_activity WHERE application_name='{application}' AND wait_event_type='Lock'") != '1':
+                    assert not future.done(), 'Guest settlement did not wait for installation'
+                    assert time.monotonic() < deadline, 'Did not observe a real settlement waiter'
+                    time.sleep(.03)
+                try:
+                    # The pending settlement must not already hold the guest job.
+                    assert sql(db, f"SELECT id FROM public.analysis_jobs WHERE id='{leased_job}' FOR UPDATE NOWAIT;") == leased_job
+                    blocker.stdin.write(f"SELECT public.bind_installation_credential('{installation}','{target}','{secret_hash}'); COMMIT;\n\\q\n")
+                    blocker.stdin.flush()
+                    _, error = blocker.communicate(timeout=15)
+                    assert blocker.returncode == 0, error
+                    assert future.result(timeout=15) == expected
+                finally:
+                    if blocker.poll() is None:
+                        blocker.kill()
+                        blocker.communicate(timeout=10)
+        finally:
+            if blocker.poll() is None:
+                blocker.kill()
+                blocker.communicate(timeout=10)
+        check(db, f"(SELECT quota_state='{quota}' FROM public.analysis_jobs WHERE id='{leased_job}')",
+              f'guest bind and {expected} settlement keep the correct original quota')
+
+    def first_aid_race_fixture(db, offset, with_photo):
+        owner, plant, diagnosis, entry, control, observe_op, undo_op = map(job, range(offset, offset + 7))
+        sql(db, f"""
+            INSERT INTO public.profiles(id,anonymous) VALUES('{owner}',false);
+            INSERT INTO public.entitlements(owner_id,product_id,state,offer_kind,valid_until)
+            VALUES('{owner}','app.narat.plants.pro.monthly','active','paid',clock_timestamp()+interval '5 minutes');
+            INSERT INTO public.plants(id,owner_id,plant_id,creation_source,display_name)
+            VALUES('{plant}','{owner}','monstera_deliciosa','identification','Observation race fixture');
+            INSERT INTO public.analysis_jobs(id,owner_id,flow_id,intent,add_method,plant_id,mode,kb_release_id,
+                prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,state)
+            VALUES('{diagnosis}','{owner}',gen_random_uuid(),'problem','scan','{plant}','diagnosis','{K}',
+                'observation-race-fixture',gen_random_uuid(),'fixture','en','none','not_applicable','succeeded');
+            INSERT INTO public.care_entries(id,owner_id,plant_id,action_code,occurred_at,occurred_local_date,
+                timezone,operation_id,first_aid_job_id)
+            VALUES('{entry}','{owner}','{plant}','check_soil',now(),current_date,'UTC',gen_random_uuid(),'{diagnosis}');
+            INSERT INTO public.first_aid_followups(id,owner_id,plant_id,origin_analysis_id,kb_release_id,
+                action_code,first_action_snapshot,check_policy_snapshot,action_entry_id)
+            VALUES('{control}','{owner}','{plant}',gen_random_uuid(),'{K}','check_soil','{{}}','{{"fixture":true}}','{entry}');
+        """)
+        payload = f"jsonb_build_object('control_id','{control}','status_code','unknown')"
+        if with_photo:
+            asset = sql(db, f"SELECT public.create_first_aid_photo_upload('{owner}','{job(offset+7)}',"
+                        f"'{plant}','{control}','image/jpeg',4,repeat('a',64))->>'photo_asset_id';")
+            assert sql(db, f"SELECT public.mark_first_aid_photo_ready('{owner}','{asset}',repeat('a',64))->>'state';") == 'ready'
+            payload += f" || jsonb_build_object('photo_id','{asset}')"
+        observe = (f"SELECT public.complete_first_aid_control('{owner}','{observe_op}','{plant}',"
+                   f"{payload})->>'state';")
+        return owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset if with_photo else None
+
+    def v10_refresh_race(db, check_completion=False):
+        owner, plant, snapshot, first_op, second_op = (job(n) for n in range(9470, 9475))
+        sql(db, f"""
+            INSERT INTO public.profiles(id,anonymous) VALUES('{owner}',false);
+            INSERT INTO public.plants(id,owner_id,taxon_id,plant_id,creation_source,display_name)
+            SELECT '{plant}','{owner}',t.id,t.plant_id,'identification','Refresh race'
+            FROM public.catalogue_taxa t JOIN public.catalogue_releases r ON r.id=t.release_id
+            WHERE t.plant_id='monstera_deliciosa' AND t.status='published' AND r.state='published';
+            INSERT INTO public.condition_snapshots(id,owner_id,plant_id) VALUES('{snapshot}','{owner}','{plant}');
+            UPDATE public.plants SET current_condition_snapshot_id='{snapshot}' WHERE id='{plant}';
+            INSERT INTO public.basic_care_memberships(owner_id,plant_id,enabled) VALUES('{owner}','{plant}',true);
+            SELECT public.execute_manual_care_command('{owner}',gen_random_uuid(),'{plant}','care.record',
+                '{{"action_code":"water","occurred_at":"2025-10-20T23:30:00Z","timezone":"Europe/Warsaw"}}');
+            INSERT INTO public.care_profiles(kb_release_id,taxon_id,version,profile,field_evidence,validation_report,state)
+            SELECT '{K}',taxon_id,'refresh-race-fixture',jsonb_build_object('kb_release_id','{K}',
+                'plant_id',plant_id,'actions','[{{"action_id":"fixture_soil_check","action_code":"check_soil",
+                "purpose":"routine_care","prerequisite_check_ids":[],"contraindication_check_ids":[],
+                "next_check_interval_days":7}}]'::jsonb,'provenance',jsonb_build_object(
+                    'source_documents','[{{"source_id":"fixture","url":"https://example.test/refresh-race",
+                        "allowed_for":["derived_records"]}}]'::jsonb,
+                    'field_evidence',jsonb_object_agg(path,'[{{"source_id":"fixture","locator":"Test"}}]'::jsonb)
+                )), '{{}}', '{{"refresh_conditions":{{"fixture_soil_check":{{"light_code":"unknown",
+                    "light_source":"unknown","light_confirmed":false,"watering_code":"unknown",
+                    "drainage_code":"unknown","pot_type":"unknown"}}}}}}', 'published'
+            FROM public.plants CROSS JOIN (VALUES ('/actions/0'),('/actions/0/next_check_interval_days'),
+                ('/actions/0/refresh_conditions')) evidence(path) WHERE id='{plant}' GROUP BY taxon_id,plant_id;
+        """)
+
+        def refresh(op):
+            return (f"SELECT public.execute_care_recommendation_refresh('{owner}','{op}','{plant}',"
+                    """'{"expected_care_revision":1}');""")
+
+        lock_session = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            lock_session.stdin.write(f"BEGIN; {refresh(first_op)}\n")
+            lock_session.stdin.flush()
+            first = json.loads(lock_session.stdout.readline())
+            assert first['state'] == 'refreshed', first
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                second = pool.submit(sql, db, "SET application_name='v10_refresh_distinct';\n" + refresh(second_op))
+                replay = pool.submit(sql, db, "SET application_name='v10_refresh_replay';\n" + refresh(first_op))
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN "
+                              "('v10_refresh_distinct','v10_refresh_replay') AND wait_event_type='Lock'") != '2':
+                        assert not second.done() and not replay.done(), 'Concurrent refresh did not wait for owner lock'
+                        assert time.monotonic() < deadline, 'Did not observe concurrent refresh waiting'
+                        time.sleep(.03)
+                    lock_session.stdin.write('COMMIT;\n\\q\n')
+                    lock_session.stdin.flush()
+                    _, error = lock_session.communicate(timeout=15)
+                    assert lock_session.returncode == 0, error
+                    assert json.loads(second.result(timeout=15)) == first
+                    assert json.loads(replay.result(timeout=15)) == first
+                finally:
+                    if lock_session.poll() is None:
+                        lock_session.kill()
+                        lock_session.communicate(timeout=10)
+        finally:
+            if lock_session.poll() is None:
+                lock_session.kill()
+                lock_session.communicate(timeout=10)
+        check(db, f"""(SELECT count(*) FROM public.care_plans WHERE plant_id='{plant}')=1
+            AND (SELECT count(*) FROM public.task_rules WHERE plant_id='{plant}' AND rule_state='active')=1
+            AND (SELECT count(*) FROM public.operation_receipts WHERE owner_id='{owner}'
+                AND command_name='care.recommendation.refresh')=2
+            AND (SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}' AND state='active')=1
+            AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V10 concurrent distinct refresh and exact retry create one rule without new journal or quota usage')
+
+
+        if check_completion:
+            v19_routine_completion_race(db, owner, plant)
+
+    def v19_routine_completion_race(db, owner, plant):
+        rule = sql(db, f"SELECT public.read_plant_care_profile('{owner}','{plant}')#>>'{{routine_check,rule_id}}';")
+        assert re.fullmatch(r'[0-9a-f-]{36}', rule), 'Expected a grounded routine rule in the V10 race fixture'
+        operation, contender = job(9475), job(9476)
+        water_snapshot = f"""SELECT to_jsonb(e) FROM public.care_entries e
+            WHERE e.owner_id='{owner}' AND e.plant_id='{plant}' AND e.action_code='water';"""
+        original_water = json.loads(sql(db, water_snapshot))
+
+        def complete(op):
+            return (f"SELECT public.execute_routine_soil_check('{owner}','{op}','{plant}',1,'{rule}',"
+                    "'2025-10-28','2025-10-28T12:00:00Z','UTC');")
+
+        def compete():
+            try:
+                sql(db, "SET application_name='v19_completion_distinct';\n" + complete(contender))
+            except RuntimeError as error:
+                assert 'SOIL_CHECK_OCCURRENCE_CHANGED' in str(error), str(error)
+                return
+            raise AssertionError('Distinct operation duplicated the completed occurrence')
+
+        session = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            session.stdin.write(f"BEGIN; {complete(operation)}\n")
+            session.stdin.flush()
+            winner = json.loads(session.stdout.readline())
+            assert winner['state'] == 'completed', winner
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                other = pool.submit(compete)
+                replay = pool.submit(sql, db, "SET application_name='v19_completion_replay';\n" + complete(operation))
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN "
+                              "('v19_completion_distinct','v19_completion_replay') AND wait_event_type='Lock'") != '2':
+                        assert not other.done() and not replay.done(), 'Competing completion did not wait for owner lock'
+                        assert time.monotonic() < deadline, 'Did not observe both routine waiters'
+                        time.sleep(.03)
+                    session.stdin.write('COMMIT;\n\\q\n')
+                    session.stdin.flush()
+                    _, error = session.communicate(timeout=15)
+                    assert session.returncode == 0, error
+                    other.result(timeout=15)
+                    assert json.loads(replay.result(timeout=15)) == winner
+                finally:
+                    if session.poll() is None:
+                        session.kill()
+                        session.communicate(timeout=10)
+        finally:
+            if session.poll() is None:
+                session.kill()
+                session.communicate(timeout=10)
+        task_id, entry_id = winner['task_id'], winner['entry_id']
+        assert all(re.fullmatch(r'[0-9a-f-]{36}', key) for key in (task_id, entry_id))
+        receipt = sql(db, f"""SELECT response_payload FROM public.operation_receipts
+            WHERE owner_id='{owner}' AND operation_id='{operation}'
+              AND command_name='care.check_soil.complete';""")
+        assert json.loads(receipt) == winner, 'Stored receipt does not match the completed operation'
+        assert json.loads(sql(db, water_snapshot)) == original_water, 'Routine completion changed the water fact'
+        check(db, f"""EXISTS (
+                SELECT 1 FROM public.care_tasks t JOIN public.care_entries e ON e.id=t.completed_entry_id
+                  AND e.task_id=t.id AND e.owner_id=t.owner_id AND e.plant_id=t.plant_id
+                WHERE t.owner_id='{owner}' AND t.plant_id='{plant}' AND t.id='{task_id}'
+                  AND t.rule_id='{rule}' AND t.due_local_date='2025-10-28'
+                  AND t.state='completed' AND NOT t.reminder_eligible
+                  AND e.id='{entry_id}' AND e.operation_id='{operation}'
+                  AND e.action_code='check_soil' AND e.state='active'
+            ) AND (SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}'
+                AND action_code='check_soil' AND state='active')=1
+            AND (SELECT count(*) FROM public.care_tasks WHERE plant_id='{plant}' AND state='completed')=1
+            AND (SELECT count(*) FROM public.operation_receipts WHERE owner_id='{owner}'
+                AND command_name='care.check_soil.complete')=1
+            AND (SELECT count(*) FROM public.care_entries WHERE plant_id='{plant}'
+                AND action_code='water' AND state='active')=1
+            AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V19 concurrent exact retry and stale distinct completion create one fact and no quota usage')
+
+    def t083_deletion_intent_race(db):
+        owner, neighbor, plant, neighbor_plant, operation, contender, original = (
+            job(i) for i in range(9601, 9608)
+        )
+        sql(db, f"""INSERT INTO public.profiles(id,anonymous) VALUES ('{owner}',false),('{neighbor}',false);
+            INSERT INTO public.plants(id,owner_id,creation_source,display_name) VALUES
+            ('{plant}','{owner}','identification','Deleting fixture'),
+            ('{neighbor_plant}','{neighbor}','identification','Independent fixture');""")
+
+        def water_command(selected_owner, selected_plant, selected_operation):
+            return f"""SELECT public.execute_manual_care_command(
+                '{selected_owner}','{selected_operation}','{selected_plant}','care.record',
+                '{{"action_code":"water","occurred_at":"2025-10-10T12:00:00Z","timezone":"UTC"}}');"""
+
+        before = json.loads(sql(db, water_command(owner, plant, original)))
+        before_row = json.loads(sql(db, f"SELECT to_jsonb(e) FROM public.care_entries e WHERE id='{before['entry_id']}';"))
+        request = f"SELECT public.request_account_deletion_internal('{owner}','{operation}');"
+
+        def competing_write():
+            try:
+                sql(db, "SET application_name='t083_deletion_write';\n" + water_command(owner, plant, contender))
+            except RuntimeError as error:
+                assert "ACTIVE_PERMANENT_OWNER_REQUIRED" in str(error), str(error)
+                return
+            raise AssertionError("A same-owner write succeeded after the deletion request")
+
+        session = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        try:
+            session.stdin.write("BEGIN; " + request + '\n')
+            session.stdin.flush()
+            winner = json.loads(session.stdout.readline())
+            assert winner["state"] == "deleting" and winner["owner_id"] == owner
+            assert winner["operation_id"] == operation
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                write = pool.submit(competing_write)
+                retry = pool.submit(sql, db, "SET application_name='t083_deletion_replay';\n" + request)
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN "
+                              "('t083_deletion_write','t083_deletion_replay') AND wait_event_type='Lock'") != '2':
+                        assert not write.done() and not retry.done(), "Same owner bypassed the lock"
+                        assert time.monotonic() < deadline, "Did not observe both owner-blocked requests"
+                        time.sleep(.03)
+                    # The same operation UUID is valid independently in a different owner's scope.
+                    neighbor_result = json.loads(sql(db, water_command(neighbor, neighbor_plant, operation)))
+                    assert neighbor_result["plant_id"] == neighbor_plant
+                    session.stdin.write('COMMIT;\n\\q\n')
+                    session.stdin.flush()
+                    _, error = session.communicate(timeout=15)
+                    assert session.returncode == 0, error
+                    write.result(timeout=15)
+                    assert json.loads(retry.result(timeout=15)) == winner
+                finally:
+                    if session.poll() is None:
+                        session.kill()
+                        session.communicate(timeout=10)
+        finally:
+            if session.poll() is None:
+                session.kill()
+                session.communicate(timeout=10)
+
+        persisted = json.loads(sql(db, f"""SELECT response_payload FROM public.operation_receipts
+            WHERE owner_id='{owner}' AND operation_id='{operation}' AND command_name='account.delete';"""))
+        assert persisted == winner
+        assert json.loads(sql(db, f"SELECT to_jsonb(e) FROM public.care_entries e WHERE id='{before['entry_id']}';")) == before_row
+        check(db, f"""EXISTS (
+                SELECT 1 FROM public.account_deletion_requests q JOIN public.profiles p ON p.id=q.owner_id
+                WHERE q.owner_id='{owner}' AND q.operation_id='{operation}' AND p.account_state='deleting'
+                AND q.requested_at=p.updated_at AND q.requested_at='{winner['watermark']}'::timestamptz
+            ) AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests WHERE owner_id='{neighbor}')
+            AND NOT EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{contender}')
+            AND (SELECT count(*) FROM public.care_entries WHERE owner_id='{owner}')=1
+            AND (SELECT count(*) FROM public.care_entries WHERE owner_id='{neighbor}')=1
+            AND (SELECT account_state FROM public.profiles WHERE id='{neighbor}')='active'""",
+              "T083 concurrent account request blocks same-owner write, replays exactly and preserves history")
+
+    def first_aid_observation_race(db, winner, offset, with_photo=False):
+        owner, plant, diagnosis, entry, control, observe_op, undo_op, observe, asset = first_aid_race_fixture(
+            db, offset, with_photo)
+        undo = (f"SELECT public.execute_manual_care_command('{owner}','{undo_op}','{plant}','care.undo',"
+                f"jsonb_build_object('entry_id','{entry}'))->>'state';")
+        expire = f"UPDATE public.entitlements SET valid_until=clock_timestamp() WHERE owner_id='{owner}';"
+        first = {'observe': observe, 'undo': undo, 'expiry': expire}[winner]
+        second = undo if winner == 'observe' else observe
+        expected = {'observe': 'voided', 'undo': 'FIRST_AID_CONTROL_INACTIVE',
+                    'expiry': 'FIRST_AID_CONTROL_EXPIRED'}[winner]
+        lock = f"SELECT id FROM public.profiles WHERE id='{owner}' FOR UPDATE;"
+        application = f'first_aid_observe_{winner}'
+        blocker = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+
+        def compete():
+            try:
+                return sql(db, f"SET application_name='{application}';\n{second}")
+            except RuntimeError as error:
+                match = re.search(r'ERROR:\s+(FIRST_AID_CONTROL_[A-Z_]+)', str(error))
+                if match:
+                    return match.group(1)
+                raise
+
+        def stop_blocker():
+            if blocker.poll() is None:
+                blocker.kill()
+                blocker.communicate(timeout=10)
+
+        try:
+            blocker.stdin.write(f"BEGIN; {lock}\n\\echo READY\n")
+            blocker.stdin.flush()
+            assert blocker.stdout.readline().strip() == owner and blocker.stdout.readline().strip() == 'READY'
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(compete)
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, f"SELECT count(*) FROM pg_stat_activity WHERE application_name='{application}' AND wait_event_type='Lock'") != '1':
+                        assert not future.done(), 'Competing care command did not wait for owner lock'
+                        assert time.monotonic() < deadline, 'Did not observe a real care command waiter'
+                        time.sleep(.03)
+                    blocker.stdin.write(f"{first} COMMIT;\n\\q\n")
+                    blocker.stdin.flush()
+                    output, error = blocker.communicate(timeout=15)
+                    assert blocker.returncode == 0, error
+                    assert output.strip() == {'observe': 'completed', 'undo': 'voided', 'expiry': ''}[winner]
+                    assert future.result(timeout=15) == expected
+                finally:
+                    stop_blocker()
+        finally:
+            stop_blocker()
+        state = {'observe': 'completed', 'undo': 'undone', 'expiry': 'active'}[winner]
+        count = int(winner == 'observe')
+        check(db, f"""(SELECT state='{state}' FROM public.first_aid_followups WHERE id='{control}')
+            AND (SELECT count(*)={count} FROM public.care_observations WHERE first_aid_control_id='{control}')
+            AND (SELECT count(*)={count} FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{observe_op}')
+            AND (SELECT count(*)=1 FROM public.analysis_jobs WHERE owner_id='{owner}' AND quota_state='not_applicable')
+            AND NOT EXISTS (SELECT 1 FROM public.analysis_jobs WHERE owner_id='{owner}' AND id<>'{diagnosis}')
+            AND NOT EXISTS (SELECT 1 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              f'first-aid {winner} wins the real owner-lock race with no new job or quota spend')
+        if with_photo:
+            attached = f"plant_id='{plant}'" if winner == 'observe' else 'plant_id IS NULL'
+            check(db, f"(SELECT {attached} FROM public.photo_assets WHERE id='{asset}') "
+                  f"AND (SELECT count(*)={count} FROM public.care_observations WHERE photo_id='{asset}')",
+                  f'photo attachment is atomic when {winner} wins')
+
+    def first_aid_cleanup_race(db, cleanup_first, offset):
+        owner, plant, _, _, control, observe_op, _, observe, asset = first_aid_race_fixture(db, offset, True)
+        sql(db, f"UPDATE public.first_aid_photo_upload_tickets SET expires_at=clock_timestamp()-interval '1 second' WHERE photo_asset_id='{asset}';")
+        claim = f"SELECT public.claim_first_aid_photo_cleanup('{asset}');"
+        first = claim if cleanup_first else observe
+        blocker = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, env=env)
+        application = 'observe_after_cleanup_claim'
+
+        def stop_blocker():
+            if blocker.poll() is None:
+                blocker.kill()
+                blocker.communicate(timeout=10)
+
+        def commit_blocker():
+            blocker.stdin.write('COMMIT;\n\\q\n')
+            blocker.stdin.flush()
+            _, error = blocker.communicate(timeout=15)
+            assert blocker.returncode == 0, error
+
+        try:
+            blocker.stdin.write(f"BEGIN; {first}\n\\echo READY\n")
+            blocker.stdin.flush()
+            result = blocker.stdout.readline().strip()
+            assert blocker.stdout.readline().strip() == 'READY'
+            if cleanup_first:
+                assert json.loads(result)[0]['photo_id'] == asset
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(sql, db, f"SET application_name='{application}';\n{observe}")
+                    try:
+                        deadline = time.monotonic() + 10
+                        while sql(db, f"SELECT count(*) FROM pg_stat_activity WHERE application_name='{application}' AND wait_event_type='Lock'") != '1':
+                            assert not future.done(), 'Attach did not wait for the cleanup asset lock'
+                            assert time.monotonic() < deadline, 'Did not observe the competing attach'
+                            time.sleep(.03)
+                        commit_blocker()
+                        try:
+                            future.result(timeout=15)
+                        except RuntimeError as error:
+                            assert 'PHOTO_NOT_READY' in str(error), error
+                        else:
+                            raise AssertionError('Attach succeeded after the cleanup claim')
+                    finally:
+                        stop_blocker()
+                check(db, f"(SELECT state='deleting' AND plant_id IS NULL FROM public.photo_assets WHERE id='{asset}') "
+                      f"AND (SELECT state='active' FROM public.first_aid_followups WHERE id='{control}') "
+                      f"AND NOT EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{observe_op}')",
+                      'cleanup wins the asset lock and leaves observation uncommitted')
+            else:
+                assert result == 'completed'
+                assert sql(db, claim) == '[]', 'cleanup must skip the asset locked by an uncommitted attach'
+                commit_blocker()
+                assert sql(db, claim) == '[]', 'cleanup must preserve the committed attachment'
+                check(db, f"(SELECT state='ready' AND plant_id='{plant}' FROM public.photo_assets WHERE id='{asset}') "
+                      f"AND EXISTS (SELECT 1 FROM public.care_observations WHERE photo_id='{asset}' AND first_aid_control_id='{control}')",
+                      'attach wins the asset lock and preserves the photo')
+        finally:
+            stop_blocker()
+
     def legacy_guard(db):
         if db == 'upgrade':
             check(db, f"(SELECT registered_at IS NULL FROM public.account_quota_anchors WHERE owner_id='{B}')", 'legacy guard probe uses unresolved permanent owner')
@@ -177,6 +638,134 @@ END; $$;
 SELECT pg_temp.probe_legacy_flip()::text;"""
         assert sql(db, query) == 'true', 'Permanent legacy owner can re-register to evade unresolved anchor'
         print(f'PASS {db}: trusted permanent-to-guest reversal rejected', flush=True)
+
+    def bound_repeat_last_attempt(db):
+        owner, plant, flow, winner, distinct, retry = map(job, range(960, 966))
+        sql(db, f"""
+            INSERT INTO auth.users(id,is_anonymous) VALUES('{owner}',false);
+            INSERT INTO public.plants(id,owner_id,plant_id,creation_source,display_name)
+            VALUES('{plant}','{owner}','monstera_deliciosa','identification','V05 fixture');
+        """)
+
+        def ready_photo():
+            asset = sql(db, f"SELECT public.create_diagnosis_upload('{owner}',gen_random_uuid(),"
+                        "'image/jpeg',4,repeat('a',64))->>'photo_asset_id';")
+            assert sql(db, f"SELECT public.mark_diagnosis_upload_ready('{owner}','{asset}',repeat('a',64))->>'state';") == 'ready'
+            return asset
+
+        def admission(operation, asset, can_dispatch=True):
+            return (f"SELECT public.create_plant_diagnosis_job('{owner}',{operation},'{asset}',"
+                    f"'{flow}','en',{str(can_dispatch).lower()},'{plant}');")
+
+        def read_job(job_id):
+            return json.loads(sql(db, f"SELECT public.read_diagnosis_job('{owner}','{job_id}');"))
+
+        def settle(job_id, succeeded):
+            lease = json.loads(sql(db, f"SELECT public.lease_diagnosis_job('{job_id}');"))
+            assert lease and lease['job_id'] == job_id
+            assert sql(db, f"SELECT public.start_diagnosis_provider('{job_id}','{lease['lease_token']}')->>'allowed';") == 'true'
+            result = (f"jsonb_build_object('job_id','{job_id}','mode','diagnosis',"
+                      f"'kb_release_id','{lease['kb_release_id']}')") if succeeded else 'NULL'
+            error = 'NULL' if succeeded else "'PROVIDER_FAILURE_FIXTURE'"
+            return sql(db, f"SELECT public.finish_diagnosis_job('{job_id}','{lease['lease_token']}',"
+                       f"{result},{str(not succeeded).lower()},{error})->>'quota_state';")
+
+        # Consume the starter and the first two monthly attempts through real admission and settlement.
+        for quota in ('starter_diagnosis', 'free_monthly', 'free_monthly'):
+            seeded = json.loads(sql(db, admission('gen_random_uuid()', ready_photo())))['job']
+            assert seeded['quota_kind'] == quota and settle(seeded['job_id'], True) == 'consumed'
+
+        original_photo, other_photo = ready_photo(), ready_photo()
+        create = admission(f"'{winner}'", original_photo)
+        replay = admission(f"'{winner}'", original_photo, can_dispatch=False)
+        competing = '\\set VERBOSITY verbose\n' + admission(f"'{distinct}'", other_photo)
+
+        def expect_exhausted(action):
+            try:
+                action()
+            except RuntimeError as error:
+                failure = re.search(r'ERROR:\s+(P0001): (QUOTA_DENIED).*?DETAIL:\s+(free_monthly_exhausted)',
+                                    str(error), re.S)
+                assert failure, error
+                code, message, details = failure.groups()
+                return {'code': code, 'message': message, 'details': details}
+            else:
+                raise AssertionError('A distinct request bypassed the last-attempt limit')
+
+        first = subprocess.Popen(base + ['-d', db], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True, env=env)
+
+        def stop_first():
+            if first.poll() is None:
+                first.kill()
+                first.communicate(timeout=10)
+
+        try:
+            first.stdin.write(f"BEGIN; {create}\n\\echo READY\n")
+            first.stdin.flush()
+            accepted = json.loads(first.stdout.readline())
+            assert first.stdout.readline().strip() == 'READY' and accepted['replayed'] is False
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                exact = pool.submit(sql, db, "SET application_name='v05_exact'; " + replay)
+                different = pool.submit(sql, db, "SET application_name='v05_distinct';\n" + competing)
+                try:
+                    deadline = time.monotonic() + 10
+                    while sql(db, "SELECT count(*) FROM pg_stat_activity WHERE application_name IN ('v05_exact','v05_distinct') AND wait_event_type='Lock';") != '2':
+                        assert not exact.done() and not different.done(), 'V05 contenders bypassed the owner lock'
+                        assert time.monotonic() < deadline, 'V05 contenders never overlapped'
+                        time.sleep(.03)
+                    first.stdin.write('COMMIT;\n\\q\n')
+                    first.stdin.flush()
+                    _, error = first.communicate(timeout=15)
+                    assert first.returncode == 0, error
+                    concurrent_replay = json.loads(exact.result(timeout=15))
+                    assert concurrent_replay == {**accepted, 'replayed': True}
+                    concurrent_denial = expect_exhausted(lambda: different.result(timeout=15))
+                finally:
+                    stop_first()
+        finally:
+            stop_first()
+
+        receipt = accepted['job']
+        failed_job = receipt['job_id']
+        assert receipt['quota_kind'] == 'free_monthly' and receipt['quota_state'] == 'reserved'
+        assert receipt['target_plant_id'] == plant and receipt['photo_asset_id'] == original_photo
+        check(db, f"""(SELECT count(*)=3 AND count(*) FILTER (WHERE quota_state='consumed')=2
+                 AND count(*) FILTER (WHERE quota_state='reserved' AND job_id='{failed_job}')=1
+                 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V05 concurrent requests leave exactly one reservation on the winning job')
+        assert settle(failed_job, False) == 'released'
+        failed = read_job(failed_job)
+        assert failed['status'] == 'failed' and failed['quota_state'] == 'released'
+        failed_replay = json.loads(sql(db, replay))
+        assert failed_replay == concurrent_replay
+
+        retried = json.loads(sql(db, admission(f"'{retry}'", original_photo)))
+        replacement = retried['job']
+        assert retried['replayed'] is False and replacement['job_id'] != failed_job
+        assert replacement['target_plant_id'] == plant and replacement['photo_asset_id'] == original_photo
+        assert replacement['quota_kind'] == 'free_monthly' and settle(replacement['job_id'], True) == 'consumed'
+        terminal = read_job(replacement['job_id'])
+        assert terminal['status'] == 'succeeded' and terminal['quota_state'] == 'consumed'
+        terminal_denial = expect_exhausted(lambda: sql(db, competing))
+        terminal_replay = json.loads(sql(db, admission(f"'{retry}'", original_photo, False)))
+        assert terminal_replay == {**retried, 'replayed': True}
+        assert read_job(failed_job) == failed and read_job(replacement['job_id']) == terminal
+        check(db, f"""(SELECT count(*)=5 FROM public.analysis_jobs WHERE owner_id='{owner}')
+            AND (SELECT count(*)=5 FROM public.operation_receipts WHERE owner_id='{owner}' AND command_name='analysis.job.create')
+            AND NOT EXISTS (SELECT 1 FROM public.operation_receipts WHERE owner_id='{owner}' AND operation_id='{distinct}')
+            AND (SELECT count(*)=4 AND count(*) FILTER (WHERE quota_state='consumed')=3
+                 AND count(*) FILTER (WHERE quota_state='released')=1
+                 FROM public.account_quota_usage WHERE owner_id='{owner}')""",
+              'V05 bound repeat: concurrent last Free attempt, immutable replay, release and one successful retry')
+        wire = dict(owner=owner, plant=plant, flow=flow, winner=winner, distinct=distinct, retry=retry,
+                    original_photo=original_photo, other_photo=other_photo, accepted=accepted,
+                    concurrent_replay=concurrent_replay, concurrent_denial=concurrent_denial,
+                    failed=failed, failed_replay=failed_replay, retried=retried, terminal=terminal,
+                    terminal_denial=terminal_denial, terminal_replay=terminal_replay)
+        command(['deno', 'run', '-A', '--config', str(ROOT/'supabase/functions/deno.json'),
+                 str(ROOT/'tools/automation/v05_bound_repeat_wire.ts')], json.dumps(wire))
+        print(f'PASS {db}: V05 202/200/429 and terminal GET through production Edge using real SQL outcomes', flush=True)
 
     def concurrency(db, same=False, outcome='succeeded'):
         # Fresh owner with exactly one remaining paid slot; 20 independent psql
@@ -259,10 +848,18 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
             if args.reserve:
                 assert any(m.name == RESERVE for m in selected), 'Reservation migration required'
             elif not args.accounting and not args.anchors:
-                assert any(m.name == SECOND for m in selected), 'Admission migration required'
+                assert any(m.name == SECOND for m in selected), 'Settlement migration required'
+            if args.bind:
+                assert any(m.name == BIND for m in selected), 'Binding migration required'
+            if args.installations:
+                assert any(m.name == INSTALLATIONS for m in selected), 'Credential API migration required'
+            if args.access:
+                assert any(m.name == ACCESS for m in selected), 'Access snapshot migration required'
         for case in ('clean','upgrade'):
             sql('postgres', f'CREATE DATABASE {case};')
-            sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean);")
+            sql(case, "CREATE SCHEMA auth; CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth TO PUBLIC; CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean,created_at timestamptz NOT NULL DEFAULT clock_timestamp());")
+            if args.diagnosis_upload or any(m.name == '202611130035_plant_delete_storage.sql' for m in selected):
+                sql(case, 'CREATE SCHEMA storage; CREATE TABLE storage.buckets(id text PRIMARY KEY, name text NOT NULL, public boolean, file_size_limit bigint, allowed_mime_types text[]); CREATE TABLE storage.objects(bucket_id text, name text, PRIMARY KEY(bucket_id,name));')
             for migration in selected:
                 if case == 'clean' or migration.name < FIRST:
                     sql(case, migration.read_text())
@@ -275,6 +872,14 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 cap_seed = (ROOT/'supabase/tests/rooms_upgrade.seed.sql').read_text() + '\nINSERT INTO public.plants(id,owner_id,plant_id,creation_source,display_name) VALUES\n(\'15800000-0000-4000-8000-000000000203\',\'15800000-0000-4000-8000-000000000001\',\'fixture_rooms_plant\',\'identification\',\'Historical A2\');\nINSERT INTO public.basic_care_memberships(owner_id,plant_id,enabled,free_slot) VALUES\n(\'15800000-0000-4000-8000-000000000001\',\'15800000-0000-4000-8000-000000000201\',true,2);\nINSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload) VALUES\n(\'15800000-0000-4000-8000-000000000001\',\'15800000-0000-4000-8000-000000000821\',\'free_care.select\',encode(digest(\'{"selected_plant_ids": []}\'::jsonb::text,\'sha256\'),\'hex\'),\'{"legacy_selection": true}\'::jsonb);\n'
                 sql(case, cap_seed)
             if case == 'upgrade':
+                if any(m.name == '202611120023_retire_notification_claim_writes.sql' for m in selected):
+                    sql(case, f"INSERT INTO public.installation_access(id,credential_hash) VALUES('{job(890)}',repeat('f',64)); "
+                        f"INSERT INTO public.notification_claims(id,owner_id,kind,period_key,installation_id,scheduled_at,state,updated_at) "
+                        f"VALUES('{job(891)}','{A}','progress_report','2026-11','{job(890)}','2026-11-01','scheduled','2026-11-01'); "
+                        f"INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload) "
+                        f"VALUES('{A}','{job(892)}','notification.claim','historical',jsonb_build_object('granted',true));")
+                if any(m.name == '202611120024_retire_notification_sync_projection.sql' for m in selected):
+                    sql(case, f"UPDATE public.profiles SET report_notifications_enabled=true,trial_reminder_enabled=true WHERE id='{A}';")
                 # Existing paid counters deliberately contain unattributable spend;
                 # known consumed/reserved jobs must not be added twice.
                 sql(case, f"INSERT INTO public.monthly_quotas(id,owner_id,quota_kind,period_start,period_end,limit_count,consumed_count,reserved_count) VALUES('{job(400)}','{A}','paid_monthly','2026-10-20','2026-11-20',100,7,1);")
@@ -303,8 +908,105 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 cap_race(case, same=False)
             if not args.anchors:
                 tap(case, ROOT/'supabase/tests/registration_quotas.test.sql')
+            if args.access and any(m.name == '202611120022_auth_registration_profile.sql' for m in selected):
+                tap(case, ROOT/'supabase/tests/auth_registration_profile.test.sql')
+                if any(m.name == '202611150060_account_deletion_intent.sql' for m in selected):
+                    t083_deletion_intent_race(case)
+            if args.access and any(m.name == '202611120023_retire_notification_claim_writes.sql' for m in selected):
+                tap(case, ROOT/'supabase/tests/notification_claim_retirement.test.sql')
+            if args.access and any(m.name == '202611120024_retire_notification_sync_projection.sql' for m in selected):
+                tap(case, ROOT/'supabase/tests/notification_sync_retirement.test.sql')
+            if args.diagnosis_upload:
+                tap(case, ROOT/'supabase/tests/diagnosis_upload.test.sql')
+            if args.diagnosis_jobs:
+                catalogue = json.loads((ROOT/'catalogue/releases/skeleton-300-v1/plants.json').read_text())
+                plant = next(x for x in catalogue['plants'] if x['plant_id'] == 'monstera_deliciosa')
+                encoded = json.dumps(plant, ensure_ascii=False)
+                assert '$fixture$' not in encoded
+                release = job(880)
+                sql(case, f"INSERT INTO public.catalogue_releases(id, version) VALUES('{release}', 'diagnosis-gate'); "
+                    f"SELECT public.upsert_catalogue_skeleton_species('{release}', $fixture${encoded}$fixture$::jsonb, true); "
+                    f"SELECT public.publish_catalogue_release('{release}');")
+                tap(case, ROOT/'supabase/tests/diagnosis_jobs.test.sql')
+                if any(migration.name == '202611120025_repeat_plant_diagnosis.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/repeat_plant_diagnosis.test.sql')
+                    bound_repeat_last_attempt(case)
+                if any(migration.name == '202611120021_guest_photo_claim.sql' for migration in selected):
+                    guest_settlement_bind_race(case, release, timed_out=False)
+                    guest_settlement_bind_race(case, release, timed_out=True)
+                if any(migration.name == CARE_JOURNAL for migration in selected):
+                    tap(case, ROOT/'supabase/tests/manual_care_journal.test.sql')
+                if any(migration.name == '202611120026_manual_care_date_correction.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/manual_care_date_correction.test.sql')
+                if any(migration.name == CARE_PROFILE_READ for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_care_profile_read.test.sql')
+                if any(migration.name == '202611120027_plant_next_check.sql' for migration in selected):
+                    result = tap(case, ROOT/'supabase/tests/plant_next_check.test.sql')
+                    if any(migration.name == '202611130042_plant_edit_conditions.sql' for migration in selected):
+                        marker = '# V10_EDIT_GET '
+                        wire = [line.removeprefix(marker) for line in result.splitlines() if line.startswith(marker)]
+                        assert len(wire) == 1, 'Missing SQL projections for V10 recommendation regression'
+                        projections = json.loads(wire[0])
+                        if any(migration.name == '202611140047_care_refresh_rule.sql' for migration in selected):
+                            prefix = '# V10_REFRESH_WIRE '
+                            refresh = [line.removeprefix(prefix) for line in result.splitlines() if line.startswith(prefix)]
+                            assert len(refresh) == 1, 'Missing SQL receipt and projection for V10 refresh'
+                            projections['refresh'] = json.loads(refresh[0])
+                        command(['deno', 'run', '--config', str(ROOT/'supabase/functions/deno.json'),
+                                 str(ROOT/'tools/automation/v10_edit_recommendation_wire.ts')], json.dumps(projections))
+                        print(f'PASS {case}: real edit preserves the recommendation and suppresses its date through Edge', flush=True)
+                        if 'refresh' in projections:
+                            print(f'PASS {case}: Edge validates refresh receipt and shows the expected next check', flush=True)
+                            v10_refresh_race(case, check_completion=any(
+                                migration.name == '202611150052_routine_soil_check_recurrence.sql'
+                                for migration in selected))
+                if any(migration.name == '202611150051_routine_soil_check_record.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/routine_soil_check.test.sql')
+                if any(migration.name == '202611120028_first_aid_control.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/first_aid_control.test.sql')
+                if any(migration.name == '202611120030_first_aid_observation.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/first_aid_observation.test.sql')
+                    with_photo = any(migration.name == '202611120031_first_aid_observation_photo.sql' for migration in selected)
+                    if with_photo:
+                        tap(case, ROOT/'supabase/tests/first_aid_observation_photo.test.sql')
+                    for offset, winner in enumerate(('observe', 'undo', 'expiry'), start=1):
+                        first_aid_observation_race(case, winner, 900 + offset * 10, with_photo)
+                if any(migration.name == '202611120032_first_aid_photo_cleanup.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/first_aid_photo_cleanup.test.sql')
+                    first_aid_cleanup_race(case, cleanup_first=True, offset=940)
+                    first_aid_cleanup_race(case, cleanup_first=False, offset=950)
+                if any(migration.name == '202611120033_plant_delete_core.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_core.test.sql')
+                if any(migration.name == '202611130034_plant_delete_access.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_access.test.sql')
+                if any(migration.name == '202611130035_plant_delete_storage.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_storage.test.sql')
+                if any(migration.name == '202611130036_plant_delete_analysis_data.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_analysis_data.test.sql')
+                if any(migration.name == '202611130037_plant_delete_expired_lease.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_expired_lease.test.sql')
+                if any(migration.name == '202611130038_plant_delete_personal_text.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_personal_text.test.sql')
+                if any(migration.name == '202611130039_plant_delete_data_pass.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_data_pass.test.sql')
+                if any(migration.name == '202611130040_plant_delete_queue.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_delete_queue.test.sql')
+                if any(migration.name == '202611130041_plant_edit_name.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_edit_name.test.sql')
+                if any(migration.name == '202611130042_plant_edit_conditions.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_edit_conditions.test.sql')
+                if any(migration.name == '202611130043_plant_edit_taxon.sql' for migration in selected):
+                    tap(case, ROOT/'supabase/tests/plant_edit_taxon.test.sql')
             if not args.accounting and not args.anchors:
-                tap(case, ROOT/('supabase/tests/registration_reservation.test.sql' if args.reserve else 'supabase/tests/registration_admission.test.sql'))
+                tap(case, ROOT/'supabase/tests/registration_reservation.test.sql')
+                if not args.reserve:
+                    tap(case, ROOT/'supabase/tests/registration_admission.test.sql')
+                if args.bind:
+                    tap(case, ROOT/'supabase/tests/registration_bind.test.sql')
+                if args.installations:
+                    tap(case, ROOT/'supabase/tests/registration_installations.test.sql')
+                if args.access:
+                    tap(case, ROOT/'supabase/tests/registration_access.test.sql')
                 concurrency(case, same=False)
                 concurrency(case, same=True)
                 if not args.reserve:

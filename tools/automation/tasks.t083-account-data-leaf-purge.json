@@ -1,0 +1,41 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-data-leaf-purge",
+      "description": "Implement the first local account data cleanup phase, limited to verified owner-owned leaf rows.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202611150060_account_deletion_intent.sql",
+        "supabase/migrations/202611150065_account_deletion_storage_verification.sql",
+        "supabase/migrations/202611150066_account_deletion_care_leaves.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150066_account_deletion_care_leaves.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Exact unified Git diff in JSON, local fixtures only. No deployment, route, role grant, Auth deletion, Storage API or generated worker. Broader T082/T083 remain open.",
+        "Forward migration adds one SQL-owner-only SECURITY DEFINER function with empty search_path, owner UUID and request operation UUID. Run the accepted 065 fresh Storage verification in the same transaction, reusing its profile/request locks. When not ready return false with no deleted rows. On verified readiness remove only rows with precisely p_owner_id from recovery_transitions, care_reversals, schedule_changes and notification_claims, independent of tombstone state. No dynamic deletion predicates. Recoverable failure must roll back the transaction; exact successful repeat is harmless and returns true. No request/receipt, parent care objects, profile/Auth, quota, payments or neighbor changes. Keep ACLs private even with default custom grants.",
+        "Rollback pgTAP against real fixture owners covers active/guest/wrong op, failed verification including reappearing objects, successful exact purge with neighbor leaves and untouched target parent records/receipts, replay, actual owner-only ACL. Honor registration-anchor immutability; use a distinct anonymous profile, never convert a permanent fixture. Support clean and forward migrations and run existing fixtures."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083DL1",
+          "description": "Scoped exact diff and Deno typing.",
+          "mode": "local",
+          "checks": ["diff-check", "deno-check"]
+        },
+        {
+          "id": "T083DL2",
+          "description": "Clean/upgrade pgTAP verifies fresh Storage block, isolated leaf purging, replay and private ACL.",
+          "mode": "fixture",
+          "checks": ["parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

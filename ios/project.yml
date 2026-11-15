@@ -37,6 +37,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NaratSupabaseURL: $(NARAT_SUPABASE_URL)
+        NaratStagingAnalysisHost: $(NARAT_STAGING_ANALYSIS_HOST)
         NaratSupabasePublishableKey: $(NARAT_SUPABASE_PUBLISHABLE_KEY)
         GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
         GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)
@@ -68,7 +69,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_NSCameraUsageDescription: "Narat uses the camera to identify plants, inspect symptoms, and estimate lighting conditions."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Narat uses the camera to photograph plants for identification or symptom analysis."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Narat accesses your photo library to analyze plant photos and attach diary pictures."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Narat saves your plant diary photos to your photo library when requested."
         GENERATE_INFOPLIST_FILE: YES
@@ -82,6 +83,9 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: PlantsTests
+      - path: ../catalogue/releases/skeleton-300-v1/media/48854fc7b2b6d711a508c396.jpg
+        group: PlantsTests/Fixtures
+        buildPhase: resources
     dependencies:
       - target: Plants
     settings:

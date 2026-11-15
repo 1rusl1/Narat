@@ -11,6 +11,115 @@ private enum CatalogueViewNotice {
     case invalidInput, unavailable, sessionChanged, nativeCancelled, authenticationFailed
 }
 
+/// Only the current account may load or render the private image for a canonical card.
+@MainActor
+struct CataloguePrivatePhotoView: View {
+    enum Subject {
+        case plant(UUID)
+        case observation(UUID)
+
+        var accessibilityId: String {
+            switch self {
+            case .plant: "catalogue.saved.photo"
+            case let .observation(id): "catalogue.saved.firstAid.photo." + id.uuidString.lowercased()
+            }
+        }
+    }
+    private struct Read: Equatable {
+        let scope: CatalogueSDKSnapshot
+        let attempt: Int
+    }
+
+    let connection: CatalogueConnection
+    let expected: CatalogueSDKSnapshot
+    let subject: Subject
+    let polish: Bool
+
+    @State private var image: UIImage?
+    @State private var loadedScope: CatalogueSDKSnapshot?
+    @State private var failed = false
+    @State private var attempt = 0
+
+    private var read: Read { Read(scope: expected, attempt: attempt) }
+
+    var body: some View {
+        if connection.snapshot == expected {
+            Group {
+                if let image, loadedScope == expected {
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .frame(maxHeight: 260)
+                        .accessibilityLabel(photoLabel)
+                        .accessibilityIdentifier(subject.accessibilityId)
+                } else if failed, loadedScope == expected {
+                    Button(polish ? "Wczytaj zdjęcie ponownie" : "Retry photo") { attempt += 1 }
+                        .accessibilityIdentifier(subject.accessibilityId + ".retry")
+                } else {
+                    ProgressView(polish ? "Wczytywanie zdjęcia…" : "Loading photo…")
+                }
+            }
+            .task(id: read) { await load(read) }
+        }
+    }
+
+    private var photoLabel: String {
+        switch subject {
+        case .plant: polish ? "Twoje zdjęcie rośliny" : "Your plant photo"
+        case .observation: "Your observation photo"
+        }
+    }
+
+    private func load(_ requested: Read) async {
+        guard !Task.isCancelled, read == requested else { return }
+        loadedScope = nil
+        image = nil
+        failed = false
+        do {
+            guard let api = connection.apiClient else { throw CatalogueConnectionUnavailable.configurationMissing }
+            let lease = try await connection.collectionLease(expected: requested.scope)
+            let bytes: Data
+            switch subject {
+            case let .plant(id): bytes = try await api.fetchPlantPhoto(plantId: id, context: lease)
+            case let .observation(id): bytes = try await api.fetchObservationPhoto(observationId: id, context: lease)
+            }
+            guard !Task.isCancelled, read == requested, connection.snapshot == requested.scope else { return }
+            guard let decoded = UIImage(data: bytes) else { throw URLError(.cannotDecodeContentData) }
+            image = decoded
+        } catch {
+            guard !Task.isCancelled, read == requested, connection.snapshot == requested.scope else { return }
+            failed = true
+        }
+        loadedScope = requested.scope
+    }
+}
+
+@MainActor
+struct CatalogueResumeSelection {
+    let speciesSlug: String
+    let flowId: UUID
+    let identification: CatalogueInput.Identification?
+
+    init?(_ model: CatalogueSaveModel) {
+        guard let input = model.input, let checkpoint = model.checkpoint else { return nil }
+        speciesSlug = input.speciesIdentifier
+        flowId = checkpoint.flowId
+        identification = input.identification
+    }
+}
+
+enum CatalogueSaveIdentity {
+    static func allowsEditingAsNewSave(analysisFlow: UUID?) -> Bool {
+        analysisFlow == nil
+    }
+
+    static func canRestore(
+        selectedSpecies: String, restoredSpecies: String?,
+        analysisFlow: UUID?, restoredFlow: UUID?
+    ) -> Bool {
+        selectedSpecies == restoredSpecies &&
+            (analysisFlow == nil || analysisFlow == restoredFlow)
+    }
+}
+
 /// Private form state belongs to one actual SDK snapshot, including its event epoch.
 @MainActor
 struct CatalogueSaveView<SpeciesDetails: View>: View {
@@ -19,6 +128,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let displayName: String
     let scientificName: String
     let polish: Bool
+    var analysisSaveIdentity: UUID? = nil
+    var identification: CatalogueInput.Identification? = nil
+    var expectedPhotoId: UUID? = nil
     @Binding var selectionLocked: Bool
     @ViewBuilder let speciesDetails: () -> SpeciesDetails
 
@@ -38,9 +150,20 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @State private var presenter: UIViewController?
     @FocusState private var nameFocused: Bool
 
+    private var showsManualWateringActions: Bool {
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
+        analysisSaveIdentity != nil && !polish
+            && ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis")
+#else
+        false
+#endif
+    }
+
     private var scopeIsCurrent: Bool {
         scope != nil && connection.snapshot == scope
     }
+
+    private var speciesIdentifier: String { identification?.taxonId.uuidString.lowercased() ?? speciesSlug }
 
     private var shouldLockSelection: Bool {
         if working || nativeInFlight || restoreFailed || !scopeIsCurrent { return true }
@@ -94,6 +217,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         .onChange(of: connection.snapshot) { _, current in
             // The native helper alone reconciles its intentional SDK transition.
             guard !nativeInFlight, current != scope else { return }
+            synchronize()
+        }
+        .onChange(of: connection.lastDeletedPlant) { _, deleted in
+            guard let deleted, scopeIsCurrent, case let .saved(confirmation) = model?.state,
+                  confirmation.receipt.plantId == deleted else { return }
             synchronize()
         }
         .onChange(of: shouldLockSelection, initial: true) { _, locked in
@@ -234,10 +362,13 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             .accessibilityIdentifier("catalogue.save.retry")
     }
 
+    @ViewBuilder
     private var editButton: some View {
+        if CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: analysisSaveIdentity) {
         Button(polish ? "Edytuj jako nowy zapis" : "Edit as a new save") { editAsNewIntent() }
             .disabled(working || !journalAllowsNewIntent)
             .accessibilityIdentifier("catalogue.save.edit")
+        }
     }
 
     @ViewBuilder
@@ -245,20 +376,34 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         // No receipt or captured private summary is passed to a destination.
         Text(polish ? "Roślina zapisana" : "Plant saved").font(.headline)
             .accessibilityIdentifier("catalogue.save.saved")
-        if let summary = model.cardSummary {
+        if let summary = model.cardSummary, expectedPhotoId == nil || expectedPhotoId == summary.mainPhotoId {
+            let selected = identification.map { $0.taxonId == summary.taxonId } ?? (summary.speciesSlug == speciesSlug)
             VStack(alignment: .leading, spacing: 12) {
                 Text(summary.personalName ?? (polish ? "Roślina" : "Plant")).font(.title)
                     .accessibilityIdentifier("catalogue.saved.name")
-                Text(summary.speciesSlug == speciesSlug ? displayName : summary.speciesSlug)
+                Text(selected ? displayName : (summary.speciesSlug ?? ""))
                     .accessibilityIdentifier("catalogue.saved.species")
-                if summary.speciesSlug == speciesSlug {
+                if selected {
                     Text(scientificName).italic()
                         .accessibilityIdentifier("catalogue.selected.scientific")
                     speciesDetails()
                 }
+                if let photo = summary.mainPhotoId, let scope {
+                    CataloguePrivatePhotoView(connection: connection, expected: scope, subject: .plant(summary.id), polish: polish)
+                        .id(photo)
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("catalogue.saved.card." + summary.id.uuidString.lowercased())
+            if analysisSaveIdentity != nil && !polish {
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
+                if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
+                    careRecommendation(model)
+                        .task(id: summary.id) { await model.loadCareRecommendation() }
+                }
+#endif
+                wateringHistory(model)
+            }
         } else {
             switch model.cardState {
             case .idle, .loading:
@@ -270,8 +415,84 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .disabled(working)
                     .accessibilityIdentifier("catalogue.saved.retry")
             case .loaded:
-                EmptyView()
+                Text(polish ? "Nie udało się potwierdzić zdjęcia." : "Couldn’t verify the saved photo.")
+                    .accessibilityIdentifier("catalogue.saved.photo.error")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func careRecommendation(_ model: CatalogueSaveModel) -> some View {
+        switch model.careRecommendationState {
+        case .idle, .loading:
+            ProgressView("Loading care recommendation…")
+        case let .available(recommendation):
+            PlantCareRecommendationContent(recommendation: recommendation)
+        case .unavailable:
+            Text("No verified care recommendation is available.")
+                .accessibilityIdentifier("catalogue.saved.care.unavailable")
+        case .failed:
+            Button("Retry care recommendation") {
+                Task { await model.loadCareRecommendation(retry: true) }
+            }
+            .accessibilityIdentifier("catalogue.saved.care.retry")
+        }
+    }
+
+    @ViewBuilder
+    private func wateringHistory(_ model: CatalogueSaveModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Manual watering history").font(.headline)
+            switch model.wateringHistoryState {
+            case .idle, .loading:
+                ProgressView("Loading watering history…")
+                    .accessibilityIdentifier("catalogue.saved.history.loading")
+            case let .loaded(entries):
+                if showsManualWateringActions { wateringControls(model) }
+                if entries.isEmpty {
+                    Text("No manual watering recorded.")
+                        .accessibilityIdentifier("catalogue.saved.history.empty")
+                } else {
+                    ForEach(entries) { entry in
+                        HStack {
+                            Text(entry.occurredLocalDate)
+                            Text(entry.state == "voided" ? "Undone" : "Active")
+                            if showsManualWateringActions, entry.state == "active",
+                               model.manualWateringState == .ready {
+                                Button("Undo") { Task { await model.undoWatering(entryId: entry.id) } }
+                                    .accessibilityIdentifier("catalogue.care.undo." + entry.id.uuidString.lowercased())
+                            }
+                        }
+                        .accessibilityIdentifier("catalogue.saved.history." + entry.id.uuidString.lowercased())
+                    }
+                }
+            case .unavailable:
+                Text("Watering history is unavailable.")
+                    .accessibilityIdentifier("catalogue.saved.history.unavailable")
+                Button("Retry watering history") { loadDetails(model) }
+                    .disabled(working)
+                    .accessibilityIdentifier("catalogue.saved.history.retry")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func wateringControls(_ model: CatalogueSaveModel) -> some View {
+        switch model.manualWateringState {
+        case .ready:
+            Button("Record watering") { Task { await model.recordWatering() } }
+                .accessibilityIdentifier("catalogue.care.record")
+        case .saving:
+            ProgressView("Saving watering history…")
+                .accessibilityIdentifier("catalogue.care.saving")
+        case .pending:
+            Text("Watering history change pending.")
+                .accessibilityIdentifier("catalogue.care.pending")
+            Button("Retry watering change") { Task { await model.retryManualWatering() } }
+                .accessibilityIdentifier("catalogue.care.retry")
+        case .unavailable:
+            Button("Reload watering history") { loadDetails(model) }
+                .accessibilityIdentifier("catalogue.care.refresh")
         }
     }
 
@@ -323,7 +544,10 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     guard isCurrent(ticket, expected) else { return }
                     switch result {
                     case let .restored(restored):
-                        if restored.input?.speciesSlug == speciesSlug {
+                        if CatalogueSaveIdentity.canRestore(
+                            selectedSpecies: speciesIdentifier, restoredSpecies: restored.input?.speciesIdentifier,
+                            analysisFlow: analysisSaveIdentity, restoredFlow: restored.checkpoint?.flowId
+                        ), restored.input?.identification == identification {
                             model = restored
                             switch restored.state {
                             case .ready, .collectionLimitNotEnqueued:
@@ -398,8 +622,10 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
         nameFocused = false
         if model == nil && intent == nil {
-            let input = CatalogueInput(speciesSlug: speciesSlug, personalName: name.isEmpty ? nil : name)
-            let chosen = CatalogueViewIntent(input: input, flowId: UUID(), operationId: UUID())
+            let personalName = name.isEmpty ? nil : name
+            let input = identification.map { CatalogueInput(identification: $0, personalName: personalName) }
+                ?? CatalogueInput(speciesSlug: speciesSlug, personalName: personalName)
+            let chosen = CatalogueViewIntent(input: input, flowId: analysisSaveIdentity ?? UUID(), operationId: UUID())
             do { _ = try input.makeEnvelope(operationId: chosen.operationId) }
             catch { notice = .invalidInput; return }
             intent = chosen
@@ -450,6 +676,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func editAsNewIntent() {
+        // A diagnosis owns one immutable checkpoint and retries that exact save.
+        guard CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: analysisSaveIdentity) else { return }
         guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
         if let model {
             switch model.state {
@@ -539,7 +767,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         try verified.validateScope(
             of: store, apiClient: api, session: expected.session, isAnonymous: expected.isAnonymous
         )
-        guard connection.snapshot == expected, verified.input?.speciesSlug == speciesSlug else {
+        guard connection.snapshot == expected, verified.input?.speciesIdentifier == speciesIdentifier,
+              verified.input?.identification == identification else {
             throw CatalogueSaveUnavailable.sessionChanged
         }
         if let old = model, old !== verified { old.cancel() }
@@ -562,7 +791,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func loadIfSaved(_ model: CatalogueSaveModel) async {
-        if case .saved = model.state { await model.loadCard() }
+        if case .saved = model.state { await model.loadCard(includeManualWateringActions: showsManualWateringActions) }
     }
 
     private func loadDetails(_ target: CatalogueSaveModel) {
@@ -571,7 +800,30 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         working = true
         work = Task { @MainActor in
             defer { if revision == ticket { working = false; work = nil } }
-            await target.loadCard()
+            await target.loadCard(includeManualWateringActions: showsManualWateringActions)
+        }
+    }
+}
+
+struct PlantCareRecommendationContent: View {
+    let recommendation: PlantCareRecommendation
+    var showNextCheck = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: recommendation.text)
+                .accessibilityIdentifier("catalogue.saved.care.text")
+            Link("Verified care source", destination: recommendation.source.url)
+                .accessibilityIdentifier("catalogue.saved.care.source")
+            if showNextCheck, let check = recommendation.nextCheck {
+                Text("Next soil check · \(check.dueOn)")
+                    .font(.headline)
+                    .accessibilityIdentifier("catalogue.saved.care.next.date")
+                Text(verbatim: check.basis)
+                    .accessibilityIdentifier("catalogue.saved.care.next.basis")
+                Link("Soil check interval source", destination: check.source.url)
+                    .accessibilityIdentifier("catalogue.saved.care.next.source")
+            }
         }
     }
 }

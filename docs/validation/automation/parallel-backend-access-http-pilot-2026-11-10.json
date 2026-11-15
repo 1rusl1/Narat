@@ -1,0 +1,288 @@
+{
+  "result": "COMPLETED / Verified and published; pilot stopped",
+  "accepted_commit": "88a8ea87de6b3ef2d41c1d66f4eb038835638609",
+  "run_id": "parallel-backend-access-http-pilot-20261110-01",
+  "manifest": "tools/automation/tasks.parallel-backend-access-http-pilot.json",
+  "manifest_sha256": "f40f9b016335a72dc307c4b975c0967d3e3a1f45af8598c3d4fb58d4c95d079f",
+  "review_scope": "full_snapshot; no candidate_base/minimality claim",
+  "timing": {
+    "task_received_utc": "2026-11-10T20:00:29Z",
+    "requested_engine_commit": "25a5830ca5447a3b25e7abd37350759e3e0841f3",
+    "requested_run_id": "parallel-backend-access-http-pilot-20261110-01",
+    "prep_initial_head": "a1e78c3",
+    "run_count": 1,
+    "engine_merge_commit": "2d1b374de8bc2eec5cd20f09be375fc4ac7015dd",
+    "engine_source_fingerprint": "3e69b5df091a1786e5765c85f75584be817d1bacdb5a47ee44d519d8623a1bd1",
+    "engine_source_files": [
+      "tools/automation/orchestration/__init__.py",
+      "tools/automation/orchestration/context.py",
+      "tools/automation/orchestration/engine.py",
+      "tools/automation/orchestration/metrics.py",
+      "tools/automation/orchestration/preflight.py",
+      "tools/automation/orchestration/process.py",
+      "tools/automation/orchestration/provider.py",
+      "tools/automation/orchestration/repository.py",
+      "tools/automation/orchestration/storage.py",
+      "tools/automation/orchestrator.py"
+    ],
+    "config_sha256": "0a7d0752cfa4a36d65c8cf0c7df630cb641adfdeabfb272bdf33e1bde608d632",
+    "prep_checks_completed_utc": "2026-11-10T20:04:39Z",
+    "prep_published_utc": "2026-11-10T20:05:51.843Z",
+    "prep_commit": "e4473b98bd8e402c983dbd1821cd6fc6b1e5900b",
+    "run_start_utc": "2026-11-10T20:05:51.859Z",
+    "run_end_utc": "2026-11-10T20:10:01.582Z",
+    "runtime_monotonic_seconds": 249.722,
+    "run_exit_code": 0
+  },
+  "prep_before_publish_seconds": 250.0,
+  "prep_through_publish_seconds": 322.843,
+  "model_elapsed_seconds": 167.64,
+  "checks_elapsed_seconds": 74.12,
+  "other_runtime_seconds": 7.962,
+  "counts": {
+    "developer": 0,
+    "reviewer": 1,
+    "qa": 1,
+    "repair": 0,
+    "re_review": 0,
+    "retry": 0,
+    "fallback": 0,
+    "timeouts": 0,
+    "additional_runtime_runs": 0
+  },
+  "calls": [
+    {
+      "id": "parallel-backend-t163-access-http-pilot:1",
+      "agent": "reviewer",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 93.515,
+      "status": "PASS",
+      "retry": 0,
+      "error_category": null,
+      "prompt_kind": "full",
+      "session_id": "01a1c712-52be-7e91-8c58-5cacc2676865",
+      "resumed_session": null,
+      "prompt_bytes": 26142
+    },
+    {
+      "id": "parallel-backend-t163-access-http-pilot:2",
+      "agent": "qa",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 74.125,
+      "status": "PASS",
+      "retry": 0,
+      "error_category": null,
+      "prompt_kind": "full",
+      "session_id": "01a1c713-c17d-7b33-8d1d-464b5f558b41",
+      "resumed_session": null,
+      "prompt_bytes": 25854
+    }
+  ],
+  "checks": [
+    {
+      "name": "deno-check",
+      "argv": [
+        "deno",
+        "check",
+        "--config",
+        "supabase/functions/deno.json",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/analysis-worker/index.ts"
+      ],
+      "status": "PASS",
+      "elapsed_seconds": 0.138,
+      "mode": "local",
+      "exit_code": 0,
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-1-deno-check/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-1-deno-check/stderr.log"
+    },
+    {
+      "name": "diff-check",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "status": "PASS",
+      "elapsed_seconds": 0.023,
+      "mode": "local",
+      "exit_code": 0,
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-2-diff-check/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-2-diff-check/stderr.log"
+    },
+    {
+      "name": "automation-tests",
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools/automation/tests",
+        "-q"
+      ],
+      "status": "PASS",
+      "elapsed_seconds": 47.151,
+      "mode": "fixture",
+      "exit_code": 0,
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-3-automation-tests/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-3-automation-tests/stderr.log"
+    },
+    {
+      "name": "deno-tests",
+      "argv": [
+        "deno",
+        "task",
+        "--cwd",
+        "supabase/functions",
+        "test"
+      ],
+      "status": "PASS",
+      "elapsed_seconds": 1.822,
+      "mode": "fixture",
+      "exit_code": 0,
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-4-deno-tests/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-4-deno-tests/stderr.log"
+    },
+    {
+      "name": "parallel-backend-access-http",
+      "argv": [
+        "deno",
+        "test",
+        "--config",
+        "supabase/functions/deno.json",
+        "--allow-env",
+        "--allow-read",
+        "--allow-net=127.0.0.1,localhost",
+        "tools/automation/parallel_backend_access_test.ts"
+      ],
+      "status": "PASS",
+      "elapsed_seconds": 0.194,
+      "mode": "fixture",
+      "exit_code": 0,
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-5-parallel-backend-access-http/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-5-parallel-backend-access-http/stderr.log"
+    },
+    {
+      "name": "parallel-backend-cap-regression",
+      "argv": [
+        "python3",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "--anchors",
+        "--legacy-guard",
+        "--cap-regression"
+      ],
+      "status": "PASS",
+      "elapsed_seconds": 5.773,
+      "mode": "fixture",
+      "exit_code": 0,
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-6-parallel-backend-cap-regression/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-6-parallel-backend-cap-regression/stderr.log"
+    },
+    {
+      "name": "parallel-backend-quota-access",
+      "argv": [
+        "python3",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "--bind",
+        "--installations",
+        "--access"
+      ],
+      "status": "PASS",
+      "elapsed_seconds": 19.019,
+      "mode": "fixture",
+      "exit_code": 0,
+      "stdout": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-7-parallel-backend-quota-access/stdout.log",
+      "stderr": "/Users/ruslansabirov/.codex/worktrees/ffee/Plants/docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/parallel-backend-t163-access-http-pilot/check-7-parallel-backend-quota-access/stderr.log"
+    }
+  ],
+  "quality_contract": "5eb586012da3411ff4a3838f7f066cb5656d6903855d5b589e3efa9c533161f4",
+  "baseline": {
+    "run_id": "parallel-backend-quota-access-http-20261110-08",
+    "status": "WAITING",
+    "phase": "qa",
+    "quality_contract": "90557079f2a7c4b00241dd29413734937c73bea6898adcc3dfecb03c58904862",
+    "calls": [
+      {
+        "agent": "developer",
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "elapsed_seconds": 68.111,
+        "status": "PASS",
+        "retry": 0,
+        "error_category": null,
+        "prompt_kind": "full",
+        "session_id": "01a1c3b6-f24e-70f3-bb6d-4c76a20d729f",
+        "resumed_session": null,
+        "prompt_bytes": 17443,
+        "reasoning_effort": "high",
+        "reasoning_source": "process.json argv; missing in legacy state",
+        "process_status": "PASS",
+        "process_error": null,
+        "process_elapsed_seconds": 68.111
+      },
+      {
+        "agent": "reviewer",
+        "provider": "codex",
+        "model": "gpt-6-astra",
+        "elapsed_seconds": 77.672,
+        "status": "PASS",
+        "retry": 0,
+        "error_category": null,
+        "prompt_kind": "full",
+        "session_id": "01a1c3b9-1738-7eb2-8e1c-6b236b1d49fc",
+        "resumed_session": null,
+        "prompt_bytes": 22843,
+        "reasoning_effort": "high",
+        "reasoning_source": "process.json argv; missing in legacy state",
+        "process_status": "PASS",
+        "process_error": null,
+        "process_elapsed_seconds": 77.672
+      },
+      {
+        "agent": "qa",
+        "provider": "codex",
+        "model": "gpt-6-astra",
+        "elapsed_seconds": null,
+        "status": "STARTED",
+        "retry": 0,
+        "error_category": null,
+        "prompt_kind": "full",
+        "session_id": null,
+        "resumed_session": null,
+        "prompt_bytes": 22555,
+        "reasoning_effort": "high",
+        "reasoning_source": "process.json argv; missing in legacy state",
+        "process_status": "FAIL",
+        "process_error": "interrupted",
+        "process_elapsed_seconds": 28.559
+      }
+    ],
+    "checks_elapsed_seconds": 69.624,
+    "completed_state_model_elapsed_seconds": 145.783,
+    "observed_process_model_elapsed_seconds": 174.342,
+    "exact_runtime_seconds": null,
+    "manual_interruptions": 1,
+    "timeouts": 0
+  },
+  "matching_quality_contracts": {},
+  "conclusions": [
+    "GET behavior accepted; no implementation changes.",
+    "No causal speedup proven; baseline QA interrupted, contract and scope differ.",
+    "Reviewer93.515 vs77.672s; prompts26142 vs22843bytes.",
+    "Developer routing and timeout guard not exercised: zero Developer/timeout.",
+    "No aggregate CLI token or quota percentage calculation."
+  ],
+  "raw_paths": {
+    "state": "docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/state.json",
+    "metrics": "docs/validation/automation/runs/orchestrator-parallel-backend-access-http-pilot-20261110-01/metrics.jsonl",
+    "timing": "docs/validation/automation/runs/parallel-backend-access-http-pilot-timing.json",
+    "comparison": "docs/validation/automation/runs/parallel-backend-access-http-pilot-comparison.json",
+    "preflight": "docs/validation/automation/runs/parallel-backend-access-http-pilot-preflight.json"
+  },
+  "next_step": "STOP; await owner evaluation/explicit new task. No installation HTTP/worker/alias/CI/main promotion."
+}

@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "v10-plant-edit-taxon",
+      "description": "Independently verify f1723a9 taxon editing on synthetic fixtures.",
+      "candidate_base": "b90f29b8e0e6b6c0a3fcbb758e88f85e97bebc80",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/plant_edit_name_test.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611130043_plant_edit_taxon.sql",
+        "supabase/tests/plant_edit_taxon.test.sql",
+        "tools/automation/tasks.v10-plant-edit-taxon.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Review/QA only on synthetic fixtures. Product inputs must match f1723a9. Check canonical published species or hybrid, owner guard, replay, historical photo/analysis/snapshot and durable pause. No staging, 024 or StoreKit changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V10-T1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V10-T2",
+          "description": "HTTP and SQL fixtures verify published taxon, history, paused rules and exact replay.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

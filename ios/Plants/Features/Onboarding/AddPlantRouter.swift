@@ -38,8 +38,12 @@ public final class AddPlantRouter {
     }
 
     public func attachPhoto(identifier: String) {
+        attachPhoto(identifier: identifier, skipQuestions: false)
+    }
+
+    func attachPhoto(identifier: String, skipQuestions: Bool) {
         flowState.photoLocalIdentifier = identifier
-        if flowState.intent == .problem {
+        if flowState.intent == .problem && !skipQuestions {
             flowState.currentStep = .careQuestions
         } else {
             flowState.currentStep = .analyzing

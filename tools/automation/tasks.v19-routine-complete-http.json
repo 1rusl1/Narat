@@ -1,0 +1,53 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-complete-http",
+      "description": "Implement the agreed routine soil check completion wire on b",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/_shared/tests/routine_soil_check_http_test.ts",
+        "supabase/migrations/202611150053_routine_soil_check_permissions.sql",
+        "supabase/migrations/202611150051_routine_soil_check_record.sql",
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql",
+        "supabase/tests/routine_soil_check.test.sql"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/_shared/tests/routine_soil_check_http_test.ts",
+        "supabase/migrations/202611150053_routine_soil_check_permissions.sql",
+        "supabase/tests/routine_soil_check.test.sql"
+      ],
+      "constraints": [
+        "Accepted base 34c8ae1. Return a valid unified Git patch in the JSON patch field, with exact source context. Controller owns writes and verification.",
+        "Exact wire: POST /commands, command_name=care.check_soil.complete, plant_id and operation_id in the established envelope. payload_json contains only rule_id (UUID), expected_care_revision (positive int32), due_local_date (YYYY-MM-DD), occurred_at (ISO 8601 instant) and timezone (IANA). Successful receipt: plant_id, rule_id, care_revision, occurrence_key, due_local_date, task_id, entry_id, state=completed, SQL watermark. Same owner and exact operation/body required on replay.",
+        "Connect the existing production owner /commands route to execute_routine_soil_check. Forward valid values, use owner from Auth and never accept guest or client-selected owner. Verify receipt plant, rule, revision and due match; non-empty exact occurrence key, UUIDs and valid timestamps. Preserve existing commands.",
+        "053 grants EXECUTE only to service_role. The preceding pgTAP fixture expects service_role denied at a 051/052 cutoff, so extend its permission assertion based on a clear private forward-migration feature marker (e.g. a COMMENT ON FUNCTION checked by obj_description), or adjust gate/fixture with the controller if needed. Keep anon/authenticated/PUBLIC denied in all modes.",
+        "Map expired/withdrawn/not eligible and outdated occurrence to bounded 409 conflict; wrong owner/plant 404, malformed input 400, expired/disabled account 403. Test routing and replay in actual Edge handler using synthetic RPC results only.",
+        "Do not deploy; no iOS, data publication, undo, reminder or scheduler change. Preserve all existing ownership and evidence checks."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19W1",
+          "description": "Deno entrypoints and diff pass.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19W2",
+          "description": "Owner protocol fixtures verify valid/malformed routing, blocked unauthorized calls and service-only execute.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

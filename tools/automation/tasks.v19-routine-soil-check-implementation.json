@@ -1,0 +1,53 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-soil-check-core",
+      "description": "Implement the private SQL transaction that records one completed routine soil check from the current explicitly refreshed basic-care rule. Keep the public API and subsequent schedule reconciliation for the next package.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150051_routine_soil_check_record.sql",
+        "supabase/tests/routine_soil_check.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "specs/001-plants-ios-mvp/spec.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "supabase/migrations/202610200005_analysis_care.sql",
+        "supabase/migrations/202611120026_manual_care_date_correction.sql",
+        "supabase/migrations/202611140047_care_refresh_rule.sql",
+        "supabase/migrations/202611150050_revalidate_refreshed_care_calendar.sql",
+        "supabase/tests/plant_next_check.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150051_routine_soil_check_record.sql",
+        "supabase/tests/routine_soil_check.test.sql"
+      ],
+      "constraints": [
+        "This is a write-scope Developer implementation on accepted base 6482e30. The intended files do not exist yet. Author both new files as a valid unified Git patch in the JSON patch field. Your read-only workspace prevents applying the diff yourself; it does not prevent writing patch text in your response. The controller applies the patch and runs the gates. Do not return BLOCKED for the missing implementation.",
+        "Forward migration only. Use existing task and care entry schemas, owner locking, operation_receipts and watermark. No Edge, iOS, live service, knowledge publication, reminders, scheduler, StoreKit or migration 024 changes.",
+        "Internal transaction only. Deny direct EXECUTE to PUBLIC, anon, authenticated and service_role until the API package is ready.",
+        "Accept owner, operation, plant, expected care revision and a stable rule/occurrence identifier, plus actual occurrence time and IANA timezone. Reuse current published applicability, active basic membership and access checks. Validate current owned rule and the expected due local date derived from the eligible current watering anchor and verified interval. Check current eligibility within the owner transaction. Require a real current rule; legacy calendar projections without a refreshed rule cannot complete a scheduled occurrence.",
+        "Record check_soil, not water. Atomically store one completed care_tasks row linked to one active care_entries row. Use a unique stable occurrence key from the rule and expected due date. Store/replay the exact receipt under owner lock. A new operation for the same occurrence is a conflict and must not duplicate a fact. No creation of future tasks or mutation of first aid, watering, existing historical entries or quota. Leave next-date recomputation, check undo and HTTP to the next task.",
+        "Use synthetic fixtures under clean/upgrade. T160/T171 remain open after this narrow stage."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19SC1",
+          "description": "Diff and forward migration remain limited to the SQL implementation and its fixture.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19SC2",
+          "description": "Clean and upgrade run the new pgTAP scenario with current valid evidence and an existing watering anchor. Check one completed occurrence and exact replay, distinct duplicate rejection, foreign owner, stale revision, withdrawn evidence or expired access, unchanged history and quota, no future occurrence, and RPC permissions.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -17,6 +17,28 @@ enum CatalogueSaveState: Sendable, Equatable {
     case unavailable(CatalogueSaveUnavailable)
 }
 
+enum CatalogueWateringHistoryState: Sendable, Equatable {
+    case idle
+    case loading
+    case loaded([CatalogueCareJournalEntry])
+    case unavailable
+}
+
+enum CatalogueCareRecommendationState: Sendable, Equatable {
+    case idle
+    case loading
+    case available(PlantCareRecommendation)
+    case unavailable
+    case failed
+}
+
+enum CatalogueManualWateringState: Sendable, Equatable {
+    case unavailable
+    case ready
+    case saving
+    case pending
+}
+
 enum CatalogueCardState: Sendable, Equatable {
     case idle
     case loading
@@ -49,6 +71,18 @@ final class CatalogueSaveModel {
     private var cancelled = false
     @ObservationIgnored private var work: Task<Void, Never>?
     private var detailsPhase: CatalogueCardState = .idle
+    private var historyPhase: CatalogueWateringHistoryState = .idle
+    private var recommendationPhase: CatalogueCareRecommendationState = .idle
+    @ObservationIgnored private var recommendationRead = 0
+    private var manualWateringPhase: CatalogueManualWateringState = .unavailable
+    private var frozenWateringCommand: CommandEnvelopeDTO?
+
+    var wateringHistoryState: CatalogueWateringHistoryState {
+        let value = historyPhase
+        guard isAccessible else { return .unavailable }
+        guard case .saved = state else { return .idle }
+        return value
+    }
     @ObservationIgnored private var detailsTask: Task<Void, Never>?
 
     /// Idle retained models redact details immediately after logout, switch or ABA.
@@ -62,6 +96,103 @@ final class CatalogueSaveModel {
     var cardSummary: CatalogueCardSummary? {
         guard case let .loaded(summary) = cardState else { return nil }
         return summary
+    }
+
+    var careRecommendationState: CatalogueCareRecommendationState {
+        guard isAccessible, !isAnonymous, cardSummary != nil else { return .unavailable }
+        return recommendationPhase
+    }
+
+    func loadCareRecommendation(retry: Bool = false) async {
+        guard !isAnonymous, case let .saved(confirmation) = state,
+              let card = cardSummary, card.id == confirmation.receipt.plantId else { return }
+        switch recommendationPhase {
+        case .idle: break
+        case .failed where retry: break
+        default: return
+        }
+        recommendationRead += 1
+        let requested = recommendationRead
+        do {
+            try publish { recommendationPhase = .loading }
+            let recommendation = try await apiClient.fetchCareRecommendation(plantId: card.id, context: context)
+            try validateAuthority()
+            guard recommendationRead == requested else { return }
+            guard case let .saved(current) = state, current == confirmation,
+                  cardSummary == card else { throw CatalogueSaveUnavailable.sessionChanged }
+            try publish {
+                recommendationPhase = recommendation.map(CatalogueCareRecommendationState.available) ?? .unavailable
+            }
+        } catch {
+            guard recommendationRead == requested else { return }
+            if Task.isCancelled {
+                recommendationPhase = .idle
+            } else {
+                try? publish { recommendationPhase = .failed }
+            }
+        }
+    }
+
+    var manualWateringState: CatalogueManualWateringState {
+        guard isAccessible, !isAnonymous, cardSummary != nil else { return .unavailable }
+        return manualWateringPhase
+    }
+
+    func recordWatering() async {
+        await beginManualWatering(.record)
+    }
+
+    func undoWatering(entryId: UUID) async {
+        guard case let .loaded(entries) = wateringHistoryState,
+              entries.contains(where: { $0.id == entryId && $0.state == "active" }) else { return }
+        await beginManualWatering(.undo(entryId))
+    }
+
+    private func beginManualWatering(_ action: ManualWateringAction) async {
+        guard manualWateringState == .ready, let card = cardSummary,
+              let command = try? action.envelope(plantId: card.id) else { return }
+        await sendManualWatering(command)
+    }
+
+    func retryManualWatering() async {
+        guard manualWateringState == .pending, let command = frozenWateringCommand else { return }
+        await sendManualWatering(command)
+    }
+
+    private func sendManualWatering(_ command: CommandEnvelopeDTO) async {
+        guard !isAnonymous, case let .saved(confirmation) = state,
+              let card = cardSummary, command.plantId == card.id,
+              manualWateringPhase != .saving else { return }
+        do {
+            try publish {
+                frozenWateringCommand = command
+                manualWateringPhase = .saving
+            }
+            let confirmed = try await repository.submitManualWatering(
+                command, confirmation: confirmation, context: context
+            )
+            if !confirmed {
+                try publish { manualWateringPhase = .pending }
+                return
+            }
+            let reloadRecommendation = recommendationPhase != .idle
+            try publish {
+                frozenWateringCommand = nil
+                if reloadRecommendation {
+                    recommendationRead += 1
+                    recommendationPhase = .idle
+                }
+            }
+            await loadCard(includeManualWateringActions: true)
+            if case .loaded = wateringHistoryState {
+                try publish { manualWateringPhase = .ready }
+                if reloadRecommendation { await loadCareRecommendation() }
+            } else {
+                try publish { manualWateringPhase = .unavailable }
+            }
+        } catch {
+            try? publish { manualWateringPhase = frozenWateringCommand == nil ? .unavailable : .pending }
+        }
     }
 
     // Access is checked as well as publication: an idle old model also redacts after ABA.
@@ -156,9 +287,7 @@ final class CatalogueSaveModel {
                 return try apiClient.syncAuthority.withBoundValid(context) { .absent }
             }
             try apiClient.syncAuthority.withBoundValid(context) {}
-            let input = try JSONDecoder().decode(
-                CheckpointInput.self, from: Data(checkpoint.envelope.payloadJSON.utf8)
-            )
+            let input = try CatalogueInput.fromCheckpoint(checkpoint.envelope)
             let journal = try await store.catalogueCreateJournal(
                 checkpoint.envelope, mode: .checkOnly,
                 context: context, authority: apiClient.syncAuthority
@@ -179,7 +308,7 @@ final class CatalogueSaveModel {
                 return .restored(CatalogueSaveModel(
                     store: store, apiClient: apiClient, repository: repository,
                     context: context, isAnonymous: isAnonymous, checkpoint: checkpoint,
-                    input: CatalogueInput(speciesSlug: input.plant_id, personalName: input.personal_name),
+                    input: input,
                     state: state
                 ))
             }
@@ -197,12 +326,6 @@ final class CatalogueSaveModel {
             }
             return .unavailable(.storageOrServiceUnavailable)
         }
-    }
-
-    // LocalStore has already validated the minimal input and its exact identity.
-    private struct CheckpointInput: Decodable {
-        let plant_id: String
-        let personal_name: String?
     }
 
     /// Exact connection scope plus the ORIGINAL bound lease, not merely an equal owner.
@@ -256,10 +379,12 @@ final class CatalogueSaveModel {
     }
 
     /// Explicit initial read or retry. Details failure never rewrites durable save truth.
-    func loadCard() async {
+    func loadCard(includeManualWateringActions: Bool = false) async {
         guard detailsTask == nil, case let .saved(confirmation) = state else { return }
         if Task.isCancelled { cancel(); return }
-        let task = Task { await self.performCardLoad(confirmation) }
+        let task = Task {
+            await self.performCardLoad(confirmation, includeManualWateringActions: includeManualWateringActions)
+        }
         detailsTask = task
         await withTaskCancellationHandler {
             await task.value
@@ -270,9 +395,15 @@ final class CatalogueSaveModel {
         detailsTask = nil
     }
 
-    private func performCardLoad(_ confirmation: CatalogueCreateConfirmationSnapshot) async {
+    private func performCardLoad(
+        _ confirmation: CatalogueCreateConfirmationSnapshot, includeManualWateringActions: Bool
+    ) async {
         do {
-            try publish { detailsPhase = .loading }
+            try publish {
+                detailsPhase = .loading
+                historyPhase = .loading
+                if manualWateringPhase != .saving { manualWateringPhase = .unavailable }
+            }
             let summary = try await repository.catalogueCard(
                 confirmation: confirmation, envelope: frozenEnvelope, context: context
             )
@@ -281,13 +412,29 @@ final class CatalogueSaveModel {
                 throw CatalogueSaveUnavailable.sessionChanged
             }
             try publish { detailsPhase = .loaded(summary) }
+            let history = try await repository.manualWateringHistory(
+                card: summary, confirmation: confirmation, context: context
+            )
+            try validateAuthority()
+            guard case let .saved(current) = state, current == confirmation else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            try publish { historyPhase = .loaded(history) }
+            if includeManualWateringActions, !isAnonymous, manualWateringPhase != .saving {
+                let queued = try await repository.pendingManualWatering(plantId: summary.id, context: context)
+                try publish {
+                    if let queued { frozenWateringCommand = queued }
+                    manualWateringPhase = frozenWateringCommand == nil ? .ready : .pending
+                }
+            }
         } catch {
             if Task.isCancelled {
                 cancel()
             } else {
                 // Includes service cancellation, absent/deleted/malformed data and disk failure.
                 // The guarded getters redact invalid authority; .saved remains durable truth.
-                detailsPhase = .unavailable
+                if case .loaded = detailsPhase {} else { detailsPhase = .unavailable }
+                historyPhase = .unavailable
             }
         }
     }
@@ -298,6 +445,8 @@ final class CatalogueSaveModel {
         work?.cancel()
         detailsTask?.cancel()
         detailsPhase = .unavailable
+        historyPhase = .unavailable
+        manualWateringPhase = .unavailable
         phase = .unavailable(.cancelled)
     }
 

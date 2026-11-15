@@ -1520,6 +1520,55 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
+#if DEBUG && targetEnvironment(simulator)
+    func testGuestDraftResumesLostResponseFromPersistedInputWithoutIdentificationScreen() async throws {
+        let credential = "fixture-stable-installation"
+        let registerPath = "/functions/v1/plants-api/installations/register"
+        let draftPath = "/functions/v1/plants-api/drafts"
+        for expires in [false, true] {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner, anonymous: true, signup: true)
+            _ = try await h.connection.sessionOwner()
+            let scope = try await h.connection.sessionSnapshot()
+            let installation = UUID()
+            let registration = try json(["installation_id": installation.uuidString])
+            h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+            h.fixture.append(.init(method: "POST", path: draftPath, data: Data(), failure: .networkConnectionLost))
+            let selection = PhotoIdentificationSelection(
+                jobId: UUID(), photoAssetId: UUID(), speciesSlug: "monstera_deliciosa", taxonId: UUID(), ownerId: owner
+            )
+            do {
+                let initial = StagingGuestPhotoClaim(connection: h.connection, credential: credential)
+                try await initial.register(scope)
+                let lost = await initial.createDraft(selection)
+                XCTAssertEqual(lost, .failed)
+            }
+            XCTAssertNotNil(h.connection.guestPhotoClaimData())
+            h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+            let reply = expires ? try json(["error": ["code": "DRAFT_EXPIRED", "message": "Expired", "retryable": false]])
+                : try json(["draft_id": UUID().uuidString, "expires_at": "2026-11-19T08:30:00Z"])
+            h.fixture.append(.init(method: "POST", path: draftPath, data: reply, status: expires ? 410 : 200))
+            let restarted = StagingGuestPhotoClaim(connection: h.connection, credential: credential)
+            try await restarted.register(scope)
+            XCTAssertTrue(restarted.canResumeDraft(for: scope))
+            let resumed = await restarted.resumeDraft()
+            XCTAssertEqual(resumed, expires ? .expired : .ready)
+            XCTAssertEqual(restarted.canResumeDraft(for: scope), !expires)
+            XCTAssertEqual(h.connection.guestPhotoClaimData() == nil, expires)
+            let posts = h.fixture.captured.filter { $0.url?.path == draftPath }
+            XCTAssertEqual(posts.count, 2)
+            XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+            XCTAssertTrue(posts.allSatisfy {
+                $0.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-a"
+                    && $0.value(forHTTPHeaderField: "X-Installation-Credential") == credential
+            })
+            assertClosed(h)
+        }
+    }
+#endif
+
     func testPermanentSDKModelUsesProductionCreateAndDurableReceipt() async throws {
         let h = try Harness()
         defer { h.close() }

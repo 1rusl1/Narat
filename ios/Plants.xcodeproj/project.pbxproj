@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		02869759E3A3F5AF56567480 /* TrialReminderSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962B7F7A53100DB1D52A0DAE /* TrialReminderSchedulerTests.swift */; };
 		06EE7B0AED33A731CB3B27F4 /* NativeIdentityProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB624C883B6C42E0806796E7 /* NativeIdentityProvider.swift */; };
 		0B343DAAFBD7664EE2C55B91 /* CollectionRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8097EE5109CAE9D4A02ED456 /* CollectionRepositoryTests.swift */; };
 		15166E88C7659442FDBE9252 /* PlantsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F16427E05A0E1221A97B6D /* PlantsApp.swift */; };
@@ -45,6 +46,8 @@
 		E74FA67EC712BA99C75EF3BF /* GuestCatalogueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF1A57F30CE90226FA3FCA7 /* GuestCatalogueView.swift */; };
 		EBB9A89C1794C2FE19D0324D /* NativeAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3EA6CB274FD7BB671AE96C4 /* NativeAuthTests.swift */; };
 		EC228F603D7FAEB42FA5E534 /* CatalogueUIFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCB2B0AC2ABCA615D72F59C2 /* CatalogueUIFixtureTests.swift */; };
+		ED24C0EAE33E185C0BB78DA4 /* 48854fc7b2b6d711a508c396.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 04C125102622741F401289ED /* 48854fc7b2b6d711a508c396.jpg */; };
+		FCB997FC95AE69BF974928EA /* TrialReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD8F1CE0CABB743050D3E96 /* TrialReminderScheduler.swift */; };
 		FFA2D8F4608A27AE2FBD3152 /* NativeAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481C9DE40A11A1924375A739 /* NativeAuthService.swift */; };
 /* End PBXBuildFile section */
 
@@ -67,7 +70,9 @@
 
 /* Begin PBXFileReference section */
 		04236BC9DAE108A2BDCAC0D2 /* LanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageStore.swift; sourceTree = "<group>"; };
+		04C125102622741F401289ED /* 48854fc7b2b6d711a508c396.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; name = 48854fc7b2b6d711a508c396.jpg; path = "../../catalogue/releases/skeleton-300-v1/media/48854fc7b2b6d711a508c396.jpg"; sourceTree = "<group>"; };
 		08ECA224EA9228AD6B806F78 /* PreliminaryResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreliminaryResultView.swift; sourceTree = "<group>"; };
+		1AD8F1CE0CABB743050D3E96 /* TrialReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrialReminderScheduler.swift; sourceTree = "<group>"; };
 		1B67457C67E9921A50DBA115 /* CatalogueSaveModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueSaveModel.swift; sourceTree = "<group>"; };
 		278B776CABA22DDC66FE3A6A /* CatalogueSaveUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueSaveUITests.swift; sourceTree = "<group>"; };
 		2E35E230E9894C7A1FB11F26 /* Auth.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Auth.xcconfig; sourceTree = "<group>"; };
@@ -89,6 +94,7 @@
 		86370884EF4396B542D1F173 /* PlantTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlantTypes.swift; sourceTree = "<group>"; };
 		8691AA7E95DA1741D53B9B63 /* SupabaseAuthExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthExchange.swift; sourceTree = "<group>"; };
 		87F9CD80AA4DD37A53A72483 /* PlantsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlantsUITests.swift; sourceTree = "<group>"; };
+		962B7F7A53100DB1D52A0DAE /* TrialReminderSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrialReminderSchedulerTests.swift; sourceTree = "<group>"; };
 		9C425C07B1ADE14D3F44C391 /* SyncPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPersistenceTests.swift; sourceTree = "<group>"; };
 		A8266B9BDDB29CEA4A096143 /* CollectionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionRepository.swift; sourceTree = "<group>"; };
 		B46CA71BE29E0E0C3D4C4683 /* NativeAuthConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAuthConfiguration.swift; sourceTree = "<group>"; };
@@ -191,6 +197,8 @@
 				E3EA6CB274FD7BB671AE96C4 /* NativeAuthTests.swift */,
 				C6FD3B93A45D6E5E9532BF63 /* PlantsBootstrapTests.swift */,
 				9C425C07B1ADE14D3F44C391 /* SyncPersistenceTests.swift */,
+				962B7F7A53100DB1D52A0DAE /* TrialReminderSchedulerTests.swift */,
+				B0B24EEFFBA61E5B3B8E089D /* Fixtures */,
 			);
 			path = PlantsTests;
 			sourceTree = "<group>";
@@ -277,6 +285,7 @@
 		565E2721486E1260CE888D18 /* Notifications */ = {
 			isa = PBXGroup;
 			children = (
+				1AD8F1CE0CABB743050D3E96 /* TrialReminderScheduler.swift */,
 			);
 			path = Notifications;
 			sourceTree = "<group>";
@@ -334,6 +343,14 @@
 				2E35E230E9894C7A1FB11F26 /* Auth.xcconfig */,
 			);
 			path = Configuration;
+			sourceTree = "<group>";
+		};
+		B0B24EEFFBA61E5B3B8E089D /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				04C125102622741F401289ED /* 48854fc7b2b6d711a508c396.jpg */,
+			);
+			name = Fixtures;
 			sourceTree = "<group>";
 		};
 		BADE328BD3D7621B600FC94E /* Repositories */ = {
@@ -456,6 +473,7 @@
 			buildConfigurationList = EF00BE80A1D44AC670D363CC /* Build configuration list for PBXNativeTarget "PlantsTests" */;
 			buildPhases = (
 				7DE4052A6A3995CC3674E9DC /* Sources */,
+				36B90A5A6CEED05A3EAAFCF4 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -550,6 +568,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		36B90A5A6CEED05A3EAAFCF4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ED24C0EAE33E185C0BB78DA4 /* 48854fc7b2b6d711a508c396.jpg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		90A5E8DFCF4D8F760AEA6C31 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -588,6 +614,7 @@
 				218718DA507A0A891BB04C86 /* PreliminaryResultView.swift in Sources */,
 				D1CC6AF8FD85D05222631564 /* SupabaseAuthExchange.swift in Sources */,
 				181666AC1EEBCB049C05BECB /* SyncEngine.swift in Sources */,
+				FCB997FC95AE69BF974928EA /* TrialReminderScheduler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -604,6 +631,7 @@
 				EBB9A89C1794C2FE19D0324D /* NativeAuthTests.swift in Sources */,
 				A061CC4CEFF68004BE2EEC29 /* PlantsBootstrapTests.swift in Sources */,
 				BD689918C0713D3D467F69EA /* SyncPersistenceTests.swift in Sources */,
+				02869759E3A3F5AF56567480 /* TrialReminderSchedulerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -703,7 +731,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Configuration/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Narat;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to identify plants, inspect symptoms, and estimate lighting conditions.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to photograph plants for identification or symptom analysis.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Narat saves your plant diary photos to your photo library when requested.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Narat accesses your photo library to analyze plant photos and attach diary pictures.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -853,7 +881,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Configuration/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Narat;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to identify plants, inspect symptoms, and estimate lighting conditions.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Narat uses the camera to photograph plants for identification or symptom analysis.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Narat saves your plant diary photos to your photo library when requested.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Narat accesses your photo library to analyze plant photos and attach diary pictures.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

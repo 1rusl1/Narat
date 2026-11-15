@@ -408,6 +408,150 @@ final class CollectionRepositoryTests: XCTestCase {
         XCTAssertTrue(legacy.isEmpty)
     }
 
+    func testCollectionAndJournalReopenOfflineOnlyForPreviouslySyncedOwner() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let plant = UUID(uuidString: "22222222-2222-4222-8222-000000000001")!
+        let entry = UUID(uuidString: "55555555-5555-4555-8555-000000000001")!
+        var card = change(1)
+        card["data"] = ["id": plant.uuidString.lowercased(), "plant_id": "monstera_deliciosa",
+                        "personal_name": "Saved Monstera", "revision": 1, "care_revision": 1] as [String: Any]
+        let fact: [String: Any] = [
+            "entity_type": "care_entries", "id": entry.uuidString.lowercased(), "updated_at": until, "deleted_at": NSNull(),
+            "data": ["id": entry.uuidString.lowercased(), "plant_id": plant.uuidString.lowercased(),
+                     "action_code": "water", "occurred_at": boundary, "occurred_local_date": "2026-11-03", "state": "active"]
+        ]
+        do {
+            let store = LocalStore(modelContainer: try container(url))
+            let api = PlantsAPIClient(transport: CapacityTransport([try json(page([fact, card]))]))
+            await api.bindSyncSession(session)
+            let lease = try await api.captureSyncContext(ownerId: owner)
+            let collection = try await repository(store, api).collectionCards(context: lease)
+            XCTAssertFalse(collection.isCached)
+            XCTAssertEqual(collection.cards.map(\.id), [plant])
+        }
+
+        let store = LocalStore(modelContainer: try container(url))
+        let transport = OutboxFailureTransport()
+        let api = PlantsAPIClient(transport: transport)
+        await api.bindSyncSession(session)
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let repo = repository(store, api)
+        let before = try await state(store, ownerId: owner)
+        let cached = try await repo.collectionCards(context: lease)
+        XCTAssertTrue(cached.isCached)
+        XCTAssertEqual(cached.cards.map(\.id), [plant])
+        XCTAssertEqual(cached.cards.first?.personalName, "Saved Monstera")
+        let history = try await repo.collectionWateringHistory(plantId: plant, context: lease)
+        XCTAssertEqual(history.map(\.id), [entry])
+        XCTAssertEqual(history.first?.state, "active")
+        XCTAssertEqual(history.first?.occurredLocalDate, "2026-11-03")
+        let after = try await state(store, ownerId: owner)
+        XCTAssertEqual(after, before)
+
+        await api.bindSyncSession(NativeAuthSession(userId: other, accessToken: "capacity-b", expiresAt: .distantFuture))
+        do {
+            _ = try await repo.collectionCards(context: lease)
+            XCTFail("A revoked lease read the previous owner's cache")
+        } catch SyncWireValidationError.invalidSession {}
+        let otherLease = try await api.captureSyncContext(ownerId: other)
+        do {
+            _ = try await repo.collectionCards(context: otherLease)
+            XCTFail("Reported an empty offline collection without a synced snapshot")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .notConnectedToInternet)
+        }
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "GET"])
+    }
+
+    func testFirstAidControlReadsOwnerSyncAndHidesHistoryAtExpiryOrUndo() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let plant = UUID(uuidString: "22222222-2222-4222-8222-000000000001")!
+        let otherPlant = UUID(uuidString: "22222222-2222-4222-8222-000000000002")!
+        let control = UUID(), actionEntry = UUID()
+        let expiry = "2026-11-04T12:00:00+00:00"
+        var card = change(1)
+        card["data"] = ["id": plant.uuidString, "plant_id": "monstera_deliciosa",
+                        "personal_name": "Saved Monstera", "revision": 1, "care_revision": 1] as [String: Any]
+
+        func followup(
+            _ id: UUID, plantId: UUID? = nil, state: String = "active",
+            due: String = "2026-11-08", source: String = "https://example.invalid/control"
+        ) -> [String: Any] {
+            [
+                "entity_type": "first_aid_followups", "id": id.uuidString, "updated_at": until, "deleted_at": NSNull(),
+                "data": [
+                    "id": id.uuidString, "plant_id": (plantId ?? plant).uuidString, "action_entry_id": actionEntry.uuidString,
+                    "state": state, "action_code": "check_soil",
+                    "check_policy_snapshot": [
+                        "due_on": due, "interval_days": 5, "source": ["url": source, "locator": "Follow-up interval"]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+        }
+        var historical = followup(UUID())
+        var historicalData = try XCTUnwrap(historical["data"] as? [String: Any])
+        historicalData["check_policy_snapshot"] = [:] as [String: Any]
+        historical["data"] = historicalData
+        let activeRows = [
+            followup(control), followup(UUID(), plantId: otherPlant), followup(UUID(), state: "undone"),
+            followup(UUID(), due: "2026-11-31"), followup(UUID(), source: "http://example.invalid/control"), historical
+        ].sorted { ($0["id"] as! String) < ($1["id"] as! String) }
+        let trial = rights(offer: "trial", trial: expiry)
+        let transport = CapacityTransport([
+            try json(page(activeRows + [card], entitlement: trial)),
+            try json(page(activeRows + [card])),
+            try json(page([followup(control, state: "undone"), card]))
+        ])
+        let api = PlantsAPIClient(transport: transport)
+        await api.bindSyncSession(session)
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let store = LocalStore(modelContainer: try container(url))
+        let repo = repository(store, api)
+        _ = try await repo.collectionCards(context: lease)
+
+        let reopened = LocalStore(modelContainer: try container(url))
+        let result = try await repository(reopened, api).collectionFirstAidControls(plantId: plant, context: lease)
+        let snapshot = try XCTUnwrap(result)
+        XCTAssertEqual(snapshot.controls.map(\.id), [control])
+        XCTAssertEqual(snapshot.controls.first?.actionEntryId, actionEntry)
+        XCTAssertEqual(snapshot.controls.first?.policy.dueOn, "2026-11-08")
+        XCTAssertEqual(snapshot.controls.first?.policy.source.url.absoluteString, "https://example.invalid/control")
+        let exactExpiry = try XCTUnwrap(SQLTimestamp.date(from: expiry))
+        XCTAssertEqual(snapshot.accessUntil, exactExpiry)
+        let expiredRepo = CollectionRepository(
+            store: reopened, apiClient: api, syncEngine: SyncEngine(store: reopened, apiClient: api),
+            clock: { exactExpiry }
+        )
+        let expired = try await expiredRepo.collectionFirstAidControls(plantId: plant, context: lease)
+        XCTAssertNil(expired)
+        let retained = try await reopened.activeSyncedEntities(ownerId: owner, entityType: "first_aid_followups")
+        XCTAssertEqual(retained.count, activeRows.count)
+
+        _ = try await repo.collectionCards(context: lease)
+        let free = try await repo.collectionFirstAidControls(plantId: plant, context: lease)
+        XCTAssertEqual(free?.controls.map(\.id), [control])
+        XCTAssertNil(free?.accessUntil)
+        _ = try await repo.collectionCards(context: lease)
+        let undone = try await repo.collectionFirstAidControls(plantId: plant, context: lease)
+        XCTAssertNil(undone)
+        let history = try await store.activeSyncedEntities(ownerId: owner, entityType: "first_aid_followups")
+        XCTAssertEqual(history.map(\.id), [control])
+
+        await api.bindSyncSession(NativeAuthSession(userId: other, accessToken: "capacity-b", expiresAt: .distantFuture))
+        do {
+            _ = try await repo.collectionFirstAidControls(plantId: plant, context: lease)
+            XCTFail("A revoked owner lease read the first-aid control")
+        } catch SyncWireValidationError.invalidSession {}
+        let otherLease = try await api.captureSyncContext(ownerId: other)
+        let inaccessible = try await repo.collectionFirstAidControls(plantId: plant, context: otherLease)
+        XCTAssertNil(inaccessible)
+        let requests = await transport.captured()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "GET", "GET"])
+    }
+
     private func assertFrozenCommand(_ actual: OutboxEntrySnapshot, _ original: OutboxEntrySnapshot) {
         XCTAssertEqual(actual.operationId, original.operationId)
         XCTAssertEqual(actual.ownerId, original.ownerId)
@@ -1827,7 +1971,7 @@ extension CollectionRepositoryTests {
         let exact = CatalogueInput(speciesSlug: "  fixture-fern  ", personalName: " e\u{0301} ")
         let command = try exact.makeEnvelope(operationId: UUID())
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(command.payloadJSON.utf8)) as? [String: String])
-        XCTAssertEqual(Data(try XCTUnwrap(payload["plant_id"]).utf8), Data(exact.speciesSlug.utf8))
+        XCTAssertEqual(Data(try XCTUnwrap(payload["plant_id"]).utf8), Data(try XCTUnwrap(exact.speciesSlug).utf8))
         XCTAssertEqual(Data(try XCTUnwrap(payload["personal_name"]).utf8), Data(try XCTUnwrap(exact.personalName).utf8))
         XCTAssertTrue(command.payloadJSON.hasPrefix(#"{"creation_source":"catalogue","personal_name":"#))
     }

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "review_date": "2026-11-12",
+  "scope": "English MVP catalogue",
+  "plants_sha256": "85fcaba4bfe8ef1cf4a3c1f07fdd1ce3517aea7feb8886124dc063a43b2e3887",
+  "original_baseline_commit": "25716fd7d744f714e804192abc882c9ae0b8c7c8",
+  "original_taxon_identity_sha256": "2398915adfc63e6dd2889e87f61187b197351496ce45b8afb629f370918ee650",
+  "records_reviewed": 606,
+  "media_reviewed": 606,
+  "polish_description_gaps": [
+    "begonia_maculata",
+    "begonia_corallina",
+    "hoya_lanceolata"
+  ],
+  "media_overrides_sha256": "6a2610fcde6fcfe9811bf42f56c286863f60e2dfbbcad8c1fe0affe5b3ed500b",
+  "image_replacements": [
+    "asplenium_antiquum",
+    "calathea_orbifolia",
+    "crassula_perforata",
+    "dracaena_fragrans",
+    "hoya_lanceolata",
+    "philodendron_domesticum"
+  ],
+  "review_method": [
+    "Verified all 606 source identities, English text provenance and per-image rights against pinned inputs.",
+    "Reviewed all original images on 13 contact sheets for suitability, checked source conflicts and inspected the six replacement images.",
+    "Decoded every final asset and verified exact bytes, dimensions and MIME.",
+    "Reviewed English fallback and retained historical Polish records."
+  ],
+  "limitations": [
+    "This scope is catalogue suitability and provenance. Remaining historical taxonomic nomenclature is retained.",
+    "Care data remains attributed reference data and does not confer a published care profile.",
+    "The full release has not been deployed to Supabase or checked in the iOS integration."
+  ]
+}

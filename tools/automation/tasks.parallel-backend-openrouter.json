@@ -1,0 +1,55 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-openrouter-local",
+      "description": "Read-only acceptance of the explicit server-side OpenRouter Messages provider for the existing photo diagnosis path.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/.env.example",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/AnalysisValidator.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/analysis-worker/diagnosis-persistence.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/migrations/202611110014_diagnosis_jobs.sql",
+        "tools/automation/parallel_backend_diagnosis_live.py"
+      ],
+      "write_files": [],
+      "evidence_files": [
+        "specs/001-plants-ios-mvp/contracts/diagnosis-photo-http.md"
+      ],
+      "constraints": [
+        "Controller materialized the candidate. Check the explicit full snapshot and recorded gates with independent Reviewer and QA. Read-only roles. No Development, deployment, secret handling, staging mutation or provider calls by model roles.",
+        "Verify exact pinned OpenRouter Messages origin, model, Bearer and separation from the Anthropic x-api-key. OpenRouter gets low effort, disabled thinking, no sampling, no fallback and SDK maxRetries=0, with a 40-second provider timeout and the existing total worker deadline.",
+        "Verify real SDK mock transport success, 401/429 failures and cancellation, unknown provider or missing selected key, direct Anthropic compatibility, and unchanged validation, lease, budget, quota and HTTP behavior. Safe diagnostics may include only job ID, pinned model, status, latency and token counts. Fixture success alone does not prove live staging integration."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Production OpenRouter/direct SDK fixture, distinct auth, bounded request, no retry, correct settlement and shared validation.",
+          "checks": ["deno-tests", "parallel-backend-access-http"],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Existing diagnosis quota, accounting, lease and HTTP behavior remain consistent.",
+          "checks": [
+            "parallel-backend-diagnosis-sql",
+            "parallel-backend-cap-regression"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Both Edge entrypoints typecheck and the source diff passes.",
+          "checks": ["deno-check", "diff-check"],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

@@ -17,11 +17,7 @@ import {
 // deno-lint-ignore no-explicit-any
 const Ajv2020: any = (Ajv2020Module as any).default ?? Ajv2020Module;
 
-const schemaUrl = new URL(
-  "../../../specs/001-plants-ios-mvp/contracts/ai-result.schema.json",
-  import.meta.url,
-);
-const canonicalAiResultSchema = JSON.parse(Deno.readTextFileSync(schemaUrl));
+import canonicalAiResultSchema from "../../../specs/001-plants-ios-mvp/contracts/ai-result.schema.json" with { type: "json" };
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 const validateJsonSchema = ajv.compile(canonicalAiResultSchema);
@@ -174,6 +170,13 @@ export class AnalysisValidator {
             ) {
               errors.push(`Candidate '${cand.condition_id}' has no valid compact profile in the pinned release.`);
             } else {
+              const scope = profile.host_scope;
+              if (!scope.general_houseplants && scope.families.length === 0 &&
+                scope.plant_ids.length > 0 &&
+                (data.identification.status !== "identified" || !data.identification.plant_id ||
+                  !scope.plant_ids.includes(data.identification.plant_id))) {
+                errors.push(`Candidate '${cand.condition_id}' does not apply to the identified species.`);
+              }
               for (const marker of profile.visual_markers) {
                 allowedVisualMarkers.add(marker);
               }

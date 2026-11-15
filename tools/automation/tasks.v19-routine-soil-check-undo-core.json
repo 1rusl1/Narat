@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-soil-check-undo-core",
+      "description": "Implement private undo of a routine soil-check completion and safe re-completion of the same due occurrence.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150054_routine_soil_check_undo.sql",
+        "supabase/tests/routine_soil_check.test.sql",
+        "supabase/migrations/202611150051_routine_soil_check_record.sql",
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql",
+        "supabase/migrations/202611150053_routine_soil_check_permissions.sql",
+        "supabase/migrations/202611120026_manual_care_date_correction.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150054_routine_soil_check_undo.sql",
+        "supabase/tests/routine_soil_check.test.sql"
+      ],
+      "constraints": [
+        "Current accepted base 1196591. Author a valid unified Git patch in the JSON patch field. Use full exact git hunk context, separate diff --git headers, and all added lines of the new file prefixed +. The controller applies and tests.",
+        "Forward-only SQL, do not edit 051\u2013053. Private execute_routine_soil_check_undo taking owner ID, operation ID, plant ID, entry ID. Deny EXECUTE to public/anon/authenticated/service_role until a later Edge adapter. Use existing owner and plant locks, care_reversals and operation_receipts. Only allow an active completed ordinary check_soil entry linked to its owner/plant basic-care task and rule. Never touch first aid or watering. No changes to other fixtures/settings.",
+        "Exact replay returns previous receipt even when access later changes; a different operation cannot reverse the same fact twice. Undo remains possible after expiry, as manual journal history. Atomically void the entry, record a reversal and mark the completed task as superseded with reminders off, retaining its linkage. The next projection drops the voided fact; if underlying rule still applies this restores the prior date.",
+        "Update completion forward so the same valid due occurrence can be completed again after undo without a duplicate active fact: reuse only the exact task associated with a voided routine check, preserve historical journal/reversal, and never reopen reminders as a side effect. Existing owner lock and expected due conflict stay authoritative. Preserve original stored receipt and exact prior replay.",
+        "Extend existing synthetic fixture with undo/replay/foreign rejection/expiry/unchanged water and quota and same-occurrence re-completion. Keep 051\u2013053 cutoffs working. No Edge, iOS, new provider, future reminders, automated jobs or staging changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19U1",
+          "description": "Forward-only exact SQL diff stays within scope.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19U2",
+          "description": "Clean/upgrade verifies exact reversal, eligibility, linked history and one new active check after undo.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

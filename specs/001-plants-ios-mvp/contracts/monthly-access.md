@@ -1,6 +1,6 @@
 # Месячный доступ — T163
 
-Статус 2026-11-09: контракт подготовки B; реализация/приёмка фиксируются в handoff.
+Статус 2026-11-09: SQL005–010 приняты на fixtures до a367d0b; HTTP B2/client/live ещё не приняты.
 Основание: spec FR-005/017/065. `collection-http.md` не изменяется.
 
 ## Период и доступ
@@ -30,7 +30,8 @@ Forward migrations: `202611090005_registration_quotas.sql` (anchor/окна),
 `202611090006_registration_ledger.sql` (перенос учёта), затем
 `202611090007_registration_state_guard.sql` (legacy permanent не может стать guest),
 `202611090008_quota_reservation.sql` (reserve),
-`202611090009_quota_settlement.sql` (finalize/bind). До последнего среза
+`202611090009_quota_settlement.sql` (finalize/release),
+`202611090010_installation_quota_bind.sql` (binding). До последнего среза
 старый admission не считается заменённым; выкатывать их вместе после приёмки.
 
 `account_quota_anchors(owner_id,registered_at,source)` — отдельный внутренний
@@ -74,11 +75,14 @@ registration anchor/period UTC. Remaining=max(0,limit-consumed-reserved),
 nextResetAt=end регистрационного окна; гостю без monthly — null.
 До B2 это целевая граница, текущий инъекционный TS adapter не production proof.
 Exhaustion: free_monthly_exhausted / paid_monthly_exhausted, HTTP 429
-QUOTA_EXCEEDED с remaining=0/reset; starter_in_progress — 409; missing verified
-anchor/history — 503 QUOTA_UNAVAILABLE (EN/PL), без успешного fallback.
+QUOTA_EXHAUSTED с remaining=0/reset; starter_in_progress — 409; missing verified
+anchor/history — unavailable status в GET (независимый starter может быть доступен),
+503 INTERNAL_ERROR в будущей denied mutation; EN/PL, без успешного fallback.
 Identity/owner mismatch — 403, payload/operation mismatch — 409, invalid mode —400.
 
 Готовность: trusted PG17 clean + seeded-upgrade, 20 одновременно наблюдаемых
 соединений на последний остаток, replay/finalizeOnce/failure/A-B; затем Deno
 handlers/production adapters и клиент A/T036. Fixtures не доказывают live Supabase,
 Auth, Storage, provider или StoreKit. Полная T163 остаётся открытой.
+
+Конкретный B2 HTTP wire proposal и canonical fixtures: [monthly-access-http.md](monthly-access-http.md).

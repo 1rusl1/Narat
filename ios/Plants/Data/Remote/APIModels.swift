@@ -1,5 +1,250 @@
 import Foundation
 
+// MARK: - Canonical monthly access read wire (not the local forecast)
+
+enum AnalysisAccessWireError: Error, Sendable {
+    case invalidSnapshot
+    case identityMismatch
+    case missingInstallationCredential
+}
+
+/// Raw server timestamps and nullable unknown counts are deliberately retained.
+struct AnalysisAccessWireDTO: Decodable, Sendable, Equatable {
+    enum QuotaKind: String, Decodable, Sendable {
+        case starterIdentification = "starter_identification"
+        case starterDiagnosis = "starter_diagnosis"
+        case freeMonthly = "free_monthly"
+        case paidMonthly = "paid_monthly"
+
+        var limit: Int {
+            switch self {
+            case .starterIdentification, .starterDiagnosis: 1
+            case .freeMonthly: 3
+            case .paidMonthly: 100
+            }
+        }
+    }
+
+    enum Status: String, Decodable, Sendable {
+        case ready
+        case registrationRequired = "registration_required"
+        case historyUnresolved = "history_unresolved"
+        case notApplicable = "not_applicable"
+    }
+
+    enum AnalysisMode: String, Decodable, Sendable {
+        case identification, diagnosis
+    }
+
+    enum Reason: String, Decodable, Sendable {
+        case starterInProgress = "starter_in_progress"
+        case starterExhausted = "starter_exhausted"
+        case freeMonthlyExhausted = "free_monthly_exhausted"
+        case paidMonthlyExhausted = "paid_monthly_exhausted"
+        case registrationRequired = "quota_registration_required"
+        case historyUnresolved = "quota_history_unresolved"
+    }
+
+    struct Starter: Decodable, Sendable, Equatable {
+        let identificationRemaining: Int
+        let diagnosisRemaining: Int
+        let identificationInProgressJobId: UUID?
+        let diagnosisInProgressJobId: UUID?
+        let firstStarterSuccessAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case identificationRemaining = "identification_remaining"
+            case diagnosisRemaining = "diagnosis_remaining"
+            case identificationInProgressJobId = "identification_in_progress_job_id"
+            case diagnosisInProgressJobId = "diagnosis_in_progress_job_id"
+            case firstStarterSuccessAt = "first_starter_success_at"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            identificationRemaining = try c.decode(Int.self, forKey: .identificationRemaining)
+            diagnosisRemaining = try c.decode(Int.self, forKey: .diagnosisRemaining)
+            // decode(Optional.self) requires the key, while permitting an explicit null.
+            identificationInProgressJobId = try c.decode(UUID?.self, forKey: .identificationInProgressJobId)
+            diagnosisInProgressJobId = try c.decode(UUID?.self, forKey: .diagnosisInProgressJobId)
+            firstStarterSuccessAt = try c.decode(String?.self, forKey: .firstStarterSuccessAt)
+            guard (0...1).contains(identificationRemaining),
+                  (0...1).contains(diagnosisRemaining),
+                  Self.validTimestamp(firstStarterSuccessAt) else {
+                throw AnalysisAccessWireError.invalidSnapshot
+            }
+        }
+
+        fileprivate static func validTimestamp(_ raw: String?) -> Bool {
+            raw == nil || SQLTimestamp.microseconds(from: raw!) != nil
+        }
+    }
+
+    struct Monthly: Decodable, Sendable, Equatable {
+        let quotaKind: QuotaKind?
+        let registeredAt: String?
+        let periodStart: String?
+        let periodEnd: String?
+        let limit: Int?
+        let consumed: Int?
+        let reserved: Int?
+        let remaining: Int?
+        let status: Status
+
+        enum CodingKeys: String, CodingKey {
+            case quotaKind = "quota_kind"
+            case registeredAt = "registered_at"
+            case periodStart = "period_start"
+            case periodEnd = "period_end"
+            case limit, consumed, reserved, remaining, status
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            quotaKind = try c.decode(QuotaKind?.self, forKey: .quotaKind)
+            registeredAt = try c.decode(String?.self, forKey: .registeredAt)
+            periodStart = try c.decode(String?.self, forKey: .periodStart)
+            periodEnd = try c.decode(String?.self, forKey: .periodEnd)
+            limit = try c.decode(Int?.self, forKey: .limit)
+            consumed = try c.decode(Int?.self, forKey: .consumed)
+            reserved = try c.decode(Int?.self, forKey: .reserved)
+            remaining = try c.decode(Int?.self, forKey: .remaining)
+            status = try c.decode(Status.self, forKey: .status)
+            guard [registeredAt, periodStart, periodEnd].allSatisfy(Starter.validTimestamp),
+                  (periodStart == nil) == (periodEnd == nil) else {
+                throw AnalysisAccessWireError.invalidSnapshot
+            }
+            if let start = periodStart, let end = periodEnd {
+                guard SQLTimestamp.microseconds(from: start)! < SQLTimestamp.microseconds(from: end)! else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            }
+            if status == .notApplicable {
+                guard quotaKind == nil, registeredAt == nil, periodStart == nil, periodEnd == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            } else {
+                guard quotaKind == .freeMonthly || quotaKind == .paidMonthly else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            }
+            if status == .ready {
+                guard registeredAt != nil, periodStart != nil, periodEnd != nil,
+                      let limit, limit == quotaKind?.limit,
+                      let consumed, consumed >= 0, let reserved, reserved >= 0,
+                      let remaining, remaining >= 0 else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+                // Saturating subtraction avoids overflow even after a paid-to-free downgrade.
+                let unconsumed = consumed >= limit ? 0 : limit - consumed
+                let available = reserved >= unconsumed ? 0 : unconsumed - reserved
+                guard remaining == available else { throw AnalysisAccessWireError.invalidSnapshot }
+            } else {
+                guard limit == nil, consumed == nil, reserved == nil, remaining == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+                if status == .registrationRequired {
+                    guard registeredAt == nil, periodStart == nil, periodEnd == nil else {
+                        throw AnalysisAccessWireError.invalidSnapshot
+                    }
+                }
+            }
+        }
+    }
+
+    struct Mode: Decodable, Sendable, Equatable {
+        let mode: AnalysisMode
+        let allowed: Bool
+        let activeQuotaKind: QuotaKind
+        let remaining: Int
+        let limit: Int
+        let inProgressJobId: UUID?
+        let nextResetAt: String?
+        let reason: Reason?
+
+        // These keys intentionally stay camelCase.
+        enum CodingKeys: String, CodingKey {
+            case mode, allowed, activeQuotaKind, remaining, limit, inProgressJobId, nextResetAt, reason
+        }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            mode = try c.decode(AnalysisMode.self, forKey: .mode)
+            allowed = try c.decode(Bool.self, forKey: .allowed)
+            activeQuotaKind = try c.decode(QuotaKind.self, forKey: .activeQuotaKind)
+            remaining = try c.decode(Int.self, forKey: .remaining)
+            limit = try c.decode(Int.self, forKey: .limit)
+            inProgressJobId = try c.decode(UUID?.self, forKey: .inProgressJobId)
+            nextResetAt = try c.decode(String?.self, forKey: .nextResetAt)
+            reason = try c.decodeIfPresent(Reason.self, forKey: .reason)
+            guard limit == activeQuotaKind.limit, (0...limit).contains(remaining),
+                  Starter.validTimestamp(nextResetAt),
+                  !allowed || (remaining > 0 && inProgressJobId == nil && reason == nil) else {
+                throw AnalysisAccessWireError.invalidSnapshot
+            }
+            switch activeQuotaKind {
+            case .starterIdentification:
+                guard mode == .identification, nextResetAt == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            case .starterDiagnosis:
+                guard mode == .diagnosis, nextResetAt == nil else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            case .freeMonthly, .paidMonthly: break
+            }
+        }
+    }
+
+    let ownerId: UUID
+    let isGuest: Bool
+    let starter: Starter
+    let monthly: Monthly
+    let modes: [String: Mode]
+
+    enum CodingKeys: String, CodingKey {
+        case ownerId = "owner_id"
+        case isGuest = "is_guest"
+        case starter, monthly, modes
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ownerId = try c.decode(UUID.self, forKey: .ownerId)
+        isGuest = try c.decode(Bool.self, forKey: .isGuest)
+        starter = try c.decode(Starter.self, forKey: .starter)
+        monthly = try c.decode(Monthly.self, forKey: .monthly)
+        modes = try c.decode([String: Mode].self, forKey: .modes)
+        guard isGuest == (monthly.status == .notApplicable),
+              Set(modes.keys) == Set(["identification", "diagnosis"]) else {
+            throw AnalysisAccessWireError.invalidSnapshot
+        }
+        for (key, mode) in modes {
+            guard mode.mode.rawValue == key else { throw AnalysisAccessWireError.invalidSnapshot }
+            switch mode.activeQuotaKind {
+            case .starterIdentification, .starterDiagnosis:
+                guard monthly.quotaKind != .paidMonthly else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+            case .freeMonthly, .paidMonthly:
+                guard !isGuest, mode.activeQuotaKind == monthly.quotaKind,
+                      SyncWireRules.sameTime(mode.nextResetAt, monthly.periodEnd) else {
+                    throw AnalysisAccessWireError.invalidSnapshot
+                }
+                if monthly.status == .ready {
+                    guard mode.remaining == monthly.remaining, mode.limit == monthly.limit else {
+                        throw AnalysisAccessWireError.invalidSnapshot
+                    }
+                } else {
+                    guard !mode.allowed, mode.remaining == 0 else {
+                        throw AnalysisAccessWireError.invalidSnapshot
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Profile & Overrides DTOs (FR-035, FR-046..048)
 
 public struct ProfileDTO: Codable, Sendable, Equatable {
@@ -380,6 +625,7 @@ public struct CommandResponseDTO: Codable, Sendable, Equatable {
 /// The raw SQL boundary must be retained: Date cannot represent every microsecond exactly.
 public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
     public let plantId: UUID
+    public let photoId: UUID?
     public let careRevision: Int
     public let contextState: String
     public let nextAvailableStep: String
@@ -391,6 +637,7 @@ public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case plantId = "plant_id"
+        case photoId = "photo_id"
         case careRevision = "care_revision"
         case contextState = "context_state"
         case nextAvailableStep = "next_available_step"
@@ -402,6 +649,7 @@ public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         plantId = try values.decode(UUID.self, forKey: .plantId)
+        photoId = try values.decodeIfPresent(UUID.self, forKey: .photoId)
         careRevision = try values.decode(Int.self, forKey: .careRevision)
         contextState = try values.decode(String.self, forKey: .contextState)
         nextAvailableStep = try values.decode(String.self, forKey: .nextAvailableStep)
@@ -423,6 +671,7 @@ public struct PlantCreateReceiptDTO: Codable, Sendable, Equatable {
     public func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(plantId, forKey: .plantId)
+        try values.encodeIfPresent(photoId, forKey: .photoId)
         try values.encode(careRevision, forKey: .careRevision)
         try values.encode(contextState, forKey: .contextState)
         try values.encode(nextAvailableStep, forKey: .nextAvailableStep)
@@ -582,7 +831,7 @@ public struct SyncWireChangeDTO: Decodable, Sendable, Equatable {
 public struct SyncWireProfileDTO: Codable, Sendable, Equatable {
     public let preferredLocale: String
     public let reminderHourLocal: Int
-    public let reportNotificationsEnabled: Bool
+    public let reportNotificationsEnabled: Bool?
     public let trialReminderEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -596,7 +845,10 @@ public struct SyncWireProfileDTO: Codable, Sendable, Equatable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         preferredLocale = try values.decode(String.self, forKey: .preferredLocale)
         reminderHourLocal = try values.decode(Int.self, forKey: .reminderHourLocal)
-        reportNotificationsEnabled = try values.decode(Bool.self, forKey: .reportNotificationsEnabled)
+        // Older pages and checkpoints retain the Boolean. New pages can omit it.
+        reportNotificationsEnabled = values.contains(.reportNotificationsEnabled)
+            ? try values.decode(Bool.self, forKey: .reportNotificationsEnabled)
+            : nil
         trialReminderEnabled = try values.decode(Bool.self, forKey: .trialReminderEnabled)
         guard ["en", "pl"].contains(preferredLocale), (0...23).contains(reminderHourLocal) else {
             throw SyncWireValidationError.invalidPage
@@ -612,6 +864,13 @@ public struct SyncWireEntitlementDTO: Codable, Sendable, Equatable {
     public let graceUntil: String?
     public let trialEndAt: String?
     public let autoRenewEnabled: Bool
+
+    var verifiedAccessUntil: Date? {
+        guard ["active", "grace"].contains(state),
+              let validUntil = validUntil.flatMap(SQLTimestamp.date(from:)) else { return nil }
+        if offerKind == "paid" { return validUntil }
+        return trialEndAt.flatMap(SQLTimestamp.date(from:)).map { min(validUntil, $0) }
+    }
 
     enum CodingKeys: String, CodingKey {
         case productId = "product_id"
@@ -776,5 +1035,362 @@ extension SQLTimestamp {
         }
         guard let seconds = date(from: whole) else { return nil }
         return Int64(seconds.timeIntervalSince1970.rounded()) * 1_000_000 + fraction
+    }
+}
+
+enum SQLCalendarDay {
+    static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    static func date(from raw: String) -> Date? {
+        guard raw.utf8.count == 10 else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        guard let date = formatter.date(from: raw), formatter.string(from: date) == raw else { return nil }
+        return date
+    }
+}
+
+// MARK: - Analysis upload and job wire
+
+enum AnalysisHTTPError: Error, Equatable {
+    case invalidUpload
+    case invalidResponse
+}
+
+struct AnalysisUploadTicket: Decodable, Sendable {
+    let storageBucket: String
+    let storagePath: String
+    let photoAssetId: UUID
+    let signedUploadURL: URL
+    let expiresInSeconds: Int
+    let maxByteSize: Int
+
+    enum CodingKeys: String, CodingKey {
+        case photoAssetId = "photo_asset_id"
+        case storageBucket = "storage_bucket"
+        case storagePath = "storage_path"
+        case signedUploadURL = "signed_upload_url"
+        case expiresInSeconds = "expires_in_seconds"
+        case maxByteSize = "max_byte_size"
+    }
+}
+
+struct AnalysisUploadedPhoto: Decodable, Sendable {
+    let photoAssetId: UUID
+    let state: String
+
+    enum CodingKeys: String, CodingKey {
+        case photoAssetId = "photo_asset_id"
+        case state
+    }
+}
+
+struct PhotoInstallationRegistration: Decodable, Sendable {
+    let installationId: UUID
+    enum CodingKeys: String, CodingKey { case installationId = "installation_id" }
+}
+
+struct PhotoInstallationBinding: Decodable, Sendable {
+    let bound: Bool
+    let ownerId: UUID
+    let installationId: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case bound
+        case ownerId = "owner_id"
+        case installationId = "installation_id"
+    }
+}
+
+struct GuestPhotoDraftReceipt: Codable, Equatable, Sendable {
+    let draftId: UUID
+    let expiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case draftId = "draft_id"
+        case expiresAt = "expires_at"
+    }
+}
+
+struct GuestPhotoClaimProof: Codable, Equatable, Sendable {
+    let claimId: UUID
+    let draftId: UUID
+    let proofExpiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case claimId = "claim_id"
+        case draftId = "draft_id"
+        case proofExpiresAt = "proof_expires_at"
+    }
+}
+
+struct GuestPhotoClaimReceipt: Codable, Equatable, Sendable {
+    let plantId: UUID
+    let photoId: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id"
+        case photoId = "photo_id"
+    }
+}
+
+struct RecordableFirstAidAction: Decodable, Sendable, Equatable {
+    let jobId: UUID
+    let plantId: UUID
+    let actionId: String
+    let actionCode: String
+    let source: PlantCareRecommendation.Source
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case plantId = "plant_id"
+        case actionId = "action_id"
+        case actionCode = "action_code"
+        case source
+    }
+
+    var isSoilCheck: Bool {
+        actionCode == "check_soil" && actionId.range(of: #"^[a-z][a-z0-9_]*$"#, options: .regularExpression) != nil
+            && source.isVerifiedLink
+    }
+}
+
+struct AnalysisJobWire: Decodable, Sendable {
+    enum Status: String, Decodable, Sendable {
+        case queued, running, succeeded, failed, expired
+    }
+
+    enum QuotaState: String, Decodable, Sendable {
+        case reserved, consumed, released
+        case notRequired = "not_required"
+    }
+
+    let jobId: UUID
+    let mode: AnalysisMode
+    let status: Status
+    let quotaKind: String
+    let quotaState: QuotaState
+    let targetPlantId: UUID?
+    let photoAssetId: UUID?
+    let result: AnalysisProjectionWire?
+    let identificationResult: PhotoIdentificationWire?
+    private let firstAidAction: RecordableFirstAidAction?
+    let errorCode: String?
+    let errorMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case mode, status, result
+        case quotaKind = "quota_kind"
+        case quotaState = "quota_state"
+        case targetPlantId = "target_plant_id"
+        case photoAssetId = "photo_asset_id"
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+        case firstAidAction = "first_aid_action"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try values.decode(UUID.self, forKey: .jobId)
+        mode = try values.decode(AnalysisMode.self, forKey: .mode)
+        status = try values.decode(Status.self, forKey: .status)
+        quotaKind = try values.decode(String.self, forKey: .quotaKind)
+        quotaState = try values.decode(QuotaState.self, forKey: .quotaState)
+        targetPlantId = try values.decodeIfPresent(UUID.self, forKey: .targetPlantId)
+        photoAssetId = try values.decodeIfPresent(UUID.self, forKey: .photoAssetId)
+        result = mode == .diagnosis ? try values.decodeIfPresent(AnalysisProjectionWire.self, forKey: .result) : nil
+        identificationResult = mode == .identification ? try values.decode(PhotoIdentificationWire?.self, forKey: .result) : nil
+        firstAidAction = try? values.decode(RecordableFirstAidAction.self, forKey: .firstAidAction)
+        errorCode = try values.decodeIfPresent(String.self, forKey: .errorCode)
+        errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+    }
+
+    var recordableFirstAid: RecordableFirstAidAction? {
+        guard mode == .diagnosis, status == .succeeded, let result, result.jobId == jobId,
+              result.identificationStatus == .identified, result.diagnosisStatus == .problemDetected,
+              result.planAvailability == .available,
+              result.firstActionSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+              let firstAidAction, firstAidAction.jobId == jobId, firstAidAction.plantId == targetPlantId,
+              firstAidAction.isSoilCheck else { return nil }
+        return firstAidAction
+    }
+
+    func validate(
+        mode expectedMode: AnalysisMode, jobId expectedId: UUID? = nil,
+        targetPlantId expectedTarget: UUID? = nil, photoAssetId expectedPhoto: UUID? = nil
+    ) throws {
+        guard mode == expectedMode, expectedId == nil || expectedId == jobId,
+              targetPlantId == expectedTarget, expectedPhoto == nil || photoAssetId == expectedPhoto else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        if mode == .identification {
+            guard ["starter_identification", "free_monthly", "paid_monthly"].contains(quotaKind) else {
+                throw AnalysisHTTPError.invalidResponse
+            }
+            switch status {
+            case .succeeded:
+                guard let identificationResult, identificationResult.jobId == jobId,
+                      quotaState == (identificationResult.plant == nil ? .released : .consumed) else {
+                    throw AnalysisHTTPError.invalidResponse
+                }
+            case .queued, .running:
+                guard identificationResult == nil, quotaState == .reserved else { throw AnalysisHTTPError.invalidResponse }
+            case .failed, .expired:
+                guard identificationResult == nil, quotaState == .released else { throw AnalysisHTTPError.invalidResponse }
+            }
+            return
+        }
+        if status == .succeeded {
+            guard let result, result.jobId == jobId, result.mode == mode,
+                  !result.analysisReceipt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  result.identificationStatus != .identified || result.plantId?.isEmpty == false,
+                  result.candidates.count <= 2,
+                  result.candidates.allSatisfy({
+                      (1...2).contains($0.rank) && (0...1).contains($0.confidence)
+                  })
+            else { throw AnalysisHTTPError.invalidResponse }
+        } else if result != nil {
+            throw AnalysisHTTPError.invalidResponse
+        }
+    }
+}
+
+struct PhotoIdentificationWire: Decodable, Sendable {
+    struct Plant: Sendable {
+        let taxonId: UUID
+        let displayName: String
+    }
+
+    private enum Status: String, Decodable { case identified, unknown }
+
+    let jobId: UUID
+    let catalogueReleaseId: UUID
+    let plant: Plant?
+
+    private enum CodingKeys: String, CodingKey {
+        case version = "schema_version"
+        case jobId = "job_id"
+        case mode
+        case catalogueReleaseId = "catalogue_release_id"
+        case status = "identification_status"
+        case taxonId = "plant_id"
+        case displayName = "plant_display_name"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        guard try values.decode(String.self, forKey: .version) == "1.0",
+              try values.decode(AnalysisMode.self, forKey: .mode) == .identification else {
+            throw AnalysisHTTPError.invalidResponse
+        }
+        jobId = try values.decode(UUID.self, forKey: .jobId)
+        catalogueReleaseId = try values.decode(UUID.self, forKey: .catalogueReleaseId)
+        let taxonId = try values.decode(UUID?.self, forKey: .taxonId)
+        let displayName = try values.decode(String?.self, forKey: .displayName)
+        switch try values.decode(Status.self, forKey: .status) {
+        case .identified:
+            guard let taxonId, let displayName,
+                  !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AnalysisHTTPError.invalidResponse
+            }
+            plant = Plant(taxonId: taxonId, displayName: displayName)
+        case .unknown:
+            guard taxonId == nil, displayName == nil else { throw AnalysisHTTPError.invalidResponse }
+            plant = nil
+        }
+    }
+}
+
+struct AnalysisProjectionWire: Decodable, Sendable {
+    enum Identification: String, Decodable, Sendable {
+        case identified, unknown
+        case genusOnly = "genus_only"
+        case outOfScope = "out_of_scope"
+
+        var domainValue: IdentificationStatus {
+            switch self {
+            case .identified: .resolved
+            case .unknown: .unknown
+            case .genusOnly: .genusOnly
+            case .outOfScope: .outOfScope
+            }
+        }
+    }
+
+    enum Diagnosis: String, Decodable, Sendable {
+        case healthy
+        case problemDetected = "problem_detected"
+        case insufficientData = "insufficient_data"
+        case outOfScope = "out_of_scope"
+
+        var domainValue: DiagnosisStatus {
+            switch self {
+            case .healthy: .healthy
+            case .problemDetected: .conditionDetected
+            case .insufficientData: .unknown
+            case .outOfScope: .outOfScope
+            }
+        }
+    }
+
+    let analysisId: UUID
+    let jobId: UUID
+    let kbReleaseId: UUID
+    let mode: AnalysisMode
+    let identificationStatus: Identification
+    let plantId: String?
+    let genusId: String?
+    let diagnosisStatus: Diagnosis?
+    let candidates: [DiagnosisCandidate]
+    let selectedConditionId: String?
+    let visualMarkers: [String]
+    let evidenceBasis: [String]
+    let limitations: [String]
+    let firstActionSummary: String?
+    let controlIntervalDays: Int?
+    let planAvailability: PlanAvailability
+    let analysisReceipt: String
+    let plantDisplayName: String?
+    let conditionDisplayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case plantDisplayName = "plant_display_name"
+        case conditionDisplayName = "condition_display_name"
+        case analysisId = "analysis_id"
+        case jobId = "job_id"
+        case kbReleaseId = "kb_release_id"
+        case mode, candidates, limitations
+        case identificationStatus = "identification_status"
+        case plantId = "plant_id"
+        case genusId = "genus_id"
+        case diagnosisStatus = "diagnosis_status"
+        case selectedConditionId = "selected_condition_id"
+        case visualMarkers = "visual_markers"
+        case evidenceBasis = "evidence_basis"
+        case firstActionSummary = "first_action_summary"
+        case controlIntervalDays = "control_interval_days"
+        case planAvailability = "plan_availability"
+        case analysisReceipt = "analysis_receipt"
+    }
+
+    var domainValue: PreliminaryAnalysis {
+        PreliminaryAnalysis(
+            id: analysisId, jobId: jobId, kbReleaseId: kbReleaseId, mode: mode,
+            identificationStatus: identificationStatus.domainValue, plantId: plantId,
+            genusId: genusId, diagnosisStatus: diagnosisStatus?.domainValue,
+            candidates: candidates, selectedConditionId: selectedConditionId,
+            visualMarkers: visualMarkers, evidenceBasis: evidenceBasis, limitations: limitations,
+            firstActionSummary: firstActionSummary, controlIntervalDays: controlIntervalDays,
+            planAvailability: planAvailability, analysisReceipt: analysisReceipt
+        )
     }
 }

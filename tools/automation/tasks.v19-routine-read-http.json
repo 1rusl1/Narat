@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-read-http",
+      "description": "Project the accepted 052 routine occurrence through the existing owner recommendation GET.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "supabase/functions/_shared/tests/care_recommendation_http_test.ts",
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "supabase/functions/_shared/tests/care_recommendation_http_test.ts"
+      ],
+      "constraints": [
+        "Accepted source b8ea426. Developer returns a valid unified Git patch in JSON. Use exact current source context around each hunk; the controller applies the diff and runs tests.",
+        "Exact additive JSON contract: routine_check = {\"rule_id\":\"UUID\",\"care_revision\":2,\"due_local_date\":\"2026-11-23\",\"anchor_local_date\":\"2026-11-16\",\"anchor_kind\":\"water\"|\"check_soil\"}. Its due/anchor dates agree with outer next_check.due_on/anchor_on. The core GET contract and source are unchanged.",
+        "Use existing production GET and private no-store behavior. Return the additive top-level routine_check unchanged in shape after validating it. For a routine projection use its anchor_local_date and due_local_date for next_check.anchor_on and due_on, and report the last recorded soil check when anchor_kind is check_soil. Continue to return the published interval and provenance, retain EN/PL transport compatibility.",
+        "Fail closed if a non-null routine projection has malformed data, inconsistent date arithmetic, or no eligible/calendar-evidenced action. With a missing routine_check, preserve existing watering-derived GET behavior for older DB or initial context. Test successful soil-check anchor, watering anchor, malformed/current evidence and legacy fallback in the existing tests.",
+        "Scope is read only. No SQL, write route, iOS, staging, data or reminders."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19B1",
+          "description": "Production Deno entrypoints and diff pass.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19B2",
+          "description": "HTTP and SQL fixtures verify legacy transport and the published routine date.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

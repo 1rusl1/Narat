@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "v19-ios-refresh-enable-review",
+      "description": "Independently verify the English iOS basic-care enable and recommendation refresh path, including owner-bound durable replay and signed V13 evidence scope.",
+      "candidate_base": "eb8180d310391b5a5a56ea38beba2877cbf4b3eb",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "docs/validation/mvp-acceptance.md",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "tools/automation/tasks.v19-ios-refresh-enable-review.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only fixture verification. Simulator local to the iOS lane. No staging calls, secrets, release, knowledge edits or production scope changes.",
+        "Check unchanged UUID and payload across loss/restart, current owner lease and canonical membership/receipt confirmation, no recorded watering on enable, no invented date after pause, and preserve V13 fixture/live scope."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19I1",
+          "description": "Exact candidate, iOS build and unit tests verify the owner-scoped transport and persistence.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "V19I2",
+          "description": "Both EN simulator scenarios exercise enable and refresh with response loss and restart.",
+          "mode": "fixture",
+          "checks": [
+            "v19-care-ui"
+          ]
+        }
+      ]
+    }
+  ]
+}

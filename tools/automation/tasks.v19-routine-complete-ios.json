@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-complete-ios",
+      "description": "Implement the agreed routine soil check completion wire on a",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Accepted base 76ba906. Return a valid unified Git patch in the JSON patch field, with exact source context. Controller owns writes and verification.",
+        "Exact wire: POST /commands, command_name=care.check_soil.complete, plant_id and operation_id in the established envelope. payload_json contains only rule_id (UUID), expected_care_revision (positive int32), due_local_date (YYYY-MM-DD), occurred_at (ISO 8601 instant) and timezone (IANA). Successful receipt: plant_id, rule_id, care_revision, occurrence_key, due_local_date, task_id, entry_id, state=completed, SQL watermark. Same owner and exact operation/body required on replay.",
+        "Add stable typed command envelope and typed completion receipt in the existing owner-bound sendOutboxCommand transport. Validate operation/card/rule/revision/due and retry body through local CollectionWireTests. Pass EN and remove installation credential like refresh.",
+        "Do not wire the command into a switch that silently discards accepted state. If OutboxCommandResult is expanded, the relevant existing Swift exhaustive switches must compile and any use of this route is fixture-only until the next package. Prefer a bound dedicated transport method if it keeps the current engine and product behavior unchanged.",
+        "Scope transport only. No UI, LocalStore, Engine, project files, live work or speculative unauthenticated fallback."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19AW1",
+          "description": "Build and unit tests verify exact typed completion and owner-bound transport.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

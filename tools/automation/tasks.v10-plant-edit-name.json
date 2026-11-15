@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "v10-plant-edit-name",
+      "description": "Review the name-only plant.edit command on synthetic owners and history.",
+      "candidate_base": "37ccbbe54e94942f72d3852e630893197286c9e9",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/collection_http_test.ts",
+        "supabase/functions/_shared/tests/plant_edit_name_test.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/migrations/202611130041_plant_edit_name.sql",
+        "supabase/tests/plant_edit_name.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v10-plant-edit-name.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Review/QA on local fixtures only. Name only. Check active owner, exact replay, unchanged photo/diagnosis/snapshot/history and rejection of mixed edits. No deployment, 024 or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V10-N1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V10-N2",
+          "description": "HTTP and SQL verify owner isolation, replay, preservation of history and no-op.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

@@ -79,15 +79,42 @@ public struct EffectiveCareTaskView: Codable, Sendable, Equatable {
 }
 
 public actor SyncEngine {
+    enum RoutineUndoFailure: Error {
+        case rejected
+    }
+
+    enum RoutineCompletionFailure: Error {
+        case rejected
+    }
+
+    enum CareRecommendationRefreshFailure: Error {
+        case rejected
+    }
+
     private let store: LocalStore
     private let apiClient: PlantsAPIClient
     private var drainingOwners = Set<UUID>()
     private var planHistoryByOwner: [UUID: [UUID: CachedPlanHistoryEntry]] = [:]
     private var reportCacheByOwner: [UUID: [String: ProgressReportDTO]] = [:]
+    private var canonicalSyncObservers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
     public init(store: LocalStore, apiClient: PlantsAPIClient) {
         self.store = store
         self.apiClient = apiClient
+    }
+
+    func canonicalSyncUpdates() -> AsyncStream<Void> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        canonicalSyncObservers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeCanonicalSyncObserver(id) }
+        }
+        return stream
+    }
+
+    private func removeCanonicalSyncObserver(_ id: UUID) {
+        canonicalSyncObservers[id] = nil
     }
 
     // MARK: - Outbox Drain (Sequential per plantId)
@@ -104,7 +131,67 @@ public actor SyncEngine {
         return try await flushOutbox(for: context.ownerId, context: context)
     }
 
-    private func flushOutbox(for ownerId: UUID, context: SyncSessionLease) async throws -> Int {
+    func flushPlantDeletions(context: SyncSessionLease) async throws {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        _ = try await flushOutbox(for: context.ownerId, context: context, commandName: PlantDeleteReceipt.commandName)
+    }
+
+    @discardableResult
+    func flushPlantCommand(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws -> Int {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        return try await flushOutbox(for: context.ownerId, context: context, onlyOperation: command.operationId)
+    }
+
+    func flushProfileReminderHour(
+        _ command: ProfileReminderHourCommand, context: SyncSessionLease
+    ) async throws -> ProfileReminderHourOutcome {
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        guard try await store.pendingProfileReminderHour(
+            context: context, authority: apiClient.syncAuthority
+        )?.envelope == command.envelope else { return .unconfirmed }
+        guard drainingOwners.insert(context.ownerId).inserted else { return .pending }
+        defer { drainingOwners.remove(context.ownerId) }
+        return try await sendProfileReminderHour(command, context: context)
+    }
+
+    private func sendProfileReminderHour(
+        _ command: ProfileReminderHourCommand, context: SyncSessionLease
+    ) async throws -> ProfileReminderHourOutcome {
+        guard try await store.pendingProfileReminderHour(
+            context: context, authority: apiClient.syncAuthority
+        )?.envelope == command.envelope else { return .unconfirmed }
+        let receipt: ProfileReminderHourReceipt
+        var receivedReceipt = false
+        do {
+            receipt = try await apiClient.updateProfileReminderHour(command, context: context)
+            receivedReceipt = true
+            try await refreshCanonicalJournal(ownerId: context.ownerId, watermark: receipt.watermark, context: context)
+        } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+            if !receivedReceipt, let rejection = error as? APIErrorResponse,
+               !rejection.error.retryable,
+               ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(rejection.error.code) {
+                _ = try await store.finishProfileReminderHour(
+                    command, receipt: nil, context: context, authority: apiClient.syncAuthority
+                )
+                return .rejected
+            }
+            try await store.finishOutboxEntry(
+                operationId: command.envelope.operationId, context: context, authority: apiClient.syncAuthority,
+                failure: String(describing: error)
+            )
+            return .pending
+        }
+        guard let hour = try await store.finishProfileReminderHour(
+            command, receipt: receipt, context: context, authority: apiClient.syncAuthority
+        ) else { throw SyncWireValidationError.invalidPage }
+        return .confirmed(hour: hour)
+    }
+
+    private func flushOutbox(
+        for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil
+    ) async throws -> Int {
         guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
         // Actor reentrancy must not dispatch a second copy of this owner's snapshot.
@@ -117,33 +204,232 @@ public actor SyncEngine {
         var blockedPlantIds = Set<UUID>()
         var GlobalChainBlocked = false
         var committedCount = 0
+        let deletingPlants = Set(pending.compactMap { entry in
+            entry.commandName == PlantDeleteReceipt.commandName ? entry.plantId : nil
+        })
 
         for entry in pending {
+            if let commandName, entry.commandName != commandName { continue }
+            if let onlyOperation, entry.operationId != onlyOperation { continue }
             if let plantId = entry.plantId {
-                if blockedPlantIds.contains(plantId) {
+                if blockedPlantIds.contains(plantId)
+                    || (deletingPlants.contains(plantId) && entry.commandName != PlantDeleteReceipt.commandName) {
                     continue
                 }
             } else if GlobalChainBlocked {
                 continue
             }
 
-            let envelope = CommandEnvelopeDTO(
-                operationId: entry.operationId,
-                commandName: entry.commandName,
-                plantId: entry.plantId,
-                payloadJSON: entry.payloadJSON
-            )
+            if entry.commandName == "profile.update" {
+                try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+                guard let command = ProfileReminderHourCommand(entry.envelope) else {
+                    try await store.finishOutboxEntry(
+                        operationId: entry.operationId, context: context, authority: apiClient.syncAuthority,
+                        failure: "Invalid persisted profile reminder-hour command"
+                    )
+                    if let plantId = entry.plantId { blockedPlantIds.insert(plantId) }
+                    else { GlobalChainBlocked = true }
+                    continue
+                }
+                switch try await sendProfileReminderHour(command, context: context) {
+                case .confirmed:
+                    committedCount += 1
+                case .pending, .unconfirmed:
+                    GlobalChainBlocked = true
+                case .rejected:
+                    break
+                }
+                continue
+            }
+
+            var envelope = entry.envelope
+            var firstAidUndo = false
+            if context.session != nil, entry.commandName == ManualWateringAction.undoCommand {
+                firstAidUndo = try await store.isFirstAidUndo(envelope, context: context, authority: apiClient.syncAuthority)
+            }
 
             let result: OutboxCommandResult
+            var receivedReceipt = false
             do {
-                result = try await apiClient.sendOutboxCommand(envelope, context: context)
+                if entry.commandName == FirstAidObservationPhotoDraft.name {
+                    guard let draft = FirstAidObservationPhotoDraft(envelope: envelope)
+                    else { throw SyncWireValidationError.invalidRequest }
+                    envelope = try await prepareFirstAidObservationPhoto(draft, context: context).envelope
+                }
+                if entry.commandName == RoutineSoilCheckUndoCommand.name {
+                    guard let plantId = envelope.plantId,
+                          let command = try await store.pendingRoutineUndo(
+                            plantId: plantId, context: context, authority: apiClient.syncAuthority
+                          ), command.envelope == envelope
+                    else { throw SyncWireValidationError.invalidRequest }
+                    let receipt = try await apiClient.sendOutboxCommand(command, context: context)
+                    receivedReceipt = true
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    try await store.validateRoutineUndo(
+                        receipt, command: command, context: context, authority: apiClient.syncAuthority
+                    )
+                    result = .generic
+                } else if entry.commandName == RoutineSoilCheckCompletionCommand.name {
+                    guard let command = RoutineSoilCheckCompletionCommand(envelope)
+                    else { throw SyncWireValidationError.invalidRequest }
+                    let receipt = try await apiClient.sendOutboxCommand(command, context: context)
+                    receivedReceipt = true
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    try await store.validateRoutineCompletion(
+                        receipt, command: command, context: context, authority: apiClient.syncAuthority
+                    )
+                    result = .generic
+                } else {
+                    result = try await apiClient.sendOutboxCommand(envelope, context: context)
+                }
+                receivedReceipt = true
+                switch result {
+                case let .wateringDateCorrection(watermark), let .careRecommendationRefreshed(watermark):
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
+                case let .firstAidRecorded(receipt):
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    guard let command = FirstAidRecordCommand(envelope: envelope),
+                          try await store.confirmedFirstAidEntry(
+                              command, context: context, authority: apiClient.syncAuthority
+                          ) == receipt.entryId else {
+                        throw SyncWireValidationError.invalidPage
+                    }
+                case let .careUndone(reversalId, watermark):
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
+                    let confirmed: UUID?
+                    if firstAidUndo {
+                        confirmed = try await store.confirmedFirstAidUndo(
+                            envelope, context: context, authority: apiClient.syncAuthority
+                        )
+                    } else {
+                        confirmed = try await store.confirmedWateringUndo(
+                            envelope, context: context, authority: apiClient.syncAuthority
+                        )
+                    }
+                    guard confirmed == reversalId else { throw SyncWireValidationError.invalidPage }
+                case let .firstAidObserved(receipt):
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    guard let command = FirstAidObservationCommand(envelope: envelope),
+                          try await store.confirmedFirstAidObservation(
+                              command, context: context, authority: apiClient.syncAuthority
+                          ) == receipt.observationId else { throw SyncWireValidationError.invalidPage }
+                case let .plantDeleting(receipt):
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    guard let deleted = try await store.plantDeletionWatermark(
+                        plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                    ), deleted >= receipt.watermark else { throw SyncWireValidationError.invalidPage }
+                case let .basicCareEnabled(receipt):
+                    guard let watermark = SQLTimestamp.microseconds(from: receipt.enabledAt)
+                    else { throw SyncWireValidationError.invalidPage }
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
+                    let enabledAt = try await store.syncedBasicCareEnabledAt(
+                        plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                    )
+                    if enabledAt != watermark {
+                        guard let deleted = try await store.plantDeletionWatermark(
+                            plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                        ), deleted >= watermark else { throw SyncWireValidationError.invalidPage }
+                    }
+                case let .plantEdited(receipt):
+                    guard let edit = PlantEditCommand(envelope) else { throw SyncWireValidationError.invalidRequest }
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    if let card = try await store.syncedCollectionCard(
+                        plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                    ) {
+                        if card.revision > receipt.revision, card.careRevision >= receipt.careRevision { break }
+                        guard card.revision == receipt.revision, card.careRevision == receipt.careRevision,
+                              card.currentConditionSnapshotId == receipt.conditionSnapshotId
+                        else { throw SyncWireValidationError.invalidPage }
+                        switch edit.change {
+                        case let .name(name):
+                            guard card.personalName?.utf8.elementsEqual(name.utf8) == true
+                            else { throw SyncWireValidationError.invalidPage }
+                        case let .taxon(id):
+                            guard card.taxonId == id else { throw SyncWireValidationError.invalidPage }
+                        case let .light(light):
+                            let saved = try await store.syncedPlantConditions(
+                                for: card, context: context, authority: apiClient.syncAuthority
+                            )
+                            guard saved?.light == light || (card.currentConditionSnapshotId == nil && light == .unknown)
+                            else { throw SyncWireValidationError.invalidPage }
+                        case let .drainage(drainage):
+                            let saved = try await store.syncedPlantConditions(
+                                for: card, context: context, authority: apiClient.syncAuthority
+                            )
+                            guard saved?.drainage == drainage || (card.currentConditionSnapshotId == nil && drainage == .unknown)
+                            else { throw SyncWireValidationError.invalidPage }
+                        case let .watering(watering):
+                            let saved = try await store.syncedPlantConditions(
+                                for: card, context: context, authority: apiClient.syncAuthority
+                            )
+                            guard saved?.watering == watering || (card.currentConditionSnapshotId == nil && watering == .unknown)
+                            else { throw SyncWireValidationError.invalidPage }
+                        case let .potType(potType):
+                            let saved = try await store.syncedPlantConditions(
+                                for: card, context: context, authority: apiClient.syncAuthority
+                            )
+                            guard saved?.potType == potType || (card.currentConditionSnapshotId == nil && potType == .unknown)
+                            else { throw SyncWireValidationError.invalidPage }
+                        }
+                    } else {
+                        guard let deleted = try await store.plantDeletionWatermark(
+                            plantId: receipt.plantId, context: context, authority: apiClient.syncAuthority
+                        ), deleted >= receipt.watermark else { throw SyncWireValidationError.invalidPage }
+                    }
+                default:
+                    break
+                }
             } catch {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 // Cancellation/auth changes abort the drain without touching the captured queue.
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
+                    let observation = envelope.commandName == FirstAidObservationCommand.name
+                    let deletion = envelope.commandName == PlantDeleteReceipt.commandName
+                    if !receivedReceipt, (entry.commandName == ManualWateringAction.undoCommand
+                                          || entry.commandName == FirstAidRecordCommand.name || observation || deletion
+                                          || entry.commandName == PlantEditCommand.name
+                                          || entry.commandName == CareRecommendationRefreshCommand.name
+                                          || entry.commandName == RoutineSoilCheckCompletionCommand.name
+                                          || entry.commandName == RoutineSoilCheckUndoCommand.name
+                                          || entry.commandName == BasicCareEnableReceipt.commandName),
+                       !apiError.error.retryable,
+                       ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
+                        if observation, ["NOT_FOUND", "CONFLICT"].contains(apiError.error.code) {
+                            if let command = FirstAidObservationCommand(envelope: envelope), let photoId = command.photoId {
+                                if try await recoverRejectedFirstAidPhoto(command, photoId: photoId, context: context) {
+                                    blockedPlantIds.insert(command.plantId)
+                                    continue
+                                }
+                            } else {
+                                _ = try? await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+                            }
+                        }
+                        if entry.commandName == ManualWateringAction.undoCommand, !firstAidUndo {
+                            // Keep the existing journal until the current owner window is available.
+                            _ = try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+                        }
+                        try await store.finishOutboxEntry(
+                            operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                        )
+                        if onlyOperation == entry.operationId,
+                           entry.commandName == RoutineSoilCheckUndoCommand.name {
+                            throw RoutineUndoFailure.rejected
+                        }
+                        if onlyOperation == entry.operationId,
+                           entry.commandName == RoutineSoilCheckCompletionCommand.name {
+                            throw RoutineCompletionFailure.rejected
+                        }
+                        if onlyOperation == entry.operationId,
+                           entry.commandName == CareRecommendationRefreshCommand.name {
+                            throw CareRecommendationRefreshFailure.rejected
+                        }
+                        continue
+                    }
                     failure = String(decoding: try JSONEncoder().encode(apiError), as: UTF8.self)
+                } else if envelope.commandName == FirstAidObservationPhotoDraft.name {
+                    failure = "Observation photo upload failed"
                 } else {
                     failure = String(describing: error)
                 }
@@ -166,7 +452,12 @@ public actor SyncEngine {
                 try await store.acknowledgeCatalogueCreate(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic:
+            case let .plantDeleting(receipt):
+                try await store.acknowledgePlantDeletion(
+                    envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
+                )
+            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantEdited,
+                 .careRecommendationRefreshed, .basicCareEnabled:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )
@@ -175,6 +466,77 @@ public actor SyncEngine {
         }
 
         return committedCount
+    }
+
+    private func prepareFirstAidObservationPhoto(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
+    ) async throws -> FirstAidObservationCommand {
+        do {
+            return try await uploadFirstAidObservationPhoto(draft, context: context)
+        } catch let error as APIErrorResponse where error.isMissingPhoto || error.isIncompletePhoto {
+            // At this stage no observe has been sent. An expired ticket cannot be refreshed by replay.
+            let renewed = try await store.renewFirstAidPhotoDraft(
+                draft, context: context, authority: apiClient.syncAuthority
+            )
+            return try await uploadFirstAidObservationPhoto(renewed, context: context)
+        }
+    }
+
+    private func uploadFirstAidObservationPhoto(
+        _ draft: FirstAidObservationPhotoDraft, context: SyncSessionLease
+    ) async throws -> FirstAidObservationCommand {
+        let authority = apiClient.syncAuthority
+        let upload = try await store.firstAidPhotoUpload(draft, context: context, authority: authority)
+        if let assetId = upload.assetId {
+            do {
+                try await apiClient.confirmFirstAidPhoto(id: assetId, context: context)
+                return try await store.finalizeFirstAidPhoto(assetId, for: draft, context: context, authority: authority)
+            } catch let error as APIErrorResponse where error.isIncompletePhoto {
+                // A lost PUT may have left the upload incomplete. Keep the original ticket identity.
+            }
+        }
+        let ticket = try await apiClient.issueFirstAidPhotoUpload(jpeg: upload.jpeg, draft: draft, context: context)
+        try await store.checkpointFirstAidPhoto(ticket.photoAssetId, for: draft, context: context, authority: authority)
+        if ticket.expiresInSeconds == 0 {
+            try await apiClient.confirmFirstAidPhoto(id: ticket.photoAssetId, context: context)
+        } else {
+            try await apiClient.uploadFirstAidJPEG(upload.jpeg, ticket: ticket, context: context)
+        }
+        return try await store.finalizeFirstAidPhoto(ticket.photoAssetId, for: draft, context: context, authority: authority)
+    }
+
+    private func recoverRejectedFirstAidPhoto(
+        _ command: FirstAidObservationCommand, photoId: UUID, context: SyncSessionLease
+    ) async throws -> Bool {
+        let authority = apiClient.syncAuthority
+        do {
+            _ = try await pullDelta(for: context.ownerId, pageSize: 200, fullRefresh: false, context: context)
+            if try await store.confirmedFirstAidObservation(command, context: context, authority: authority) != nil {
+                return true
+            }
+            guard try await store.canReplaceRejectedFirstAidPhoto(command, context: context, authority: authority)
+            else { return false }
+            do {
+                try await apiClient.confirmFirstAidPhoto(id: photoId, context: context)
+                return false
+            } catch let error as APIErrorResponse where error.isMissingPhoto {
+                try await store.replaceRejectedFirstAidPhoto(command, context: context, authority: authority)
+                return true
+            }
+        } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            // Inconclusive readback keeps the exact observe, which checks the server receipt first.
+            try await apiClient.validateSyncContext(context)
+            return true
+        }
+    }
+
+    private func refreshCanonicalJournal(ownerId: UUID, watermark: Int64, context: SyncSessionLease) async throws {
+        _ = try await pullDelta(for: ownerId, pageSize: 200, fullRefresh: false, context: context)
+        guard let raw = try await store.currentWatermarkRaw(ownerId: ownerId),
+              let confirmed = SQLTimestamp.microseconds(from: raw), confirmed >= watermark else {
+            throw SyncWireValidationError.invalidPage
+        }
     }
 
     // MARK: - Delta Sync with since/until Window & Stable Cursor
@@ -290,6 +652,7 @@ public actor SyncEngine {
             items: items, ownerId: ownerId, watermark: watermark, wirePage: finalPage, changes: changes,
             fullRefresh: fullRefresh, context: context, authority: apiClient.syncAuthority
         )
+        for observer in canonicalSyncObservers.values { observer.yield(()) }
         if fullRefresh { planHistoryByOwner[ownerId] = nil }
         ingestSpecialEntities(items, ownerId: ownerId)
         if let watermark { invalidateReportCache(for: ownerId, newWatermark: watermark) }
@@ -395,4 +758,9 @@ public actor SyncEngine {
         planHistoryByOwner[ownerId] = nil
         reportCacheByOwner[ownerId] = nil
     }
+}
+
+private extension APIErrorResponse {
+    var isMissingPhoto: Bool { error.code == "NOT_FOUND" && !error.retryable }
+    var isIncompletePhoto: Bool { error.code == "CONFLICT" && error.retryable }
 }

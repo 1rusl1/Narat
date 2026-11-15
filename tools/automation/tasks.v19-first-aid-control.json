@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "v19-first-aid-control",
+      "description": "Independently verify first-aid action recording and one sourced pending control with atomic undo.",
+      "candidate_base": "874b049f5a062fbeb7dfae8a1dbff26566ed7f27",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/care_journal_http_test.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/migrations/202611120028_first_aid_control.sql",
+        "supabase/tests/first_aid_control.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v19-first-aid-control.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Local gates only. The controller owns staging and usage limits.",
+        "Keep the old journal receipt wire. Scope to canonical owner/plant problem diagnosis with an applicable published first action. Require separate interval evidence and access for one control, deduplicate, and withdraw only an unfinished new control on undo. Preserve journal facts without dates and prevent recurrence.",
+        "Numeric evidence is synthetic only. Control observation/photo, recurrence, 024 and StoreKit are outside this packet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19-A1",
+          "description": "Production entrypoints type-check and exact diff passes.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V19-A2",
+          "description": "HTTP and PostgreSQL fixtures exercise canonical admission, one control, receipt replay, owner isolation, expiry and undo.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

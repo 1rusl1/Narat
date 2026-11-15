@@ -1,0 +1,40 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-completion-race-links",
+      "description": "Independently verify the real PostgreSQL concurrent completion, exact retry and stale distinct operation on the V19 rule.",
+      "candidate_base": "3e0143e40a4e479da0f1ad5e9485148994058e5c",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "tools/automation/tasks.v19-routine-completion-race-links.json",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "docs/handoff_status.md"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only, local fixture gate, no external service, stage mutations or changes to write paths. Verify observations of both owner-lock waiters, canonical receipt replay, distinct stale rejection, one linked care fact and unchanged water/quota.",
+        "Address the previous Reviewer finding explicitly: persisted receipt equals winner; assert both linkage directions and rule/due on the task, and exact original water snapshot."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19RACE1",
+          "description": "The candidate exact diff is the documented gate change.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19RACE2",
+          "description": "Both local clean and upgrade execute the new overlap scenario and preserve existing fixture regressions.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

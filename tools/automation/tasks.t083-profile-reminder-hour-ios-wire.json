@@ -1,0 +1,36 @@
+{
+  "tasks": [
+    {
+      "id": "t083-profile-reminder-hour-ios-wire",
+      "description": "Read and write the signed-in owner's reminder hour through the accepted typed profile HTTP routes.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Forward Swift client transport only. Return an exact unified Git diff in JSON with separate headers, controller applies. No UI, scheduler, LocalStore, outbox, server, notification claim or live test changes.",
+        "Live plants-api v28 established GET /me returns {profile:{preferred_locale,reminder_hour_local}} and POST /commands profile.update returns that profile plus SQL watermark. Request includes no plant target, event UUID in operation_id and associated header, payload_json contains only reminder_hour_local integer 0...23. A repeated call may use the same typed envelope. Do not decode this small private response as SyncWireProfileDTO whose wider fields are required.",
+        "Use the existing session-bound SyncSessionLease read/send transport, strict 0...23/en or pl and SQL timestamp validators, explicit session/cancel guard before and after HTTP. UTC watermark does not imply local timezone changes. Reject malformed or wrong-hour receipt. Add focused CollectionWireTests for exact authenticated requests, client-side bounds, stale/mismatched receipt, no owner change/cancel acceptance and valid exact retry. T083/T084 open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083IW1",
+          "description": "Swift compile/unit gate confirms owner-bound profile settings and typed payload.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-deletion-namespace-holds",
+      "description": "Detect untracked private objects and unfinished guest transfers before an account purge can be considered complete.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150062_account_deletion_namespace_holds.sql",
+        "supabase/migrations/202611150060_account_deletion_intent.sql",
+        "supabase/migrations/202611150061_account_deletion_media_inventory.sql",
+        "supabase/migrations/202611120021_guest_photo_claim.sql",
+        "supabase/migrations/202610200004_collection.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150062_account_deletion_namespace_holds.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Internal forward SQL projection and focused local tests only. Return exact unified diff in JSON. Controller applies and tests. No remote, storage or DB deletion, credentials, grants, public paths, workers or app changes.",
+        "An owner deletion may not be complete if its private analysis-inputs owner/id namespace contains objects untracked by its photo_assets or an unfinished guest transfer may still create an owner object. Add an internal queued deleting-owner read-only projection of aggregated blocker counts only. Validate the exact persisted 060 request against its account.delete receipt the same way as 061. Return SQL NULL for unavailable owner/no request. Count orphan keys only under this lowercase UUID directory in the private analysis-inputs bucket, excluding canonical known owned keys; never return raw keys or assume orphans are safe to delete. Other buckets/owners never counted. Also count unresolved guest sources directly scoped by guest_owner_id and still-prepared/live or copying claims targeting this owner (see actual guest SQL). Do not infer ownership by shared installation binding. Counts intentionally fail closed until cleanup proves resolution.",
+        "Reuse existing predicate or small private helper where it reduces divergence without changing 061 public behavior. Deny all ordinary/service execution. Add pgTAP in existing auth_registration_profile fixture with version compatibility. Include canonical/unknown/neighbor/bucket, an outstanding guest transfer with no object yet, unsafe/noncanonical owner path, settled or cleaned history, missing/forged request, and no mutations/no paths emitted. T082/T083 remain open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083N1",
+          "description": "Focused diff and safe no-write scope.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T083N2",
+          "description": "Clean/upgrade PostgreSQL covers orphan namespace, in-flight target and owner isolation.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

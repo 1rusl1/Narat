@@ -1,0 +1,53 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-undo-card",
+      "description": "Show owner routine soil-check history in the English saved plant card and reverse a check through the accepted durable outbox.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Return valid unified Git diff with exact source context, separate headers and complete tests. Controller owns writes. Reuse RoutineUndoTask and owner-bound pending/enqueue/retry routines, completion outbox, canonical disk and validated recommendation. No server, signed build or store schema changes.",
+        "Read routine history from canonical owner-synced care_tasks/care_entries. Require linked saved plant and task shape action=check_soil, condition=check_soil_first and canonical occurrence key (lowercase rule UUID + ':' + due date). Assert both linkage directions for an active undoable entry. Keep historical voided routine entries visible even after a valid re-completion replaces one task's completed_entry_id, with no second undo action. Manual watering and first-aid stay in their existing views and are never eligible. Handle incomplete/legacy notes safely and bind owner session. Tighten existing routine task shape as needed and adapt only routine fixture identifiers, preserving other fixtures.",
+        "Surface EN history row, a confirm/cancel action for active checks, exact pending retry across restart and error without false success. Disable competing case of mark/undo and existing destructive/edit flows. Only confirmed canonical reversal updates the journal and advice; no optimistic voiding. Completion should refresh the dedicated routine history instead of using the first-aid journal. Reuse date and accessibility helpers.",
+        "Add a focused EN test testRoutineSoilCheckUndoAfterRestart with a separate DEBUG fixture mode. First complete a check, verify its history row, cancel the first undo, confirm another attempt with lost first HTTP receipt, restart and tap retry with exact envelope, observe voided history and restored dated rule. Verify watering and first-aid unaffected by classification, using fixture or unit tests. Run the existing completion-after-restart test alongside. No production network or broad snapshots. Leave T160/T171 open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19AJ1",
+          "description": "Swift units and diff pass with canonical history and strict owner/occurrence filtering.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "V19AJ2",
+          "description": "Targeted EN XCUITests cover existing mark and new visible undo through restart.",
+          "mode": "fixture",
+          "checks": [
+            "v19-care-ui"
+          ]
+        }
+      ]
+    }
+  ]
+}

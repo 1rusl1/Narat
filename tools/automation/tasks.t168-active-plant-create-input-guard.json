@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "t168-active-plant-create-input-guard",
+      "description": "Reject newly submitted camera light and retired seasonal overrides in the canonical plant create SQL writer while retaining legitimate historical replay.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150058_guard_new_plant_create_context.sql",
+        "supabase/migrations/202611120020_identification_plant_photo.sql",
+        "supabase/migrations/202611130042_plant_edit_conditions.sql",
+        "supabase/tests/diagnosis_jobs.test.sql",
+        "supabase/functions/plants-api/collection.ts",
+        "supabase/functions/_shared/tests/collection_http_test.ts"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150058_guard_new_plant_create_context.sql",
+        "supabase/tests/diagnosis_jobs.test.sql"
+      ],
+      "constraints": [
+        "Return a valid unified Git diff with exact current context. Controller applies and verifies. Forward 058 plus existing gate-covered synthetic SQL fixture only. No Edge behavior changes, staging, payment/provider network, bulk changes or prior migration edits.",
+        "The live create Edge allowlist rejects camera_estimate and explicit season_override already. Enforce the same retirement at the underlying service-only execute_plant_create_command for new operations. Reject explicit camera_estimate light_source from supplied conditions/overrides and explicit season_override even null from the outer payload/conditions/overrides, with SQLSTATE 22023, after exact receipt lookup and idempotency mismatch so documented existing historical receipts can replay and changed payload still conflicts. Keep authorized manual/unknown semantics, canonical normalized source, catalogue and identification-photo save, capacity, watermarks, no silent camera-to-manual recoding. Reuse the existing function's signature and grants and preserve unrelated behavior. Prefer one fail-closed targeted forward transformation. If authoritative stored from an existing legacy draft is not a newly supplied field, avoid rewriting that source or stored history; this package is scoped to payload guard only.",
+        "Add version-aware pgTAP to diagnosis_jobs.test.sql: camera under each applicable payload, retired season nested/top and null, exact legacy receipt replay (fixture created as historical operation), changed replay conflict, no extra plants/snapshots/quotas on denied requests, manual/unknown valid save. Retain existing registration and photo checks. T168/T169 remain partial for client legacy and special old writer paths."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T168SQL1",
+          "description": "Diff restricted to forward writer guard and covered SQL fixture.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T168SQL2",
+          "description": "PostgreSQL clean and upgrade and existing Deno Edge guard tests pass.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql",
+            "deno-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

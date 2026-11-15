@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-data-pass",
+      "description": "Review atomic cleanup of analysis projections and private text after Storage.",
+      "candidate_base": "7993a89e9858c0aa20a8c777c7885d1822ff64f2",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/plant_storage_purge_test.ts",
+        "supabase/functions/maintenance/plant-deletions.ts",
+        "supabase/functions/plants-api/index.ts",
+        "tools/automation/tasks.v13-plant-delete-data-pass.json",
+        "supabase/migrations/202611130039_plant_delete_data_pass.sql",
+        "supabase/tests/plant_delete_data_pass.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Local fixtures only. Preserve owner command receipt and Storage path. Verify transactional rollback, service auth, and idempotent retry. No deployment, scheduler, 024 or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-H1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V13-H2",
+          "description": "Edge and PostgreSQL fixtures verify service auth, Storage phase gate, rollback, and exact retry.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

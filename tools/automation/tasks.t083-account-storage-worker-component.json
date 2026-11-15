@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-storage-worker-component",
+      "description": "Implement the targeted account Storage batch component and fresh verification against the accepted private plan.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/maintenance/account-deletion-storage.ts",
+        "supabase/functions/maintenance/plant-deletions.ts",
+        "supabase/functions/plants-api/diagnosis-media.ts",
+        "supabase/functions/_shared/tests/account_deletion_storage_test.ts",
+        "supabase/migrations/202611150063_account_deletion_storage_work_plan.sql"
+      ],
+      "write_files": [
+        "supabase/functions/maintenance/account-deletion-storage.ts",
+        "supabase/functions/_shared/tests/account_deletion_storage_test.ts"
+      ],
+      "constraints": [
+        "Local production component plus isolated Deno mocks. Return exact Git diff in JSON; controller applies. No endpoint, worker scheduling, SQL grants, staging, real removals, profile/Auth/purchase changes or unrelated refactor. The private RPC is still ungranted, so no external execution path is added.",
+        "Implement a single-account one-batch helper consistent with runPlantStoragePurge. Validate the canonical lowercase owner UUID and exact RPC plan shape, same owner_id, at most 20 ordered unique lowercase photo UUIDs, nonnegative safe integer hold counts, and consistent storage_ready. Derive only ownerUUID/photoUUID under the existing private DIAGNOSIS_PHOTO_BUCKET; accept no storage paths from callers/SQL. Use one bounded idempotent remove call for a nonempty verified batch, then a fresh from-start read of the accepted work plan. Never report ready without that evidence, never change DB/account state, preserve pending if objects/holds survive. Surface retryable I/O failure without logging raw objects, credentials or owner data. Absent plan before work is no work; disappearing/malformed plan after remove is error rather than readiness.",
+        "Deno fixture cases: no plan, already ready, >1 page continuation, exact scoped bucket/key map, owner mismatch or invalid shape rejected before remove, remove failure, stale surviving object/holds, and fresh ready only after successful independent read. Reuse existing app types and mocked HttpClient style. T082/T083 remain open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083W1",
+          "description": "Scoped diff with typechecked internal component.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "deno-check"
+          ]
+        },
+        {
+          "id": "T083W2",
+          "description": "Deno mock Storage and canonical plan tests verify targeted and idempotent only.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

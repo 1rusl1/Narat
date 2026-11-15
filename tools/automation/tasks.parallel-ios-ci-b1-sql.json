@@ -1,0 +1,51 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-ios-ci-b1-sql",
+      "description": "Read-only local configuration acceptance of controller-owned portable CI adapter extended to execute BOTH existing cap/legacy suite and newly accepted B1 --bind suite. Workflow command unchanged; actual SQL business gates unchanged. No cloudCI/T006 or parent closure.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "tools/automation/parallel_ios_ci_sql_gate.py",
+        "tools/automation/parallel_backend_quota_gate.py",
+        ".github/workflows/validate.yml",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/migrations/202611090009_quota_settlement.sql",
+        "supabase/migrations/202611090010_installation_quota_bind.sql",
+        "supabase/tests/registration_reservation.test.sql",
+        "supabase/tests/registration_admission.test.sql",
+        "supabase/tests/registration_bind.test.sql"
+      ],
+      "write_files": [],
+      "constraints": [
+        "READONLY/noDeveloper. Controller owns portable CI helper preparation. Inspect exact delta: helper formerly called accepted.main once with --accounting --legacy-guard --cap-regression; now sequentially calls that unchanged suite then accepted.main with --bind. Same explicit PG17/pgTAP version/path validation, argv restoration in finally, each suite fresh private DB cluster/cleanup, failfast nonzero exit. No SQL/assertion/engine/workflow/app/contract changes, no fake success or dropped oldcapregression. Do not edit or run Git yourself.",
+        "B1 SQL005–010 bc6a879/runtimea367d0b accepted independently and combined A integration run completed before this packet. SQL11/12 unaccepted not included. New CI coverage must actually run cap235pgTAP clean/upgrade+4realcapraces and B1bind384pgTAP clean/upgrade+6rounds20simultaneous observed ownerlock waiting connections after99actualadmit/finalize perround. All preexisting public rows preserved,12UTCcases perDB. Check raw logs prove both suites and cleanup, not a summary-count claim. Independent sequential execution uses existing business gate ROOT/BIN/PGTAP, never liveDB.",
+        "CI already calls the helper once and uploads its rawstdout/stderr log with failure-preserving pipefail. No new workflow step, dependency or credentials. Its existing bounded12minSQLstep remains ample locally but cloudrunner/dependency installation notobserved; do not claim cloud outcome. GitHub access is unavailable (plugininstalledfalse,loggedoutbrowser,ghabsent). T006 remainsopen.",
+        "Run actual helper through parallel-ios-ci-sql check with explicit localPG17/bin and pgtap.sql, plus123automation/336Deno and YAML/Bashsyntax/diff. Do not rerun unchanged iOS184unit18UI/Release/Simulator or claim new executions: exact iOS source/gates remain accepted from previousT162/B1integration. This packet changes only Python CI adapter orchestration, not underlying tests.",
+        "Preserve routing/budgets, target origin/codex/plants-ios; use unchanged CIacceptanceconfig. No use of check_run_id token for plain selector output, no engine edits. Controller verifies source fingerprint before/after, documents limits and only then ordinarypromotion of B1+CI from separate cleancheckout. Localconfiguration/fixtures not liveproof, T036/T163/openparents untouched."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Minimal CI adapter change preserves failure/cleanup and existing workflow syntax/semantics, no unrelated source changes or cloud claims.",
+          "checks": [
+            "diff-check",
+            "parallel-ios-ci-workflow-syntax"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "AC2",
+          "description": "Actual portable helper sequentially passes both complete accepted cap235each/4races and B1bind384each/6x20realownerlock suites with oldrows, plus123automation and336Deno on same source, independentReviewQA no unresolvedfindings.",
+          "checks": [
+            "parallel-ios-ci-sql",
+            "automation-tests",
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

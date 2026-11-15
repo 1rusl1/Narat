@@ -33,6 +33,8 @@
 	<string>$(GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>NaratSupabasePublishableKey</key>
 	<string>$(NARAT_SUPABASE_PUBLISHABLE_KEY)</string>
+	<key>NaratStagingAnalysisHost</key>
+	<string>$(NARAT_STAGING_ANALYSIS_HOST)</string>
 	<key>NaratSupabaseURL</key>
 	<string>$(NARAT_SUPABASE_URL)</string>
 </dict>

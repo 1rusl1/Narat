@@ -8,7 +8,7 @@ import UIKit
 
 @MainActor
 final class CatalogueUIFixtureTests: XCTestCase {
-    private let input = CatalogueInput(speciesSlug: "fixture-fern", personalName: " e\u{0301} ")
+    private let input = CatalogueInput(speciesSlug: "fixture_fern", personalName: " e\u{0301} ")
 
     private func model(
         _ h: CatalogueUIFixtureContext, flow: UUID = UUID(), operation: UUID = UUID()
@@ -59,6 +59,14 @@ final class CatalogueUIFixtureTests: XCTestCase {
         XCTAssertEqual(h.server.snapshot.plants.count, 3)
         let refreshed = try await capacity(h)
         XCTAssertEqual(refreshed.plantCount, 3)
+        let scope = try await h.connection.sessionSnapshot()
+        let lease = try await h.connection.collectionLease(expected: scope)
+        let collection = try await h.connection.repository!.collectionCards(context: lease)
+        XCTAssertFalse(collection.isCached)
+        let cards = collection.cards
+        XCTAssertEqual(cards.count, 3)
+        let savedCard = try XCTUnwrap(cards.first { $0.id == confirmation.receipt.plantId })
+        XCTAssertEqual(savedCard.speciesSlug, input.speciesSlug)
         let rows = try await h.connection.store!.activeSyncedEntities(ownerId: initial.ownerId, entityType: "plants")
         let row = try XCTUnwrap(rows.first { $0.id == confirmation.receipt.plantId })
         let data = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(row.payloadJSON.utf8)) as? [String: Any])
@@ -74,7 +82,7 @@ final class CatalogueUIFixtureTests: XCTestCase {
         XCTAssertNil(data["owner_id"])
         let pending = try await h.connection.store!.pendingOutboxEntries(for: initial.ownerId)
         XCTAssertTrue(pending.isEmpty)
-        let changed = try CatalogueInput(speciesSlug: "fixture-fern", personalName: "changed").makeEnvelope(operationId: envelope.operationId)
+        let changed = try CatalogueInput(speciesSlug: "fixture_fern", personalName: "changed").makeEnvelope(operationId: envelope.operationId)
         do {
             _ = try await h.connection.apiClient!.sendCatalogueCreate(changed)
             XCTFail("Changed replay must be rejected")
@@ -207,7 +215,7 @@ final class CatalogueUIFixtureTests: XCTestCase {
         let checkpoint = try XCTUnwrap(model.checkpoint)
         XCTAssertEqual(checkpoint.flowId, flow)
         XCTAssertEqual(checkpoint.ownerId, snapshot.session.userId)
-        XCTAssertEqual(model.input, CatalogueInput(speciesSlug: "fixture-fern", personalName: "Luna"))
+        XCTAssertEqual(model.input, CatalogueInput(speciesSlug: "fixture_fern", personalName: "Luna"))
         XCTAssertEqual(model.envelope, checkpoint.envelope)
         XCTAssertEqual(entry.operationId, checkpoint.operationId)
         XCTAssertEqual(Data(entry.payloadJSON.utf8), Data(checkpoint.envelope.payloadJSON.utf8))
@@ -381,11 +389,7 @@ final class CatalogueUIFixtureTests: XCTestCase {
         }
     }
 
-    func testNamespaceIsolationPersistentAnonymousSDKRPCAndFailClosedURLs() async throws {
-        struct Page: Decodable {
-            struct Card: Decodable { let plant_id: String; let display_name: String; let hero_image: String? }
-            let items: [Card]
-        }
+    func testNamespaceIsolationPersistentAnonymousSDKCatalogueAndFailClosedURLs() async throws {
         let name = UUID().uuidString
         let first = try await CatalogueUIFixtures.make(namespace: name, scenario: .guestProviderSuccess)
         let other = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .cap3)
@@ -406,11 +410,21 @@ final class CatalogueUIFixtureTests: XCTestCase {
         XCTAssertTrue(otherRows.isEmpty)
         let foreign = await other.connection.restoreModel(ownerId: current.session.userId, flowId: checkpoint.flowId, expected: otherSnapshot)
         guard case .unavailable(.sessionChanged) = foreign else { return XCTFail("Foreign owner must fail closed") }
-        for locale in ["en", "pl"] {
-            let page: Page = try await reopened.connection.client!.rpc("search_catalogue_species", params: ["p_locale": locale]).execute().value
-            XCTAssertEqual(page.items.first?.plant_id, "fixture-fern")
-            XCTAssertEqual(page.items.first?.display_name, locale == "pl" ? "Paproć" : "Fern")
-            XCTAssertNil(page.items.first?.hero_image)
+        let api = try XCTUnwrap(reopened.connection.apiClient)
+        for locale in [SupportedLocale.en, .pl] {
+            let page = try await api.searchPublishedCatalogue(query: "Nephrolepis", locale: locale, limit: 1, offset: 0)
+            XCTAssertEqual(page.items.first?.id, "fixture_fern")
+            XCTAssertEqual(page.items.first?.displayName, locale == .pl ? "Paproć" : "Fern")
+            XCTAssertNil(page.items.first?.heroImage)
+            let card = try await api.fetchPublishedSpecies(slug: "fixture_fern", locale: locale)
+            XCTAssertEqual(card.taxonId, page.items.first?.taxonId)
+            let byTaxon = try await api.fetchPublishedSpecies(taxonId: card.taxonId, locale: locale)
+            XCTAssertEqual(byTaxon.id, card.id)
+            XCTAssertEqual(byTaxon.displayName, card.displayName)
+            let end = try await api.searchPublishedCatalogue(query: "Nephrolepis", locale: locale, limit: 1, offset: 1)
+            XCTAssertEqual(end.releaseVersion, page.releaseVersion)
+            XCTAssertEqual(end.total, 1)
+            XCTAssertTrue(end.items.isEmpty)
         }
         _ = try await reopened.connection.client!.auth.refreshSession()
         let user = try await reopened.connection.client!.auth.user()

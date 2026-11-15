@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-owner-history",
+      "description": "Read canonical routine soil-check history for one saved plant and distinguish it from watering and first aid.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Return a valid unified Git patch with exact current context and separate headers in JSON. Controller applies and tests. Scope backend-independent repository/read model and focused tests. No UI, transport, schema, model migration or unrelated changes.",
+        "Offer owner-bound routine history for a saved plant through CollectionRepository. Reuse LocalStore's private RoutineUndoTask and CatalogueCareJournalEntry. Require an ordinary routine task with valid rule UUID, action check_soil, condition check_soil_first and exact occurrence_key lowercase rule UUID + ':' + due local day. Exclude first aid, watering, other plants/owners, tombstones and unlinked entries. Active entry must be pointed to by completed task and link back. Keep genuinely voided routine entries visible after the same task is re-completed and its latest completion points elsewhere. Return id, taskId, local day and state (or canUndo) with stable newest-first ordering; no duplicate display. Validate owner/session and cancellation, cohere in one canonical read. Reuse the strengthened routine identity in undo validation and adapt only routine-undo synthetic occurrence keys as needed.",
+        "Add focused CollectionWireTests for active, voided, recompleted, unrelated action, arbitrary occurrence and wrong owner/plant. Avoid any UI work or fixture network. Parent tasks stay open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19HIST1",
+          "description": "Scoped diff and Swift gate verify real owner-bound history classification with no regressions.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

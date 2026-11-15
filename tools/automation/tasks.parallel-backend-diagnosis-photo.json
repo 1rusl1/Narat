@@ -1,0 +1,77 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-diagnosis-photo-local",
+      "description": "Read-only acceptance of the narrow authenticated permanent test-account photo-to-diagnosis server path. Inspect current implementation and fixture evidence.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "specs/001-plants-ios-mvp/contracts/diagnosis-photo-http.md",
+        "knowledge-base/releases/staging-diagnosis-v1/monstera-overwatering.json",
+        "knowledge-base/releases/staging-diagnosis-v1/README.md",
+        "supabase/functions/_shared/AnalysisValidator.ts",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/analysis-worker/diagnosis-persistence.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/plants-api/media.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/plants-api/diagnosis-media.ts",
+        "supabase/migrations/202611110013_diagnosis_upload.sql",
+        "supabase/migrations/202611110014_diagnosis_jobs.sql",
+        "supabase/tests/diagnosis_jobs.test.sql",
+        "supabase/tests/diagnosis_upload.test.sql",
+        "tools/automation/parallel_backend_diagnosis_live.py",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/parallel_backend_access_test.ts",
+        "supabase/migrations/202611090008_quota_reservation.sql",
+        "supabase/migrations/202611090009_quota_settlement.sql"
+      ],
+      "write_files": [],
+      "evidence_files": [
+        "specs/001-plants-ios-mvp/contracts/diagnosis-photo-http.md",
+        "knowledge-base/releases/staging-diagnosis-v1/monstera-overwatering.json"
+      ],
+      "constraints": [
+        "Explicit full snapshot audit of this narrow backend slice. Controller materialized the candidate, use checks-first, no Developer/implementation changes. Existing auth, collection wire and accepted quota logic must remain intact. Prior engine prepare/summary merged 8b2c637. No CI, iOS, deployment, secrets, live account changes or actual provider calls by model roles.",
+        "Production private photo ticket owns its asset and operation receipt. Verify 60-second application signature and DB expiry, bearer owner, bounded image format/size/SHA256, private bucket and no upsert, retry/complete after lost response, wrong-owner refusal. SQL checks use a Storage metadata fixture and SDK transport fixture, not deployed Storage.",
+        "One active permanent owner. Fresh job creation, quota admission and receipt atomic. Replays precede availability/quota. Owner-scoped reads and expiry release via status/new create. A single target lease and budget start, stale lease cannot finalize. Worker downloads verified stored bytes, uses pinned published catalogue/KB, real production Anthropic SDK entrypoint and explicit no-sampling Haiku5.5 body. Provider responses in local tests are mocks.",
+        "Preserve provider failure/no-quota semantics and accepted quota/existing HTTP gates. Status only exposes the matching validated projection. EN/PL display names come from pinned data. One staging Monstera profile validated, with three independent factual sources and no calendar interval. Artifact not applied to staging; no deployment, provider, live Storage or full T031/T033/T034 completion claim. Installation, guest transfer, saving diagnosis, background expiry maintenance outside this slice.",
+        "Independent Astra Reviewer and QA. Judge actual configured checks/evidence and source, not an empty patch. No changes to tests/gates/config or handling of credentials. Staging auth/profiles were checked separately, missing Anthropic secret and staging migration/KB prerequisites are documented in handoff."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Private upload and owner-scoped production API-to-worker fixture. Replays, refusal, invalid image, missing provider and label/KB scope.",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-access-http"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Real clean/upgrade PostgreSQL fixture gate for owner isolation, upload receipts, atomic reservation, lease/budget, immutable settlement and quota regressions.",
+          "checks": [
+            "parallel-backend-diagnosis-sql",
+            "parallel-backend-cap-regression"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Actual API/worker entrypoints typecheck and source diff check.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

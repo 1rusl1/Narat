@@ -4,6 +4,8 @@
 // confidence in [0,1], visual_markers membership, and compact EN/PL actions.
 
 import Ajv2020Import from "ajv/dist/2020";
+import conditionProfileSchema from "../../../specs/001-plants-ios-mvp/contracts/condition-profile.schema.json" with { type: "json" };
+import plantProfileSchema from "../../../specs/001-plants-ios-mvp/contracts/plant-profile.schema.json" with { type: "json" };
 
 export const CANONICAL_CONDITION_IDS = [
   "overwatering",
@@ -180,9 +182,44 @@ export interface CanonicalConditionProfile {
   };
 }
 
+export interface CanonicalPlantCareProfile {
+  schema_version: "2.0";
+  kb_release_id: string;
+  record_version: number;
+  plant_id: string;
+  provenance: ProfileProvenance;
+  actions: ProfileAction[];
+}
+
+export interface PhotoIdentificationCatalogue {
+  releaseId: string;
+  species: ReadonlyMap<string, { scientificName: string; displayName: string }>;
+}
+
+export type PhotoIdentificationResult =
+  & {
+    schema_version: "1.0";
+    job_id: string;
+    mode: "identification";
+    catalogue_release_id: string;
+  }
+  & (
+    | {
+      identification_status: "identified";
+      plant_id: string;
+      plant_display_name: string;
+    }
+    | {
+      identification_status: "unknown";
+      plant_id: null;
+      plant_display_name: null;
+    }
+  );
+
 export interface PublishedReleaseCatalog {
   kbReleaseId: string;
   plantIds: Set<string>;
+  plantScientificNames?: Map<string, string>;
   genusIds: Set<string>;
   conditionProfiles: Map<CanonicalConditionId, CanonicalConditionProfile>;
 }
@@ -197,22 +234,20 @@ export interface ValidationOutcome {
 // must fail before the resolver reads compact fields. No v1 conversion is performed.
 const Ajv2020 = (Ajv2020Import as unknown as { default?: typeof Ajv2020Import.default }).default ??
   (Ajv2020Import as unknown as typeof Ajv2020Import.default);
-const conditionAjv = new Ajv2020({ allErrors: true, strict: false });
-conditionAjv.addFormat("uuid", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-conditionAjv.addFormat("uri", (value: string) => {
+const profileAjv = new Ajv2020({ allErrors: true, strict: false });
+profileAjv.addFormat("uuid", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+profileAjv.addFormat("uri", (value: string) => {
   try {
     return Boolean(new URL(value).protocol);
   } catch {
     return false;
   }
 });
-conditionAjv.addFormat("date-time", (value: string) =>
+profileAjv.addFormat("date-time", (value: string) =>
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value) &&
   Number.isFinite(Date.parse(value)));
-const validatePublishedCondition = conditionAjv.compile(JSON.parse(Deno.readTextFileSync(new URL(
-  "../../../specs/001-plants-ios-mvp/contracts/condition-profile.schema.json",
-  import.meta.url,
-))));
+const validatePublishedCondition = profileAjv.compile<CanonicalConditionProfile>(conditionProfileSchema);
+export const validatePublishedPlantCare = profileAjv.compile<CanonicalPlantCareProfile>(plantProfileSchema);
 
 export function validateConditionProfileSemantics(
   raw: unknown,
@@ -225,7 +260,7 @@ export function validateConditionProfileSemantics(
       ),
     };
   }
-  const profile = raw as CanonicalConditionProfile;
+  const profile = raw;
   const errors: string[] = [];
   const actionIds = new Set<string>();
   for (const action of profile.actions) {

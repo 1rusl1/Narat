@@ -1,0 +1,19 @@
+{
+  "source_url": "https://identify.plantnet.org/oc/k-world-flora/species/Philodendron%20%C3%97%20domesticum%20G.S.Bunting/data",
+  "source_sha256": "5c02c780759dc41f7daf629789c9c13eae22e6ca27e872a350149f9b2b22c08c",
+  "taxon_label": "Philodendron × domesticum G.S.Bunting",
+  "observation_id": "1020626778",
+  "image": {
+    "@type": "ImageObject",
+    "contentUrl": "https://bs.plantnet.org/image/o/f6f1246b36f87d07f9419b1c33c250fc2e0ac38f",
+    "license": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "copyrightNotice": "Chérif-Jacques Allali",
+    "creditText": "Chérif-Jacques Allali",
+    "creator": [
+      {
+        "@type": "Person",
+        "name": "Chérif-Jacques Allali"
+      }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-undo-outbox",
+      "description": "Persist owner routine soil-check reversal through loss, restart and canonical sync before acknowledging it.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Return valid unified Git diff with exact source context and separate diff headers in JSON. Do not edit worktree directly. Use the accepted RoutineSoilCheckUndoCommand and typed receipt. Scope is store, engine, repository, focused unit tests only. No UI, server, or release changes.",
+        "Enqueue owner/plant/entry-scoped undo only for a synced active ordinary routine check with a linked completed care_task and matching action/condition/occurrence shape. Exclude manual first aid, watering, foreign, deleted, unlinked and stale identities. Reuse an exact saved undo for retries after ambiguous success; lock competing undo/mark operations per plant without mutating their identity or impacting unrelated outbox commands.",
+        "Dispatch through typed transport and refresh authorized owner sync up to receipt watermark. Before ACK validate the original now-voided check entry, its routine task identity and the immutable reversal linked to this entry and exact operation. Normally the task is superseded and points to the undone entry. If a second device re-completed the same occurrence before replay, the same task can now point to a different active completed entry. Accept that only with the exact independent persisted reversal and valid canonical task/replacement links; do not change the latest server state or retry forever. Preserve strict identity, cancellation and account ABA checks. Distinguish .pending, .confirmed, terminal .rejected and absent .unconfirmed without treating local removal as success.",
+        "Add focused disk-backed tests for first response loss, reopen and exact replay, valid owner sync linkage, rejecting wrong or missing reversal, and correct replay if authoritative task was re-completed. No UI and no network, changes confined to local fixture and accepted transport path. T160/T171 remain open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19AUNDO2",
+          "description": "Swift gate verifies exact durable reversal, canonical tombstone and reversal linkage, no false success and restart.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

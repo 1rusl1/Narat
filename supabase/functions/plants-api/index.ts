@@ -8,15 +8,12 @@ import {
   errorResponse,
   extractBearerToken,
   jsonResponse,
+  matchesSecret,
   RequestContext,
   requireActiveOwner,
+  requireUuid,
   resolveLocale,
 } from "../_shared/http.ts";
-import {
-  handleNotificationClaim,
-  NotificationClaimResponse,
-  NotificationClaimRpcAdapter,
-} from "./notifications.ts";
 import {
   handleInstallationBind,
   handleInstallationRegister,
@@ -24,6 +21,7 @@ import {
 } from "./installations.ts";
 import {
   AnalysisAccessQueryAdapter,
+  createAnalysisAccessQueryAdapter,
   handleGetAnalysisAccess,
 } from "./analysis-access.ts";
 import {
@@ -35,7 +33,17 @@ import {
   handleCreateAnalysisJob,
   handleGetAnalysisJob,
 } from "./analysis.ts";
-import { handleGetSync, handlePlantCreate } from "./collection.ts";
+import { runPlantDataPurge, runPlantPurgePage, runPlantStoragePurge } from "../maintenance/plant-deletions.ts";
+import { runAccountStoragePurge } from "../maintenance/account-deletion-storage.ts";
+import { createDiagnosisWorker } from "../analysis-worker/index.ts";
+import { createGuestPhotoApi } from "./guest-photo.ts";
+import { createDiagnosisJobs } from "./diagnosis-jobs.ts";
+import { createDiagnosisMedia } from "./diagnosis-media.ts";
+import { handleGetSync } from "./collection.ts";
+import { handleCollectionCommand } from "./care-journal.ts";
+import { handleCareRecommendation } from "./care-recommendation.ts";
+import { handlePublishedCatalogue } from "./catalogue.ts";
+import { handleGetProfileSettings } from "./profile-settings.ts";
 
 // The default resolver still authenticates through Supabase; tests can supply
 // a real client with a mocked transport without reading credentials or using the network.
@@ -44,13 +52,23 @@ export type AuthClientFactory = (token: string) => SupabaseClient | null;
 export interface PlantsApiDependencies {
   resolveRequestContext?: (req: Request) => Promise<RequestContext>;
   authClientFactory?: AuthClientFactory;
-  notificationAdapter?: NotificationClaimRpcAdapter;
   installationsAdapter?: InstallationsStoreAdapter;
   analysisAccessAdapter?: AnalysisAccessQueryAdapter;
   mediaAdapter?: MediaStorageAdapter;
+  diagnosisMedia?: ReturnType<typeof createDiagnosisMedia>;
   analysisJobAdapter?: AnalysisJobStoreAdapter;
+  diagnosisJobs?: ReturnType<typeof createDiagnosisJobs>;
+  guestPhoto?: ReturnType<typeof createGuestPhotoApi>;
+  handlePlantPurge?: (
+    req: Request, id: string | null, phase: "storage" | "data" | "sweep",
+  ) => Promise<Response>;
+  handleAccountStoragePurge?: (req: Request, ownerId: string) => Promise<Response>;
+  handleGuestPhotoMaintenance?: (req: Request) => Promise<Response>;
+  handleProfileSettings?: (req: Request, ctx: RequestContext) => Promise<Response>;
   handleSync?: (req: Request, ctx: RequestContext, url: URL) => Promise<Response>;
   handleCommand?: (req: Request, ctx: RequestContext) => Promise<Response>;
+  handleCareRecommendation?: (req: Request, ctx: RequestContext, plantId: string) => Promise<Response>;
+  handleCatalogue?: (req: Request, locale: RequestContext["locale"], identifier?: string) => Promise<Response>;
 }
 
 function createSupabaseAuthClient(token: string): SupabaseClient | null {
@@ -142,61 +160,76 @@ async function defaultResolveRequestContext(
   };
 }
 
-function createSupabaseNotificationAdapter(): NotificationClaimRpcAdapter {
-  return {
-    async claimSlot(params): Promise<NotificationClaimResponse> {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-      const client = createClient(supabaseUrl, serviceRoleKey || "", {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-
-      const { data, error } = await client.rpc("claim_notification_slot", {
-        p_owner_id: params.ownerId,
-        p_operation_id: params.operationId,
-        p_kind: params.kind,
-        p_period_key: params.periodKey,
-        p_device_installation_id: params.deviceInstallationId,
-      });
-
-      if (error) {
-        throw new ApiHttpError(
-          400,
-          "VALIDATION_ERROR",
-          error.message,
-        );
-      }
-      return data as NotificationClaimResponse;
-    },
-  };
+function privateResponse(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "private, no-store");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
   return async (req: Request): Promise<Response> => {
-    if (req.method === "OPTIONS") {
-      return new Response("ok", { headers: CORS_HEADERS });
-    }
-
     const locale = resolveLocale(req);
+    const url = new URL(req.url);
+    const normalizedPath = url.pathname
+      .replace(/^\/functions\/v1\/plants-api/, "")
+      .replace(/^\/plants-api/, "") || "/";
+    const accountStorageMatch = normalizedPath.match(
+      /^\/internal\/account-deletions\/([^/]+)\/storage$/,
+    );
+    if (req.method === "OPTIONS") {
+      const response = new Response("ok", { headers: CORS_HEADERS });
+      return accountStorageMatch ? privateResponse(response) : response;
+    }
+    const careMatch = req.method === "GET"
+      ? normalizedPath.match(/^\/plants\/([^/]+)\/care\/recommendation$/)
+      : null;
+    const photoMatch = req.method === "GET"
+      ? normalizedPath.match(/^\/plants\/([^/]+)\/photo$/)
+      : null;
+    const observationPhotoMatch = req.method === "GET"
+      ? normalizedPath.match(/^\/care\/observations\/([^/]+)\/photo$/)
+      : null;
+    const firstAidMedia = normalizedPath.startsWith("/media/first-aid/");
+    const guestRoute = /^\/(drafts|claims)(?:\/|$)/.test(normalizedPath);
+    const purgeMatch = req.method === "POST"
+      ? normalizedPath.match(/^\/internal\/plant-deletions\/([^/]+)\/(storage|data)$/)
+      : null;
+    const purgeSweep = req.method === "POST" &&
+      normalizedPath === "/internal/plant-deletions/sweep";
     try {
-      const url = new URL(req.url);
-      const normalizedPath = url.pathname
-        .replace(/^\/functions\/v1\/plants-api/, "")
-        .replace(/^\/plants-api/, "") || "/";
-
+      if (accountStorageMatch) {
+        if (!deps.handleAccountStoragePurge) {
+          throw new ApiHttpError(503, "INTERNAL_ERROR", "Account cleanup is temporarily unavailable.", true);
+        }
+        return privateResponse(await deps.handleAccountStoragePurge(req, accountStorageMatch[1]));
+      }
+      if (purgeSweep && deps.handlePlantPurge) {
+        return privateResponse(await deps.handlePlantPurge(req, null, "sweep"));
+      }
+      if (purgeMatch && deps.handlePlantPurge) {
+        const phase = purgeMatch[2] === "storage" ? "storage" : "data";
+        return privateResponse(await deps.handlePlantPurge(req, purgeMatch[1], phase));
+      }
+      if (req.method === "POST" && normalizedPath === "/internal/guest-drafts/cleanup" &&
+        deps.handleGuestPhotoMaintenance) {
+        return privateResponse(await deps.handleGuestPhotoMaintenance(req));
+      }
       if (req.method === "GET" && normalizedPath === "/health") {
         return jsonResponse({ status: "ok", version: "3.0.0", locale }, 200);
+      }
+
+      if (req.method === "GET" && deps.handleCatalogue) {
+        const catalogue = normalizedPath.match(/^\/catalogue(?:\/([^/]+))?$/);
+        if (catalogue) return await deps.handleCatalogue(req, locale, catalogue[1]);
       }
 
       const ctx = deps.resolveRequestContext
         ? await deps.resolveRequestContext(req)
         : await defaultResolveRequestContext(req, deps.authClientFactory);
-
-      if (req.method === "POST" && normalizedPath === "/notifications/claim") {
-        const adapter = deps.notificationAdapter ??
-          createSupabaseNotificationAdapter();
-        return await handleNotificationClaim(req, ctx, adapter);
-      }
 
       if (
         req.method === "POST" &&
@@ -212,6 +245,29 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         deps.installationsAdapter
       ) {
         return await handleInstallationBind(req, ctx, deps.installationsAdapter);
+      }
+
+      if (deps.guestPhoto) {
+        const guest = deps.guestPhoto;
+        if (req.method === "POST" && normalizedPath === "/installations/register") {
+          return privateResponse(await guest.registerInstallation(ctx));
+        }
+        if (req.method === "POST" && normalizedPath === "/installations/bind") {
+          return privateResponse(await guest.bindInstallation(req, ctx));
+        }
+        if (req.method === "POST" && normalizedPath === "/drafts") {
+          return privateResponse(await guest.draft(req, ctx));
+        }
+        const draft = normalizedPath.match(/^\/drafts\/([^/]+)$/);
+        if (req.method === "DELETE" && draft) return privateResponse(await guest.deleteDraft(ctx, draft[1]));
+        if (req.method === "POST" && normalizedPath === "/claims/prepare") {
+          return privateResponse(await guest.prepare(req, ctx));
+        }
+        if (req.method === "POST" && normalizedPath === "/claims/commit") {
+          return privateResponse(await guest.commit(req, ctx));
+        }
+        const claim = normalizedPath.match(/^\/claims\/([^/]+)$/);
+        if (req.method === "GET" && claim) return privateResponse(await guest.status(ctx, claim[1]));
       }
 
       if (
@@ -230,6 +286,27 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
         return await handleMediaUploadTicket(req, ctx, deps.mediaAdapter);
       }
 
+      if (deps.diagnosisMedia) {
+        if (photoMatch) {
+          return privateResponse(await deps.diagnosisMedia.plantPhoto(ctx, photoMatch[1]));
+        }
+        if (observationPhotoMatch) {
+          return privateResponse(await deps.diagnosisMedia.observationPhoto(ctx, observationPhotoMatch[1]));
+        }
+        const mediaScope = firstAidMedia ? "first-aid" : "diagnosis";
+        const mediaPath = firstAidMedia ? normalizedPath.replace("/media/first-aid/", "/media/") : normalizedPath;
+        if (req.method === "POST" && mediaPath === "/media/upload-ticket") {
+          return await deps.diagnosisMedia.ticket(req, ctx, mediaScope);
+        }
+        if (req.method === "POST" && mediaPath === "/media/complete") {
+          return await deps.diagnosisMedia.complete(req, ctx, mediaScope);
+        }
+        const upload = mediaPath.match(/^\/media\/uploads\/([^/]+)$/);
+        if (req.method === "PUT" && upload) {
+          return await deps.diagnosisMedia.upload(req, ctx, upload[1], mediaScope);
+        }
+      }
+
       if (
         req.method === "POST" &&
         normalizedPath === "/analysis/jobs" &&
@@ -246,6 +323,30 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
           jobMatch[1],
           deps.analysisJobAdapter,
         );
+      }
+
+      if (deps.diagnosisJobs) {
+        if (req.method === "POST" && normalizedPath === "/analysis/jobs") {
+          return await deps.diagnosisJobs.create(req, ctx);
+        }
+        if (req.method === "GET" && jobMatch) {
+          return await deps.diagnosisJobs.status(ctx, jobMatch[1]);
+        }
+      }
+
+      if (careMatch && deps.handleCareRecommendation) {
+        return privateResponse(await deps.handleCareRecommendation(req, ctx, careMatch[1]));
+      }
+
+      if (req.method === "GET" && normalizedPath === "/me") {
+        requireActiveOwner(ctx);
+        if (ctx.isAnonymous) {
+          throw new ApiHttpError(403, "FORBIDDEN", "An active permanent account is required.");
+        }
+        if (deps.handleProfileSettings) {
+          return privateResponse(await deps.handleProfileSettings(req, ctx));
+        }
+        throw new ApiHttpError(503, "INTERNAL_ERROR", "Profile settings are temporarily unavailable.", true);
       }
 
       if (req.method === "GET" && normalizedPath === "/sync") {
@@ -286,7 +387,11 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
           : `Route not found: ${req.method} ${normalizedPath}`,
       );
     } catch (err) {
-      return errorResponse(err, locale);
+      const response = errorResponse(err, locale);
+      return normalizedPath === "/me" || normalizedPath === "/commands" ||
+          careMatch || photoMatch || observationPhotoMatch || firstAidMedia || guestRoute || purgeMatch || purgeSweep || accountStorageMatch
+        ? privateResponse(response)
+        : response;
     }
   };
 }
@@ -294,30 +399,125 @@ export function createPlantsApiHandler(deps: PlantsApiDependencies = {}) {
 export interface ProductionSyncOptions {
   env?: (name: string) => string | undefined;
   fetch?: typeof fetch;
+  diagnosisWorker?: Parameters<typeof createDiagnosisJobs>[1];
+  scheduleDiagnosis?: Parameters<typeof createDiagnosisJobs>[2];
+}
+
+function defaultServiceSecret(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const key: unknown = JSON.parse(value)?.default;
+    if (typeof key === "string" && key.startsWith("sb_secret_") && key.length > "sb_secret_".length) {
+      return key;
+    }
+  } catch {
+    // A missing or malformed secret configuration leaves legacy authentication available.
+  }
+  return undefined;
 }
 
 // Keep the bare handler's T152 fallback. Only the deployed composition enables
-// sync/catalogue create, and explicit delegates still take precedence.
+// sync and collection commands, and explicit delegates still take precedence.
 export function createProductionPlantsApiHandler(
   deps: PlantsApiDependencies = {},
   options: ProductionSyncOptions = {},
 ) {
-  const syncClient = (): SupabaseClient | null => {
-    const env = options.env ?? ((name: string) => Deno.env.get(name));
+  const env = options.env ?? ((name: string) => Deno.env.get(name));
+  const apiClient = (keyName: "SUPABASE_SERVICE_ROLE_KEY" | "SUPABASE_ANON_KEY"): SupabaseClient | null => {
     const url = env("SUPABASE_URL")?.trim();
-    const key = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+    const key = env(keyName)?.trim();
     if (!url || !key) return null;
     return createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       global: { fetch: options.fetch },
     });
   };
+  const syncClient = () => apiClient("SUPABASE_SERVICE_ROLE_KEY");
+  const catalogueClient = () => apiClient("SUPABASE_ANON_KEY");
+  const diagnosisMedia = deps.diagnosisMedia ?? createDiagnosisMedia(syncClient, env);
+  const guestPhoto = deps.guestPhoto ?? createGuestPhotoApi(syncClient, diagnosisMedia.copyPhotoForClaim);
   return createPlantsApiHandler({
     ...deps,
+    diagnosisMedia,
+    guestPhoto,
+    handleAccountStoragePurge: deps.handleAccountStoragePurge ?? (async (req, ownerId) => {
+      const legacyKey = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+      const secretKey = defaultServiceSecret(env("SUPABASE_SECRET_KEYS"));
+      if (
+        !matchesSecret(legacyKey && `Bearer ${legacyKey}`, req.headers.get("authorization")) &&
+        !matchesSecret(secretKey, req.headers.get("apikey"))
+      ) {
+        throw new ApiHttpError(401, "UNAUTHORIZED", "Unauthorized.");
+      }
+      if (req.method !== "POST") {
+        throw new ApiHttpError(404, "NOT_FOUND", "Route not found.");
+      }
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(ownerId) ||
+        new URL(req.url).search !== "" || (await req.text()) !== "") {
+        throw new ApiHttpError(400, "VALIDATION_ERROR", "Invalid account cleanup request.");
+      }
+      const admin = syncClient();
+      const result = admin
+        ? await runAccountStoragePurge(admin, ownerId).catch(() => undefined)
+        : undefined;
+      if (result?.state === "not_found") {
+        throw new ApiHttpError(404, "NOT_FOUND", "Account cleanup not found.");
+      }
+      if (result) return jsonResponse(result);
+      throw new ApiHttpError(503, "INTERNAL_ERROR", "Account cleanup is temporarily unavailable.", true);
+    }),
+    handlePlantPurge: deps.handlePlantPurge ?? (async (req, id, phase) => {
+      const legacyKey = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+      const secretKey = defaultServiceSecret(env("SUPABASE_SECRET_KEYS"));
+      if (
+        !matchesSecret(legacyKey && `Bearer ${legacyKey}`, req.headers.get("authorization")) &&
+        !matchesSecret(secretKey, req.headers.get("apikey"))
+      ) {
+        throw new ApiHttpError(401, "UNAUTHORIZED", "Unauthorized.");
+      }
+      const query = new URL(req.url).searchParams;
+      if (phase === "sweep" && query.size > 0 && (query.size !== 1 || !query.has("after"))) {
+        throw new ApiHttpError(400, "VALIDATION_ERROR", "Invalid deletion queue cursor.");
+      }
+      const after = phase === "sweep" && query.has("after")
+        ? requireUuid(query.get("after"), "after")
+        : null;
+      const jobId = phase === "sweep" ? null : requireUuid(id, "deletion_job_id");
+      const admin = syncClient();
+      if (admin) {
+        if (jobId === null) {
+          const page = await runPlantPurgePage(admin, after).catch(() => null);
+          if (page) return jsonResponse(page);
+        } else {
+          const runPurge = phase === "storage" ? runPlantStoragePurge : runPlantDataPurge;
+          const result = await runPurge(admin, jobId).catch(() => undefined);
+          if (result === null || result?.state === "not_found") {
+            throw new ApiHttpError(404, "NOT_FOUND", "Plant deletion job not found.");
+          }
+          if (result) return jsonResponse(result);
+        }
+      }
+      throw new ApiHttpError(503, "INTERNAL_ERROR", "Plant cleanup is temporarily unavailable.", true);
+    }),
+    handleGuestPhotoMaintenance: deps.handleGuestPhotoMaintenance ??
+      ((req) => guestPhoto.maintenance(
+        req, env("SUPABASE_SERVICE_ROLE_KEY")?.trim(), defaultServiceSecret(env("SUPABASE_SECRET_KEYS")),
+      )),
+    diagnosisJobs: deps.diagnosisJobs ?? createDiagnosisJobs(
+      syncClient, options.diagnosisWorker ?? createDiagnosisWorker(env, { fetch: options.fetch }),
+      options.scheduleDiagnosis,
+    ),
+    analysisAccessAdapter: deps.analysisAccessAdapter ?? createAnalysisAccessQueryAdapter(syncClient),
+    handleProfileSettings: deps.handleProfileSettings ??
+      ((req, ctx) => handleGetProfileSettings(req, ctx, syncClient)),
     handleSync: deps.handleSync ??
       ((req, ctx, url) => handleGetSync(req, ctx, url, syncClient)),
     handleCommand: deps.handleCommand ??
-      ((req, ctx) => handlePlantCreate(req, ctx, syncClient)),
+      ((req, ctx) => handleCollectionCommand(req, ctx, syncClient)),
+    handleCareRecommendation: deps.handleCareRecommendation ??
+      ((req, ctx, plantId) => handleCareRecommendation(req, ctx, plantId, syncClient)),
+    handleCatalogue: deps.handleCatalogue ??
+      ((req, locale, identifier) => handlePublishedCatalogue(req, locale, catalogueClient, identifier)),
   });
 }
 

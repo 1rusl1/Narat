@@ -116,14 +116,14 @@ public struct AnalysisPhotoInput: Sendable {
             return image.jpegData(compressionQuality: quality)
         }
 
-        let options: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: quality,
-            kCGImagePropertyExifDictionary: kCFNull as Any,
-            kCGImagePropertyGPSDictionary: kCFNull as Any,
-            kCGImagePropertyTIFFDictionary: kCFNull as Any
-        ]
-        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else {
+        // The renderer has already removed the input metadata. Null dictionaries can produce an empty frame.
+        let options = [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary
+        CGImageDestinationAddImage(destination, cgImage, options)
+        guard CGImageDestinationFinalize(destination),
+              let source = CGImageSourceCreateWithData(mutableData, nil),
+              (CGImageSourceGetType(source) as String?) == UTType.jpeg.identifier,
+              CGImageSourceGetCount(source) == 1,
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else {
             return nil
         }
         return mutableData as Data

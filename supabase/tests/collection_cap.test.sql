@@ -1,7 +1,7 @@
 -- Actual schema and production functions; synthetic data only.
 -- Concurrent lock/retry and clean/upgrade preservation run in the controller gate.
 BEGIN;
-SELECT plan(35);
+SELECT plan(39);
 
 INSERT INTO public.profiles (id, anonymous, preferred_locale) VALUES
 ('c1610000-0000-4000-8000-000000000001', false, 'en'),
@@ -191,6 +191,35 @@ SELECT ok(
     NOT has_function_privilege('anon', 'public.enforce_plant_collection_cap()', 'EXECUTE')
     AND NOT has_function_privilege('authenticated', 'public.enforce_plant_collection_cap()', 'EXECUTE'),
     'New definer helper is not executable by public client roles');
+
+-- Hosted Supabase installs pgcrypto in extensions instead of public.
+CREATE SCHEMA IF NOT EXISTS extensions;
+ALTER EXTENSION pgcrypto SET SCHEMA extensions;
+SELECT is(public.execute_plant_create_command(
+    'c1610000-0000-4000-8000-000000000001',
+    'c1610000-0000-4000-8000-000000000101',
+    '{"plant_id":"fixture_collection_cap","display_name":"Third"}'::jsonb),
+    (SELECT response_payload FROM public.operation_receipts
+     WHERE owner_id = 'c1610000-0000-4000-8000-000000000001'
+       AND operation_id = 'c1610000-0000-4000-8000-000000000101'),
+    'Hosted layout replays a receipt created with pgcrypto in public');
+SELECT lives_ok($q$
+    SELECT public.execute_plant_create_command(
+        'c1610000-0000-4000-8000-000000000002',
+        'c1610000-0000-4000-8000-000000000104',
+        '{"creation_source":"catalogue","plant_id":"fixture_collection_cap","display_name":"Hosted layout"}'::jsonb)
+$q$, 'Hosted layout creates a new catalogue plant');
+SELECT is(public.execute_plant_create_command(
+    'c1610000-0000-4000-8000-000000000002',
+    'c1610000-0000-4000-8000-000000000104',
+    '{"creation_source":"catalogue","plant_id":"fixture_collection_cap","display_name":"Hosted layout"}'::jsonb),
+    (SELECT response_payload FROM public.operation_receipts
+     WHERE owner_id = 'c1610000-0000-4000-8000-000000000002'
+       AND operation_id = 'c1610000-0000-4000-8000-000000000104'),
+    'Hosted layout retry returns the same receipt');
+SELECT is((SELECT count(*) FROM public.plants
+    WHERE owner_id = 'c1610000-0000-4000-8000-000000000002' AND personal_name = 'Hosted layout'),
+    1::bigint, 'Hosted layout retry leaves exactly one plant');
 
 GRANT SELECT ON public.plants TO authenticated;
 SET LOCAL ROLE authenticated;
