@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t083-profile-reminder-hour-core",
+      "description": "Persist the user's reminder hour through an owner-bound canonical profile command and read projection.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150059_profile_reminder_hour.sql",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202611120022_auth_registration_profile.sql",
+        "supabase/tests/auth_registration_profile.test.sql",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150059_profile_reminder_hour.sql",
+        "supabase/tests/auth_registration_profile.test.sql"
+      ],
+      "constraints": [
+        "Forward SQL and focused pgTAP only. Return a valid unified git diff with exact headers and context in JSON; controller applies and tests. No live, HTTP, app, notifications, provider, entitlement or role changes beyond service-only RPC grants.",
+        "Implement public.execute_profile_reminder_hour_update(p_owner_id uuid,p_operation_id uuid,p_payload jsonb), canonical operation_receipts command profile.update, and read_owner_profile_settings(p_owner_id uuid) for the future GET /me. Profile writer accepts exactly one key reminder_hour_local with a JSON integer 0..23; reject null, string, fractional or unknown keys (22023). Require a permanent active owner and non-null operation ID, lock the owner row, validate owner-scoped exact receipt before a new mutation, reject same operation changed data or different command (23505). Reuse the established owner watermark function. No-op with a different operation may return the existing watermark; a genuine change advances it. Keep the default 9 for new users, no rewriting existing settings, never modify locale or entitlement; no profile fields supplied by other owners.",
+        "Return private service projection {preferred_locale,reminder_hour_local}; write response {profile:{preferred_locale,reminder_hour_local},watermark}. Read SQL NULL for absent, anonymous or inactive owner. Explicitly revoke on PUBLIC/anon/authenticated, grant only service_role, preserve existing /sync and prior migrations.",
+        "Add version-compatible coverage in existing auth_registration_profile.test.sql for default, all boundaries, 0/23, malformed types/keys, exact replay after later change, changed conflict, no local false success, owner isolation/no other settings touched, service-only ACL and new /sync profile hour/monotonic watermark. T083/T084 stay open until HTTP, client and live."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083S1",
+          "description": "Diff limited to forward migration and gate-covered profile fixture.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T083S2",
+          "description": "PostgreSQL clean and upgrade confirm private scoped settings, validation and replay.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

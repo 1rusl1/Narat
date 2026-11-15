@@ -1,5 +1,19 @@
 # Narat — текущий статус и передача работы
 
+## T168/058 и живой повтор V19 — 15 ноября 2026
+
+058 и pgTAP применены из принятого `554cb7a`. Deno, PostgreSQL,
+Review и QA прошли. Репетиция точного staging-набора без 024 дала
+по 133 диагнозных pgTAP, 29 по условиям. Выложена только 058.
+Откатный SQL на staging подтвердил запрет новых retired inputs,
+точный исторический replay и успешный ручной контекст.
+Повтор V19 на опубликованной Monstera через HTTP подтвердил одну
+задачу, старый отменённый и новый активный факт, устойчивые квитанции
+и сохранность полива. Временная учётка удалена.
+Обновлены отчёт, T168 и handoff. Следующий backend-пакет — SQL
+`profile.update` для часа напоминаний. Клиентская приёмка в работе.
+
+
 ## T169 — сезонное поле owner sync — 15 ноября 2026
 
 Приняты и отправлены 057 и pgTAP `1bc0696`. Локальные PostgreSQL,
@@ -2409,10 +2423,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only project orchestrators run separately and publish to codex/plants-backend and codex/plants-ios. iOS owns Simulator. Stop threshold is 85% weekly consumed.
-- 057 in 1bc0696 removed season_override from owner condition projections only. Deno, PostgreSQL clean/upgrade, reviewer and QA passed. Exact staging rehearsal without 024 passed with 29 condition and 136 routine TAP checks per database. 057 deployed alone to narat-staging. Live rolled-back SQL verified full/delta, legacy winter storage, historical camera light and owner isolation. Catalogue, provider and other sync fields retained.
-- Monstera v3 is active on staging with 051–057, plants-api v27, worker v8. Live owner HTTP marks, undo, replay and synthetic expiry validated. iOS outbox undo c073844 accepted and UI is in progress.
-- Next: forward 058 rejects newly supplied camera or season keys in the canonical plant.create service writer after checking exact receipt replay. Preserve historical contexts. No Edge, live deployment, rewrite or staging in this task. Return unified git diff in JSON. T168/T169 and broader care acceptance stay open.
+- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend and iOS/integration to codex/plants-ios. iOS owns Simulator. Stop threshold is 85% consumed weekly.
+- 554cb7a accepted 058 and diagnosis_jobs coverage. PostgreSQL, Deno, Review/QA and push passed. Exact no-024 rehearsal had 133 diagnosis and 29 condition TAP assertions per database. Only 058 deployed, live rolled-back SQL checked manual create, retired inputs and historical exact replay. T168/T169 remain partially open.
+- narat-staging has 051–058, plants-api v27, worker v8 and published Monstera v3. Live mark, undo, replay, expiry and re-completion accepted: one task, old voided + new active entry, unchanged manual watering. Temporary owners removed.
+- Next T083 059 adds owner-bound SQL profile.update for one valid reminder hour and private read projection. Return unified diff in JSON; controller applies and checks. No Edge, iOS, notifications, billing or staging changes in this packet. iOS c073844 durable undo accepted; history/card work and signed V19 pending.
 
 <!-- /orchestrator:project-state -->
 
