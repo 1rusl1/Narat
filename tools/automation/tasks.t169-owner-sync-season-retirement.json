@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "t169-owner-sync-season-retirement",
+      "description": "Retire season_override from the active owner condition sync projection while preserving stored snapshots and public seasonal facts.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150057_retire_season_override_owner_sync.sql",
+        "supabase/migrations/202611120030_first_aid_observation.sql",
+        "supabase/migrations/202611120024_retire_notification_sync_projection.sql",
+        "supabase/tests/plant_edit_conditions.test.sql",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150057_retire_season_override_owner_sync.sql",
+        "supabase/tests/plant_edit_conditions.test.sql"
+      ],
+      "constraints": [
+        "Current backend base c8ad7d6 or controller metadata-only follow-up. Return a valid unified Git diff with exact source context. Controller applies and verifies.",
+        "The active normal plant create/edit APIs already reject newly supplied season_override and production analysis jobs accept a closed list of inputs. Current owner_sync_entries still returns the historical season_override field for condition_snapshots. Remove only that JSON key from the active owner sync projection with one forward migration. Preserve exact other JSON fields and tombstones, column types, view options, ownership and ACL; don't change fetch_sync_delta profile/entitlement behavior or dependency order for deployments without 024. Prefer the smallest fail-closed transformation of current view definition targeting exactly one occurrence, with tests against real PostgreSQL deparsing. Use the same internal view and canonical fetch path.",
+        "Keep all stored condition_snapshot values and pinned diagnoses byte-for-byte. Preserve old light provenance and public seasonal catalogue facts. No changes to historical migrations, table storage or writes, jobs/provider, catalogue, entitlement/notification projections, Edge or iOS. No live deployment in this task. T169 remains open for broader clients and verified integration.",
+        "Extend plant_edit_conditions.test.sql with version-compatible checks using an explicit view comment marker or equivalent. Verify old and new snapshots still store winter, canonical owner feed full and delta omit only season_override, other snapshot keys and historically confirmed light remain, and cross-owner access stays blocked. Retain earlier cutoff fixture behavior."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T169SYNC1",
+          "description": "Forward migration and existing test file only, diff PASS.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T169SYNC2",
+          "description": "Real PostgreSQL clean and upgrade cover safe owner projection and preservation.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

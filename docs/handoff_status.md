@@ -12,9 +12,10 @@ PG17, 149 automation, Deno, KB и независимые Review/QA прошли 
 область проверки cache headers. [Отчёт](validation/staging-routine-soil-check-2026-11-15.md).
 
 Изменены отчёт, контракт, частичные статусы T160/T171 и handoff.
-Следующий шаг backend — проверить истечение права на активном V19 с сохранением
-ручного журнала. iOS продолжает durable undo. Подписанный сквозной прогон и
-напоминания открыты.
+Живой повтор в отдельной учётке со staged expiry скрыл дату и дал
+409 новому completion. Ручной полив, отмена, replay и доступ к истории
+сохранились. Синтетическая запись права удалена. Следующий шаг — частичный
+T169 для owner sync, затем подписанная iOS-приёмка. T160/T164/T171 открыты.
 
 
 ## B — усилена проверка конкурентной записи — 15 ноября 2026
@@ -2395,10 +2396,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Backend/data and iOS/integration run separately and publish to codex/plants-backend and codex/plants-ios. User stop threshold is 85% consumed weekly. All model routes use Codex.
-- a2ddd3a accepted 056. Local exact staging rehearsal without 024 passed, 136 routine pgTAP assertions on clean/upgrade. 056 deployed alone and a live rolled-back fixture confirmed gating, mark, undo and replay. plants-api v27, worker v8.
-- 7cd1bf9 accepted the v3 Monstera PlantProfile, contextual sidecar and provenance README through independent Review/QA, project KB and production schema gate. Local PG17 exact activation and replay keep the published catalogue, pinned analysis row and old profile/condition content. Negative tests rejected missing 056 or source drift with no target rows. v2 remains active in live staging at the time of this commit.
-- Added the controller's exact v3 SQL renderer. Next is an isolated activation rehearsal with ROLLBACK on staging and then applying the same verified SQL to narat-staging. Verify old KB digests, existing pinned jobs and catalogue, exercise live matching/mismatch, mark, undo and sync. T160/T171 open. iOS b028902 tested EN mark/restart/retry; 6eef71e typed undo accepted, durable iOS undo in progress.
+- Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend; iOS/integration publishes to codex/plants-ios and owns Simulator. Stop threshold is 85% weekly Codex consumed.
+- Backend c8ad7d6 documents the live staging release and owner acceptance. 051–056, plants-api v27, worker v8, Monstera v3. Actual live HTTP exercised published date, mark, exact replay, undo, mismatch, preservation of watering and cleanup.
+- The independent staged expiry test created one disposable owner and synthetic verified entitlement. Expiry hid the date and blocked new completion, manual watering and correction remained available, exact receipt survived. No extra task was created and owner sync kept history. Cleanup verified. StoreKit and iOS expiry remain open.
+- Next local task 057 is scope-restricted to retiring season_override from the owner sync projection. Preserve old snapshots, all other data, ACL and capability on the no-024 staging source. Return unified Git diff in JSON. No live deploy or catalogue edits. T160/T164/T169/T171 remain open. iOS durable undo is in progress.
 
 <!-- /orchestrator:project-state -->
 
