@@ -142,6 +142,53 @@ public actor SyncEngine {
         return try await flushOutbox(for: context.ownerId, context: context, onlyOperation: command.operationId)
     }
 
+    func flushProfileReminderHour(
+        _ command: ProfileReminderHourCommand, context: SyncSessionLease
+    ) async throws -> ProfileReminderHourOutcome {
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        guard try await store.pendingProfileReminderHour(
+            context: context, authority: apiClient.syncAuthority
+        )?.envelope == command.envelope else { return .unconfirmed }
+        guard drainingOwners.insert(context.ownerId).inserted else { return .pending }
+        defer { drainingOwners.remove(context.ownerId) }
+        return try await sendProfileReminderHour(command, context: context)
+    }
+
+    private func sendProfileReminderHour(
+        _ command: ProfileReminderHourCommand, context: SyncSessionLease
+    ) async throws -> ProfileReminderHourOutcome {
+        guard try await store.pendingProfileReminderHour(
+            context: context, authority: apiClient.syncAuthority
+        )?.envelope == command.envelope else { return .unconfirmed }
+        let receipt: ProfileReminderHourReceipt
+        var receivedReceipt = false
+        do {
+            receipt = try await apiClient.updateProfileReminderHour(command, context: context)
+            receivedReceipt = true
+            try await refreshCanonicalJournal(ownerId: context.ownerId, watermark: receipt.watermark, context: context)
+        } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+            if !receivedReceipt, let rejection = error as? APIErrorResponse,
+               !rejection.error.retryable,
+               ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(rejection.error.code) {
+                _ = try await store.finishProfileReminderHour(
+                    command, receipt: nil, context: context, authority: apiClient.syncAuthority
+                )
+                return .rejected
+            }
+            try await store.finishOutboxEntry(
+                operationId: command.envelope.operationId, context: context, authority: apiClient.syncAuthority,
+                failure: String(describing: error)
+            )
+            return .pending
+        }
+        guard let hour = try await store.finishProfileReminderHour(
+            command, receipt: receipt, context: context, authority: apiClient.syncAuthority
+        ) else { throw SyncWireValidationError.invalidPage }
+        return .confirmed(hour: hour)
+    }
+
     private func flushOutbox(
         for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil
     ) async throws -> Int {
@@ -170,6 +217,28 @@ public actor SyncEngine {
                     continue
                 }
             } else if GlobalChainBlocked {
+                continue
+            }
+
+            if entry.commandName == "profile.update" {
+                try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+                guard let command = ProfileReminderHourCommand(entry.envelope) else {
+                    try await store.finishOutboxEntry(
+                        operationId: entry.operationId, context: context, authority: apiClient.syncAuthority,
+                        failure: "Invalid persisted profile reminder-hour command"
+                    )
+                    if let plantId = entry.plantId { blockedPlantIds.insert(plantId) }
+                    else { GlobalChainBlocked = true }
+                    continue
+                }
+                switch try await sendProfileReminderHour(command, context: context) {
+                case .confirmed:
+                    committedCount += 1
+                case .pending, .unconfirmed:
+                    GlobalChainBlocked = true
+                case .rejected:
+                    break
+                }
                 continue
             }
 

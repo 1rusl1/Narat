@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "t077-care-local-reminder-plan",
+      "description": "Calculate one eligible local notification per canonical routine occurrence, in the current profile hour and time zone.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/ReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/TrialReminderScheduler.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/ReminderSchedulingTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "specs/001-plants-ios-mvp/spec.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/ReminderScheduler.swift",
+        "ios/PlantsTests/ReminderSchedulingTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj"
+      ],
+      "constraints": [
+        "Return an exact unified Git diff in JSON. Small deterministic planning core, unit fixtures and target membership only. No UI, permissions, OS notification writes, network, production scheduling, schema changes or trial scheduler changes. Use accepted V19 canonical routine due local date, owner, plant and rule identifiers. A later packet supplies canonical eligibility and binds it to the OS.",
+        "Plan only for the current permanent owner who has explicitly opted in, and only canonical applicable active tasks with valid due date within known access expiry. Reject guest, paused, deleted, completed, expired or unvalidated inputs, and dates already past the selected hour. Use default 09 only when canonical profile hour is absent; explicit 00...23 are valid and out-of-range fixture input fails closed. One stable ID from owner+plant+rule+local due day. Dedup identical occurrence, replacing trigger time on profile/timezone change; rescheduling to a different due day replaces the previous occurrence. Keep manual journal and report/trial reminders outside this policy.",
+        "Use strict ISO local calendar date, explicit current Gregorian timezone, and injected time in tests. Resolve DST gap to the next valid hour still on the same day, resolve overlap deterministically to the first occurrence; tomorrow is never substituted for an invalid local day. Cover defaults and endpoints, timezone and DST, stable IDs, same due duplicates, offset change, completion/undo/transfer, stale owner, opt-out, pause, deletion, expiry including due at/after boundary. Keep T075/T077 and dependent UI tasks open pending app wiring and integrated tests."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T077L1",
+          "description": "Swift builds and planner unit fixtures pass.",
+          "mode": "local",
+          "checks": ["diff-check", "ios-tests"]
+        }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
     case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo
+    case profileReminderHour
 
     var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo }
 
@@ -306,7 +307,25 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         try JSONEncoder().encode(next).write(to: file, options: .atomic)
         ledger = next
     }
-    private func token(_ owner: UUID) -> String { "fixture-only-" + namespace + "-" + owner.uuidString.lowercased() }
+    private func token(_ owner: UUID) -> String {
+        guard ledger.scenario == .profileReminderHour else {
+            return "fixture-only-" + namespace + "-" + owner.uuidString.lowercased()
+        }
+        // Exercise the production permanent-owner claim gate through the SDK bearer.
+        // This DEBUG-only token is accepted solely by this namespace's fixture server.
+        func base64URL(_ value: String) -> String {
+            Data(value.utf8).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        let header = base64URL(#"{"alg":"HS256","typ":"JWT"}"#)
+        let claims = base64URL(
+            "{\"sub\":\"\(owner.uuidString.lowercased())\",\"is_anonymous\":\(owner == ledger.guest),"
+                + "\"fixture_namespace\":\"\(namespace)\"}"
+        )
+        return header + "." + claims + ".fixture-only-signature"
+    }
     func isFixtureSession(_ session: Session) -> Bool {
         lock.withLock {
             [ledger.guest, ledger.permanent].contains(session.user.id) &&
@@ -455,6 +474,23 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 ]))
             }
             let caller = try owner(request)
+            if method == "GET", url.path == "/functions/v1/plants-api/me" {
+                guard caller == ledger.permanent, query.isEmpty else {
+                    throw CatalogueUIFixtureError.invalidRequest
+                }
+                if ledger.scenario == .profileReminderHour, ledger.tick > 0 {
+                    // A lost reply must remain pending until exactly one explicit replay.
+                    guard ledger.attempts.count == 2, ledger.commits.count == 1,
+                          ledger.attempts[0].owner == caller, ledger.attempts[1].owner == caller,
+                          ledger.attempts[0].body == ledger.attempts[1].body else {
+                        throw CatalogueUIFixtureError.invalidRequest
+                    }
+                }
+                return Reply(status: 200, data: try json([
+                    "profile": ["preferred_locale": "en",
+                                "reminder_hour_local": ledger.scenario == .profileReminderHour && ledger.tick > 0 ? 23 : 9]
+                ]))
+            }
             if ledger.scenario == .photoHistory || ledger.scenario.testsPlantEdit,
                method == "GET", url.lastPathComponent == "photo" {
                 guard query.isEmpty, request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
@@ -690,7 +726,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 let until = Self.time(ledger.tick)
                 return Reply(status: 200, data: try json([
                     "until": until, "has_more": false, "last_cursor": NSNull(), "next_since": until,
-                    "profile": ["preferred_locale": "pl", "reminder_hour_local": 9,
+                    "profile": ["preferred_locale": "pl",
+                                "reminder_hour_local": ledger.scenario == .profileReminderHour && ledger.tick > 0 ? 23 : 9,
                                 "report_notifications_enabled": true, "trial_reminder_enabled": false],
                     "entitlement": entitlement, "changes": orderedChanges
                 ]))
@@ -698,6 +735,38 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             guard method == "POST", url.path == "/functions/v1/plants-api/commands", query.isEmpty,
                   caller == ledger.permanent else { throw CatalogueUIFixtureError.invalidRequest }
             let envelope = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
+            if ledger.scenario == .profileReminderHour,
+               let command = ProfileReminderHourCommand(envelope) {
+                guard command.reminderHourLocal == 23,
+                      request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
+                else { throw CatalogueUIFixtureError.invalidRequest }
+                let key = caller.uuidString + ":" + envelope.operationId.uuidString
+                var next = ledger
+                next.attempts.append(Attempt(owner: caller, body: body))
+                if let commit = ledger.commits[key] {
+                    guard ledger.attempts.count == 1, ledger.commits.count == 1,
+                          commit.owner == caller, commit.body == body, commit.envelope == envelope
+                    else {
+                        try persist(next)
+                        throw CatalogueUIFixtureError.invalidRequest
+                    }
+                    try persist(next)
+                    return Reply(status: 200, data: commit.receipt)
+                }
+                guard ledger.attempts.isEmpty, ledger.commits.isEmpty else {
+                    try persist(next)
+                    throw CatalogueUIFixtureError.invalidRequest
+                }
+                next.tick += 1
+                let receipt = try json([
+                    "profile": ["preferred_locale": "en", "reminder_hour_local": 23],
+                    "watermark": Self.time(next.tick)
+                ])
+                next.commits[key] = Commit(owner: caller, envelope: envelope, body: body,
+                                           receipt: receipt, plantID: caller)
+                try persist(next)
+                throw URLError(.networkConnectionLost)
+            }
             if ledger.scenario == .plantDeletion, envelope.commandName == "plant.delete" {
                 return try deletePlant(envelope, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
             }

@@ -122,6 +122,52 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.descendants(matching: .any)["catalogue.saved.firstAid.source"].firstMatch.exists)
     }
 
+    @MainActor func testProfileReminderHourSurvivesRestart() {
+        let run = Run("profileReminderHour", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        let synced = run.app.staticTexts["profile.hour.synced"]
+        require(synced)
+        XCTAssertEqual(synced.label, "09:00")
+        let picker = run.app.pickerWheels.firstMatch
+        enabled(picker)
+        picker.adjust(toPickerWheelValue: "23:00")
+        tap(run, "profile.hour.save", "Save")
+        let pending = run.app.staticTexts["profile.hour.pending"]
+        require(pending)
+        XCTAssertEqual(pending.label, "Pending: 23:00")
+        enabled(run.app.buttons["profile.hour.retry"])
+        XCTAssertFalse(synced.exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.save"].exists)
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        require(pending)
+        XCTAssertEqual(pending.label, "Pending: 23:00")
+        XCTAssertFalse(synced.exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.save"].exists)
+        // The fixture confirms only attempt two of the identical persisted envelope/body.
+        tap(run, "profile.hour.retry", "Try again")
+        require(synced)
+        XCTAssertEqual(synced.label, "23:00")
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.retry"].exists)
+        XCTAssertFalse(run.app.buttons["profile.hour.save"].isEnabled)
+
+        tap(run, "collection.back", "Close")
+        tap(run, "collection.open", "My plants")
+        require(synced)
+        XCTAssertEqual(synced.label, "23:00")
+        XCTAssertFalse(pending.exists)
+        // Reopening reads /me, whose fixture rejects duplicate or nonidentical attempts.
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        require(synced)
+        XCTAssertEqual(synced.label, "23:00")
+        XCTAssertFalse(pending.exists)
+    }
+
     @MainActor func testCollectionShowsVerifiedTrialDateWithOptInOffByDefault() {
         let run = Run("trialReminder", .en)
         defer { run.app.terminate() }

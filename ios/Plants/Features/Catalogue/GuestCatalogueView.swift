@@ -701,6 +701,10 @@ struct CatalogueCollectionView: View {
 
     private var collectionList: some View {
         VStack {
+            if let scope = loadedScope, scope == connection.snapshot, !scope.isAnonymous {
+                ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
+                    .id(scope.session.userId)
+            }
             if let trialReminder, let trial = trialReminder.trial, trial.ownerId == loadedScope?.session.userId {
                 trialReminderSettings(trialReminder, trial: trial)
             }
@@ -775,6 +779,150 @@ struct CatalogueCollectionView: View {
         }
         loadedScope = expected
         loading = false
+    }
+}
+
+private struct ProfileReminderHourSettings: View {
+    let connection: CatalogueConnection
+    let expected: CatalogueSDKSnapshot
+    let polish: Bool
+    @State private var canonicalHour: Int?
+    @State private var selectedHour = 9
+    @State private var pending: ProfileReminderHourCommand?
+    @State private var busy = true
+    @State private var failed = false
+
+    private var isCurrent: Bool {
+        connection.snapshot == expected && !expected.isAnonymous
+    }
+
+    private func hourText(_ hour: Int) -> String { String(format: "%02d:00", hour) }
+
+    var body: some View {
+        Group {
+            if isCurrent {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(polish ? "Ustawienia konta" : "Account settings").font(.headline)
+                    Text(polish ? "Godzina przypomnień" : "Reminder hour")
+                    if let pending {
+                        Text((polish ? "Oczekuje: " : "Pending: ") + hourText(pending.reminderHourLocal))
+                            .accessibilityIdentifier("profile.hour.pending")
+                        Button(polish ? "Spróbuj ponownie" : "Try again") {
+                            Task { await save(retrying: pending) }
+                        }
+                        .accessibilityIdentifier("profile.hour.retry")
+                        .disabled(busy)
+                    } else if let canonicalHour {
+                        Text(hourText(canonicalHour))
+                            .accessibilityIdentifier("profile.hour.synced")
+                        Picker(polish ? "Wybierz godzinę" : "Choose hour", selection: $selectedHour) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text(hourText(hour)).tag(hour)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(height: 100)
+                        .accessibilityIdentifier("profile.hour.picker")
+                        .disabled(busy)
+                        Button(polish ? "Zapisz" : "Save") {
+                            Task { await save(retrying: nil) }
+                        }
+                        .accessibilityIdentifier("profile.hour.save")
+                        .disabled(busy || selectedHour == canonicalHour)
+                    }
+                    if busy { ProgressView() }
+                    if failed {
+                        Text(polish ? "Nie udało się potwierdzić godziny." : "Couldn’t confirm the hour.")
+                            .accessibilityIdentifier("profile.hour.failed")
+                        if pending == nil {
+                            Button(polish ? "Wczytaj ponownie" : "Reload") {
+                                Task { await load() }
+                            }
+                            .accessibilityIdentifier("profile.hour.reload")
+                            .disabled(busy)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+            }
+        }
+        .task(id: expected) { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        guard isCurrent, !Task.isCancelled else { return }
+        busy = true
+        failed = false
+        canonicalHour = nil
+        pending = nil
+        defer { if isCurrent { busy = false } }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            guard let repository = connection.repository, let api = connection.apiClient else {
+                throw CatalogueConnectionUnavailable.storageUnavailable
+            }
+            let saved = try await repository.pendingProfileReminderHour(context: lease)
+            guard isCurrent, !Task.isCancelled else { return }
+            pending = saved
+            if let saved {
+                selectedHour = saved.reminderHourLocal
+            } else {
+                let profile = try await api.fetchProfileSettings(context: lease)
+                guard isCurrent, !Task.isCancelled else { return }
+                canonicalHour = profile.reminderHourLocal
+                selectedHour = profile.reminderHourLocal
+            }
+        } catch {
+            guard isCurrent, !Task.isCancelled else { return }
+            failed = true
+        }
+    }
+
+    @MainActor
+    private func save(retrying command: ProfileReminderHourCommand?) async {
+        guard isCurrent, !Task.isCancelled, !busy else { return }
+        // Capture the selection before acquiring the owner-bound lease.
+        let hour = selectedHour
+        busy = true
+        failed = false
+        defer { if isCurrent { busy = false } }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            guard let repository = connection.repository else {
+                throw CatalogueConnectionUnavailable.storageUnavailable
+            }
+            let saved: ProfileReminderHourCommand
+            if let command {
+                saved = command
+            } else {
+                saved = try await repository.enqueueProfileReminderHour(reminderHourLocal: hour, context: lease)
+            }
+            guard isCurrent, !Task.isCancelled else { return }
+            pending = saved
+            canonicalHour = nil
+            let outcome = try await repository.retryProfileReminderHour(saved, context: lease)
+            guard isCurrent, !Task.isCancelled else { return }
+            switch outcome {
+            case let .confirmed(hour):
+                pending = nil
+                canonicalHour = hour
+                selectedHour = hour
+            case .pending:
+                break
+            case .rejected, .unconfirmed:
+                let restored = try await repository.pendingProfileReminderHour(context: lease)
+                guard isCurrent, !Task.isCancelled else { return }
+                pending = restored
+                failed = true
+            }
+        } catch {
+            guard isCurrent, !Task.isCancelled else { return }
+            // Require a durable reload before allowing another edit.
+            canonicalHour = nil
+            failed = true
+        }
     }
 }
 
