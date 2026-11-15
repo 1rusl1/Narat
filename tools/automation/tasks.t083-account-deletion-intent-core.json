@@ -10,7 +10,7 @@
         "supabase/migrations/202611150060_account_deletion_intent.sql",
         "supabase/migrations/202610200001_ownership_sync.sql",
         "supabase/migrations/202611120022_auth_registration_profile.sql",
-        "supabase/migrations/202611130033_plant_delete_core.sql",
+        "supabase/migrations/202611120033_plant_delete_core.sql",
         "supabase/tests/auth_registration_profile.test.sql",
         "specs/001-plants-ios-mvp/tasks.md"
       ],

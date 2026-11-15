@@ -2451,6 +2451,7 @@ T148 остаётся на прежней остановке до запуска
 - Two Codex-only project orchestrators run separately. Backend/data publishes to codex/plants-backend, iOS/integration to codex/plants-ios. iOS owns Simulator. Weekly stop at 85% consumed.
 - c842f13 accepted 059 and a411fc2 accepted GET /me and profile.update. Exact no-024 clean/upgrade had 104 profile TAP tests each. Deno and independent Review/QA passed. 059 and plants-api v28 are live on narat-staging, worker v8. Re-ran deploy with explicit import map after first bundle rejection. Live disposable owner verified default 9, 0/23, validation, exact replay, /me and /sync. Cleanup verified.
 - Staging Monstera v3 and 051–059. Live V19 dates, mark, undo, re-completion and synthetic expiry accepted. iOS c073844/c92db81 accepted durable undo and history, UI and signed staging pending.
+- The first 060 run stopped in preflight on a wrongly dated 033 file name before invoking any model. The corrected manifest uses the existing 202611120033 file. Read-only staging catalogue inspection found no authenticated/public RLS policies on the granted owner relations in the inspected scope; signed media and edge status still require later checks.
 - Next 060 adds the internal private account deletion request transaction only. No service-role grant, HTTP, worker, real account/Storage deletion, RLS work or staging in this packet. Return valid unified diff in JSON. Existing inaccessibility and worker must be verified before exposure. T082/T083 remain open.
 
 <!-- /orchestrator:project-state -->
