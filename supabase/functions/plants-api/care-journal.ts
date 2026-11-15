@@ -21,13 +21,14 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+const enableBasicCareCommand = "basic_care.enable";
 const refreshCommand = "care.recommendation.refresh";
 const refreshReasons = new Set([
   "insufficient_evidence",
   "missing_watering_anchor",
   "automatic_care_unavailable",
 ]);
-type PlantCommand = "plant.delete" | "plant.edit" | typeof refreshCommand;
+type PlantCommand = "plant.delete" | "plant.edit" | typeof refreshCommand | typeof enableBasicCareCommand;
 
 function unavailable(plantCommand?: PlantCommand) {
   return new ApiHttpError(
@@ -36,6 +37,7 @@ function unavailable(plantCommand?: PlantCommand) {
     plantCommand === "plant.edit" ? "Plant editing is temporarily unavailable."
       : plantCommand === "plant.delete" ? "Plant deletion is temporarily unavailable."
       : plantCommand === refreshCommand ? "Recommendation refresh is temporarily unavailable."
+      : plantCommand === enableBasicCareCommand ? "Basic care is temporarily unavailable."
       : "The care journal is temporarily unavailable.",
     true,
   );
@@ -48,6 +50,7 @@ function invalid(plantCommand?: PlantCommand) {
     plantCommand === "plant.edit" ? "Invalid plant editing command."
       : plantCommand === "plant.delete" ? "Invalid plant deletion command."
       : plantCommand === refreshCommand ? "Invalid recommendation refresh command."
+      : plantCommand === enableBasicCareCommand ? "Invalid basic care command."
       : "Invalid manual care command.",
   );
 }
@@ -68,7 +71,7 @@ export async function handleCollectionCommand(
       body.command_name !== "care.first_aid.record" &&
       body.command_name !== "care.first_aid.observe" &&
       body.command_name !== "plant.delete" && body.command_name !== "plant.edit" &&
-      body.command_name !== refreshCommand)
+      body.command_name !== refreshCommand && body.command_name !== enableBasicCareCommand)
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
@@ -76,9 +79,11 @@ export async function handleCollectionCommand(
   const isDeletion = body.command_name === "plant.delete";
   const isEdit = body.command_name === "plant.edit";
   const isRefresh = body.command_name === refreshCommand;
+  const isEnableBasicCare = body.command_name === enableBasicCareCommand;
   const plantCommand = isEdit ? "plant.edit"
     : isDeletion ? "plant.delete"
     : isRefresh ? refreshCommand
+    : isEnableBasicCare ? enableBasicCareCommand
     : undefined;
   if (
     new URL(req.url).search ||
@@ -108,7 +113,7 @@ export async function handleCollectionCommand(
   const isObservation = body.command_name === "care.first_aid.observe";
   let controlId: string | null = null;
   let entryId: string | null = null;
-  if (isDeletion) {
+  if (isDeletion || isEnableBasicCare) {
     if (Object.keys(payload).length !== 0) throw invalid(plantCommand);
   } else if (isEdit) {
     const conditions = payload.conditions;
@@ -155,15 +160,21 @@ export async function handleCollectionCommand(
     if (!client) throw unavailable(plantCommand);
     const rpc = isEdit ? "execute_plant_edit_command"
       : isDeletion ? "execute_plant_delete_command"
-      : isRefresh ? "execute_care_recommendation_refresh" : isObservation
+      : isRefresh ? "execute_care_recommendation_refresh"
+      : isEnableBasicCare ? "execute_basic_care_command"
+      : isObservation
       ? "complete_first_aid_control"
       : "execute_manual_care_command";
     response = await client.rpc(rpc, {
       p_owner_id: ownerId,
       p_operation_id: operationId,
-      p_plant_id: plantId,
-      ...(!isObservation && !plantCommand && { p_command_name: body.command_name }),
-      p_payload: payload,
+      ...(isEnableBasicCare
+        ? { p_command_type: enableBasicCareCommand, p_payload: { plant_id: plantId } }
+        : {
+          p_plant_id: plantId,
+          ...(!isObservation && !plantCommand && { p_command_name: body.command_name }),
+          p_payload: payload,
+        }),
     });
   } catch {
     throw unavailable(plantCommand);
@@ -213,6 +224,23 @@ export async function handleCollectionCommand(
       timestamp(data.watermark) === null
     ) throw unavailable(plantCommand);
     return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
+  }
+  if (isEnableBasicCare) {
+    if (
+      !record(data) || data.command_type !== enableBasicCareCommand || data.status !== "committed" ||
+      !record(data.state) || !Array.isArray(data.state.memberships)
+    ) throw unavailable(plantCommand);
+    const membership = data.state.memberships.find((item: unknown) =>
+      record(item) && item.plant_id === plantId
+    );
+    if (!record(membership) || membership.enabled !== true || timestamp(membership.enabled_at) === null) {
+      throw unavailable(plantCommand);
+    }
+    return jsonResponse(
+      { plant_id: plantId, enabled: true, enabled_at: membership.enabled_at },
+      200,
+      { "Cache-Control": "private, no-store" },
+    );
   }
   if (isRefresh) {
     if (

@@ -42,7 +42,18 @@ SELECT is(pg_temp.check_read()->>'last_watered_on', '2025-10-11', 'Undo falls ba
 INSERT INTO public.basic_care_memberships(owner_id, plant_id, enabled) VALUES
     ('17300000-0000-4000-8000-000000000001', '17300000-0000-4000-8000-000000000011', false);
 SELECT is(pg_temp.check_read()->'calendar_eligible', 'false'::jsonb, 'Disabled care suppresses the date');
-UPDATE public.basic_care_memberships SET enabled = true WHERE plant_id = '17300000-0000-4000-8000-000000000011';
+CREATE TEMP TABLE basic_care_enable_result AS
+SELECT public.execute_basic_care_command(
+    '17300000-0000-4000-8000-000000000001','17300000-0000-4000-8000-000000000020',
+    'basic_care.enable','{"plant_id":"17300000-0000-4000-8000-000000000011"}') AS receipt;
+SELECT is((SELECT receipt#>>'{state,memberships,0,enabled}' FROM basic_care_enable_result),'true',
+    'enabling care confirms this owner membership');
+SELECT is(public.execute_basic_care_command(
+    '17300000-0000-4000-8000-000000000001','17300000-0000-4000-8000-000000000020',
+    'basic_care.enable','{"plant_id":"17300000-0000-4000-8000-000000000011"}'),
+    (SELECT receipt FROM basic_care_enable_result),'enabling care replays the original receipt');
+SELECT is((SELECT count(*) FROM public.care_entries WHERE plant_id='17300000-0000-4000-8000-000000000011'),
+    3::bigint,'enabling care adds no journal entries');
 INSERT INTO public.entitlements(owner_id, product_id, state, offer_kind, valid_until) VALUES
     ('17300000-0000-4000-8000-000000000001', 'app.narat.plants.pro.monthly', 'active', 'paid', now() - interval '1 day');
 SELECT is(pg_temp.check_read()->'calendar_eligible', 'false'::jsonb, 'Elapsed verified access suppresses the date');
