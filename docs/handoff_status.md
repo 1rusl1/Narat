@@ -2378,11 +2378,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- 15 Nov 2026. Two independently running project orchestrators. Backend/data publishes to codex/plants-backend; iOS/integration publishes to codex/plants-ios and owns the Simulator. User requests continuation without intermediate confirmation up to 85% weekly Codex usage. All providers and fallbacks in these runs use Codex.
-- Backend activation and refresh are accepted on fixtures at 6482e30. narat-staging runs plants-api v26, worker v8 and 041–050 with 024 excluded. Live paused refresh, enable, replay and one owner journal fact passed on disposable accounts. The dated journey awaits published evidence applicable to the actual context.
-- iOS c742a92/585e3be supports enable and explicit refresh through owner-bound durable outbox. Signed V13 plant deletion, private photo revocation and neighbor preservation passed; account deletion remains open.
-- Current backend task is the internal V19 write transaction for one routine soil check, before HTTP and recurrence. New files are expected. Developer returns a unified Git patch in JSON; the controller owns all writes and test execution. Keep T160/T171 open, avoid staging/purchase/catalogue edits.
-- Swift 6, Supabase/PostgreSQL, verified evidence, owner isolation, exact replay, forward-only migrations. T006 and StoreKit remain deferred.
+- Backend/data worktree publishes to codex/plants-backend; iOS/integration independently publishes to codex/plants-ios and owns the Simulator. The weekly Codex ceiling is 85% used. All model routes use Codex.
+- narat-staging has 051–055, excluding 024, with plants-api v27 and worker v8. Discarded live SQL fixture transaction verified progression, reversal, isolated owner access and exact replay. Published Monstera v2 has a conditional action and no interval. Live HTTP verified paused refresh and no generated task.
+- Backend local clean and upgrade PostgreSQL accepted b37fdff. Both actual owner-lock waiters were observed, exact replay matched the persisted winner, stale new operation failed, one task and entry linked in both directions, original watering row and quota were unchanged. Changes: race fixture gate and task manifest/report.
+- Next 056 is forward-only. For a contextual profile a date requires an active verified refreshed rule and qualifying facts. Keep legacy without contextual metadata. Return a unified Git diff in JSON. Local fixture gates only. Keep T160/T171 open and do not publish a dated profile in this packet.
 
 <!-- /orchestrator:project-state -->
 

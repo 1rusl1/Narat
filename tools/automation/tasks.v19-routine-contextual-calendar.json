@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-contextual-calendar",
+      "description": "Require an explicit verified routine rule before a contextual care profile can emit a soil-check date.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611150056_require_explicit_contextual_calendar.sql",
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql",
+        "supabase/migrations/202611150050_revalidate_refreshed_care_calendar.sql",
+        "supabase/tests/routine_soil_check.test.sql",
+        "supabase/tests/plant_next_check.test.sql",
+        "supabase/functions/plants-api/care-recommendation.ts"
+      ],
+      "write_files": [
+        "supabase/migrations/202611150056_require_explicit_contextual_calendar.sql",
+        "supabase/tests/routine_soil_check.test.sql"
+      ],
+      "constraints": [
+        "Return a valid unified Git diff with exact source context in the JSON patch field. Controller writes and verifies. Forward migration only, with focused fixture changes. No data publication, external services, HTTP or changes to earlier migrations.",
+        "The 050 base allows revision-one legacy calendar dates from a watering fact. In 056, preserve legacy results for published care profiles without refresh_conditions metadata. For the exact published care profile selected by the existing owner-bound projection, if its validation_report has the refresh_conditions key (even empty or null), report calendar_eligible=false unless the 052 valid routine check resolves and 050 calendar access remains eligible. This prevents GET building a legacy watering-derived date lacking an explicitly refreshed matching rule. Derive the contextual flag by matching the owner plant and its taxon and the projection's published KB/profile (guard SQL nulls). Keep projection body, last water date, recommendation interval and service-only grants intact, including absent profile/owner behavior. Prefer updating the 052 wrapper with no recursion and reusing the existing resolver.",
+        "Add gate-covered pgTAP tests for revision one with watering and contextual profile before any stored rule, a matching explicit valid current rule, unmatched or withdrawn evidence, malformed named contextual metadata, and legacy revision-one metadata absent. Preserve historical fixture cutoff compatibility using an explicit version marker or a stable test for the function's presence. Leave T160/T171 open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19CTX1",
+          "description": "Diff limited to independent forward migration and covered SQL regression fixture.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19CTX2",
+          "description": "Real PostgreSQL clean and upgrade checks preserve legacy and suppress contextual dates without a valid explicit rule.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
