@@ -1,0 +1,71 @@
+BEGIN;
+
+-- Private settings projection for the future GET /me service handler.
+CREATE FUNCTION public.read_owner_profile_settings(p_owner_id UUID)
+RETURNS JSONB LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+    SELECT jsonb_build_object('preferred_locale', preferred_locale,
+        'reminder_hour_local', reminder_hour_local)
+    FROM public.profiles
+    WHERE id=p_owner_id AND account_state='active' AND NOT anonymous
+$$;
+
+CREATE FUNCTION public.execute_profile_reminder_hour_update(
+    p_owner_id UUID, p_operation_id UUID, p_payload JSONB
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE
+    v_profile public.profiles%ROWTYPE;
+    v_receipt public.operation_receipts%ROWTYPE;
+    v_hour INTEGER;
+    v_hash TEXT;
+    v_watermark TIMESTAMPTZ;
+    v_result JSONB;
+BEGIN
+    SELECT * INTO v_profile FROM public.profiles
+    WHERE id=p_owner_id AND account_state='active' AND NOT anonymous FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ACTIVE_PERMANENT_OWNER_REQUIRED' USING ERRCODE='42501';
+    END IF;
+
+    IF p_operation_id IS NULL
+       OR jsonb_typeof(p_payload) IS DISTINCT FROM 'object'
+       OR p_payload - 'reminder_hour_local' <> '{}'::jsonb
+       OR jsonb_typeof(p_payload->'reminder_hour_local') IS DISTINCT FROM 'number' THEN
+        RAISE EXCEPTION 'INVALID_PROFILE_UPDATE_INPUT' USING ERRCODE='22023';
+    END IF;
+    -- Check the JSON number before casting: no rounding or numeric overflow.
+    IF (p_payload->>'reminder_hour_local') !~ '^([0-9]|1[0-9]|2[0-3])$' THEN
+        RAISE EXCEPTION 'INVALID_PROFILE_UPDATE_INPUT' USING ERRCODE='22023';
+    END IF;
+    v_hour := (p_payload->>'reminder_hour_local')::integer;
+    v_hash := encode(sha256(convert_to(
+        jsonb_build_array('profile.update',p_payload)::text,'UTF8')),'hex');
+    SELECT * INTO v_receipt FROM public.operation_receipts
+    WHERE owner_id=p_owner_id AND operation_id=p_operation_id;
+    IF FOUND THEN
+        IF v_receipt.command_name <> 'profile.update' OR v_receipt.payload_hash <> v_hash THEN
+            RAISE EXCEPTION 'IDEMPOTENCY_CONFLICT' USING ERRCODE='23505';
+        END IF;
+        RETURN v_receipt.response_payload;
+    END IF;
+
+    v_watermark := v_profile.updated_at;
+    IF v_profile.reminder_hour_local IS DISTINCT FROM v_hour THEN
+        v_watermark := public.advance_owner_watermark(p_owner_id);
+        UPDATE public.profiles SET reminder_hour_local=v_hour WHERE id=p_owner_id;
+    END IF;
+    v_result := jsonb_build_object('profile',jsonb_build_object(
+        'preferred_locale',v_profile.preferred_locale,'reminder_hour_local',v_hour),
+        'watermark',v_watermark);
+    INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload)
+    VALUES(p_owner_id,p_operation_id,'profile.update',v_hash,v_result);
+    RETURN v_result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.read_owner_profile_settings(UUID) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.execute_profile_reminder_hour_update(UUID,UUID,JSONB)
+    FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.read_owner_profile_settings(UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.execute_profile_reminder_hour_update(UUID,UUID,JSONB) TO service_role;
+
+COMMIT;

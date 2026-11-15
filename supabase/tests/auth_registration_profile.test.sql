@@ -104,5 +104,147 @@ SELECT ok(NOT has_function_privilege('authenticated','public.sync_auth_owner_pro
     AND NOT has_function_privilege('service_role','public.sync_auth_owner_profile()','execute'),
     'only the installed Auth triggers invoke profile synchronization');
 
+-- T083 SQL core only; HTTP/client/live acceptance (T083/T084) remains open.
+INSERT INTO public.profiles(id,anonymous,preferred_locale) VALUES
+    (pg_temp.owner_id(80),false,'pl'), (pg_temp.owner_id(81),false,'en'),
+    (pg_temp.owner_id(82),true,'en'), (pg_temp.owner_id(83),false,'en'),
+    (pg_temp.owner_id(84),false,'en'), (pg_temp.owner_id(85),false,'en');
+UPDATE public.profiles SET account_state='deleting' WHERE id=pg_temp.owner_id(83);
+UPDATE public.profiles SET account_state='deleted' WHERE id=pg_temp.owner_id(85);
+UPDATE public.profiles SET reminder_hour_local=17 WHERE id=pg_temp.owner_id(81);
+SELECT is(public.read_owner_profile_settings(pg_temp.owner_id(80)),
+    '{"preferred_locale":"pl","reminder_hour_local":9}'::jsonb,'new owner defaults to 09:00');
+SELECT is(public.read_owner_profile_settings(pg_temp.owner_id(81)),
+    '{"preferred_locale":"en","reminder_hour_local":17}'::jsonb,'existing settings are not reset');
+SELECT is(public.read_owner_profile_settings(id),NULL::jsonb,
+    'private read hides absent, anonymous and inactive owner '||n)
+FROM (VALUES (82),(83),(85),(86)) v(n) CROSS JOIN LATERAL (SELECT pg_temp.owner_id(n) id) i;
+SELECT is(public.read_owner_profile_settings(NULL),NULL::jsonb,'null owner has no settings');
+
+-- A future timestamp forces strict monotonicity independent of wall-clock time.
+UPDATE public.profiles SET updated_at=clock_timestamp()+interval '1 day',
+    trial_reminder_enabled=true WHERE id=pg_temp.owner_id(80);
+INSERT INTO public.entitlements(owner_id,product_id,state,offer_kind,valid_until)
+VALUES(pg_temp.owner_id(80),'app.narat.plants.pro.monthly','expired','paid',clock_timestamp()-interval '1 day');
+CREATE TEMP TABLE t083_before AS
+SELECT to_jsonb(p) AS profile,public.fetch_sync_delta(p.id) AS sync,
+    (SELECT to_jsonb(e) FROM public.entitlements e WHERE e.owner_id=p.id) AS entitlement,
+    (SELECT to_jsonb(a) FROM public.account_quota_anchors a WHERE a.owner_id=p.id) AS anchor
+FROM public.profiles p WHERE p.id=pg_temp.owner_id(80);
+CREATE TEMP TABLE t083_other AS SELECT to_jsonb(p) AS profile FROM public.profiles p
+WHERE p.id=pg_temp.owner_id(81);
+
+CREATE FUNCTION pg_temp.profile_hour(payload JSONB,
+    operation UUID DEFAULT pg_temp.owner_id(100),
+    owner UUID DEFAULT pg_temp.owner_id(80))
+RETURNS JSONB LANGUAGE sql AS $$
+    SELECT public.execute_profile_reminder_hour_update(owner,operation,payload)
+$$;
+CREATE TEMP TABLE t083_zero AS SELECT pg_temp.profile_hour('{"reminder_hour_local":0}') AS body;
+SELECT is((SELECT body->'profile' FROM t083_zero),
+    '{"preferred_locale":"pl","reminder_hour_local":0}'::jsonb,'midnight persists with the owner locale');
+SELECT is(public.read_owner_profile_settings(pg_temp.owner_id(80)),
+    (SELECT body->'profile' FROM t083_zero),'midnight is stored rather than only echoed');
+SELECT ok((SELECT (z.body->>'watermark')::timestamptz>(b.profile->>'updated_at')::timestamptz
+    FROM t083_zero z CROSS JOIN t083_before b),'real change advances a future owner watermark');
+CREATE TEMP TABLE t083_last AS
+SELECT pg_temp.profile_hour('{"reminder_hour_local":23}',pg_temp.owner_id(101)) AS body;
+SELECT is(public.read_owner_profile_settings(pg_temp.owner_id(80)),
+    '{"preferred_locale":"pl","reminder_hour_local":23}'::jsonb,'23:00 persists in the private read');
+SELECT ok((SELECT (l.body->>'watermark')::timestamptz>(z.body->>'watermark')::timestamptz
+    FROM t083_last l CROSS JOIN t083_zero z),'second change strictly advances the watermark');
+SELECT is(pg_temp.profile_hour('{"reminder_hour_local":0}'),(SELECT body FROM t083_zero),
+    'exact replay after a later change returns the original response and watermark');
+SELECT is(public.read_owner_profile_settings(pg_temp.owner_id(80))->>'reminder_hour_local','23',
+    'old replay does not overwrite the newer hour');
+SELECT is(pg_temp.profile_hour('{"reminder_hour_local":23}',pg_temp.owner_id(102)),
+    (SELECT body FROM t083_last),'new no-op operation preserves the current watermark');
+SELECT ok((SELECT count(*)=3 AND bool_and(command_name='profile.update')
+    FROM public.operation_receipts WHERE owner_id=pg_temp.owner_id(80)),
+    'each successful operation including the no-op has a canonical receipt');
+SELECT is((SELECT public.fetch_sync_delta(pg_temp.owner_id(80),
+    (b.sync->>'until')::timestamptz)->'profile'->'reminder_hour_local' FROM t083_before b),
+    '23'::jsonb,'new sync exposes the persisted reminder hour');
+SELECT is(public.fetch_sync_delta(pg_temp.owner_id(80))->>'until',
+    (SELECT body->>'watermark' FROM t083_last),'sync watermark matches the last genuine mutation');
+
+-- Rejected requests cannot leave a receipt, mutate settings or claim local success.
+CREATE TEMP TABLE t083_rejected_before AS
+SELECT to_jsonb(p) AS profile,
+    (SELECT count(*) FROM public.operation_receipts WHERE owner_id=p.id) AS receipts
+FROM public.profiles p WHERE p.id=pg_temp.owner_id(80);
+SELECT throws_ok(format('SELECT pg_temp.profile_hour(%L::jsonb)',payload),
+    '22023','INVALID_PROFILE_UPDATE_INPUT','reject invalid profile payload: '||coalesce(payload,'SQL NULL'))
+FROM (VALUES (NULL::text),('null'),('{}'),('[]'),('9'),
+    ('{"reminder_hour_local":null}'),('{"reminder_hour_local":"9"}'),
+    ('{"reminder_hour_local":true}'),('{"reminder_hour_local":[]}'),
+    ('{"reminder_hour_local":{}}'),('{"reminder_hour_local":9.5}'),
+    ('{"reminder_hour_local":9.0}'),('{"reminder_hour_local":-1}'),
+    ('{"reminder_hour_local":24}'),('{"reminder_hour_local":1e1000}'),
+    ('{"reminder_hour_local":8,"preferred_locale":"en"}'),
+    ('{"reminder_hour_local":8,"owner_id":"15410000-0000-4000-8000-000000000081"}'),
+    ('{"reminder_hour_local":8,"unknown":1}'),('{"preferred_locale":"en"}')) bad(payload);
+SELECT throws_ok($q$SELECT pg_temp.profile_hour('{"reminder_hour_local":8}',NULL)$q$,
+    '22023','INVALID_PROFILE_UPDATE_INPUT','operation UUID is required');
+SELECT throws_ok($q$SELECT pg_temp.profile_hour('{"reminder_hour_local":8}')$q$,
+    '23505','IDEMPOTENCY_CONFLICT','changed data cannot reuse the operation UUID');
+SELECT throws_ok(format('SELECT pg_temp.profile_hour(''{"reminder_hour_local":8}'',%L::uuid,%L::uuid)',
+    pg_temp.owner_id(103),id),'42501','ACTIVE_PERMANENT_OWNER_REQUIRED',
+    'write rejects absent, anonymous or inactive owner '||n)
+FROM (VALUES (82),(83),(85),(86)) v(n) CROSS JOIN LATERAL (SELECT pg_temp.owner_id(n) id) i;
+SELECT throws_ok($q$SELECT pg_temp.profile_hour('{"reminder_hour_local":8}',pg_temp.owner_id(103),NULL)$q$,
+    '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','null owner cannot write');
+SELECT ok((SELECT to_jsonb(p)=b.profile AND b.receipts=(
+    SELECT count(*) FROM public.operation_receipts WHERE owner_id=p.id)
+    FROM public.profiles p CROSS JOIN t083_rejected_before b WHERE p.id=pg_temp.owner_id(80)),
+    'failed writes leave the profile, watermark and receipt count unchanged');
+
+SELECT is((SELECT count(*) FROM public.operation_receipts
+    WHERE owner_id IN (pg_temp.owner_id(82),pg_temp.owner_id(83),pg_temp.owner_id(85),pg_temp.owner_id(86))),
+    0::bigint,'rejected owners receive no success receipts');
+
+-- Even an otherwise matching hash cannot replay a receipt for another command.
+INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload)
+VALUES(pg_temp.owner_id(80),pg_temp.owner_id(104),'plant.edit',
+    encode(sha256(convert_to(jsonb_build_array('profile.update',
+        '{"reminder_hour_local":8}'::jsonb)::text,'UTF8')),'hex'),'{"foreign":true}');
+SELECT throws_ok($q$SELECT pg_temp.profile_hour('{"reminder_hour_local":8}',pg_temp.owner_id(104))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','different command conflicts even with a matching payload hash');
+SELECT is(pg_temp.profile_hour('{"reminder_hour_local":0}',pg_temp.owner_id(100),pg_temp.owner_id(84))->'profile',
+    '{"preferred_locale":"en","reminder_hour_local":0}'::jsonb,
+    'operation UUID is owner-scoped and cannot return another owner locale or receipt');
+
+-- Exercise every remaining integer hour with new operations.
+CREATE TEMP TABLE t083_hours AS
+SELECT n,pg_temp.profile_hour(jsonb_build_object('reminder_hour_local',n),
+    pg_temp.owner_id(200+n)) AS body FROM generate_series(0,23) n ORDER BY n;
+SELECT is(body->'profile'->'reminder_hour_local',to_jsonb(n),'valid integer hour '||n) FROM t083_hours;
+SELECT ok((SELECT count(*)=24 AND count(DISTINCT body->>'watermark')=24
+    AND min((body->>'watermark')::timestamptz)>(SELECT (body->>'watermark')::timestamptz FROM t083_last)
+    FROM t083_hours),'all genuine hour changes get distinct increasing watermarks');
+SELECT ok((SELECT to_jsonb(p)-'reminder_hour_local'-'updated_at'
+    =b.profile-'reminder_hour_local'-'updated_at'
+    AND (SELECT to_jsonb(e) FROM public.entitlements e WHERE e.owner_id=p.id)
+        IS NOT DISTINCT FROM b.entitlement
+    AND (SELECT to_jsonb(a) FROM public.account_quota_anchors a WHERE a.owner_id=p.id)
+        IS NOT DISTINCT FROM b.anchor
+    FROM public.profiles p CROSS JOIN t083_before b WHERE p.id=pg_temp.owner_id(80)),
+    'hour updates preserve all other profile settings, entitlement and quota anchor');
+SELECT is((SELECT to_jsonb(p) FROM public.profiles p WHERE p.id=pg_temp.owner_id(81)),
+    (SELECT profile FROM t083_other),'another owner settings and watermark remain untouched');
+SELECT is(public.read_owner_profile_settings(pg_temp.owner_id(80)),
+    (public.fetch_sync_delta(pg_temp.owner_id(80))->'profile')-'trial_reminder_enabled'-'report_notifications_enabled',
+    'private settings agree with both supported sync projection versions');
+
+SELECT ok(has_function_privilege('service_role',signature,'EXECUTE')
+    AND NOT has_function_privilege('anon',signature,'EXECUTE')
+    AND NOT has_function_privilege('authenticated',signature,'EXECUTE')
+    AND NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+        WHERE p.oid=signature::regprocedure AND acl.grantee=0 AND acl.privilege_type='EXECUTE'),
+    'only service role can call '||signature)
+FROM (VALUES ('public.read_owner_profile_settings(uuid)'),
+    ('public.execute_profile_reminder_hour_update(uuid,uuid,jsonb)')) rpc(signature);
+
 SELECT * FROM finish();
 ROLLBACK;

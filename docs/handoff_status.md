@@ -2433,9 +2433,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t168-active-plant-create-input-guard: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 323.09 с, проверки — 52.39 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t168-active-plant-create-input-guard](validation/automation/tasks/t168-active-plant-create-input-guard.md).
+t083-profile-reminder-hour-core: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 389.62 с, проверки — 53.00 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-profile-reminder-hour-core](validation/automation/tasks/t083-profile-reminder-hour-core.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
