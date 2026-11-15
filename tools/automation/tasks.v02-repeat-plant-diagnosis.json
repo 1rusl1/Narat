@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "v02-repeat-plant-diagnosis",
+      "description": "Independently review the owner-scoped repeat diagnosis candidate and its production route, database and worker fixtures.",
+      "candidate_base": "def21d0c2a2cf1a163fdf479c039bf44b7490f83",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/diagnosis-photo-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/http.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/functions/analysis-worker/diagnosis-persistence.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/migrations/202611120025_repeat_plant_diagnosis.sql",
+        "supabase/tests/repeat_plant_diagnosis.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v02-repeat-plant-diagnosis.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Use local and fixture gates. Controller alone deploys to narat-staging after acceptance.",
+        "Check owner scope and isolation before quota, immutable replay and historical compatibility, photo reuse on technical failure, no previous photos or results in the prompt, current conditions and factual non-voided care.",
+        "Use the existing diagnosis admission and provider quota. Keep 024, billing, and StoreKit outside this packet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V02-R1",
+          "description": "Production entrypoints type-check and the exact diff is clean.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V02-R2",
+          "description": "Production HTTP/worker transport and clean/upgrade SQL verify owner scope, single new photo, factual context, unchanged history and quota/replay.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-t163-access-http-pilot",
+      "description": "READ-ONLY FULL SNAPSHOT AUDIT: independently accept the existing production GET /analysis/access candidate after interrupted run08; inspect current behavior, not comparative delta minimality.",
+      "depends_on": [],
+      "risk": "high",
+      "complexity": "medium",
+      "files": [
+        "supabase/functions/_shared/AnalysisAccess.ts",
+        "supabase/functions/plants-api/analysis-access.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/tests/analysis_result_test.ts",
+        "specs/001-plants-ios-mvp/contracts/monthly-access-http.md",
+        "specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json",
+        "supabase/migrations/202611090011_installation_access_api.sql",
+        "supabase/migrations/202611090012_analysis_access_snapshot.sql",
+        "supabase/functions/plants-api/installations.ts",
+        "tools/automation/parallel_backend_access_test.ts",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/ORCHESTRATOR.md",
+        "tools/automation/orchestration/engine.py",
+        "tools/automation/orchestration/context.py",
+        "tools/automation/orchestration/preflight.py",
+        "docs/validation/automation/parallel-backend-access-http-pilot-prep-2026-11-10.md"
+      ],
+      "write_files": [],
+      "constraints": [
+        "EXPLICIT FULL SNAPSHOT AUDIT, not candidate_diff/minimality review. candidate_base deliberately omitted under owner-authorized alternative. Inspect current complete GET source and all behavioral evidence; empty task.patch does NOT prove minimality. write_files=[]: no implementation/patch/Developer. Only ONE task/run is authorized; stop at first terminal status or timeout, no newrun/repaircontroller/secondpackage/automaticresume. Do not touch GitHub Actions/CI helpers/manifests/T006/main promotion/installation HTTP/worker/alias. Findings mean stop for owner/controller, not unauthorized implementation.",
+        "Accepted engine prerequisite25a5830ca5447a3b25e7abd37350759e3e0841f3 (ancestorcf5a6b1) ordinary merged2d1b374; read ORCHESTRATOR.md updated routing/preflight/boundedreading. Engine/config/docs delta is accepted prerequisite, not an extension of business acceptance to whole repository. Current GET candidate originallya151427, SQL/wire prerequisite6d689b7. Newrun uses context discovery6/read_chars16000, preflight preserved and branch-only publish. Highrisk unchanged => separate independent AstraReviewer+QA. No extraDeveloper confirmation.",
+        "Preserve the original three acceptance criteria and ALL checks. Oldrun08 had DeveloperPASS68.111s/ReviewerPASS77.672s and QA interrupted; this is NOT acceptance or reusable current-run evidence. Fresh actual39protectedHTTP,336Deno, current147automation,511pgTAP/cap/typecheck required before fresh independent Reviewer/QA. Snapshot audit must inspect source directly rather than falsely inferring no changes from empty diff. Fixtures/mock transport only, no deploy/live/fullT163/T036 closure.",
+        "No files may be changed; read-only acceptance. Controller owns gates/config/fixtures/handoff/tasks/Git. No applied SQL, Swift, authresolver/collection/billing/worker/provider/SDK rewrites, network/deploy, secrets. External SQL005-012 accepted through b44013e and main5d15123 ordinary merged93a54cf are prerequisites, NOTsame-manifestdependencies. User explicitly authorized configured Developer/Reviewer/QA/providers and backend-only commit/push. Fixtures not live. FullT163/T036/live remainopen.",
+        "New AnalysisAccessQueryAdapter is ONE fetchSnapshot, actual service Supabase RPC get_analysis_access_snapshot params p_owner_id verifiedactivectx + p_installation_credential_hash hashedheader only, never p_now/queryowner/time. Production composition uses existing lazy serviceclient closure options.env/fetch. Keep actual default Auth getUser/profile active verification unchanged and existing collection production composition/injected delegates. Active anonymous JWT counts as authenticated before visiblelogin; requires credential, permanent optional. Present malformed credential400; unknown/unlinked credential safe403 via SQL. No ownerless fallback.",
+        "AnalysisAccess.ts removes evaluateAccessSnapshot/Free1/calendar/trialexpiry defaults and only validates authoritative JSON. owner_id MUSTmatch capturedowner and is_guest MUSTmatch verifiedcontext. One monthly pool, only identification/diagnosis camelCase modes. Unknown monthly.limit/consumed/reserved/remaining NULL and periodunknown NULL, status registration_required/history_unresolved; mode limit3/100 and denied0. Guest monthly allNULL/not_applicable, independentstarters. Paid100 no starterfallback, Free3 unusedstarter first. Validate finite nonnegative safeinteger fields/coherence/currentmode, missing/invalid/mixedowner/mismatchedguest/Free1/extra followup rejected503; never fabricate defaults or coerce booleans. Preserve original rawRFC3339 microsecondstrings+offsets, syntaxvalidate/bigintcompare only, never reserialize/reset from localcalendar. No split speculative profile/entitlement/monthly reads.",
+        "Transport/SDK/missingbadenv/DB/malformedresponse errors localizedsafe ENPL503 INTERNAL_ERROR retryable, never rawSQL/key leakage via sharedhttp generic500. Whitelist knownSQL credential/activeowner errors to403, malformedcredential400, conflictingstarter409. GET200 exhaustion structuredfalse, unknownmonthly GET200 maystillallowunusedFree starter. No job/reserve/dryrun or fake202/result in this slice. Installations HTTP still follows separatetask; do not activate/change it yet. collection-http staysstable. A explicitly agreed newadditive DTO and correcting2unknownfixture monthly.limit toNULL; mode limitsunchanged.",
+        "Protected actual-production transport gate39 tests includes7canonicalcases, realSDK URL/Authorization/servicekey/argnames/hash/callercontext despitequeryspoof/noSQLclock, A/B/stale, anonymous/missingcredential, malformeddata/timestamps/legacyFree1, ENPL503 withoutleaks. Cannot edit gate/fixtures/check definitions or weaken existing336Deno tests. Full511pgTAP/99actual+6x20/cap mustremainPASS. HTTPtransport ismock, notliveAuth/Supabase/provider/StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Real production-composition HTTP with actual Supabase client mocked transport; canonical ENPL and identity/credentials/no-fallback.",
+          "checks": [
+            "parallel-backend-access-http"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "All server/Deno/accounting/cap regression preserved.",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-quota-access",
+            "parallel-backend-cap-regression"
+          ],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC3",
+          "description": "Actual entrypoints typecheck and diff clean.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        }
+      ],
+      "evidence_files": [
+        "specs/001-plants-ios-mvp/contracts/fixtures/monthly-access.json",
+        "docs/validation/automation/parallel-backend-access-http-pilot-prep-2026-11-10.md"
+      ]
+    }
+  ]
+}

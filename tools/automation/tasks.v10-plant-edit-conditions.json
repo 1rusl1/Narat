@@ -1,0 +1,47 @@
+{
+  "tasks": [
+    {
+      "id": "v10-plant-edit-conditions",
+      "description": "Review partial conditions editing, historical snapshots and pausing invalid automation.",
+      "candidate_base": "cbf05c158fdc2c67f7c9c26afc4eb36c9e2a3c8f",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/plant_edit_name_test.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/migrations/202611130042_plant_edit_conditions.sql",
+        "supabase/tests/plant_edit_conditions.test.sql",
+        "tools/automation/tasks.v10-plant-edit-conditions.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Local synthetic fixtures only. Keep previous snapshots, job links, photo, completed history and sibling scheduling. Verify partial edit, stale summary, active rule/first aid pausing, no re-enable through basic care reconciliation, exact replay. No taxon, deployment, 024 or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V10-N1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V10-N2",
+          "description": "HTTP and SQL verify conditions input, preservation of history, scoped pause and exact replay.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

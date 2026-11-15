@@ -1,0 +1,51 @@
+{
+  "tasks": [
+    {
+      "id": "v19-monstera-contextual-profile",
+      "description": "Author a versioned staging-only Monstera record for an explicitly confirmed ordinary soil-check cadence.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "knowledge-base/releases/staging-monstera-care-v3/monstera-watering.json",
+        "knowledge-base/releases/staging-monstera-care-v3/refresh-conditions.json",
+        "knowledge-base/releases/staging-monstera-care-v3/README.md",
+        "knowledge-base/releases/staging-monstera-care-v2/monstera-watering.json",
+        "knowledge-base/releases/staging-monstera-care-v2/README.md",
+        "specs/001-plants-ios-mvp/contracts/plant-profile.schema.json",
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql"
+      ],
+      "write_files": [
+        "knowledge-base/releases/staging-monstera-care-v3/monstera-watering.json",
+        "knowledge-base/releases/staging-monstera-care-v3/refresh-conditions.json",
+        "knowledge-base/releases/staging-monstera-care-v3/README.md"
+      ],
+      "constraints": [
+        "Return a valid unified diff with exact headers. New files only, under v3. No publish SQL, provider, staging connect, existing version, migration or iOS change. Fixed new kb_release_id 3ed50000-0000-4000-8000-000000000013 and record_version=2. Keep prior action ID check_monstera_mix_before_watering, no active ingredients, EN/PL authored content and no prerequisites. The next check is a soil observation, never an instruction for automatic watering or to postpone justified watering.",
+        "Retain the v2 Wisconsin evidence for action at /actions/0, with slightly dry soil before watering. Add Illinois Extension https://extension.illinois.edu/sites/default/files/hkmw-_houseplants.pdf, page 2, Day to Day Maintenance / Watering. Verified 2026-11-15T08:46:56Z, SHA256 of checked PDF 6cf3f44999ce73441313278c7baefc651da22f66b24fca469963afc465939860. Its reviewed facts are that indoor soil should be checked every few days to weekly and watered as necessary, frequency depends on plant/soil/conditions, let water drain. Derive 7 days as an upper routine soil observation cadence and recommend checking sooner as needed. This is editorial inference; Illinois guide is general and says nothing species-specific. Link interval field specifically to Illinois.",
+        "Applicability is a narrow staging policy for a saved potted indoor Monstera, using University of Minnesota Extension https://extension.umn.edu/garden-and-home/yard-and-garden/gardening-in-minnesota/propagating-monstera-deliciosa Quick Facts medium-light houseplant, reviewed 2026-11-15; use SHA256 of a retained UTF-8 editorial evidence note (without newline) with exact text/hash in README, no claimed raw HTML digest. Its mature-plant watering guidance is not used. Link /actions/0/refresh_conditions first to UMN for medium indoor light and to Illinois for draining pot/houseplants. Exact six fields in the sidecar object at refresh_conditions[action ID]: light_code medium, light_source manual, light_confirmed true, watering_code unknown, drainage_code yes, pot_type plastic. Document that manual confirmation, unknown habit and chosen pot material are narrow eligibility choices, not claims by the publishers. Require known matching current conditions, enabled membership, persisted watering and explicit refresh before a date, enforced by 056 in a separate packet. Preserve source documents, existing schema field names, and use basis for derived_records only.",
+        "README must distinguish reviewed facts, staging-only editorial inference, retained note/hash conventions and technical gate. This is an unpublished candidate. No task completion claim."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19KB1",
+          "description": "Scoped diff and project compact plant schema gate pass. Reviewer checks v3 own files, separate applicability metadata and provenance paths.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "t157-compact-plant",
+            "v19-contextual-kb"
+          ]
+        },
+        {
+          "id": "V19KB2",
+          "description": "Project KB checks pass with no catalogue changes.",
+          "mode": "fixture",
+          "checks": [
+            "kb-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-undo-http",
+      "description": "Connect the verified routine soil-check reversal to owner /commands without changing other care undo routes.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/_shared/tests/routine_soil_check_http_test.ts",
+        "supabase/migrations/202611150055_routine_soil_check_undo_permissions.sql",
+        "supabase/tests/routine_soil_check.test.sql",
+        "supabase/migrations/202611150054_routine_soil_check_undo.sql"
+      ],
+      "write_files": [
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/_shared/tests/routine_soil_check_http_test.ts",
+        "supabase/migrations/202611150055_routine_soil_check_undo_permissions.sql",
+        "supabase/tests/routine_soil_check.test.sql"
+      ],
+      "constraints": [
+        "Current accepted base 1dfe312. Return a valid unified Git patch in JSON with exact current context. The controller applies and checks. Do not modify 054 or existing applied migrations.",
+        "Exact wire: POST /commands command_name=care.check_soil.undo. Existing operation_id/plant_id envelope, payload_json only entry_id UUID. Auth supplies the permanent owner. Call execute_routine_soil_check_undo with existing signature. Validate receipt plant_id, entry_id, task_id, reversal_id, state=voided and SQL watermark. Return private, no-store. Keep original manual watering and first-aid undo paths untouched.",
+        "Add 055 granting only service_role to the 054 function. Use the same controlled COMMENT/fixture feature marker pattern as 053 to retain private permissions until 055. Make sure anon/authenticated/PUBLIC remain denied. HTTP fixture proves owner-bound request, valid exact response, permanent rejection and malformed envelope.",
+        "No staging, data publication, iOS changes, scheduler, notifications or reshaping the project API."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19UH1",
+          "description": "Production TypeScript and exact diff pass.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V19UH2",
+          "description": "HTTP and SQL fixtures verify owner-only reversal with previous behavior preserved.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

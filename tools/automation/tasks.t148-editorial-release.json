@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    {
+      "id": "t148-editorial-release",
+      "description": "Independently accept the exact 606-record catalogue artifact for the English MVP. The pipeline was separately accepted in 440256f. The controller authored the release corrections and generated the digest-bound actual-data evidence.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "tools/automation/tasks.t148-editorial-release.json",
+        "tools/automation/t148_catalogue_gate.py",
+        "knowledge-base/pipeline/catalogue_image.py",
+        "knowledge-base/pipeline/import_catalogue_300.py",
+        "knowledge-base/pipeline/validate_catalogue_skeleton.py",
+        "knowledge-base/tests/test_catalogue_skeleton.py",
+        "catalogue/releases/skeleton-300-v1/README.md",
+        "catalogue/releases/skeleton-300-v1/editorial-review.json",
+        "catalogue/releases/skeleton-300-v1/image-validation.json",
+        "catalogue/releases/skeleton-300-v1/offline-validation.json",
+        "catalogue/releases/skeleton-300-v1/coverage.json"
+      ],
+      "write_files": [],
+      "evidence_files": [
+        "catalogue/releases/skeleton-300-v1/editorial-review.json",
+        "catalogue/releases/skeleton-300-v1/image-validation.json",
+        "catalogue/releases/skeleton-300-v1/offline-validation.json"
+      ],
+      "constraints": [
+        "Reviewer and QA reports must be in English. This is a read-only release snapshot acceptance bound by its Git fingerprint and actual plants.json SHA. Inspect code and the retained aggregate evidence. Raw snapshots, full catalogue source extracts, image bytes and the locally licensed Plantfolio reference are controller checks only. Do not open or transmit them. The configured release gate independently reads them and reports aggregate counts and pass/fail.",
+        "Confirm preservation of all 606 original plant IDs and Wikidata IDs, provenance of English descriptions and names, compatibility for 603 existing Polish descriptions and English fallback for three invalid source assignments. The six image replacements have per-asset rights, visual inspection and byte checks. Philodendron × domesticum uses the existing ID and authoritative hybrid classification.",
+        "Actual release checks must reproduce the JSON byte for byte in two isolated offline imports and verify SQLite, source text provenance, media bytes, attribution and bounded rights. This is catalogue editorial readiness and isolated import evidence. Live Supabase deployment and T149 iOS acceptance are separate."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T148-R1",
+          "description": "The accepted pipeline checks and real release gate pass, including 606 identities, media and two matching offline rebuilds.",
+          "checks": ["catalogue-schema-sync", "diff-check", "t148-pipeline-gate", "t148-release-gate"],
+          "mode": "local"
+        },
+        {
+          "id": "T148-R2",
+          "description": "Existing tests validate the schema and EN/PL projections for the complete actual release and local compatibility fixtures.",
+          "checks": ["deno-tests", "kb-tests"],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

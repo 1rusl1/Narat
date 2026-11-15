@@ -1,0 +1,96 @@
+{
+  "schema_version": "2.0",
+  "kb_release_id": "3ed50000-0000-4000-8000-000000000013",
+  "record_version": 2,
+  "plant_id": "monstera_deliciosa",
+  "actions": [
+    {
+      "action_id": "check_monstera_mix_before_watering",
+      "action_code": "check_soil",
+      "purpose": "routine_care",
+      "prerequisite_check_ids": [],
+      "contraindication_check_ids": [],
+      "action_en": "Check the potting mix. Let it dry slightly between waterings. Once it has dried a little, water thoroughly and let excess water drain. Check the soil again within 7 days, sooner as needed. This is a soil observation, not a watering schedule: water when needed without waiting for the next check.",
+      "action_pl": "Sprawdź podłoże. Pozwól mu lekko przeschnąć między podlewaniami. Gdy lekko przeschnie, podlej obficie i pozwól nadmiarowi wody odpłynąć. Sprawdź podłoże ponownie najpóźniej za 7 dni, a w razie potrzeby wcześniej. To termin obserwacji podłoża, nie harmonogram podlewania: podlej, gdy jest to potrzebne, nie czekając na kolejną kontrolę.",
+      "next_check_interval_days": 7
+    }
+  ],
+  "provenance": {
+    "source_documents": [
+      {
+        "source_id": "wisconsin_monstera",
+        "donor_id": "uw_madison",
+        "independence_group": "uw_madison",
+        "url": "https://hort.extension.wisc.edu/articles/monstera-deliciosa/",
+        "retrieved_at": "2026-11-11T16:40:59Z",
+        "content_hash": "c08594a4ad0f2e830f630451c9c9b111da71e76f74e7bd14e5ce0b37a6d8550d",
+        "use_basis": "Editorial paraphrase of a reviewed horticultural fact for this staging derived record. No publisher text or image is imported, stored, republished or licensed by this record.",
+        "allowed_for": [
+          "derived_records"
+        ]
+      },
+      {
+        "source_id": "illinois_houseplants",
+        "donor_id": "university_of_illinois_extension",
+        "independence_group": "university_of_illinois_extension",
+        "url": "https://extension.illinois.edu/sites/default/files/hkmw-_houseplants.pdf",
+        "retrieved_at": "2026-11-15T08:46:56Z",
+        "content_hash": "6cf3f44999ce73441313278c7baefc651da22f66b24fca469963afc465939860",
+        "use_basis": "Editorial paraphrase of reviewed general houseplant facts and explicitly identified staging inference for derived_records only. The digest identifies the checked PDF; no publisher text, image or raw document is imported or republished.",
+        "allowed_for": [
+          "derived_records"
+        ]
+      },
+      {
+        "source_id": "umn_monstera",
+        "donor_id": "university_of_minnesota_extension",
+        "independence_group": "university_of_minnesota_extension",
+        "url": "https://extension.umn.edu/garden-and-home/yard-and-garden/gardening-in-minnesota/propagating-monstera-deliciosa",
+        "retrieved_at": "2026-11-15T00:00:00Z",
+        "content_hash": "6ed55823ebe6369a82c153470e432acf42bae6eb5c59aa115e8b9b966f3e2d94",
+        "use_basis": "Editorial paraphrase of the reviewed Quick Facts medium-light houseplant fact for derived_records only. The digest identifies the retained UTF-8 editorial evidence note, not raw HTML. Mature-plant watering guidance is excluded; publisher text, images and raw imports are not republished.",
+        "allowed_for": [
+          "derived_records"
+        ]
+      }
+    ],
+    "field_evidence": {
+      "/actions/0": [
+        {
+          "source_id": "wisconsin_monstera",
+          "locator": "Growing Swiss-Cheese Plant, watering paragraph",
+          "scope": "Routine indoor care for potted Monstera deliciosa. Slight drying is a condition for watering, without a fixed interval."
+        },
+        {
+          "source_id": "illinois_houseplants",
+          "locator": "Page 2, Day to Day Maintenance / Watering",
+          "scope": "General indoor houseplant guidance: check soil every few days to weekly, water as necessary, and let water drain. Frequency depends on plant, soil and conditions; not species-specific Monstera guidance."
+        }
+      ],
+      "/actions/0/next_check_interval_days": [
+        {
+          "source_id": "illinois_houseplants",
+          "locator": "Page 2, Day to Day Maintenance / Watering",
+          "scope": "Staging-only editorial inference: 7 days is an upper routine soil observation cadence within the guide's every-few-days-to-weekly range, with earlier checking as needed. Not a watering interval or a reason to delay justified watering; the guide is general, not species-specific."
+        }
+      ],
+      "/actions/0/refresh_conditions": [
+        {
+          "source_id": "umn_monstera",
+          "locator": "Quick Facts, medium-light houseplant; reviewed 2026-11-15",
+          "scope": "Supports medium indoor light for Monstera deliciosa only. Manual confirmation, unknown watering habit and plastic pot material are narrow staging eligibility choices, not publisher claims. Mature-plant watering guidance is not used."
+        },
+        {
+          "source_id": "illinois_houseplants",
+          "locator": "Page 2, Day to Day Maintenance / Watering",
+          "scope": "Supports indoor houseplant watering with water allowed to drain. The draining-pot eligibility is a narrow staging policy; manual confirmation, unknown watering habit and plastic material are not publisher claims."
+        }
+      ]
+    },
+    "validation": {
+      "method": "manual_review",
+      "validated_at": "2026-11-15T08:46:56Z",
+      "unresolved_conflicts": []
+    }
+  }
+}

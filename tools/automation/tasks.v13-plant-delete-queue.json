@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-queue",
+      "description": "Review the bounded service-only queue sweep and late Storage retries.",
+      "candidate_base": "d6db6c1e9b811eb6634dc647e5a4e99ef1852814",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/maintenance/plant-deletions.ts",
+        "supabase/functions/plants-api/index.ts",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "supabase/functions/_shared/tests/plant_purge_queue_test.ts",
+        "supabase/migrations/202611130040_plant_delete_queue.sql",
+        "supabase/tests/plant_delete_queue.test.sql",
+        "tools/automation/tasks.v13-plant-delete-queue.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Synthetic fixtures only. Review fixed page size, exclusive cursor, service auth, failed job isolation and late Storage retries. No deployment, scheduler, 024 or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-H1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "V13-H2",
+          "description": "Edge and SQL fixtures verify pagination, service auth, failed job isolation and revisiting late objects.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

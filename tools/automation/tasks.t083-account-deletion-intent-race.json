@@ -1,0 +1,40 @@
+{
+  "tasks": [
+    {
+      "id": "t083-account-deletion-intent-race",
+      "description": "Independently verify that a concurrent account request blocks same-owner writes and preserves exact replay and separate owner progress.",
+      "candidate_base": "16886524d6a8f85b217ad8d87a71bacdd765f454",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "tools/automation/tasks.t083-account-deletion-intent-race.json",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "docs/handoff_status.md"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only acceptance of committed controller gate only. SQL 060 already accepted at base. No staging, account mutation outside PostgreSQL fixtures, workers or grants.",
+        "Verify separate PostgreSQL connections genuinely block while the deletion request holds the owner lock. The independent owner writes while the lock is held with the same operation UUID, the deleting owner's write is denied after commit, its exact replay matches the stored receipt, and the historical water fact remains byte-for-byte."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083R1",
+          "description": "Actual diff scoped to controller gate and recorded test evidence.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        },
+        {
+          "id": "T083R2",
+          "description": "Real PostgreSQL clean and upgrade observe both waiters and confirm independent owner progress and exact replay.",
+          "mode": "fixture",
+          "checks": [
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "parallel-backend-published-catalogue",
+      "description": "Accept the public staging Edge read path for the existing published catalogue search and species card.",
+      "risk": "high",
+      "complexity": "low",
+      "depends_on": [],
+      "candidate_base": "99c995a6d688f630acaf0441eae730f31e8d521d",
+      "files": [
+        "tools/automation/tasks.parallel-backend-published-catalogue.json",
+        "supabase/functions/plants-api/catalogue.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/functions/_shared/tests/published_catalogue_http_test.ts",
+        "supabase/migrations/202611050001_catalogue_skeleton.sql",
+        "supabase/tests/catalogue_skeleton.test.sql",
+        "specs/001-plants-ios-mvp/contracts/published-catalogue-http.md"
+      ],
+      "write_files": [],
+      "evidence_files": ["docs/handoff_status.md"],
+      "constraints": [
+        "Reviewer and QA reports must be in English. Audit the actual committed diff and saved local checks. Model roles are read-only. The controller alone deploys plants-api to narat-staging and checks live public reads.",
+        "Verify that only the published catalogue GET paths bypass account authentication and that the request uses the anonymous Supabase role. Preserve canonical search, locale, scientific fallback, attribution, pagination and absence semantics. Owner routes retain their existing identity and behavior.",
+        "This packet adds a facade over existing public RPCs. Keep the catalogue rows and releases, existing unused catalogue helpers, KB data, iOS and migration history unchanged. Full T148 editorial acceptance and T149 are outside scope."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC1",
+          "description": "Production HTTP fixtures cover public search, English and Polish routing, pagination, card reads, validation and sanitized errors. Existing Deno, KB and SQL fixtures pass.",
+          "checks": ["deno-tests", "kb-tests", "parallel-backend-diagnosis-sql"],
+          "mode": "fixture"
+        },
+        {
+          "id": "AC2",
+          "description": "Catalogue schema synchronization, Edge type checks and the scoped diff pass.",
+          "checks": ["catalogue-schema-sync", "deno-check", "diff-check"],
+          "mode": "local"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "v19-first-aid-observation-photo",
+      "description": "Independently review upload, atomic attachment and owner-only read of an optional first-aid observation photo.",
+      "candidate_base": "03e31e5efe30048fa20434179903c07e586ae7b5",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "supabase/functions/_shared/tests/care_journal_http_test.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/functions/plants-api/diagnosis-media.ts",
+        "supabase/functions/plants-api/index.ts",
+        "supabase/migrations/202611120031_first_aid_observation_photo.sql",
+        "supabase/tests/first_aid_observation.test.sql",
+        "supabase/tests/first_aid_observation_photo.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v19-first-aid-observation-photo.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Independent Reviewer and QA. Local gates only. Controller owns staging and checks weekly remaining usage.",
+        "Use the existing private byte verification, require owner and exact control binding, isolate from AI, preserve photo-free wire and replay, and check undo and expiry races.",
+        "Scope covers upload, ready confirmation, attachment and read. Deferred abandoned-upload cleanup and iOS UI. No invented schedule, migration 024 or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19-P1",
+          "description": "Production entrypoints type-check and exact diff is clean.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V19-P2",
+          "description": "HTTP and SQL prove ready and owner binding, immutable bytes, replay, private read, AI and quota isolation, and atomicity under undo and expiry races.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

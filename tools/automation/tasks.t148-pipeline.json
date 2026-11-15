@@ -2,55 +2,72 @@
   "tasks": [
     {
       "id": "t148-pipeline-001",
-      "description": "T148 Slice 1: Fix editorial/audit anomalies in the 606-species catalogue pipeline (`knowledge-base/pipeline/import_catalogue_300.py`, `knowledge-base/pipeline/validate_catalogue_skeleton.py`, `knowledge-base/manifests/pl-description-translations.json`, and `knowledge-base/tests/test_catalogue_skeleton.py`). Specifically: (1) In `knowledge-base/manifests/pl-description-translations.json` (around lines 490-515, 646, 981-996, 1367, 1820-1835, 2268), add missing Polish translations for the 3 species whose Wikidata `plwiki` sitelinks pointed to a list or wrong species (`begonia_maculata` with `scientific_name: \"Begonia maculata\"`, `source_revision: 1376148716`, `pl_common_names: [\"ukośnica plamista\", \"begonia plamista\"]`; `begonia_corallina` with `scientific_name: \"Begonia corallina\"`, `source_revision: 1368208086`, `pl_common_names: [\"ukośnica koralowa\", \"begonia koralowa\"]`; `hoya_lanceolata` with `scientific_name: \"Hoya lanceolata\"`, `source_revision: 1342565019`, `pl_common_names: [\"hoja lancetowata\", \"woskownica lancetowata\"]`), remove the wrong `\"wilczomlecz okazały\"` from `euphorbia_tirucalli.pl_common_names` (keeping `\"wilczomlecz ołówkowy\"`), and remove bare single-word Latin genus names from `pl_common_names` on `ceropegia_linearis` (`\"ceropegia\"` -> `[]`), `cymbidium_goeringii` (`\"cymbidium\"` -> `[]`), `cymbidium_kanran` (`\"cymbidium\"` -> `[]`), and `oncidium_sphacelatum` (remove `\"oncidium\"`, keep `\"motylnik\"`). (2) In `knowledge-base/pipeline/import_catalogue_300.py`: (a) In `common_names(item, scientific)`, exclude single-word Latin genus names (any single word matching `scientific.split()[0].casefold()` or ` {'fatsia', 'camellia', 'vanilla', 'pilea', 'didymochlaena', 'tolmiea', 'oncidium', 'ceropegia', 'cymbidium'}`), generic English category words (`{'cactus', 'orchid', 'plant', 'houseplant', 'tree', 'shrub', 'fern', 'palm', 'succulent'}`), and the 3 cross-species Polish Wikidata label collisions (`item.get('id') == 'Q31318'` with `'dracena sandera'`, `item.get('id') == 'Q814368'` with `'begonia koralowa'`, `item.get('id') == 'Q162311'` with `'hoja piękna'`). (b) In `intro_common_names(page, aliases, scientific_genera)`, split `subject` on `r'\\bis\\s+(?:a|an|the|one)\\b'` (so `Adiantum raddianum` does not extract habitat phrases `'rock crevices'`, `'river banks'`, `'coastal cliffs'`, `'basalt banks along trails'`); if `r'\\bis\\s+(?:a|an|the|one)\\b'` is not in `lead[:450]`, truncate `subject` before `, a ` / `, in the family ` (so `Hippeastrum striatum` only extracts `'striped Barbados lily'` and not `'flowering perennial herbaceous bulbous plant'` or `'eastern regions of Brazil'`); strip outer single quotes `'` in addition to `' \"“”.,:'` (so `Echeveria nodulosa` extracts `'painted echeveria'` without single quotes); strip leading `r'^(?:as well as|also sold as|and|simply|by its māori name of)\\s+'` and if stripping `'by its māori name of '` leaves `'tī'` (<3 chars) skip it, and also reject phrases containing `'cousin to'` or `'māori name'` and expand the generic word reject set to `('houseplant', 'plant', 'tree', 'shrub', 'cactus', 'orchid', 'fern', 'palm', 'succulent')`. (c) When resolving `pl_page` in `run(args)`, also set `pl_page = None` if `pl_title.lower().startswith('lista ')` or if `item['id'] in ('Q2893846', 'Q814368', 'Q162311')` (where `plwiki` links to a list or a different species `Begonia maculata` / `Hoya bella`), so `description(pl_page, 'pl') or translated_description(page, pl_entry)` uses the accurate Polish translation from `pl-description-translations.json`. (d) In `download_image(client, image)`, parse actual pixel `width`, `height`, and `mime` (`image/jpeg`, `image/png`, `image/webp`) from `raw` bytes and include `'width': width, 'height': height, 'mime': mime` in the returned dictionary. (e) Keep editorial_review pending/not_completed in this pipeline-only slice. A regex/code fix is not editorial acceptance of all 606 cards. Do not set completed without a separate documented review of the real release. Keep permitted_image() review status unchanged. (3) In `knowledge-base/pipeline/validate_catalogue_skeleton.py`, preserve the existing read-only `--check` behavior, validate `wikipedia_intro_pl_translation` `source_revision` against `pl_translations`, do not infer editorial acceptance from a flag copied by the importer. Preserve the actual review status; the release acceptance gate remains separate. (4) Add unit tests for these fixes in `knowledge-base/tests/test_catalogue_skeleton.py`.",
+      "description": "Repair the existing catalogue ingestion and verify the English MVP path with evidence from the pinned catalogue data. This is the pipeline slice of T148. Actual release editorial acceptance follows separately.",
+      "risk": "high",
+      "complexity": "medium",
       "depends_on": [],
       "files": [
         "knowledge-base/pipeline/import_catalogue_300.py",
+        "knowledge-base/pipeline/catalogue_image.py",
         "knowledge-base/pipeline/validate_catalogue_skeleton.py",
+        "knowledge-base/pipeline/sync_catalogue_schema.py",
         "knowledge-base/tests/test_catalogue_skeleton.py",
         "knowledge-base/manifests/pl-description-translations.json",
-        "tools/automation/t148_catalogue_gate.py"
+        "tools/automation/t148_catalogue_gate.py",
+        "tools/automation/tests/test_t148_catalogue_gate.py",
+        "specs/001-plants-ios-mvp/contracts/catalogue-skeleton.schema.json",
+        "catalogue/import.ts",
+        "supabase/migrations/202611050001_catalogue_skeleton.sql",
+        "supabase/migrations/202611120018_catalogue_pl_description_fallback.sql",
+        "supabase/tests/catalogue_skeleton.test.sql"
       ],
       "write_files": [
         "knowledge-base/pipeline/import_catalogue_300.py",
         "knowledge-base/pipeline/validate_catalogue_skeleton.py",
+        "knowledge-base/pipeline/sync_catalogue_schema.py",
         "knowledge-base/tests/test_catalogue_skeleton.py",
-        "knowledge-base/manifests/pl-description-translations.json"
+        "specs/001-plants-ios-mvp/contracts/catalogue-skeleton.schema.json",
+        "catalogue/import.ts",
+        "supabase/migrations/202611120018_catalogue_pl_description_fallback.sql",
+        "supabase/tests/catalogue_skeleton.test.sql"
       ],
       "search_terms": [
         "intro_common_names",
         "translated_pl_common_names",
-        "validate_catalogue_skeleton"
+        "verify_pipeline",
+        "catalogue_skeleton_schema",
+        "projectCatalogueSkeletonCard"
       ],
-      "risk": "medium",
-      "complexity": "medium",
       "constraints": [
-        "Keep all existing unit tests in `knowledge-base/tests/test_catalogue_skeleton.py` passing (`permitted_image()` must still return `species_visual_review: 'pending'` when called directly).",
-        "Do not modify files outside `write_files`.",
-        "Ensure `python3 knowledge-base/pipeline/validate_catalogue_skeleton.py --help` shows `--check` and that `tools/automation/t148_catalogue_gate.py --mode pipeline` passes all checks.",
-        "Scope revision 2026-11-09: no minimum coverage of 300 species/40 problems. Preserve the existing 606-record release and its integrity checks. This slice cannot mark T148 or full editorial acceptance complete; actual data/media review and release evidence are still required."
+        "Reviewer and QA reports must be in English. Use the approved EN-only MVP scope from 26ae2a0. Preserve existing valid Polish data and format compatibility. Do not add Polish translations, mark editorial complete, change catalogue data/media, change staging, or rewrite historical migrations.",
+        "The existing pipeline gate carries English regression samples for Hippeastrum, Adiantum, Cordyline, Echeveria, Jasminum and Phalaenopsis. Fix the name parsing and reject generic or bare-genus labels as common names without dropping valid names. Correct known cross-species Polish names and search aliases on Q31318, Q814368 and Q162311, the list alias on Q2893846, and the erroneous translated common name on Q883685. Keep Latin synonyms and other historical Polish names. Preserve data and filter errors at ingestion rather than editing the translation manifest.",
+        "The retained Polish pages on Q2893846, Q814368 and Q162311 describe a genus list, Begonia maculata and Hoya bella respectively, even though their cached pageprops claims match the target QID. Use eligible_polish_article(item, page), which returns a valid page or None. Reject the exact known source/title collisions as well as list articles and entity mismatches. Keep valid existing translations and their original revisions. When no valid PL source exists, retain the pl key with null. Canonical TS and SQL projection already use the English description as fallback and keep its actual language. Make this explicit in the shared JSON Schema, TS types, a forward-only 018 SQL schema migration and existing parity check. Regress existing valid PL, missing PL, and malformed data. Keep English mandatory.",
+        "Persist width, height and MIME from downloaded bytes. Use the controller-owned parse_image_dimensions_and_mime from knowledge-base/pipeline/catalogue_image.py in importer and validator. Preserve all source URLs, license, attribution, hashes and cache validation. Strengthen the independent validator with actual dimensions, source identity and PL translation provenance. Existing raw snapshots and Plantfolio inputs are local only; never stage them.",
+        "The controller owns the revised pipeline gate. Its actual acceptance depends on the listed behavior rather than new Polish coverage. Keep release mode separate for the next actual editorial slice. The controller will independently run isolated PostgreSQL regression and real offline rebuild, and handle identified hero-image exceptions and release publication evidence in the next slice."
       ],
       "acceptance_criteria": [
         {
           "id": "T148-P1",
-          "description": "Git diff is clean and catalogue SQL/JSON schema parity holds (`diff-check`, `catalogue-schema-sync`).",
+          "description": "Static checks pass and the latest SQL/JSON schema stays synchronized without rewriting applied migrations.",
           "checks": [
             "diff-check",
-            "catalogue-schema-sync"
+            "catalogue-schema-sync",
+            "deno-check"
           ],
           "mode": "local"
         },
         {
           "id": "T148-P2",
-          "description": "All knowledge-base unit tests including new T148 regression tests pass (`kb-tests`).",
+          "description": "Knowledge-base and Deno fixtures cover provenance, media header formats, English naming defects and optional Polish fallback without fake translations.",
           "checks": [
-            "kb-tests"
+            "kb-tests",
+            "deno-tests"
           ],
           "mode": "fixture"
         },
         {
           "id": "T148-P3",
-          "description": "T148 pipeline verification gate passes all checks on `pl-description-translations.json`, `import_catalogue_300.py`, and `validate_catalogue_skeleton.py` (`t148-pipeline-gate`).",
+          "description": "The corrected pipeline gate passes with targeted English name, actual media and Polish identity regressions.",
           "checks": [
             "t148-pipeline-gate"
           ],

@@ -11,10 +11,13 @@ from import_catalogue_300 import (
     Client,
     common_names,
     description,
+    eligible_polish_article,
     intro_common_names,
     match_plantfolio_watering,
     parse_plantfolio_examples,
     permitted_image,
+    polish_name_is_eligible,
+    reviewed_image,
     taxon,
     translated_description,
     translated_pl_common_names,
@@ -37,6 +40,38 @@ def media(license='CC BY-SA 4.0', author='<a href="/wiki/X">Photographer</a>'):
 
 
 class SkeletonTests(unittest.TestCase):
+    def test_reviewed_image_stays_bound_to_original_identity_and_bytes(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = root / 'catalogue/manifests/skeleton-300-editorial-media.json'
+        entry = json.loads(manifest.read_text())['plants']['hoya_lanceolata']
+        image = entry['hero_image']
+        original = {'file_title': entry['replaces']}
+        self.assertEqual(reviewed_image('hoya_lanceolata', entry['wikidata_id'], original, entry), image)
+        with self.assertRaisesRegex(ValueError, 'Editorial source changed'):
+            reviewed_image('hoya_lanceolata', 'Q1', original, entry)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            path = temp_root / image['local_path']
+            path.parent.mkdir(parents=True)
+            path.write_bytes((root / image['local_path']).read_bytes() + b'changed')
+            with patch('import_catalogue_300.ROOT', temp_root), patch('import_catalogue_300.OUT', path.parent.parent):
+                with self.assertRaisesRegex(ValueError, 'hash or size mismatch'):
+                    reviewed_image('hoya_lanceolata', entry['wikidata_id'], original, entry)
+
+    def test_polish_sources_must_match_the_species_even_with_matching_pageprops(self):
+        cases = [('Q2893846', 'Lista gatunków z rodzaju begonia'),
+                 ('Q814368', 'Begonia koralowa'), ('Q162311', 'Hoja piękna')]
+        for qid, title in cases:
+            with self.subTest(qid=qid):
+                self.assertIsNone(eligible_polish_article(
+                    {'id': qid}, {'title': title, 'pageprops': {'wikibase_item': qid}}))
+        page = {'title': 'Monstera dziurawa', 'pageprops': {'wikibase_item': 'Q161077'}}
+        self.assertIs(eligible_polish_article({'id': 'Q161077'}, page), page)
+        self.assertIsNone(eligible_polish_article({'id': 'Q162311'}, page))
+        self.assertFalse(polish_name_is_eligible('Hoya bella', 'Q162311'))
+        self.assertTrue(polish_name_is_eligible('Monstera dziurawa', 'Q161077'))
+
     def test_genus_hybrid_and_ambiguous_name_not_counted_as_species(self):
         self.assertEqual(taxon(entity()), 'Monstera deliciosa')
         self.assertIsNone(taxon(entity(rank='Q34740')))

@@ -1,10 +1,10 @@
 // supabase/functions/_shared/tests/foundational_services_test.ts
 // Unit tests for T019 (plants-api router & http), T020 (EntitlementGate),
-// T021 (catalogue/import.ts), and T128 (notifications.ts).
+// T021 (catalogue/import.ts), and T165 (retired notification claims).
 
 import { assert, assertEquals } from "@std/assert";
 import { EntitlementGate, EntitlementSnapshot, ExistingPlanRecord } from "../EntitlementGate.ts";
-import { createPlantsApiHandler } from "../../plants-api/index.ts";
+import { createProductionPlantsApiHandler } from "../../plants-api/index.ts";
 import {
   CatalogueSkeletonBundle,
   KbReleaseBundle,
@@ -123,109 +123,39 @@ Deno.test("T020: EntitlementGate separates canReadExistingPlan from canGenerateF
   }
 });
 
-Deno.test("T019 & T128: plants-api router and POST /notifications/claim validate report period_key and dedup", async () => {
-  const ownerId = "11111111-1111-4111-8111-111111111111";
-  const claimedSet = new Map<string, { device: string; state: "claimed" | "cancelled" }>();
-
-  const handler = createPlantsApiHandler({
-    resolveRequestContext: async (req) => ({
-      ownerId,
+Deno.test("T165: former notification claims are no longer routed or sent to RPC", async () => {
+  let upstreamCalls = 0;
+  const handler = createProductionPlantsApiHandler({
+    resolveRequestContext: async () => ({
+      ownerId: "11111111-1111-4111-8111-111111111111",
       isAnonymous: false,
       accountState: "active",
-      installationCredential: req.headers.get("x-installation-credential"),
-      locale: "pl",
+      installationCredential: "fixture-installation",
+      locale: "en",
       operationId: null,
     }),
-    notificationAdapter: {
-      claimSlot: async (params) => {
-        const key = `${params.ownerId}:${params.kind}:${params.periodKey}`;
-        const existing = claimedSet.get(key);
-        if (existing) {
-          if (existing.state === "cancelled") {
-            return {
-              granted: false,
-              kind: params.kind,
-              period_key: params.periodKey,
-              state: "cancelled",
-              reason: "already_cancelled_for_period",
-            };
-          }
-          if (existing.device !== params.deviceInstallationId) {
-            return {
-              granted: false,
-              kind: params.kind,
-              period_key: params.periodKey,
-              state: "claimed",
-              reason: "already_claimed_by_other_device",
-            };
-          }
-        }
-        claimedSet.set(key, { device: params.deviceInstallationId, state: "claimed" });
-        return {
-          granted: true,
-          claim_id: "44444444-4444-4444-8444-444444444444",
-          kind: params.kind,
-          period_key: params.periodKey,
-          state: "claimed",
-        };
-      },
+  }, {
+    fetch: () => {
+      upstreamCalls++;
+      throw new Error("Retired endpoint reached upstream.");
     },
   });
 
-  // Reject monthly_report period_key with timezone suffix
-  const badRes = await handler(
-    new Request("https://api.narat.app/functions/v1/plants-api/notifications/claim", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Installation-Credential": "device-a",
-      },
-      body: JSON.stringify({
-        operation_id: "55555555-5555-4555-8555-555555555555",
-        kind: "monthly_report",
-        period_key: "2026-10+02:00",
+  for (const kind of ["monthly_report", "trial_ending_24h"]) {
+    const response = await handler(
+      new Request("https://api.narat.app/functions/v1/plants-api/notifications/claim", {
+        method: "POST",
+        body: JSON.stringify({
+          operation_id: "55555555-5555-4555-8555-555555555555",
+          kind,
+          period_key: kind === "monthly_report" ? "2026-11" : "2026-11-12",
+        }),
       }),
-    }),
-  );
-  assertEquals(badRes.status, 400);
-
-  // Valid claim on device A succeeds
-  const okRes = await handler(
-    new Request("https://api.narat.app/functions/v1/plants-api/notifications/claim", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Installation-Credential": "device-a",
-      },
-      body: JSON.stringify({
-        operation_id: "55555555-5555-4555-8555-555555555556",
-        kind: "monthly_report",
-        period_key: "2026-10",
-      }),
-    }),
-  );
-  assertEquals(okRes.status, 200);
-  const okBody = await okRes.json();
-  assertEquals(okBody.granted, true);
-
-  // Device B claiming the same period is denied
-  const dupRes = await handler(
-    new Request("https://api.narat.app/functions/v1/plants-api/notifications/claim", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Installation-Credential": "device-b",
-      },
-      body: JSON.stringify({
-        operation_id: "55555555-5555-4555-8555-555555555557",
-        kind: "monthly_report",
-        period_key: "2026-10",
-      }),
-    }),
-  );
-  const dupBody = await dupRes.json();
-  assertEquals(dupBody.granted, false);
-  assertEquals(dupBody.reason, "already_claimed_by_other_device");
+    );
+    assertEquals(response.status, 404);
+    assertEquals((await response.json()).error.code, "NOT_FOUND");
+  }
+  assertEquals(upstreamCalls, 0);
 });
 
 Deno.test("T021: validateAndStageKbRelease enforces thresholds, PL/EN completeness, and strips paid protocols from catalogue projection", () => {
@@ -423,4 +353,27 @@ Deno.test("T147: each DTO field independently rejects missing keys and wrong typ
   assertEquals(validateAndProjectSkeletonRelease({ ...bundle, plants: [nullable] }, { minSpeciesCount: 1 }).valid, false);
   nullable.watering!.watering_method = "immersion";
   assert(validateAndProjectSkeletonRelease({ ...bundle, plants: [nullable] }, { minSpeciesCount: 1 }).valid);
+});
+
+Deno.test("T148: an explicit Polish gap preserves the original English description", () => {
+  const bundle = JSON.parse(Deno.readTextFileSync(new URL(
+    "../../../../catalogue/releases/skeleton-300-v1/plants.json",
+    import.meta.url,
+  ))) as CatalogueSkeletonBundle;
+  const plant = structuredClone(bundle.plants[0]);
+  const options = { locale: "pl" as const };
+  const historical = validateAndProjectSkeletonRelease({ ...bundle, plants: [plant] }, options);
+  assert(historical.valid);
+  assertEquals(historical.cards[0].description, plant.descriptions.pl);
+
+  plant.descriptions.pl = null;
+  const fallback = validateAndProjectSkeletonRelease({ ...bundle, plants: [plant] }, options);
+  assert(fallback.valid, fallback.errors.join("; "));
+  assertEquals(fallback.cards[0].description, plant.descriptions.en);
+  assertEquals(fallback.cards[0].descriptions.pl, null);
+  assertEquals(validateCatalogueSkeletonCardContract(fallback.cards[0]), []);
+
+  const withoutKey = { ...plant, descriptions: { en: plant.descriptions.en } };
+  const incomplete = { ...bundle, plants: [withoutKey] } as CatalogueSkeletonBundle;
+  assertEquals(validateAndProjectSkeletonRelease(incomplete, options).valid, false);
 });

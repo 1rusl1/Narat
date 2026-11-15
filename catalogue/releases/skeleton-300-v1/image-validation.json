@@ -1,12 +1,11 @@
 {
-  "tool": "sips metadata read",
-  "files_read": 300,
+  "tool": "macOS ImageIO full decode and contact sheets",
+  "plants_sha256": "85fcaba4bfe8ef1cf4a3c1f07fdd1ce3517aea7feb8886124dc063a43b2e3887",
+  "files_read": 606,
   "formats": {
-    "jpeg": 295,
-    "png": 5
+    "image/jpeg": 598,
+    "image/png": 8
   },
-  "min_width": 235,
-  "min_height": 281,
-  "errors": "",
-  "visual_species_review": "not_performed"
+  "errors": [],
+  "visual_suitability_review": "All 13 contact sheets reviewed; six replacements reviewed at full image size."
 }

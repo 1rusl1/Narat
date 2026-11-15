@@ -280,6 +280,60 @@
         "Retain commit hash and SHA256 of the source snapshot",
         "Do not silently substitute genus/other-species intervals without explicit match_level metadata"
       ]
+    },
+    {
+      "id": "rbge_editorial_hoya_lanceolata",
+      "status": "allowed",
+      "scope": "Only Hoya lanceolata Wall. ex D.Don (E01479576) and its recorded rights evidence. License CC BY-SA 2.5.",
+      "method": "Manually verified per-asset metadata, image bytes and source attribution",
+      "terms_urls": [
+        "https://iiif.rbge.org.uk/herb/iiif/E01479576/manifest",
+        "https://creativecommons.org/licenses/by-sa/2.5/"
+      ],
+      "checked_at": "2026-11-12",
+      "review_after": "2026-12-12",
+      "allowed_operations": {
+        "manual_reference": true,
+        "automated_fetch": false,
+        "store_raw": true,
+        "commercial_use": true,
+        "download_media": true,
+        "llm_processing": false
+      },
+      "allowed_asset_urls": [
+        "https://iiif.rbge.org.uk/herb/iiif/E01479576/full/1600,/0/default.jpg"
+      ],
+      "obligations": [
+        "Retain source and license URLs, creator attribution and disclosed resizing.",
+        "Distribute derivatives of the image under the recorded share-alike license."
+      ]
+    },
+    {
+      "id": "plantnet_editorial_philodendron_domesticum",
+      "status": "allowed",
+      "scope": "Only Philodendron × domesticum G.S.Bunting and its recorded rights evidence. License CC BY-SA 4.0.",
+      "method": "Manually verified per-asset metadata, image bytes and source attribution",
+      "terms_urls": [
+        "https://identify.plantnet.org/oc/k-world-flora/species/Philodendron%20%C3%97%20domesticum%20G.S.Bunting/data",
+        "https://creativecommons.org/licenses/by-sa/4.0/"
+      ],
+      "checked_at": "2026-11-12",
+      "review_after": "2026-12-12",
+      "allowed_operations": {
+        "manual_reference": true,
+        "automated_fetch": false,
+        "store_raw": true,
+        "commercial_use": true,
+        "download_media": true,
+        "llm_processing": false
+      },
+      "allowed_asset_urls": [
+        "https://bs.plantnet.org/image/o/f6f1246b36f87d07f9419b1c33c250fc2e0ac38f"
+      ],
+      "obligations": [
+        "Retain source and license URLs, creator attribution and disclosed resizing.",
+        "Distribute derivatives of the image under the recorded share-alike license."
+      ]
     }
   ]
 }

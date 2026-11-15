@@ -1,0 +1,39 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-analysis-http",
+      "description": "Review the service-only HTTP entry point for analysis projection cleanup.",
+      "candidate_base": "3b798be89956fbfcbc7c80467eb5707ab6098dd7",
+      "risk": "medium",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "supabase/functions/_shared/tests/plant_storage_purge_test.ts",
+        "supabase/functions/maintenance/plant-deletions.ts",
+        "supabase/functions/plants-api/index.ts",
+        "tools/automation/tasks.v13-plant-delete-analysis-http.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only acceptance on synthetic fixtures. Keep deletion receipt and existing Storage path compatible. No deployment, schedule, 024 or StoreKit changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-H1",
+          "description": "Typecheck and clean diff.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V13-H2",
+          "description": "Actual Edge routes with fixture transport verify owner token denial, service auth, exact RPC, pending/cleared and error mappings.",
+          "mode": "fixture",
+          "checks": ["deno-tests"]
+        }
+      ]
+    }
+  ]
+}

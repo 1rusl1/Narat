@@ -9,7 +9,7 @@
 -- ============================================================================
 
 BEGIN;
-SELECT plan(235);
+SELECT plan(239);
 
 -- 1. Ensure zero kb_releases / care_profiles exist
 SELECT is(
@@ -830,6 +830,19 @@ SELECT throws_ok(format('SELECT public.upsert_catalogue_skeleton_species(%L, %L:
     '00000000-0000-0000-0000-000000000701', b.record - k),
     '22023', NULL, 'Required SQL record key: ' || k)
 FROM catalogue_contract_base b, jsonb_array_elements_text(public.catalogue_skeleton_schema()->'definitions'->'record'->'required') k;
+SELECT lives_ok(format('SELECT public.validate_catalogue_skeleton_species_record(%L::jsonb)',
+    jsonb_set(record, '{descriptions,pl}', 'null'::jsonb)),
+    'An explicit Polish description gap is accepted') FROM catalogue_contract_base;
+SELECT throws_ok(format('SELECT public.validate_catalogue_skeleton_species_record(%L::jsonb)',
+    record #- '{descriptions,pl}'), '22023', NULL,
+    'The Polish description key remains required') FROM catalogue_contract_base;
+SELECT throws_ok(format('SELECT public.validate_catalogue_skeleton_species_record(%L::jsonb)',
+    jsonb_set(record, '{descriptions,en}', 'null'::jsonb)), '22023', NULL,
+    'The English description remains required') FROM catalogue_contract_base;
+SELECT is(public.project_catalogue_species_card(jsonb_populate_record(NULL::public.catalogue_taxa,
+    jsonb_set(to_jsonb(t), '{descriptions,pl}', 'null'::jsonb)), 'pl')->'description',
+    t.descriptions->'en', 'Polish reads preserve English provenance when the translation is absent')
+FROM public.catalogue_taxa t WHERE t.plant_id = 'monstera_deliciosa';
 SELECT lives_ok(format('SELECT public.validate_catalogue_skeleton_species_record(%L::jsonb)',
     jsonb_set(record, '{watering,intervals_days,winter}', 'null'::jsonb)), 'Nullable winter accepted') FROM catalogue_contract_base;
 SELECT throws_ok(format('SELECT public.validate_catalogue_skeleton_species_record(%L::jsonb)',

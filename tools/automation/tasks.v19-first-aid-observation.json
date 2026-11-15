@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "v19-first-aid-observation",
+      "description": "Independently review manual completion of one owner-bound first-aid control, with an idempotent observation and canonical owner sync.",
+      "candidate_base": "bcc9534171348d4c0799b62a546433c5aefe3b65",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "supabase/functions/_shared/tests/care_journal_http_test.ts",
+        "supabase/functions/plants-api/care-journal.ts",
+        "supabase/migrations/202611120030_first_aid_observation.sql",
+        "supabase/tests/first_aid_observation.test.sql",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "tools/automation/tasks.v19-first-aid-observation.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Reviewer and QA. Local gates only. Controller owns staging and checks weekly usage limits.",
+        "Preserve prior command and sync payloads, reuse operation receipts, and scope observations to the owner and plant. An exact replay survives expiry and undo.",
+        "Prove both orders of a competing undo and expiry reached during lock contention, using separate PostgreSQL connections. Check absence of new AI jobs, quotas and schedules.",
+        "Photo upload and attachment lifecycle is a separate packet. No KB publication, 024, StoreKit or live pending deadline."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19-O1",
+          "description": "Production entrypoints type-check and exact diff is clean.",
+          "mode": "local",
+          "checks": ["deno-check", "diff-check"]
+        },
+        {
+          "id": "V19-O2",
+          "description": "HTTP and SQL fixtures verify the closed payload, owner and plant isolation, exact receipt, sync history, genuine undo and expiry races, and no AI or quota writes.",
+          "mode": "fixture",
+          "checks": ["deno-tests", "parallel-backend-diagnosis-sql"]
+        }
+      ]
+    }
+  ]
+}

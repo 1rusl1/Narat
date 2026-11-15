@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "v13-plant-delete-runner",
+      "description": "Review the command for a complete plant deletion sweep from a scheduler.",
+      "candidate_base": "5a60bbb403b4c8dee010c9fb2c5209fcfe5ab8c5",
+      "risk": "medium",
+      "complexity": "low",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/contracts/collection-http.md",
+        "supabase/functions/_shared/tests/plant_purge_runner_test.ts",
+        "tools/automation/sweep_plant_deletions.ts",
+        "tools/automation/tasks.v13-plant-delete-runner.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Local fixture checks only. Validate full pagination, per-job failures, aggregate output and scoped secret forwarding with redirects disabled. No deployment, schedule creation, live deletion, 024 or StoreKit."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V13-R1",
+          "description": "Clean diff.",
+          "mode": "local",
+          "checks": ["diff-check"]
+        },
+        {
+          "id": "V13-R2",
+          "description": "Deno fixture tests verify pagination, authentication and failure handling.",
+          "mode": "fixture",
+          "checks": ["deno-tests"]
+        }
+      ]
+    }
+  ]
+}

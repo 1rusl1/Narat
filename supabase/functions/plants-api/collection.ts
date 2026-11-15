@@ -22,7 +22,7 @@ const queryKeys = new Set([
 
 // Validate calendar dates, require a timezone, and compare at PostgreSQL's
 // microsecond precision. Never round/serialize a caller's watermark through Date.
-function timestamp(value: unknown): bigint | null {
+export function timestamp(value: unknown): bigint | null {
   if (typeof value !== "string") return null;
   const match = value.match(
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/,
@@ -131,7 +131,9 @@ function canonicalPage(value: unknown): value is Record<string, unknown> {
     (profile.preferred_locale !== "en" && profile.preferred_locale !== "pl") ||
     !Number.isInteger(profile.reminder_hour_local) ||
     Number(profile.reminder_hour_local) < 0 || Number(profile.reminder_hour_local) > 23 ||
-    typeof profile.report_notifications_enabled !== "boolean" ||
+    // Accept old SQL pages while the Edge function is rolled out before the migration.
+    (Object.hasOwn(profile, "report_notifications_enabled") &&
+      typeof profile.report_notifications_enabled !== "boolean") ||
     typeof profile.trial_reminder_enabled !== "boolean"
   ) return false;
   if (value.entitlement !== null) {
@@ -253,16 +255,16 @@ function catalogueFields(value: unknown, kind: "payload" | "conditions" | "overr
       if (field !== null && (typeof field !== "string" || !uuid.test(field))) return false;
     } else if (kind === "payload" && key === "origin_flow_id") {
       if (field !== null && (typeof field !== "string" || !uuid.test(field))) return false;
+    } else if (kind === "payload" && key === "identification_job_id") {
+      if (typeof field !== "string" || !uuid.test(field)) return false;
     } else if (kind === "payload" && key === "photo_id") {
-      // SQL does not verify main_photo_id ownership on insert. Keep catalogue
-      // creation without media until attachment has an authoritative guard.
       if (field !== null) return false;
     } else if (kind === "payload" && key === "creation_source") {
       if (field !== "catalogue") return false;
     } else if (kind === "payload" && key === "creation_intent") {
       if (field !== "care" && field !== "problem") return false;
     } else if (kind === "payload" && key === "add_method") {
-      if (field !== "catalogue") return false;
+      if (field !== "catalogue" && field !== "scan") return false;
     } else if (kind === "payload" && (key === "conditions" || key === "overrides")) {
       if (!catalogueFields(field, key)) return false;
     } else {
@@ -309,10 +311,17 @@ export async function handlePlantCreate(
     !catalogueFields(payload, "payload")
   ) throw commandError(ctx, "invalid");
   const overrides = record(payload.overrides) ? payload.overrides : {};
-  if (![payload.plant_id, payload.taxon_id, overrides.plant_id, overrides.taxon_id]
-    .some((value) => typeof value === "string" && value.length > 0)) {
-    throw commandError(ctx, "invalid");
-  }
+  const scan = payload.add_method === "scan";
+  if (scan) {
+    if (typeof payload.identification_job_id !== "string" ||
+      typeof payload.taxon_id !== "string" || payload.plant_id != null ||
+      Object.hasOwn(payload, "photo_id") || Object.hasOwn(overrides, "plant_id") ||
+      Object.hasOwn(overrides, "taxon_id")) throw commandError(ctx, "invalid");
+  } else if (
+    Object.hasOwn(payload, "identification_job_id") ||
+    ![payload.plant_id, payload.taxon_id, overrides.plant_id, overrides.taxon_id]
+      .some((value) => typeof value === "string" && value.length > 0)
+  ) throw commandError(ctx, "invalid");
   const header = req.headers.get("x-operation-id");
   if (header !== null) {
     if (!uuid.test(header.trim())) throw commandError(ctx, "invalid");
@@ -342,6 +351,15 @@ export async function handlePlantCreate(
       (code === "P0002" && message === "owner_profile_not_found")
     ) throw commandForbidden(ctx);
     if (code === "P0001" && message === "COLLECTION_LIMIT_REACHED") throw commandError(ctx, "cap");
+    if (code === "P0002" && message === "identification_source_not_found") {
+      throw new ApiHttpError(
+        404,
+        "NOT_FOUND",
+        ctx.locale === "pl"
+          ? "Nie znaleziono ukończonej identyfikacji."
+          : "Completed identification not found.",
+      );
+    }
     if (code === "23505" || message === "operation_payload_mismatch") throw commandError(ctx, "conflict");
     if (
       (typeof code === "string" && ["22007", "22008", "22023", "22P02", "23502", "23503", "23514"].includes(code)) ||
@@ -349,6 +367,9 @@ export async function handlePlantCreate(
     ) throw commandError(ctx, "invalid");
     throw commandError(ctx, "unavailable");
   }
-  if (!canonicalCreate(result.data)) throw commandError(ctx, "unavailable");
-  return jsonResponse(result.data);
+  if (
+    !canonicalCreate(result.data) ||
+    (scan && (typeof result.data.photo_id !== "string" || !uuid.test(result.data.photo_id)))
+  ) throw commandError(ctx, "unavailable");
+  return jsonResponse(result.data, 200, scan ? { "Cache-Control": "private, no-store" } : undefined);
 }

@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "plants": {
+    "dracaena_fragrans": {
+      "wikidata_id": "Q133690",
+      "replaces": "File:Dracaena fragrans a1.jpg",
+      "identity_evidence": "The old caption identified Dracaena reflexa. The replacement caption and the pinned English article identify Dracaena fragrans.",
+      "hero_image": {
+        "file_title": "File:Dracaena fragrans (2).jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Dracaena_fragrans_(2).jpg",
+        "original_url": "https://upload.wikimedia.org/wikipedia/commons/d/db/Dracaena_fragrans_%282%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/d/db/Dracaena_fragrans_%282%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "original_sha1": "a6543aac2a5afe5b2dc3c8ecfb8504fde3cdbb24",
+        "author": "rojypala",
+        "credit": "Singapore (3) Uploaded by rojypala",
+        "license": "CC BY 2.0",
+        "license_url": "https://creativecommons.org/licenses/by/2.0",
+        "attribution": "File:Dracaena fragrans (2).jpg — rojypala / Wikimedia Commons / CC BY 2.0",
+        "retrieved_at": "2026-11-12T05:21:24.519169+00:00",
+        "license_review": "Pinned Wikimedia Commons imageinfo",
+        "metadata_snapshot": {
+          "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&iiprop=url%7Cextmetadata%7Csha1%7Csize%7Cmime&iiurlwidth=960&maxlag=5&prop=imageinfo&redirects=1&titles=File%3AMonstera+deliciosa2.jpg%7CFile%3AMonstera_deliciosa2.jpg%7CFile%3AMonstera+adansonii+CBM.png%7CFile%3AMonstera_adansonii_79319231.jpg%7CFile%3AEpipremnum+aureum+31082012.jpg%7CFile%3AEpipremnum+pinnatum+var.jpg%7CFile%3AEpipremnum+aurem+flower.png%7CFile%3AZamioculcas+zamiifolia+1.jpg%7CFile%3AZamioculcas_zamiifolia_1.jpg%7CFile%3ABird+of+Paradise+flower.JPG%7CFile%3AStrelitzia+larger.jpg%7CFile%3AAve-do-para%C3%ADso%2C_Strelitzia_reginae%2C_em_Bag%C3%A9%2C_Rio_Grande_do_Sul%2C_Brasil_-_55211233712.jpg%7CFile%3AStrelitzia+nicolai+3.jpg%7CFile%3AStrelitzia_nicolai_3.jpg%7CFile%3ADa+bup+do.jpg%7CFile%3AFicus+1.JPG%7CFile%3AFicus+November+2008-1.jpg%7CFile%3AFicus+lyrata+%28%C3%81rbol+lira%29+%2814394247887%29.jpg%7CFile%3AStarr_031108-0130_Ficus_lyrata.jpg%7CFile%3AFicus+benjamina2.jpg%7CFile%3AStarr-080608-7576-Ficus_benjamina-habit_with_Laysan_albatross-Gym_Sand_Island-Midway_Atoll_%2824823189861%29.jpg%7CFile%3ASansevieria+trifasciata+flower.jpg%7CFile%3ASnake_Plant_%28Sansevieria_trifasciata_%27Laurentii%27%29.jpg%7CFile%3ADracaena+fragrans+a1.jpg%7CFile%3ADracaena_fragrans_%282%29.jpg%7CFile%3AArya.dracanea.song+of+India.bulak+Lor.2019.0.jpg%7CFile%3ADracaena+reflexa.JPG%7CFile%3ADracaena_reflexa.JPG%7CFile%3ALuckyBamboo+2005+SeanMcClean.jpg%7CFile%3AStarr-110330-3595-Dracaena+sanderiana-habit-Garden+of+Eden+Keanae-Maui+%2824453630723%29.jpg%7CFile%3ADracaena_sanderiana_2.jpg%7CFile%3AMalamadre+%28Chlorophytum+comosum%29.jpg%7CFile%3AHierbabuena_0611_Revised.jpg%7CFile%3ASpathiphyllumWallisii.jpg%7CFile%3APeace_lily_-_1_-_cropped.jpg%7CFile%3AAnthurium+andraeanum+hatem+moushir.JPG%7CFile%3AAnthuriumAndraenum.jpg%7CFile%3AAnthurium+scherzerianum+2.jpg%7CFile%3AAnthurium_scherzerianum_2.jpg%7CFile%3APhilodendron+scandens+subsp+oxycardium2.jpg",
+          "sha256": "d99e7f00ac59b2c86b1939e576352806f2e4a8888af5175318c77ed9481d19c8",
+          "retrieved_at": "2026-11-04T16:29:24.052101+00:00",
+          "snapshot": "knowledge-base/raw/catalogue-300/api/c55316ccabda5d48ffc81b537ff708acc37e6f74b9257a5e7c46433418d96132.json"
+        },
+        "modifications": "Source image used unchanged.",
+        "local_path": "catalogue/releases/skeleton-300-v1/media/ec642f372bce935eaa86d6bb.jpg",
+        "sha256": "ec642f372bce935eaa86d6bb748ff21e59a96124e1b9ba41c45f2e36a9653d17",
+        "source_image_sha256": "ec642f372bce935eaa86d6bb748ff21e59a96124e1b9ba41c45f2e36a9653d17",
+        "bytes": 450581,
+        "width": 1024,
+        "height": 765,
+        "mime": "image/jpeg",
+        "species_visual_review": "editorial_source_and_visual_review_2026-11-12"
+      },
+      "source_id": "wikimedia_commons_catalogue"
+    },
+    "calathea_orbifolia": {
+      "wikidata_id": "Q5018586",
+      "replaces": "File:Calathea fasciata kz2.jpg",
+      "identity_evidence": "The old image showed Calathea fasciata. The replacement caption and the pinned English article identify Calathea orbifolia.",
+      "hero_image": {
+        "file_title": "File:Calathea orbifolia 2.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Calathea_orbifolia_2.jpg",
+        "original_url": "https://upload.wikimedia.org/wikipedia/commons/f/fa/Calathea_orbifolia_2.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/f/fa/Calathea_orbifolia_2.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "original_sha1": "fca8ca688535922e80c505b55f4295310bfe3504",
+        "author": "Fregisseur",
+        "credit": "Own work",
+        "license": "CC BY-SA 4.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "File:Calathea orbifolia 2.jpg — Fregisseur / Wikimedia Commons / CC BY-SA 4.0",
+        "retrieved_at": "2026-11-12T05:21:25.577356+00:00",
+        "license_review": "Pinned Wikimedia Commons imageinfo",
+        "metadata_snapshot": {
+          "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&iiprop=url%7Cextmetadata%7Csha1%7Csize%7Cmime&iiurlwidth=960&maxlag=5&prop=imageinfo&redirects=1&titles=File%3APhilodendron_scandens_subsp_oxycardium2.jpg%7CFile%3APhilodendron+erubescens+Bot.+Mag.+84.+5071.+1858.jpg%7CFile%3AFleur+de+Philodendron+erubescens+%28face%29.jpg%7CFile%3APhilodendron_erubescens_-_Leaves.jpg%7CFile%3ATree1.JPG%7CFile%3APhilodendron+xanadu+AK1.jpg%7CFile%3APhilodendron_xanadu_AK1.jpg%7CFile%3ARhaphidophora+tetrasperma.jpg%7CFile%3ARhaphidophora_tetrasperma.jpg%7CFile%3AScindapsus+pictus+01.jpg%7CFile%3AScindapsus_pictus_01.jpg%7CFile%3AZingiber+malaysianum.jpg%7CFile%3AZingiber_malaysianum.jpg%7CFile%3AMaranta+leuconeura3.jpg%7CFile%3AMaranta_leuconeura3.jpg%7CFile%3ACalathea+fasciata+kz2.jpg%7CFile%3ACalathea_orbifolia_2.jpg%7CFile%3ACalatheaMakoyana.jpg%7CFile%3AGoeppertia+insignis.jpg%7CFile%3ACalatheaLancifolia.jpg%7CFile%3AGoeppertia_roseopicta.jpg%7CFile%3ACalatheaZebrina.jpg%7CFile%3ACalatheaOrnataRoseo-Lineata.jpg%7CFile%3AGoeppertia_ornata_herbarium.jpg%7CFile%3AStromanthe+sanguinea+Triostar+1zz.jpg%7CFile%3AStromanthe_sanguinea_in_garden_in_Manaus%2C_Brazil.jpg%7CFile%3ACtenanthe+burle-marxii+1.jpg%7CFile%3ACtenanthe_burle-marxii.jpg%7CFile%3AAlocasiaMacrorrhizaFlower.jpg%7CFile%3AAlocasia_macrorrhizos1.jpg%7CFile%3AAlocasia+cucullata+in+Auckland+Botanic+Gardens+02.jpg%7CFile%3AAlocasia_cucullata_in_Auckland_Botanic_Gardens_02.jpg%7CFile%3AAlocasia+odora1.jpg%7CFile%3AOreille+d%27elephant+-+Alocasia+odora+-+par+Mickael+Schauli.jpg%7CFile%3AAlocasia_odora1.jpg%7CFile%3A%28MHNT%29+Colocasia+esculenta+-+Les+Martels%2C+Giroussens+Tarn.jpg%7CFile%3ASonge-R%C3%A9union.JPG%7CFile%3AAglaonema+commutatum2.jpg%7CFile%3AAglaonema+commutatum+var+maculatum+CBM.png%7CFile%3AAglaonema+commutatum+-+Saigon+Zoo+and+Botanical+Gardens+-+Ho+Chi+Minh+City%2C+Vietnam+-+DSC01286.JPG",
+          "sha256": "ba39287be248a2dd375f7dd98dcd6de85f0b0727993c2b9c2fcfd406ff3fa128",
+          "retrieved_at": "2026-11-04T16:29:25.709144+00:00",
+          "snapshot": "knowledge-base/raw/catalogue-300/api/1deff55c34c8cc11480f52579adfb40d6297f00e507ed4a95e16fb73b3c9394f.json"
+        },
+        "modifications": "Resized to a maximum dimension of 1200 pixels by Narat. No crop.",
+        "local_path": "catalogue/releases/skeleton-300-v1/media/1848a0da303664e9d49bade7.jpg",
+        "sha256": "1848a0da303664e9d49bade733e3601d113f6bffac8ccf25cc5a848cfacaab9b",
+        "source_image_sha256": "94501ffbd52a725a66a0772b0ad229068d797433de29665d84aa104a22368c31",
+        "bytes": 290951,
+        "width": 1200,
+        "height": 900,
+        "mime": "image/jpeg",
+        "species_visual_review": "editorial_source_and_visual_review_2026-11-12"
+      },
+      "source_id": "wikimedia_commons_catalogue"
+    },
+    "asplenium_antiquum": {
+      "wikidata_id": "Q4808118",
+      "replaces": "File:Asplenium-nidus.JPG",
+      "identity_evidence": "The old image showed Asplenium nidus. The replacement is identified as Asplenium antiquum at the Freiburg botanical garden.",
+      "hero_image": {
+        "file_title": "File:Asplenium antiquum - Botanischer Garten Freiburg - DSC06284.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Asplenium_antiquum_-_Botanischer_Garten_Freiburg_-_DSC06284.jpg",
+        "original_url": "https://upload.wikimedia.org/wikipedia/commons/f/f7/Asplenium_antiquum_-_Botanischer_Garten_Freiburg_-_DSC06284.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/f/f7/Asplenium_antiquum_-_Botanischer_Garten_Freiburg_-_DSC06284.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "original_sha1": "b8a7e0aad56f9cf2f25006d4efcc2fec323498e4",
+        "author": "Daderot",
+        "credit": "Own work",
+        "license": "CC0",
+        "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attribution": "File:Asplenium antiquum - Botanischer Garten Freiburg - DSC06284.jpg — Daderot / Wikimedia Commons / CC0",
+        "retrieved_at": "2026-11-12T05:21:27.103921+00:00",
+        "license_review": "Pinned Wikimedia Commons imageinfo",
+        "metadata_snapshot": {
+          "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&iiprop=url%7Cextmetadata%7Csha1%7Csize%7Cmime&iiurlwidth=960&maxlag=5&prop=imageinfo&redirects=1&titles=File%3AAnthurium+clarinervium+-+Conservatory+of+Flowers+-+San+Francisco%2C+CA+-+DSC03116.JPG%7CFile%3AAnthurium_clarinervium.jpg%7CFile%3AAnthurium+crenatum+3zz.jpg%7CFile%3AAnthurium_crenatum_3zz.jpg%7CFile%3AAraceae+Anthurium+gracile+1.jpg%7CFile%3AAnthurium_gracile_IMG_1673.jpg%7CFile%3AARACEAE+Anthurium+radicans+K.Koch+%26+A.Haage%2C+INMA+%28MBML027533%29.pdf%7CFile%3AAnthurium_radicans.jpg%7CFile%3AARACEAE+Anthurium+vittariifolium+Engl.%2C+MPEG+%28MG005558%29.pdf%7CFile%3A%E5%9E%82%E8%91%89%E8%8A%B1%E7%87%AD_Anthurium_wendlingeri_20190806183918_12.jpg%7CFile%3AAnthurium+waroqueanum.JPG%7CFile%3AL%27Illustration_horticole_%28Plate_392%29.jpg%7CFile%3AAnthurium+watermaliense+kz10.jpg%7CFile%3AAnthurium_watermaliense_kz6.jpg%7CFile%3AAphelandraSquarrosa.jpg%7CFile%3AAphelandraSquarrosaWPC.jpg%7CFile%3AAphelandraSquarrosaWPC_edit.jpg%7CFile%3ACissus+antarctica+fruits.jpg%7CFile%3ACissus_antarctica_kz1.JPG%7CFile%3ABeetle+palm+with+nut+bunch.jpg%7CFile%3AAreca_Palm_Seeds_Forming_Coorg_Feb24_A7C_09499.jpg%7CFile%3AAsparagus+aethiopicus+5Dsr+7747.jpg%7CFile%3AAsparagus+aethiopicus+5Dsr+7566.jpg%7CFile%3AAsparagus_aethiopicus_5Dsr_7742.jpg%7CFile%3AAspidistra-elatior-variegata.jpg%7CFile%3AAspidistra_elatior1.jpg%7CFile%3AAsplenium-nidus.JPG%7CFile%3AAsplenium_antiquum_-_Botanischer_Garten_Freiburg_-_DSC06284.jpg%7CFile%3AAsplenium+bulbiferum+kz15.jpg%7CFile%3AAsplenium_bulbiferum_kz3.jpg%7CFile%3AAsplenium+gracillimum+Colenso+%28AM+AK288203-2%29.jpg%7CFile%3AMother_Spleenwort_frond_tips.jpg%7CFile%3AStarr-090623-1444-Asplenium+nidus-habit+and+sori-Nahiku-Maui+%2824335949904%29.jpg%7CFile%3AAsplenium_nidus_%28Bukidnon%2C_Philippines%29_02.jpg%7CFile%3AAstrophytum+asterias11.jpg%7CFile%3AAstrophytum_asterias1.jpg%7CFile%3ABegonia+bowerae.JPG%7CFile%3ABegonia+boweri+3.jpg%7CFile%3ABegonia_boweri_3.jpg%7CFile%3ABegonia+conchifolia+-+Botanischer+Garten+-+Heidelberg%2C+Germany+-+DSC01023.jpg",
+          "sha256": "0721ff9ef51f595088d694be9bdf559d2b8cc2e1b03f61ea43f36eda4eb984b8",
+          "retrieved_at": "2026-11-04T16:29:34.851722+00:00",
+          "snapshot": "knowledge-base/raw/catalogue-300/api/d0ee3943b9afe7330071f4c3d7a7928c6fddf8209d274828291f0d1c1e9442b0.json"
+        },
+        "modifications": "Resized to a maximum dimension of 1200 pixels by Narat. No crop.",
+        "local_path": "catalogue/releases/skeleton-300-v1/media/1f4682f4944705bd79d838f0.jpg",
+        "sha256": "1f4682f4944705bd79d838f019604bd45ac4f3c2fc25d3fbcf00f7f03c50511f",
+        "source_image_sha256": "84a8c5a27bc9e394e7a62ee03dc0be53f613505a08ff2734c2bca189686314f3",
+        "bytes": 481822,
+        "width": 900,
+        "height": 1200,
+        "mime": "image/jpeg",
+        "species_visual_review": "editorial_source_and_visual_review_2026-11-12"
+      },
+      "source_id": "wikimedia_commons_catalogue"
+    },
+    "crassula_perforata": {
+      "wikidata_id": "Q15482979",
+      "replaces": "File:Crassula rupestris x perforata (baby necklace)1.jpg",
+      "identity_evidence": "The old caption described a cross with Crassula rupestris. The replacement authors identify Crassula perforata.",
+      "hero_image": {
+        "file_title": "File:Starr-110218-1569-Crassula perforata-flowering habit-Ulana St Makawao-Maui (24449889633).jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Starr-110218-1569-Crassula_perforata-flowering_habit-Ulana_St_Makawao-Maui_(24449889633).jpg",
+        "original_url": "https://upload.wikimedia.org/wikipedia/commons/3/35/Starr-110218-1569-Crassula_perforata-flowering_habit-Ulana_St_Makawao-Maui_%2824449889633%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "download_url": "https://upload.wikimedia.org/wikipedia/commons/3/35/Starr-110218-1569-Crassula_perforata-flowering_habit-Ulana_St_Makawao-Maui_%2824449889633%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+        "original_sha1": "43eea7a035ad57bf8d93761874563268a67a2b48",
+        "author": "Forest and Kim Starr",
+        "credit": "starr-110218-1569-Crassula_perforata-flowering_habit-Ulana_St_Makawao-Maui",
+        "license": "CC BY 3.0 us",
+        "license_url": "https://creativecommons.org/licenses/by/3.0/us/deed.en",
+        "attribution": "File:Starr-110218-1569-Crassula perforata-flowering habit-Ulana St Makawao-Maui (24449889633).jpg — Forest and Kim Starr / Wikimedia Commons / CC BY 3.0 us",
+        "retrieved_at": "2026-11-12T05:21:28.313147+00:00",
+        "license_review": "Pinned Wikimedia Commons imageinfo",
+        "metadata_snapshot": {
+          "url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&iiprop=url%7Cextmetadata%7Csha1%7Csize%7Cmime&iiurlwidth=960&maxlag=5&prop=imageinfo&redirects=1&titles=File%3ADischidia_nummularia_%28Habius%29.jpg%7CFile%3ADischidia+ovata+kz1.jpg%7CFile%3ADischidia_ovata_kz02.jpg%7CFile%3A%E7%99%BE%E8%90%AC%E5%BF%83+Dischidia+ruscifolia+-%E9%A6%99%E6%B8%AF%E5%8B%95%E6%A4%8D%E7%89%A9%E5%85%AC%E5%9C%92+Hong+Kong+Botanical+Garden-+%289240152650%29.jpg%7CFile%3A%E7%99%BE%E8%90%AC%E5%BF%83_Dischidia_ruscifolia_-%E9%A6%99%E6%B8%AF%E5%8B%95%E6%A4%8D%E7%89%A9%E5%85%AC%E5%9C%92_Hong_Kong_Botanical_Garden-_%289240152650%29.jpg%7CFile%3ACurio+radicans+1DS-II+5274.jpg%7CFile%3ACurio+radicans+1DS-II+5329.jpg%7CFile%3AString_of_Bananas.JPG%7CFile%3ASenecio+herreanus+2019-04-16+0741.jpg%7CFile%3ASenecio_herreanus_2019-04-16_0741.jpg%7CFile%3A1+Curio+citriformis+-+Okkertskraal+-+Copy.jpg%7CFile%3ASenecio_citriformis_0zz.jpg%7CFile%3ACurio+repens+syn.+Senecio+serpens+2019-04-14+01.jpg%7CFile%3ASenecio_serpens_04.jpg%7CFile%3ASenecio+barbertonicus%2C+winterblomme.jpg%7CFile%3ASenecio.barbertonicus.7075.jpg%7CFile%3ASedum+nussbaumerianum+Madagascar05.jpg%7CFile%3ASedum+nussbaumerianum+Madagascar01.jpg%7CFile%3ASedumnussbaumerianum.jpg%7CFile%3ASedum+pachyphyllum+%E4%B9%99%E5%A5%B3%E5%BF%83+%2819270345881%29.jpg%7CFile%3ASedum+pachyphyllum+%2834074554171%29.jpg%7CFile%3ASedum_Pachyphyllum_%28Jelly_Bean_Plant%29.jpg%7CFile%3AGardenology.org-IMG+0391+hunt07mar.jpg%7CFile%3AGardenology.org-IMG_0391_hunt07mar.jpg%7CFile%3ACrassula+rupestris+x+perforata+%28baby+necklace%291.jpg%7CFile%3AStarr-110218-1569-Crassula_perforata-flowering_habit-Ulana_St_Makawao-Maui_%2824449889633%29.jpg%7CFile%3ACrassula+rupestris+BotGardBln271207B.jpg%7CFile%3ACrassula_rupestris-PICT3087.jpg%7CFile%3ACrassula+capitella+2.jpg%7CFile%3ACrassula_capitella_-_CT_5.jpg%7CFile%3ACrassulaceae+-+Crassula+marnieriana.JPG%7CFile%3ACrassula_rupestris_subsp._marnieriana_%28Crassula_marnieriana%29_-_Orto_botanico_-_Rome%2C_Italy_-_DSC09988.jpg%7CFile%3ACrassula+pellucida+5268+hunt10mar+Gardenology.jpg%7CFile%3ACrassula+pellucida+5269+hunt10mar+Gardenology.jpg%7CFile%3ACrassula+pellucida+01+Feb+09+Skeleton+Gorge.JPG%7CFile%3ACrassula+tetragona+-+plants+%28aka%29.jpg%7CFile%3ACrassula_tetragona_-_plants_%28aka%29.jpg%7CFile%3ACrassulapubescens.jpg%7CFile%3AEcheveria+Agavoides+%286105629489%29.jpg%7CFile%3AEcheveria_agavoides-1.jpg",
+          "sha256": "49ac035f6885d019a5e14ab04650ae8acfdc80cce64f0c409ac24dfd0c288136",
+          "retrieved_at": "2026-11-04T16:29:48.440112+00:00",
+          "snapshot": "knowledge-base/raw/catalogue-300/api/f26bdb05cfae5de49df7d97e8f50e2a5dd58456bb9b4ae42e10c86f752cd0432.json"
+        },
+        "modifications": "Resized to a maximum dimension of 1200 pixels by Narat. No crop.",
+        "local_path": "catalogue/releases/skeleton-300-v1/media/bec88d45a41c7a970d3e4205.jpg",
+        "sha256": "bec88d45a41c7a970d3e420523aa617175378037435ff099ddd9430ba1c29a58",
+        "source_image_sha256": "e6b899d91ed9e547b0f97a7d7fd849fff3e0e60ed6280b6fc3e48e28a6c26f5d",
+        "bytes": 250203,
+        "width": 1200,
+        "height": 900,
+        "mime": "image/jpeg",
+        "species_visual_review": "editorial_source_and_visual_review_2026-11-12"
+      },
+      "source_id": "wikimedia_commons_catalogue"
+    },
+    "hoya_lanceolata": {
+      "wikidata_id": "Q162311",
+      "replaces": "File:Hoya bella.JPG",
+      "identity_evidence": "The old image was Hoya bella. Kew treats the two taxa separately. RBGE specimen E01479576 is labelled Hoya lanceolata.",
+      "hero_image": {
+        "file_title": "Hoya lanceolata Wall. ex D.Don (E01479576)",
+        "source_page": "https://iiif.rbge.org.uk/herb/iiif/E01479576/manifest",
+        "original_url": "https://iiif.rbge.org.uk/herb/iiif/E01479576/full/1600,/0/default.jpg",
+        "download_url": "https://iiif.rbge.org.uk/herb/iiif/E01479576/full/1600,/0/default.jpg",
+        "author": "Royal Botanic Garden Edinburgh",
+        "license": "CC BY-SA 2.5",
+        "license_url": "https://creativecommons.org/licenses/by-sa/2.5/",
+        "credit": "Herbarium specimen E01479576",
+        "attribution": "Hoya lanceolata Wall. ex D.Don (E01479576) — Royal Botanic Garden Edinburgh / CC BY-SA 2.5",
+        "retrieved_at": "2026-11-12T05:23:40.621538+00:00",
+        "license_review": "RBGE IIIF manifest rights and attribution",
+        "metadata_snapshot": {
+          "snapshot": "catalogue/manifests/t148-editorial-sources/rbge-hoya-lanceolata.json",
+          "sha256": "7321549d01f80fadcb6e60ff4c12b456abf0d2d3f229709912477c7c8cd5b8e0",
+          "url": "https://iiif.rbge.org.uk/herb/iiif/E01479576/manifest"
+        },
+        "modifications": "Resized to a maximum dimension of 1200 pixels by Narat. No crop.",
+        "local_path": "catalogue/releases/skeleton-300-v1/media/2225d886c7ec6561cbccb956.jpg",
+        "sha256": "2225d886c7ec6561cbccb9564154f13ba9d40a06b6ee27e3ad4fb91a880441c9",
+        "source_image_sha256": "09b7c1e70f0e2bbf00f2e558b6194def955adadf6c14559318946278cabd239d",
+        "bytes": 177753,
+        "width": 829,
+        "height": 1200,
+        "mime": "image/jpeg",
+        "species_visual_review": "editorial_source_and_visual_review_2026-11-12"
+      },
+      "source_id": "rbge_editorial_hoya_lanceolata"
+    },
+    "philodendron_domesticum": {
+      "wikidata_id": "Q7186048",
+      "replaces": "File:Philodendron hederaceum lemon at Cox's Bazar Bangladesh.jpg",
+      "identity_evidence": "The old image was captioned Philodendron hederaceum. The replacement is the leaf image listed under this hybrid by Pl@ntNet.",
+      "hero_image": {
+        "file_title": "Philodendron × domesticum G.S.Bunting",
+        "source_page": "https://identify.plantnet.org/oc/k-world-flora/species/Philodendron%20%C3%97%20domesticum%20G.S.Bunting/data",
+        "original_url": "https://bs.plantnet.org/image/o/f6f1246b36f87d07f9419b1c33c250fc2e0ac38f",
+        "download_url": "https://bs.plantnet.org/image/o/f6f1246b36f87d07f9419b1c33c250fc2e0ac38f",
+        "author": "Chérif-Jacques Allali",
+        "license": "CC BY-SA 4.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "credit": "Chérif-Jacques Allali / Pl@ntNet",
+        "attribution": "Philodendron × domesticum G.S.Bunting — Chérif-Jacques Allali / Pl@ntNet / CC BY-SA 4.0",
+        "retrieved_at": "2026-11-12T05:31:54.912415+00:00",
+        "license_review": "Per-image Pl@ntNet gallery ImageObject license",
+        "metadata_snapshot": {
+          "snapshot": "catalogue/manifests/t148-editorial-sources/plantnet-philodendron-domesticum.json",
+          "sha256": "bc7b5dc0c60202b232b6b7d0b11d6753842d4c12ddcee7395982006c1203c072",
+          "url": "https://identify.plantnet.org/oc/k-world-flora/species/Philodendron%20%C3%97%20domesticum%20G.S.Bunting/data"
+        },
+        "modifications": "Source image used unchanged.",
+        "local_path": "catalogue/releases/skeleton-300-v1/media/663feba8194a5a52aab52fbb.jpg",
+        "sha256": "663feba8194a5a52aab52fbb5433c13ba113ba94f34ae6fa4898688b9403b773",
+        "source_image_sha256": "663feba8194a5a52aab52fbb5433c13ba113ba94f34ae6fa4898688b9403b773",
+        "bytes": 92966,
+        "width": 563,
+        "height": 1000,
+        "mime": "image/jpeg",
+        "species_visual_review": "editorial_source_and_visual_review_2026-11-12"
+      },
+      "taxon_classification": {
+        "rank": "hybrid",
+        "scientific_name": "Philodendron × domesticum",
+        "status": "Wikidata identifier retained; hybrid classification verified in Kew POWO",
+        "source_url": "https://powo.science.kew.org/taxon/193021-2",
+        "original_scientific_name": "Philodendron domesticum"
+      },
+      "source_id": "plantnet_editorial_philodendron_domesticum"
+    }
+  }
+}

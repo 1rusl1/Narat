@@ -36,6 +36,8 @@ export interface UploadTicketResponse {
 export interface MediaStorageAdapter {
   createSignedUploadTicket(params: {
     ownerId: string | null;
+    operationId: string;
+    contentSha256: string | null;
     draftId: string | null;
     plantId: string | null;
     mimeType: string;
@@ -56,7 +58,7 @@ export async function handleMediaUploadTicket(
   }
 
   const obj = body as Record<string, unknown>;
-  requireUuid(obj.operation_id, "operation_id");
+  const operationId = requireUuid(obj.operation_id, "operation_id");
 
   const mimeType = typeof obj.mime_type === "string"
     ? obj.mime_type.trim().toLowerCase()
@@ -75,7 +77,7 @@ export async function handleMediaUploadTicket(
 
   const byteSize = typeof obj.byte_size === "number" ? obj.byte_size : NaN;
   if (
-    !Number.isFinite(byteSize) ||
+    !Number.isInteger(byteSize) ||
     byteSize <= 0 ||
     byteSize > MAX_NORMALIZED_PHOTO_BYTES
   ) {
@@ -111,6 +113,8 @@ export async function handleMediaUploadTicket(
 
   const ticket = await adapter.createSignedUploadTicket({
     ownerId: ctx.ownerId,
+    operationId,
+    contentSha256: typeof obj.content_sha256 === "string" ? obj.content_sha256 : null,
     draftId,
     plantId,
     mimeType,
@@ -119,5 +123,5 @@ export async function handleMediaUploadTicket(
     ttlSeconds: UPLOAD_TICKET_TTL_SECONDS,
   });
 
-  return jsonResponse(ticket, 200);
+  return jsonResponse(ticket, 200, { "Cache-Control": "no-store" });
 }

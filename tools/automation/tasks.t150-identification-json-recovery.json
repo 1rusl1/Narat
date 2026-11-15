@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "t150-identification-json-recovery",
+      "description": "Accept the identification-only structured output request after repeated malformed known-species responses on narat-staging.",
+      "candidate_base": "8ba3756b8eab7859275311724d7796dd01bafdc2",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "tools/automation/tasks.t150-identification-json-recovery.json",
+        "docs/handoff_status.md",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "specs/001-plants-ios-mvp/contracts/identification-photo-http.md"
+      ],
+      "write_files": [],
+      "constraints": [
+        "English independent Review and QA on the exact controller candidate. Model roles do not access live credentials, run staging operations or make external provider calls. The controller exercises the published candidate separately on the fixed staging project.",
+        "The accepted server slice returned unknown with no charge on a synthetic non-plant. Two known-image jobs ended PROVIDER_INVALID_JSON and released the starter. This repair requests a small static output_config.format schema through the existing SDK for identification only. Preserve local response and closed-list validation, the diagnosis request and wire, no retry/fallback semantics and provider-error settlement. The public wire and the accepted migration are unchanged."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T150-J1",
+          "description": "Actual production entrypoints compile and the diff check passes.",
+          "checks": [
+            "deno-check",
+            "diff-check"
+          ],
+          "mode": "local"
+        },
+        {
+          "id": "T150-J2",
+          "description": "SDK fixtures assert the identification schema and unchanged diagnosis request while known/unknown, malformed JSON and failure settlement still pass.",
+          "checks": [
+            "deno-tests"
+          ],
+          "mode": "fixture"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "source_url": "https://iiif.rbge.org.uk/herb/iiif/E01479576/manifest",
+  "source_sha256": "7ef48b40d34f5655bf9881d1a41f8726413654072b91bd5b8279f6f0add5014d",
+  "label": "Hoya lanceolata Wall. ex D.Don (E01479576)",
+  "creator": "Royal Botanic Garden Edinburgh",
+  "rights": "https://creativecommons.org/licenses/by-sa/2.5/",
+  "image_url": "https://iiif.rbge.org.uk/herb/iiif/E01479576/full/1600,/0/default.jpg",
+  "specimen_url": "https://data.rbge.org.uk/herb/E01479576",
+  "occurrence_url": "https://www.gbif.org/occurrence/4945350619"
+}
