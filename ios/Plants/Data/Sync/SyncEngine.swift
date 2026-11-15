@@ -79,6 +79,10 @@ public struct EffectiveCareTaskView: Codable, Sendable, Equatable {
 }
 
 public actor SyncEngine {
+    enum CareRecommendationRefreshFailure: Error {
+        case rejected
+    }
+
     private let store: LocalStore
     private let apiClient: PlantsAPIClient
     private var drainingOwners = Set<UUID>()
@@ -124,9 +128,10 @@ public actor SyncEngine {
         _ = try await flushOutbox(for: context.ownerId, context: context, commandName: PlantDeleteReceipt.commandName)
     }
 
-    func flushPlantCommand(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+    @discardableResult
+    func flushPlantCommand(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws -> Int {
         try apiClient.syncAuthority.withBoundValid(context) {}
-        _ = try await flushOutbox(for: context.ownerId, context: context, onlyOperation: command.operationId)
+        return try await flushOutbox(for: context.ownerId, context: context, onlyOperation: command.operationId)
     }
 
     private func flushOutbox(
@@ -304,6 +309,10 @@ public actor SyncEngine {
                         try await store.finishOutboxEntry(
                             operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                         )
+                        if onlyOperation == entry.operationId,
+                           entry.commandName == CareRecommendationRefreshCommand.name {
+                            throw CareRecommendationRefreshFailure.rejected
+                        }
                         continue
                     }
                     failure = String(decoding: try JSONEncoder().encode(apiError), as: UTF8.self)

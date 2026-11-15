@@ -4803,7 +4803,8 @@ extension CollectionWireTests {
             _ = try await repo.collectionCards(context: lease)
             command = try await repo.enqueueCareRecommendationRefresh(plantId: plant, context: lease)
             XCTAssertEqual(command.payloadJSON, "{\"expected_care_revision\":2}")
-            try await repo.retryCareRecommendationRefresh(command, context: lease)
+            let outcome = try await repo.retryCareRecommendationRefresh(command, context: lease)
+            XCTAssertEqual(outcome, .pending)
             let requests = await transport.capturedRequests()
             XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
             firstPost = try XCTUnwrap(requests.last?.httpBody)
@@ -4822,10 +4823,12 @@ extension CollectionWireTests {
         let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
         let replay = try await repo.enqueueCareRecommendationRefresh(plantId: plant, context: lease)
         XCTAssertEqual(replay, command)
-        try await repo.retryCareRecommendationRefresh(replay, context: lease)
+        let invalidOutcome = try await repo.retryCareRecommendationRefresh(replay, context: lease)
+        XCTAssertEqual(invalidOutcome, .pending)
         let pending = try await repo.pendingCareRecommendationRefresh(plantId: plant, context: lease)
         XCTAssertEqual(pending, command)
-        try await repo.retryCareRecommendationRefresh(replay, context: lease)
+        let validOutcome = try await repo.retryCareRecommendationRefresh(replay, context: lease)
+        XCTAssertEqual(validOutcome, .confirmed)
         let remaining = try await repo.pendingCareRecommendationRefresh(plantId: plant, context: lease)
         XCTAssertNil(remaining)
         let recommendation = try await api.fetchCareRecommendation(plantId: plant, context: lease)
@@ -4839,6 +4842,66 @@ extension CollectionWireTests {
                 && $0.value(forHTTPHeaderField: "X-Client-Locale") == "en"
                 && $0.value(forHTTPHeaderField: "X-Installation-Credential") == nil
         })
+    }
+
+    @MainActor
+    func testCareRecommendationRefreshTerminalAndPausedOutcomes() async throws {
+        for code in ["CONFLICT", "FORBIDDEN", "VALIDATION_ERROR", "NOT_FOUND"] {
+            var row = syncChange(syncUntil, id: serverPlantId.uuidString)
+            row["data"] = ["id": serverPlantId.uuidString, "revision": 2, "care_revision": 2] as [String: Any]
+            var baseline = syncObject()
+            baseline["changes"] = [row]
+            let failure = try syncJSON(["error": ["code": code, "message": "Fixture rejection", "retryable": false] as [String: Any]])
+            let retryable = try syncJSON(["error": ["code": code, "message": "Fixture retry", "retryable": true] as [String: Any]])
+            let paused = try syncJSON([
+                "plant_id": serverPlantId.uuidString, "care_revision": 2, "state": "paused",
+                "reason": "missing_watering_anchor", "watermark": syncUntil
+            ])
+            let status = code == "FORBIDDEN" ? 403 : code == "NOT_FOUND" ? 404 : code == "CONFLICT" ? 409 : 400
+            let transport = CatalogueTransport([
+                .http(200, try syncJSON(baseline)), .http(status, failure),
+                .http(status, failure), .http(status, retryable),
+                .http(200, paused), .http(200, try syncJSON(syncObject()))
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let engine = SyncEngine(store: store, apiClient: api)
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+            _ = try await repo.collectionCards(context: lease)
+            let command = try await repo.enqueueCareRecommendationRefresh(plantId: serverPlantId, context: lease)
+            let rejected = try await repo.retryCareRecommendationRefresh(command, context: lease)
+            XCTAssertEqual(rejected, .rejected, code)
+            let discarded = try await repo.pendingCareRecommendationRefresh(plantId: serverPlantId, context: lease)
+            XCTAssertNil(discarded, code)
+            let absent = try await repo.retryCareRecommendationRefresh(command, context: lease)
+            XCTAssertEqual(absent, .unconfirmed, code)
+
+            // Background rejection retains the existing nonthrowing drain behavior.
+            let background = try await repo.enqueueCareRecommendationRefresh(plantId: serverPlantId, context: lease)
+            let committed = try await engine.flushOutbox(context: lease)
+            XCTAssertEqual(committed, 0, code)
+            let backgroundOutcome = try await repo.retryCareRecommendationRefresh(background, context: lease)
+            XCTAssertEqual(backgroundOutcome, .unconfirmed, code)
+
+            let retry = try await repo.enqueueCareRecommendationRefresh(plantId: serverPlantId, context: lease)
+            let pendingOutcome = try await repo.retryCareRecommendationRefresh(retry, context: lease)
+            XCTAssertEqual(pendingOutcome, .pending, code)
+            let pending = try await repo.pendingCareRecommendationRefresh(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(pending, retry, code)
+            let confirmed = try await repo.retryCareRecommendationRefresh(retry, context: lease)
+            XCTAssertEqual(confirmed, .confirmed, code)
+            let remaining = try await repo.pendingCareRecommendationRefresh(plantId: serverPlantId, context: lease)
+            XCTAssertNil(remaining, code)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "POST", "POST", "POST", "GET"], code)
+            XCTAssertEqual(requests[3].httpBody, requests[4].httpBody, code)
+            XCTAssertEqual(requests[3].value(forHTTPHeaderField: "X-Operation-Id"), retry.operationId.uuidString.lowercased(), code)
+            XCTAssertEqual(requests[3].value(forHTTPHeaderField: "X-Operation-Id"), requests[4].value(forHTTPHeaderField: "X-Operation-Id"), code)
+        }
     }
 
     @MainActor

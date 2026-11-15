@@ -193,6 +193,10 @@ enum PlantDeletionOutcome {
     case pending, confirmed, rejected
 }
 
+enum CareRecommendationRefreshOutcome: Sendable, Equatable {
+    case pending, confirmed, rejected, unconfirmed
+}
+
 struct CatalogueFirstAidControl: Decodable, Sendable, Identifiable {
     struct Policy: Decodable, Sendable {
         let dueOn: String
@@ -507,9 +511,18 @@ public struct CollectionRepository: Sendable {
         try await store.enqueueCareRecommendationRefresh(plantId: plantId, context: context, authority: apiClient.syncAuthority)
     }
 
-    func retryCareRecommendationRefresh(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
-        guard CareRecommendationRefreshCommand(command) != nil else { throw SyncWireValidationError.invalidRequest }
-        try await syncEngine.flushPlantCommand(command, context: context)
+    @discardableResult
+    func retryCareRecommendationRefresh(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws -> CareRecommendationRefreshOutcome {
+        guard CareRecommendationRefreshCommand(command) != nil, let plantId = command.plantId
+        else { throw SyncWireValidationError.invalidRequest }
+        do {
+            let committed = try await syncEngine.flushPlantCommand(command, context: context)
+            if committed == 1 { return .confirmed }
+        } catch SyncEngine.CareRecommendationRefreshFailure.rejected {
+            return .rejected
+        }
+        let pending = try await pendingCareRecommendationRefresh(plantId: plantId, context: context)
+        return pending == command ? .pending : .unconfirmed
     }
 
     func enqueuePlantDeletion(plantId: UUID, context: SyncSessionLease) async throws -> CommandEnvelopeDTO {

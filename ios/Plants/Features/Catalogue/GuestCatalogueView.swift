@@ -1635,13 +1635,18 @@ private struct CatalogueCollectionCardView: View {
             let command = try await repository.enqueueCareRecommendationRefresh(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             pendingAdviceRefresh = command
-            try await repository.retryCareRecommendationRefresh(command, context: lease)
-            let pending = try await repository.pendingCareRecommendationRefresh(plantId: card.id, context: lease)
+            let outcome = try await repository.retryCareRecommendationRefresh(command, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
-            pendingAdviceRefresh = pending
-            if pending == nil {
+            switch outcome {
+            case .confirmed:
+                pendingAdviceRefresh = nil
                 adviceRequest += 1
                 adviceRefreshRead = adviceRequest
+            case .pending:
+                pendingAdviceRefresh = command
+            case .rejected, .unconfirmed:
+                pendingAdviceRefresh = nil
+                adviceRefreshFailed = true
             }
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
