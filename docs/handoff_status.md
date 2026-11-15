@@ -2381,7 +2381,9 @@ T148 остаётся на прежней остановке до запуска
 - Backend/data and iOS/integration run in separate worktrees and publish to codex/plants-backend and codex/plants-ios. iOS alone uses Simulator. The user set a weekly Codex stop threshold of 85% consumed. Model routes use Codex.
 - a2ddd3a accepted forward migration 056 and contextual SQL tests. Deno and PostgreSQL clean/upgrade passed, 136 routine fixture assertions per database, plus Review and QA. Contextual revision one without an explicit matching refresh, mismatched or withdrawn evidence and malformed metadata fail closed. Legacy without metadata and the qualifying current rule still work. Not deployed at acceptance.
 - Staging has 051–055 and plants-api v27/worker v8. Live v2 manifest 7349299f74a36747e0c6042e581e706e36cb844002e19395fd8edc6448978d80 contains one Monstera profile, no calendar interval and one pinned condition. Published catalogue has null KB pointer. v2 paused HTTP and the isolated live SQL rollback were verified.
-- Current task creates only the staging-only v3 data candidate and reasoned evidence sidecar. Developer returns unified git diff in JSON. Controller applies and verifies. No staging activation in this packet. Leave T160/T171 open. Next: accept v3, rehearse atomic publication preserving v2, and run live dated owner operations. iOS b028902 passed the EN mark/restart/retry test and undo is separate.
+- The v3 candidate adds the compact profile, exact refresh metadata sidecar and evidence README. Initial local run blocked at the controller's Deny dynamic import twice. Static import into the production validator now passes directly with the exact candidate. Review and QA must verify the committed scope before any staging activation.
+- 056 deployed to narat-staging. Exact dry run and PostgreSQL no-024 rehearsal passed. Live rollback confirmed no date without rule, then dated complete/undo/replay without leaving fixtures. v2 active profile remains conditional.
+- Next: read-only Review/QA, atomic v3 rehearsal, live dated owner operations. T160/T171 open.
 
 <!-- /orchestrator:project-state -->
 
