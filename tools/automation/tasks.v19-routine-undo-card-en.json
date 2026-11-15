@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-undo-card-en",
+      "description": "Connect the accepted canonical routine journal and durable undo to the existing EN plant card.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "Current read model provides collectionRoutineSoilCheckHistory(plantId:context:) returning canonical CatalogueCareJournalEntry rows with taskId, state and local date. Controller applies a Git unified patch returned in JSON with exact separate headers and matching context. Only the three listed UI/Test files may change. Do not rewrite store, repository or transport.",
+        "Show EN routine soil-check journal in the saved card, render active and voided rows, expose an undo button for a canonical active row using its taskId and entryId, then confirm/cancel. Reuse pendingRoutineUndo, enqueueRoutineUndo and retryRoutineUndo, the existing owner lease and edit/deletion guards. Restore pending after restart, exact retry and confirmed local journal update only after server verification, then refresh recommendation. Preserve completion and unrelated care paths. Completion should reload routine history. Identifier for each undo target collection.routine.undo.<lowercase entry UUID>.",
+        "In the existing DEBUG harness add isolated undo fixture mode and testRoutineSoilCheckUndoAfterRestart. Complete, see history, cancel initial undo, confirm another and lose first receipt, restart, retry exact payload, verify voided history and restored date. Use real sync union ordering, canonical rule UUID:due, receipt, task, entry, reversal linkage. Reuse existing helpers and preserve testRoutineSoilCheckCompletesAfterRestart. Fixture only, no external service or live check. No wider task closure."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19AJ1",
+          "description": "Swift units and diff pass with canonical history and strict owner/occurrence filtering.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "V19AJ2",
+          "description": "Targeted EN XCUITests cover existing mark and new visible undo through restart.",
+          "mode": "fixture",
+          "checks": [
+            "v19-care-ui"
+          ]
+        }
+      ]
+    }
+  ]
+}

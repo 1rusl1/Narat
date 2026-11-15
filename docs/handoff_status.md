@@ -1,5 +1,16 @@
 # Narat — текущий статус и передача работы
 
+## A — подтверждённая история обычной проверки — 15 ноября 2026
+
+`c92db81` принят и отправлен. LocalStore и CollectionRepository
+читают канонические записи владельца, включая историю после повторной
+отметки. Swift, Simulator smoke, Review и QA прошли. Первый
+объединённый UI-run истёк до патча, затем отдельный read model
+восстановлен штатным resume и исправлением diff. Следующий шаг —
+EN-карточка с историей и отменой, два XCUITest и отдельная
+подписанная проверка на опубликованной Monstera. T160/T171 открыты.
+
+
 ## A — принят outbox записи проверки — 15 ноября 2026
 
 `8046790`: оркестратор принял durable retry и подтверждение
@@ -2150,11 +2161,10 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:project-state -->
 ## Project State
 
-- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios. Backend/data independently publishes to codex/plants-backend. Weekly Codex stop threshold is 85% used and all model routes are Codex only.
-- c073844 accepted durable typed undo, canonical owner sync, persisted entry/task/reversal evidence, exact retry after a lost response and restart, and re-completed task handling. Swift, Simulator smoke, Review, QA and push passed. The initial negative fixture ordering was fixed. A separate macOS SwiftData probe compiled the six actual post/pre model types, seeded old SQLite and confirmed opening and preserving rows and outbox bytes with the new optional field.
-- b028902 accepted EN mark and next date after restart. Backend 051–056, Edge v27/worker v8 and real published Monstera v3 passed staging HTTP for date, completion, exact replay, reversal, mismatch and synthetic expiry. Staging synthetic identities were cleaned. iOS live V19 remains open.
-- The first combined history/UI/fixture run v19-routine-undo-card-codex-20261115-10 timed out at Developer with network stream disconnect, no patch or newer local check. Worktree stayed clean. Split into smaller packages.
-- Current smaller task adds owner-bound routine history and exact canonical occurrence classification using LocalStore and CollectionRepository, with focused Swift tests. Developer returns a valid unified Git patch in JSON. Controller applies and verifies. Follow with EN UI and a dedicated XCUITest using the accepted read model. Signed staging acceptance remains open. T160/T164/T171 stay open.
+- 15 Nov 2026. iOS/integration is the only Simulator user and publishes to codex/plants-ios. Backend/data independently publishes to codex/plants-backend. All providers are Codex, weekly ceiling 85% used.
+- c92db81 accepted owner-bound routine soil-check history, canonical task occurrence classification, retained active/voided rows after re-completion, and rejection of unrelated check/watering. Changes: LocalStore/CollectionRepository/CollectionWireTests and report. Swift, Simulator smoke, Review and QA passed. Initial run v19-routine-undo-card-codex-20261115-10 stopped before a patch; new history run was resumed after incorrect fingerprint and repaired patch alignment.
+- c073844 accepted durable exact undo, session and canonical linkage. Existing mark UI is b028902. Published Monstera v3 on narat-staging 051–058/Edge v27 passed live HTTP mark, undo, re-completion, exact replay and synthetic expiry. The signed iOS path is still open.
+- Current task changes only EN card, DEBUG fixture and XCUITest. Use accepted collectionRoutineSoilCheckHistory and durable undo. Developer returns valid unified Git diff in JSON; controller applies and tests. Then use the signed production request path against staging. Leave T160/T164/T171 open.
 
 <!-- /orchestrator:project-state -->
 
