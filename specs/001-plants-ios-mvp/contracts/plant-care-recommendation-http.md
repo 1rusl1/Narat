@@ -47,3 +47,15 @@ The example uses fixture values. The server needs a published, applicable `check
 The server returns null for a missing or unsupported interval, missing active watering, disabled basic care, a paused soil-check rule, or a recorded entitlement without current verified access. The immediate recommendation remains available when its own evidence is valid. `basis` uses the response locale. Clients can render the date as a calendar day and show the interval's source. This read projection creates no scheduled task, reminder, recurrence, or first-aid control.
 
 After another actual watering, record the fact through the existing `care.record` command. The next GET projects one soil check from that newer factual anchor while the published rule remains applicable. Re-reading an overdue check keeps its original date. A recorded watering still appears in the journal when the interval evidence is absent or access has expired. A conditional soil check alone gives no new watering anchor.
+
+## Explicitly refreshed routine occurrence
+
+When a current refreshed rule remains applicable, the response also
+includes `routine_check` with `rule_id`, `care_revision`,
+`due_local_date`, `anchor_local_date` and `anchor_kind`.
+The kind is `water` or `check_soil`. The dates match the outer
+`next_check.due_on` and `next_check.anchor_on`. A completed
+ordinary soil check can provide the factual anchor for the next
+date. This projection does not include first-aid observations.
+The field is absent for a legacy watering-only projection or a
+paused date.

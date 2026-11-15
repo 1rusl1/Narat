@@ -85,5 +85,9 @@ if (refresh) {
   assertEquals(response.status, 200);
   assertEquals(response.headers.get("cache-control"), "private, no-store");
   assertEquals(await response.json(), refresh.receipt);
-  assertEquals(await recommendation(), prior);
+  const routine = refresh.after_refresh.routine_check;
+  assertEquals(
+    await recommendation(),
+    routine == null ? prior : { ...prior, routine_check: routine },
+  );
 }

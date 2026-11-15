@@ -115,7 +115,24 @@ export async function handleCareRecommendation(
     actionPath + "/next_check_interval_days",
   );
   const interval = ruleSource ? action.next_check_interval_days : null;
-  const anchor = data.last_watered_on;
+  const routine = data.routine_check;
+  if (routine != null) {
+    if (
+      typeof routine !== "object" || Array.isArray(routine) ||
+      Object.keys(routine).length !== 5 ||
+      !Number.isSafeInteger(routine.care_revision) || routine.care_revision < 1 ||
+      (routine.anchor_kind !== "water" && routine.anchor_kind !== "check_soil") ||
+      data.calendar_eligible !== true || interval === null ||
+      typeof routine.due_local_date !== "string" ||
+      addCalendarDays(routine.anchor_local_date, interval) !== routine.due_local_date
+    ) return absent();
+    try {
+      requireUuid(routine.rule_id, "rule_id");
+    } catch {
+      return absent();
+    }
+  }
+  const anchor = routine?.anchor_local_date ?? data.last_watered_on;
   const due = data.calendar_eligible === true && interval !== null
     ? addCalendarDays(anchor, interval)
     : null;
@@ -130,11 +147,16 @@ export async function handleCareRecommendation(
         next_check_interval_days: interval,
         source,
       },
+      ...(routine == null ? {} : { routine_check: routine }),
       next_check: due === null ? null : {
         due_on: due,
         anchor_on: anchor,
         interval_days: interval,
-        basis: ctx.locale === "pl"
+        basis: routine?.anchor_kind === "check_soil"
+          ? ctx.locale === "pl"
+            ? `Na podstawie ostatniej zapisanej kontroli podłoża i opublikowanego odstępu (${interval} dni).`
+            : `Based on the last recorded soil check and the published ${interval}-day interval.`
+          : ctx.locale === "pl"
           ? `Na podstawie ostatniego zapisanego podlewania i opublikowanego odstępu (${interval} dni).`
           : `Based on the last recorded watering and the published ${interval}-day interval.`,
         source: ruleSource,

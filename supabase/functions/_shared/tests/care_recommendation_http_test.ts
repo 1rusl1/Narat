@@ -181,6 +181,92 @@ Deno.test("Calendar check adds published days to the factual local day and cites
   assertEquals(expired.next_check, null);
   assertEquals(expired.status, "available");
 
+  const routine = {
+    rule_id: "17100000-0000-4000-8000-000000000021",
+    care_revision: 2,
+    due_local_date: "2026-11-23",
+    anchor_local_date: "2026-11-16",
+    anchor_kind: "check_soil",
+  };
+  for (const anchorKind of ["check_soil", "water"]) {
+    for (const polish of [false, true]) {
+      const projection = { ...routine, anchor_kind: anchorKind };
+      const http = await fixture({
+        polish,
+        row: { ...row, routine_check: projection },
+      }).get();
+      assertEquals(http.status, 200);
+      assertEquals(http.headers.get("cache-control"), "private, no-store");
+      const result = await http.json();
+      assertEquals(result.routine_check, projection);
+      assertEquals(result.recommendation, {
+        ...response.recommendation,
+        text: polish ? datedProfile.actions[0].action_pl : datedProfile.actions[0].action_en,
+      });
+      const basis = anchorKind === "check_soil"
+        ? polish
+          ? "Na podstawie ostatniej zapisanej kontroli podłoża i opublikowanego odstępu (7 dni)."
+          : "Based on the last recorded soil check and the published 7-day interval."
+        : polish
+        ? "Na podstawie ostatniego zapisanego podlewania i opublikowanego odstępu (7 dni)."
+        : "Based on the last recorded watering and the published 7-day interval.";
+      assertEquals(result.next_check, {
+        ...response.next_check,
+        due_on: projection.due_local_date,
+        anchor_on: projection.anchor_local_date,
+        basis,
+      });
+    }
+  }
+  for (const malformed of [
+    false, 7, "invalid", [], {},
+    { ...routine, rule_id: "invalid" },
+    { ...routine, care_revision: "2" },
+    { ...routine, care_revision: 0 },
+    { ...routine, care_revision: 1.5 },
+    { ...routine, care_revision: 9007199254740992 },
+    { ...routine, anchor_kind: "observe" },
+    { ...routine, anchor_local_date: "2026-02-30" },
+    { ...routine, anchor_local_date: null },
+    { ...routine, due_local_date: null },
+    { ...routine, due_local_date: "2026-11-24" },
+    { ...routine, due_local_date: "2026-11-23T00:00:00Z" },
+    { ...routine, extra: true },
+  ]) {
+    const http = await fixture({ row: { ...row, routine_check: malformed } }).get();
+    assertEquals(http.status, 200);
+    assertEquals(http.headers.get("cache-control"), "private, no-store");
+    assertEquals(await http.json(), {
+      plant_id: plant, status: "unavailable", recommendation: null, next_check: null,
+    });
+  }
+  for (const unsupported of [
+    { ...row, calendar_eligible: false },
+    { ...row, calendar_eligible: undefined },
+    { ...row, kb_release_id: owner },
+    { ...row, profile: { ...datedProfile, actions: [] } },
+    { ...row, profile },
+    {
+      ...row,
+      profile: {
+        ...datedProfile,
+        provenance: {
+          ...datedProfile.provenance,
+          field_evidence: profile.provenance.field_evidence,
+        },
+      },
+    },
+  ]) {
+    const result = await (await fixture({
+      row: { ...unsupported, routine_check: routine },
+    }).get()).json();
+    assertEquals(result, {
+      plant_id: plant, status: "unavailable", recommendation: null, next_check: null,
+    });
+  }
+  const legacy = await (await fixture({ row: { ...row, routine_check: null } }).get()).json();
+  assertEquals(legacy, response);
+
   for (const fallback of [
     { ...row, last_watered_on: null },
     { ...row, last_watered_on: "2024-02-30" },
