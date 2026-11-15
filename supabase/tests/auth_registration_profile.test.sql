@@ -1102,5 +1102,199 @@ END;
 $$;
 SELECT * FROM pg_temp.storage_verification_tests();
 
+-- Resolve 066 only after the gate so earlier migration fixtures still run.
+CREATE FUNCTION pg_temp.care_leaf_snapshot(p_owner uuid DEFAULT NULL) RETURNS jsonb LANGUAGE sql AS $$
+    SELECT jsonb_build_object(
+        'recovery_transitions',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.recovery_transitions r WHERE p_owner IS NULL OR owner_id=p_owner),
+        'care_reversals',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.care_reversals r WHERE p_owner IS NULL OR owner_id=p_owner),
+        'schedule_changes',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.schedule_changes r WHERE p_owner IS NULL OR owner_id=p_owner),
+        'notification_claims',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]'::jsonb)
+            FROM public.notification_claims r WHERE p_owner IS NULL OR owner_id=p_owner))
+$$;
+
+CREATE FUNCTION pg_temp.care_leaf_retained_snapshot() RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+    v_table text;
+    v_rows jsonb;
+    v_result jsonb := pg_temp.deletion_history();
+BEGIN
+    FOREACH v_table IN ARRAY ARRAY['profiles','condition_snapshots','care_observations',
+        'task_rules','first_aid_followups','basic_care_memberships','operation_receipts',
+        'account_deletion_requests'] LOOP
+        EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),
+            ''[]''::jsonb) FROM public.%I r',v_table) INTO v_rows;
+        v_result := v_result || jsonb_build_object(v_table,v_rows);
+    END LOOP;
+    RETURN v_result || jsonb_build_object('auth_users',
+        (SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM auth.users u));
+END;
+$$;
+
+CREATE FUNCTION pg_temp.reject_care_leaf_purge() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'FIXTURE_LEAF_PURGE_FAILURE' USING ERRCODE='Z0066';
+END;
+$$;
+
+CREATE FUNCTION pg_temp.care_leaf_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0660000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0660000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0660000-0000-4000-8000-000000000003';
+    v_operation uuid := pg_temp.owner_id(1699);
+    v_subject uuid;
+    v_plant uuid;
+    v_snapshot uuid;
+    v_plan uuid;
+    v_observation uuid;
+    v_entry uuid;
+    v_release uuid;
+    v_installation uuid;
+    v_deleted timestamptz;
+    v_leaves jsonb;
+    v_neighbor_leaves jsonb;
+    v_guest_leaves jsonb;
+    v_retained jsonb;
+    v_n integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_care_leaves_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('066 leaf purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    INSERT INTO public.kb_releases(version,state) VALUES('t083-leaf-purge-066','draft')
+        RETURNING id INTO v_release;
+    FOREACH v_subject IN ARRAY ARRAY[v_owner,v_neighbor,v_guest] LOOP
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+        VALUES(encode(sha256(convert_to(v_subject::text,'UTF8')),'hex'),ARRAY[v_subject])
+            RETURNING id INTO v_installation;
+        INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_subject,'Leaf purge fixture','identification') RETURNING id INTO v_plant;
+        INSERT INTO public.condition_snapshots(owner_id,plant_id)
+        VALUES(v_subject,v_plant) RETURNING id INTO v_snapshot;
+        INSERT INTO public.care_plans(owner_id,plant_id,operation_id,locale,plan_kind,
+            access_tier,source_kind,snapshot_id,kb_release_id,context_revision,full_body)
+        VALUES(v_subject,v_plant,gen_random_uuid(),'en','recovery','full','analysis',
+            v_snapshot,v_release,1,'{}') RETURNING id INTO v_plan;
+        FOR v_n IN 1..2 LOOP
+            v_deleted := CASE WHEN v_n=2 THEN clock_timestamp() ELSE NULL END;
+            INSERT INTO public.care_observations(owner_id,plant_id,status_code,operation_id)
+            VALUES(v_subject,v_plant,'improved',gen_random_uuid()) RETURNING id INTO v_observation;
+            INSERT INTO public.care_entries(owner_id,plant_id,action_code,occurred_at,
+                occurred_local_date,timezone,operation_id)
+            VALUES(v_subject,v_plant,'water',clock_timestamp(),current_date,'UTC',gen_random_uuid())
+                RETURNING id INTO v_entry;
+            INSERT INTO public.recovery_transitions(owner_id,plant_id,recovery_plan_id,
+                observation_id,expected_care_revision,operation_id,state,deleted_at)
+            VALUES(v_subject,v_plant,v_plan,v_observation,1,gen_random_uuid(),'confirmed',v_deleted);
+            INSERT INTO public.care_reversals(owner_id,entry_id,operation_id,deleted_at)
+            VALUES(v_subject,v_entry,gen_random_uuid(),v_deleted);
+            INSERT INTO public.schedule_changes(owner_id,plant_id,to_date,cause_code,explanation_code,deleted_at)
+            VALUES(v_subject,v_plant,current_date,'fixture','fixture',v_deleted);
+            INSERT INTO public.notification_claims(owner_id,kind,period_key,installation_id,scheduled_at,deleted_at)
+            VALUES(v_subject,'trial_end','leaf-'||v_n,v_installation,clock_timestamp(),v_deleted);
+        END LOOP;
+    END LOOP;
+    v_leaves := pg_temp.care_leaf_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),false,
+        'active permanent owner cannot purge');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_guest,v_operation),false,
+        'distinct anonymous owner cannot purge');
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    -- A forged matching request/receipt cannot authorize the anonymous fixture.
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_guest;
+    INSERT INTO public.account_deletion_requests(owner_id,operation_id,requested_at)
+        SELECT v_guest,operation_id,requested_at FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    INSERT INTO public.operation_receipts(owner_id,operation_id,command_name,payload_hash,response_payload,committed_at)
+        SELECT v_guest,operation_id,command_name,payload_hash,
+            response_payload||jsonb_build_object('owner_id',v_guest),committed_at
+        FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_guest,v_operation),false,
+        'anonymous owner with matching forged receipt remains ineligible');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,pg_temp.owner_id(1698)),false,
+        'wrong operation cannot purge');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(NULL,v_operation),false,
+        'null owner cannot purge');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,NULL),false,
+        'null operation cannot purge');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'invalid callers preserve all leaf rows');
+
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/orphan');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),false,
+        'fresh Storage hold blocks purge');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'failed verification deletes no rows');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/orphan';
+    RETURN NEXT ok(public.verify_account_deletion_storage_internal(v_owner,v_operation) IS NOT NULL,
+        'clean owner has saved verification');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/orphan');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),false,
+        'reappearing object blocks purge despite saved verification');
+    RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_owner),
+        NULL::timestamptz,'fresh failure invalidates saved verification');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'reappearing object preserves all leaves');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/orphan';
+
+    -- Failure on the last table must undo earlier deletes and the new verification.
+    v_retained := pg_temp.care_leaf_retained_snapshot();
+    CREATE TRIGGER t066_reject_leaf BEFORE DELETE ON public.notification_claims
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format('SELECT public.purge_account_deletion_care_leaves_internal(%L::uuid,%L::uuid)',
+        v_owner,v_operation),'Z0066','FIXTURE_LEAF_PURGE_FAILURE','last-table failure propagates');
+    DROP TRIGGER t066_reject_leaf ON public.notification_claims;
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(),v_leaves,'failure rolls back every earlier leaf deletion');
+    RETURN NEXT is(pg_temp.care_leaf_retained_snapshot(),v_retained,'failure rolls back verification too');
+
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_retained := pg_temp.care_leaf_retained_snapshot();
+    v_neighbor_leaves := pg_temp.care_leaf_snapshot(v_neighbor);
+    v_guest_leaves := pg_temp.care_leaf_snapshot(v_guest);
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),true,
+        'verified owner purges successfully');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(v_owner),
+        '{"recovery_transitions":[],"care_reversals":[],"schedule_changes":[],"notification_claims":[]}'::jsonb,
+        'all four owner leaf sets are empty including live and tombstoned rows');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(v_neighbor),v_neighbor_leaves,'neighbor leaves are unchanged');
+    RETURN NEXT is(pg_temp.care_leaf_snapshot(v_guest),v_guest_leaves,'guest leaves are unchanged');
+    RETURN NEXT is(pg_temp.care_leaf_retained_snapshot(),v_retained,
+        'parents, observations, profiles, Auth, requests, receipts, quotas and payments are unchanged');
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),true,
+        'exact successful replay is harmless');
+    RETURN NEXT is(pg_temp.care_leaf_retained_snapshot(),v_retained,'replay preserves retained rows');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_leaves_internal(uuid,uuid)'::regprocedure
+          AND prosecdef AND provolatile='v' AND proconfig @> ARRAY['search_path=""']),
+        'purge is volatile SECURITY DEFINER with empty search path');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_care_leaves_internal(uuid,uuid)'::regprocedure
+          AND a.grantee<>p.proowner),'all nonowner default ACL grants are stripped');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_care_leaves_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN
+            v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual purge execution denied for '||v_role);
+    END LOOP;
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_leaves_internal(uuid,uuid)'::regprocedure;
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_care_leaves_internal(v_owner,v_operation),true,
+        'actual SQL owner can execute exact replay');
+    RESET ROLE;
+END;
+$$;
+SELECT * FROM pg_temp.care_leaf_purge_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
