@@ -1,5 +1,16 @@
 # Narat — текущий статус и передача работы
 
+## A — типизированный профильный час — 15 ноября 2026
+
+В `86a3c51` приняты PlantsAPIClient и CollectionWireTests.
+Типизированные GET /me и профильная команда проверяют сессию
+владельца, границы, точное тело, повтор, отмену ожидания и
+соответствие квитанции. Swift и Simulator smoke, Review/QA прошли
+локально. Следующий шаг — сохранять команду при потере ответа,
+проверять последнее каноническое значение в sync и затем подключить
+EN-настройку. Клиентских live-вызовов и расписания пока нет.
+
+
 ## Подписанный V19 — EN-журнал, Cancel и Undo — 15 ноября 2026
 
 `c9492c8` принят независимыми Review и QA, оба EN XCUITest прошли.
@@ -2187,10 +2198,10 @@ bind HTTP и последующая общая/live приёмка. Сами з�
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only orchestrators: iOS/integration owns Simulator and publishes to codex/plants-ios; backend/data to codex/plants-backend. Weekly threshold 85% used; last verified 12%.
-- c9492c8 accepted EN saved card mark and undo with two XCUITest fixtures, durable owner queue and canonical history. Exact signed build and staged V19 passed on iPhone 17 Pro Simulator, with real owner sign-in, enable, explicit refresh, mark, restart, Cancel and Undo. Real GET and sync matched restored due/linkage and unchanged water. Temporary accounts and bundle removed. T160/T171 remain open for wider coverage.
-- narat-staging 051–059 and plants-api v28/worker v8. Profile /me and profile.update verified live. Backend internal account deletion inventory is not on staging.
-- Next scoped Swift transport for profile reminder hour and focused tests. Return valid unified git diff in JSON, controller applies and tests. No notifications, UI, app state, server or live change in this packet. T083/T084 remain open. Later durable profile setting and local reminder scheduling.
+- Two Codex-only orchestrators: iOS/integration owns Simulator and publishes to codex/plants-ios; backend/data to codex/plants-backend. Weekly stop threshold 85% consumed, last 12%.
+- V19 signed staging passed c9492c8, documented in cc0c8e0. Integration branch codex/plants-v19-integration at 888217a preserves the two accepted source trees and passed Deno/PostgreSQL local gates. It is a checkpoint. Product T160/T171/notifications stay open.
+- 86a3c51 accepted Swift owner-bound GET /me and typed updateProfileReminderHour, exact JSON and receipt validation with focused CollectionWireTests. Swift, Simulator smoke, Review/QA and push passed. Backend these routes are live on staging v28; Swift transport tested on fixtures.
+- Next durable owner-scoped profile.update with existing outbox, exact stable identity and canonical sync before ACK. Return exact unified Git diff in JSON. Controller applies and verifies. No UI, notifications, staging or server changes. T083/T084 remain open.
 
 <!-- /orchestrator:project-state -->
 

@@ -1,0 +1,42 @@
+{
+  "tasks": [
+    {
+      "id": "t083-profile-reminder-hour-ios-outbox",
+      "description": "Persist the owner's reminder-hour update and reconcile the latest canonical profile before acknowledging it.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Use the accepted typed ProfileReminderHourCommand, updateProfileReminderHour and persisted owner outbox. Return exact unified Git diff in JSON; controller writes and tests. No UI, scheduler, server, DB layout, unrelated commands or local notification decisions. Keep files scoped.",
+        "Keep one pending no-plant profile.update per owner, require valid permanent SyncSessionLease and stable operation/body on retry after restart. Rehydrate the typed command only after verifying exact envelope and hour and never send as a generic/foreign command. Preserve unrelated global/plant outbox relationships and account ABA checks.",
+        "Before removing the queued command require typed receipt, matching hour and authorized sync through its watermark; then read canonical cached profile hour. A newer external update may be canonical when an exact older receipt replays, so show the newest synchronized hour as confirmed if watermark reached, while proving the original receipt was correct. Leave retryable loss pending, distinguish .confirmed/.pending/.rejected/.unconfirmed and prevent false success from removing or not finding the command. Do not synthesize a change to the profile if sync cannot confirm it.",
+        "Add focused disk-backed CollectionWireTests for lost response, reopening exact retry, latest authoritative profile/no-op, malformed or missing sync, owner isolation and permanent rejection/cancellation. Use existing helpers. T083/T084 remain open. Later EN setting and local reminder logic use this API."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T083IO1",
+          "description": "Swift local fixture tests prove stable outbox, canonical profile and isolation.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        }
+      ]
+    }
+  ]
+}
