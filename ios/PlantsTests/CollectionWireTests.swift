@@ -225,6 +225,230 @@ extension CollectionWireTests {
         return page
     }
 
+    private func routineUndoBaseline(
+        taskChanges: [String: Any] = [:], entryChanges: [String: Any] = [:]
+    ) -> [String: Any] {
+        var fields: [String: Any] = ["condition_code": "check_soil_first"]
+        fields.merge(taskChanges) { _, new in new }
+        var page = routineCompletionPage(operation: operationId, taskChanges: fields, entryChanges: entryChanges)
+        page["changes"] = (routineCompletionBaseline()["changes"] as! [[String: Any]])
+            + (page["changes"] as! [[String: Any]])
+        return page
+    }
+
+    private func routineUndoCanonical(
+        _ command: RoutineSoilCheckUndoCommand, minute: Int, recompleted: Bool, fault: String?
+    ) -> [String: Any] {
+        let time = String(format: "2026-11-03T09:%02d:00.000001+00:00", minute)
+        let replacementId = UUID(uuidString: "19190000-0000-4000-8000-000000000005")!
+        var task: [String: Any] = [
+            "condition_code": "check_soil_first", "state": recompleted ? "completed" : "superseded",
+            "completed_entry_id": recompleted ? replacementId.uuidString : command.entryId.uuidString
+        ]
+        if fault == "task" { task["occurrence_key"] = "another-occurrence" }
+        var entry: [String: Any] = ["state": "voided"]
+        if fault == "active" { entry["state"] = "active" }
+        if fault == "entry" { entry["task_id"] = UUID().uuidString }
+        var page = routineCompletionPage(operation: operationId, taskChanges: task, entryChanges: entry, time: time)
+        var changes = page["changes"] as! [[String: Any]]
+        if fault != "missing" {
+            let id = "19190000-0000-4000-8000-000000000004"
+            var reversal = syncChange(time, id: id, entity: "care_reversals")
+            reversal["data"] = [
+                "id": id, "entry_id": fault == "reversal-entry" ? UUID().uuidString : command.entryId.uuidString,
+                "operation_id": fault == "reversal-operation" ? UUID().uuidString : command.envelope.operationId.uuidString
+            ]
+            changes.append(reversal)
+        }
+        if recompleted {
+            var replacement = syncChange(time, id: replacementId.uuidString, entity: "care_entries")
+            replacement["data"] = [
+                "id": replacementId.uuidString, "plant_id": serverPlantId.uuidString,
+                "task_id": fault == "replacement" ? UUID().uuidString : command.taskId.uuidString,
+                "operation_id": "19190000-0000-4000-8000-000000000006",
+                "action_code": "check_soil", "state": "active", "occurred_at": time,
+                "occurred_local_date": "2026-11-03", "timezone": "Europe/Warsaw"
+            ]
+            changes.append(replacement)
+        }
+        // All changes share this timestamp; canonical sync also orders by entity and id.
+        page["changes"] = changes.sorted {
+            ($0["entity_type"] as! String, $0["id"] as! String)
+                < ($1["entity_type"] as! String, $1["id"] as! String)
+        }
+        return page
+    }
+
+    @MainActor
+    func testRoutineUndoDiskLossReopenExactReplayAndIndependentReversal() async throws {
+        for recompleted in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let command: RoutineSoilCheckUndoCommand
+            let firstBody: Data
+            do {
+                let transport = CatalogueTransport([.http(200, try syncJSON(routineUndoBaseline())), .network])
+                let api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+                _ = try await repo.collectionCards(context: lease)
+                let identity = routineCompletionReceipt()
+                command = try await repo.enqueueRoutineUndo(
+                    plantId: serverPlantId, taskId: UUID(uuidString: identity["task_id"] as! String)!,
+                    entryId: UUID(uuidString: identity["entry_id"] as! String)!, context: lease
+                )
+                let outcome = try await repo.retryRoutineUndo(command, context: lease)
+                XCTAssertEqual(outcome, .pending)
+                let requests = await transport.capturedRequests()
+                firstBody = try XCTUnwrap(requests.last?.httpBody)
+            }
+            let faults: [String?] = [
+                "missing", "reversal-operation", "reversal-entry", "task", "entry", "active"
+            ] + (recompleted ? ["replacement"] : []) + [nil]
+            for (index, fault) in faults.enumerated() {
+                var receipt = routineUndoReceipt(command)
+                receipt["watermark"] = "2026-11-03T09:20:00.000001+00:00"
+                let transport = CatalogueTransport([
+                    .http(200, try syncJSON(receipt)),
+                    .http(200, try syncJSON(routineUndoCanonical(
+                        command, minute: 20 + index, recompleted: recompleted, fault: fault
+                    )))
+                ])
+                let api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+                let replay = try await repo.enqueueRoutineUndo(
+                    plantId: serverPlantId, taskId: command.taskId, entryId: command.entryId, context: lease
+                )
+                XCTAssertEqual(replay.envelope, command.envelope)
+                let result = try await repo.retryRoutineUndo(replay, context: lease)
+                // Negative linkage cases must reach validation after a successful sync.
+                let watermark = try await store.currentWatermarkRaw(ownerId: syncOwner)
+                XCTAssertEqual(watermark, String(format: "2026-11-03T09:%02d:00.000001+00:00", 20 + index))
+                XCTAssertEqual(result, fault == nil ? .confirmed : .pending, fault ?? "valid replay")
+                let requests = await transport.capturedRequests()
+                XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET"])
+                XCTAssertEqual(requests.first?.httpBody, firstBody)
+                let reopened = LocalStore(modelContainer: try diskContainer(url))
+                let pending = try await reopened.pendingOutboxEntries(for: syncOwner)
+                XCTAssertEqual(pending.map(\.envelope), fault == nil ? [] : [command.envelope])
+                if fault == nil {
+                    let absent = try await repo.retryRoutineUndo(command, context: lease)
+                    XCTAssertEqual(absent, .unconfirmed)
+                    let tasks = try await reopened.activeSyncedEntities(ownerId: syncOwner, entityType: "care_tasks")
+                    let task = try XCTUnwrap(tasks.first)
+                    let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(task.payloadJSON.utf8)) as? [String: Any])
+                    XCTAssertEqual(fields["state"] as? String, recompleted ? "completed" : "superseded")
+                    if recompleted {
+                        XCTAssertEqual(fields["completed_entry_id"] as? String, "19190000-0000-4000-8000-000000000005")
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testRoutineUndoLocksCompetingMarkAndUndoAndRejectsWithoutFalseSuccess() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rejection = try syncJSON(["error": [
+            "code": "CONFLICT", "message": "stale entry", "retryable": false
+        ] as [String: Any]])
+        let transport = CatalogueTransport([.http(200, try syncJSON(routineUndoBaseline())), .http(409, rejection)])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+        _ = try await repo.collectionCards(context: lease)
+        let identity = routineCompletionReceipt()
+        let command = try await repo.enqueueRoutineUndo(
+            plantId: serverPlantId, taskId: UUID(uuidString: identity["task_id"] as! String)!,
+            entryId: UUID(uuidString: identity["entry_id"] as! String)!, context: lease
+        )
+        let unrelated = try await store.enqueueCommand(
+            ownerId: syncOwner, plantId: UUID(), commandName: "fixture.unrelated", payloadJSON: "{}"
+        )
+        do {
+            _ = try await repo.enqueueRoutineCompletion(
+                plantId: serverPlantId, routineContext: routineCompletionContext(),
+                occurredAt: timestamp, timezone: "UTC", context: lease
+            )
+            XCTFail("Competing mark accepted")
+        } catch OutboxEnqueueError.operationIdentityMismatch {}
+        do {
+            _ = try await repo.enqueueRoutineUndo(
+                plantId: serverPlantId, taskId: command.taskId, entryId: UUID(), context: lease
+            )
+            XCTFail("Competing undo accepted")
+        } catch OutboxEnqueueError.operationIdentityMismatch {}
+        let wrongTask = try XCTUnwrap(RoutineSoilCheckUndoCommand(command.envelope, taskId: UUID()))
+        let wrongOutcome = try await repo.retryRoutineUndo(wrongTask, context: lease)
+        XCTAssertEqual(wrongOutcome, .unconfirmed)
+        await api.bindSyncSession(NativeAuthSession(userId: otherSyncOwner, accessToken: "other", expiresAt: .distantFuture))
+        let foreign = try await api.captureSyncContext(ownerId: otherSyncOwner)
+        let foreignOutcome = try await repo.retryRoutineUndo(command, context: foreign)
+        XCTAssertEqual(foreignOutcome, .unconfirmed)
+        await api.bindSyncSession(syncSession)
+        do {
+            _ = try await repo.retryRoutineUndo(command, context: lease)
+            XCTFail("Account ABA accepted")
+        } catch SyncWireValidationError.invalidSession {}
+        let current = try await api.captureSyncContext(ownerId: syncOwner)
+        let rejected = try await repo.retryRoutineUndo(command, context: current)
+        XCTAssertEqual(rejected, .rejected)
+        let absent = try await repo.retryRoutineUndo(command, context: current)
+        XCTAssertEqual(absent, .unconfirmed)
+        let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(remaining, [unrelated])
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST"])
+    }
+
+    @MainActor
+    func testRoutineUndoRequiresActiveLinkedOrdinaryCheck() async throws {
+        let invalid: [([String: Any], [String: Any])] = [
+            (["condition_code": "manual"], [:]),
+            (["action_code": "water"], [:]),
+            (["occurrence_key": " "], [:]),
+            (["state": "superseded"], [:]),
+            (["completed_entry_id": UUID().uuidString], [:]),
+            (["plant_id": UUID().uuidString], [:]),
+            ([:], ["state": "voided"]),
+            ([:], ["task_id": NSNull()]),
+            ([:], ["task_id": UUID().uuidString]),
+            ([:], ["plant_id": UUID().uuidString]),
+            ([:], ["action_code": "water"])
+        ]
+        for (task, entry) in invalid {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = CatalogueTransport([.http(200, try syncJSON(
+                routineUndoBaseline(taskChanges: task, entryChanges: entry)
+            ))])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            let identity = routineCompletionReceipt()
+            do {
+                _ = try await repo.enqueueRoutineUndo(
+                    plantId: serverPlantId, taskId: UUID(uuidString: identity["task_id"] as! String)!,
+                    entryId: UUID(uuidString: identity["entry_id"] as! String)!, context: lease
+                )
+                XCTFail("Invalid routine undo accepted")
+            } catch {}
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(pending.isEmpty)
+        }
+    }
+
     private func routineCompletionBaseline() -> [String: Any] {
         var row = syncChange(syncUntil, id: serverPlantId.uuidString)
         row["data"] = ["id": serverPlantId.uuidString, "revision": 2, "care_revision": 2] as [String: Any]

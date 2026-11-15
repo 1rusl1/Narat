@@ -79,6 +79,10 @@ public struct EffectiveCareTaskView: Codable, Sendable, Equatable {
 }
 
 public actor SyncEngine {
+    enum RoutineUndoFailure: Error {
+        case rejected
+    }
+
     enum RoutineCompletionFailure: Error {
         case rejected
     }
@@ -183,7 +187,20 @@ public actor SyncEngine {
                     else { throw SyncWireValidationError.invalidRequest }
                     envelope = try await prepareFirstAidObservationPhoto(draft, context: context).envelope
                 }
-                if entry.commandName == RoutineSoilCheckCompletionCommand.name {
+                if entry.commandName == RoutineSoilCheckUndoCommand.name {
+                    guard let plantId = envelope.plantId,
+                          let command = try await store.pendingRoutineUndo(
+                            plantId: plantId, context: context, authority: apiClient.syncAuthority
+                          ), command.envelope == envelope
+                    else { throw SyncWireValidationError.invalidRequest }
+                    let receipt = try await apiClient.sendOutboxCommand(command, context: context)
+                    receivedReceipt = true
+                    try await refreshCanonicalJournal(ownerId: ownerId, watermark: receipt.watermark, context: context)
+                    try await store.validateRoutineUndo(
+                        receipt, command: command, context: context, authority: apiClient.syncAuthority
+                    )
+                    result = .generic
+                } else if entry.commandName == RoutineSoilCheckCompletionCommand.name {
                     guard let command = RoutineSoilCheckCompletionCommand(envelope)
                     else { throw SyncWireValidationError.invalidRequest }
                     let receipt = try await apiClient.sendOutboxCommand(command, context: context)
@@ -306,6 +323,7 @@ public actor SyncEngine {
                                           || entry.commandName == PlantEditCommand.name
                                           || entry.commandName == CareRecommendationRefreshCommand.name
                                           || entry.commandName == RoutineSoilCheckCompletionCommand.name
+                                          || entry.commandName == RoutineSoilCheckUndoCommand.name
                                           || entry.commandName == BasicCareEnableReceipt.commandName),
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
@@ -326,6 +344,10 @@ public actor SyncEngine {
                         try await store.finishOutboxEntry(
                             operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                         )
+                        if onlyOperation == entry.operationId,
+                           entry.commandName == RoutineSoilCheckUndoCommand.name {
+                            throw RoutineUndoFailure.rejected
+                        }
                         if onlyOperation == entry.operationId,
                            entry.commandName == RoutineSoilCheckCompletionCommand.name {
                             throw RoutineCompletionFailure.rejected

@@ -193,6 +193,10 @@ enum PlantDeletionOutcome {
     case pending, confirmed, rejected
 }
 
+enum RoutineUndoOutcome: Sendable, Equatable {
+    case pending, confirmed, rejected, unconfirmed
+}
+
 enum RoutineCompletionOutcome: Sendable, Equatable {
     case pending, confirmed, rejected, unconfirmed
 }
@@ -502,6 +506,33 @@ public struct CollectionRepository: Sendable {
             plantId: plantId, context: context, authority: apiClient.syncAuthority
         )
         try await syncEngine.flushPlantCommand(command, context: context)
+    }
+
+    func pendingRoutineUndo(plantId: UUID, context: SyncSessionLease) async throws -> RoutineSoilCheckUndoCommand? {
+        try await store.pendingRoutineUndo(plantId: plantId, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func enqueueRoutineUndo(
+        plantId: UUID, taskId: UUID, entryId: UUID, context: SyncSessionLease
+    ) async throws -> RoutineSoilCheckUndoCommand {
+        let command = try RoutineSoilCheckUndoCommand.make(plantId: plantId, taskId: taskId, entryId: entryId)
+        return try await store.enqueueRoutineUndo(command, context: context, authority: apiClient.syncAuthority)
+    }
+
+    func retryRoutineUndo(
+        _ command: RoutineSoilCheckUndoCommand, context: SyncSessionLease
+    ) async throws -> RoutineUndoOutcome {
+        guard let plantId = command.envelope.plantId,
+              let saved = try await pendingRoutineUndo(plantId: plantId, context: context),
+              saved.envelope == command.envelope, saved.taskId == command.taskId
+        else { return .unconfirmed }
+        do {
+            if try await syncEngine.flushPlantCommand(command.envelope, context: context) == 1 { return .confirmed }
+        } catch SyncEngine.RoutineUndoFailure.rejected {
+            return .rejected
+        }
+        let pending = try await pendingRoutineUndo(plantId: plantId, context: context)
+        return pending?.envelope == command.envelope && pending?.taskId == command.taskId ? .pending : .unconfirmed
     }
 
     func pendingRoutineCompletion(plantId: UUID, context: SyncSessionLease) async throws -> RoutineSoilCheckCompletionCommand? {

@@ -16,6 +16,8 @@ public final class LocalOutboxRecord {
     public var createdAt: Date
     @Attribute(.externalStorage) var observationJPEG: Data?
     var observationPhotoAssetId: UUID?
+    // Immutable enqueue-time identity; never included in the transport payload.
+    var routineUndoIdentityJSON: String?
 
     public init(
         operationId: UUID = UUID(),
@@ -711,8 +713,9 @@ public actor LocalStore {
             guard card.id == plantId, card.revision > 0, card.careRevision == command.careRevision
             else { throw SyncWireValidationError.invalidRequest }
             let pending = try pendingOutboxEntries(for: context.ownerId).filter { $0.plantId == plantId }
-            guard !pending.contains(where: { $0.commandName == PlantDeleteReceipt.commandName })
-            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            guard !pending.contains(where: {
+                $0.commandName == PlantDeleteReceipt.commandName || $0.commandName == RoutineSoilCheckUndoCommand.name
+            }) else { throw OutboxEnqueueError.operationIdentityMismatch }
             if let row = pending.first(where: { $0.commandName == RoutineSoilCheckCompletionCommand.name }) {
                 guard let existing = RoutineSoilCheckCompletionCommand(row.envelope)
                 else { throw OutboxEnqueueError.operationIdentityMismatch }
@@ -726,6 +729,171 @@ public actor LocalStore {
                 commandName: command.envelope.commandName, payloadJSON: command.envelope.payloadJSON
             )
             return command
+        }
+    }
+
+    private struct RoutineUndoTask: Decodable {
+        let id: UUID
+        let plantId: UUID
+        let ruleId: UUID
+        let occurrenceKey: String
+        let dueLocalDate: String
+        let actionCode: String
+        let conditionCode: String
+        let state: String
+        let completedEntryId: UUID
+
+        enum CodingKeys: String, CodingKey {
+            case id, state
+            case plantId = "plant_id", ruleId = "rule_id", occurrenceKey = "occurrence_key"
+            case dueLocalDate = "due_local_date", actionCode = "action_code", conditionCode = "condition_code"
+            case completedEntryId = "completed_entry_id"
+        }
+
+        var isRoutineCheck: Bool {
+            actionCode == "check_soil" && conditionCode == "check_soil_first"
+                && !occurrenceKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && SQLCalendarDay.date(from: dueLocalDate) != nil
+        }
+    }
+
+    private struct RoutineUndoIdentity: Codable {
+        let taskJSON: String
+        let entryJSON: String
+    }
+
+    private func savedRoutineUndo(
+        _ row: LocalOutboxRecord
+    ) throws -> (command: RoutineSoilCheckUndoCommand, task: RoutineUndoTask, entry: CatalogueCareJournalEntry) {
+        guard let json = row.routineUndoIdentityJSON else { throw SyncWireValidationError.invalidRequest }
+        let decoder = JSONDecoder()
+        let saved = try decoder.decode(RoutineUndoIdentity.self, from: Data(json.utf8))
+        let task = try decoder.decode(RoutineUndoTask.self, from: Data(saved.taskJSON.utf8))
+        let entry = try decoder.decode(CatalogueCareJournalEntry.self, from: Data(saved.entryJSON.utf8))
+        let envelope = CommandEnvelopeDTO(
+            operationId: row.operationId, commandName: row.commandName,
+            plantId: row.plantId, payloadJSON: row.payloadJSON
+        )
+        guard let command = RoutineSoilCheckUndoCommand(envelope, taskId: task.id),
+              task.isRoutineCheck, task.state == "completed", task.completedEntryId == entry.id,
+              task.plantId == row.plantId, entry.plantId == task.plantId, entry.taskId == task.id,
+              command.entryId == entry.id, entry.state == "active", entry.actionCode == "check_soil",
+              entry.operationId != nil, entry.operationId != row.operationId, entry.hasCanonicalDatesAndState
+        else { throw SyncWireValidationError.invalidRequest }
+        return (command, task, entry)
+    }
+
+    func pendingRoutineUndo(
+        plantId: UUID, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> RoutineSoilCheckUndoCommand? {
+        try authority.withBoundValid(context) {
+            try pendingRoutineUndo(plantId: plantId, ownerId: context.ownerId)
+        }
+    }
+
+    private func pendingRoutineUndo(plantId: UUID, ownerId: UUID) throws -> RoutineSoilCheckUndoCommand? {
+        let name = RoutineSoilCheckUndoCommand.name
+        let rows = try makeSyncContext().fetch(FetchDescriptor<LocalOutboxRecord>(predicate: #Predicate {
+            $0.ownerId == ownerId && $0.plantId == plantId && $0.commandName == name
+        }))
+        guard let row = rows.first else { return nil }
+        return try savedRoutineUndo(row).command
+    }
+
+    func enqueueRoutineUndo(
+        _ command: RoutineSoilCheckUndoCommand,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> RoutineSoilCheckUndoCommand {
+        try authority.withBoundValid(context) {
+            guard let plantId = command.envelope.plantId else { throw SyncWireValidationError.invalidRequest }
+            // Replay the saved identity even when sync has already voided the entry.
+            if let saved = try pendingRoutineUndo(plantId: plantId, ownerId: context.ownerId) {
+                guard saved.entryId == command.entryId, saved.taskId == command.taskId
+                else { throw OutboxEnqueueError.operationIdentityMismatch }
+                return saved
+            }
+            let pending = try pendingOutboxEntries(for: context.ownerId)
+            guard !pending.contains(where: {
+                $0.plantId == plantId && ($0.commandName == RoutineSoilCheckCompletionCommand.name
+                    || $0.commandName == PlantDeleteReceipt.commandName)
+            }) else { throw OutboxEnqueueError.operationIdentityMismatch }
+            let disk = makeSyncContext()
+            guard try activeSyncRow("plants", id: plantId, ownerId: context.ownerId, in: disk) != nil,
+                  let taskRow = try activeSyncRow("care_tasks", id: command.taskId, ownerId: context.ownerId, in: disk),
+                  let entryRow = try activeSyncRow("care_entries", id: command.entryId, ownerId: context.ownerId, in: disk)
+            else { throw SyncWireValidationError.invalidRequest }
+            let row = LocalOutboxRecord(
+                operationId: command.envelope.operationId, ownerId: context.ownerId, plantId: plantId,
+                commandName: command.envelope.commandName, payloadJSON: command.envelope.payloadJSON,
+                sequenceNumber: (try disk.fetch(FetchDescriptor<LocalOutboxRecord>(
+                    sortBy: [SortDescriptor(\.sequenceNumber, order: .reverse)]
+                )).first?.sequenceNumber ?? 0) + 1
+            )
+            row.routineUndoIdentityJSON = String(decoding: try JSONEncoder().encode(RoutineUndoIdentity(
+                taskJSON: taskRow.payloadJSON, entryJSON: entryRow.payloadJSON
+            )), as: UTF8.self)
+            guard try savedRoutineUndo(row).command.taskId == command.taskId
+            else { throw SyncWireValidationError.invalidRequest }
+            let operationId = command.envelope.operationId
+            guard try disk.fetch(FetchDescriptor<LocalOutboxRecord>(predicate: #Predicate {
+                $0.operationId == operationId
+            })).isEmpty else { throw OutboxEnqueueError.operationIdentityMismatch }
+            disk.insert(row)
+            try Task.checkCancellation()
+            try disk.save()
+            return command
+        }
+    }
+
+    func validateRoutineUndo(
+        _ receipt: RoutineSoilCheckUndoReceipt, command: RoutineSoilCheckUndoCommand,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withBoundValid(context) {
+            try receipt.validate(for: command)
+            let disk = makeSyncContext()
+            let operationId = command.envelope.operationId
+            let ownerId = context.ownerId
+            guard let pending = try disk.fetch(FetchDescriptor<LocalOutboxRecord>(predicate: #Predicate {
+                $0.operationId == operationId && $0.ownerId == ownerId
+            })).first else { throw SyncWireValidationError.invalidPage }
+            let saved = try savedRoutineUndo(pending)
+            guard saved.command.envelope == command.envelope, saved.command.taskId == command.taskId,
+                  let raw = try currentWatermarkRaw(ownerId: ownerId),
+                  let watermark = SQLTimestamp.microseconds(from: raw), watermark >= receipt.watermark,
+                  try activeSyncRow("plants", id: receipt.plantId, ownerId: ownerId, in: disk) != nil,
+                  let taskRow = try activeSyncRow("care_tasks", id: receipt.taskId, ownerId: ownerId, in: disk),
+                  let entryRow = try activeSyncRow("care_entries", id: receipt.entryId, ownerId: ownerId, in: disk)
+            else { throw SyncWireValidationError.invalidPage }
+            let decoder = JSONDecoder()
+            let task = try decoder.decode(RoutineUndoTask.self, from: Data(taskRow.payloadJSON.utf8))
+            let entry = try decoder.decode(CatalogueCareJournalEntry.self, from: Data(entryRow.payloadJSON.utf8))
+            guard task.id == saved.task.id, task.plantId == saved.task.plantId, task.isRoutineCheck,
+                  task.ruleId == saved.task.ruleId, task.occurrenceKey == saved.task.occurrenceKey,
+                  task.dueLocalDate == saved.task.dueLocalDate, task.conditionCode == saved.task.conditionCode,
+                  entry.id == saved.entry.id, entry.plantId == saved.entry.plantId,
+                  entry.taskId == saved.entry.taskId, entry.operationId == saved.entry.operationId,
+                  entry.actionCode == saved.entry.actionCode, entry.occurredAt == saved.entry.occurredAt,
+                  entry.occurredLocalDate == saved.entry.occurredLocalDate, entry.timezone == saved.entry.timezone,
+                  entry.state == "voided", entry.hasCanonicalDatesAndState,
+                  try confirmedCareReversal(command.envelope, entryId: entry.id, ownerId: ownerId, in: disk)
+                    == receipt.reversalId
+            else { throw SyncWireValidationError.invalidPage }
+            if task.state == "superseded", task.completedEntryId == entry.id { return }
+            // A different device may have re-completed this same occurrence after the undo.
+            guard task.state == "completed", task.completedEntryId != entry.id,
+                  let replacementRow = try activeSyncRow(
+                    "care_entries", id: task.completedEntryId, ownerId: ownerId, in: disk
+                  ) else { throw SyncWireValidationError.invalidPage }
+            let replacement = try decoder.decode(
+                CatalogueCareJournalEntry.self, from: Data(replacementRow.payloadJSON.utf8)
+            )
+            guard replacement.id == task.completedEntryId, replacement.plantId == task.plantId,
+                  replacement.taskId == task.id, replacement.actionCode == "check_soil",
+                  replacement.state == "active", replacement.hasCanonicalDatesAndState,
+                  let replacementOperation = replacement.operationId,
+                  replacementOperation != saved.entry.operationId, replacementOperation != operationId
+            else { throw SyncWireValidationError.invalidPage }
         }
     }
 
