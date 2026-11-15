@@ -23,6 +23,7 @@ function record(value: unknown): value is Record<string, unknown> {
 
 const enableBasicCareCommand = "basic_care.enable";
 const soilCommand = "care.check_soil.complete";
+const soilUndoCommand = "care.check_soil.undo";
 const refreshCommand = "care.recommendation.refresh";
 const refreshReasons = new Set([
   "insufficient_evidence",
@@ -72,12 +73,14 @@ export async function handleCollectionCommand(
       body.command_name !== "care.first_aid.record" &&
       body.command_name !== "care.first_aid.observe" &&
       body.command_name !== "plant.delete" && body.command_name !== "plant.edit" &&
-      body.command_name !== soilCommand && body.command_name !== refreshCommand && body.command_name !== enableBasicCareCommand)
+      body.command_name !== soilCommand && body.command_name !== soilUndoCommand &&
+      body.command_name !== refreshCommand && body.command_name !== enableBasicCareCommand)
   ) {
     return await handlePlantCreate(req, ctx, clientFactory);
   }
 
   const isSoil = body.command_name === soilCommand;
+  const isSoilUndo = body.command_name === soilUndoCommand;
   const isDeletion = body.command_name === "plant.delete";
   const isEdit = body.command_name === "plant.edit";
   const isRefresh = body.command_name === refreshCommand;
@@ -158,6 +161,9 @@ export async function handleCollectionCommand(
     } catch {
       throw invalid();
     }
+  } else if (isSoilUndo) {
+    if (Object.keys(payload).length !== 1 || !("entry_id" in payload)) throw invalid();
+    entryId = requireUuid(payload.entry_id, "entry_id");
   } else if (isObservation) {
     if (
       Object.keys(payload).some((key) => !["control_id", "status_code", "photo_id"].includes(key)) ||
@@ -182,7 +188,8 @@ export async function handleCollectionCommand(
   try {
     const client = clientFactory();
     if (!client) throw unavailable(plantCommand);
-    const rpc = isSoil ? "execute_routine_soil_check"
+    const rpc = isSoilUndo ? "execute_routine_soil_check_undo"
+      : isSoil ? "execute_routine_soil_check"
       : isEdit ? "execute_plant_edit_command"
       : isDeletion ? "execute_plant_delete_command"
       : isRefresh ? "execute_care_recommendation_refresh"
@@ -193,7 +200,9 @@ export async function handleCollectionCommand(
     response = await client.rpc(rpc, {
       p_owner_id: ownerId,
       p_operation_id: operationId,
-      ...(isSoil
+      ...(isSoilUndo
+        ? { p_plant_id: plantId, p_entry_id: entryId }
+        : isSoil
         ? {
           p_plant_id: plantId,
           p_rule_id: payload.rule_id,
@@ -231,7 +240,7 @@ export async function handleCollectionCommand(
           : "The plant or care entry was not found.",
       );
     }
-    if (error.code === "23505" || (isSoil && error.code === "55000")) {
+    if (error.code === "23505" || ((isSoil || isSoilUndo) && error.code === "55000")) {
       throw new ApiHttpError(
         409,
         "CONFLICT",
@@ -248,6 +257,15 @@ export async function handleCollectionCommand(
       throw invalid(plantCommand);
     }
     throw unavailable(plantCommand);
+  }
+  if (isSoilUndo) {
+    if (
+      !record(data) || data.plant_id !== plantId || data.entry_id !== entryId ||
+      typeof data.task_id !== "string" || !uuid.test(data.task_id) ||
+      typeof data.reversal_id !== "string" || !uuid.test(data.reversal_id) ||
+      data.state !== "voided" || timestamp(data.watermark) === null
+    ) throw unavailable();
+    return jsonResponse(data, 200, { "Cache-Control": "private, no-store" });
   }
   if (isSoil) {
     if (

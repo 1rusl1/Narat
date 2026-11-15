@@ -343,9 +343,12 @@ BEGIN
         RETURN;
     END IF;
     FOREACH role_name IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
-        RETURN NEXT ok(NOT has_function_privilege(role_name,
-            'public.execute_routine_soil_check_undo(uuid,uuid,uuid,uuid)','EXECUTE'),
-            role_name||' cannot execute private undo');
+        RETURN NEXT ok(has_function_privilege(role_name,
+            'public.execute_routine_soil_check_undo(uuid,uuid,uuid,uuid)','EXECUTE') =
+            (role_name='service_role' AND coalesce(obj_description(
+                'public.execute_routine_soil_check_undo(uuid,uuid,uuid,uuid)'::regprocedure,
+                'pg_proc')='private:routine-soil-check-undo-owner-http:055',false)),
+            role_name||' has the expected private undo permission');
     END LOOP;
     RETURN NEXT ok(NOT EXISTS (
         SELECT 1 FROM pg_catalog.pg_proc p
