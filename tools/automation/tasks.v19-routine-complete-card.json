@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    {
+      "id": "v19-routine-complete-card",
+      "description": "Let the English saved plant card record a due routine soil check using the accepted owner-scoped outbox and reload the new date after canonical confirmation.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "Accepted base 8046790. Developer must return a valid unified Git patch incl exact current context with separate diff --git headers. The controller applies and tests.",
+        "Expose an EN action to mark a due/overdue routine check only for a current validated routineContext from the existing recommendation GET, with same plant ID and care revision. Check the device local date using existing ISO day/time helpers; do not show an action from a generic recommendation or stale/paused projection. Do not mark watering or presentation success on click.",
+        "Use pendingRoutineCompletion, enqueueRoutineCompletion and retryRoutineCompletion from the existing repository. Restore pending on reopen and exact retry after loss, handle rejected/unconfirmed outcomes without false success, guard owner/session and pending edits/deletion. After canonical confirmation refresh GET, so the new date appears and journal confirmation reflects the existing intended sync. No new transport/store/projection, undo and reminders out of scope.",
+        "Add one isolated DEBUG fixture that returns a due routine context and simulates first reply loss, exact retry, real linkage shape for care_tasks/care_entries and advancement asserted in testRoutineSoilCheckCompletesAfterRestart. Test same card and absence of duplicate/false action. Reuse helpers and keep previous EN scenarios. No staging/network calls in the fixture."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "V19CARD1",
+          "description": "Build, diff and unit gate pass with production transport unchanged.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "V19CARD2",
+          "description": "Targeted EN XCUITest covers due action, exact pending retry across restart and confirmed next date.",
+          "mode": "fixture",
+          "checks": [
+            "v19-care-ui"
+          ]
+        }
+      ]
+    }
+  ]
+}
