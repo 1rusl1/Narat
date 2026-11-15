@@ -86,11 +86,98 @@ SELECT throws_ok('SELECT pg_temp.soil()','55000','CURRENT_REFRESHED_RULE_REQUIRE
     'legacy calendar projection cannot complete without a refreshed rule');
 SELECT is(pg_temp.soil_state(),(SELECT before_state FROM soil_fixture),'missing rule writes nothing');
 
+-- The marker keeps this fixture usable at the historical 051-055 cutoffs.
+CREATE FUNCTION pg_temp.contextual_calendar_checks(refreshed BOOLEAN)
+RETURNS SETOF TEXT LANGUAGE plpgsql AS $test$
+DECLARE
+    v_owner_id CONSTANT UUID := '19510000-0000-4000-8000-000000000001';
+    v_plant_id CONSTANT UUID := '19510000-0000-4000-8000-000000000011';
+    v_profile_id UUID;
+    saved_report JSONB;
+    saved_profile JSONB;
+    saved_body JSONB;
+    v_plan_id UUID;
+    projected JSONB;
+    baseline JSONB;
+    metadata JSONB;
+BEGIN
+    IF obj_description('public.read_plant_care_profile(uuid,uuid)'::regprocedure,'pg_proc')
+        IS DISTINCT FROM 'explicit-contextual-calendar:056' THEN
+        RETURN;
+    END IF;
+    SELECT c.id,c.validation_report,c.profile INTO v_profile_id,saved_report,saved_profile
+    FROM public.care_profiles c WHERE c.version='soil-check-fixture';
+    SELECT public.read_plant_care_profile(v_owner_id,v_plant_id) INTO projected;
+    SELECT public.read_plant_care_profile_050(v_owner_id,v_plant_id) INTO baseline;
+    RETURN NEXT is(projected->'calendar_eligible',to_jsonb(refreshed),
+        'contextual revision one requires an explicit verified rule, refreshed='||refreshed);
+    RETURN NEXT is(projected->>'last_watered_on','2025-10-11',
+        'contextual gating preserves the factual watering date');
+    RETURN NEXT is(projected - 'calendar_eligible' - 'routine_check',baseline - 'calendar_eligible',
+        'contextual gating preserves the profile and recommendation interval');
+    IF refreshed THEN
+        RETURN NEXT is(projected->'routine_check',public.resolve_routine_soil_check(v_owner_id,v_plant_id),
+            'matching explicit current rule supplies the resolved routine date');
+        RETURN NEXT is(projected#>>'{routine_check,due_local_date}','2025-10-18',
+            'verified routine date uses the stored watering local day');
+        SELECT plan.id,plan.full_body INTO v_plan_id,saved_body
+        FROM public.care_plans plan JOIN public.task_rules rule ON rule.plan_id=plan.id
+        WHERE rule.id=(SELECT f.rule_id FROM soil_fixture f);
+        UPDATE public.care_plans SET full_body='{}'::jsonb WHERE id=v_plan_id;
+        RETURN NEXT is(public.read_plant_care_profile(v_owner_id,v_plant_id)->'calendar_eligible','false'::jsonb,
+            'unmatched stored refresh evidence cannot emit a contextual date');
+        UPDATE public.care_plans SET full_body=saved_body WHERE id=v_plan_id;
+        UPDATE public.care_profiles SET profile=profile #- '{provenance,field_evidence,/actions/0}'
+            WHERE id=v_profile_id;
+        RETURN NEXT is(public.read_plant_care_profile(v_owner_id,v_plant_id)->'calendar_eligible','false'::jsonb,
+            'withdrawn action evidence cannot emit a contextual date');
+        UPDATE public.care_profiles SET profile=saved_profile WHERE id=v_profile_id;
+        UPDATE public.basic_care_memberships SET enabled=false
+            WHERE owner_id=v_owner_id AND plant_id=v_plant_id;
+        RETURN NEXT is(public.read_plant_care_profile(v_owner_id,v_plant_id)->'calendar_eligible','false'::jsonb,
+            'valid rule cannot bypass the 050 calendar access gate');
+        UPDATE public.basic_care_memberships SET enabled=true
+            WHERE owner_id=v_owner_id AND plant_id=v_plant_id;
+    ELSE
+        RETURN NEXT ok(projected->'routine_check' IS NULL,
+            'watering alone cannot create a contextual routine date');
+    END IF;
+    FOREACH metadata IN ARRAY ARRAY['{}'::jsonb,'null'::jsonb,'[]'::jsonb,'"invalid"'::jsonb,
+        '{"fixture_soil_check":null}'::jsonb,'{"fixture_soil_check":{"light_code":"wrong"}}'::jsonb]
+    LOOP
+        UPDATE public.care_profiles
+            SET validation_report=jsonb_build_object('refresh_conditions',metadata) WHERE id=v_profile_id;
+        SELECT public.read_plant_care_profile(v_owner_id,v_plant_id) INTO projected;
+        RETURN NEXT is(projected->'calendar_eligible','false'::jsonb,
+            'named malformed contextual metadata suppresses dates: '||metadata::text||', refreshed='||refreshed);
+        RETURN NEXT ok(projected->'routine_check' IS NULL,'invalid contextual metadata has no routine date');
+    END LOOP;
+    UPDATE public.care_profiles SET validation_report=saved_report - 'refresh_conditions' WHERE id=v_profile_id;
+    RETURN NEXT is(public.read_plant_care_profile(v_owner_id,v_plant_id),
+        public.read_plant_care_profile_050(v_owner_id,v_plant_id),
+        'metadata absent preserves the complete legacy projection');
+    IF NOT refreshed THEN
+        RETURN NEXT is(public.read_plant_care_profile(v_owner_id,v_plant_id)->'calendar_eligible','true'::jsonb,
+            'legacy revision one retains its watering calendar without a stored rule');
+    END IF;
+    UPDATE public.care_profiles SET validation_report=saved_report WHERE id=v_profile_id;
+    RETURN NEXT ok(public.read_plant_care_profile('19510000-0000-4000-8000-000000000002',v_plant_id) IS NULL,
+        'foreign owner still has no projection');
+    UPDATE public.care_profiles SET state='retired' WHERE id=v_profile_id;
+    RETURN NEXT is(public.read_plant_care_profile(v_owner_id,v_plant_id),
+        public.read_plant_care_profile_050(v_owner_id,v_plant_id),
+        'absent published profile preserves the legacy unavailable projection');
+    UPDATE public.care_profiles SET state='published' WHERE id=v_profile_id;
+END
+$test$;
+SELECT * FROM pg_temp.contextual_calendar_checks(false);
+
 SELECT public.execute_care_recommendation_refresh('19510000-0000-4000-8000-000000000001',
     gen_random_uuid(),'19510000-0000-4000-8000-000000000011','{"expected_care_revision":1}');
 UPDATE soil_fixture SET rule_id=(SELECT id FROM public.task_rules
     WHERE plant_id='19510000-0000-4000-8000-000000000011' AND rule_state='active');
 SELECT ok((SELECT rule_id IS NOT NULL FROM soil_fixture),'explicit refresh stored a real rule');
+SELECT * FROM pg_temp.contextual_calendar_checks(true);
 SELECT is(public.read_plant_care_profile('19510000-0000-4000-8000-000000000001',
     '19510000-0000-4000-8000-000000000011')->'routine_check',
     jsonb_build_object('rule_id',rule_id,'care_revision',1,
