@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## T083 — неучтённые объекты и guest-переносы — 15 ноября 2026
+
+В `5194999` приняты 062, SQL-фикстура и отчёт. Clean/upgrade
+по 184 профильным pgTAP, Deno, Review и QA прошли. SQL считает
+приватные объекты без канонической ссылки и незавершённые
+переносы в границах владельца. Реального удаления, выкладки
+или расширения прав нет. Следующий шаг — 063, объединённый план
+и проверка готовности к следующей фазе. T082/T083 открыты.
+
+
 ## T083 — инвентаризация приватных фото — 15 ноября 2026
 
 Принята и отправлена 061 `b1bddac`. PostgreSQL clean/upgrade
@@ -2473,10 +2483,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Two Codex-only orchestrators. Backend and data to codex/plants-backend; iOS/integration to codex/plants-ios and owns Simulator. Weekly ceiling 85% consumed.
-- Internal 060, independent concurrency 023e91a and media inventory 061 b1bddac accepted. 061 PostgreSQL had 161 profile/intent/inventory assertions on each clean/upgrade, plus Deno, Review/QA and push. Only private canonical photo IDs, blocked/waiting counts and bounded pages. No remote, grants, deletion or imaging operations.
-- Current 062 detects untracked objects and unresolved account-scoped guest source or transfer holds. Internal aggregate read only, exact queued owner receipt, no raw storage names, deleting capability, user routes, stage or data rewrites. Return an exact unified Git diff in JSON. Controller applies and verifies. T082/T083 remain open.
-- narat-staging 051–059, plants-api v28, worker v8 and published Monstera v3. V19 real HTTP accepted; iOS c9492c8 EN undo and restart fixture accepted. Signed staged mark already verified, complete cancel/undo run is now in progress on a disposable account.
+- Two Codex-only orchestrators, backend/data to codex/plants-backend and iOS/integration to codex/plants-ios. iOS owns Simulator. Weekly ceiling 85% consumed.
+- 5194999 accepted 062 aggregate namespace/guest holds, 184 profile/deletion pgTAP per clean/upgrade and Deno, Review/QA. Finds owner orphans and unfinished transfers with no raw storage names, grant or write. 060/061 and lock concurrency already accepted. All internal 060–062 are off staging.
+- Next 063 composes the internal first-page photo work plan and exact readiness guard based on canonically private bucket and zero all holds. Return exact Git diff in JSON, controller applies and verifies. No storage writes or public entry point. T082/T083 open for worker, Auth and client.
+- narat-staging 051–059/plants-api v28 and Monstera v3: live V19 and profile hour accepted. Signed EN Simulator c9492c8 passed V19. Combined 888217a published to codex/plants-v19-integration with exact source preservation and local Deno/PostgreSQL. iOS profile wire is in progress.
 
 <!-- /orchestrator:project-state -->
 
