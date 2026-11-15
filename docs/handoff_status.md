@@ -2378,10 +2378,10 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:project-state -->
 ## Project State
 
-- Backend/data worktree publishes to codex/plants-backend; iOS/integration independently publishes to codex/plants-ios and owns the Simulator. The weekly Codex ceiling is 85% used. All model routes use Codex.
-- narat-staging has 051–055, excluding 024, with plants-api v27 and worker v8. Discarded live SQL fixture transaction verified progression, reversal, isolated owner access and exact replay. Published Monstera v2 has a conditional action and no interval. Live HTTP verified paused refresh and no generated task.
-- Backend local clean and upgrade PostgreSQL accepted b37fdff. Both actual owner-lock waiters were observed, exact replay matched the persisted winner, stale new operation failed, one task and entry linked in both directions, original watering row and quota were unchanged. Changes: race fixture gate and task manifest/report.
-- Next 056 is forward-only. For a contextual profile a date requires an active verified refreshed rule and qualifying facts. Keep legacy without contextual metadata. Return a unified Git diff in JSON. Local fixture gates only. Keep T160/T171 open and do not publish a dated profile in this packet.
+- Backend/data and iOS/integration run in separate worktrees and publish to codex/plants-backend and codex/plants-ios. iOS alone uses Simulator. The user set a weekly Codex stop threshold of 85% consumed. Model routes use Codex.
+- a2ddd3a accepted forward migration 056 and contextual SQL tests. Deno and PostgreSQL clean/upgrade passed, 136 routine fixture assertions per database, plus Review and QA. Contextual revision one without an explicit matching refresh, mismatched or withdrawn evidence and malformed metadata fail closed. Legacy without metadata and the qualifying current rule still work. Not deployed at acceptance.
+- Staging has 051–055 and plants-api v27/worker v8. Live v2 manifest 7349299f74a36747e0c6042e581e706e36cb844002e19395fd8edc6448978d80 contains one Monstera profile, no calendar interval and one pinned condition. Published catalogue has null KB pointer. v2 paused HTTP and the isolated live SQL rollback were verified.
+- Current task creates only the staging-only v3 data candidate and reasoned evidence sidecar. Developer returns unified git diff in JSON. Controller applies and verifies. No staging activation in this packet. Leave T160/T171 open. Next: accept v3, rehearse atomic publication preserving v2, and run live dated owner operations. iOS b028902 passed the EN mark/restart/retry test and undo is separate.
 
 <!-- /orchestrator:project-state -->
 
