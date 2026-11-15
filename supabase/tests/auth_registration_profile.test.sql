@@ -717,5 +717,175 @@ END;
 $$;
 SELECT * FROM pg_temp.namespace_hold_tests();
 
+-- Resolve 063 calls only after the version gate (061/062 selectors still work).
+CREATE FUNCTION pg_temp.storage_work_plan_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0630000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0630000-0000-4000-8000-000000000002';
+    v_body jsonb;
+    v_before jsonb;
+    v_receipt public.operation_receipts%ROWTYPE;
+    v_field text;
+    v_case integer;
+BEGIN
+    IF to_regprocedure('public.read_account_deletion_storage_work_plan(uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('063 work plan is outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(NULL),NULL::jsonb,
+        'work plan rejects null owner');
+    UPDATE public.profiles SET account_state='deleting' WHERE id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),NULL::jsonb,
+        'deleting flag alone supplies no work plan');
+    UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+    PERFORM public.request_account_deletion_internal(v_owner,pg_temp.owner_id(1399));
+    SELECT * INTO STRICT v_receipt FROM public.operation_receipts
+    WHERE owner_id=v_owner AND operation_id=pg_temp.owner_id(1399);
+    FOR v_case IN 1..4 LOOP
+        UPDATE public.operation_receipts SET
+            command_name=CASE WHEN v_case=1 THEN 'forged' ELSE v_receipt.command_name END,
+            payload_hash=CASE WHEN v_case=2 THEN 'forged' ELSE v_receipt.payload_hash END,
+            committed_at=CASE WHEN v_case=3 THEN v_receipt.committed_at+interval '1 second'
+                ELSE v_receipt.committed_at END,
+            response_payload=CASE WHEN v_case=4 THEN v_receipt.response_payload||'{"extra":true}'::jsonb
+                ELSE v_receipt.response_payload END
+        WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+        RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),NULL::jsonb,
+            'work plan rejects forged receipt component '||v_case);
+    END LOOP;
+    UPDATE public.operation_receipts SET command_name=v_receipt.command_name,
+        payload_hash=v_receipt.payload_hash,committed_at=v_receipt.committed_at,
+        response_payload=v_receipt.response_payload
+    WHERE owner_id=v_owner AND operation_id=v_receipt.operation_id;
+    UPDATE public.account_deletion_requests SET operation_id=pg_temp.owner_id(1398)
+    WHERE owner_id=v_owner;
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),NULL::jsonb,
+        'work plan requires the exact queued receipt');
+    UPDATE public.account_deletion_requests SET operation_id=v_receipt.operation_id WHERE owner_id=v_owner;
+
+    INSERT INTO public.photo_assets(id,owner_id,purpose,original_key,content_hash)
+    SELECT pg_temp.owner_id(n),v_owner,'initial',v_owner::text||'/'||pg_temp.owner_id(n),repeat('a',64)
+    FROM generate_series(1300,1320) n;
+    INSERT INTO public.diagnosis_upload_tickets(photo_asset_id,mime_type,byte_size,expires_at)
+    SELECT pg_temp.owner_id(n),'image/jpeg',4,clock_timestamp()-interval '1 day'
+    FROM generate_series(1300,1320) n;
+    INSERT INTO storage.objects(bucket_id,name)
+    SELECT 'analysis-inputs',original_key FROM public.photo_assets WHERE owner_id=v_owner;
+    UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp()
+    WHERE id=pg_temp.owner_id(1320);
+    v_before := pg_temp.media_inventory_snapshot();
+    v_body := public.read_account_deletion_storage_work_plan(v_owner);
+    RETURN NEXT is(v_body->'photo_ids',
+        (SELECT jsonb_agg(pg_temp.owner_id(n) ORDER BY n) FROM generate_series(1300,1319) n),
+        'work plan emits at most twenty validated first-page IDs');
+    RETURN NEXT is(v_body->>'storage_ready','false','full work page prevents readiness');
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),v_body,
+        'retry retains all still-owned objects');
+    RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,'work plan reads preserve source rows');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs'
+        AND name IN (SELECT original_key FROM public.photo_assets
+            WHERE owner_id=v_owner AND id<>pg_temp.owner_id(1320));
+    v_body := public.read_account_deletion_storage_work_plan(v_owner);
+    RETURN NEXT is(v_body->'photo_ids',jsonb_build_array(pg_temp.owner_id(1320)),
+        'partial first page retains tombstoned surviving object');
+    RETURN NEXT is(v_body->>'storage_ready','false','partial page cannot signal readiness');
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner),v_body,
+        'retry cannot skip the surviving object with a cursor');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs'
+        AND name=v_owner::text||'/'||pg_temp.owner_id(1320);
+    v_body := public.read_account_deletion_storage_work_plan(v_owner);
+    RETURN NEXT is(v_body,jsonb_build_object('owner_id',v_owner,'photo_ids','[]'::jsonb,
+        'blocked',0,'waiting',0,'orphan_objects',0,'guest_draft_sources',0,
+        'guest_identification_sources',0,'incoming_claims',0,'storage_ready',true),
+        'actual canonical object removal supplies clean evidence despite retained photo rows');
+
+    -- Each independent hold is introduced against the otherwise clean owner.
+    FOR v_case IN 1..6 LOOP
+        IF v_case=1 THEN
+            UPDATE public.photo_assets SET analysis_key='unsafe/thumbnail'
+            WHERE id=pg_temp.owner_id(1300);
+            v_field := 'blocked';
+        ELSIF v_case=2 THEN
+            UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()+interval '1 day'
+            WHERE photo_asset_id=pg_temp.owner_id(1300);
+            v_field := 'waiting';
+        ELSIF v_case=3 THEN
+            INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/orphan');
+            v_field := 'orphan_objects';
+        ELSIF v_case=4 THEN
+            INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+            VALUES(pg_temp.owner_id(1340),v_owner,pg_temp.owner_id(1341),'care','scan','legacy/source');
+            v_field := 'guest_draft_sources';
+        ELSIF v_case=5 THEN
+            INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at)
+            VALUES(pg_temp.owner_id(1300),clock_timestamp()-interval '2 days',clock_timestamp()-interval '1 day');
+            v_field := 'guest_identification_sources';
+        ELSE
+            INSERT INTO public.guest_drafts(id,guest_owner_id,flow_id,intent,add_method,source_storage_key)
+            VALUES(pg_temp.owner_id(1350),v_neighbor,pg_temp.owner_id(1351),'care','scan','legacy/incoming');
+            INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+            VALUES(pg_temp.owner_id(1350),'work-plan',v_owner,pg_temp.owner_id(1352),
+                'copying',clock_timestamp()-interval '1 day');
+            v_field := 'incoming_claims';
+        END IF;
+        v_before := pg_temp.media_inventory_snapshot();
+        v_body := public.read_account_deletion_storage_work_plan(v_owner);
+        RETURN NEXT is(v_body->>v_field,'1','work plan exposes hold '||v_field);
+        RETURN NEXT is(v_body->>'storage_ready','false','hold prevents readiness: '||v_field);
+        RETURN NEXT is(pg_temp.media_inventory_snapshot(),v_before,'hold read preserves sources: '||v_field);
+        IF v_case=1 THEN
+            UPDATE public.photo_assets SET analysis_key=NULL WHERE id=pg_temp.owner_id(1300);
+        ELSIF v_case=2 THEN
+            UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()-interval '1 day'
+            WHERE photo_asset_id=pg_temp.owner_id(1300);
+        ELSIF v_case=3 THEN
+            DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/orphan';
+        ELSIF v_case=4 THEN
+            UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp() WHERE id=pg_temp.owner_id(1340);
+        ELSIF v_case=5 THEN
+            UPDATE public.guest_identification_sources SET storage_cleaned_at=clock_timestamp()
+            WHERE photo_id=pg_temp.owner_id(1300);
+        ELSE
+            UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp() WHERE id=pg_temp.owner_id(1350);
+        END IF;
+        RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner)->>'storage_ready','true',
+            'confirmed removal of hold restores clean readiness: '||v_field);
+    END LOOP;
+    UPDATE storage.buckets SET public=true WHERE id='analysis-inputs';
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner)->>'storage_ready','false',
+        'public canonical bucket prevents readiness');
+    UPDATE storage.buckets SET public=false WHERE id='analysis-inputs';
+    -- Roll back only this fixture perturbation, including other owners objects.
+    BEGIN
+        DELETE FROM storage.objects WHERE bucket_id='analysis-inputs';
+        DELETE FROM storage.buckets WHERE id='analysis-inputs';
+        RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_owner)->>'storage_ready','false',
+            'absent canonical bucket prevents readiness');
+        RAISE SQLSTATE 'Z0063';
+    EXCEPTION WHEN SQLSTATE 'Z0063' THEN NULL;
+    END;
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(v_neighbor),NULL::jsonb,
+        'neighbor cannot acquire a plan from another owners receipt');
+    RETURN NEXT is(public.read_account_deletion_storage_work_plan(pg_temp.owner_id(902)),NULL::jsonb,
+        'anonymous forged queue remains unavailable');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM jsonb_each(v_body) e
+        WHERE e.key NOT IN ('owner_id','photo_ids','blocked','waiting','orphan_objects',
+            'guest_draft_sources','guest_identification_sources','incoming_claims','storage_ready')),
+        'work plan exposes no raw names or cursor');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.read_account_deletion_storage_work_plan(uuid)'::regprocedure
+          AND a.grantee<>p.proowner AND a.privilege_type='EXECUTE'),
+        'only internal function owner receives execution');
+    RETURN NEXT ok(NOT has_function_privilege('anon','public.read_account_deletion_storage_work_plan(uuid)','EXECUTE')
+        AND NOT has_function_privilege('authenticated','public.read_account_deletion_storage_work_plan(uuid)','EXECUTE')
+        AND NOT has_function_privilege('service_role','public.read_account_deletion_storage_work_plan(uuid)','EXECUTE'),
+        'API roles cannot execute the work plan');
+END;
+$$;
+SELECT * FROM pg_temp.storage_work_plan_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
