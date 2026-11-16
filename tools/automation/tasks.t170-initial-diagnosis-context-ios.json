@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "t170-initial-diagnosis-context-ios",
+      "description": "Ask for drainage and send the frozen initial photo diagnosis answers in the ordinary iOS flow.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Domain/PlantTypes.swift",
+        "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+        "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/FirstHelpUnitTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Produce a unified Git diff in JSON. This iOS package runs only local checks; server support is a parallel package. Do not deploy or attach the Swift change to a live app until the compatible backend is accepted and deployed. Exact retry must retain these captured answers with the frozen operation; never fallback to a retry that drops them.",
+        "Replace the first diagnosis question about last watering with an explicit yes/no/unknown for drainage. Keep historical lastWatered decoding and other callers working. Decode missing drainage as unknown for existing persisted inputs. Preserve answers collected during an attempt; no questions for repeat diagnosis or identification. Keep guest identification, existing account checks, reminders, recommendation behavior, catalogue saves and native login unchanged.",
+        "POST /analysis/jobs for initial permanent-owner diagnosis sends optional closed initial_context object with exactly light in low/medium/bright_indirect/direct_sun/unknown, watering_frequency in frequent/moderate/sparse/unknown, and drainage in yes/no/unknown. Map existing bright_direct to direct_sun. For unconfirmed light and absent values use unknown. Omit the field for identification, repeat or legacy callers. Reject conflicting mode/target/guest combinations before HTTP. Test exact typed body, stable retry, omitted field on other modes, and legacy decode."
+      ],
+      "acceptance_criteria": [
+        {"id":"T170IC1","description":"Swift build, local units and Simulator smoke verify new initial question and compatible transport.","mode":"local","checks":["diff-check","ios-tests"]}
+      ]
+    }
+  ]
+}
