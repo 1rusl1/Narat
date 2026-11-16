@@ -449,13 +449,11 @@ final class CatalogueConnection {
         return access
     }
 
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
     func guestPhotoClaimData() -> Data? { resumeDefaults.data(forKey: "staging.guest.photo.claim") }
 
     func storeGuestPhotoClaimData(_ data: Data?) {
         resumeDefaults.set(data, forKey: "staging.guest.photo.claim")
     }
-#endif
 
     /// Current-owner metadata only, for guests and permanent users alike.
     /// Payload and receipt remain exclusively in SQLite.

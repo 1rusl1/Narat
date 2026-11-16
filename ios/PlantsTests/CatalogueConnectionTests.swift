@@ -1540,7 +1540,7 @@ final class CatalogueConnectionTests: XCTestCase {
                 jobId: UUID(), photoAssetId: UUID(), speciesSlug: "monstera_deliciosa", taxonId: UUID(), ownerId: owner
             )
             do {
-                let initial = StagingGuestPhotoClaim(connection: h.connection, credential: credential)
+                let initial = GuestPhotoClaim(connection: h.connection, credential: credential)
                 try await initial.register(scope)
                 let lost = await initial.createDraft(selection)
                 XCTAssertEqual(lost, .failed)
@@ -1550,7 +1550,7 @@ final class CatalogueConnectionTests: XCTestCase {
             let reply = expires ? try json(["error": ["code": "DRAFT_EXPIRED", "message": "Expired", "retryable": false]])
                 : try json(["draft_id": UUID().uuidString, "expires_at": "2026-11-19T08:30:00Z"])
             h.fixture.append(.init(method: "POST", path: draftPath, data: reply, status: expires ? 410 : 200))
-            let restarted = StagingGuestPhotoClaim(connection: h.connection, credential: credential)
+            let restarted = GuestPhotoClaim(connection: h.connection, credential: credential)
             try await restarted.register(scope)
             XCTAssertTrue(restarted.canResumeDraft(for: scope))
             let resumed = await restarted.resumeDraft()

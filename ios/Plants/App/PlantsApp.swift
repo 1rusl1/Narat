@@ -1,8 +1,6 @@
 import SwiftUI
 import Supabase
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 import Observation
-#endif
 
 @main
 struct PlantsApp: App {
@@ -38,7 +36,7 @@ struct RootContainerView: View {
     @State private var catalogue: CatalogueConnection?
     @State private var trialReminder = TrialReminderScheduler()
     private enum AccountDestination: String, Identifiable {
-        case diagnosis, identification, collection
+        case diagnosis, identification, collection, guestTransfer
         var id: Self { self }
     }
 
@@ -47,6 +45,11 @@ struct RootContainerView: View {
     @State private var collectionAfterSignIn = false
     @State private var opening: AccountDestination?
     @State private var analysisOwner: UUID?
+    @State private var analysisCredential: String?
+    @State private var guestPhotoClaim: GuestPhotoClaim?
+    @State private var guestAccessFailed = false
+    @State private var showingGuestTransfer = false
+    @State private var openClaimCollection = false
     @State private var analysisAccessRepository = AnalysisAccessRepository()
     @State private var starting = false
     @State private var startupFailed = false
@@ -55,9 +58,6 @@ struct RootContainerView: View {
     @State private var stagingResume: CatalogueResumeSelection?
     @State private var stagingResumeLocked = false
     @State private var stagingSpecies: PublishedSpeciesCard?
-    @State private var stagingGuestClaim: StagingGuestPhotoClaim?
-    @State private var showingGuestTransfer = false
-    @State private var openClaimCollection = false
 #endif
 #if DEBUG
     @State private var fixtureContext: CatalogueUIFixtureContext?
@@ -113,6 +113,7 @@ struct RootContainerView: View {
                         PlantHomeView(
                             busy: opening != nil,
                             unavailable: catalogue?.unavailable != nil || startupFailed,
+                            guestAccessFailed: guestAccessFailed,
                             check: { open(.diagnosis) },
                             identify: { open(.identification) },
                             browse: {
@@ -120,7 +121,7 @@ struct RootContainerView: View {
                                 analysisModel.router.selectCareMethod(.catalogue)
                             },
                             collection: { open(.collection) }
-                        )
+                        ) { guestSaveButtons }
                     }
                 case .selectCareMethod:
                     careMethodPickerSection
@@ -190,24 +191,7 @@ struct RootContainerView: View {
                     Button(isPolish ? "Moje rośliny" : "My plants") { showingCollection = true }
                         .accessibilityIdentifier("collection.open")
                 }
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-                if analysisModel.router.flowState.currentStep == .selectIntent,
-                   let claim = stagingGuestClaim, let scope = catalogue?.snapshot, claim.canResumeDraft(for: scope) {
-                    Button("Continue saving") {
-                        Task { @MainActor in
-                            handleGuestDraft(await claim.resumeDraft(), claim: claim)
-                        }
-                    }
-                    .disabled(claim.busy)
-                    .accessibilityIdentifier("staging.guest.draft.resume")
-                    if claim.failed { Text("Couldn’t prepare your plant. Try again.") }
-                }
-                if let claim = stagingGuestClaim, let scope = catalogue?.snapshot, claim.pending(for: scope),
-                   !showingGuestTransfer {
-                    Button("Finish saving your plant") { showingGuestTransfer = true }
-                        .accessibilityIdentifier("staging.guest.claim.resume")
-                }
-#endif
+                if usesLegacyWelcome { guestSaveButtons }
             }
         }
         .task { await prepareCatalogue() }
@@ -224,6 +208,8 @@ struct RootContainerView: View {
             if collectionAfterSignIn {
                 collectionAfterSignIn = false
                 showingCollection = true
+            } else {
+                showPendingGuestTransfer()
             }
         }) { destination in
             if let catalogue {
@@ -231,9 +217,12 @@ struct RootContainerView: View {
                     connection: catalogue,
                     cancel: { accountDestination = nil }
                 ) { snapshot in
-                    if destination == .collection {
+                    switch destination {
+                    case .collection:
                         collectionAfterSignIn = true
-                    } else {
+                    case .guestTransfer:
+                        finishGuestSignIn(snapshot)
+                    case .diagnosis, .identification:
                         activate(destination, connection: catalogue, snapshot: snapshot)
                     }
                     accountDestination = nil
@@ -247,20 +236,40 @@ struct RootContainerView: View {
                 cancel: account.guestTransfer ? { stagingAccount = nil } : nil
             ) { snapshot in finishStagingSignIn(account, snapshot: snapshot) }
         }
+#endif
         .sheet(isPresented: $showingGuestTransfer, onDismiss: {
             if openClaimCollection {
                 openClaimCollection = false
                 showingCollection = true
             }
         }) {
-            if let claim = stagingGuestClaim {
-                StagingGuestTransferView(claim: claim) {
+            if let claim = guestPhotoClaim {
+                GuestPhotoTransferView(claim: claim) {
                     openClaimCollection = true
                     showingGuestTransfer = false
                 }
             }
         }
-#endif
+    }
+
+    @ViewBuilder
+    private var guestSaveButtons: some View {
+        if analysisModel.router.flowState.currentStep == .selectIntent,
+           let claim = guestPhotoClaim, let scope = catalogue?.snapshot, claim.canResumeDraft(for: scope) {
+            Button("Continue saving") {
+                Task { @MainActor in
+                    handleGuestDraft(await claim.resumeDraft(), claim: claim)
+                }
+            }
+            .disabled(claim.busy)
+            .accessibilityIdentifier("staging.guest.draft.resume")
+            if claim.failed { Text("Couldn’t prepare your plant. Try again.") }
+        }
+        if let claim = guestPhotoClaim, let scope = catalogue?.snapshot, claim.pending(for: scope),
+           !showingGuestTransfer {
+            Button("Finish saving your plant") { showingGuestTransfer = true }
+                .accessibilityIdentifier("staging.guest.claim.resume")
+        }
     }
 
     private func observeTrialReminder(_ read: TrialReminderRead) async {
@@ -286,13 +295,8 @@ struct RootContainerView: View {
 
     private var analysisAccessSource: AnalysisAccessSource? {
         guard let catalogue, analysisOwner != nil else { return nil }
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-        let credential = isStagingAnalysis ? stagingGuestClaim?.credential : nil
-#else
-        let credential: String? = nil
-#endif
         return AnalysisAccessSource(
-            connection: catalogue, repository: analysisAccessRepository, guestCredential: credential
+            connection: catalogue, repository: analysisAccessRepository, guestCredential: analysisCredential
         )
     }
 
@@ -326,13 +330,58 @@ struct RootContainerView: View {
         guard opening == nil, accountDestination == nil, let connection = catalogue,
               connection.apiClient != nil else { return }
         opening = destination
+        guestAccessFailed = false
         Task { @MainActor in
             defer { opening = nil }
             if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
                 activate(destination, connection: connection, snapshot: snapshot)
+            } else if destination == .identification {
+                do { try await openGuestIdentification(connection) }
+                catch {
+                    if !Task.isCancelled { guestAccessFailed = true }
+                }
             } else if !Task.isCancelled {
                 accountDestination = destination
             }
+        }
+    }
+
+    private func openGuestIdentification(_ connection: CatalogueConnection) async throws {
+        _ = try await connection.sessionOwner()
+        let expected = try await connection.sessionSnapshot()
+        if !expected.isAnonymous {
+            activate(.identification, connection: connection, snapshot: expected)
+            return
+        }
+        let claim = await photoClaim(for: connection)
+        try await claim.register(expected)
+        guard !Task.isCancelled, connection.snapshot == expected else {
+            throw SyncWireValidationError.invalidSession
+        }
+        installAnalysis(connection: connection, owner: expected.session.userId,
+                        identificationEnabled: true, guestCredential: claim.credential)
+        analysisModel.router.selectIntent(.care)
+        analysisModel.router.selectCareMethod(.scan)
+    }
+
+    private func photoClaim(for connection: CatalogueConnection) async -> GuestPhotoClaim {
+        if let guestPhotoClaim, guestPhotoClaim.connection === connection { return guestPhotoClaim }
+        let claim = GuestPhotoClaim(connection: connection, credential: await analysisAccessRepository.installationCredential())
+        guestPhotoClaim = claim
+        return claim
+    }
+
+    private func finishGuestSignIn(_ snapshot: CatalogueSDKSnapshot) {
+        do {
+            guard let guestPhotoClaim else { throw SyncWireValidationError.invalidSession }
+            try guestPhotoClaim.acceptDestination(snapshot)
+            analysisModel.installAnalysisService(nil)
+            analysisOwner = nil
+            analysisCredential = nil
+            analysisModel.router.flowState.currentStep = .selectIntent
+        } catch {
+            guestAccessFailed = true
+            analysisModel.router.flowState.currentStep = .selectIntent
         }
     }
 
@@ -356,16 +405,12 @@ struct RootContainerView: View {
     }
 
     private var guestIdentificationActions: GuestIdentificationActions? {
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-        guard let claim = stagingGuestClaim, catalogue?.snapshot?.isAnonymous == true else { return nil }
+        guard let claim = guestPhotoClaim, catalogue?.snapshot?.isAnonymous == true else { return nil }
         return GuestIdentificationActions(busy: claim.busy, failed: claim.failed) { selection in
             Task { @MainActor in
                 handleGuestDraft(await claim.createDraft(selection), claim: claim)
             }
         }
-#else
-        return nil
-#endif
     }
 
     @MainActor
@@ -422,6 +467,15 @@ struct RootContainerView: View {
             if usesLegacyWelcome { _ = try await catalogue.sessionOwner() }
             guard analysisModel.router.flowState.currentStep == .selectIntent else { return }
             let expected = try await catalogue.sessionSnapshot()
+            if !usesLegacyWelcome, catalogue.guestPhotoClaimData() != nil {
+                let claim = await photoClaim(for: catalogue)
+                if expected.isAnonymous {
+                    try await claim.register(expected)
+                } else if claim.pending(for: expected) {
+                    showingGuestTransfer = true
+                    return
+                }
+            }
             guard analysisModel.router.flowState.currentStep == .selectIntent,
                   let flow = try catalogue.resumableFlow(expected: expected) else { return }
             let result = await catalogue.restoreModel(
@@ -438,11 +492,16 @@ struct RootContainerView: View {
         }
     }
 
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-    private func handleGuestDraft(_ outcome: StagingGuestPhotoClaim.DraftOutcome, claim: StagingGuestPhotoClaim) {
+    private func handleGuestDraft(_ outcome: GuestPhotoClaim.DraftOutcome, claim: GuestPhotoClaim) {
         switch outcome {
         case .ready:
-            stagingAccount = StagingAccountPresentation(connection: claim.connection, guestTransfer: true)
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
+            if isStagingAnalysis {
+                stagingAccount = StagingAccountPresentation(connection: claim.connection, guestTransfer: true)
+                return
+            }
+#endif
+            accountDestination = .guestTransfer
         case .expired:
             if analysisModel.router.flowState.currentStep == .preliminaryResult { analysisModel.returnFromAnalysis() }
         case .failed:
@@ -450,6 +509,13 @@ struct RootContainerView: View {
         }
     }
 
+    private func showPendingGuestTransfer() {
+        guard let claim = guestPhotoClaim, let snapshot = catalogue?.snapshot,
+              claim.pending(for: snapshot) else { return }
+        showingGuestTransfer = true
+    }
+
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
     @MainActor
     private func prepareStagingAnalysis() async {
         guard let config = try? NativeAuthConfiguration(),
@@ -469,10 +535,10 @@ struct RootContainerView: View {
         catalogue = connection
         languageStore.currentLocale = .en
         if ProcessInfo.processInfo.arguments.contains("--narat-staging-guest-claim") {
-            let claim = StagingGuestPhotoClaim(
+            let claim = GuestPhotoClaim(
                 connection: connection, credential: await analysisAccessRepository.installationCredential()
             )
-            stagingGuestClaim = claim
+            guestPhotoClaim = claim
             do {
                 _ = try await connection.sessionOwner()
                 let snapshot = try await connection.sessionSnapshot()
@@ -504,7 +570,7 @@ struct RootContainerView: View {
     private func finishStagingSignIn(_ account: StagingAccountPresentation, snapshot: CatalogueSDKSnapshot) {
         if account.guestTransfer {
             do {
-                guard let claim = stagingGuestClaim else { throw SyncWireValidationError.invalidSession }
+                guard let claim = guestPhotoClaim else { throw SyncWireValidationError.invalidSession }
                 try claim.acceptDestination(snapshot)
             } catch {
                 startupFailed = true
@@ -518,12 +584,6 @@ struct RootContainerView: View {
         if !account.guestTransfer {
             Task { await restoreStagingCard(connection: account.connection) }
         }
-    }
-
-    private func showPendingGuestTransfer() {
-        guard let claim = stagingGuestClaim, let snapshot = catalogue?.snapshot,
-              claim.pending(for: snapshot) else { return }
-        showingGuestTransfer = true
     }
 
     @MainActor
@@ -565,6 +625,7 @@ struct RootContainerView: View {
     ) {
         guard let api = connection.apiClient else { return }
         analysisOwner = owner
+        analysisCredential = guestCredential
         analysisModel.installAnalysisService(PhotoAnalysisService(
             api: api, identificationEnabled: identificationEnabled, guestCredential: guestCredential
         ) {
@@ -852,10 +913,9 @@ final class PhotoAnalysisService: AnalysisService {
     }
 }
 
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 @MainActor
 @Observable
-final class StagingGuestPhotoClaim {
+final class GuestPhotoClaim {
     enum DraftOutcome: Equatable { case ready, expired, failed }
 
     private struct Journal: Codable, Equatable {
@@ -1031,8 +1091,8 @@ final class StagingGuestPhotoClaim {
 }
 
 @MainActor
-private struct StagingGuestTransferView: View {
-    let claim: StagingGuestPhotoClaim
+private struct GuestPhotoTransferView: View {
+    let claim: GuestPhotoClaim
     let openCollection: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -1062,6 +1122,7 @@ private struct StagingGuestTransferView: View {
     }
 }
 
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
 private struct StagingAccountPresentation: Identifiable {
     let id = UUID()
     let connection: CatalogueConnection
@@ -1140,13 +1201,15 @@ private struct AccountSignInView: View {
     }
 }
 
-private struct PlantHomeView: View {
+private struct PlantHomeView<GuestActions: View>: View {
     let busy: Bool
     let unavailable: Bool
+    let guestAccessFailed: Bool
     let check: () -> Void
     let identify: () -> Void
     let browse: () -> Void
     let collection: () -> Void
+    @ViewBuilder let guestActions: () -> GuestActions
 
     private let green = Color(red: 0.13, green: 0.33, blue: 0.22)
 
@@ -1199,11 +1262,19 @@ private struct PlantHomeView: View {
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
 
+                guestActions()
+
                 if unavailable {
                     Text("Narat can’t connect right now. Check the app’s connection settings.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("welcome.unavailable")
+                }
+                if guestAccessFailed {
+                    Text("Couldn’t start guest identification. Try again.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("welcome.guest.error")
                 }
                 if busy {
                     ProgressView("Opening…")
