@@ -2682,8 +2682,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-persist-guest-diagnosis-conditions-on-claim: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 395.40 с, проверки — 62.87 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-persist-guest-diagnosis-conditions-on-claim](validation/automation/tasks/t170-persist-guest-diagnosis-conditions-on-claim.md).
+t083-account-data-diagnostic-decisions-purge-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 128.18 с, проверки — 49.83 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-account-data-diagnostic-decisions-purge-acceptance](validation/automation/tasks/t083-account-data-diagnostic-decisions-purge-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
