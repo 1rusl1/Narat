@@ -2635,9 +2635,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-initial-diagnosis-context-worker: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 2, qa 1. Модели — 395.42 с, проверки — 46.90 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-initial-diagnosis-context-worker](validation/automation/tasks/t170-initial-diagnosis-context-worker.md).
+t083-account-data-care-plan-purge: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 526.31 с, проверки — 46.21 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-account-data-care-plan-purge](validation/automation/tasks/t083-account-data-care-plan-purge.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
