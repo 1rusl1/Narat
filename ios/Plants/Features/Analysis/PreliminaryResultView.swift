@@ -122,6 +122,12 @@ public struct PreliminaryResultView: View {
                                 .accessibilityIdentifier("analysis.result.uncertainty")
                         }
                     }
+                    if let guidance = explanation.photoGuidance(
+                        isInitial: model.repeatDiagnosisTarget == nil
+                    ) {
+                        Text(verbatim: guidance)
+                            .accessibilityIdentifier("analysis.result.photoGuidance")
+                    }
                     if model.repeatDiagnosisTarget == nil, result.mode == .diagnosis {
                         if !explanation.evidence.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
