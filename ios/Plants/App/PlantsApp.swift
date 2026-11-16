@@ -412,11 +412,19 @@ struct RootContainerView: View {
 
     private var guestIdentificationActions: GuestIdentificationActions? {
         guard let claim = guestPhotoClaim, catalogue?.snapshot?.isAnonymous == true else { return nil }
-        return GuestIdentificationActions(busy: claim.busy, failed: claim.failed) { selection in
-            Task { @MainActor in
-                handleGuestDraft(await claim.createDraft(selection), claim: claim)
+        return GuestIdentificationActions(
+            busy: claim.busy, failed: claim.failed,
+            save: { selection in
+                Task { @MainActor in
+                    handleGuestDraft(await claim.createDraft(selection), claim: claim)
+                }
+            },
+            saveDiagnosis: { selection in
+                Task { @MainActor in
+                    handleGuestDraft(await claim.createDraft(selection), claim: claim)
+                }
             }
-        }
+        )
     }
 
     @MainActor
@@ -926,12 +934,20 @@ final class PhotoAnalysisService: AnalysisService {
 final class GuestPhotoClaim {
     enum DraftOutcome: Equatable { case ready, expired, failed }
 
+    private enum DraftSource: String, Codable { case identification, diagnosis }
+
     private struct Journal: Codable, Equatable {
         let guestOwner: UUID
         let installationId: UUID
         let jobId: UUID
-        let taxonId: UUID
+        let taxonId: UUID?
+        // Absent in legacy identification journals, including an unprepared draft.
+        var source: DraftSource? = nil
         let photoId: UUID
+
+        var validSource: Bool {
+            source == .diagnosis ? taxonId == nil : taxonId != nil
+        }
         let draftOperationId: UUID
         let prepareOperationId: UUID
         let commitOperationId: UUID
@@ -965,19 +981,34 @@ final class GuestPhotoClaim {
     }
 
     func createDraft(_ selection: PhotoIdentificationSelection) async -> DraftOutcome {
+        await createDraft(jobId: selection.jobId, taxonId: selection.taxonId,
+                          photoId: selection.photoAssetId, ownerId: selection.ownerId)
+    }
+
+    func createDraft(_ selection: GuestDiagnosisSelection) async -> DraftOutcome {
+        guard let expected = connection.snapshot,
+              PlantsAPIClient.isGuestPhotoSession(expected.session) else { return .failed }
+        return await createDraft(jobId: selection.jobId, taxonId: nil, source: .diagnosis,
+                                 photoId: selection.photoId, ownerId: selection.ownerId)
+    }
+
+    private func createDraft(
+        jobId: UUID, taxonId: UUID?, source: DraftSource? = nil, photoId: UUID, ownerId: UUID?
+    ) async -> DraftOutcome {
         guard !busy, let expected = connection.snapshot, expected.isAnonymous,
-              selection.ownerId == expected.session.userId, let installationId else { return .failed }
+              ownerId == expected.session.userId, let installationId else { return .failed }
         failed = false
         do {
             if let journal, journal.receipt == nil {
-                guard canResumeDraft(for: expected), journal.jobId == selection.jobId,
-                      journal.taxonId == selection.taxonId, journal.photoId == selection.photoAssetId else {
+                guard canResumeDraft(for: expected), journal.jobId == jobId,
+                      journal.taxonId == taxonId, (journal.source ?? .identification) == (source ?? .identification),
+                      journal.photoId == photoId else {
                     throw AnalysisHTTPError.invalidResponse
                 }
             } else {
                 try store(Journal(
                     guestOwner: expected.session.userId, installationId: installationId,
-                    jobId: selection.jobId, taxonId: selection.taxonId, photoId: selection.photoAssetId,
+                    jobId: jobId, taxonId: taxonId, source: source, photoId: photoId,
                     draftOperationId: UUID(), prepareOperationId: UUID(), commitOperationId: UUID()
                 ))
             }
@@ -989,7 +1020,8 @@ final class GuestPhotoClaim {
     }
 
     func canResumeDraft(for expected: CatalogueSDKSnapshot) -> Bool {
-        guard expected.isAnonymous, let installationId, let journal else { return false }
+        guard expected.isAnonymous, let installationId, let journal, journal.validSource,
+              journal.source != .diagnosis || PlantsAPIClient.isGuestPhotoSession(expected.session) else { return false }
         return journal.guestOwner == expected.session.userId && journal.installationId == installationId
             && journal.destinationOwner == nil && journal.receipt == nil
     }
@@ -1003,10 +1035,19 @@ final class GuestPhotoClaim {
         do {
             if current.draft == nil {
                 let lease = try await connection.analysisLease(expected: expected)
-                current.draft = try await api.createPhotoDraft(
-                    operationId: current.draftOperationId, jobId: current.jobId, taxonId: current.taxonId,
-                    credential: credential, context: lease
-                )
+                if current.source == .diagnosis {
+                    current.draft = try await api.createDiagnosisPhotoDraft(
+                        operationId: current.draftOperationId, jobId: current.jobId,
+                        credential: credential, context: lease
+                    )
+                } else if let taxonId = current.taxonId {
+                    current.draft = try await api.createPhotoDraft(
+                        operationId: current.draftOperationId, jobId: current.jobId, taxonId: taxonId,
+                        credential: credential, context: lease
+                    )
+                } else {
+                    throw AnalysisHTTPError.invalidResponse
+                }
                 guard !Task.isCancelled, connection.snapshot == expected else { throw SyncWireValidationError.invalidSession }
                 try store(current)
             }
@@ -1031,7 +1072,8 @@ final class GuestPhotoClaim {
     }
 
     func pending(for expected: CatalogueSDKSnapshot) -> Bool {
-        !expected.isAnonymous && journal?.destinationOwner == expected.session.userId && journal?.receipt == nil
+        !expected.isAnonymous && journal?.validSource == true
+            && journal?.destinationOwner == expected.session.userId && journal?.receipt == nil
     }
 
     var receipt: GuestPhotoClaimReceipt? {

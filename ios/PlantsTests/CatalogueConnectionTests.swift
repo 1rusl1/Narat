@@ -1729,6 +1729,120 @@ final class CatalogueConnectionTests: XCTestCase {
     }
 
 #if DEBUG && targetEnvironment(simulator)
+    private func guestDiagnosisResult(
+        identification: IdentificationStatus = .resolved, plant: String? = "monstera_deliciosa",
+        mode: AnalysisMode = .diagnosis
+    ) -> PreliminaryAnalysis {
+        PreliminaryAnalysis(
+            id: UUID(), jobId: UUID(), kbReleaseId: UUID(), mode: mode,
+            identificationStatus: identification, plantId: plant, genusId: nil,
+            diagnosisStatus: .healthy, candidates: [], selectedConditionId: nil,
+            visualMarkers: [], evidenceBasis: [], limitations: [], firstActionSummary: nil,
+            controlIntervalDays: nil, analysisReceipt: "fixture-receipt"
+        )
+    }
+
+    func testGuestDiagnosisDraftIsExplicitBoundRestartSafeAndSurvivesAccountCancellation() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        await h.ready()
+        let payload = try json(["sub": owner.uuidString, "is_anonymous": true]).base64EncodedString()
+        try auth(h, owner: owner, token: "header.\(payload).signature", anonymous: true, signup: true)
+        _ = try await h.connection.sessionOwner()
+        let scope = try await h.connection.accountScope()
+        let original = try XCTUnwrap(scope.snapshot)
+        let photo = UUID(), installation = UUID()
+        let result = guestDiagnosisResult()
+        let selection = try XCTUnwrap(GuestDiagnosisSelection(
+            result: result, photo: (photo, owner), isInitial: true, expected: original
+        ))
+        XCTAssertEqual(selection.jobId, result.jobId)
+        XCTAssertNil(GuestDiagnosisSelection(result: result, photo: nil, isInitial: true, expected: original))
+        XCTAssertNil(GuestDiagnosisSelection(result: result, photo: (photo, other), isInitial: true, expected: original))
+        XCTAssertNil(GuestDiagnosisSelection(result: result, photo: (photo, owner), isInitial: false, expected: original))
+        for invalid in [
+            guestDiagnosisResult(identification: .unknown),
+            guestDiagnosisResult(plant: nil), guestDiagnosisResult(plant: "  "),
+            guestDiagnosisResult(mode: .identification)
+        ] {
+            XCTAssertNil(GuestDiagnosisSelection(result: invalid, photo: (photo, owner),
+                                                isInitial: true, expected: original))
+        }
+        XCTAssertNil(h.connection.guestPhotoClaimData())
+        XCTAssertEqual(h.identity.calls, 0)
+        let registerPath = "/functions/v1/plants-api/installations/register"
+        let draftPath = "/functions/v1/plants-api/drafts"
+        let registration = try json(["installation_id": installation.uuidString])
+        h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+        h.fixture.append(.init(method: "POST", path: draftPath, data: Data(), failure: .networkConnectionLost))
+        let initial = GuestPhotoClaim(connection: h.connection, credential: "fixture-stable-installation")
+        try await initial.register(original)
+        let lost = await initial.createDraft(selection)
+        XCTAssertEqual(lost, .failed)
+        let pending = try XCTUnwrap(h.connection.guestPhotoClaimData())
+
+        let restarted = GuestPhotoClaim(connection: h.connection, credential: "fixture-stable-installation")
+        h.fixture.append(.init(method: "POST", path: registerPath,
+                               data: try json(["installation_id": UUID().uuidString])))
+        try await restarted.register(original)
+        XCTAssertFalse(restarted.canResumeDraft(for: original))
+        let wrongInstallation = await restarted.resumeDraft()
+        XCTAssertEqual(wrongInstallation, .failed)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), pending)
+        h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+        try await restarted.register(original)
+        let foreignSource = try XCTUnwrap(GuestDiagnosisSelection(
+            result: guestDiagnosisResult(), photo: (photo, owner), isInitial: true, expected: original
+        ))
+        let rejected = await restarted.createDraft(foreignSource)
+        XCTAssertEqual(rejected, .failed)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), pending)
+        h.fixture.append(.init(method: "POST", path: draftPath,
+                               data: try json(["draft_id": UUID().uuidString, "expires_at": "2026-11-19T08:30:00Z"])))
+        let resumed = await restarted.resumeDraft()
+        XCTAssertEqual(resumed, .ready)
+        let ready = try XCTUnwrap(h.connection.guestPhotoClaimData())
+        h.identity.result = .failure(CancellationError())
+        let cancelled = try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+        XCTAssertNil(cancelled)
+        XCTAssertEqual(h.connection.snapshot, original)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), ready)
+
+        let reopened = GuestPhotoClaim(connection: h.connection, credential: "fixture-stable-installation")
+        h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+        try await reopened.register(original)
+        let sameDraft = await reopened.createDraft(selection)
+        XCTAssertEqual(sameDraft, .ready)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), ready)
+        let posts = h.fixture.captured.filter { $0.url?.path == draftPath }
+        XCTAssertEqual(posts.count, 2)
+        XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+        let body = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(posts.last?.httpBody))
+        let journal = try XCTUnwrap(JSONSerialization.jsonObject(with: ready) as? [String: Any])
+        XCTAssertEqual(body, ["operation_id": (journal["draftOperationId"] as? String)?.lowercased() ?? "",
+                              "diagnosis_job_id": result.jobId.uuidString.lowercased()])
+        XCTAssertNil(journal["taxonId"])
+        XCTAssertEqual(journal["source"] as? String, "diagnosis")
+        XCTAssertEqual(h.identity.calls, 1)
+
+        h.identity.result = .success(.init(provider: .apple, idToken: "FIXTURE-ONLY-ID-TOKEN", nonce: "fixture-nonce"))
+        try auth(h, owner: other)
+        let signedIn = try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+        let permanent = try XCTUnwrap(signedIn)
+        XCTAssertFalse(reopened.pending(for: permanent))
+        XCTAssertNil(GuestDiagnosisSelection(result: result, photo: (photo, owner),
+                                            isInitial: true, expected: permanent))
+        XCTAssertThrowsError(try reopened.acceptDestination(permanent, from: permanent))
+        try reopened.acceptDestination(permanent, from: original)
+        XCTAssertTrue(reopened.pending(for: permanent))
+        let accepted = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: XCTUnwrap(h.connection.guestPhotoClaimData())) as? [String: Any])
+        for key in ["draftOperationId", "prepareOperationId", "commitOperationId", "draft", "source"] {
+            XCTAssertEqual(journal[key] as? NSObject, accepted[key] as? NSObject)
+        }
+        assertClosed(h)
+    }
+
     func testOrdinaryPhotoClaimRequiresExplicitMatchingGuestAndKeepsOperationIDs() async throws {
         let h = try Harness()
         defer { h.close() }
@@ -1803,7 +1917,11 @@ final class CatalogueConnectionTests: XCTestCase {
                 let lost = await initial.createDraft(selection)
                 XCTAssertEqual(lost, .failed)
             }
-            XCTAssertNotNil(h.connection.guestPhotoClaimData())
+            let legacyData = try XCTUnwrap(h.connection.guestPhotoClaimData())
+            let legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: legacyData) as? [String: Any])
+            XCTAssertNil(legacy["source"])
+            XCTAssertNil(legacy["draft"])
+            XCTAssertEqual(legacy["taxonId"] as? String, selection.taxonId.uuidString)
             h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
             let reply = expires ? try json(["error": ["code": "DRAFT_EXPIRED", "message": "Expired", "retryable": false]])
                 : try json(["draft_id": UUID().uuidString, "expires_at": "2026-11-19T08:30:00Z"])
@@ -1818,6 +1936,12 @@ final class CatalogueConnectionTests: XCTestCase {
             let posts = h.fixture.captured.filter { $0.url?.path == draftPath }
             XCTAssertEqual(posts.count, 2)
             XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+            let identificationBody = try JSONDecoder().decode(
+                [String: String].self, from: XCTUnwrap(posts.last?.httpBody)
+            )
+            XCTAssertEqual(Set(identificationBody.keys), ["operation_id", "identification_job_id", "taxon_id"])
+            XCTAssertEqual(identificationBody["identification_job_id"], selection.jobId.uuidString.lowercased())
+            XCTAssertEqual(identificationBody["taxon_id"], selection.taxonId.uuidString.lowercased())
             XCTAssertTrue(posts.allSatisfy {
                 $0.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-a"
                     && $0.value(forHTTPHeaderField: "X-Installation-Credential") == credential

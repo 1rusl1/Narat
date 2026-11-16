@@ -5978,6 +5978,54 @@ extension CollectionWireTests {
         }
     }
 
+    func testGuestDiagnosisDraftShapeAndInvalidSessionsFailBeforeHTTP() async throws {
+        let guest = try profileSession(claims: ["sub": syncOwner.uuidString, "is_anonymous": true])
+        let transport = CatalogueTransport([
+            .http(201, try syncJSON(["draft_id": UUID().uuidString, "expires_at": syncUntil]))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(guest)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        _ = try await api.createDiagnosisPhotoDraft(
+            operationId: operationId, jobId: serverPlantId, credential: "fixture-installation", context: lease
+        )
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        let body = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(request.httpBody))
+        XCTAssertEqual(body, ["operation_id": operationId.uuidString.lowercased(),
+                              "diagnosis_job_id": serverPlantId.uuidString.lowercased()])
+        XCTAssertEqual(request.url?.lastPathComponent, "drafts")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(guest.accessToken)")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Installation-Credential"), "fixture-installation")
+        let invalidSessions = [
+            syncSession,
+            try profileSession(),
+            try profileSession(claims: ["sub": otherSyncOwner.uuidString, "is_anonymous": true]),
+            try profileSession(claims: ["sub": syncOwner.uuidString]),
+            try profileSession(claims: ["sub": syncOwner.uuidString, "is_anonymous": "true"])
+        ]
+        for invalid in invalidSessions {
+            await api.bindSyncSession(invalid)
+            let invalidLease = try await api.captureSyncContext(ownerId: invalid.userId)
+            do {
+                _ = try await api.createDiagnosisPhotoDraft(
+                    operationId: operationId, jobId: serverPlantId,
+                    credential: "fixture-installation", context: invalidLease
+                )
+                XCTFail("Invalid guest claims must not create a diagnosis draft")
+            } catch SyncWireValidationError.invalidSession {}
+        }
+        do {
+            _ = try await api.createDiagnosisPhotoDraft(
+                operationId: operationId, jobId: serverPlantId, credential: "fixture-installation", context: lease
+            )
+            XCTFail("A replaced guest lease must not create a draft")
+        } catch SyncWireValidationError.invalidSession {}
+        let after = await transport.capturedRequests()
+        XCTAssertEqual(after.count, 1)
+    }
+
     func testGuestPhotoClaimUsesSameInstallationAndRetriesExactCommit() async throws {
         let credential = "fixture-guest-installation"
         let installation = UUID(), draft = UUID(), proof = UUID(), photo = UUID()

@@ -4,6 +4,26 @@ struct GuestIdentificationActions {
     let busy: Bool
     let failed: Bool
     let save: (PhotoIdentificationSelection) -> Void
+    var saveDiagnosis: ((GuestDiagnosisSelection) -> Void)? = nil
+}
+
+/// A resolved initial diagnosis with the verified upload owned by the active guest.
+struct GuestDiagnosisSelection: Equatable, Sendable {
+    let jobId: UUID
+    let photoId: UUID
+    let ownerId: UUID
+
+    init?(result: PreliminaryAnalysis, photo: (id: UUID, owner: UUID)?,
+          isInitial: Bool, expected: CatalogueSDKSnapshot) {
+        guard isInitial, result.mode == .diagnosis, result.identificationStatus == .resolved,
+              let plant = result.plantId,
+              !plant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              expected.isAnonymous, PlantsAPIClient.isGuestPhotoSession(expected.session),
+              let photo, photo.owner == expected.session.userId else { return nil }
+        jobId = result.jobId
+        photoId = photo.id
+        ownerId = photo.owner
+    }
 }
 
 struct FirstAidResultContext {
@@ -125,6 +145,24 @@ public struct PreliminaryResultView: View {
                        context.connection.snapshot == context.expected {
                         FirstAidRecordControls(context: context, target: target, action: action, summary: summary)
                             .id(action.jobId)
+                    }
+                    if let guestActions, let save = guestActions.saveDiagnosis,
+                       let session = catalogueConnection?.snapshot,
+                       let selection = GuestDiagnosisSelection(
+                           result: result, photo: model.diagnosisPhoto,
+                           isInitial: model.repeatDiagnosisTarget == nil, expected: session
+                       ) {
+                        Button(isPolish ? "Zaloguj się, aby zapisać" : "Sign in to save") { save(selection) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(guestActions.busy)
+                            .accessibilityIdentifier("staging.guest.draft.save")
+                        if guestActions.busy {
+                            ProgressView(isPolish ? "Przygotowywanie rośliny…" : "Preparing your plant…")
+                        }
+                        if guestActions.failed {
+                            Text(isPolish ? "Nie udało się przygotować rośliny. Spróbuj ponownie."
+                                 : "Couldn’t prepare your plant. Try again.")
+                        }
                     }
                     if model.repeatDiagnosisTarget == nil, let connection = catalogueConnection,
                        let session = connection.snapshot, !session.isAnonymous,
