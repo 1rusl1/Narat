@@ -57,6 +57,56 @@ final class PlantsUITests: XCTestCase {
     }
 
     @MainActor
+    func testOrdinaryAccessibilityTextSizeKeepsShortcutsReachable() throws {
+        for language in ["en", "pl"] {
+            let app = XCUIApplication()
+            let locale = ["-AppleLanguages", "(\(language))", "-AppleLocale", language == "pl" ? "pl_PL" : "en_US"]
+            app.launchArguments = locale + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"]
+            app.launch()
+            let title = app.staticTexts["welcome.title"]
+            XCTAssertTrue(title.waitForExistence(timeout: 5))
+            let standardTitleHeight = title.frame.height
+            app.terminate()
+
+            // UIKit's OS preference only; the application has no test-size override.
+            app.launchArguments = locale + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+            app.launch()
+            XCTAssertTrue(title.waitForExistence(timeout: 5))
+            // Fail if the platform ignores the preference: ordinary-size navigation
+            // must never be reported as accessibility-size coverage.
+            XCTAssertGreaterThan(title.frame.height, standardTitleHeight * 1.5)
+            let collection = app.buttons["collection.open"]
+            XCTAssertEqual(collection.label, language == "pl" ? "Moje rośliny" : "My plants")
+            XCTAssertGreaterThanOrEqual(collection.frame.minY, title.frame.maxY)
+            XCTAssertGreaterThanOrEqual(collection.frame.height, 44)
+            XCTAssertFalse(collection.isEnabled)
+            XCTAssertEqual(app.buttons["welcome.check"].label, language == "pl" ? "Sprawdź roślinę" : "Check a plant")
+            XCTAssertEqual(app.buttons["welcome.identify"].label, language == "pl" ? "Rozpoznaj roślinę" : "Identify a plant")
+            XCTAssertFalse(app.buttons["welcome.check"].isEnabled)
+            XCTAssertFalse(app.buttons["welcome.identify"].isEnabled)
+
+            let scroll = app.scrollViews.firstMatch
+            let catalogue = app.buttons["welcome.catalogue"]
+            let initialY = catalogue.frame.minY
+            XCTAssertGreaterThan(catalogue.frame.maxY, scroll.frame.maxY)
+            for _ in 0..<8 {
+                if scroll.frame.contains(catalogue.frame) && catalogue.isHittable { break }
+                scroll.swipeUp()
+            }
+            XCTAssertLessThan(catalogue.frame.minY, initialY)
+            XCTAssertTrue(scroll.frame.contains(catalogue.frame))
+            XCTAssertTrue(catalogue.isHittable)
+            XCTAssertGreaterThanOrEqual(catalogue.frame.height, 44)
+            XCTAssertEqual(catalogue.label, language == "pl" ? "Przeglądaj katalog" : "Browse catalogue")
+            catalogue.tap()
+            XCTAssertTrue(app.staticTexts["catalogue.error"].waitForExistence(timeout: 5))
+            app.buttons["catalogue.back"].tap()
+            XCTAssertTrue(app.buttons["welcome.check"].waitForExistence(timeout: 5))
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testStagingCatalogueSelectionSurvivesRelaunch() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["NARAT_LIVE_STAGING"] == "1")
         let app = XCUIApplication()

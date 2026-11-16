@@ -1742,6 +1742,112 @@ final class CatalogueConnectionTests: XCTestCase {
         )
     }
 
+    func testResumedGuestDiagnosisOrdinaryEmailRequiresCurrentScopeWithoutReplayingDraft() async throws {
+        // 0: unchanged; 1: refresh before opening; 2: refresh after opening;
+        // 3: unrelated owner; 4: guest -> unrelated owner -> same guest (ABA).
+        for scenario in 0..<5 {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            let payload = try json(["sub": owner.uuidString, "is_anonymous": true]).base64EncodedString()
+            let token = "header.\(payload).signature"
+            try auth(h, owner: owner, token: token, anonymous: true, signup: true)
+            _ = try await h.connection.sessionOwner()
+            let originalScope = try await h.connection.accountScope()
+            let original = try XCTUnwrap(originalScope.snapshot)
+            let selection = try XCTUnwrap(GuestDiagnosisSelection(
+                result: guestDiagnosisResult(), photo: (UUID(), owner),
+                isInitial: true, expected: original
+            ))
+            let registration = try json(["installation_id": UUID().uuidString])
+            let registerPath = "/functions/v1/plants-api/installations/register"
+            let draftPath = "/functions/v1/plants-api/drafts"
+            h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+            h.fixture.append(.init(
+                method: "POST", path: draftPath,
+                data: try json(["draft_id": UUID().uuidString, "expires_at": "2026-11-19T08:30:00Z"])
+            ))
+            let initial = GuestPhotoClaim(connection: h.connection, credential: "fixture-stable-installation")
+            try await initial.register(original)
+            let created = await initial.createDraft(selection)
+            XCTAssertEqual(created, .ready)
+            let journal = try XCTUnwrap(h.connection.guestPhotoClaimData())
+            h.identity.result = .failure(CancellationError())
+            let cancelled = try await h.connection.signInAccount(
+                with: .apple, presenting: UIViewController(), scope: originalScope
+            )
+            XCTAssertNil(cancelled)
+            XCTAssertEqual(h.connection.guestPhotoClaimData(), journal)
+
+            // A second connection reopens SQLite and the same defaults suite.
+            // The SDK is retained: this covers app binding, not Keychain/process restoration.
+            let connection = try reopenedConnection(h)
+            let restored = try await connection.sessionSnapshot()
+            let resumed = GuestPhotoClaim(connection: connection, credential: "fixture-stable-installation")
+            h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+            try await resumed.register(restored)
+            XCTAssertTrue(resumed.canResumeDraft(for: restored))
+            let outcome = await resumed.resumeDraft()
+            XCTAssertEqual(outcome, .ready)
+            XCTAssertEqual(connection.guestPhotoClaimData(), journal)
+
+            if scenario == 1 {
+                try auth(h, owner: owner, token: token, anonymous: true, refresh: true)
+                _ = try await h.client.auth.refreshSession()
+                _ = try await connection.sessionSnapshot()
+            }
+            let scope = try await connection.accountScope()
+            XCTAssertEqual(scope.snapshot?.session.userId, owner)
+            XCTAssertEqual(scope.snapshot?.isAnonymous, true)
+            let before = metadata(h)
+            if scenario == 2 {
+                try auth(h, owner: owner, token: token, anonymous: true, refresh: true)
+                _ = try await h.client.auth.refreshSession()
+            } else if scenario >= 3 {
+                try auth(h, owner: other)
+                try await h.signIn()
+                if scenario == 4 {
+                    try auth(h, owner: owner, token: token, anonymous: true)
+                    try await h.signIn()
+                }
+            }
+            let requestCount = h.fixture.captured.count
+            if scenario < 2 {
+                try auth(h, owner: other, token: "fixture-email", grant: "password")
+                let signedIn = try await connection.signInAccount(
+                    email: "fixture@example.invalid", password: "fixture", scope: scope
+                )
+                let permanent = try XCTUnwrap(signedIn)
+                XCTAssertEqual(permanent.session.userId, other)
+                XCTAssertFalse(permanent.isAnonymous)
+                XCTAssertEqual(connection.snapshot, permanent)
+                XCTAssertEqual(h.fixture.captured.count, requestCount + 1)
+                XCTAssertEqual(h.fixture.captured.last?.url?.query, "grant_type=password")
+            } else {
+                do {
+                    _ = try await connection.signInAccount(
+                        email: "fixture@example.invalid", password: "fixture", scope: scope
+                    )
+                    XCTFail("Stale or replaced scope must fail before password HTTP")
+                } catch {
+                    XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged)
+                }
+                XCTAssertEqual(h.fixture.captured.count, requestCount)
+            }
+            XCTAssertFalse(connection.authenticationInFlight)
+            XCTAssertEqual(metadata(h), before)
+            XCTAssertEqual(connection.guestPhotoClaimData(), journal)
+            XCTAssertEqual(h.identity.calls, 1)
+            XCTAssertEqual(h.fixture.captured.filter { $0.url?.path == draftPath }.count, 1)
+            XCTAssertFalse(h.fixture.captured.contains { $0.url?.path.contains("/claims") == true })
+            let guestQueue = try await h.store.pendingOutboxEntries(for: owner)
+            let permanentQueue = try await h.store.pendingOutboxEntries(for: other)
+            XCTAssertTrue(guestQueue.isEmpty)
+            XCTAssertTrue(permanentQueue.isEmpty)
+            assertClosed(h)
+        }
+    }
+
     func testGuestDiagnosisDraftIsExplicitBoundRestartSafeAndSurvivesAccountCancellation() async throws {
         let h = try Harness()
         defer { h.close() }
@@ -1950,6 +2056,109 @@ final class CatalogueConnectionTests: XCTestCase {
         }
     }
 #endif
+
+    func testSavedDiagnosisConditionsRestoreAndRemainIsolated() async throws {
+        // Exercise diagnosis, catalogue and identification through the real connection.
+        for source in 0..<3 {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner)
+            try await h.signIn()
+            let expected = try await h.connection.sessionSnapshot()
+            let flow = UUID(), photo = UUID(), snapshot = UUID(), taxon = UUID()
+            let plant = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+            let selected: CatalogueInput
+            switch source {
+            case 0: selected = CatalogueInput(diagnosisJobId: UUID(), speciesSlug: "fixture-fern")
+            case 1: selected = input
+            default: selected = CatalogueInput(identification: .init(jobId: UUID(), taxonId: taxon))
+            }
+            try plants(h, commandError: json([
+                "plant_id": plant.uuidString, "photo_id": photo.uuidString, "care_revision": 1,
+                "context_state": "current", "next_available_step": "enable_basic_care",
+                "paid_action": NSNull(), "plan_availability": "available",
+                "watermark": "2026-11-03T09:00:01.123456+00:00"
+            ]))
+            let model = try await h.connection.makeModel(
+                input: selected, flowId: flow, operationId: UUID(), expected: expected
+            )
+            _ = try await h.connection.rememberModel(model, expected: expected)
+            await model.save()
+            guard case .saved = model.state else { return XCTFail("Confirmed receipt required") }
+            XCTAssertNil(model.diagnosisConditions)
+
+            func appendCard(pointer: UUID?, snapshotPlant: UUID? = nil) throws {
+                let timestamp = "2026-11-03T09:00:02.123456+00:00"
+                let rows: [[String: Any]] = [
+                    ["entity_type": "condition_snapshots", "id": snapshot.uuidString,
+                     "updated_at": timestamp, "deleted_at": NSNull(),
+                     "data": ["id": snapshot.uuidString, "plant_id": (snapshotPlant ?? plant).uuidString,
+                              "light_code": "bright_indirect", "watering_code": "weekly", "drainage_code": "yes"]],
+                    ["entity_type": "plants", "id": plant.uuidString,
+                     "updated_at": timestamp, "deleted_at": NSNull(),
+                     "data": ["id": plant.uuidString, "plant_id": "fixture-fern", "taxon_id": taxon.uuidString,
+                              "main_photo_id": photo.uuidString, "revision": 1, "care_revision": 1,
+                              "current_condition_snapshot_id": pointer.map { $0.uuidString as Any } ?? NSNull()]]
+                ]
+                h.fixture.append(.init(method: "GET", path: "/functions/v1/plants-api/sync", data: try json([
+                    "until": timestamp, "has_more": false, "last_cursor": NSNull(), "next_since": timestamp,
+                    "entitlement": NSNull(), "changes": rows,
+                    "profile": ["preferred_locale": "pl", "reminder_hour_local": 9,
+                                "report_notifications_enabled": true, "trial_reminder_enabled": false]
+                ]), query: "limit=200"))
+            }
+            func assertConditions(_ target: CatalogueSaveModel) {
+                XCTAssertEqual(target.cardSummary?.id, plant)
+                if source == 0 {
+                    XCTAssertEqual(target.diagnosisConditions?.id, snapshot)
+                    XCTAssertEqual(target.diagnosisConditions?.light, .brightIndirect)
+                    XCTAssertEqual(target.diagnosisConditions?.watering, .weekly)
+                    XCTAssertEqual(target.diagnosisConditions?.drainage, .yes)
+                } else {
+                    XCTAssertNil(target.diagnosisConditions)
+                }
+            }
+            try appendCard(pointer: snapshot)
+            await model.loadCard()
+            assertConditions(model)
+
+            // Reopen SQLite and restore the exact persisted flow with a new connection.
+            let restarted = try reopenedConnection(h)
+            let restoredScope = try await restarted.sessionSnapshot()
+            guard case let .restored(restored) = await restarted.restoreModel(
+                ownerId: owner, flowId: flow, expected: restoredScope
+            ) else { return XCTFail("Exact saved flow must restore") }
+            XCTAssertNil(restored.diagnosisConditions)
+            try appendCard(pointer: snapshot)
+            await restored.loadCard()
+            assertConditions(restored)
+            for pointer in [nil, UUID(), snapshot] as [UUID?] {
+                // Missing pointer, old snapshot, and a snapshot belonging to another plant.
+                try appendCard(pointer: pointer, snapshotPlant: pointer == snapshot ? other : plant)
+                await restored.loadCard()
+                XCTAssertNil(restored.diagnosisConditions)
+                XCTAssertEqual(restored.cardSummary?.id, plant)
+                XCTAssertEqual(restored.wateringHistoryState, .loaded([]))
+            }
+            try appendCard(pointer: snapshot)
+            await restored.loadCard()
+            assertConditions(restored)
+            try auth(h, owner: other, token: "fixture-b")
+            try await h.signIn()
+            let foreign = try await restarted.sessionSnapshot()
+            _ = try await h.connection.sessionSnapshot()
+            XCTAssertNil(model.diagnosisConditions)
+            XCTAssertNil(restored.diagnosisConditions)
+            let wrongOwner = await restarted.restoreModel(ownerId: other, flowId: flow, expected: foreign)
+            if case .absent = wrongOwner {} else { XCTFail("Do not restore another owner's flow") }
+            let writes = h.fixture.captured.filter {
+                $0.httpMethod == "POST" && $0.url?.path.hasSuffix("/commands") == true
+            }
+            XCTAssertEqual(writes.count, 1)
+            assertClosed(h)
+        }
+    }
 
     func testPermanentSDKModelUsesProductionCreateAndDurableReceipt() async throws {
         let h = try Harness()

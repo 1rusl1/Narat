@@ -1312,6 +1312,8 @@ private struct AccountSignInView: View {
 }
 
 private struct PlantHomeView<GuestActions: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let polish: Bool
     let busy: Bool
     let unavailable: Bool
@@ -1327,15 +1329,17 @@ private struct PlantHomeView<GuestActions: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack {
+                headerLayout {
                     Text("Narat")
                         .font(.system(.largeTitle, design: .serif).weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("welcome.title")
-                    Spacer()
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer() }
                     Button(action: collection) {
                         Label(polish ? "Moje rośliny" : "My plants", systemImage: "leaf")
                             .font(.subheadline.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+                            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 44 : nil)
                     }
                     .buttonStyle(.bordered)
                     .accessibilityIdentifier("collection.open").disabled(unavailable)
@@ -1348,11 +1352,15 @@ private struct PlantHomeView<GuestActions: View>: View {
                     Text(polish ? "Jak się ma Twoja roślina?" : "How’s your plant doing?")
                         .font(.system(.largeTitle, design: .serif).weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
+                        .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                     Text(polish ? "Dodaj zdjęcie, aby sprawdzić, czego może potrzebować Twoja roślina." : "Use a photo to see what your plant might need.")
                         .font(.body)
+                        .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                     Button(action: check) {
                         Label(polish ? "Sprawdź roślinę" : "Check a plant", systemImage: "camera")
                             .font(.headline)
+                            .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
+                            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 44 : nil)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
                     }
@@ -1398,6 +1406,12 @@ private struct PlantHomeView<GuestActions: View>: View {
         .background(Color(uiColor: .systemGroupedBackground))
     }
 
+    private var headerLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout())
+    }
+
     private func destination(_ title: String, systemImage: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
@@ -1405,6 +1419,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                     .frame(width: 24)
                     .accessibilityHidden(true)
                 Text(title).font(.body.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
