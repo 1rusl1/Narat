@@ -195,6 +195,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     var identification: CatalogueInput.Identification? = nil
     var diagnosisJobId: UUID? = nil
     var expectedPhotoId: UUID? = nil
+    var openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil
     @Binding var selectionLocked: Bool
     @ViewBuilder let speciesDetails: () -> SpeciesDetails
 
@@ -271,7 +272,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         }
 #if DEBUG
         .modifier(ResultSavePresentationFixtureModifier(
-            connection: connection, polish: polish, enabled: analysisSaveIdentity == nil
+            connection: connection, polish: polish, enabled: analysisSaveIdentity == nil,
+            openCollection: openCollection
         ))
 #endif
         .onAppear {
@@ -466,6 +468,13 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                         .task(id: summary.id) { await model.loadCareRecommendation() }
                     wateringHistory(model)
                 }
+                if let openCollection, let scope, canOpenCollection(model, scope: scope) {
+                    Button(polish ? "Moje rośliny" : "My plants") {
+                        guard canOpenCollection(model, scope: scope) else { return }
+                        openCollection(scope)
+                    }
+                    .accessibilityIdentifier("catalogue.saved.collection")
+                }
                 if selected { speciesDetails() }
             }
             .accessibilityElement(children: .contain)
@@ -485,6 +494,17 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .accessibilityIdentifier("catalogue.saved.photo.error")
             }
         }
+    }
+
+    private func canOpenCollection(_ model: CatalogueSaveModel, scope: CatalogueSDKSnapshot) -> Bool {
+        guard connection.snapshot == scope, !scope.isAnonymous,
+              case let .saved(confirmation) = model.state,
+              confirmation.ownerId == scope.session.userId,
+              let summary = model.cardSummary,
+              summary.id == confirmation.receipt.plantId,
+              summary.mainPhotoId == confirmation.receipt.photoId,
+              expectedPhotoId == nil || expectedPhotoId == summary.mainPhotoId else { return false }
+        return true
     }
 
     @ViewBuilder

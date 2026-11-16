@@ -2771,8 +2771,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t039-unresolved-photo-next-step: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 3, reviewer 1, qa 1. Модели — 249.05 с, проверки — 322.01 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t039-unresolved-photo-next-step](validation/automation/tasks/t039-unresolved-photo-next-step.md).
+t170-open-collection-from-saved-card: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 340.58 с, проверки — 392.77 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-open-collection-from-saved-card](validation/automation/tasks/t170-open-collection-from-saved-card.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

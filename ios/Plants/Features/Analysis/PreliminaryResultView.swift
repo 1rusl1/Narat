@@ -40,6 +40,7 @@ public struct PreliminaryResultView: View {
     @Bindable var languageStore: LanguageStore
     private var catalogueConnection: CatalogueConnection? = nil
     private var guestActions: GuestIdentificationActions? = nil
+    private var openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil
     private var returnToPlant: (() -> Void)? = nil
     private var firstAidContext: FirstAidResultContext? = nil
     @State private var saveLocked = false
@@ -51,13 +52,15 @@ public struct PreliminaryResultView: View {
 
     init(model: AnalysisFlowModel, languageStore: LanguageStore, catalogueConnection: CatalogueConnection?,
          guestActions: GuestIdentificationActions? = nil, returnToPlant: (() -> Void)? = nil,
-         firstAidContext: FirstAidResultContext? = nil) {
+         firstAidContext: FirstAidResultContext? = nil,
+         openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil) {
         self.model = model
         self.languageStore = languageStore
         self.catalogueConnection = catalogueConnection
         self.guestActions = guestActions
         self.returnToPlant = returnToPlant
         self.firstAidContext = firstAidContext
+        self.openCollection = openCollection
     }
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
@@ -83,7 +86,8 @@ public struct PreliminaryResultView: View {
                                 showsSpeciesHeading: false,
                                 analysisSaveIdentity: confirmed.jobId,
                                 identification: .init(jobId: confirmed.jobId, taxonId: confirmed.taxonId),
-                                expectedPhotoId: confirmed.photoAssetId, selectionLocked: $saveLocked
+                                expectedPhotoId: confirmed.photoAssetId, openCollection: openCollection,
+                                selectionLocked: $saveLocked
                             ) { EmptyView() }
                             .id(confirmed.jobId)
                         } else if let guestActions, let session = catalogueConnection?.snapshot,
@@ -192,7 +196,8 @@ public struct PreliminaryResultView: View {
                             displayName: label, scientificName: "", polish: isPolish,
                             showsSpeciesHeading: false,
                             analysisSaveIdentity: result.jobId, diagnosisJobId: result.jobId,
-                            expectedPhotoId: photo.id, selectionLocked: $saveLocked
+                            expectedPhotoId: photo.id, openCollection: openCollection,
+                            selectionLocked: $saveLocked
                         ) { EmptyView() }
                         .id(result.jobId)
                     }
@@ -226,6 +231,7 @@ struct ResultSavePresentationFixtureModifier: ViewModifier {
     let connection: CatalogueConnection
     let polish: Bool
     let enabled: Bool
+    var openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil
     private var mode: AnalysisMode? {
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("--catalogue-fixture"),
@@ -238,7 +244,9 @@ struct ResultSavePresentationFixtureModifier: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled, let mode {
-            ResultSavePresentationFixture(connection: connection, polish: polish, mode: mode)
+            ResultSavePresentationFixture(
+                connection: connection, polish: polish, mode: mode, openCollection: openCollection
+            )
         } else {
             content
         }
@@ -249,12 +257,16 @@ private struct ResultSavePresentationFixture: View {
     let connection: CatalogueConnection
     let polish: Bool
     let mode: AnalysisMode
+    var openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil
     @State private var model = AnalysisFlowModel()
     @State private var languageStore = LanguageStore()
 
     var body: some View {
         NavigationStack {
-            PreliminaryResultView(model: model, languageStore: languageStore, catalogueConnection: connection)
+            PreliminaryResultView(
+                model: model, languageStore: languageStore, catalogueConnection: connection,
+                openCollection: openCollection
+            )
         }
         .task {
             guard let snapshot = connection.snapshot, !snapshot.isAnonymous else { return }
