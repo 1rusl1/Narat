@@ -116,6 +116,52 @@ struct InitialDiagnosisExplanation {
     let result: PreliminaryAnalysis
     let polish: Bool
 
+    // Exact ProtocolResolver stock copy. Preserve arbitrary server warnings verbatim.
+    private static let healthyStock = [
+        "No problem detected. No published basic-care action is provided in this result.",
+        "Nie wykryto problemu. Brak opublikowanego działania podstawowej pielęgnacji w tym wyniku."
+    ]
+    private static let insufficientStock = [
+        "Insufficient data to select an applicable action.",
+        "Za mało danych do wyboru odpowiedniego działania."
+    ]
+    private static let ambiguousStock = [
+        "The result is ambiguous; no treatment has been selected.",
+        "Niejednoznaczny wynik; nie wybrano leczenia."
+    ]
+    private static let unavailableStock = [
+        "No published, applicable first aid or check interval is available.",
+        "Brak opublikowanej, mającej zastosowanie pierwszej pomocy i terminu kontroli."
+    ]
+
+    private var uncertainStock: [String]? {
+        guard result.mode == .diagnosis, result.diagnosisStatus == .unknown else { return nil }
+        let insufficient = result.limitations.contains { Self.insufficientStock.contains($0) }
+        let ambiguous = result.limitations.contains { Self.ambiguousStock.contains($0) }
+        // Keep both reasons when the server supplies distinct limitations.
+        guard insufficient != ambiguous else { return nil }
+        return insufficient ? Self.insufficientStock : Self.ambiguousStock
+    }
+
+    var uncertaintyStatus: String {
+        if let stock = uncertainStock { return stock[polish ? 1 : 0] }
+        return polish
+            ? "Nie ustalono jednoznacznej diagnozy."
+            : "No conclusive diagnosis is available."
+    }
+
+    var limitations: [String] {
+        guard result.mode == .diagnosis else { return result.limitations }
+        return result.limitations.filter { text in
+            if result.diagnosisStatus == .healthy, Self.healthyStock.contains(text) {
+                return false
+            }
+            if let stock = uncertainStock, stock.contains(text) { return false }
+            if firstAction == nil, Self.unavailableStock.contains(text) { return false }
+            return true
+        }
+    }
+
     var firstAction: String? {
         guard result.mode == .diagnosis,
               result.identificationStatus == .resolved,
@@ -142,6 +188,7 @@ struct InitialDiagnosisExplanation {
             case "standing_water_in_saucer":
                 return polish ? "Na podstawce widać stojącą wodę." : "Standing water is visible in the saucer."
             case "no_pathological_markers_detected":
+                guard result.diagnosisStatus != .healthy else { return nil }
                 return polish
                     ? "Na tym zdjęciu nie wykryto widocznych oznak problemu."
                     : "No visible signs of a problem were detected in this photo."

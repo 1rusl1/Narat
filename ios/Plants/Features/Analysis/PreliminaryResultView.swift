@@ -100,6 +100,7 @@ public struct PreliminaryResultView: View {
                     }
                     exitButtons
                 } else if let result = model.preliminaryResult {
+                    let explanation = InitialDiagnosisExplanation(result: result, polish: isPolish)
                     speciesHeading
                     if result.mode == .diagnosis {
                         if let condition = model.conditionLabel {
@@ -109,14 +110,15 @@ public struct PreliminaryResultView: View {
                             Text(isPolish ? "Nie wykryto problemu." : "No problem detected.")
                                 .accessibilityIdentifier("analysis.result.healthy")
                         } else {
-                            Text(isPolish
-                                 ? "Nie ustalono jednoznacznej diagnozy."
-                                 : "No conclusive diagnosis is available.")
+                            Text(model.repeatDiagnosisTarget == nil
+                                 ? explanation.uncertaintyStatus
+                                 : (isPolish
+                                    ? "Nie ustalono jednoznacznej diagnozy."
+                                    : "No conclusive diagnosis is available."))
                                 .accessibilityIdentifier("analysis.result.uncertainty")
                         }
                     }
                     if model.repeatDiagnosisTarget == nil, result.mode == .diagnosis {
-                        let explanation = InitialDiagnosisExplanation(result: result, polish: isPolish)
                         if !explanation.evidence.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(isPolish ? "Co widać na zdjęciu" : "What the photo shows")
@@ -136,7 +138,9 @@ public struct PreliminaryResultView: View {
                             .accessibilityIdentifier("analysis.result.firstAction")
                         }
                     }
-                    ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
+                    ForEach(Array((model.repeatDiagnosisTarget == nil
+                                   ? explanation.limitations
+                                   : result.limitations).enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
                     }
                     if let context = firstAidContext, let action = model.recordableFirstAid,

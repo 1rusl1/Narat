@@ -14,13 +14,14 @@ final class FirstHelpUnitTests: XCTestCase {
         condition: String? = "overwatering",
         summary: String? = "  Check the potting mix. \n",
         evidence: [String] = [],
+        limitations: [String] = [],
         polish: Bool = false
     ) -> InitialDiagnosisExplanation {
         InitialDiagnosisExplanation(result: PreliminaryAnalysis(
             id: UUID(), jobId: UUID(), kbReleaseId: UUID(), mode: mode,
             identificationStatus: identification, plantId: "monstera_deliciosa", genusId: nil,
             diagnosisStatus: status, candidates: [], selectedConditionId: condition,
-            visualMarkers: ["standing_water_in_saucer"], evidenceBasis: evidence, limitations: [],
+            visualMarkers: ["standing_water_in_saucer"], evidenceBasis: evidence, limitations: limitations,
             firstActionSummary: summary, controlIntervalDays: nil, contextState: context,
             planAvailability: availability, analysisReceipt: ""
         ), polish: polish)
@@ -49,11 +50,61 @@ final class FirstHelpUnitTests: XCTestCase {
             XCTAssertNil(explanationFixture(status: status).firstAction)
         }
         let codes = ["no_pathological_markers_detected"]
-        XCTAssertEqual(explanationFixture(status: .healthy, evidence: codes).evidence,
-                       ["No visible signs of a problem were detected in this photo."])
-        XCTAssertEqual(explanationFixture(status: .healthy, evidence: codes, polish: true).evidence,
-                       ["Na tym zdjęciu nie wykryto widocznych oznak problemu."])
+        XCTAssertTrue(explanationFixture(status: .healthy, evidence: codes).evidence.isEmpty)
+        XCTAssertTrue(explanationFixture(status: .healthy, evidence: codes, polish: true).evidence.isEmpty)
         XCTAssertTrue(explanationFixture(status: .unknown).evidence.isEmpty)
+    }
+
+    func testInitialStockCopyPreservesWarningsAndAction() {
+        let stocks = [
+            [
+                "No problem detected. No published basic-care action is provided in this result.",
+                "Insufficient data to select an applicable action.",
+                "The result is ambiguous; no treatment has been selected.",
+                "No published, applicable first aid or check interval is available."
+            ],
+            [
+                "Nie wykryto problemu. Brak opublikowanego działania podstawowej pielęgnacji w tym wyniku.",
+                "Za mało danych do wyboru odpowiedniego działania.",
+                "Niejednoznaczny wynik; nie wybrano leczenia.",
+                "Brak opublikowanej, mającej zastosowanie pierwszej pomocy i terminu kontroli."
+            ]
+        ]
+        for (index, stock) in stocks.enumerated() {
+            let polish = index == 1
+            let warning = polish ? "Korzenie nie są widoczne." : "Roots are not visible."
+            let context = polish ? "Warunki są nieaktualne." : "Care conditions are stale."
+            let warnings = [warning, context, stock[0] + " " + warning]
+            let healthy = explanationFixture(
+                status: .healthy, evidence: ["no_pathological_markers_detected", "yellowing_lower_leaves"],
+                limitations: [stock[0]] + warnings, polish: polish
+            )
+            XCTAssertEqual(healthy.limitations, warnings)
+            XCTAssertEqual(healthy.evidence, [polish
+                ? "Dolne liście wydają się żółte." : "Lower leaves appear yellow."])
+            for reason in [stock[1], stock[2]] {
+                let uncertain = explanationFixture(
+                    status: .unknown, evidence: ["standing_water_in_saucer"],
+                    limitations: [reason, stock[3]] + warnings, polish: polish
+                )
+                XCTAssertEqual(uncertain.uncertaintyStatus, reason)
+                XCTAssertEqual(uncertain.limitations, warnings)
+                XCTAssertEqual(uncertain.evidence.count, 1)
+                XCTAssertNil(uncertain.firstAction)
+            }
+            let action = polish ? "Sprawdź podłoże." : "Check the potting mix."
+            let problem = explanationFixture(
+                summary: action, limitations: stock + warnings, polish: polish
+            )
+            XCTAssertEqual(problem.firstAction, action)
+            XCTAssertEqual(problem.limitations, stock + warnings)
+            XCTAssertEqual(explanationFixture(
+                status: .unknown, limitations: [stock[1], stock[2]], polish: polish
+            ).limitations, [stock[1], stock[2]])
+            XCTAssertEqual(explanationFixture(
+                mode: .identification, limitations: stock, polish: polish
+            ).limitations, stock)
+        }
     }
 
     func testCanonicalEvidenceIsLocalizedOrderedAndDeduplicated() {
