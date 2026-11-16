@@ -2742,8 +2742,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t039-last-watered-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 161.61 с, проверки — 73.49 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t039-last-watered-acceptance](validation/automation/tasks/t039-last-watered-acceptance.md).
+t039-explicit-unknown-drainage-replay: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 265.79 с, проверки — 64.53 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t039-explicit-unknown-drainage-replay](validation/automation/tasks/t039-explicit-unknown-drainage-replay.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

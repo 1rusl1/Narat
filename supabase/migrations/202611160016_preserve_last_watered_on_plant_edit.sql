@@ -1,9 +1,8 @@
 BEGIN;
 
 -- Preserve the complete installed function and its ACL at both migration cutoffs.
--- Do not change the legacy bidirectional drainage/last_watered alias trigger.
--- Explicit drainage='unknown' with an older non-unknown last_watered remains
--- ambiguous for legacy writers: 004 restores drainage from that historical value.
+-- Canonical edits supply drainage and watering context independently.
+-- Legacy callers retain bidirectional aliasing outside this function's scope.
 DO $migration$
 DECLARE
     definition text := pg_get_functiondef(
@@ -29,5 +28,40 @@ BEGIN
     EXECUTE replace(definition,old_insert,new_insert);
 END;
 $migration$;
+
+-- Patch only the verified alias boundary; retain other aliases and the trigger ACL.
+DO $migration$
+DECLARE
+    definition text := pg_get_functiondef(
+        'public.sync_condition_snapshot_columns()'::regprocedure);
+    alias_boundary constant text := $old$    IF NEW.last_watered IS NOT NULL AND NEW.drainage_code = 'unknown' THEN
+        NEW.drainage_code := NEW.last_watered;
+    ELSIF NEW.last_watered IS NULL THEN
+        NEW.last_watered := NEW.drainage_code;
+    END IF;$old$;
+    independent_guard constant text := $new$    IF current_setting('narat.independent_snapshot_watered',true) = 'on' THEN
+        RETURN NEW;
+    END IF;
+    -- Unrelated updates must not reinterpret an existing independent pair.
+    IF TG_OP = 'UPDATE' THEN
+        IF ROW(NEW.drainage_code,NEW.last_watered)
+            IS NOT DISTINCT FROM ROW(OLD.drainage_code,OLD.last_watered) THEN
+            RETURN NEW;
+        END IF;
+    END IF;
+$new$;
+BEGIN
+    IF (length(definition)-length(replace(definition,alias_boundary,'')))
+            / length(alias_boundary) <> 1 THEN
+        RAISE EXCEPTION 'Unexpected condition snapshot alias boundary';
+    END IF;
+    EXECUTE replace(definition,alias_boundary,independent_guard || alias_boundary);
+END;
+$migration$;
+
+-- This adds only one setting; search_path, SECURITY DEFINER and ACL are retained.
+-- PostgreSQL restores the caller's setting on return, including exceptions.
+ALTER FUNCTION public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)
+    SET narat.independent_snapshot_watered = 'on';
 
 COMMIT;
