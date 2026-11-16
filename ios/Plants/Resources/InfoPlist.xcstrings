@@ -1,0 +1,22 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSCameraUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Narat uses the camera to photograph plants for identification or symptom analysis."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Narat używa aparatu do fotografowania roślin, aby rozpoznać gatunek lub ocenić objawy."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

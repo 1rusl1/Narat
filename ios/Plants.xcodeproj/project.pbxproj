@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C906258959DC1E93C2C1FFF9 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C906258959DC1E93C2C1FFF8 /* InfoPlist.xcstrings */; };
 		02869759E3A3F5AF56567480 /* TrialReminderSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962B7F7A53100DB1D52A0DAE /* TrialReminderSchedulerTests.swift */; };
 		06EE7B0AED33A731CB3B27F4 /* NativeIdentityProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB624C883B6C42E0806796E7 /* NativeIdentityProvider.swift */; };
 		0B343DAAFBD7664EE2C55B91 /* CollectionRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8097EE5109CAE9D4A02ED456 /* CollectionRepositoryTests.swift */; };
@@ -69,6 +70,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C906258959DC1E93C2C1FFF8 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		04236BC9DAE108A2BDCAC0D2 /* LanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageStore.swift; sourceTree = "<group>"; };
 		04C125102622741F401289ED /* 48854fc7b2b6d711a508c396.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; name = 48854fc7b2b6d711a508c396.jpg; path = "../../catalogue/releases/skeleton-300-v1/media/48854fc7b2b6d711a508c396.jpg"; sourceTree = "<group>"; };
 		08ECA224EA9228AD6B806F78 /* PreliminaryResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreliminaryResultView.swift; sourceTree = "<group>"; };
@@ -259,6 +261,7 @@
 			children = (
 				46ADF7131111530E8907D142 /* Assets.xcassets */,
 				53200DCB7253F127C0C57997 /* Localizable.xcstrings */,
+				C906258959DC1E93C2C1FFF8 /* InfoPlist.xcstrings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -582,6 +585,7 @@
 			files = (
 				83F6BF10538B5C47F47411E6 /* Assets.xcassets in Resources */,
 				C906258959DC1E93C2C1FFF7 /* Localizable.xcstrings in Resources */,
+				C906258959DC1E93C2C1FFF9 /* InfoPlist.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
