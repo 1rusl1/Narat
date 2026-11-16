@@ -165,7 +165,21 @@ BEGIN
     IF v_replay AND (v_receipt.command_name <> 'draft.create' OR v_receipt.payload_hash <> v_hash) THEN
         RAISE EXCEPTION 'IDEMPOTENCY_CONFLICT' USING ERRCODE='23505';
     END IF;
-    -- Match worker admission's profile -> installation -> photo -> job order.
+    -- Replay must lock the existing draft before its photo, as cleanup does.
+    -- The no-draft path retains worker admission's photo -> job order.
+    IF v_replay THEN
+        SELECT * INTO v_draft FROM public.guest_drafts
+        WHERE id=(v_receipt.response_payload->>'draft_id')::uuid
+          AND guest_owner_id=p_owner_id AND installation_id=v_installation
+          AND analysis_job_id=p_job_id
+        FOR UPDATE;
+        -- Check the row returned after any lock wait with a fresh clock.
+        IF NOT FOUND OR v_draft.expires_at<=clock_timestamp()
+          OR v_draft.deleted_at IS NOT NULL OR v_draft.claimed_at IS NOT NULL
+          OR v_draft.storage_cleaned_at IS NOT NULL THEN
+            RAISE EXCEPTION 'DRAFT_EXPIRED' USING ERRCODE='P0002';
+        END IF;
+    END IF;
     SELECT a.* INTO v_photo FROM public.photo_assets a
     JOIN public.analysis_jobs j ON j.photo_ids=ARRAY[a.id]
     WHERE j.id=p_job_id AND j.owner_id=p_owner_id AND j.quota_installation_id=v_installation
@@ -179,6 +193,7 @@ BEGIN
     v_now := clock_timestamp();
     IF NOT FOUND OR v_expires<=v_now THEN RAISE EXCEPTION 'DRAFT_EXPIRED' USING ERRCODE='P0002'; END IF;
     IF v_replay THEN
+        -- Already locked: revalidate exact scope and TTL after all later waits.
         SELECT * INTO v_draft FROM public.guest_drafts
         WHERE id=(v_receipt.response_payload->>'draft_id')::uuid
           AND guest_owner_id=p_owner_id AND installation_id=v_installation
@@ -187,8 +202,7 @@ BEGIN
           AND source_storage_key=v_photo.original_key
           AND id=v_photo.draft_id AND id=v_job.draft_id
           AND expires_at=v_expires AND expires_at>v_now
-          AND deleted_at IS NULL AND claimed_at IS NULL AND storage_cleaned_at IS NULL
-        FOR UPDATE;
+          AND deleted_at IS NULL AND claimed_at IS NULL AND storage_cleaned_at IS NULL;
         IF NOT FOUND THEN RAISE EXCEPTION 'DRAFT_EXPIRED' USING ERRCODE='P0002'; END IF;
         RETURN v_receipt.response_payload;
     END IF;

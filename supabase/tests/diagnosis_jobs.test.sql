@@ -1008,6 +1008,28 @@ $setup$),'P0002:DIAGNOSIS_SOURCE_NOT_FOUND','unconsumed separate installation st
 
 CREATE TEMP TABLE diagnosis_draft_receipt AS SELECT pg_temp.diagnosis_draft() body;
 SELECT is(pg_temp.diagnosis_draft(),(SELECT body FROM diagnosis_draft_receipt),'draft replay returns exact receipt');
+-- Cleanup is a no-op for this exact unexpired draft, including on replay.
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    SELECT public.finish_guest_photo_cleanup((SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt));
+$setup$, $query$
+    SELECT (pg_temp.diagnosis_draft()=(SELECT body FROM diagnosis_draft_receipt)
+        AND d.expires_at>clock_timestamp() AND d.deleted_at IS NULL
+        AND d.claimed_at IS NULL AND d.storage_cleaned_at IS NULL)::text
+    FROM public.guest_drafts d
+    WHERE d.id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt)
+$query$),'true','unexpired cleanup preserves exact replay receipt and live draft');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_drafts SET storage_cleaned_at=clock_timestamp()
+    WHERE id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt);
+$setup$),'P0002:DRAFT_EXPIRED','cleanup marker rejects replay even with unexpired source and projection');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_drafts SET expires_at=clock_timestamp()
+    WHERE id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt);
+$setup$),'P0002:DRAFT_EXPIRED','expired draft rejects replay even with unexpired source');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_drafts SET source_storage_key=source_storage_key || '/stale'
+    WHERE id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt);
+$setup$),'P0002:DRAFT_EXPIRED','locked draft still requires exact canonical source scope');
 SELECT is((SELECT body - ARRAY['draft_id','expires_at'] FROM diagnosis_draft_receipt),'{}'::jsonb,
     'draft receipt retains existing shape');
 SELECT ok((SELECT d.intent='problem' AND d.add_method='scan'
