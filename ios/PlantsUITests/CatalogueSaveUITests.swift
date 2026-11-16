@@ -122,11 +122,44 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.descendants(matching: .any)["catalogue.saved.firstAid.source"].firstMatch.exists)
     }
 
+    @MainActor func testCollectionShowsPlantsBeforeAccountSettingsEnglish() {
+        verifyCollectionSettings(.en)
+    }
+
+    @MainActor func testCollectionShowsPlantsBeforeAccountSettingsPolish() {
+        verifyCollectionSettings(.pl)
+    }
+
+    @MainActor
+    private func verifyCollectionSettings(_ language: Language) {
+        let run = Run("plantDeletion", language)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", language.text("My plants", "Moje rośliny"))
+        let plant = run.app.buttons["Fixture 1"]
+        enabled(plant)
+        XCTAssertFalse(run.app.pickers["profile.hour.picker"].exists)
+        XCTAssertFalse(run.app.staticTexts["profile.hour.synced"].exists)
+        tap(run, "collection.settings.open", language.text("Account settings", "Ustawienia konta"))
+        require(run.app.staticTexts["profile.hour.synced"])
+        enabled(run.app.pickerWheels.firstMatch)
+        tap(run, "collection.settings.close", language.text("Close", "Zamknij"))
+        enabled(plant)
+        XCTAssertFalse(run.app.pickers["profile.hour.picker"].exists)
+        plant.tap()
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertFalse(run.app.buttons["collection.settings.open"].exists)
+        tap(run, "collection.back", language.text("Back", "Wstecz"))
+        enabled(plant)
+        enabled(run.app.buttons["collection.settings.open"])
+    }
+
     @MainActor func testProfileReminderHourSurvivesRestart() {
         let run = Run("profileReminderHour", .en)
         defer { run.app.terminate() }
         launch(run)
         tap(run, "collection.open", "My plants")
+        tap(run, "collection.settings.open", "Account settings")
         let synced = run.app.staticTexts["profile.hour.synced"]
         require(synced)
         XCTAssertEqual(synced.label, "09:00")
@@ -143,6 +176,7 @@ final class CatalogueSaveUITests: XCTestCase {
 
         restart(run)
         tap(run, "collection.open", "My plants")
+        tap(run, "collection.settings.open", "Account settings")
         require(pending)
         XCTAssertEqual(pending.label, "Pending: 23:00")
         XCTAssertFalse(synced.exists)
@@ -155,14 +189,17 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.buttons["profile.hour.retry"].exists)
         XCTAssertFalse(run.app.buttons["profile.hour.save"].isEnabled)
 
+        tap(run, "collection.settings.close", "Close")
         tap(run, "collection.back", "Close")
         tap(run, "collection.open", "My plants")
+        tap(run, "collection.settings.open", "Account settings")
         require(synced)
         XCTAssertEqual(synced.label, "23:00")
         XCTAssertFalse(pending.exists)
         // Reopening reads /me, whose fixture rejects duplicate or nonidentical attempts.
         restart(run)
         tap(run, "collection.open", "My plants")
+        tap(run, "collection.settings.open", "Account settings")
         require(synced)
         XCTAssertEqual(synced.label, "23:00")
         XCTAssertFalse(pending.exists)
