@@ -31,6 +31,12 @@ struct CatalogueSDKSnapshot: Sendable, Equatable {
     fileprivate let epoch: UInt64
 }
 
+/// Captured when the account sheet opens, including an absent SDK session.
+struct CatalogueAccountScope: Sendable {
+    let snapshot: CatalogueSDKSnapshot?
+    fileprivate let epoch: UInt64
+}
+
 /// No suspension or Observation mutation in this small callback-side gate.
 private final class CatalogueSDKEpoch: @unchecked Sendable {
     private let lock = NSLock()
@@ -86,7 +92,10 @@ final class CatalogueConnection {
     @ObservationIgnored private var boundEpoch: UInt64?
     @ObservationIgnored private let nativeAuth: NativeAuthService?
     @ObservationIgnored private let resumeDefaults: UserDefaults
-    @ObservationIgnored private var nativeFlow: UUID?
+    private var nativeFlow: UUID?
+    let accountProviders: [NativeAuthProvider]
+
+    var authenticationInFlight: Bool { nativeFlow != nil }
 
     var nativeAuthState: NativeAuthState? { nativeAuth?.state }
 
@@ -137,6 +146,7 @@ final class CatalogueConnection {
         repository = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
         unavailable = nil
         self.resumeDefaults = resumeDefaults
+        accountProviders = configuration.supportsGoogleSignIn ? [.apple, .google] : [.apple]
         if let identityProvider {
             nativeAuth = NativeAuthService(
                 identityProvider: identityProvider, exchange: SupabaseAuthExchange(client: client)
@@ -167,6 +177,7 @@ final class CatalogueConnection {
         repository = nil
         self.unavailable = unavailable
         nativeAuth = nil
+        accountProviders = []
         resumeDefaults = .standard
         sdkEpoch = CatalogueSDKEpoch()
     }
@@ -280,6 +291,76 @@ final class CatalogueConnection {
         let epoch = sdkEpoch.read()
         let current = try await client.auth.session
         let expected = Self.snapshot(current, epoch: epoch)
+        try validate(expected)
+        try await bind(expected)
+        try validate(expected)
+        observedSnapshot = expected
+        try validate(expected)
+        return expected
+    }
+
+    /// Captures existing identity without creating a guest or writing application data.
+    func accountScope() async throws -> CatalogueAccountScope {
+        guard let client else { throw NativeAuthFailure.configurationMissing }
+        _ = await observer?.value
+        let epoch = sdkEpoch.read()
+        let snapshot = client.auth.currentSession.flatMap {
+            $0.isExpired ? nil : Self.snapshot($0, epoch: epoch)
+        }
+        try validateBinding(snapshot, epoch: epoch)
+        return CatalogueAccountScope(snapshot: snapshot, epoch: epoch)
+    }
+
+    func signInAccount(
+        with provider: NativeAuthProvider, presenting: UIViewController,
+        scope: CatalogueAccountScope
+    ) async throws -> CatalogueSDKSnapshot? {
+        guard let nativeAuth else { throw NativeAuthFailure.configurationMissing }
+        return try await signInAccount(scope: scope) {
+            let result = await nativeAuth.signIn(
+                with: provider, presenting: presenting,
+                validateBeforeExchange: { try self.validateBinding(scope.snapshot, epoch: scope.epoch) },
+                prepareForSessionChange: { try self.validateBinding(scope.snapshot, epoch: scope.epoch) }
+            )
+            if let result { return result.session }
+            try self.validateBinding(scope.snapshot, epoch: scope.epoch)
+            if case .cancelled = nativeAuth.state { return nil }
+            if case let .failed(reason) = nativeAuth.state { throw reason }
+            throw NativeAuthFailure.providerFailed
+        }
+    }
+
+    func signInAccount(
+        email: String, password: String, scope: CatalogueAccountScope
+    ) async throws -> CatalogueSDKSnapshot? {
+        guard let client else { throw NativeAuthFailure.configurationMissing }
+        return try await signInAccount(scope: scope) {
+            let session = try await client.auth.signIn(email: email, password: password)
+            guard !session.user.isAnonymous else { throw NativeAuthFailure.invalidCredential }
+            return NativeAuthSession(
+                userId: session.user.id, accessToken: session.accessToken,
+                expiresAt: Date(timeIntervalSince1970: session.expiresAt)
+            )
+        }
+    }
+
+    /// Shares the catalogue-native gate. Only the exchange's one signedIn event is accepted.
+    private func signInAccount(
+        scope: CatalogueAccountScope,
+        exchange: @MainActor () async throws -> NativeAuthSession?
+    ) async throws -> CatalogueSDKSnapshot? {
+        guard nativeFlow == nil else { throw NativeAuthFailure.providerFailed }
+        let intent = UUID()
+        nativeFlow = intent
+        defer { nativeFlow = nil }
+        try validateBinding(scope.snapshot, epoch: scope.epoch)
+        guard let session = try await exchange() else { return nil }
+        try Task.checkCancellation()
+        guard nativeFlow == intent, sdkEpoch.permitsNativeSignIn(after: scope.epoch),
+              let current = client?.auth.currentSession, !current.isExpired,
+              !current.user.isAnonymous else { throw CatalogueSaveUnavailable.sessionChanged }
+        let expected = Self.snapshot(current, epoch: scope.epoch &+ 1)
+        guard expected.session == session else { throw CatalogueSaveUnavailable.sessionChanged }
         try validate(expected)
         try await bind(expected)
         try validate(expected)

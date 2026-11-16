@@ -7,6 +7,10 @@ public struct NativeAuthConfiguration: Sendable {
     public let googleClientId: String?
     public let googleServerClientId: String?
 
+    public var supportsGoogleSignIn: Bool {
+        NativeIdentityProvider.isGoogleConfigured(clientId: googleClientId)
+    }
+
     public init(values: [String: String]) throws {
         func configured(_ key: String) -> String? {
             guard let value = values[key]?.trimmingCharacters(in: .whitespacesAndNewlines),

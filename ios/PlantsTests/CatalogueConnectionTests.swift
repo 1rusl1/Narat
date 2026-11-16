@@ -278,7 +278,8 @@ final class CatalogueConnectionTests: XCTestCase {
 
     private func auth(
         _ h: Harness, owner: UUID, token: String = "fixture-a", anonymous: Bool = false,
-        signup: Bool = false, expired: Bool = false, suspend: Bool = false, refresh: Bool = false
+        signup: Bool = false, expired: Bool = false, suspend: Bool = false, refresh: Bool = false,
+        grant: String = "id_token"
     ) throws {
         h.fixture.append(.init(
             method: "POST", path: signup ? "/auth/v1/signup" : "/auth/v1/token",
@@ -292,7 +293,7 @@ final class CatalogueConnectionTests: XCTestCase {
                     "created_at": "2026-11-01T00:00:00Z", "updated_at": "2026-11-01T00:00:00Z"
                 ]
             ]), suspend: suspend,
-            query: signup ? nil : (refresh ? "grant_type=refresh_token" : "grant_type=id_token")
+            query: signup ? nil : (refresh ? "grant_type=refresh_token" : "grant_type=" + grant)
         ))
     }
 
@@ -1052,6 +1053,213 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
+    func testOrdinaryEmailKeepsVerifiedBindingAndSerializesNativeSignIn() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let scope = try await h.connection.accountScope()
+        try auth(h, owner: other, suspend: true, grant: "password")
+        let signing = Task {
+            try await h.connection.signInAccount(
+                email: "fixture@example.invalid", password: "fixture", scope: scope
+            )
+        }
+        try await waitForSuspension(h.fixture)
+        do {
+            _ = try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+            XCTFail("Native sign-in must wait for email")
+        } catch {
+            XCTAssertEqual(error as? NativeAuthFailure, .providerFailed)
+        }
+        h.fixture.release()
+        let result = try await signing.value
+        XCTAssertEqual(result?.session.userId, other)
+        XCTAssertEqual(result, h.connection.snapshot)
+        XCTAssertEqual(h.identity.calls, 0)
+        XCTAssertFalse(h.connection.authenticationInFlight)
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testOrdinaryGoogleAvailabilityRequiresClientAndRegisteredCallback() throws {
+        let h = try Harness()
+        defer { h.close() }
+        let bundleURL = h.directory.appendingPathComponent("GoogleFixture.bundle")
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        let plist: [String: Any] = [
+            "CFBundleIdentifier": "invalid.fixture.google",
+            "CFBundleURLTypes": [["CFBundleURLSchemes": ["com.googleusercontent.apps.fixture"]]]
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: bundleURL.appendingPathComponent("Info.plist"))
+        let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+        XCTAssertTrue(NativeIdentityProvider.isGoogleConfigured(clientId: "fixture.apps.googleusercontent.com", bundle: bundle))
+        for client in [nil, "", "$(GOOGLE_IOS_CLIENT_ID)", "wrong.apps.googleusercontent.com", "invalid"] {
+            XCTAssertFalse(NativeIdentityProvider.isGoogleConfigured(clientId: client, bundle: bundle))
+        }
+        XCTAssertEqual(h.connection.accountProviders, [.apple])
+        assertClosed(h)
+    }
+
+    func testOrdinaryNativeCancellationPreservesDraftAndOwnerWithoutWrites() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let flow = UUID()
+        let model = try await guestModel(h, flow: flow, operation: UUID())
+        let checkpoint = try await model.checkpointInput()
+        let scope = try await h.connection.accountScope()
+        let journal = Data("fixture-existing-photo-journal".utf8)
+        h.connection.storeGuestPhotoClaimData(journal)
+        h.identity.result = .failure(CancellationError())
+        let result = try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+        XCTAssertNil(result)
+        XCTAssertEqual(h.connection.snapshot, scope.snapshot)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), journal)
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: flow)?.envelope, checkpoint.envelope)
+        XCTAssertEqual(model.input, input)
+        XCTAssertEqual(h.identity.calls, 1)
+        XCTAssertFalse(h.connection.authenticationInFlight)
+        XCTAssertEqual(h.fixture.captured.map(\.url?.path), ["/auth/v1/signup"])
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testOrdinaryNativeSuccessReturnsOneVerifiedPermanentSnapshotWithoutMigration() async throws {
+        for provider in [NativeAuthProvider.apple, .google] {
+            let h = try Harness()
+            defer { h.close() }
+            let flow = UUID(), operation = UUID()
+            let model = try await guestModel(h, flow: flow, operation: operation)
+            let checkpoint = try await model.checkpointInput()
+            let scope = try await h.connection.accountScope()
+            let journal = Data("fixture-existing-photo-journal".utf8)
+            h.connection.storeGuestPhotoClaimData(journal)
+            h.identity.result = .success(.init(
+                provider: provider, idToken: "FIXTURE-ONLY-ID-TOKEN", nonce: "fixture-nonce"
+            ))
+            try auth(h, owner: other, token: "fixture-ordinary")
+            var callbacks = 0
+            if let snapshot = try await h.connection.signInAccount(
+                with: provider, presenting: UIViewController(), scope: scope
+            ) {
+                XCTAssertFalse(snapshot.isAnonymous)
+                XCTAssertEqual(snapshot.session.userId, other)
+                XCTAssertEqual(snapshot, h.connection.snapshot)
+                XCTAssertEqual(snapshot.session.accessToken, h.client.auth.currentSession?.accessToken)
+                callbacks += 1
+            }
+            await h.ready()
+            XCTAssertEqual(callbacks, 1)
+            XCTAssertEqual(h.identity.calls, 1)
+            XCTAssertEqual(h.connection.guestPhotoClaimData(), journal)
+            XCTAssertEqual(try diskInput(h, owner: owner, flow: flow)?.envelope, checkpoint.envelope)
+            XCTAssertNil(try diskInput(h, owner: other, flow: flow))
+            let queue = try await h.store.pendingOutboxEntries(for: other)
+            XCTAssertTrue(queue.isEmpty)
+            assertNoPlants(h)
+            assertClosed(h)
+        }
+    }
+
+    func testOrdinaryNativeSignInWithoutSessionDoesNotCreateAnonymousIdentity() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let scope = try await h.connection.accountScope()
+        XCTAssertNil(scope.snapshot)
+        try auth(h, owner: other)
+        let snapshot = try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+        XCTAssertEqual(snapshot?.session.userId, other)
+        XCTAssertEqual(h.fixture.captured.map(\.url?.path), ["/auth/v1/token"])
+        XCTAssertTrue((h.defaults.persistentDomain(forName: h.defaultsSuite) ?? [:]).isEmpty)
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testOrdinaryAccountRejectsScopeReplacementBeforeAndDuringProviderIncludingABA() async throws {
+        for timing in 0..<3 {
+            let h = try Harness()
+            defer { h.close() }
+            _ = try await guestModel(h, flow: UUID(), operation: UUID())
+            let scope = try await h.connection.accountScope()
+            let replace: () async throws -> Void = {
+                try self.auth(h, owner: self.other)
+                try await h.signIn()
+                if timing == 2 {
+                    try self.auth(h, owner: self.owner, anonymous: true)
+                    try await h.signIn()
+                }
+            }
+            if timing == 0 { try await replace() }
+            else { h.identity.onRequest = replace }
+            do {
+                _ = try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+                XCTFail("Replaced scope must not reach caller")
+            } catch {
+                XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged)
+            }
+            XCTAssertEqual(h.identity.calls, timing == 0 ? 0 : 1)
+            XCTAssertEqual(h.fixture.captured.filter { $0.url?.path == "/auth/v1/token" }.count, timing == 2 ? 2 : 1)
+            assertNoPlants(h)
+            assertClosed(h)
+        }
+    }
+
+    func testOrdinaryAccountRejectsUnrelatedSessionDuringCommittedExchange() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let scope = try await h.connection.accountScope()
+        try auth(h, owner: other, token: "fixture-intended", suspend: true)
+        let signing = Task {
+            try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+        }
+        try await waitForSuspension(h.fixture)
+        try auth(h, owner: UUID(), token: "fixture-unrelated")
+        try await h.signIn()
+        h.fixture.release()
+        do {
+            _ = try await signing.value
+            XCTFail("Extra SDK event must invalidate the result")
+        } catch {
+            XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged)
+        }
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testOrdinaryNativeSerializesEmailAndCatalogueActions() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let model = try await guestModel(h, flow: UUID(), operation: UUID())
+        let scope = try await h.connection.accountScope()
+        var gate: CheckedContinuation<Void, Never>?
+        h.identity.onRequest = { await withCheckedContinuation { gate = $0 } }
+        h.identity.result = .failure(CancellationError())
+        let signing = Task {
+            try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while gate == nil && Date() < deadline { await Task.yield() }
+        guard let release = gate else {
+            signing.cancel()
+            return XCTFail("Provider did not open")
+        }
+        XCTAssertTrue(h.connection.authenticationInFlight)
+        do {
+            _ = try await h.connection.signInAccount(email: "fixture@example.invalid", password: "fixture", scope: scope)
+            XCTFail("Concurrent email sign-in must be rejected")
+        } catch {
+            XCTAssertEqual(error as? NativeAuthFailure, .providerFailed)
+        }
+        let duplicate = await h.connection.signInAndSave(model, with: .apple, presenting: UIViewController())
+        if case .busy = duplicate {} else { XCTFail("Catalogue must share the account gate") }
+        release.resume()
+        let result = try await signing.value
+        XCTAssertNil(result)
+        XCTAssertEqual(h.identity.calls, 1)
+        XCTAssertEqual(h.fixture.captured.map(\.url?.path), ["/auth/v1/signup"])
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
     func testNativeProviderOpensOnlyAfterExactDiskCheckpointAndCancellationRetainsGuest() async throws {
         let h = try Harness()
         defer { h.close() }
@@ -1521,6 +1729,56 @@ final class CatalogueConnectionTests: XCTestCase {
     }
 
 #if DEBUG && targetEnvironment(simulator)
+    func testOrdinaryPhotoClaimRequiresExplicitMatchingGuestAndKeepsOperationIDs() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        _ = try await guestModel(h, flow: UUID(), operation: UUID())
+        let scope = try await h.connection.accountScope()
+        let original = try XCTUnwrap(scope.snapshot)
+        h.fixture.append(.init(
+            method: "POST", path: "/functions/v1/plants-api/installations/register",
+            data: try json(["installation_id": UUID().uuidString])
+        ))
+        h.fixture.append(.init(
+            method: "POST", path: "/functions/v1/plants-api/drafts",
+            data: try json(["draft_id": UUID().uuidString, "expires_at": "2026-11-19T08:30:00Z"])
+        ))
+        let claim = GuestPhotoClaim(connection: h.connection, credential: "fixture-installation")
+        try await claim.register(original)
+        let draft = await claim.createDraft(.init(
+            jobId: UUID(), photoAssetId: UUID(), speciesSlug: "monstera_deliciosa", taxonId: UUID(), ownerId: owner
+        ))
+        XCTAssertEqual(draft, .ready)
+        let before = try XCTUnwrap(h.connection.guestPhotoClaimData())
+        try auth(h, owner: other)
+        let result = try await h.connection.signInAccount(with: .apple, presenting: UIViewController(), scope: scope)
+        let permanent = try XCTUnwrap(result)
+        XCTAssertFalse(claim.pending(for: permanent))
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), before)
+        do {
+            try claim.acceptDestination(permanent, from: permanent)
+            XCTFail("Permanent or foreign source cannot authorize a guest claim")
+        } catch {
+            guard case SyncWireValidationError.invalidSession = error else {
+                return XCTFail("Expected invalid source scope")
+            }
+        }
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), before)
+        try claim.acceptDestination(permanent, from: original)
+        XCTAssertTrue(claim.pending(for: permanent))
+        let after = try XCTUnwrap(h.connection.guestPhotoClaimData())
+        let old = try XCTUnwrap(JSONSerialization.jsonObject(with: before) as? [String: Any])
+        let new = try XCTUnwrap(JSONSerialization.jsonObject(with: after) as? [String: Any])
+        for key in ["draftOperationId", "prepareOperationId", "commitOperationId", "draft"] {
+            XCTAssertEqual(old[key] as? NSObject, new[key] as? NSObject)
+        }
+        XCTAssertEqual(h.fixture.captured.map(\.url?.path), [
+            "/auth/v1/signup", "/functions/v1/plants-api/installations/register",
+            "/functions/v1/plants-api/drafts", "/auth/v1/token"
+        ])
+        assertClosed(h)
+    }
+
     func testGuestDraftResumesLostResponseFromPersistedInputWithoutIdentificationScreen() async throws {
         let credential = "fixture-stable-installation"
         let registerPath = "/functions/v1/plants-api/installations/register"
