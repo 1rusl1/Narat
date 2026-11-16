@@ -2730,8 +2730,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t036-explain-used-guest-analysis: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 328.29 с, проверки — 438.97 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t036-explain-used-guest-analysis](validation/automation/tasks/t036-explain-used-guest-analysis.md).
+t039-polish-camera-photo-choice: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 255.50 с, проверки — 602.11 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t039-polish-camera-photo-choice](validation/automation/tasks/t039-polish-camera-photo-choice.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

@@ -218,6 +218,17 @@ enum PhotoCameraAccess: Equatable {
         @unknown default: self = .unavailable
         }
     }
+
+    func noticeText(polish: Bool) -> String {
+        if self == .denied {
+            return polish
+                ? "Dostęp do aparatu jest wyłączony. Nadal możesz wybrać zdjęcie z galerii."
+                : "Camera access is off. You can still choose a photo."
+        }
+        return polish
+            ? "Aparat jest niedostępny. Nadal możesz wybrać zdjęcie z galerii."
+            : "Camera is unavailable. You can still choose a photo."
+    }
 }
 
 public struct CareQuestionsView: View {
@@ -316,9 +327,7 @@ public struct CareQuestionsView: View {
                 photoChoices
             }
             if let cameraNotice {
-                Text(cameraNotice == .denied
-                     ? "Camera access is off. You can still choose a photo."
-                     : "Camera is unavailable. You can still choose a photo.")
+                Text(cameraNotice.noticeText(polish: isPolish))
                     .accessibilityIdentifier("photo.camera.notice")
             }
 
@@ -343,12 +352,10 @@ public struct CareQuestionsView: View {
 
     private var photoChoices: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !isPolish || model.isReplacingQuestionPhoto {
-                Button(isPolish ? "Zrób zdjęcie" : "Take photo", action: openCamera)
-                    .buttonStyle(.bordered)
-                    .disabled(model.isPreparingPhoto || cameraPermissionTask != nil)
-                    .accessibilityIdentifier("photo.select.camera")
-            }
+            Button(isPolish ? "Zrób zdjęcie" : "Take photo", action: openCamera)
+                .buttonStyle(.bordered)
+                .disabled(model.isPreparingPhoto || cameraPermissionTask != nil)
+                .accessibilityIdentifier("photo.select.camera")
             photoPicker
                 .disabled(cameraPermissionTask != nil)
         }
