@@ -689,6 +689,7 @@ struct CatalogueCollectionView: View {
     @State private var loadedScope: CatalogueSDKSnapshot?
     @State private var cards: [CatalogueCardSummary] = []
     @State private var selected: Selected?
+    @State private var accountSettingsScope: CatalogueSDKSnapshot?
     @State private var repeatModel: AnalysisFlowModel?
     @State private var loading = true
     @State private var failed = false
@@ -759,6 +760,15 @@ struct CatalogueCollectionView: View {
             }
             .navigationTitle(polish ? "Moje rośliny" : "My plants")
             .toolbar {
+                if currentSelection == nil, let scope = loadedScope,
+                   scope == connection.snapshot, !scope.isAnonymous {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(polish ? "Ustawienia konta" : "Account settings") {
+                            accountSettingsScope = scope
+                        }
+                        .accessibilityIdentifier("collection.settings.open")
+                    }
+                }
                 if currentSelection == nil || repeatModel == nil {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(currentSelection == nil ? (polish ? "Zamknij" : "Close") : (polish ? "Wstecz" : "Back")) {
@@ -769,6 +779,28 @@ struct CatalogueCollectionView: View {
                 }
             }
         }
+        .sheet(isPresented: Binding(
+            get: { accountSettingsScope != nil },
+            set: { if !$0 { accountSettingsScope = nil } }
+        )) {
+            NavigationStack {
+                Group {
+                    if let scope = accountSettingsScope,
+                       scope == connection.snapshot, !scope.isAnonymous {
+                        ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
+                            .id(scope.session.userId)
+                    }
+                }
+                .navigationTitle(polish ? "Ustawienia konta" : "Account settings")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(polish ? "Zamknij" : "Close") { accountSettingsScope = nil }
+                            .accessibilityIdentifier("collection.settings.close")
+                    }
+                }
+            }
+        }
+        .onChange(of: connection.snapshot) { _, _ in accountSettingsScope = nil }
         .task(id: read) { await load(read) }
         .onDisappear(perform: endRepeatDiagnosis)
     }
@@ -780,10 +812,6 @@ struct CatalogueCollectionView: View {
 
     private var collectionList: some View {
         VStack {
-            if let scope = loadedScope, scope == connection.snapshot, !scope.isAnonymous {
-                ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
-                    .id(scope.session.userId)
-            }
             if let trialReminder, let trial = trialReminder.trial, trial.ownerId == loadedScope?.session.userId {
                 trialReminderSettings(trialReminder, trial: trial)
             }
