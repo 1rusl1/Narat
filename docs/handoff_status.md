@@ -2770,8 +2770,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-account-data-guest-draft-purge: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 465.11 с, проверки — 90.95 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-account-data-guest-draft-purge](validation/automation/tasks/t083-account-data-guest-draft-purge.md).
+t083-account-empty-draft-purge-locks: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 573.93 с, проверки — 66.45 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-account-empty-draft-purge-locks](validation/automation/tasks/t083-account-empty-draft-purge-locks.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

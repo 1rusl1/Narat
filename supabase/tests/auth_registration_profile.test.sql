@@ -1785,6 +1785,127 @@ CREATE FUNCTION pg_temp.analysis_purge_snapshot() RETURNS jsonb LANGUAGE sql AS 
     SELECT pg_temp.care_plan_snapshot() || pg_temp.media_inventory_snapshot()
 $$;
 
+-- Compare only this backend's granted writer barriers on 017's seven tables.
+-- 014 may legitimately take some of them on upgraded schemas; measure it in
+-- a rolled-back subtransaction instead of asserting that all locks are absent.
+CREATE FUNCTION pg_temp.guest_purge_writer_locks() RETURNS text[] LANGUAGE sql AS $$
+    SELECT coalesce(array_agg(relation::text||':'||mode ORDER BY relation,mode),'{}'::text[])
+    FROM pg_locks
+    WHERE pid=pg_backend_pid() AND locktype='relation' AND granted
+      AND mode IN ('ShareLock','ShareRowExclusiveLock','ExclusiveLock','AccessExclusiveLock')
+      AND relation=ANY(ARRAY['public.guest_drafts'::regclass,'public.draft_claims'::regclass,
+          'public.analysis_jobs'::regclass,'public.condition_snapshots'::regclass,
+          'public.photo_assets'::regclass,'public.analysis_results'::regclass,'public.plants'::regclass])
+$$;
+
+CREATE FUNCTION pg_temp.empty_guest_draft_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0170000-0000-4000-8000-000000000011';
+    v_neighbor uuid := 'a0170000-0000-4000-8000-000000000012';
+    v_operation uuid := gen_random_uuid();
+    v_plant uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_locks text[];
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_guest_drafts_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('017 empty draft purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_locks
+        WHERE pid=pg_backend_pid() AND relation='public.guest_drafts'::regclass
+          AND mode='ShareRowExclusiveLock' AND granted),
+        '017 lock regression starts without a preexisting guest draft writer barrier');
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'Empty draft owner','identification') RETURNING id INTO v_plant;
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_neighbor,'Neighbor retained','identification');
+    RETURN NEXT throws_ok(format(
+        'SELECT public.create_guest_photo_draft(%L::uuid,%L::uuid,%L::uuid,%L::uuid,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),'fixture'),
+        '42501','ACTIVE_GUEST_REQUIRED','017 identification producer requires a guest');
+    RETURN NEXT throws_ok(format(
+        'SELECT public.create_bound_guest_diagnosis_draft(%L::uuid,%L::uuid,%L::uuid,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid(),'fixture'),
+        '42501','ACTIVE_GUEST_REQUIRED','017 diagnosis producer requires a guest');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+        '017 active permanent owner with no drafts rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 active empty graph unchanged');
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_neighbor,v_operation),false,
+        '017 empty graph wrong owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,gen_random_uuid()),false,
+        '017 empty graph wrong operation rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 invalid empty scope unchanged');
+    BEGIN
+        UPDATE public.operation_receipts SET payload_hash='forged'
+            WHERE owner_id=v_owner AND operation_id=v_operation;
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 empty graph forged proof rejected');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 forged proof hold is atomic');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO public.condition_snapshots(owner_id,plant_id) VALUES(v_neighbor,v_plant);
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 empty draft path retains 014 cross-owner child hold');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 empty predecessor hold is atomic');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    BEGIN
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+            '017 empty path can establish fresh proof');
+        RETURN NEXT ok((SELECT storage_verified_at IS NOT NULL FROM public.account_deletion_requests
+            WHERE owner_id=v_owner),'017 empty path persists verified Storage proof');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    BEGIN
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/empty-hold');
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 empty path rechecks saved proof against live Storage');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 stale proof hold is atomic');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    -- Normalize the proof timestamp before comparing exact predecessor effects.
+    BEGIN
+        RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),true,
+            '017 empty fixture has a successful 014 baseline');
+        v_expected := pg_temp.analysis_purge_snapshot();
+        v_locks := pg_temp.guest_purge_writer_locks();
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+        '017 verified no-draft owner delegates cleanup');
+    RETURN NEXT is(pg_temp.guest_purge_writer_locks(),v_locks,
+        '017 empty path adds no writer barriers beyond 014');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '017 empty path exactly matches 014 cleanup and retained proof/neighbor/audit');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM public.plants WHERE id=v_plant),
+        '017 empty path actually removes the owner plant');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+        '017 empty path exact replay accepted');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 empty replay changes nothing');
+    RETURN NEXT is(pg_temp.guest_purge_writer_locks(),v_locks,'017 empty replay adds no writer barriers');
+    RAISE SQLSTATE 'Z1718';
+EXCEPTION WHEN SQLSTATE 'Z1718' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.empty_guest_draft_purge_tests();
+
 CREATE FUNCTION pg_temp.analysis_purge_tests(v_owner uuid,v_neighbor uuid)
 RETURNS SETOF text LANGUAGE plpgsql AS $$
 DECLARE
@@ -2928,6 +3049,7 @@ DECLARE
     v_before jsonb;
     v_expected jsonb;
     v_case integer;
+    v_constraint text;
 BEGIN
     IF to_regprocedure('public.purge_account_deletion_guest_drafts_internal(uuid,uuid)') IS NULL THEN
         RETURN QUERY SELECT skip('017 guest purge is outside selected migration version',1);
@@ -2984,6 +3106,32 @@ BEGIN
         RAISE SQLSTATE 'Z1717';
     EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
     END;
+    BEGIN
+        -- Exercise the semantic hold on upgrades where this FK is absent.
+        FOR v_constraint IN SELECT conname FROM pg_constraint
+            WHERE contype='f' AND conrelid='public.condition_snapshots'::regclass
+              AND confrelid='public.guest_drafts'::regclass
+        LOOP
+            EXECUTE format('ALTER TABLE public.condition_snapshots DROP CONSTRAINT %I',v_constraint);
+        END LOOP;
+        INSERT INTO public.condition_snapshots(owner_id,draft_id) VALUES(v_neighbor,v_draft);
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 nonempty legacy graph retains cross-owner semantic child without FK');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 semantic child hold is atomic');
+        RAISE SQLSTATE 'Z1717';
+    EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+    END;
+    BEGIN
+        ALTER TABLE public.plants ADD CONSTRAINT t017_origin_draft
+            FOREIGN KEY(origin_draft_id) REFERENCES public.guest_drafts(id) ON DELETE SET NULL NOT VALID;
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 actual foreign destination FK holds nonempty graph');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 destination FK hold is atomic');
+        RAISE SQLSTATE 'Z1717';
+    EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+    END;
     v_before := pg_temp.analysis_purge_snapshot();
     v_expected := jsonb_set(v_before,ARRAY['public.guest_drafts'],
         (SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb)
@@ -3014,7 +3162,9 @@ SELECT * FROM pg_temp.guest_draft_purge_tests();
 SELECT ok(NOT EXISTS (
     SELECT 1 FROM auth.users WHERE id IN (
         'a0170000-0000-4000-8000-000000000001'::uuid,
-        'a0170000-0000-4000-8000-000000000002'::uuid)
+        'a0170000-0000-4000-8000-000000000002'::uuid,
+        'a0170000-0000-4000-8000-000000000011'::uuid,
+        'a0170000-0000-4000-8000-000000000012'::uuid)
 ), '017 rollback fixtures leave no fixture accounts');
 SELECT * FROM finish();
 ROLLBACK;

@@ -14,13 +14,24 @@ DECLARE
     v_pass INTEGER;
 BEGIN
     PERFORM 1 FROM public.profiles WHERE id=p_owner_id FOR UPDATE;
-    -- Writer barriers cover semantic links even on upgrades without their FK.
-    LOCK TABLE public.guest_drafts,public.draft_claims,public.analysis_jobs,
-        public.condition_snapshots,public.photo_assets,public.analysis_results,
-        public.plants IN SHARE ROW EXCLUSIVE MODE;
     IF public.verify_account_deletion_storage_internal(p_owner_id,p_operation_id) IS NULL THEN
         RAISE EXCEPTION 'storage verification' USING ERRCODE='P1617';
     END IF;
+    -- Verification requires a permanent deleting owner. Both supported producers
+    -- (create_guest_photo_draft / create_bound_guest_diagnosis_draft) first lock
+    -- this profile and require an active guest, so no eligible insert can race
+    -- this empty-set check. Keep 014 cleanup, proof rechecks and replay intact.
+    IF NOT EXISTS (SELECT 1 FROM public.guest_drafts WHERE guest_owner_id=p_owner_id) THEN
+        IF NOT public.purge_account_deletion_plant_rows_internal(p_owner_id,p_operation_id) THEN
+            RAISE EXCEPTION 'plant predecessor (014)' USING ERRCODE='P1617';
+        END IF;
+        RETURN true;
+    END IF;
+    -- Nonempty legacy graphs still need semantic writer barriers, including
+    -- upgrades without FKs. Preserve their order and reread the set under them.
+    LOCK TABLE public.guest_drafts,public.draft_claims,public.analysis_jobs,
+        public.condition_snapshots,public.photo_assets,public.analysis_results,
+        public.plants IN SHARE ROW EXCLUSIVE MODE;
     SELECT coalesce(array_agg(id ORDER BY id),'{}'::uuid[]) INTO v_ids
         FROM public.guest_drafts WHERE guest_owner_id=p_owner_id;
 
