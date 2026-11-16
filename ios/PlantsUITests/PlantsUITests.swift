@@ -107,6 +107,80 @@ final class PlantsUITests: XCTestCase {
     }
 
     @MainActor
+    func testDiagnosisSavePresentationEnglish() { verifyResultSavePresentation(mode: "diagnosis", polish: false) }
+
+    @MainActor
+    func testDiagnosisSavePresentationPolish() { verifyResultSavePresentation(mode: "diagnosis", polish: true) }
+
+    @MainActor
+    func testIdentificationSavePresentationEnglish() { verifyResultSavePresentation(mode: "identification", polish: false) }
+
+    @MainActor
+    func testIdentificationSavePresentationPolish() { verifyResultSavePresentation(mode: "identification", polish: true) }
+
+    @MainActor
+    func testStandaloneCatalogueKeepsSpeciesAndScientificName() {
+        for polish in [false, true] {
+            let app = openSavePresentationFixture(polish: polish)
+            defer { app.terminate() }
+            let scientific = app.staticTexts["catalogue.selected.scientific"]
+            XCTAssertTrue(scientific.waitForExistence(timeout: 15))
+            XCTAssertEqual(scientific.label, "Nephrolepis exaltata")
+            XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", polish ? "Paproć" : "Fern")).count, 1)
+            XCTAssertFalse(app.staticTexts["analysis.result.species"].exists)
+        }
+    }
+
+    @MainActor
+    private func verifyResultSavePresentation(mode: String, polish: Bool) {
+        let app = openSavePresentationFixture(polish: polish, mode: mode)
+        defer { app.terminate() }
+        let heading = app.staticTexts["analysis.result.species"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 15))
+        if mode == "identification" {
+            let confirm = app.buttons["analysis.identification.confirm"]
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+            confirm.tap()
+            XCTAssertTrue(app.staticTexts["analysis.identification.confirmed"].waitForExistence(timeout: 5))
+        }
+        let submit = app.buttons["catalogue.save.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 15))
+        XCTAssertEqual(submit.label, polish ? "Zapisz roślinę" : "Save plant")
+        XCTAssertTrue(app.staticTexts[polish ? "Zapisz w kolekcji" : "Save to collection"].exists)
+        XCTAssertEqual(app.textFields["catalogue.save.name"].placeholderValue,
+                       polish ? "Nazwa rośliny (opcjonalnie)" : "Plant name (optional)")
+        let label = polish ? "Paproć" : "Fern"
+        XCTAssertEqual(heading.label, label)
+        XCTAssertEqual(app.staticTexts.matching(identifier: "analysis.result.species").count, 1)
+        // Count the label too: a second header has no analysis accessibility ID.
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count, 1)
+        XCTAssertFalse(app.staticTexts["catalogue.selected.scientific"].exists)
+    }
+
+    /// Fixture-only presentation; no live analysis, authentication or save is performed.
+    @MainActor
+    private func openSavePresentationFixture(polish: Bool, mode: String? = nil) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--catalogue-fixture", "free2", "--catalogue-namespace", UUID().uuidString,
+            "-AppleLanguages", polish ? "(pl)" : "(en)", "-AppleLocale", polish ? "pl_PL" : "en_US"
+        ]
+        if let mode { app.launchArguments += ["--result-save-presentation", mode] }
+        app.launch()
+        let language = app.segmentedControls["welcome.language.picker"].buttons[polish ? "Polski" : "English"]
+        XCTAssertTrue(language.waitForExistence(timeout: 15))
+        language.tap()
+        app.buttons["welcome.intent.care"].tap()
+        let catalogue = app.buttons["care.method.catalogue"]
+        XCTAssertTrue(catalogue.waitForExistence(timeout: 5))
+        catalogue.tap()
+        let species = app.buttons["catalogue.species.fixture_fern"]
+        XCTAssertTrue(species.waitForExistence(timeout: 15))
+        species.tap()
+        return app
+    }
+
+    @MainActor
     func testStagingCatalogueSelectionSurvivesRelaunch() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["NARAT_LIVE_STAGING"] == "1")
         let app = XCUIApplication()

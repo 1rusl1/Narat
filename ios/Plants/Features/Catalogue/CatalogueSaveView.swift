@@ -130,6 +130,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let displayName: String
     let scientificName: String
     let polish: Bool
+    var showsSpeciesHeading: Bool = true
     var analysisSaveIdentity: UUID? = nil
     var identification: CatalogueInput.Identification? = nil
     var diagnosisJobId: UUID? = nil
@@ -208,6 +209,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
         }
+#if DEBUG
+        .modifier(ResultSavePresentationFixtureModifier(
+            connection: connection, polish: polish, enabled: analysisSaveIdentity == nil
+        ))
+#endif
         .onAppear {
             active = true
             synchronize()
@@ -243,11 +249,14 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         }
     }
 
+    @ViewBuilder
     private var publicHeading: some View {
-        VStack(alignment: .leading) {
-            Text(displayName).font(.title)
-            Text(scientificName).italic()
-                .accessibilityIdentifier("catalogue.selected.scientific")
+        if showsSpeciesHeading {
+            VStack(alignment: .leading) {
+                Text(displayName).font(.title)
+                Text(scientificName).italic()
+                    .accessibilityIdentifier("catalogue.selected.scientific")
+            }
         }
     }
 

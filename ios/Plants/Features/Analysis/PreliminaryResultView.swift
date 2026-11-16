@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import UIKit
+#endif
 
 struct GuestIdentificationActions {
     let busy: Bool
@@ -77,6 +80,7 @@ public struct PreliminaryResultView: View {
                             CatalogueSaveView(
                                 connection: connection, speciesSlug: confirmed.speciesSlug,
                                 displayName: label, scientificName: "", polish: isPolish,
+                                showsSpeciesHeading: false,
                                 analysisSaveIdentity: confirmed.jobId,
                                 identification: .init(jobId: confirmed.jobId, taxonId: confirmed.taxonId),
                                 expectedPhotoId: confirmed.photoAssetId, selectionLocked: $saveLocked
@@ -179,7 +183,8 @@ public struct PreliminaryResultView: View {
                        !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         CatalogueSaveView(
                             connection: connection, speciesSlug: species,
-                            displayName: label, scientificName: "", polish: false,
+                            displayName: label, scientificName: "", polish: isPolish,
+                            showsSpeciesHeading: false,
                             analysisSaveIdentity: result.jobId, diagnosisJobId: result.jobId,
                             expectedPhotoId: photo.id, selectionLocked: $saveLocked
                         ) { EmptyView() }
@@ -208,6 +213,90 @@ public struct PreliminaryResultView: View {
             .buttonStyle(.bordered)
     }
 }
+
+#if DEBUG
+/// Reuses the isolated catalogue fixture and renders the ordinary result view.
+struct ResultSavePresentationFixtureModifier: ViewModifier {
+    let connection: CatalogueConnection
+    let polish: Bool
+    let enabled: Bool
+    private var mode: AnalysisMode? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--catalogue-fixture"),
+              let index = arguments.firstIndex(of: "--result-save-presentation"),
+              index + 1 < arguments.count,
+              let mode = AnalysisMode(rawValue: arguments[index + 1]), mode.isSelectable else { return nil }
+        return mode
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled, let mode {
+            ResultSavePresentationFixture(connection: connection, polish: polish, mode: mode)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ResultSavePresentationFixture: View {
+    let connection: CatalogueConnection
+    let polish: Bool
+    let mode: AnalysisMode
+    @State private var model = AnalysisFlowModel()
+    @State private var languageStore = LanguageStore()
+
+    var body: some View {
+        NavigationStack {
+            PreliminaryResultView(model: model, languageStore: languageStore, catalogueConnection: connection)
+        }
+        .task {
+            guard let snapshot = connection.snapshot, !snapshot.isAnonymous else { return }
+            languageStore.currentLocale = polish ? .pl : .en
+            model.installAnalysisService(ResultSavePresentationService(owner: snapshot.session.userId))
+            model.router.selectIntent(mode == .diagnosis ? .problem : .care)
+            if mode == .identification { model.router.selectCareMethod(.scan) }
+            let size = CGSize(width: 600, height: 800)
+            let photo = UIGraphicsImageRenderer(size: size).pngData { context in
+                UIColor.systemGreen.setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+            }
+            model.selectPhotoData(photo, locale: languageStore.currentLocale)
+            await model.submitAnalysis(locale: languageStore.currentLocale)?.value
+        }
+    }
+}
+
+private struct ResultSavePresentationService: AnalysisService {
+    let owner: UUID
+
+    func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
+        let label = request.locale == .pl ? "Paproć" : "Fern"
+        let job = UUID()
+        let photo = UUID()
+        if request.mode == .identification {
+            return AnalysisServiceResult(
+                identification: .init(jobId: job, catalogueReleaseId: UUID(), species: .init(
+                    taxonId: UUID(uuidString: "32e72c49-4e06-434a-86dd-bbf8a5cb209e")!,
+                    slug: "fixture_fern", displayName: label
+                )),
+                uploadedPhotoId: photo, photoOwnerId: owner
+            )
+        }
+        return AnalysisServiceResult(
+            analysis: PreliminaryAnalysis(
+                id: UUID(), jobId: job, kbReleaseId: UUID(), mode: .diagnosis,
+                identificationStatus: .resolved, plantId: "fixture_fern", genusId: nil,
+                diagnosisStatus: .healthy, candidates: [], selectedConditionId: nil,
+                visualMarkers: [], evidenceBasis: [], limitations: [],
+                firstActionSummary: nil, controlIntervalDays: nil, analysisReceipt: "fixture"
+            ),
+            speciesLabel: label, conditionLabel: nil, uploadedPhotoId: photo,
+            firstAidAction: nil, photoOwnerId: owner
+        )
+    }
+}
+#endif
 
 private struct FirstAidRecordControls: View {
     let context: FirstAidResultContext
