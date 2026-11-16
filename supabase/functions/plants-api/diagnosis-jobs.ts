@@ -203,6 +203,8 @@ export function createDiagnosisJobs(
         !body || typeof body !== "object" || Array.isArray(body) ||
         (body.mode !== "diagnosis" && body.mode !== "identification") ||
         ("target_plant_id" in body && body.mode !== "diagnosis") ||
+        (ctx.isAnonymous && body.mode === "diagnosis" &&
+          (!("initial_context" in body) || "target_plant_id" in body)) ||
         ("initial_context" in body &&
           (body.mode !== "diagnosis" || "target_plant_id" in body ||
             !validInitialContext(body.initial_context))) ||
@@ -216,15 +218,6 @@ export function createDiagnosisJobs(
             : "Invalid analysis request.",
         );
       }
-      if ("initial_context" in body && ctx.isAnonymous) {
-        throw new ApiHttpError(
-          403,
-          "FORBIDDEN",
-          ctx.locale === "pl"
-            ? "Wymagane jest aktywne stałe konto."
-            : "An active permanent account is required.",
-        );
-      }
       const op = requireUuid(body.operation_id, "operation_id");
       const photo = requireUuid(body.photo_asset_id, "photo_asset_id");
       const flow = body.flow_id == null
@@ -235,11 +228,14 @@ export function createDiagnosisJobs(
         : null;
       const identification = body.mode === "identification";
       const guestIdentification = identification && ctx.isAnonymous;
-      const credentialHash = guestIdentification
+      const guestDiagnosis = !identification && ctx.isAnonymous;
+      const credentialHash = ctx.isAnonymous
         ? await installationCredentialHash(ctx, true)
         : null;
       const command = guestIdentification
         ? "create_bound_photo_analysis_job"
+        : guestDiagnosis
+        ? "create_bound_guest_initial_diagnosis_job"
         : identification
         ? "create_photo_analysis_job"
         : target
@@ -255,7 +251,7 @@ export function createDiagnosisJobs(
         p_locale: ctx.locale,
         p_can_dispatch: worker.ready(),
         ...(identification && { p_mode: body.mode }),
-        ...(guestIdentification && { p_credential_hash: credentialHash }),
+        ...(ctx.isAnonymous && { p_credential_hash: credentialHash }),
         ...(target && { p_target_plant_id: target }),
         ...("initial_context" in body && { p_initial_context: body.initial_context }),
       });
@@ -280,14 +276,33 @@ export function createDiagnosisJobs(
     async status(ctx: RequestContext, id: string) {
       const owner = requireActiveOwner(ctx);
       const jobId = requireUuid(id, "job_id");
-      const job = parseJob(
-        await rpc(ctx, "read_diagnosis_job", {
+      // Historical guest identification remains readable without an installation header.
+      const boundResult = ctx.isAnonymous &&
+          (ctx.installationCredential?.trim().length ?? 0) >= 16
+        ? await rpc(ctx, "read_bound_guest_initial_diagnosis_job", {
           p_owner_id: owner,
           p_job_id: jobId,
-        }),
+          p_credential_hash: await installationCredentialHash(ctx, true),
+        })
+        : null;
+      const job = parseJob(
+        boundResult === null
+          ? await rpc(ctx, "read_diagnosis_job", {
+            p_owner_id: owner,
+            p_job_id: jobId,
+          })
+          : boundResult,
         ctx,
       );
-      if (job.job_id !== jobId) throw unavailable(ctx);
+      if (
+        job.job_id !== jobId ||
+        (boundResult !== null &&
+          (job.mode !== "diagnosis" || job.quota_kind !== "starter_diagnosis" ||
+            job.target_plant_id !== undefined || job.photo_asset_id !== undefined))
+      ) throw unavailable(ctx);
+      if (ctx.isAnonymous && boundResult === null && job.mode !== "identification") {
+        throw notFound(ctx);
+      }
       return jsonResponse(job, 200, { "Cache-Control": "no-store" });
     },
   };

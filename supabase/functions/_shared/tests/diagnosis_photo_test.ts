@@ -1,5 +1,6 @@
 // SDK transport fixtures for the production photo routes and leased worker.
 import { assert, assertEquals } from "@std/assert";
+import { hashInstallationCredential } from "../AnalysisAccess.ts";
 import { createProductionPlantsApiHandler } from "../../plants-api/index.ts";
 import { createDiagnosisWorker } from "../../analysis-worker/index.ts";
 import { AnthropicAdapter } from "../AnthropicAdapter.ts";
@@ -1018,7 +1019,7 @@ Deno.test("Staging published diagnosis profile validates and applies to Monstera
   assert(!AnalysisValidator.validate(classification, catalog).valid);
 });
 
-Deno.test("Initial diagnosis context is closed, owner-only and uses a dedicated receipt RPC", async () => {
+Deno.test("Permanent initial diagnosis context is closed and uses a dedicated receipt RPC", async () => {
   const context = { light: "low", watering_frequency: "moderate", drainage: "yes" };
   const payload = {
     job_id: job,
@@ -1111,7 +1112,7 @@ Deno.test("Initial diagnosis context is closed, owner-only and uses a dedicated 
   assertEquals((await post({ initial_context: context, target_plant_id: savedPlant })).status, 400);
   assertEquals((await post({ initial_context: context, owner_id: other })).status, 400);
   anonymous = true;
-  assertEquals((await post({ initial_context: context })).status, 403);
+  assertEquals((await post({ initial_context: context })).status, 400);
   anonymous = false;
   assertEquals(calls, 0);
   assertEquals(dispatches, 0);
@@ -1215,3 +1216,233 @@ for (const [name, initialContext, extra] of [
     assertEquals((await (await unrelated.api("/analysis/jobs/" + job)).json()).status, "succeeded");
   });
 }
+
+Deno.test("Bound guest initial diagnosis uses installation digest, closed context and private status", async () => {
+  const credential = "fixture-guest-initial-installation";
+  const credentialHash = await hashInstallationCredential(credential);
+  const context = { light: "low", watering_frequency: "moderate", drainage: "yes" };
+  const payload = {
+    job_id: job,
+    mode: "diagnosis",
+    status: "queued",
+    quota_kind: "starter_diagnosis",
+    quota_state: "reserved",
+    result: null,
+  };
+  let currentOwner = owner;
+  let installation: string | null = credential;
+  let accepted: string | null = null;
+  let ready = true;
+  let dispatches = 0;
+  let createOverride: { value: unknown } | null = null;
+  let readValue: unknown = payload;
+  let legacyValue: unknown = null;
+  let failure: "transport" | "rpc" | null = null;
+  const calls: string[] = [];
+  const handler = createProductionPlantsApiHandler({
+    resolveRequestContext: async () => ({
+      ownerId: currentOwner,
+      accountState: "active",
+      isAnonymous: true,
+      locale: "en",
+      installationCredential: installation,
+      operationId: null,
+    }),
+  }, {
+    env: (name) =>
+      ({ SUPABASE_URL: host, SUPABASE_SERVICE_ROLE_KEY: "fixture-service-role" })[name],
+    diagnosisWorker: {
+      ready: () => ready,
+      run: () => {
+        dispatches++;
+        return Promise.resolve();
+      },
+    },
+    scheduleDiagnosis: () => {},
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      const name = new URL(request.url).pathname.split("/").at(-1)!;
+      const args = await request.json();
+      calls.push(name);
+      if (name === "read_diagnosis_job") {
+        assertEquals(args, { p_owner_id: currentOwner, p_job_id: job });
+        return Response.json(legacyValue);
+      }
+      if (name === "read_bound_guest_initial_diagnosis_job") {
+        assertEquals(args, {
+          p_owner_id: currentOwner,
+          p_job_id: job,
+          p_credential_hash: await hashInstallationCredential(installation!),
+        });
+        if (failure === "transport") throw new Error("fixture transport failure");
+        if (failure === "rpc") {
+          return Response.json({ code: "XX000", message: "fixture RPC failure" }, { status: 500 });
+        }
+        return Response.json(
+          args.p_owner_id === owner && args.p_credential_hash === credentialHash ? readValue : null,
+        );
+      }
+      if (name === "create_bound_photo_analysis_job") {
+        assertEquals(args, {
+          p_owner_id: owner,
+          p_operation_id: jobOperation,
+          p_photo_asset_id: photo,
+          p_flow_id: null,
+          p_locale: "en",
+          p_can_dispatch: ready,
+          p_mode: "identification",
+          p_credential_hash: credentialHash,
+        });
+        return Response.json({
+          replayed: false,
+          job: { ...payload, mode: "identification", quota_kind: "starter_identification" },
+        });
+      }
+      assertEquals(name, "create_bound_guest_initial_diagnosis_job");
+      assertEquals(args, {
+        p_owner_id: owner,
+        p_operation_id: jobOperation,
+        p_photo_asset_id: photo,
+        p_flow_id: null,
+        p_locale: "en",
+        p_can_dispatch: ready,
+        p_initial_context: context,
+        p_credential_hash: await hashInstallationCredential(installation!),
+      });
+      if (args.p_credential_hash !== credentialHash) {
+        return Response.json({ code: "42501", message: "ACCESS_DENIED" }, { status: 403 });
+      }
+      if (createOverride) return Response.json(createOverride.value);
+      const digest = JSON.stringify([args.p_initial_context, args.p_credential_hash]);
+      const replayed = accepted !== null;
+      if (replayed) assertEquals(digest, accepted);
+      accepted = digest;
+      return Response.json({ replayed, job: payload });
+    },
+  });
+  const post = (extra: Record<string, unknown> = {}) => handler(new Request(
+    host + "/functions/v1/plants-api/analysis/jobs",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operation_id: jobOperation,
+        photo_asset_id: photo,
+        mode: "diagnosis",
+        initial_context: context,
+        ...extra,
+      }),
+    },
+  ));
+  const get = () => handler(new Request(host + "/functions/v1/plants-api/analysis/jobs/" + job));
+  for (const invalid of [null, "", "short"]) {
+    installation = invalid;
+    assertEquals((await post()).status, 400);
+  }
+  installation = credential;
+  for (const extra of [
+    { initial_context: null },
+    { initial_context: { ...context, extra: "forbidden" } },
+    { initial_context: { ...context, watering_frequency: "less_often" } },
+    { target_plant_id: savedPlant },
+    { initial_context: undefined },
+    { initial_context: undefined, target_plant_id: savedPlant },
+  ]) {
+    assertEquals((await post(extra)).status, 400);
+  }
+  assertEquals(calls, []);
+  installation = "fixture-unbound-installation";
+  assertEquals((await post()).status, 403);
+  assertEquals(dispatches, 0);
+  installation = "  " + credential + "  ";
+  calls.length = 0;
+  const first = await post();
+  assertEquals(first.status, 202);
+  assertEquals(first.headers.get("cache-control"), "no-store");
+  assertEquals(await first.json(), payload);
+  assertEquals(dispatches, 1);
+  const replay = await post();
+  assertEquals(replay.status, 200);
+  assertEquals(await replay.json(), payload);
+  assertEquals(dispatches, 2);
+  ready = false;
+  assertEquals((await post()).status, 200);
+  assertEquals(dispatches, 2);
+  ready = true;
+  for (const status of ["running", "failed", "expired"]) {
+    createOverride = { value: { replayed: true, job: { ...payload, status } } };
+    assertEquals((await post()).status, 200);
+  }
+  for (const value of [null, {}, { replayed: true, job: { ...payload, mode: "identification" } }]) {
+    createOverride = { value };
+    assertEquals((await post()).status, 503);
+  }
+  assertEquals(dispatches, 2);
+  assert(calls.every((name) => name === "create_bound_guest_initial_diagnosis_job"));
+
+  calls.length = 0;
+  const found = await get();
+  assertEquals(found.status, 200);
+  assertEquals(await found.json(), payload);
+  assertEquals(found.headers.get("cache-control"), "no-store");
+  assertEquals(calls, ["read_bound_guest_initial_diagnosis_job"]);
+  readValue = null;
+  const notFound = await get();
+  assertEquals(notFound.status, 404);
+  const missing = await notFound.json();
+  assertEquals(missing.error.code, "NOT_FOUND");
+  readValue = payload;
+  for (const invalid of [null, "", "short", "fixture-unbound-installation"]) {
+    installation = invalid;
+    const denied = await get();
+    assertEquals(denied.status, 404);
+    assertEquals(await denied.json(), missing);
+  }
+  installation = credential;
+  currentOwner = other;
+  const deniedOwner = await get();
+  assertEquals(deniedOwner.status, 404);
+  assertEquals(await deniedOwner.json(), missing);
+  currentOwner = owner;
+
+  for (const invalid of [
+    {}, [], "unexpected", { job: payload },
+    { ...payload, job_id: other },
+    { ...payload, mode: "identification", quota_kind: "starter_identification" },
+    { ...payload, target_plant_id: savedPlant, photo_asset_id: photo },
+  ]) {
+    calls.length = 0;
+    readValue = invalid;
+    assertEquals((await get()).status, 503);
+    assertEquals(calls, ["read_bound_guest_initial_diagnosis_job"]);
+  }
+  readValue = payload;
+  for (const fault of ["transport", "rpc"] as const) {
+    calls.length = 0;
+    failure = fault;
+    assertEquals((await get()).status, 503);
+    assertEquals(calls, ["read_bound_guest_initial_diagnosis_job"]);
+  }
+  failure = null;
+  readValue = null;
+  legacyValue = { ...payload, mode: "identification", quota_kind: "starter_identification" };
+  for (const header of [credential, null, "short"]) {
+    installation = header;
+    calls.length = 0;
+    const legacy = await get();
+    assertEquals(legacy.status, 200);
+    assertEquals(await legacy.json(), legacyValue);
+    assertEquals(calls, header === credential
+      ? ["read_bound_guest_initial_diagnosis_job", "read_diagnosis_job"]
+      : ["read_diagnosis_job"]);
+  }
+  legacyValue = payload;
+  assertEquals((await get()).status, 404);
+  assertEquals(dispatches, 2);
+
+  installation = credential;
+  ready = false;
+  assertEquals((await post({ mode: "identification", initial_context: undefined })).status, 202);
+  assertEquals(calls.at(-1), "create_bound_photo_analysis_job");
+  assertEquals(dispatches, 2);
+});
