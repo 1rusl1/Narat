@@ -775,3 +775,35 @@ Deno.test("T162 catalogue composition: explicit command delegate wins without co
   assertEquals(original.bodyUsed, false);
   assertEquals(f.rpcRequests.length, 0);
 });
+
+Deno.test("diagnosis save forwards only the canonical job and requires a private photo receipt", async () => {
+  const payload = createPayload({
+    add_method: "scan", creation_intent: "problem", diagnosis_job_id: otherOperation,
+  });
+  const receipt = createReceipt({ photo_id: taxon });
+  const f = fixture({ rpcBody: receipt });
+  const response = await f.handler(commandRequest(commandEnvelope(payload)));
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get("cache-control"), "private, no-store");
+  assertEquals(await response.json(), receipt);
+  assertEquals(await f.rpcRequests[0].json(), {
+    p_owner_id: ownerA, p_operation_id: operation, p_payload: payload,
+  });
+
+  for (const invalid of [
+    { photo_id: taxon }, { identification_job_id: taxon }, { add_method: "catalogue" },
+    { creation_intent: "care" }, { overrides: { plant_id: "other" } }, { diagnosis_job_id: "bad" },
+  ]) {
+    const blocked = fixture();
+    const rejected = await blocked.handler(commandRequest(commandEnvelope({ ...payload, ...invalid })));
+    assertEquals(rejected.status, 400);
+    assertEquals(blocked.rpcRequests.length, 0);
+  }
+
+  const incomplete = fixture();
+  assertEquals((await incomplete.handler(commandRequest(commandEnvelope(payload)))).status, 503);
+  const missing = fixture({ rpcStatus: 400, rpcBody: {
+    code: "P0002", message: "diagnosis_source_not_found",
+  } });
+  assertEquals((await missing.handler(commandRequest(commandEnvelope(payload)))).status, 404);
+});

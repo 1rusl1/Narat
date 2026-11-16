@@ -10,6 +10,7 @@ public struct CatalogueInput: Sendable, Equatable {
     public let speciesSlug: String?
     public let personalName: String?
     let identification: Identification?
+    let diagnosisJobId: UUID?
 
     var speciesIdentifier: String {
         identification?.taxonId.uuidString.lowercased() ?? speciesSlug ?? ""
@@ -19,12 +20,21 @@ public struct CatalogueInput: Sendable, Equatable {
         self.speciesSlug = speciesSlug
         self.personalName = personalName
         identification = nil
+        diagnosisJobId = nil
+    }
+
+    init(diagnosisJobId: UUID, speciesSlug: String, personalName: String? = nil) {
+        self.speciesSlug = speciesSlug
+        self.personalName = personalName
+        identification = nil
+        self.diagnosisJobId = diagnosisJobId
     }
 
     init(identification: Identification, personalName: String? = nil) {
         speciesSlug = nil
         self.personalName = personalName
         self.identification = identification
+        diagnosisJobId = nil
     }
 
     public func makeEnvelope(operationId: UUID) throws -> CommandEnvelopeDTO {
@@ -36,6 +46,11 @@ public struct CatalogueInput: Sendable, Equatable {
             payload["taxon_id"] = identification.taxonId.uuidString.lowercased()
         } else if let speciesSlug {
             payload["plant_id"] = speciesSlug
+            if let diagnosisJobId {
+                payload["add_method"] = "scan"
+                payload["creation_intent"] = "problem"
+                payload["diagnosis_job_id"] = diagnosisJobId.uuidString.lowercased()
+            }
         }
         if let personalName { payload["personal_name"] = personalName }
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
@@ -55,6 +70,9 @@ public struct CatalogueInput: Sendable, Equatable {
         if let jobId = payload["identification_job_id"].flatMap(UUID.init(uuidString:)),
            let taxonId = payload["taxon_id"].flatMap(UUID.init(uuidString:)) {
             input = Self(identification: Identification(jobId: jobId, taxonId: taxonId), personalName: payload["personal_name"])
+        } else if let jobId = payload["diagnosis_job_id"].flatMap(UUID.init(uuidString:)),
+                  let slug = payload["plant_id"] {
+            input = Self(diagnosisJobId: jobId, speciesSlug: slug, personalName: payload["personal_name"])
         } else if let slug = payload["plant_id"] {
             input = Self(speciesSlug: slug, personalName: payload["personal_name"])
         } else {
@@ -422,6 +440,10 @@ public struct CollectionRepository: Sendable {
             if let taxon = CatalogueCreateWire.identificationTaxon(envelope) {
                 guard let photo = confirmation.receipt.photoId, photo == summary.mainPhotoId,
                       taxon == summary.taxonId else { throw SyncWireValidationError.invalidPage }
+            }
+            if let diagnosisSlug = CatalogueCreateWire.diagnosisSpecies(envelope) {
+                guard let photo = confirmation.receipt.photoId, photo == summary.mainPhotoId,
+                      diagnosisSlug == summary.speciesSlug else { throw SyncWireValidationError.invalidPage }
             }
             return summary
         }

@@ -135,6 +135,7 @@ struct RootContainerView: View {
                                     scientificName: stagingSpecies?.scientificName ?? "", polish: false,
                                     analysisSaveIdentity: resumed.flowId,
                                     identification: resumed.identification,
+                                    diagnosisJobId: resumed.diagnosisJobId,
                                     selectionLocked: $stagingResumeLocked
                                 ) { EmptyView() }
                                 .id(resumed.flowId)
@@ -833,7 +834,7 @@ final class PhotoAnalysisService: AnalysisService {
                 speciesLabel: result.plantDisplayName,
                 conditionLabel: result.conditionDisplayName,
                 uploadedPhotoId: photoId,
-                firstAidAction: readStatus ? job.recordableFirstAid : nil
+                firstAidAction: readStatus ? job.recordableFirstAid : nil, photoOwnerId: lease.ownerId
             )
         } catch let error as APIErrorResponse where error.error.code == "QUOTA_REGISTRATION_REQUIRED" {
             throw AnalysisServiceFailure.quotaRegistrationRequired

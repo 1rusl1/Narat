@@ -928,6 +928,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                     f"SELECT public.upsert_catalogue_skeleton_species('{release}', $fixture${encoded}$fixture$::jsonb, true); "
                     f"SELECT public.publish_catalogue_release('{release}');")
                 tap(case, ROOT/'supabase/tests/diagnosis_jobs.test.sql')
+                if any(m.name == '202611160001_diagnosis_plant_photo.sql' for m in selected):
+                    tap(case, ROOT/'supabase/tests/diagnosis_plant_photo.test.sql')
                 if any(migration.name == '202611120025_repeat_plant_diagnosis.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/repeat_plant_diagnosis.test.sql')
                     bound_repeat_last_attempt(case)

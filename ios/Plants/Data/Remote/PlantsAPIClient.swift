@@ -1702,6 +1702,18 @@ enum CatalogueCreateWire {
               payload["creation_source"] as? String == "catalogue" else {
             throw CatalogueCreateValidationError.invalidPayload
         }
+        if payload["diagnosis_job_id"] != nil {
+            guard Set(payload.keys).isSubset(of: ["creation_source", "add_method", "creation_intent",
+                                                 "diagnosis_job_id", "plant_id", "personal_name"]),
+                  payload["add_method"] as? String == "scan",
+                  payload["creation_intent"] as? String == "problem",
+                  uuid(payload["diagnosis_job_id"]) != nil,
+                  let slug = payload["plant_id"] as? String, !slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  payload["personal_name"] == nil || payload["personal_name"] is String else {
+                throw CatalogueCreateValidationError.invalidPayload
+            }
+            return
+        }
         if payload["add_method"] as? String == "scan" {
             guard Set(payload.keys).isSubset(of: ["creation_source", "add_method", "creation_intent",
                                                  "identification_job_id", "taxon_id", "origin_flow_id", "personal_name"]),
@@ -1727,8 +1739,14 @@ enum CatalogueCreateWire {
         return uuid(payload["taxon_id"])
     }
 
+    static func diagnosisSpecies(_ envelope: CommandEnvelopeDTO) -> String? {
+        guard let payload = try? JSONSerialization.jsonObject(with: Data(envelope.payloadJSON.utf8)) as? [String: Any],
+              uuid(payload["diagnosis_job_id"]) != nil else { return nil }
+        return payload["plant_id"] as? String
+    }
+
     static func validate(_ receipt: PlantCreateReceiptDTO, for envelope: CommandEnvelopeDTO) throws {
-        if identificationTaxon(envelope) != nil, receipt.photoId == nil {
+        if (identificationTaxon(envelope) != nil || diagnosisSpecies(envelope) != nil), receipt.photoId == nil {
             throw AnalysisHTTPError.invalidResponse
         }
     }

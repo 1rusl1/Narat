@@ -2271,6 +2271,25 @@ final class CollectionWireTests: XCTestCase {
                        requests[1].value(forHTTPHeaderField: "X-Operation-Id"))
     }
 
+    func testDiagnosisSaveCheckpointKeepsTheJobAndRejectsMissingPhotoReceipt() throws {
+        let input = CatalogueInput(diagnosisJobId: UUID(), speciesSlug: "monstera_deliciosa", personalName: "Window")
+        let envelope = try input.makeEnvelope(operationId: UUID())
+        let restored = try CatalogueInput.fromCheckpoint(envelope)
+        XCTAssertEqual(restored, input)
+        XCTAssertEqual(try restored.makeEnvelope(operationId: envelope.operationId), envelope)
+        XCTAssertEqual(CatalogueCreateWire.diagnosisSpecies(envelope), "monstera_deliciosa")
+        XCTAssertNil(CatalogueCreateWire.identificationTaxon(envelope))
+        let json = """
+            {
+              "plant_id":"00000000-0000-0000-0000-000000000001",
+              "care_revision":1,"context_state":"current","next_available_step":"view_plant",
+              "paid_action":null,"plan_availability":"available","watermark":"2026-11-16T12:00:00Z"
+            }
+            """
+        let receipt = try JSONDecoder().decode(PlantCreateReceiptDTO.self, from: Data(json.utf8))
+        XCTAssertThrowsError(try CatalogueCreateWire.validate(receipt, for: envelope))
+    }
+
     func testCataloguePayloadValidationDoesNotSendOrSubstituteIdentity() async throws {
         let transport = CatalogueTransport([])
         let api = client(transport)

@@ -255,7 +255,7 @@ function catalogueFields(value: unknown, kind: "payload" | "conditions" | "overr
       if (field !== null && (typeof field !== "string" || !uuid.test(field))) return false;
     } else if (kind === "payload" && key === "origin_flow_id") {
       if (field !== null && (typeof field !== "string" || !uuid.test(field))) return false;
-    } else if (kind === "payload" && key === "identification_job_id") {
+    } else if (kind === "payload" && ["identification_job_id", "diagnosis_job_id"].includes(key)) {
       if (typeof field !== "string" || !uuid.test(field)) return false;
     } else if (kind === "payload" && key === "photo_id") {
       if (field !== null) return false;
@@ -312,7 +312,16 @@ export async function handlePlantCreate(
   ) throw commandError(ctx, "invalid");
   const overrides = record(payload.overrides) ? payload.overrides : {};
   const scan = payload.add_method === "scan";
-  if (scan) {
+  const diagnosis = Object.hasOwn(payload, "diagnosis_job_id");
+  if (diagnosis) {
+    const allowed = new Set(["creation_source", "add_method", "creation_intent", "diagnosis_job_id",
+      "plant_id", "personal_name"]);
+    if (!scan || payload.creation_intent !== "problem" || typeof payload.plant_id !== "string" ||
+      Object.keys(payload).some((key) => !allowed.has(key)) ||
+      (Object.hasOwn(payload, "personal_name") && typeof payload.personal_name !== "string")) {
+      throw commandError(ctx, "invalid");
+    }
+  } else if (scan) {
     if (typeof payload.identification_job_id !== "string" ||
       typeof payload.taxon_id !== "string" || payload.plant_id != null ||
       Object.hasOwn(payload, "photo_id") || Object.hasOwn(overrides, "plant_id") ||
@@ -351,13 +360,13 @@ export async function handlePlantCreate(
       (code === "P0002" && message === "owner_profile_not_found")
     ) throw commandForbidden(ctx);
     if (code === "P0001" && message === "COLLECTION_LIMIT_REACHED") throw commandError(ctx, "cap");
-    if (code === "P0002" && message === "identification_source_not_found") {
+    if (code === "P0002" && (message === "identification_source_not_found" || message === "diagnosis_source_not_found")) {
       throw new ApiHttpError(
         404,
         "NOT_FOUND",
-        ctx.locale === "pl"
-          ? "Nie znaleziono ukończonej identyfikacji."
-          : "Completed identification not found.",
+        message === "diagnosis_source_not_found"
+          ? "Completed plant check not found."
+          : ctx.locale === "pl" ? "Nie znaleziono ukończonej identyfikacji." : "Completed identification not found.",
       );
     }
     if (code === "23505" || message === "operation_payload_mismatch") throw commandError(ctx, "conflict");

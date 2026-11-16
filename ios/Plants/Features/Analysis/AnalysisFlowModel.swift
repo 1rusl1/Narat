@@ -67,13 +67,13 @@ public struct AnalysisServiceResult: Sendable {
     }
 
     init(analysis: PreliminaryAnalysis, speciesLabel: String?, conditionLabel: String?,
-         uploadedPhotoId: UUID?, firstAidAction: RecordableFirstAidAction?) {
+         uploadedPhotoId: UUID?, firstAidAction: RecordableFirstAidAction?, photoOwnerId: UUID? = nil) {
         self.analysis = analysis
         identification = nil
         self.speciesLabel = speciesLabel
         self.conditionLabel = conditionLabel
         self.uploadedPhotoId = uploadedPhotoId
-        photoOwnerId = nil
+        self.photoOwnerId = photoOwnerId
         self.firstAidAction = firstAidAction
     }
 
@@ -129,6 +129,7 @@ public final class AnalysisFlowModel {
     private var identifiedPhoto: PhotoIdentificationSelection?
     private var confirmedPhoto: PhotoIdentificationSelection?
     private var firstAidAction: RecordableFirstAidAction?
+    private(set) var diagnosisPhoto: (id: UUID, owner: UUID)?
     private let photoInput = AnalysisPhotoInput()
     private var service: (any AnalysisService)?
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
@@ -184,6 +185,7 @@ public final class AnalysisFlowModel {
         if confirmedPhoto != nil { router.flowState.confirmedPlantId = nil }
         confirmedPhoto = nil
         firstAidAction = nil
+        diagnosisPhoto = nil
         analysisError = nil
     }
 
@@ -366,6 +368,9 @@ public final class AnalysisFlowModel {
                 } else if request.mode == .diagnosis, let diagnosis = result.analysis, diagnosis.mode == .diagnosis {
                     self.preliminaryResult = diagnosis
                     self.firstAidAction = result.firstAidAction
+                    if let id = result.uploadedPhotoId, let owner = result.photoOwnerId {
+                        self.diagnosisPhoto = (id, owner)
+                    }
                     if diagnosis.identificationStatus == .resolved, diagnosis.plantId != nil {
                         self.speciesLabel = Self.nonempty(result.speciesLabel)
                     }

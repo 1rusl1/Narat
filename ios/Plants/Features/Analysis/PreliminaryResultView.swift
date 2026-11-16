@@ -106,7 +106,8 @@ public struct PreliminaryResultView: View {
                             .id(action.jobId)
                     }
                     if model.repeatDiagnosisTarget == nil, let connection = catalogueConnection,
-                       connection.snapshot?.isAnonymous == false,
+                       let session = connection.snapshot, !session.isAnonymous,
+                       let photo = model.diagnosisPhoto, photo.owner == session.session.userId,
                        result.mode == .diagnosis,
                        result.identificationStatus == .resolved,
                        let species = result.plantId,
@@ -116,8 +117,8 @@ public struct PreliminaryResultView: View {
                         CatalogueSaveView(
                             connection: connection, speciesSlug: species,
                             displayName: label, scientificName: "", polish: false,
-                            analysisSaveIdentity: result.jobId,
-                            selectionLocked: $saveLocked
+                            analysisSaveIdentity: result.jobId, diagnosisJobId: result.jobId,
+                            expectedPhotoId: photo.id, selectionLocked: $saveLocked
                         ) { EmptyView() }
                         .id(result.jobId)
                     }

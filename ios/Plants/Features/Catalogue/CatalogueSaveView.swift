@@ -97,12 +97,14 @@ struct CatalogueResumeSelection {
     let speciesSlug: String
     let flowId: UUID
     let identification: CatalogueInput.Identification?
+    let diagnosisJobId: UUID?
 
     init?(_ model: CatalogueSaveModel) {
         guard let input = model.input, let checkpoint = model.checkpoint else { return nil }
         speciesSlug = input.speciesIdentifier
         flowId = checkpoint.flowId
         identification = input.identification
+        diagnosisJobId = input.diagnosisJobId
     }
 }
 
@@ -130,6 +132,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let polish: Bool
     var analysisSaveIdentity: UUID? = nil
     var identification: CatalogueInput.Identification? = nil
+    var diagnosisJobId: UUID? = nil
     var expectedPhotoId: UUID? = nil
     @Binding var selectionLocked: Bool
     @ViewBuilder let speciesDetails: () -> SpeciesDetails
@@ -623,8 +626,14 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         nameFocused = false
         if model == nil && intent == nil {
             let personalName = name.isEmpty ? nil : name
-            let input = identification.map { CatalogueInput(identification: $0, personalName: personalName) }
-                ?? CatalogueInput(speciesSlug: speciesSlug, personalName: personalName)
+            let input: CatalogueInput
+            if let identification {
+                input = CatalogueInput(identification: identification, personalName: personalName)
+            } else if let diagnosisJobId {
+                input = CatalogueInput(diagnosisJobId: diagnosisJobId, speciesSlug: speciesSlug, personalName: personalName)
+            } else {
+                input = CatalogueInput(speciesSlug: speciesSlug, personalName: personalName)
+            }
             let chosen = CatalogueViewIntent(input: input, flowId: analysisSaveIdentity ?? UUID(), operationId: UUID())
             do { _ = try input.makeEnvelope(operationId: chosen.operationId) }
             catch { notice = .invalidInput; return }
