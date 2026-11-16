@@ -219,7 +219,7 @@ struct RootContainerView: View {
         }) { destination in
             if let catalogue {
                 AccountSignInView(
-                    connection: catalogue,
+                    connection: catalogue, polish: isPolish,
                     cancel: { accountDestination = nil }
                 ) { snapshot, original in
                     switch destination {
@@ -1206,6 +1206,7 @@ private struct StagingAccountPresentation: Identifiable {
 
 private struct AccountSignInView: View {
     let connection: CatalogueConnection
+    var polish = false
     var staging = false
     let cancel: (() -> Void)?
     let signedIn: @MainActor (CatalogueSDKSnapshot, CatalogueSDKSnapshot?) -> Void
@@ -1221,44 +1222,50 @@ private struct AccountSignInView: View {
     @State private var completed = false
 
     private var busy: Bool { signingIn || connection.authenticationInFlight }
+    private var isPolish: Bool { polish && !staging }
 
     var body: some View {
         NavigationStack {
             Form {
                 if !staging {
                     ForEach(connection.accountProviders, id: \.rawValue) { provider in
-                        Button(provider == .apple ? "Continue with Apple" : "Continue with Google") {
+                        Button(provider == .apple
+                               ? (isPolish ? "Kontynuuj z Apple" : "Continue with Apple")
+                               : (isPolish ? "Kontynuuj z Google" : "Continue with Google")) {
                             signIn(provider)
                         }
                         .disabled(busy || scope == nil || presenter?.viewIfLoaded?.window == nil)
                         .accessibilityIdentifier("account.signin." + provider.rawValue)
                     }
                 }
-                TextField("Email", text: $email)
+                TextField(isPolish ? "Adres e-mail" : "Email", text: $email)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.emailAddress)
                     .accessibilityIdentifier(staging ? "staging.email" : "account.email")
-                SecureField("Password", text: $password)
+                SecureField(isPolish ? "Hasło" : "Password", text: $password)
                     .textContentType(.password)
                     .accessibilityIdentifier(staging ? "staging.password" : "account.password")
                 if failed {
-                    Text(staging ? "Could not sign in to the test stand. Check the test account." : "Couldn’t sign in. Check your email and password and try again.")
+                    Text(staging ? "Could not sign in to the test stand. Check the test account."
+                         : (isPolish ? "Nie udało się zalogować. Sprawdź adres e-mail i hasło, a następnie spróbuj ponownie."
+                            : "Couldn’t sign in. Check your email and password and try again."))
                         .foregroundStyle(.red)
                         .accessibilityIdentifier(staging ? "staging.signin.error" : "account.signin.error")
                 }
-                Button(signingIn ? "Signing in…" : "Sign in") {
+                Button(signingIn ? (isPolish ? "Logowanie…" : "Signing in…")
+                       : (isPolish ? "Zaloguj się" : "Sign in")) {
                     signIn()
                 }
                 .disabled(busy || scope == nil || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
                 .accessibilityIdentifier(staging ? "staging.signin" : "account.signin")
             }
-            .navigationTitle(staging ? "Test account" : "Sign in to Narat")
+            .navigationTitle(staging ? "Test account" : (isPolish ? "Zaloguj się do Narat" : "Sign in to Narat"))
             .toolbar {
                 if let cancel {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel", action: cancel).disabled(busy)
+                        Button(isPolish ? "Anuluj" : "Cancel", action: cancel).disabled(busy)
                     }
                 }
             }

@@ -2781,8 +2781,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-open-collection-from-saved-card: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 340.58 с, проверки — 392.77 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-open-collection-from-saved-card](validation/automation/tasks/t170-open-collection-from-saved-card.md).
+t170-polish-account-sign-in: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 170.35 с, проверки — 340.64 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-polish-account-sign-in](validation/automation/tasks/t170-polish-account-sign-in.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
