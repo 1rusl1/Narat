@@ -2691,8 +2691,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-account-data-diagnostic-decisions-purge-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 128.18 с, проверки — 49.83 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-account-data-diagnostic-decisions-purge-acceptance](validation/automation/tasks/t083-account-data-diagnostic-decisions-purge-acceptance.md).
+t083-account-data-analysis-results-purge: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 419.68 с, проверки — 61.97 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-account-data-analysis-results-purge](validation/automation/tasks/t083-account-data-analysis-results-purge.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
