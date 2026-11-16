@@ -141,8 +141,9 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.pickers["profile.hour.picker"].exists)
         XCTAssertFalse(run.app.staticTexts["profile.hour.synced"].exists)
         tap(run, "collection.settings.open", language.text("Account settings", "Ustawienia konta"))
-        require(run.app.staticTexts["profile.hour.synced"])
-        enabled(run.app.pickerWheels.firstMatch)
+        // The saved-plant fixture has no profile endpoint. The separate profile
+        // fixture covers a successful load, edit and relaunch.
+        require(run.app.staticTexts["profile.hour.failed"])
         tap(run, "collection.settings.close", language.text("Close", "Zamknij"))
         enabled(plant)
         XCTAssertFalse(run.app.pickers["profile.hour.picker"].exists)
