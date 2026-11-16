@@ -1530,6 +1530,256 @@ BEGIN
 END;
 $$;
 
+-- Reuse the canonical two-owner plan graphs; every diagnostic test rolls back
+-- before the existing 004 acceptance continues, on clean and upgraded schemas.
+CREATE FUNCTION pg_temp.diagnostic_purge_tests(v_owner uuid,v_neighbor uuid)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_operation uuid;
+    v_neighbor_operation uuid;
+    v_decision uuid;
+    v_foreign_decision uuid;
+    v_answer uuid;
+    v_foreign_answer uuid;
+    v_photo uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_rows jsonb;
+    v_table text;
+    v_role text;
+    v_case integer;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('010 diagnostic purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    SELECT operation_id INTO v_neighbor_operation FROM public.account_deletion_requests WHERE owner_id=v_neighbor;
+    SELECT id INTO v_decision FROM public.diagnostic_decisions WHERE owner_id=v_owner LIMIT 1;
+    SELECT id INTO v_foreign_decision FROM public.diagnostic_decisions WHERE owner_id=v_neighbor LIMIT 1;
+    SELECT id INTO v_answer FROM public.diagnostic_answers WHERE owner_id=v_owner LIMIT 1;
+    SELECT id INTO v_foreign_answer FROM public.diagnostic_answers WHERE owner_id=v_neighbor LIMIT 1;
+    SELECT id INTO v_photo FROM public.photo_assets WHERE owner_id=v_owner LIMIT 1;
+
+    RETURN NEXT is((SELECT array_agg(c.relname||'.'||a.attname ORDER BY c.relname,k.ord)
+        FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid
+        CROSS JOIN LATERAL unnest(f.conkey) WITH ORDINALITY k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=k.attnum
+        WHERE f.contype='f' AND f.confrelid IN
+            ('public.diagnostic_decisions'::regclass,'public.diagnostic_answers'::regclass)),
+        ARRAY['care_plans.diagnostic_decision_id','care_plans.diagnostic_decision_revision']::text[],
+        'actual diagnostic incoming FK inventory covers the composite plan key');
+
+    v_before := pg_temp.care_plan_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_neighbor_operation),false,
+        'another deleting owner operation is rejected');
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_neighbor,v_operation),false,
+        'operation cannot be applied to another owner');
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(NULL,v_operation),false,
+        'null diagnostic owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,NULL),false,
+        'null diagnostic operation rejected');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'invalid diagnostic requests are atomic');
+    BEGIN
+        UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+            'old deletion receipt cannot purge an active owner');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'old receipt preserves the graph');
+        RAISE SQLSTATE 'Z1610';
+    EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+    END;
+    BEGIN
+        UPDATE public.operation_receipts SET payload_hash='forged'
+            WHERE owner_id=v_owner AND operation_id=v_operation;
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+            'forged diagnostic deletion receipt rejected');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'forged receipt hold is atomic');
+        RAISE SQLSTATE 'Z1610';
+    EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+    END;
+
+    FOR v_case IN 1..12 LOOP
+        BEGIN
+            CASE v_case
+            WHEN 1 THEN
+                UPDATE public.care_plans SET diagnostic_decision_id=v_decision,
+                    diagnostic_decision_revision=1,deleted_at=clock_timestamp()
+                    WHERE owner_id=v_neighbor AND plan_kind='recovery';
+            WHEN 2 THEN
+                UPDATE public.diagnostic_answers SET decision_id=v_decision,
+                    question_id='cross-owner-fixture',deleted_at=clock_timestamp()
+                    WHERE id=v_foreign_answer;
+            WHEN 3 THEN
+                UPDATE public.diagnostic_decisions SET origin_decision_id=v_decision
+                    WHERE id=v_foreign_decision;
+            WHEN 4 THEN
+                UPDATE public.diagnostic_decisions SET answer_snapshot_ids=ARRAY[v_answer]
+                    WHERE id=v_foreign_decision;
+            WHEN 5 THEN
+                INSERT INTO public.diagnostic_decisions(id,revision,analysis_result_id,owner_id,
+                    kb_release_id,policy_version,original_candidates,decision_scores,state,decision_receipt)
+                SELECT v_decision,2,analysis_result_id,v_neighbor,kb_release_id,policy_version,
+                    original_candidates,decision_scores,state,decision_receipt
+                    FROM public.diagnostic_decisions WHERE id=v_foreign_decision;
+            WHEN 6 THEN
+                UPDATE public.diagnostic_decisions SET answer_snapshot_ids=ARRAY[v_foreign_answer]
+                    WHERE id=v_decision;
+            WHEN 7 THEN
+                UPDATE public.diagnostic_answers SET decision_id=v_foreign_decision,
+                    question_id='cross-owner-fixture' WHERE id=v_answer;
+            WHEN 8 THEN
+                UPDATE public.diagnostic_decisions SET origin_decision_id=v_foreign_decision WHERE id=v_decision;
+            WHEN 9 THEN
+                UPDATE public.care_plans SET diagnostic_decision_id=v_decision,
+                    diagnostic_decision_revision=NULL WHERE owner_id=v_neighbor AND plan_kind='routine';
+            WHEN 10 THEN
+                UPDATE public.diagnostic_decisions SET analysis_result_id=(
+                    SELECT analysis_result_id FROM public.diagnostic_decisions WHERE id=v_foreign_decision)
+                    WHERE id=v_decision;
+            WHEN 11 THEN
+                -- Hold a dependency owned by the caller as well: no cascade or
+                -- restrictive reference outside this phase may be silently removed.
+                CREATE TABLE public.t010_restrictive_reference(
+                    decision_id uuid,revision integer,
+                    CONSTRAINT t010_exact_dependency FOREIGN KEY(decision_id,revision)
+                        REFERENCES public.diagnostic_decisions(id,revision));
+                INSERT INTO public.t010_restrictive_reference VALUES(v_decision,1);
+            WHEN 12 THEN
+                CREATE TABLE public.t010_answer_reference(
+                    answer_id uuid CONSTRAINT t010_answer_dependency
+                        REFERENCES public.diagnostic_answers(id) ON DELETE CASCADE);
+                INSERT INTO public.t010_answer_reference VALUES(v_answer);
+            END CASE;
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+                'diagnostic association holds before predecessor mutation, case '||v_case);
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'diagnostic hold is atomic, case '||v_case);
+            PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+                'saved proof cannot bypass diagnostic dependency, case '||v_case);
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'saved proof hold is atomic, case '||v_case);
+            IF v_case=11 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t010_restrictive_reference),1::bigint,
+                    'restrictive dependency is retained');
+            END IF;
+            IF v_case=12 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t010_answer_reference),1::bigint,
+                    'unowned cascading answer dependency is retained');
+            END IF;
+            RAISE SQLSTATE 'Z1610';
+        EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+        END;
+    END LOOP;
+    BEGIN
+        UPDATE public.care_entries SET task_id=(SELECT id FROM public.care_tasks WHERE owner_id=v_owner),
+            state='voided' WHERE owner_id=v_neighbor;
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+            '004 predecessor hold blocks diagnostic deletion');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'nested hold rolls back the entire diagnostic phase');
+        RAISE SQLSTATE 'Z1610';
+    EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+    END;
+
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            IF v_case>1 THEN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+            END IF;
+            IF v_case=3 THEN
+                UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()+interval '1 hour'
+                    WHERE photo_asset_id=v_photo;
+            ELSE
+                INSERT INTO storage.objects(bucket_id,name)
+                    VALUES('analysis-inputs',v_owner::text||'/diagnostic-hold');
+            END IF;
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+                'fresh Storage check holds absent/old proof or unexpired upload, case '||v_case);
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'Storage hold preserves all rows and evidence');
+            RAISE SQLSTATE 'Z1610';
+        EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+        END;
+    END LOOP;
+
+    -- Canonical versioned decisions with both stored associations.
+    INSERT INTO public.diagnostic_decisions(id,revision,origin_decision_id,analysis_result_id,owner_id,
+        kb_release_id,policy_version,original_candidates,answer_snapshot_ids,decision_scores,state,decision_receipt)
+    SELECT id,2,id,analysis_result_id,owner_id,kb_release_id,policy_version,original_candidates,
+        ARRAY[v_answer],decision_scores,state,decision_receipt
+        FROM public.diagnostic_decisions WHERE id=v_decision AND revision=1;
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.care_plan_snapshot();
+    CREATE TRIGGER t010_reject_decision BEFORE DELETE ON public.diagnostic_decisions
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format(
+        'SELECT public.purge_account_deletion_diagnostic_decisions_internal(%L::uuid,%L::uuid)',
+        v_owner,v_operation),'Z0066','FIXTURE_LEAF_PURGE_FAILURE','late diagnostic failure propagates');
+    DROP TRIGGER t010_reject_decision ON public.diagnostic_decisions;
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'late failure restores answers and all predecessors');
+
+    v_expected := v_before;
+    FOREACH v_table IN ARRAY ARRAY['care_plans','task_rules','care_tasks','care_entries',
+        'care_observations','recovery_transitions','care_reversals','schedule_changes','notification_claims',
+        'diagnostic_answers','diagnostic_decisions'] LOOP
+        SELECT coalesce(jsonb_agg(e.value ORDER BY e.ordinality),'[]'::jsonb) INTO v_rows
+            FROM jsonb_array_elements(v_before->v_table) WITH ORDINALITY e(value,ordinality)
+            WHERE e.value->>'owner_id'<>v_owner::text;
+        v_expected := jsonb_set(v_expected,ARRAY[v_table],v_rows);
+    END LOOP;
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),true,
+        'expired uploads and clean Storage permit canonical owner diagnostic cleanup after 004');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_expected,
+        'only owner diagnostics and eligible predecessors removed; foreign graph, analysis, quota, receipts and Auth retained');
+    RETURN NEXT is((SELECT account_state FROM public.profiles WHERE id=v_owner),'deleting',
+        'diagnostic cleanup does not finalize Auth');
+    v_before := pg_temp.care_plan_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),true,
+        'exact diagnostic replay succeeds');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'exact diagnostic replay changes no row');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/diagnostic-replay');
+    v_before := pg_temp.care_plan_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+        'successful diagnostic replay still requires fresh Storage readiness');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'replay hold is atomic');
+
+    RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid=
+            'public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)'::regprocedure),
+        'diagnostic phase is SECURITY DEFINER with an empty search path');
+    RETURN NEXT ok(NOT EXISTS (
+        SELECT 1 FROM pg_proc p CROSS JOIN LATERAL
+            aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'diagnostic function has no nonowner grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual diagnostic execution denied for '||v_role);
+    END LOOP;
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/diagnostic-replay';
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)'::regprocedure;
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),true,
+        'SQL function owner can execute diagnostic replay');
+    RESET ROLE;
+    RAISE SQLSTATE 'Z1610';
+EXCEPTION WHEN SQLSTATE 'Z1610' THEN
+    RETURN;
+END;
+$$;
+
 CREATE FUNCTION pg_temp.care_plan_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
 DECLARE
     v_a uuid := 'a0040000-0000-4000-8000-000000000001';
@@ -1640,6 +1890,7 @@ BEGIN
     -- Both directions are tested before either canonical graph is removed.
     FOREACH v_owner IN ARRAY ARRAY[v_a,v_b] LOOP
         v_neighbor := CASE WHEN v_owner=v_a THEN v_b ELSE v_a END;
+        RETURN QUERY SELECT * FROM pg_temp.diagnostic_purge_tests(v_owner,v_neighbor);
         SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
         v_before := pg_temp.care_plan_snapshot();
         RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,gen_random_uuid()),false,
