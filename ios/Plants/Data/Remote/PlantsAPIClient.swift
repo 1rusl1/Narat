@@ -2036,6 +2036,39 @@ extension PlantsAPIClient {
         return result
     }
 
+    nonisolated static func isGuestPhotoSession(_ session: NativeAuthSession) -> Bool {
+        struct Claims: Decodable {
+            let sub: UUID
+            let is_anonymous: Bool
+        }
+        let parts = session.accessToken.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty }), session.expiresAt > Date() else { return false }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let data = Data(base64Encoded: payload),
+              let claims = try? JSONDecoder().decode(Claims.self, from: data) else { return false }
+        return claims.is_anonymous && claims.sub == session.userId
+    }
+
+    func createDiagnosisPhotoDraft(
+        operationId: UUID, jobId: UUID, credential: String, context: SyncSessionLease
+    ) async throws -> GuestPhotoDraftReceipt {
+        try syncAuthority.withBoundValid(context) {
+            guard let session = context.session, Self.isGuestPhotoSession(session) else {
+                throw SyncWireValidationError.invalidSession
+            }
+        }
+        let result: GuestPhotoDraftReceipt = try await guestPhotoRequest(
+            path: "drafts",
+            body: ["operation_id": operationId.uuidString.lowercased(),
+                   "diagnosis_job_id": jobId.uuidString.lowercased()],
+            credential: credential, context: context
+        )
+        guard SQLTimestamp.date(from: result.expiresAt) != nil else { throw AnalysisHTTPError.invalidResponse }
+        return result
+    }
+
     func preparePhotoClaim(
         operationId: UUID, draftId: UUID, credential: String, context: SyncSessionLease
     ) async throws -> GuestPhotoClaimProof {

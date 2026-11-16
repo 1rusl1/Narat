@@ -4,6 +4,26 @@ struct GuestIdentificationActions {
     let busy: Bool
     let failed: Bool
     let save: (PhotoIdentificationSelection) -> Void
+    var saveDiagnosis: ((GuestDiagnosisSelection) -> Void)? = nil
+}
+
+/// A resolved initial diagnosis with the verified upload owned by the active guest.
+struct GuestDiagnosisSelection: Equatable, Sendable {
+    let jobId: UUID
+    let photoId: UUID
+    let ownerId: UUID
+
+    init?(result: PreliminaryAnalysis, photo: (id: UUID, owner: UUID)?,
+          isInitial: Bool, expected: CatalogueSDKSnapshot) {
+        guard isInitial, result.mode == .diagnosis, result.identificationStatus == .resolved,
+              let plant = result.plantId,
+              !plant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              expected.isAnonymous, PlantsAPIClient.isGuestPhotoSession(expected.session),
+              let photo, photo.owner == expected.session.userId else { return nil }
+        jobId = result.jobId
+        photoId = photo.id
+        ownerId = photo.owner
+    }
 }
 
 struct FirstAidResultContext {
@@ -80,6 +100,7 @@ public struct PreliminaryResultView: View {
                     }
                     exitButtons
                 } else if let result = model.preliminaryResult {
+                    let explanation = InitialDiagnosisExplanation(result: result, polish: isPolish)
                     speciesHeading
                     if result.mode == .diagnosis {
                         if let condition = model.conditionLabel {
@@ -89,14 +110,15 @@ public struct PreliminaryResultView: View {
                             Text(isPolish ? "Nie wykryto problemu." : "No problem detected.")
                                 .accessibilityIdentifier("analysis.result.healthy")
                         } else {
-                            Text(isPolish
-                                 ? "Nie ustalono jednoznacznej diagnozy."
-                                 : "No conclusive diagnosis is available.")
+                            Text(model.repeatDiagnosisTarget == nil
+                                 ? explanation.uncertaintyStatus
+                                 : (isPolish
+                                    ? "Nie ustalono jednoznacznej diagnozy."
+                                    : "No conclusive diagnosis is available."))
                                 .accessibilityIdentifier("analysis.result.uncertainty")
                         }
                     }
                     if model.repeatDiagnosisTarget == nil, result.mode == .diagnosis {
-                        let explanation = InitialDiagnosisExplanation(result: result, polish: isPolish)
                         if !explanation.evidence.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(isPolish ? "Co widać na zdjęciu" : "What the photo shows")
@@ -116,7 +138,9 @@ public struct PreliminaryResultView: View {
                             .accessibilityIdentifier("analysis.result.firstAction")
                         }
                     }
-                    ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
+                    ForEach(Array((model.repeatDiagnosisTarget == nil
+                                   ? explanation.limitations
+                                   : result.limitations).enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
                     }
                     if let context = firstAidContext, let action = model.recordableFirstAid,
@@ -125,6 +149,24 @@ public struct PreliminaryResultView: View {
                        context.connection.snapshot == context.expected {
                         FirstAidRecordControls(context: context, target: target, action: action, summary: summary)
                             .id(action.jobId)
+                    }
+                    if let guestActions, let save = guestActions.saveDiagnosis,
+                       let session = catalogueConnection?.snapshot,
+                       let selection = GuestDiagnosisSelection(
+                           result: result, photo: model.diagnosisPhoto,
+                           isInitial: model.repeatDiagnosisTarget == nil, expected: session
+                       ) {
+                        Button(isPolish ? "Zaloguj się, aby zapisać" : "Sign in to save") { save(selection) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(guestActions.busy)
+                            .accessibilityIdentifier("staging.guest.draft.save")
+                        if guestActions.busy {
+                            ProgressView(isPolish ? "Przygotowywanie rośliny…" : "Preparing your plant…")
+                        }
+                        if guestActions.failed {
+                            Text(isPolish ? "Nie udało się przygotować rośliny. Spróbuj ponownie."
+                                 : "Couldn’t prepare your plant. Try again.")
+                        }
                     }
                     if model.repeatDiagnosisTarget == nil, let connection = catalogueConnection,
                        let session = connection.snapshot, !session.isAnonymous,
@@ -278,6 +320,14 @@ struct AnalysisUnavailableSection: View {
             return isPolish
                 ? "Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie."
                 : "The analysis provider is temporarily unavailable. Please retry."
+        case "analysis.error.timeout":
+            return isPolish
+                ? "Analiza przekroczyła limit czasu. Spróbuj ponownie z tym samym zdjęciem i odpowiedziami."
+                : "The analysis timed out. Retry with the same photo and answers."
+        case "analysis.error.expired_terminal":
+            return isPolish
+                ? "Analiza wygasła. Wróć i wybierz zdjęcie ponownie."
+                : "The analysis expired. Go back and choose a photo again."
         case "analysis.error.provider_terminal":
             if returnToPlant != nil { return "The provider could not complete the analysis. Choose a new photo from your plant card." }
             return isPolish
@@ -309,6 +359,7 @@ struct AnalysisUnavailableSection: View {
                 .accessibilityIdentifier("analysis.unavailable.title")
 
             if model.analysisError != "analysis.error.provider_terminal",
+               model.analysisError != "analysis.error.expired_terminal",
                model.analysisError != "analysis.error.quota_registration",
                model.analysisError != "analysis.error.quota_exhausted" {
                 Button(isPolish ? "Spróbuj ponownie" : "Retry") {
