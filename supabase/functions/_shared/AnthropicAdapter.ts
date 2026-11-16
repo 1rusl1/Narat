@@ -3,6 +3,7 @@
 // Uses separate prompts for identification vs diagnosis, enforces stop_reason === 'end_turn',
 // validates against AnalysisValidator (Schema 3.0 + KB membership), and delegates advice/receipts to ProtocolResolver.
 
+import { validInitialContext } from "./initial-diagnosis-context.ts";
 import Anthropic, { type ClientOptions } from "@anthropic-ai/sdk";
 import {
   AnalysisValidator,
@@ -46,6 +47,7 @@ export interface AnthropicClassificationInput {
     season_override?: string;
   };
   repeatContext?: RepeatDiagnosisContext;
+  initialContext?: unknown;
   catalog: PublishedReleaseCatalog;
   signingSecret: string;
   signal?: AbortSignal;
@@ -60,6 +62,7 @@ export interface AnthropicAdapterResult {
   shouldConsumeQuota: boolean;
   errorCode?:
     | "UNSUPPORTED_ANALYSIS_MODE"
+    | "INVALID_INITIAL_CONTEXT"
     | "PROVIDER_REFUSAL"
     | "PROVIDER_TRUNCATED"
     | "PROVIDER_INVALID_JSON"
@@ -201,6 +204,19 @@ export class AnthropicAdapter {
         errorMessage: "Unsupported analysis mode.",
       };
     }
+    if ("initialContext" in input &&
+      (input.mode !== "diagnosis" || input.repeatContext != null ||
+        !validInitialContext(input.initialContext))) {
+      return {
+        ok: false,
+        shouldConsumeQuota: false,
+        errorCode: "INVALID_INITIAL_CONTEXT",
+        errorMessage: "Invalid initial diagnosis context.",
+      };
+    }
+    const initialContext = validInitialContext(input.initialContext)
+      ? input.initialContext
+      : undefined;
     let systemPrompt = buildSystemPrompt(
       input.mode,
       input.catalog.kbReleaseId,
@@ -211,11 +227,22 @@ export class AnthropicAdapter {
       systemPrompt += " Diagnose only the submitted new photo. Use saved conditions and recorded care as background facts. Missing information remains unknown. Do not compare images, diagnose from the journal alone, or infer improvement or deterioration.";
     }
 
+    if (initialContext) {
+      systemPrompt += " Initial observation answers are background only. Unknown remains unknown. Diagnose only the submitted photo using visible evidence and the published catalogue constraints. Do not infer recorded care, last watering dates or history from these answers.";
+    }
+
     const contextPayload = {
       kb_release_id: input.catalog.kbReleaseId,
       mode: input.mode,
       locale: input.locale,
       care_context: input.careContext ?? null,
+      ...(initialContext && {
+        initial_context: {
+          light: initialContext.light,
+          watering_frequency: initialContext.watering_frequency,
+          drainage: initialContext.drainage,
+        },
+      }),
       ...(repeatContext && {
         repeat_context: {
           light: repeatContext.light,

@@ -3,6 +3,7 @@
 // Enforces 40s provider timeout, 55s total job deadline, daily ProviderBudgetGuard <= $10 USD,
 // and settles lease/quota exactly once against the original reserved period.
 
+import { validInitialContext } from "../_shared/initial-diagnosis-context.ts";
 import {
   AnthropicAdapter,
   PROVIDER_CALL_TIMEOUT_MS,
@@ -43,6 +44,7 @@ export interface LeasedAnalysisJob {
     season_override?: string;
   };
   repeatContext?: RepeatDiagnosisContext;
+  initialContext?: unknown;
   quotaKind: string;
   monthlyQuotaId: string | null;
   leaseExpiresAt: string;
@@ -129,6 +131,13 @@ export async function processSingleQueuedJob(params: {
     | undefined;
   let errorCode = "ANALYSIS_PROCESSING_FAILED";
   try {
+    // Reject untrusted context before catalogue, image or provider access.
+    if ("initialContext" in job &&
+      (job.mode !== "diagnosis" || job.repeatContext != null ||
+        !validInitialContext(job.initialContext))) {
+      errorCode = "INVALID_INITIAL_CONTEXT";
+      throw new Error("Invalid initial diagnosis context.");
+    }
     const target = job.mode === "identification"
       ? {
         mode: "identification" as const,
@@ -179,6 +188,7 @@ export async function processSingleQueuedJob(params: {
             locale: job.locale,
             careContext: job.careContext,
             repeatContext: job.repeatContext,
+            ...("initialContext" in job && { initialContext: job.initialContext }),
             catalog: target.catalog,
             signingSecret: params.signingSecret,
           });

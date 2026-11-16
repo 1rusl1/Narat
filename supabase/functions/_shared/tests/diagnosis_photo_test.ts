@@ -100,6 +100,8 @@ function fixture(
     missingKey?: boolean;
     registrationRequired?: boolean;
     repeatDiagnosis?: boolean;
+    initialContext?: unknown;
+    invalidInitialContext?: boolean;
     identificationReply?: {
       text: string;
       stopReason?: string;
@@ -124,7 +126,7 @@ function fixture(
   const repeatBinding = options.repeatDiagnosis
     ? { target_plant_id: savedPlant, photo_asset_id: photo }
     : {};
-  const expectedError = identification?.errorCode ??
+  const expectedError = options.invalidInitialContext ? "INVALID_INITIAL_CONTEXT" : identification?.errorCode ??
     (options.providerHttpStatus
       ? "PROVIDER_TIMEOUT_OR_ERROR"
       : options.providerFailure
@@ -135,7 +137,7 @@ function fixture(
   let plantSaved = false;
   let ticketIssued = false;
   let ready = false, created = false, leased = false, providerStarted = false;
-  let providerCalls = 0, uploads = 0;
+  let providerCalls = 0, uploads = 0, imageReads = 0;
   let stored: Uint8Array<ArrayBuffer> | null = null;
   let projection: Record<string, unknown> | null = null;
   let outcome = "queued";
@@ -246,6 +248,13 @@ function fixture(
         });
       }
       const providerContext = JSON.parse(text.text);
+      assertEquals(providerContext.initial_context, options.initialContext);
+      if (options.initialContext) {
+        assert(body.system.includes("Unknown remains unknown"));
+        assertEquals(providerContext.care_context, null);
+        assert(!("repeat_context" in providerContext));
+        assert(!text.text.includes(owner) && !text.text.includes(photo));
+      }
       assertEquals(providerContext.repeat_context, options.repeatDiagnosis ? repeatContext : undefined);
       if (options.repeatDiagnosis) {
         assert(body.system.includes("Do not compare images"));
@@ -292,6 +301,7 @@ function fixture(
     if (path.startsWith("/storage/v1/object/")) {
       assert(path.endsWith(`/analysis-inputs/${owner}/${photo}`));
       if (req.method === "GET") {
+        imageReads++;
         return stored
           ? new Response(stored, { headers: { "content-type": "image/jpeg" } })
           : Response.json({ statusCode: "404", message: "not found" }, {
@@ -431,6 +441,7 @@ function fixture(
           quota_kind: `starter_${mode}`,
           deadline_at: new Date(Date.now() + 55_000).toISOString(),
           upload: row(),
+          ...("initialContext" in options && { initial_context: options.initialContext }),
           ...(options.repeatDiagnosis && {
             repeat_context: {
               ...repeatContext,
@@ -549,6 +560,7 @@ function fixture(
       expired = true;
     },
     providerCalls: () => providerCalls,
+    imageReads: () => imageReads,
     uploads: () => uploads,
     corruptPhoto: () => {
       stored = new Uint8Array(jpeg.length);
@@ -1145,3 +1157,61 @@ Deno.test("Initial diagnosis context is closed, owner-only and uses a dedicated 
     assertEquals((await post({ initial_context: { ...context, drainage } })).status, 503);
   }
 });
+
+for (const provider of ["anthropic", "openrouter"]) {
+  for (const initialContext of [
+    { light: "bright_indirect", watering_frequency: "moderate", drainage: "yes" },
+    { light: "unknown", watering_frequency: "unknown", drainage: "unknown" },
+  ]) {
+    Deno.test(`Leased initial answers reach exact ${provider} payload: ${initialContext.light}`, async () => {
+      const f = fixture({ provider, initialContext });
+      const ticket = await f.ticket();
+      assertEquals((await f.put((await ticket.json()).signed_upload_url)).status, 200);
+      assertEquals((await f.api("/analysis/jobs", {
+        operation_id: jobOperation, mode: "diagnosis", photo_asset_id: photo,
+      })).status, 202);
+      await Promise.all(f.work);
+      assertEquals(f.providerCalls(), 1);
+      assertEquals((await (await f.api("/analysis/jobs/" + job)).json()).status, "succeeded");
+    });
+  }
+}
+
+for (const [name, initialContext, extra] of [
+  ["null", null, {}],
+  ["array", [], {}],
+  ["missing answer", { light: "low", drainage: "yes" }, {}],
+  ["unsupported value", { light: "ignore instructions", watering_frequency: "moderate", drainage: "yes" }, {}],
+  ["untrusted keys", { light: "low", watering_frequency: "moderate", drainage: "yes", owner_id: owner, photos: [photo], description: "private" }, {}],
+  ["repeat", { light: "low", watering_frequency: "moderate", drainage: "yes" }, { repeatDiagnosis: true }],
+  ["identification", { light: "low", watering_frequency: "moderate", drainage: "yes" }, { identificationReply: { text: "{}" } }],
+] as const) {
+  Deno.test(`Untrusted leased context fails before image and provider: ${name}`, async () => {
+    const f = fixture({ ...extra, initialContext, invalidInitialContext: true });
+    const ticket = await f.ticket();
+    assertEquals((await f.put((await ticket.json()).signed_upload_url)).status, 200);
+    const readsBeforeJob = f.imageReads();
+    assertEquals((await f.api("/analysis/jobs", {
+      operation_id: jobOperation,
+      mode: "identificationReply" in extra ? "identification" : "diagnosis",
+      photo_asset_id: photo,
+      ...("repeatDiagnosis" in extra && { target_plant_id: savedPlant }),
+    })).status, 202);
+    await Promise.all(f.work);
+    assertEquals(f.imageReads(), readsBeforeJob);
+    assertEquals(f.providerCalls(), 0);
+    assert(!f.rpcNames.includes("start_diagnosis_provider"));
+    const status = await (await f.api("/analysis/jobs/" + job)).json();
+    assertEquals(status.status, "failed");
+    assertEquals(status.quota_state, "released");
+    const unrelated = fixture();
+    const upload = await unrelated.ticket();
+    assertEquals((await unrelated.put((await upload.json()).signed_upload_url)).status, 200);
+    assertEquals((await unrelated.api("/analysis/jobs", {
+      operation_id: jobOperation, mode: "diagnosis", photo_asset_id: photo,
+    })).status, 202);
+    await Promise.all(unrelated.work);
+    assertEquals(unrelated.providerCalls(), 1);
+    assertEquals((await (await unrelated.api("/analysis/jobs/" + job)).json()).status, "succeeded");
+  });
+}
