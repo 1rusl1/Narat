@@ -1084,5 +1084,157 @@ $setup$, $query$
     SELECT (projection IS NULL)::text FROM public.diagnosis_job_runtime
     WHERE job_id=(SELECT id FROM bound_initial_job)
 $query$),'true','draft cleanup removes initial diagnosis projection');
+
+-- Forward-only persistence; earlier migration checkpoints keep their existing tests.
+CREATE FUNCTION pg_temp.test_initial_save_conditions() RETURNS SETOF text
+LANGUAGE plpgsql SET search_path = public, extensions, pg_temp AS $test$
+DECLARE
+    ctx jsonb;
+    owner_uuid uuid;
+    photo_uuid uuid;
+    job_uuid uuid;
+    lease_uuid uuid;
+    operation_uuid uuid;
+    plant_uuid uuid;
+    snapshot_uuid uuid;
+    payload jsonb;
+    receipt jsonb;
+    replayed jsonb;
+    before_state jsonb;
+    saved_state jsonb;
+    query_sql text;
+    setup_sql text;
+    delta jsonb;
+    snapshot public.condition_snapshots%ROWTYPE;
+BEGIN
+    IF position('Initial diagnosis answers belong' IN pg_get_functiondef(
+        'public.execute_plant_create_command(uuid,uuid,jsonb,timestamptz)'::regprocedure)) = 0 THEN
+        RETURN QUERY SELECT * FROM skip('008 initial save conditions not installed',1);
+        RETURN;
+    END IF;
+
+    -- Cover every light/frequency/drainage enum, plus a compatible old job.
+    FOR ctx IN SELECT value FROM (VALUES
+        ('{"light":"low","watering_frequency":"frequent","drainage":"yes"}'::jsonb),
+        ('{"light":"medium","watering_frequency":"moderate","drainage":"no"}'::jsonb),
+        ('{"light":"bright_indirect","watering_frequency":"sparse","drainage":"unknown"}'::jsonb),
+        ('{"light":"direct_sun","watering_frequency":"moderate","drainage":"yes"}'::jsonb),
+        ('{"light":"unknown","watering_frequency":"unknown","drainage":"unknown"}'::jsonb),
+        (NULL::jsonb)
+    ) cases(value)
+    LOOP
+        owner_uuid := gen_random_uuid();
+        operation_uuid := gen_random_uuid();
+        INSERT INTO public.profiles(id,anonymous) VALUES (owner_uuid,false);
+        photo_uuid := (public.create_diagnosis_upload(
+            owner_uuid,gen_random_uuid(),'image/jpeg',4,repeat('e',64))->>'photo_asset_id')::uuid;
+        PERFORM public.mark_diagnosis_upload_ready(owner_uuid,photo_uuid,repeat('e',64));
+        IF ctx IS NULL THEN
+            job_uuid := (public.create_diagnosis_job(
+                owner_uuid,gen_random_uuid(),photo_uuid,NULL,'en',true)->'job'->>'job_id')::uuid;
+        ELSE
+            job_uuid := (public.create_initial_diagnosis_job(
+                owner_uuid,gen_random_uuid(),photo_uuid,NULL,'en',true,ctx)->'job'->>'job_id')::uuid;
+        END IF;
+        lease_uuid := (public.lease_diagnosis_job(job_uuid)->>'lease_token')::uuid;
+        PERFORM public.start_diagnosis_provider(job_uuid,lease_uuid);
+        PERFORM public.finish_diagnosis_job(job_uuid,lease_uuid,
+            (SELECT jsonb_build_object('mode','diagnosis','job_id',j.id,'kb_release_id',j.kb_release_id,
+                'identification_status','identified','plant_id','monstera_deliciosa','diagnosis_status','healthy')
+             FROM public.analysis_jobs j WHERE j.id=job_uuid),false,NULL);
+        INSERT INTO storage.objects(bucket_id,name)
+            SELECT 'analysis-inputs',original_key FROM public.photo_assets WHERE id=photo_uuid;
+        payload := jsonb_build_object('creation_source','catalogue','creation_intent','problem',
+            'add_method','scan','plant_id','monstera_deliciosa','diagnosis_job_id',job_uuid);
+        query_sql := format('SELECT public.execute_plant_create_command(%L::uuid,%L::uuid,%L::jsonb)',
+            owner_uuid,operation_uuid,payload);
+        SELECT body INTO before_state FROM create_context_state;
+
+        RETURN NEXT throws_ok(format('SELECT public.execute_plant_create_command(%L::uuid,%L::uuid,%L::jsonb)',
+            '16300000-0000-4000-8000-000000000001',operation_uuid,payload),
+            'P0002','diagnosis_source_not_found','initial save cannot use another owner source');
+        RETURN NEXT throws_ok(format('SELECT public.execute_plant_create_command(%L::uuid,%L::uuid,%L::jsonb)',
+            owner_uuid,operation_uuid,payload || '{"conditions":{"light_code":"medium"}}'::jsonb),
+            '22023','invalid_diagnosis_save','client conditions cannot replace immutable answers');
+        FOR setup_sql IN SELECT value FROM (VALUES
+            (format('UPDATE public.photo_assets SET deleted_at=clock_timestamp() WHERE id=%L::uuid',photo_uuid)),
+            (format('UPDATE public.photo_assets SET original_key=%L WHERE id=%L::uuid','wrong/provenance',photo_uuid)),
+            (format('DELETE FROM storage.objects WHERE bucket_id=%L AND name=(SELECT original_key FROM public.photo_assets WHERE id=%L::uuid)',
+                'analysis-inputs',photo_uuid)),
+            (format('UPDATE public.diagnosis_job_runtime SET projection=jsonb_set(projection,%L,%L::jsonb) WHERE job_id=%L::uuid',
+                '{plant_id}','"aloe_vera"',job_uuid))
+        ) invalid_source(value)
+        LOOP
+            RETURN NEXT is(pg_temp.diagnosis_draft_probe(setup_sql,query_sql),
+                'P0002:diagnosis_source_not_found','001 source restrictions still precede snapshot creation');
+        END LOOP;
+        RETURN NEXT is((SELECT body FROM create_context_state),before_state,
+            'rejected saves leave snapshots, receipts, photos, quotas and watermarks unchanged');
+
+        EXECUTE query_sql INTO receipt;
+        plant_uuid := (receipt->>'plant_id')::uuid;
+        SELECT current_condition_snapshot_id INTO snapshot_uuid FROM public.plants WHERE id=plant_uuid;
+        RETURN NEXT is((SELECT jsonb_build_array(main_photo_id,current_snapshot_id,revision,care_revision,updated_at)
+            FROM public.plants WHERE id=plant_uuid AND owner_id=owner_uuid),
+            jsonb_build_array(photo_uuid,snapshot_uuid,1,1,receipt->'watermark'),
+            'save keeps original photo, pointer aliases, revisions and the single create watermark');
+        RETURN NEXT is((SELECT plant_id FROM public.photo_assets WHERE id=photo_uuid),plant_uuid,
+            'original source photo belongs to the same saved plant');
+        RETURN NEXT is((SELECT count(*) FROM public.condition_snapshots WHERE owner_id=owner_uuid),
+            CASE WHEN ctx IS NULL THEN 0 ELSE 1 END::bigint,'one canonical snapshot only for jobs with initial context');
+        IF ctx IS NOT NULL THEN
+            SELECT * INTO snapshot FROM public.condition_snapshots WHERE id=snapshot_uuid;
+            RETURN NEXT ok(snapshot.id IS NOT NULL AND snapshot.plant_id=plant_uuid
+                AND snapshot.owner_id=owner_uuid AND snapshot.draft_id IS NULL
+                AND snapshot.version=1 AND snapshot.revision=1
+                AND snapshot.light_level=ctx->>'light' AND snapshot.watering_habit=ctx->>'watering_frequency'
+                AND snapshot.created_at=(receipt->>'watermark')::timestamptz
+                AND snapshot.updated_at=snapshot.created_at,'canonical snapshot uses owner, plant, version and create watermark');
+            RETURN NEXT is(jsonb_build_array(snapshot.light_code,snapshot.light_source,snapshot.light_confirmed,
+                snapshot.watering_code,snapshot.drainage_code,snapshot.last_watered,snapshot.pot_type,snapshot.season_override),
+                jsonb_build_array(ctx->>'light',CASE WHEN ctx->>'light'='unknown' THEN 'unknown' ELSE 'manual' END,
+                    ctx->>'light'<>'unknown',ctx->>'watering_frequency',ctx->>'drainage','unknown','unknown','auto'),
+                'known and unknown answers map directly without dates, pot or season invention');
+            delta := public.fetch_sync_delta(owner_uuid);
+            RETURN NEXT ok(EXISTS (SELECT 1 FROM jsonb_array_elements(delta->'changes') e
+                WHERE e->>'entity_type'='plants' AND e->>'id'=plant_uuid::text
+                  AND e->'data'->>'current_condition_snapshot_id'=snapshot_uuid::text),
+                'owner sync publishes the canonical plant pointer');
+            RETURN NEXT ok(EXISTS (SELECT 1 FROM jsonb_array_elements(delta->'changes') e
+                WHERE e->>'entity_type'='condition_snapshots' AND e->>'id'=snapshot_uuid::text
+                  AND e->'data'->>'plant_id'=plant_uuid::text
+                  AND e->'data'->>'light_code'=ctx->>'light'
+                  AND e->'data'->>'watering_code'=ctx->>'watering_frequency'
+                  AND e->'data'->>'drainage_code'=ctx->>'drainage'),
+                'owner sync roundtrips initial conditions');
+        ELSE
+            RETURN NEXT is(snapshot_uuid,NULL::uuid,'old no-context diagnosis keeps a null pointer');
+        END IF;
+        RETURN NEXT is((SELECT body - ARRAY['profiles','plants','snapshots','receipts','photos']
+            FROM create_context_state),before_state - ARRAY['profiles','plants','snapshots','receipts','photos'],
+            'plant save does not change diagnosis jobs or quota accounting');
+        RETURN NEXT is((SELECT response_payload FROM public.operation_receipts
+            WHERE owner_id=owner_uuid AND operation_id=operation_uuid),receipt,'persisted receipt is canonical');
+        RETURN NEXT is((SELECT count(*) FROM public.operation_receipts
+            WHERE owner_id=owner_uuid AND command_name='plant.create'),1::bigint,'no second create receipt');
+        SELECT body INTO saved_state FROM create_context_state;
+        EXECUTE query_sql INTO replayed;
+        RETURN NEXT is(replayed,receipt,'exact retry returns the same persisted receipt and plant id');
+        RETURN NEXT is((SELECT body - 'profiles' FROM create_context_state),saved_state - 'profiles',
+            'retry preserves snapshot id and every persisted collection and quota row');
+        SELECT body INTO saved_state FROM create_context_state;
+        RETURN NEXT throws_ok(format('SELECT public.execute_plant_create_command(%L::uuid,%L::uuid,%L::jsonb)',
+            owner_uuid,operation_uuid,payload || '{"personal_name":"Changed"}'::jsonb),
+            '23505','operation_payload_mismatch','changed operation conflicts before snapshot creation');
+        RETURN NEXT throws_ok(format('SELECT public.execute_plant_create_command(%L::uuid,%L::uuid,%L::jsonb)',
+            owner_uuid,gen_random_uuid(),jsonb_build_object('creation_source','catalogue','creation_intent','problem',
+                'add_method','scan','plant_id','monstera_deliciosa','diagnosis_job_id',job_uuid)),
+            '23505','diagnosis_photo_already_attached','another operation cannot save the same diagnosis photo twice');
+        RETURN NEXT is((SELECT body FROM create_context_state),saved_state,
+            'conflicts have no snapshot, receipt, photo, quota or watermark side effects');
+    END LOOP;
+END;
+$test$;
+SELECT * FROM pg_temp.test_initial_save_conditions();
 SELECT * FROM finish();
 ROLLBACK;
