@@ -2657,8 +2657,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-initial-diagnosis-context-ios: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 497.52 с, проверки — 143.94 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-initial-diagnosis-context-ios](validation/automation/tasks/t170-initial-diagnosis-context-ios.md).
+t170-persist-conditions-on-diagnosis-save: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 388.31 с, проверки — 52.24 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-persist-conditions-on-diagnosis-save](validation/automation/tasks/t170-persist-conditions-on-diagnosis-save.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
