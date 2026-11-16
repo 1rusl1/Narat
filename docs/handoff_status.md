@@ -2592,8 +2592,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t019-native-auth-ordinary-account: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 769.48 с, проверки — 112.76 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t019-native-auth-ordinary-account](validation/automation/tasks/t019-native-auth-ordinary-account.md).
+t096-ordinary-polish-photo-entry: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 346.78 с, проверки — 107.94 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t096-ordinary-polish-photo-entry](validation/automation/tasks/t096-ordinary-polish-photo-entry.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

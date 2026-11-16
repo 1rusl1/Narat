@@ -112,6 +112,7 @@ struct RootContainerView: View {
                         welcomeIntentSection
                     } else {
                         PlantHomeView(
+                            polish: isPolish,
                             busy: opening != nil,
                             unavailable: catalogue?.unavailable != nil || startupFailed,
                             guestAccessFailed: guestAccessFailed,
@@ -462,7 +463,7 @@ struct RootContainerView: View {
 #endif
         guard let catalogue else { return }
         if !usesLegacyWelcome {
-            languageStore.currentLocale = .en
+            languageStore.currentLocale = SupportedLocale.resolveInitial()
         }
         do {
             if usesLegacyWelcome { _ = try await catalogue.sessionOwner() }
@@ -1250,6 +1251,7 @@ private struct AccountSignInView: View {
 }
 
 private struct PlantHomeView<GuestActions: View>: View {
+    let polish: Bool
     let busy: Bool
     let unavailable: Bool
     let guestAccessFailed: Bool
@@ -1271,7 +1273,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                         .accessibilityIdentifier("welcome.title")
                     Spacer()
                     Button(action: collection) {
-                        Label("My plants", systemImage: "leaf")
+                        Label(polish ? "Moje rośliny" : "My plants", systemImage: "leaf")
                             .font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
@@ -1282,13 +1284,13 @@ private struct PlantHomeView<GuestActions: View>: View {
                     Image(systemName: "leaf.circle")
                         .font(.system(size: 44, weight: .light))
                         .accessibilityHidden(true)
-                    Text("How’s your plant doing?")
+                    Text(polish ? "Jak się ma Twoja roślina?" : "How’s your plant doing?")
                         .font(.system(.largeTitle, design: .serif).weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
-                    Text("Use a photo to see what your plant might need.")
+                    Text(polish ? "Dodaj zdjęcie, aby sprawdzić, czego może potrzebować Twoja roślina." : "Use a photo to see what your plant might need.")
                         .font(.body)
                     Button(action: check) {
-                        Label("Check a plant", systemImage: "camera")
+                        Label(polish ? "Sprawdź roślinę" : "Check a plant", systemImage: "camera")
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
@@ -1303,29 +1305,29 @@ private struct PlantHomeView<GuestActions: View>: View {
                 .background(green, in: RoundedRectangle(cornerRadius: 28))
 
                 VStack(spacing: 0) {
-                    destination("Identify a plant", systemImage: "viewfinder", id: "welcome.identify", action: identify)
+                    destination(polish ? "Rozpoznaj roślinę" : "Identify a plant", systemImage: "viewfinder", id: "welcome.identify", action: identify)
                         .disabled(unavailable)
                     Divider().padding(.leading, 52)
-                    destination("Browse catalogue", systemImage: "books.vertical", id: "welcome.catalogue", action: browse)
+                    destination(polish ? "Przeglądaj katalog" : "Browse catalogue", systemImage: "books.vertical", id: "welcome.catalogue", action: browse)
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
 
                 guestActions()
 
                 if unavailable {
-                    Text("Narat can’t connect right now. Check the app’s connection settings.")
+                    Text(polish ? "Narat nie może się teraz połączyć. Sprawdź ustawienia połączenia aplikacji." : "Narat can’t connect right now. Check the app’s connection settings.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("welcome.unavailable")
                 }
                 if guestAccessFailed {
-                    Text("Couldn’t start guest identification. Try again.")
+                    Text(polish ? "Nie udało się rozpocząć rozpoznawania bez logowania. Spróbuj ponownie." : "Couldn’t start guest identification. Try again.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("welcome.guest.error")
                 }
                 if busy {
-                    ProgressView("Opening…")
+                    ProgressView(polish ? "Otwieranie…" : "Opening…")
                         .accessibilityIdentifier("welcome.opening")
                 }
             }

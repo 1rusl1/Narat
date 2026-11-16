@@ -19,6 +19,44 @@ final class PlantsUITests: XCTestCase {
     }
 
     @MainActor
+    func testOrdinaryPolishHomeShowsOfflinePhotoAvailabilityAndBack() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(pl)", "-AppleLocale", "pl_PL"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Jak się ma Twoja roślina?"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["welcome.title"].label, "Narat")
+        XCTAssertTrue(app.staticTexts["Dodaj zdjęcie, aby sprawdzić, czego może potrzebować Twoja roślina."].exists)
+        XCTAssertEqual(app.buttons["welcome.check"].label, "Sprawdź roślinę")
+        XCTAssertEqual(app.buttons["welcome.identify"].label, "Rozpoznaj roślinę")
+        XCTAssertEqual(app.buttons["welcome.catalogue"].label, "Przeglądaj katalog")
+        XCTAssertEqual(app.buttons["collection.open"].label, "Moje rośliny")
+        XCTAssertFalse(app.segmentedControls["welcome.language.picker"].exists)
+
+        // The local QA build has no backend configuration. Its ordinary photo
+        // routes are unavailable; do not substitute fixtures or start a session.
+        let unavailable = app.staticTexts["welcome.unavailable"]
+        XCTAssertTrue(unavailable.waitForExistence(timeout: 5))
+        XCTAssertEqual(unavailable.label, "Narat nie może się teraz połączyć. Sprawdź ustawienia połączenia aplikacji.")
+        XCTAssertFalse(app.buttons["welcome.check"].isEnabled)
+        XCTAssertFalse(app.buttons["welcome.identify"].isEnabled)
+        XCTAssertFalse(app.buttons["collection.open"].isEnabled)
+        XCTAssertFalse(app.buttons["photo.select.gallery"].exists)
+
+        app.buttons["welcome.catalogue"].tap()
+        let error = app.staticTexts["catalogue.error"]
+        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        XCTAssertEqual(error.label, "Nie udało się pobrać katalogu.")
+        XCTAssertEqual(app.buttons["catalogue.retry"].label, "Spróbuj ponownie")
+        let back = app.buttons["catalogue.back"]
+        XCTAssertEqual(back.label, "Wstecz")
+        back.tap()
+        XCTAssertTrue(app.buttons["welcome.check"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["welcome.check"].label, "Sprawdź roślinę")
+        XCTAssertTrue(unavailable.exists)
+    }
+
+    @MainActor
     func testStagingCatalogueSelectionSurvivesRelaunch() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["NARAT_LIVE_STAGING"] == "1")
         let app = XCUIApplication()
