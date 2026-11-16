@@ -2761,8 +2761,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t039-stage-compatible-snapshot-edit: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 237.52 с, проверки — 64.61 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t039-stage-compatible-snapshot-edit](validation/automation/tasks/t039-stage-compatible-snapshot-edit.md).
+t083-account-data-guest-draft-purge: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 465.11 с, проверки — 90.95 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-account-data-guest-draft-purge](validation/automation/tasks/t083-account-data-guest-draft-purge.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

@@ -2914,5 +2914,107 @@ END;
 $$;
 SELECT * FROM pg_temp.care_plan_purge_tests();
 
+-- 017 acceptance is rollback-only on both clean and upgraded schemas.
+-- Still blocked: every claim (even expired same-owner), any job replay anchor,
+-- foreign/unknown dependencies, and destination provenance backed by a new FK.
+CREATE FUNCTION pg_temp.guest_draft_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0170000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0170000-0000-4000-8000-000000000002';
+    v_operation uuid := gen_random_uuid();
+    v_draft uuid;
+    v_foreign uuid;
+    v_plant uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_case integer;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_guest_drafts_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('017 guest purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+        VALUES(v_owner,gen_random_uuid(),'care','catalogue') RETURNING id INTO v_draft;
+    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+        VALUES(v_neighbor,gen_random_uuid(),'care','catalogue') RETURNING id INTO v_foreign;
+    INSERT INTO public.plants(owner_id,personal_name,creation_source,origin_draft_id)
+        VALUES(v_neighbor,'Committed destination','identification',v_draft) RETURNING id INTO v_plant;
+    RETURN NEXT is((SELECT array_agg(c.relname||'.'||a.attname ORDER BY c.relname,a.attname)
+        FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid
+        JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=f.conkey[1]
+        WHERE f.contype='f' AND f.confrelid='public.guest_drafts'::regclass),
+        ARRAY['analysis_jobs.draft_id','analysis_results.draft_id','condition_snapshots.draft_id',
+            'draft_claims.draft_id','photo_assets.draft_id']::text[],
+        '017 actual clean/upgrade incoming FK inventory');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+        '017 unverified active owner rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 unverified request changes nothing');
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_neighbor,v_operation),false,'017 wrong owner');
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,gen_random_uuid()),false,'017 wrong operation');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 invalid scope changes nothing');
+    FOR v_case IN 1..4 LOOP
+        BEGIN
+            INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+                VALUES(v_draft,'retained-proof',
+                    CASE WHEN v_case=2 THEN v_neighbor ELSE v_owner END,gen_random_uuid(),
+                    CASE WHEN v_case=3 THEN 'published' ELSE 'prepared' END,
+                    clock_timestamp()+CASE WHEN v_case=4 THEN interval '-1 day' ELSE interval '1 day' END);
+            v_before := pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+                '017 replay/active/cross-owner claim hold '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 claim hold has zero mutation '||v_case);
+            RAISE SQLSTATE 'Z1717';
+        EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+        END;
+    END LOOP;
+    BEGIN
+        CREATE TABLE public.t083_guest_dependency(draft_id uuid REFERENCES public.guest_drafts(id) ON DELETE CASCADE);
+        INSERT INTO public.t083_guest_dependency VALUES(v_draft);
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 unknown cascading dependency fails closed');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 unknown dependency changes nothing');
+        RETURN NEXT is((SELECT count(*) FROM public.t083_guest_dependency),1::bigint,'017 unknown child retained');
+        RAISE SQLSTATE 'Z1717';
+    EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+    END;
+    v_before := pg_temp.analysis_purge_snapshot();
+    v_expected := jsonb_set(v_before,ARRAY['public.guest_drafts'],
+        (SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb)
+         FROM jsonb_array_elements(v_before->'public.guest_drafts') e WHERE e->>'id'<>v_draft::text));
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+        '017 no-alias owner draft purged after verified predecessors');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '017 exact owner scope preserves destination, other owners, proof/storage, quota, Auth and receipts');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM public.plants WHERE id=v_plant AND owner_id=v_neighbor
+        AND origin_draft_id=v_draft),'017 committed foreign destination provenance retained');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,'017 exact purge replay');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 replay has zero mutation');
+    RETURN NEXT ok(NOT has_function_privilege('service_role',
+        'public.purge_account_deletion_guest_drafts_internal(uuid,uuid)','EXECUTE')
+        AND NOT has_function_privilege('authenticated',
+        'public.purge_account_deletion_guest_drafts_internal(uuid,uuid)','EXECUTE')
+        AND NOT has_function_privilege('anon',
+        'public.purge_account_deletion_guest_drafts_internal(uuid,uuid)','EXECUTE'),'017 SQL owner only');
+    RAISE SQLSTATE 'Z1717';
+EXCEPTION WHEN SQLSTATE 'Z1717' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.guest_draft_purge_tests();
+
+-- Rollback restores pgTAP's transactional curr_test cache, but its sequence
+-- retains emitted assertion numbers. Assert outside the rollback before finish.
+SELECT ok(NOT EXISTS (
+    SELECT 1 FROM auth.users WHERE id IN (
+        'a0170000-0000-4000-8000-000000000001'::uuid,
+        'a0170000-0000-4000-8000-000000000002'::uuid)
+), '017 rollback fixtures leave no fixture accounts');
 SELECT * FROM finish();
 ROLLBACK;
