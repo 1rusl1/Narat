@@ -1954,21 +1954,30 @@ extension PlantsAPIClient {
     func createAnalysisJob(
         operationId: UUID, mode: AnalysisMode, photoAssetId: UUID,
         flowId: UUID? = nil, targetPlantId: UUID? = nil,
+        initialContext: InitialDiagnosisContext? = nil,
         locale: SupportedLocale, context: SyncSessionLease, guestCredential: String? = nil
     ) async throws -> AnalysisJobWire {
         guard mode == .diagnosis || mode == .identification,
-              targetPlantId == nil || (mode == .diagnosis && guestCredential == nil) else {
+              targetPlantId == nil || (mode == .diagnosis && guestCredential == nil),
+              initialContext == nil || (mode == .diagnosis && targetPlantId == nil && guestCredential == nil) else {
             throw AnalysisHTTPError.invalidResponse
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        var fields = [
-            "operation_id": operationId.uuidString.lowercased(), "mode": mode.rawValue,
-            "photo_asset_id": photoAssetId.uuidString.lowercased()
-        ]
-        if let flowId { fields["flow_id"] = flowId.uuidString.lowercased() }
-        if let targetPlantId { fields["target_plant_id"] = targetPlantId.uuidString.lowercased() }
-        let body = try encoder.encode(fields)
+        struct Body: Encodable {
+            let operation_id: String
+            let mode: AnalysisMode
+            let photo_asset_id: String
+            let flow_id: String?
+            let target_plant_id: String?
+            let initial_context: InitialDiagnosisContext?
+        }
+        let body = try encoder.encode(Body(
+            operation_id: operationId.uuidString.lowercased(), mode: mode,
+            photo_asset_id: photoAssetId.uuidString.lowercased(),
+            flow_id: flowId?.uuidString.lowercased(), target_plant_id: targetPlantId?.uuidString.lowercased(),
+            initial_context: initialContext
+        ))
         let request = try buildRequest(path: "analysis/jobs", method: "POST", body: body)
         let job: AnalysisJobWire = try await analysisRequest(
             request, locale: locale, context: context, status: [200, 202], installation: guestCredential

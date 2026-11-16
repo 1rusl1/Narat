@@ -6034,6 +6034,54 @@ extension CollectionWireTests {
         XCTAssertEqual(nonRedirecting, 6)
     }
 
+    func testInitialDiagnosisContextUsesClosedWireBodyAndRejectsConflictsBeforeHTTP() async throws {
+        let transport = CatalogueTransport([.network, .network])
+        let api = client(transport)
+        await api.bindSyncSession(accessSession)
+        let lease = try await api.captureSyncContext(ownerId: accessOwner)
+        let answers = InitialDiagnosisContext(conditions: CareConditionsInput(
+            lightLevel: .brightDirect, lightConfirmed: true, wateringHabit: .sparse, drainage: .no
+        ))
+        for _ in 0..<2 {
+            do {
+                _ = try await api.createAnalysisJob(
+                    operationId: operationId, mode: .diagnosis, photoAssetId: serverPlantId,
+                    initialContext: answers, locale: .en, context: lease
+                )
+                XCTFail("Expected lost response")
+            } catch is URLError {}
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 2)
+        let body = try XCTUnwrap(requests.first?.httpBody)
+        let expected: [String: Any] = [
+            "operation_id": operationId.uuidString.lowercased(), "mode": "diagnosis",
+            "photo_asset_id": serverPlantId.uuidString.lowercased(),
+            "initial_context": ["light": "direct_sun", "watering_frequency": "sparse", "drainage": "no"]
+        ]
+        XCTAssertEqual(try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? NSDictionary), expected as NSDictionary)
+        XCTAssertEqual(requests.last?.httpBody, body)
+        let unknown = InitialDiagnosisContext(conditions: CareConditionsInput(lightLevel: .brightDirect))
+        let unknownBody = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(unknown)) as? [String: String])
+        XCTAssertEqual(unknownBody, ["light": "unknown", "watering_frequency": "unknown", "drainage": "unknown"])
+        for (mode, target, guest) in [
+            (AnalysisMode.identification, Optional<UUID>.none, Optional<String>.none),
+            (.diagnosis, Optional(serverPlantId), nil),
+            (.diagnosis, nil, Optional("fixture-guest")),
+            (.legacyFollowUp, nil, nil)
+        ] {
+            do {
+                _ = try await api.createAnalysisJob(
+                    operationId: operationId, mode: mode, photoAssetId: serverPlantId,
+                    targetPlantId: target, initialContext: answers, locale: .en, context: lease, guestCredential: guest
+                )
+                XCTFail("Conflicting context must fail before HTTP")
+            } catch AnalysisHTTPError.invalidResponse {}
+        }
+        let after = await transport.capturedRequests()
+        XCTAssertEqual(after.count, requests.count)
+    }
+
     func testDiagnosisUploadAndReplaySendCanonicalWireWithBoundToken() async throws {
         let photo = serverPlantId
         let uploadOperationId = UUID()
@@ -6398,10 +6446,12 @@ extension CollectionWireTests {
         let uploadBody = try XCTUnwrap(requests[0].httpBody)
         let upload = try XCTUnwrap(JSONSerialization.jsonObject(with: uploadBody) as? [String: Any])
         let jobBody = try XCTUnwrap(requests[4].httpBody)
-        let job = try JSONDecoder().decode([String: String].self, from: jobBody)
+        let job = try XCTUnwrap(JSONSerialization.jsonObject(with: jobBody) as? [String: Any])
+        XCTAssertEqual(job["initial_context"] as? [String: String],
+                       ["light": "unknown", "watering_frequency": "unknown", "drainage": "unknown"])
         XCTAssertEqual(upload["operation_id"] as? String, input.uploadOperationId.uuidString.lowercased())
-        XCTAssertEqual(job["operation_id"], id.uuidString.lowercased())
-        XCTAssertNotEqual(upload["operation_id"] as? String, job["operation_id"])
+        XCTAssertEqual(job["operation_id"] as? String, id.uuidString.lowercased())
+        XCTAssertNotEqual(upload["operation_id"] as? String, job["operation_id"] as? String)
         XCTAssertEqual(requests[1].httpBody, uploadBody)
         XCTAssertEqual(requests[5].httpBody, jobBody)
     }
@@ -6459,12 +6509,15 @@ extension CollectionWireTests {
         let requests = await transport.capturedRequests()
         XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "GET", "POST", "POST", "GET", "GET"])
         guard requests.count == 8 else { return }
-        let firstCreate = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[2].httpBody))
-        let secondCreate = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[4].httpBody))
-        XCTAssertEqual(firstCreate["operation_id"], frozen.operationId.uuidString.lowercased())
-        XCTAssertNotEqual(firstCreate["operation_id"], secondCreate["operation_id"])
-        XCTAssertEqual(firstCreate["photo_asset_id"], photo.uuidString.lowercased())
-        XCTAssertEqual(secondCreate["photo_asset_id"], firstCreate["photo_asset_id"])
+        let firstCreate = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[2].httpBody)) as? [String: Any])
+        let secondCreate = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[4].httpBody)) as? [String: Any])
+        XCTAssertEqual(firstCreate["operation_id"] as? String, frozen.operationId.uuidString.lowercased())
+        XCTAssertNotEqual(firstCreate["operation_id"] as? String, secondCreate["operation_id"] as? String)
+        XCTAssertEqual(firstCreate["photo_asset_id"] as? String, photo.uuidString.lowercased())
+        XCTAssertEqual(secondCreate["photo_asset_id"] as? String, firstCreate["photo_asset_id"] as? String)
+        XCTAssertEqual(firstCreate["initial_context"] as? [String: String],
+                       ["light": "medium", "watering_frequency": "moderate", "drainage": "unknown"])
+        XCTAssertEqual(secondCreate["initial_context"] as? [String: String], firstCreate["initial_context"] as? [String: String])
         XCTAssertEqual(requests[4].httpBody, requests[5].httpBody)
         XCTAssertEqual(requests[1].httpBody, frozen.photo.aiVisionJPEG)
         XCTAssertEqual(requests[6].url, requests[7].url)

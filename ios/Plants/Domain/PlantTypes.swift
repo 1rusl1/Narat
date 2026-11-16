@@ -66,12 +66,49 @@ public enum SeasonOverride: String, Codable, Sendable, CaseIterable, Equatable {
     case autumnWinter = "autumn_winter"
 }
 
+public enum DrainageAnswer: String, Codable, Sendable, CaseIterable, Equatable {
+    case yes, no, unknown
+}
+
+/// Closed wire vocabulary for answers captured before an initial diagnosis.
+public struct InitialDiagnosisContext: Encodable, Sendable, Equatable {
+    public enum Light: String, Encodable, Sendable {
+        case low, medium, brightIndirect = "bright_indirect", directSun = "direct_sun", unknown
+    }
+
+    public let light: Light
+    public let wateringFrequency: WateringHabit
+    public let drainage: DrainageAnswer
+
+    public init(conditions: CareConditionsInput) {
+        if !conditions.lightConfirmed {
+            light = .unknown
+        } else {
+            switch conditions.lightLevel {
+            case .low: light = .low
+            case .medium: light = .medium
+            case .brightIndirect: light = .brightIndirect
+            case .brightDirect: light = .directSun
+            case .unknown: light = .unknown
+            }
+        }
+        wateringFrequency = conditions.wateringHabit
+        drainage = conditions.drainage
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case light, drainage
+        case wateringFrequency = "watering_frequency"
+    }
+}
+
 public struct CareConditionsInput: Codable, Sendable, Equatable {
     public var lightLevel: LightLevel
     public var lightSource: LightSource
     public var lightConfirmed: Bool
     public var wateringHabit: WateringHabit
     public var lastWatered: LastWateredBucket
+    public var drainage: DrainageAnswer
     public var potType: PotType
     public var seasonOverride: SeasonOverride
 
@@ -81,6 +118,7 @@ public struct CareConditionsInput: Codable, Sendable, Equatable {
         lightConfirmed: Bool = false,
         wateringHabit: WateringHabit = .unknown,
         lastWatered: LastWateredBucket = .unknown,
+        drainage: DrainageAnswer = .unknown,
         potType: PotType = .unknown,
         seasonOverride: SeasonOverride = .auto
     ) {
@@ -89,11 +127,25 @@ public struct CareConditionsInput: Codable, Sendable, Equatable {
         self.lightConfirmed = lightConfirmed
         self.wateringHabit = wateringHabit
         self.lastWatered = lastWatered
+        self.drainage = drainage
         self.potType = potType
         self.seasonOverride = seasonOverride
     }
 
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        lightLevel = try values.decode(LightLevel.self, forKey: .lightLevel)
+        lightSource = try values.decode(LightSource.self, forKey: .lightSource)
+        lightConfirmed = try values.decode(Bool.self, forKey: .lightConfirmed)
+        wateringHabit = try values.decode(WateringHabit.self, forKey: .wateringHabit)
+        lastWatered = try values.decode(LastWateredBucket.self, forKey: .lastWatered)
+        drainage = try values.decodeIfPresent(DrainageAnswer.self, forKey: .drainage) ?? .unknown
+        potType = try values.decode(PotType.self, forKey: .potType)
+        seasonOverride = try values.decode(SeasonOverride.self, forKey: .seasonOverride)
+    }
+
     enum CodingKeys: String, CodingKey {
+        case drainage
         case lightLevel = "light_level"
         case lightSource = "light_source"
         case lightConfirmed = "light_confirmed"

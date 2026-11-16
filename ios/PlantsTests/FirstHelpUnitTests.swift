@@ -149,6 +149,32 @@ final class FirstHelpUnitTests: XCTestCase {
         }
     }
 
+    func testInitialContextMapsEveryLightAndPersistsDrainageWithoutChangingLastWatered() throws {
+        for (level, wire) in [
+            (LightLevel.low, "low"), (.medium, "medium"),
+            (.brightIndirect, "bright_indirect"), (.brightDirect, "direct_sun"), (.unknown, "unknown")
+        ] {
+            for confirmed in [false, true] {
+                let conditions = CareConditionsInput(
+                    lightLevel: level, lightConfirmed: confirmed, wateringHabit: .frequent,
+                    lastWatered: .within7Days, drainage: .yes
+                )
+                let data = try JSONEncoder().encode(InitialDiagnosisContext(conditions: conditions))
+                let body = try JSONDecoder().decode([String: String].self, from: data)
+                XCTAssertEqual(body, [
+                    "light": confirmed ? wire : "unknown", "watering_frequency": "frequent", "drainage": "yes"
+                ])
+                let stored = try JSONEncoder().encode(conditions)
+                XCTAssertEqual(try JSONDecoder().decode(CareConditionsInput.self, from: stored), conditions)
+            }
+        }
+        for answer in DrainageAnswer.allCases {
+            let conditions = CareConditionsInput(drainage: answer)
+            let data = try JSONEncoder().encode(conditions)
+            XCTAssertEqual(try JSONDecoder().decode(CareConditionsInput.self, from: data).drainage, answer)
+        }
+    }
+
     func testLegacyLightingStaysHistoricalUntilExplicitManualSelection() throws {
         let legacyJSON = #"""
         {
@@ -163,6 +189,8 @@ final class FirstHelpUnitTests: XCTestCase {
         XCTAssertEqual(legacy.lightLevel, .low)
         XCTAssertEqual(legacy.lightSource, .cameraEstimate)
         XCTAssertFalse(legacy.lightConfirmed)
+        XCTAssertEqual(legacy.drainage, .unknown)
+        XCTAssertEqual(legacy.lastWatered, .within3Days)
 
         for intent in [AddIntent.problem, .care] {
             let initial = AddFlowState(
@@ -302,8 +330,8 @@ final class FirstHelpUnitTests: XCTestCase {
             if intent == .care { model.router.selectCareMethod(.scan) }
             let raw = photoFixture()
             model.selectPhotoData(raw, locale: .pl)
-            XCTAssertEqual(model.router.flowState.currentStep, .analyzing)
-            let task = try XCTUnwrap(model.submitAnalysis(locale: .en))
+            XCTAssertEqual(model.router.flowState.currentStep, intent == .problem ? .careQuestions : .analyzing)
+            let task = try XCTUnwrap(model.submitAnalysis(locale: .pl))
             await task.value
 
             let request = try XCTUnwrap(service.requests.first)
@@ -413,8 +441,16 @@ final class FirstHelpUnitTests: XCTestCase {
         let service = GalleryAnalysisFixture(response: serviceResult())
         service.failure = AnalysisServiceFailure.retryableProvider
         let model = AnalysisFlowModel(service: service)
-        model.selectLightLevel(.medium)
         model.selectPhotoData(photoFixture(), locale: .pl)
+        XCTAssertEqual(model.router.flowState.currentStep, .careQuestions)
+        XCTAssertNil(model.frozenRequest)
+        XCTAssertTrue(service.requests.isEmpty)
+        model.selectLightLevel(.medium)
+        model.advanceQuestionOrStartAnalysis(locale: .pl)
+        model.selectWateringHabit(.sparse)
+        model.advanceQuestionOrStartAnalysis(locale: .pl)
+        model.selectDrainage(.no)
+        model.advanceQuestionOrStartAnalysis(locale: .pl)
         let firstTask = try XCTUnwrap(model.submitAnalysis(locale: .en))
         await firstTask.value
         let original = try XCTUnwrap(model.frozenRequest)
@@ -425,6 +461,7 @@ final class FirstHelpUnitTests: XCTestCase {
 
         model.selectLightLevel(.low)
         model.selectWateringHabit(.frequent)
+        model.selectDrainage(.yes)
         service.failure = nil
         let retry = try XCTUnwrap(model.submitAnalysis(locale: .en))
         _ = model.submitAnalysis(locale: .en)
@@ -433,6 +470,9 @@ final class FirstHelpUnitTests: XCTestCase {
         XCTAssertEqual(model.currentOperationId, original.operationId)
         XCTAssertEqual(original.locale, .pl)
         XCTAssertEqual(original.conditions.lightLevel, .medium)
+        XCTAssertEqual(original.conditions.wateringHabit, .sparse)
+        XCTAssertEqual(original.conditions.drainage, .no)
+        XCTAssertEqual(model.router.flowState.conditions.drainage, .yes)
         XCTAssertEqual(model.router.flowState.conditions.lightLevel, .low)
         XCTAssertNotNil(model.preliminaryResult)
     }

@@ -276,7 +276,7 @@ public final class AnalysisFlowModel {
             isPreparingPhoto = false
             preparedPhoto = prepared
             router.attachPhoto(identifier: identifier, skipQuestions: repeatDiagnosisTarget != nil)
-            if hasAnalysisService {
+            if hasAnalysisService && router.flowState.currentStep == .analyzing {
                 submitAnalysis(locale: locale)
             }
         } catch {
@@ -299,6 +299,10 @@ public final class AnalysisFlowModel {
 
     public func selectWateringHabit(_ habit: WateringHabit) {
         router.flowState.conditions.wateringHabit = habit
+    }
+
+    public func selectDrainage(_ answer: DrainageAnswer) {
+        router.flowState.conditions.drainage = answer
     }
 
     public func selectLastWatered(_ bucket: LastWateredBucket) {

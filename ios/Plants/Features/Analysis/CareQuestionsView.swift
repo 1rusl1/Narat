@@ -385,7 +385,7 @@ public struct CareQuestionsView: View {
             } else if step == 2 {
                 wateringHabitQuestionView
             } else {
-                lastWateredQuestionView
+                drainageQuestionView
             }
 
             HStack(spacing: 12) {
@@ -469,19 +469,19 @@ public struct CareQuestionsView: View {
         }
     }
 
-    private var lastWateredQuestionView: some View {
+    private var drainageQuestionView: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(isPolish ? "3. Kiedy ostatnio była podlewana?" : "3. When was it last watered?")
+            Text(isPolish ? "3. Czy doniczka ma otwory odpływowe?" : "3. Does the pot have drainage holes?")
                 .font(.title3.bold())
-                .accessibilityIdentifier("care.question.last_watered.title")
+                .accessibilityIdentifier("care.question.drainage.title")
 
-            ForEach(LastWateredBucket.allCases, id: \.self) { bucket in
-                let isSelected = model.router.flowState.conditions.lastWatered == bucket
+            ForEach(DrainageAnswer.allCases, id: \.self) { answer in
+                let isSelected = model.router.flowState.conditions.drainage == answer
                 Button {
-                    model.selectLastWatered(bucket)
+                    model.selectDrainage(answer)
                 } label: {
                     HStack {
-                        Text(labelForLastWatered(bucket))
+                        Text(labelForDrainage(answer))
                         Spacer()
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
@@ -491,7 +491,7 @@ public struct CareQuestionsView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(isSelected ? .accentColor : .primary)
-                .accessibilityIdentifier("care.last_watered.option.\(bucket.rawValue)")
+                .accessibilityIdentifier("care.drainage.option.\(answer.rawValue)")
             }
         }
     }
@@ -524,16 +524,12 @@ public struct CareQuestionsView: View {
         }
     }
 
-    private func labelForLastWatered(_ bucket: LastWateredBucket) -> String {
-        switch bucket {
-        case .today:
-            return isPolish ? "Dzisiaj / wczoraj" : "Today / yesterday"
-        case .within3Days:
-            return isPolish ? "2–3 dni temu" : "2–3 days ago"
-        case .within7Days:
-            return isPolish ? "W tym tygodniu" : "Within the last week"
-        case .over7Days:
-            return isPolish ? "Ponad tydzień temu" : "More than a week ago"
+    private func labelForDrainage(_ answer: DrainageAnswer) -> String {
+        switch answer {
+        case .yes:
+            return isPolish ? "Tak" : "Yes"
+        case .no:
+            return isPolish ? "Nie" : "No"
         case .unknown:
             return isPolish ? "Nie wiem" : "I don't know"
         }

@@ -840,6 +840,8 @@ final class PhotoAnalysisService: AnalysisService {
                     operationId: progress.creationOperationId, mode: request.mode, photoAssetId: photoId,
                     flowId: request.mode == .identification || targetPlantId != nil ? request.flowId : nil,
                     targetPlantId: targetPlantId,
+                    initialContext: request.mode == .diagnosis && targetPlantId == nil && guestCredential == nil
+                        ? InitialDiagnosisContext(conditions: request.conditions) : nil,
                     locale: locale, context: lease, guestCredential: guestCredential
                 )
             }
