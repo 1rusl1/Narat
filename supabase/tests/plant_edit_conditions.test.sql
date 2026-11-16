@@ -297,12 +297,24 @@ SELECT ok((SELECT bool_and(s.last_watered=coalesce(f.watered,'unknown')
 SELECT ok((SELECT bool_and(to_jsonb(s)=o.body) FROM watered_old o
     JOIN public.condition_snapshots s ON s.id=o.id),
     'all historical snapshots remain byte-identical');
-SELECT ok(coalesce(current_setting('narat.independent_snapshot_watered',true),'')<>'on',
-    'canonical function restores the caller setting');
-SELECT ok((SELECT prosecdef AND proconfig @> ARRAY['search_path=""',
-    'narat.independent_snapshot_watered=on']::text[]
-    FROM pg_proc WHERE oid='public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)'::regprocedure),
-    'canonical edit retains empty search path and the scoped setting');
+-- No custom scope is installed: portable to the hosted function-owner role.
+SELECT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']::text[]
+    AND prosrc NOT LIKE '%narat.independent_snapshot_watered%'
+    FROM pg_proc WHERE oid='public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)'::regprocedure)
+    AND (SELECT proconfig IS NULL AND NOT prosecdef
+        AND prosrc NOT LIKE '%narat.independent_snapshot_watered%'
+        FROM pg_proc WHERE oid='public.sync_condition_snapshot_columns()'::regprocedure),
+    'canonical edit and trigger retain original configuration without a custom scope');
+SELECT throws_ok($q$SELECT pg_temp.edit_conditions(
+    '{"conditions":{"drainage_code":"__narat_plant_edit_unknown__"}}')$q$,
+    '22023','INVALID_PLANT_EDIT_INPUT','internal insert value is not a public edit input');
+SELECT throws_ok($q$UPDATE public.condition_snapshots
+    SET drainage_code='__narat_plant_edit_unknown__'
+    WHERE id=(SELECT snapshot FROM watered_edit WHERE label='claim')$q$,
+    '23514',NULL,'existing drainage CHECK rejects the internal value on UPDATE');
+SELECT ok((SELECT bool_and(drainage_code IN ('yes','no','within_7_days','over_7_days','unknown'))
+    FROM public.condition_snapshots),
+    'persisted drainage contains only the existing enum values');
 SELECT ok(has_function_privilege('service_role',
     'public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)','EXECUTE')
     AND NOT has_function_privilege('authenticated',
@@ -310,7 +322,12 @@ SELECT ok(has_function_privilege('service_role',
     AND NOT has_function_privilege('anon',
     'public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)','EXECUTE'),
     'canonical edit retains service-only execution');
--- Legacy writes below execute after the canonical function returns.
+SELECT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+    LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+    WHERE p.oid='public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)'::regprocedure
+      AND a.grantee=0 AND a.privilege_type='EXECUTE'),
+    'canonical edit grants no EXECUTE to PUBLIC');
+-- Legacy writes retain their original meaning after canonical inserts.
 CREATE TEMP TABLE watered_legacy AS
 SELECT gen_random_uuid() AS plant,gen_random_uuid() AS snapshot,
     gen_random_uuid() AS alias_snapshot,owner FROM watered_edit WHERE label='claim';

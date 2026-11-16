@@ -2751,8 +2751,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t039-explicit-unknown-drainage-replay: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 265.79 с, проверки — 64.53 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t039-explicit-unknown-drainage-replay](validation/automation/tasks/t039-explicit-unknown-drainage-replay.md).
+t039-stage-compatible-snapshot-edit: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 237.52 с, проверки — 64.61 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t039-stage-compatible-snapshot-edit](validation/automation/tasks/t039-stage-compatible-snapshot-edit.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

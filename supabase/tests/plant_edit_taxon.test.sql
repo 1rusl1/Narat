@@ -1,6 +1,11 @@
 BEGIN;
 SELECT no_plan();
 
+SELECT ok((SELECT pronargs=4 AND pronargdefaults=0
+    AND proargnames=ARRAY['p_owner_id','p_operation_id','p_plant_id','p_payload']::text[]
+    FROM pg_proc WHERE oid='public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)'::regprocedure),
+    'plant edit keeps exactly the existing public RPC parameters');
+
 CREATE TEMP TABLE taxon_edit AS
 SELECT gen_random_uuid() AS owner, gen_random_uuid() AS stranger,
     gen_random_uuid() AS plant, gen_random_uuid() AS snapshot,

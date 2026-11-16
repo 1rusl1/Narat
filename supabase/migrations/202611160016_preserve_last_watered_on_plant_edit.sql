@@ -2,7 +2,9 @@ BEGIN;
 
 -- Preserve the complete installed function and its ACL at both migration cutoffs.
 -- Canonical edits supply drainage and watering context independently.
--- Legacy callers retain bidirectional aliasing outside this function's scope.
+-- Legacy callers retain bidirectional aliasing for all existing drainage values.
+-- Hosted migration roles need only their existing function ownership: no custom
+-- GUC, parameter privilege, role change or new grant is required.
 DO $migration$
 DECLARE
     definition text := pg_get_functiondef(
@@ -17,7 +19,8 @@ DECLARE
                 owner_id,plant_id,version,light_code,light_source,light_confirmed,watering_code,
                 drainage_code,last_watered,pot_type,season_override,created_at,updated_at)
             VALUES (p_owner_id,p_plant_id,v_version,v_light,v_light_source,v_light_confirmed,
-                v_watering,v_drainage,coalesce(v_snapshot.last_watered,'unknown'),v_pot,
+                v_watering,CASE WHEN v_drainage='unknown' THEN '__narat_plant_edit_unknown__'
+                    ELSE v_drainage END,coalesce(v_snapshot.last_watered,'unknown'),v_pot,
                 coalesce(v_snapshot.season_override,'auto'),v_watermark,v_watermark)
             RETURNING id INTO v_snapshot_id;$new$;
 BEGIN
@@ -39,7 +42,10 @@ DECLARE
     ELSIF NEW.last_watered IS NULL THEN
         NEW.last_watered := NEW.drainage_code;
     END IF;$old$;
-    independent_guard constant text := $new$    IF current_setting('narat.independent_snapshot_watered',true) = 'on' THEN
+    independent_guard constant text := $new$    -- Insert-only transport value, never a persisted drainage enum member.
+    -- The existing CHECK rejects it on UPDATE or if this rewrite is absent.
+    IF TG_OP = 'INSERT' AND NEW.drainage_code = '__narat_plant_edit_unknown__' THEN
+        NEW.drainage_code := 'unknown';
         RETURN NEW;
     END IF;
     -- Unrelated updates must not reinterpret an existing independent pair.
@@ -58,10 +64,5 @@ BEGIN
     EXECUTE replace(definition,alias_boundary,independent_guard || alias_boundary);
 END;
 $migration$;
-
--- This adds only one setting; search_path, SECURITY DEFINER and ACL are retained.
--- PostgreSQL restores the caller's setting on return, including exceptions.
-ALTER FUNCTION public.execute_plant_edit_command(uuid,uuid,uuid,jsonb)
-    SET narat.independent_snapshot_watered = 'on';
 
 COMMIT;
