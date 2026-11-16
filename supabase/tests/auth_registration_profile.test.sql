@@ -1296,5 +1296,221 @@ END;
 $$;
 SELECT * FROM pg_temp.care_leaf_purge_tests();
 
+-- Keep function resolution behind the version gate for clean/upgrade selectors.
+CREATE FUNCTION pg_temp.care_journal_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.care_leaf_retained_snapshot() || pg_temp.care_leaf_snapshot()
+$$;
+
+CREATE FUNCTION pg_temp.care_journal_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0670000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0670000-0000-4000-8000-000000000002';
+    v_operation uuid := pg_temp.owner_id(1799);
+    v_subject uuid;
+    v_release uuid;
+    v_plant uuid;
+    v_snapshot uuid;
+    v_plan uuid;
+    v_task uuid;
+    v_entry uuid;
+    v_extra_entry uuid;
+    v_observation uuid;
+    v_before jsonb;
+    v_retained jsonb;
+    v_followups jsonb;
+    v_edge record;
+    v_target uuid;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_care_journal_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('067 journal purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    INSERT INTO public.kb_releases(version,state) VALUES('t083-journal-067','draft')
+        RETURNING id INTO v_release;
+    FOREACH v_subject IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+        INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_subject,'Journal fixture','identification') RETURNING id INTO v_plant;
+        INSERT INTO public.condition_snapshots(owner_id,plant_id)
+        VALUES(v_subject,v_plant) RETURNING id INTO v_snapshot;
+        INSERT INTO public.care_plans(owner_id,plant_id,operation_id,locale,plan_kind,
+            access_tier,source_kind,snapshot_id,kb_release_id,context_revision,full_body)
+        VALUES(v_subject,v_plant,gen_random_uuid(),'en','recovery','full','analysis',
+            v_snapshot,v_release,1,'{}') RETURNING id INTO v_plan;
+        INSERT INTO public.care_tasks(owner_id,plant_id,occurrence_key,action_code,due_local_date)
+        VALUES(v_subject,v_plant,'journal','water',current_date) RETURNING id INTO v_task;
+        INSERT INTO public.care_entries(owner_id,plant_id,task_id,action_code,occurred_at,
+            occurred_local_date,timezone,operation_id)
+        VALUES(v_subject,v_plant,v_task,'water',clock_timestamp(),current_date,'UTC',gen_random_uuid())
+            RETURNING id INTO v_entry;
+        UPDATE public.care_tasks SET completed_entry_id=v_entry WHERE id=v_task;
+        INSERT INTO public.care_entries(owner_id,plant_id,action_code,occurred_at,
+            occurred_local_date,timezone,operation_id,deleted_at)
+        VALUES(v_subject,v_plant,'water',clock_timestamp(),current_date,'UTC',gen_random_uuid(),
+            clock_timestamp()) RETURNING id INTO v_extra_entry;
+        INSERT INTO public.care_reversals(owner_id,entry_id,operation_id)
+        VALUES(v_subject,v_extra_entry,gen_random_uuid());
+        INSERT INTO public.first_aid_followups(owner_id,plant_id,origin_analysis_id,
+            kb_release_id,action_code,first_action_snapshot,action_entry_id,control_task_id)
+        VALUES(v_subject,v_plant,gen_random_uuid(),v_release,'water','{}',v_entry,v_task);
+        INSERT INTO public.care_observations(owner_id,plant_id,task_id,status_code,operation_id)
+        VALUES(v_subject,v_plant,v_task,'improved',gen_random_uuid()) RETURNING id INTO v_observation;
+        INSERT INTO public.recovery_transitions(owner_id,plant_id,recovery_plan_id,
+            observation_id,expected_care_revision,operation_id,state)
+        VALUES(v_subject,v_plant,v_plan,v_observation,1,gen_random_uuid(),'confirmed');
+        INSERT INTO public.schedule_changes(owner_id,plant_id,to_date,cause_code,explanation_code)
+        VALUES(v_subject,v_plant,current_date,'fixture','fixture');
+    END LOOP;
+
+    v_before := pg_temp.care_journal_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),false,
+        'journal requires deleting permanent owner');
+    RETURN NEXT is(pg_temp.care_journal_snapshot(),v_before,'active graph retained exactly');
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    v_before := pg_temp.care_journal_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,gen_random_uuid()),false,
+        'journal requires exact request operation');
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(NULL,v_operation),false,
+        'null owner is rejected');
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,NULL),false,
+        'null operation is rejected');
+    RETURN NEXT is(pg_temp.care_journal_snapshot(),v_before,'invalid identity retains exact graph');
+    BEGIN
+        UPDATE public.operation_receipts SET payload_hash='forged'
+        WHERE owner_id=v_owner AND operation_id=v_operation;
+        v_before := pg_temp.care_journal_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),false,
+            'journal revalidates exact account.delete receipt');
+        RETURN NEXT is(pg_temp.care_journal_snapshot(),v_before,'bad receipt retains exact graph');
+        RAISE SQLSTATE 'Z0067';
+    EXCEPTION WHEN SQLSTATE 'Z0067' THEN NULL;
+    END;
+
+    -- Each current incoming FK is exercised independently, including tombstones.
+    -- Subtransactions restore the canonical graph after each malformed case.
+    FOR v_edge IN SELECT * FROM (VALUES
+        ('care_tasks','completed_entry_id','care_entries'),
+        ('care_entries','task_id','care_tasks'),
+        ('care_observations','task_id','care_tasks'),
+        ('first_aid_followups','action_entry_id','care_entries'),
+        ('first_aid_followups','control_task_id','care_tasks'),
+        ('care_reversals','entry_id','care_entries'),
+        ('recovery_transitions','observation_id','care_observations')
+    ) AS edges(child_table,child_column,parent_table) LOOP
+        BEGIN
+            EXECUTE format('SELECT id FROM public.%I WHERE owner_id=$1 ORDER BY id LIMIT 1',
+                v_edge.parent_table) INTO v_target USING v_owner;
+            -- Use the task's entry, which has no existing unique reversal.
+            IF v_edge.parent_table='care_entries' THEN
+                SELECT completed_entry_id INTO v_target FROM public.care_tasks WHERE owner_id=v_owner;
+            END IF;
+            IF v_edge.child_table='care_entries' THEN
+                UPDATE public.care_entries SET state='voided' WHERE owner_id=v_neighbor;
+            END IF;
+            EXECUTE format('UPDATE public.%I SET %I=$1,deleted_at=clock_timestamp() WHERE owner_id=$2',
+                v_edge.child_table,v_edge.child_column) USING v_target,v_neighbor;
+            v_before := pg_temp.care_journal_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),false,
+                'foreign historical FK holds journal '||v_edge.child_table||'.'||v_edge.child_column);
+            RETURN NEXT is(pg_temp.care_journal_snapshot(),v_before,
+                'hold retains every row and verification before 066 '||v_edge.child_column);
+            PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+            v_before := pg_temp.care_journal_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),false,
+                'saved verification cannot bypass foreign FK '||v_edge.child_column);
+            RETURN NEXT is(pg_temp.care_journal_snapshot(),v_before,
+                'foreign FK hold preserves saved evidence and graph '||v_edge.child_column);
+            RAISE SQLSTATE 'Z0067';
+        EXCEPTION WHEN SQLSTATE 'Z0067' THEN NULL;
+        END;
+    END LOOP;
+
+    -- A late journal failure must roll back 066 and newly recorded verification.
+    v_before := pg_temp.care_journal_snapshot();
+    CREATE TRIGGER t067_reject_journal BEFORE DELETE ON public.care_tasks
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format('SELECT public.purge_account_deletion_care_journal_internal(%L::uuid,%L::uuid)',
+        v_owner,v_operation),'Z0066','FIXTURE_LEAF_PURGE_FAILURE','journal failure propagates');
+    DROP TRIGGER t067_reject_journal ON public.care_tasks;
+    RETURN NEXT is(pg_temp.care_journal_snapshot(),v_before,
+        'late error atomically restores leaves, journal, FK nulls and verification');
+
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.care_journal_snapshot();
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/journal-orphan');
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),false,
+        'saved verification cannot bypass reappearing Storage object');
+    RETURN NEXT is(pg_temp.care_journal_snapshot()-'account_deletion_requests',
+        v_before-'account_deletion_requests','Storage hold retains the entire data graph');
+    RETURN NEXT is((SELECT storage_verified_at FROM public.account_deletion_requests WHERE owner_id=v_owner),
+        NULL::timestamptz,'stale Storage evidence is invalidated');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/journal-orphan';
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.care_journal_snapshot();
+    v_retained := v_before - ARRAY['care_entries','care_tasks','care_observations',
+        'first_aid_followups','recovery_transitions','care_reversals','schedule_changes','notification_claims'];
+    SELECT jsonb_agg(CASE WHEN owner_id=v_owner THEN to_jsonb(f) ||
+        jsonb_build_object('action_entry_id',NULL,'control_task_id',NULL) ELSE to_jsonb(f) END ORDER BY id)
+        INTO v_followups FROM public.first_aid_followups f;
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),true,
+        'verified canonical journal is removed');
+    RETURN NEXT is((SELECT count(*) FROM (
+        SELECT id FROM public.care_entries WHERE owner_id=v_owner
+        UNION ALL SELECT id FROM public.care_tasks WHERE owner_id=v_owner
+        UNION ALL SELECT id FROM public.care_observations WHERE owner_id=v_owner) remaining),
+        0::bigint,'all owner facts, tasks and observations including tombstones are gone');
+    RETURN NEXT is(pg_temp.care_journal_snapshot() - ARRAY['care_entries','care_tasks','care_observations',
+        'first_aid_followups','recovery_transitions','care_reversals','schedule_changes','notification_claims'],
+        v_retained,'all other parent, profile, Auth, request, receipt, photo and financial data retained');
+    RETURN NEXT is((SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM public.first_aid_followups f),
+        v_followups,'only schema-defined same-owner followup fields are nulled');
+    FOREACH v_role IN ARRAY ARRAY['care_entries','care_tasks','care_observations',
+        'recovery_transitions','care_reversals','schedule_changes','notification_claims'] LOOP
+        EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),''[]''::jsonb)
+            FROM public.%I r WHERE owner_id<>$1',v_role) INTO v_retained USING v_owner;
+        RETURN NEXT is(v_retained,(SELECT coalesce(jsonb_agg(e ORDER BY e->>'id'),'[]'::jsonb)
+            FROM jsonb_array_elements(v_before->v_role) e WHERE e->>'owner_id'<>v_owner::text),
+            'neighbors retained exactly in '||v_role);
+    END LOOP;
+    v_before := pg_temp.care_journal_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),true,
+        'exact second invocation is harmless');
+    RETURN NEXT is(pg_temp.care_journal_snapshot(),v_before,'exact replay changes no row');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/journal-replay');
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),false,
+        'successful replay still requires fresh Storage verification');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/journal-replay';
+
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_journal_internal(uuid,uuid)'::regprocedure
+          AND prosecdef AND provolatile='v' AND proconfig @> ARRAY['search_path=""']),
+        'journal function is volatile SECURITY DEFINER with empty search path');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_care_journal_internal(uuid,uuid)'::regprocedure
+          AND a.grantee<>p.proowner),'journal strips every nonowner grant');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_care_journal_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual journal execution denied for '||v_role);
+    END LOOP;
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_journal_internal(uuid,uuid)'::regprocedure;
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_care_journal_internal(v_owner,v_operation),true,
+        'SQL function owner can execute journal replay');
+    RESET ROLE;
+END;
+$$;
+SELECT * FROM pg_temp.care_journal_purge_tests();
+
 SELECT * FROM finish();
 ROLLBACK;

@@ -1005,3 +1005,143 @@ Deno.test("Staging published diagnosis profile validates and applies to Monstera
   };
   assert(!AnalysisValidator.validate(classification, catalog).valid);
 });
+
+Deno.test("Initial diagnosis context is closed, owner-only and uses a dedicated receipt RPC", async () => {
+  const context = { light: "low", watering_frequency: "moderate", drainage: "yes" };
+  const payload = {
+    job_id: job,
+    mode: "diagnosis",
+    status: "queued",
+    quota_kind: "starter_diagnosis",
+    quota_state: "reserved",
+    result: null,
+  };
+  let anonymous = false;
+  let ready = true;
+  let dispatches = 0;
+  let calls = 0;
+  let accepted: string | null = null;
+  const handler = createProductionPlantsApiHandler({
+    resolveRequestContext: async () => ({
+      ownerId: owner,
+      accountState: "active",
+      isAnonymous: anonymous,
+      locale: "en",
+      installationCredential: null,
+      operationId: null,
+    }),
+  }, {
+    env: (name) =>
+      ({ SUPABASE_URL: host, SUPABASE_SERVICE_ROLE_KEY: "fixture-service-role" })[name],
+    diagnosisWorker: {
+      ready: () => ready,
+      run: () => {
+        dispatches++;
+        return Promise.resolve();
+      },
+    },
+    scheduleDiagnosis: () => {},
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      const args = await request.json();
+      calls++;
+      const hasContext = "p_initial_context" in args;
+      assertEquals(request.url, host + "/rest/v1/rpc/" +
+        (hasContext ? "create_initial_diagnosis_job" : "create_diagnosis_job"));
+      assertEquals(args.p_owner_id, owner);
+      assertEquals(args.p_operation_id, jobOperation);
+      assertEquals(args.p_photo_asset_id, photo);
+      assertEquals(args.p_flow_id, null);
+      assertEquals(args.p_locale, "en");
+      assertEquals(args.p_can_dispatch, ready);
+      const supplied = args.p_initial_context;
+      const hash = JSON.stringify(hasContext
+        ? [supplied.light, supplied.watering_frequency, supplied.drainage]
+        : null);
+      if (accepted !== null && hash !== accepted) {
+        return Response.json({ code: "23505", message: "IDEMPOTENCY_CONFLICT" }, { status: 409 });
+      }
+      if (accepted === null && !ready) {
+        return Response.json({ code: "P0001", message: "PROVIDER_UNAVAILABLE" }, { status: 400 });
+      }
+      const replayed = accepted !== null;
+      accepted = hash;
+      return Response.json({ replayed, job: payload });
+    },
+  });
+  const post = (extra: Record<string, unknown>) => handler(new Request(
+    host + "/functions/v1/plants-api/analysis/jobs",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operation_id: jobOperation,
+        photo_asset_id: photo,
+        mode: "diagnosis",
+        ...extra,
+      }),
+    },
+  ));
+
+  for (const invalid of [
+    null, [], {}, "unknown",
+    { light: "low", watering_frequency: "moderate" },
+    { ...context, light: "LOW" },
+    { ...context, watering_frequency: "less_often" },
+    { ...context, drainage: true },
+    { ...context, drainage: null },
+    { ...context, care_history: [] },
+    { ...context, target_plant_id: savedPlant },
+  ]) {
+    assertEquals((await post({ initial_context: invalid })).status, 400);
+  }
+  assertEquals((await post({ initial_context: context, mode: "identification" })).status, 400);
+  assertEquals((await post({ initial_context: context, target_plant_id: savedPlant })).status, 400);
+  assertEquals((await post({ initial_context: context, owner_id: other })).status, 400);
+  anonymous = true;
+  assertEquals((await post({ initial_context: context })).status, 403);
+  anonymous = false;
+  assertEquals(calls, 0);
+  assertEquals(dispatches, 0);
+
+  ready = false;
+  assertEquals((await post({ initial_context: context })).status, 503);
+  assertEquals(dispatches, 0);
+  ready = true;
+  const first = await post({ initial_context: context });
+  assertEquals(first.status, 202);
+  assertEquals(await first.json(), payload);
+  assertEquals(dispatches, 1);
+  ready = false;
+  const replay = await post({
+    initial_context: { drainage: "yes", watering_frequency: "moderate", light: "low" },
+  });
+  assertEquals(replay.status, 200);
+  assertEquals(await replay.json(), payload);
+  assertEquals(dispatches, 1);
+  for (const changed of [
+    { ...context, light: "medium" },
+    { ...context, watering_frequency: "sparse" },
+    { ...context, drainage: "no" },
+  ]) {
+    assertEquals((await post({ initial_context: changed })).status, 409);
+  }
+  assertEquals((await post({})).status, 409);
+  accepted = null;
+  ready = true;
+  assertEquals((await post({})).status, 202);
+  assertEquals((await post({ initial_context: context })).status, 409);
+
+  // Every supported enum reaches admission through the production HTTP route.
+  accepted = null;
+  ready = false;
+  for (const light of ["low", "medium", "bright_indirect", "direct_sun", "unknown"]) {
+    assertEquals((await post({ initial_context: { ...context, light } })).status, 503);
+  }
+  for (const watering_frequency of ["frequent", "moderate", "sparse", "unknown"]) {
+    assertEquals((await post({ initial_context: { ...context, watering_frequency } })).status, 503);
+  }
+  for (const drainage of ["yes", "no", "unknown"]) {
+    assertEquals((await post({ initial_context: { ...context, drainage } })).status, 503);
+  }
+});

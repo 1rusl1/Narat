@@ -30,6 +30,18 @@ interface DiagnosisWorker {
   run(jobId: string): Promise<unknown>;
 }
 
+function validInitialContext(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const context = value as Record<string, unknown>;
+  return Object.keys(context).length === 3 &&
+    typeof context.light === "string" &&
+    ["low", "medium", "bright_indirect", "direct_sun", "unknown"].includes(context.light) &&
+    typeof context.watering_frequency === "string" &&
+    ["frequent", "moderate", "sparse", "unknown"].includes(context.watering_frequency) &&
+    typeof context.drainage === "string" &&
+    ["yes", "no", "unknown"].includes(context.drainage);
+}
+
 function unavailable(ctx: RequestContext) {
   return new ApiHttpError(
     503,
@@ -196,11 +208,15 @@ export function createDiagnosisJobs(
         "photo_asset_id",
         "flow_id",
         "target_plant_id",
+        "initial_context",
       ]);
       if (
         !body || typeof body !== "object" || Array.isArray(body) ||
         (body.mode !== "diagnosis" && body.mode !== "identification") ||
         ("target_plant_id" in body && body.mode !== "diagnosis") ||
+        ("initial_context" in body &&
+          (body.mode !== "diagnosis" || "target_plant_id" in body ||
+            !validInitialContext(body.initial_context))) ||
         Object.keys(body).some((key) => !allowed.has(key))
       ) {
         throw new ApiHttpError(
@@ -209,6 +225,15 @@ export function createDiagnosisJobs(
           ctx.locale === "pl"
             ? "Nieprawidłowe żądanie analizy."
             : "Invalid analysis request.",
+        );
+      }
+      if ("initial_context" in body && ctx.isAnonymous) {
+        throw new ApiHttpError(
+          403,
+          "FORBIDDEN",
+          ctx.locale === "pl"
+            ? "Wymagane jest aktywne stałe konto."
+            : "An active permanent account is required.",
         );
       }
       const op = requireUuid(body.operation_id, "operation_id");
@@ -230,6 +255,8 @@ export function createDiagnosisJobs(
         ? "create_photo_analysis_job"
         : target
         ? "create_plant_diagnosis_job"
+        : "initial_context" in body
+        ? "create_initial_diagnosis_job"
         : "create_diagnosis_job";
       const result = await rpc(ctx, command, {
         p_owner_id: owner,
@@ -241,6 +268,7 @@ export function createDiagnosisJobs(
         ...(identification && { p_mode: body.mode }),
         ...(guestIdentification && { p_credential_hash: credentialHash }),
         ...(target && { p_target_plant_id: target }),
+        ...("initial_context" in body && { p_initial_context: body.initial_context }),
       });
       if (typeof result?.replayed !== "boolean") throw unavailable(ctx);
       const job = parseJob(result.job, ctx);
