@@ -51,11 +51,16 @@ export function createGuestPhotoApi(
         "This guest draft is no longer available.",
       );
     }
-    if (error.message === "IDENTIFICATION_SOURCE_NOT_FOUND") {
+    if (
+      error.message === "IDENTIFICATION_SOURCE_NOT_FOUND" ||
+      error.message === "DIAGNOSIS_SOURCE_NOT_FOUND"
+    ) {
       throw new ApiHttpError(
         404,
         "NOT_FOUND",
-        "Completed identification not found.",
+        error.message === "IDENTIFICATION_SOURCE_NOT_FOUND"
+          ? "Completed identification not found."
+          : "Completed diagnosis not found.",
       );
     }
     if (error.code === "42501") {
@@ -97,12 +102,14 @@ export function createGuestPhotoApi(
     throw unavailable();
   }
 
-  async function body(req: Request, keys: string[]) {
+  async function body(req: Request, ...keySets: string[][]) {
     const value = await req.json().catch(() => null);
     if (
       !value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).length !== keys.length ||
-      keys.some((key) => !Object.hasOwn(value, key))
+      !keySets.some((keys) =>
+        Object.keys(value).length === keys.length &&
+        keys.every((key) => Object.hasOwn(value, key))
+      )
     ) {
       throw new ApiHttpError(
         400,
@@ -248,11 +255,20 @@ export function createGuestPhotoApi(
 
     async draft(req: Request, ctx: RequestContext) {
       const who = await identity(ctx);
-      const value = await body(req, [
-        "operation_id",
-        "identification_job_id",
-        "taxon_id",
-      ]);
+      const value = await body(
+        req,
+        ["operation_id", "identification_job_id", "taxon_id"],
+        ["operation_id", "diagnosis_job_id"],
+      );
+      if (Object.hasOwn(value, "diagnosis_job_id")) {
+        return jsonResponse(
+          await rpc("create_bound_guest_diagnosis_draft", {
+            ...who,
+            p_operation_id: requireUuid(value.operation_id, "operation_id"),
+            p_job_id: requireUuid(value.diagnosis_job_id, "diagnosis_job_id"),
+          }),
+        );
+      }
       return jsonResponse(
         await rpc("create_guest_photo_draft", {
           ...who,
