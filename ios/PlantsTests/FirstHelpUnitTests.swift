@@ -5,6 +5,92 @@ import ImageIO
 
 @MainActor
 final class FirstHelpUnitTests: XCTestCase {
+    private func quotaDenialFixture(
+        mode: AnalysisAccessWireDTO.AnalysisMode,
+        guest: Bool = true,
+        reason: String? = "starter_exhausted",
+        remaining: Int = 0,
+        job: UUID? = nil
+    ) throws -> AnalysisAccessWireDTO {
+        let null = NSNull()
+        let modes = Dictionary(uniqueKeysWithValues: ["identification", "diagnosis"].map { key in
+            let targeted = key == mode.rawValue
+            let value: [String: Any] = [
+                "mode": key, "allowed": !targeted,
+                "activeQuotaKind": "starter_\(key)",
+                "remaining": targeted ? remaining : 1, "limit": 1,
+                "inProgressJobId": targeted ? (job.map { $0.uuidString as Any } ?? null) : null,
+                "nextResetAt": null,
+                "reason": targeted ? (reason.map { $0 as Any } ?? null) : null
+            ]
+            return (key, value)
+        })
+        let payload: [String: Any] = [
+            "owner_id": UUID().uuidString, "is_guest": guest,
+            "starter": [
+                "identification_remaining": mode == .identification ? remaining : 1,
+                "diagnosis_remaining": mode == .diagnosis ? remaining : 1,
+                "identification_in_progress_job_id": null,
+                "diagnosis_in_progress_job_id": null,
+                "first_starter_success_at": null
+            ],
+            "monthly": [
+                "quota_kind": guest ? null : "free_monthly" as Any,
+                "registered_at": null, "period_start": null, "period_end": null,
+                "limit": null, "consumed": null, "reserved": null, "remaining": null,
+                "status": guest ? "not_applicable" : "history_unresolved"
+            ],
+            "modes": modes
+        ]
+        return try JSONDecoder().decode(
+            AnalysisAccessWireDTO.self, from: JSONSerialization.data(withJSONObject: payload)
+        )
+    }
+
+    func testConfirmedGuestExhaustionExplainsOnlyTheUsedModeInBothLocales() throws {
+        for mode in [AnalysisAccessWireDTO.AnalysisMode.diagnosis, .identification] {
+            let access = try quotaDenialFixture(mode: mode)
+            let presentation = AnalysisQuotaDenialPresentation(access: access, mode: mode)
+            XCTAssertEqual(presentation, .guestExhausted(mode))
+            XCTAssertFalse(presentation.showsRetry)
+            XCTAssertEqual(presentation.message(locale: .en), mode == .diagnosis
+                ? "Your free guest diagnosis has already been used. You can still browse the catalogue."
+                : "Your free guest identification has already been used. You can still browse the catalogue.")
+            XCTAssertEqual(presentation.message(locale: .pl), mode == .diagnosis
+                ? "Bezpłatna diagnoza dla gościa została już wykorzystana. Nadal możesz przeglądać katalog."
+                : "Bezpłatne rozpoznanie gatunku dla gościa zostało już wykorzystane. Nadal możesz przeglądać katalog.")
+            let other: AnalysisAccessWireDTO.AnalysisMode = mode == .diagnosis ? .identification : .diagnosis
+            XCTAssertEqual(access.modes[other.rawValue]?.allowed, true)
+            XCTAssertNotEqual(AnalysisQuotaDenialPresentation(access: access, mode: other), .guestExhausted(other))
+        }
+    }
+
+    func testUnconfirmedGuestDenialsAndPermanentUsersRetainRetry() throws {
+        for mode in [AnalysisAccessWireDTO.AnalysisMode.diagnosis, .identification] {
+            let snapshots = try [
+                quotaDenialFixture(mode: mode, reason: nil),
+                quotaDenialFixture(mode: mode, reason: "quota_history_unresolved"),
+                quotaDenialFixture(mode: mode, reason: "starter_in_progress", remaining: 1, job: UUID()),
+                quotaDenialFixture(mode: mode, job: UUID()),
+                quotaDenialFixture(mode: mode, remaining: 1),
+                quotaDenialFixture(mode: mode, guest: false)
+            ]
+            for access in snapshots {
+                let presentation = AnalysisQuotaDenialPresentation(access: access, mode: mode)
+                XCTAssertEqual(presentation, .temporary)
+                XCTAssertTrue(presentation.showsRetry)
+                XCTAssertEqual(presentation.message(locale: .en), "Photo analysis is currently unavailable.")
+                XCTAssertEqual(presentation.message(locale: .pl), "Analiza zdjęcia jest teraz niedostępna.")
+            }
+            // A failed network read has no validated snapshot, so it must remain retryable.
+            let network = AnalysisQuotaDenialPresentation(access: nil, mode: mode)
+            XCTAssertEqual(network, .unavailable)
+            XCTAssertTrue(network.showsRetry)
+            XCTAssertEqual(network.message(locale: .en), "Couldn’t check analysis quota.")
+            XCTAssertEqual(network.message(locale: .pl), "Nie udało się sprawdzić limitu analiz.")
+        }
+    }
+
     private func explanationFixture(
         mode: AnalysisMode = .diagnosis,
         status: DiagnosisStatus = .conditionDetected,

@@ -64,6 +64,53 @@ private struct PlantCameraPicker: UIViewControllerRepresentable {
     }
 }
 
+/// Presentation only: access and owner validation remain in the existing read lease.
+enum AnalysisQuotaDenialPresentation: Equatable {
+    case unavailable
+    case temporary
+    case guestExhausted(AnalysisAccessWireDTO.AnalysisMode)
+
+    init(access: AnalysisAccessWireDTO?, mode: AnalysisAccessWireDTO.AnalysisMode) {
+        guard let access, let quota = access.modes[mode.rawValue] else {
+            self = .unavailable
+            return
+        }
+        let starterKind: AnalysisAccessWireDTO.QuotaKind = mode == .diagnosis
+            ? .starterDiagnosis : .starterIdentification
+        guard access.isGuest, quota.mode == mode, !quota.allowed,
+              quota.activeQuotaKind == starterKind, quota.reason == .starterExhausted,
+              quota.remaining == 0, quota.inProgressJobId == nil else {
+            self = .temporary
+            return
+        }
+        self = .guestExhausted(mode)
+    }
+
+    var showsRetry: Bool {
+        if case .guestExhausted = self { return false }
+        return true
+    }
+
+    func message(locale: SupportedLocale) -> String {
+        switch self {
+        case .unavailable:
+            return locale == .pl
+                ? "Nie udało się sprawdzić limitu analiz." : "Couldn’t check analysis quota."
+        case .temporary:
+            return locale == .pl
+                ? "Analiza zdjęcia jest teraz niedostępna." : "Photo analysis is currently unavailable."
+        case .guestExhausted(.diagnosis):
+            return locale == .pl
+                ? "Bezpłatna diagnoza dla gościa została już wykorzystana. Nadal możesz przeglądać katalog."
+                : "Your free guest diagnosis has already been used. You can still browse the catalogue."
+        case .guestExhausted(.identification):
+            return locale == .pl
+                ? "Bezpłatne rozpoznanie gatunku dla gościa zostało już wykorzystane. Nadal możesz przeglądać katalog."
+                : "Your free guest identification has already been used. You can still browse the catalogue."
+        }
+    }
+}
+
 private struct AnalysisQuotaGate<Content: View>: View {
     let source: AnalysisAccessSource
     let mode: AnalysisAccessWireDTO.AnalysisMode
@@ -96,9 +143,7 @@ private struct AnalysisQuotaGate<Content: View>: View {
                     if quota.allowed {
                         content()
                     } else {
-                        Text(isPolish ? "Analiza zdjęcia jest teraz niedostępna." : "Photo analysis is currently unavailable.")
-                            .accessibilityIdentifier("analysis.access.denied")
-                        retryButton
+                        denial(access: access, identifier: "analysis.access.denied")
                     }
                 } else {
                     unavailable
@@ -144,10 +189,15 @@ private struct AnalysisQuotaGate<Content: View>: View {
     }
 
     private var unavailable: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(isPolish ? "Nie udało się sprawdzić limitu analiz." : "Couldn’t check analysis quota.")
-                .accessibilityIdentifier("analysis.access.error")
-            retryButton
+        denial(access: nil, identifier: "analysis.access.error")
+    }
+
+    private func denial(access: AnalysisAccessWireDTO?, identifier: String) -> some View {
+        let presentation = AnalysisQuotaDenialPresentation(access: access, mode: mode)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(presentation.message(locale: locale))
+                .accessibilityIdentifier(identifier)
+            if presentation.showsRetry { retryButton }
         }
     }
 
