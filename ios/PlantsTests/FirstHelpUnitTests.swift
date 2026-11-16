@@ -215,6 +215,18 @@ final class FirstHelpUnitTests: XCTestCase {
         XCTAssertEqual(PhotoCameraAccess(available: false, authorization: .authorized), .unavailable)
         XCTAssertEqual(PhotoCameraAccess(available: false, authorization: .notDetermined), .unavailable)
         XCTAssertEqual(PhotoCameraAccess(available: false, authorization: .denied), .denied)
+        XCTAssertEqual(PhotoCameraAccess(available: false, authorization: .restricted), .denied)
+    }
+
+    func testCameraNoticesAreLocalizedAndKeepGalleryFallback() {
+        XCTAssertEqual(PhotoCameraAccess.denied.noticeText(polish: true),
+                       "Dostęp do aparatu jest wyłączony. Nadal możesz wybrać zdjęcie z galerii.")
+        XCTAssertEqual(PhotoCameraAccess.unavailable.noticeText(polish: true),
+                       "Aparat jest niedostępny. Nadal możesz wybrać zdjęcie z galerii.")
+        XCTAssertEqual(PhotoCameraAccess.denied.noticeText(polish: false),
+                       "Camera access is off. You can still choose a photo.")
+        XCTAssertEqual(PhotoCameraAccess.unavailable.noticeText(polish: false),
+                       "Camera is unavailable. You can still choose a photo.")
     }
 
     // Image data is a test fixture only; production must never offer generated photos.
