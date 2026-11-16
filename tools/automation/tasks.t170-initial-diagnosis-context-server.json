@@ -1,0 +1,33 @@
+{
+  "tasks": [
+    {
+      "id": "t170-initial-diagnosis-context-server",
+      "description": "Accept and persist the closed initial diagnosis context with exact replay and dedicated worker lease data.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611130034_plant_delete_access.sql",
+        "supabase/migrations/202611160002_initial_diagnosis_context.sql",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/tests/diagnosis_jobs.test.sql"
+      ],
+      "write_files": [
+        "supabase/migrations/202611160002_initial_diagnosis_context.sql",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/tests/diagnosis_jobs.test.sql"
+      ],
+      "constraints": [
+        "Return exact unified Git diff in JSON. Local DB and Edge only, no deployment, no quota/auth/owner bypass, no guest diagnosis, no worker prompt edits in this stage. Backend branch does not contain unrelated 202611160001 from the integrated iOS workspace, reserve number 202611160002. Keep old no-context clients/operations working.",
+        "POST /analysis/jobs accepts optional closed initial_context for initial permanent-owner diagnosis only: light low/medium/bright_indirect/direct_sun/unknown, watering_frequency frequent/moderate/sparse/unknown, drainage yes/no/unknown. No arbitrary extra keys or fields from history. Validate before dispatch at HTTP and SQL. Only the context-bearing request routes to a new service_role-only SQL entry. Persist immutable values in diagnosis_job_runtime.initial_context; lease_diagnosis_job includes initial_context only if present. Keep repeat_context, outward result/receipt shape, provider start, quota and old no-context request behavior intact.",
+        "Use same owner lock and exact idempotency: new receipt hash covers base inputs and normalized exact context, scopes owner, replays accepted receipt even with unavailable worker, rejects changed context and conflict against legacy omission/mode. A guarded wrapper may reuse existing create_diagnosis_job then update exact new job, runtime and receipt hash atomically before returning; check no stale legacy receipt can be overwritten. Validate ACL, legacy replay, invalid/foreign scope, case-specific lease, changed/missing/extra context with pgTAP + Edge fixtures. Keep production T039/T098/T170 open until worker forwarding and normal live acceptance."
+      ],
+      "acceptance_criteria": [
+        {"id":"T170ICS1","description":"Scope and production Deno checks pass.","mode":"local","checks":["diff-check","deno-check"]},
+        {"id":"T170ICS2","description":"Local PostgreSQL clean/upgrade and Deno mocks verify bounded immutable context and regressions.","mode":"fixture","checks":["parallel-backend-diagnosis-sql","deno-tests"]}
+      ]
+    }
+  ]
+}
