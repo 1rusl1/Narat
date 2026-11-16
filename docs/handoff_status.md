@@ -2825,8 +2825,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-account-retained-deletion-job: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 3, reviewer 1, qa 1. Модели — 403.02 с, проверки — 88.39 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-account-retained-deletion-job](validation/automation/tasks/t083-account-retained-deletion-job.md).
+t083-account-job-replay-race-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 114.71 с, проверки — 88.45 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-account-job-replay-race-acceptance](validation/automation/tasks/t083-account-job-replay-race-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
