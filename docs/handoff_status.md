@@ -2674,8 +2674,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t096-ordinary-ios-app-icon-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 106.82 с, проверки — 253.08 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t096-ordinary-ios-app-icon-acceptance](validation/automation/tasks/t096-ordinary-ios-app-icon-acceptance.md).
+t096-ordinary-welcome-accessibility-size: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 3. Модели — 596.46 с, проверки — 159.41 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t096-ordinary-welcome-accessibility-size](validation/automation/tasks/t096-ordinary-welcome-accessibility-size.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
