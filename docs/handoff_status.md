@@ -2684,8 +2684,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t096-ordinary-welcome-accessibility-size: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 3. Модели — 596.46 с, проверки — 159.41 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t096-ordinary-welcome-accessibility-size](validation/automation/tasks/t096-ordinary-welcome-accessibility-size.md).
+t170-resumed-guest-email-binding: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 209.29 с, проверки — 406.21 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-resumed-guest-email-binding](validation/automation/tasks/t170-resumed-guest-email-binding.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

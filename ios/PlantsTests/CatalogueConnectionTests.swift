@@ -1742,6 +1742,112 @@ final class CatalogueConnectionTests: XCTestCase {
         )
     }
 
+    func testResumedGuestDiagnosisOrdinaryEmailRequiresCurrentScopeWithoutReplayingDraft() async throws {
+        // 0: unchanged; 1: refresh before opening; 2: refresh after opening;
+        // 3: unrelated owner; 4: guest -> unrelated owner -> same guest (ABA).
+        for scenario in 0..<5 {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            let payload = try json(["sub": owner.uuidString, "is_anonymous": true]).base64EncodedString()
+            let token = "header.\(payload).signature"
+            try auth(h, owner: owner, token: token, anonymous: true, signup: true)
+            _ = try await h.connection.sessionOwner()
+            let originalScope = try await h.connection.accountScope()
+            let original = try XCTUnwrap(originalScope.snapshot)
+            let selection = try XCTUnwrap(GuestDiagnosisSelection(
+                result: guestDiagnosisResult(), photo: (UUID(), owner),
+                isInitial: true, expected: original
+            ))
+            let registration = try json(["installation_id": UUID().uuidString])
+            let registerPath = "/functions/v1/plants-api/installations/register"
+            let draftPath = "/functions/v1/plants-api/drafts"
+            h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+            h.fixture.append(.init(
+                method: "POST", path: draftPath,
+                data: try json(["draft_id": UUID().uuidString, "expires_at": "2026-11-19T08:30:00Z"])
+            ))
+            let initial = GuestPhotoClaim(connection: h.connection, credential: "fixture-stable-installation")
+            try await initial.register(original)
+            let created = await initial.createDraft(selection)
+            XCTAssertEqual(created, .ready)
+            let journal = try XCTUnwrap(h.connection.guestPhotoClaimData())
+            h.identity.result = .failure(CancellationError())
+            let cancelled = try await h.connection.signInAccount(
+                with: .apple, presenting: UIViewController(), scope: originalScope
+            )
+            XCTAssertNil(cancelled)
+            XCTAssertEqual(h.connection.guestPhotoClaimData(), journal)
+
+            // A second connection reopens SQLite and the same defaults suite.
+            // The SDK is retained: this covers app binding, not Keychain/process restoration.
+            let connection = try reopenedConnection(h)
+            let restored = try await connection.sessionSnapshot()
+            let resumed = GuestPhotoClaim(connection: connection, credential: "fixture-stable-installation")
+            h.fixture.append(.init(method: "POST", path: registerPath, data: registration))
+            try await resumed.register(restored)
+            XCTAssertTrue(resumed.canResumeDraft(for: restored))
+            let outcome = await resumed.resumeDraft()
+            XCTAssertEqual(outcome, .ready)
+            XCTAssertEqual(connection.guestPhotoClaimData(), journal)
+
+            if scenario == 1 {
+                try auth(h, owner: owner, token: token, anonymous: true, refresh: true)
+                _ = try await h.client.auth.refreshSession()
+                _ = try await connection.sessionSnapshot()
+            }
+            let scope = try await connection.accountScope()
+            XCTAssertEqual(scope.snapshot?.session.userId, owner)
+            XCTAssertEqual(scope.snapshot?.isAnonymous, true)
+            let before = metadata(h)
+            if scenario == 2 {
+                try auth(h, owner: owner, token: token, anonymous: true, refresh: true)
+                _ = try await h.client.auth.refreshSession()
+            } else if scenario >= 3 {
+                try auth(h, owner: other)
+                try await h.signIn()
+                if scenario == 4 {
+                    try auth(h, owner: owner, token: token, anonymous: true)
+                    try await h.signIn()
+                }
+            }
+            let requestCount = h.fixture.captured.count
+            if scenario < 2 {
+                try auth(h, owner: other, token: "fixture-email", grant: "password")
+                let signedIn = try await connection.signInAccount(
+                    email: "fixture@example.invalid", password: "fixture", scope: scope
+                )
+                let permanent = try XCTUnwrap(signedIn)
+                XCTAssertEqual(permanent.session.userId, other)
+                XCTAssertFalse(permanent.isAnonymous)
+                XCTAssertEqual(connection.snapshot, permanent)
+                XCTAssertEqual(h.fixture.captured.count, requestCount + 1)
+                XCTAssertEqual(h.fixture.captured.last?.url?.query, "grant_type=password")
+            } else {
+                do {
+                    _ = try await connection.signInAccount(
+                        email: "fixture@example.invalid", password: "fixture", scope: scope
+                    )
+                    XCTFail("Stale or replaced scope must fail before password HTTP")
+                } catch {
+                    XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged)
+                }
+                XCTAssertEqual(h.fixture.captured.count, requestCount)
+            }
+            XCTAssertFalse(connection.authenticationInFlight)
+            XCTAssertEqual(metadata(h), before)
+            XCTAssertEqual(connection.guestPhotoClaimData(), journal)
+            XCTAssertEqual(h.identity.calls, 1)
+            XCTAssertEqual(h.fixture.captured.filter { $0.url?.path == draftPath }.count, 1)
+            XCTAssertFalse(h.fixture.captured.contains { $0.url?.path.contains("/claims") == true })
+            let guestQueue = try await h.store.pendingOutboxEntries(for: owner)
+            let permanentQueue = try await h.store.pendingOutboxEntries(for: other)
+            XCTAssertTrue(guestQueue.isEmpty)
+            XCTAssertTrue(permanentQueue.isEmpty)
+            assertClosed(h)
+        }
+    }
+
     func testGuestDiagnosisDraftIsExplicitBoundRestartSafeAndSurvivesAccountCancellation() async throws {
         let h = try Harness()
         defer { h.close() }
