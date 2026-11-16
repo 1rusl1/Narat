@@ -1,0 +1,57 @@
+{
+  "tasks": [
+    {
+      "id": "t170-initial-diagnosis-context-worker",
+      "description": "Validate leased initial observation answers and provide them to the photo diagnosis prompt.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/_shared/initial-diagnosis-context.ts",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/analysis-worker/diagnosis-persistence.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/migrations/202611160002_initial_diagnosis_context.sql",
+        "supabase/tests/diagnosis_jobs.test.sql"
+      ],
+      "write_files": [
+        "supabase/functions/_shared/initial-diagnosis-context.ts",
+        "supabase/functions/_shared/AnthropicAdapter.ts",
+        "supabase/functions/plants-api/diagnosis-jobs.ts",
+        "supabase/functions/analysis-worker/index.ts",
+        "supabase/functions/analysis-worker/diagnosis-persistence.ts",
+        "supabase/functions/_shared/tests/diagnosis_photo_test.ts",
+        "supabase/migrations/202611160002_initial_diagnosis_context.sql",
+        "supabase/tests/diagnosis_jobs.test.sql"
+      ],
+      "constraints": [
+        "Return an exact unified Git diff in JSON. Local tests only. Use accepted lease initial_context. Read only the three enumerated context values. Validate before image access/provider consumption, fail closed when malformed or attached to identification/repeat. Share the already accepted Edge validator in a small dependency-free module if useful.",
+        "Pass initial_context into both provider routes through the existing classification adapter. Keep repeat_context separate; never create synthetic history or forward IDs, photos other than the selected one, personal descriptions, or unsupported keys. Unknown is unknown. Initial facts are background only; existing photo evidence and published catalogue constraints still apply. Legacy lease without context, repeat and identification must behave as before.",
+        "Add local assertions that validated initial answers reach the exact provider payload, untrusted keys do not reach provider, unrelated jobs are preserved and prior fixture paths still pass. Keep T039/T170 open for signed live acceptance. No service deployment, no quota or authorization changes.",
+        "Before deployment verify new context replays follow the same revoked-photo guard as create_bound_photo_analysis_job. If the guard is missing in the still-undeployed 202611160002 wrapper, add it after the exact receipt check and extend clean/upgrade pgTAP using a deleted source plant. Preserve the receipt identity and all existing ACLs."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "T170ICW1",
+          "description": "Scope and Deno type check.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "deno-check"
+          ]
+        },
+        {
+          "id": "T170ICW2",
+          "description": "Deno fixtures prove bounded provider forwarding and rejects untrusted context.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "parallel-backend-diagnosis-sql"
+          ]
+        }
+      ]
+    }
+  ]
+}
