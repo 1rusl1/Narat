@@ -6034,6 +6034,106 @@ extension CollectionWireTests {
         XCTAssertEqual(nonRedirecting, 6)
     }
 
+    @MainActor
+    func testGuestDiagnosisRetriesBoundUploadAndStatusWithExactInitialContext() async throws {
+        let owner = accessOwner
+        let guest = try profileSession(ownerId: owner, claims: ["sub": owner.uuidString, "is_anonymous": true])
+        let credential = "fixture-installation-credential"
+        let photo = serverPlantId
+        let jobId = UUID()
+        let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+        let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+        let result = #"{"analysis_id":"\#(UUID().uuidString)","job_id":"\#(jobId.uuidString)","kb_release_id":"\#(UUID().uuidString)","mode":"diagnosis","identification_status":"unknown","plant_id":null,"genus_id":null,"diagnosis_status":"insufficient_data","selected_condition_id":null,"candidates":[],"visual_markers":[],"evidence_basis":[],"limitations":["Photo too unclear."],"first_action_summary":null,"control_interval_days":null,"plan_availability":"diagnosis_unresolved","analysis_receipt":"test-receipt"}"#
+        let transport = CatalogueTransport([
+            .http(200, diagnosisTicket(url: url, photoId: photo)), .network,
+            .http(200, ready), .http(202, diagnosisJob(id: jobId, status: "queued")),
+            .network, .http(200, diagnosisJob(id: jobId, status: "succeeded", result: result))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(guest)
+        var currentOwner = owner
+        let service = PhotoAnalysisService(api: api, guestCredential: credential) {
+            try await api.captureSyncContext(ownerId: currentOwner)
+        }
+        let input = AnalysisServiceRequest(
+            operationId: operationId, flowId: UUID(), mode: .diagnosis, intent: .problem,
+            photo: PreparedAnalysisPhoto(
+                cloudNormalizedJPEG: Data("abc".utf8), aiVisionJPEG: Data("abc".utf8),
+                aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 3
+            ),
+            conditions: CareConditionsInput(
+                lightLevel: .brightDirect, lightConfirmed: true, wateringHabit: .sparse, drainage: .no
+            ), locale: .en
+        )
+        for _ in 0..<2 {
+            do {
+                _ = try await service.analyze(input)
+                XCTFail("Expected a disconnected upload or status response")
+            } catch is URLError {}
+        }
+        let changed = AnalysisServiceRequest(
+            operationId: input.operationId, flowId: input.flowId, mode: .diagnosis, intent: .problem,
+            photo: input.photo, conditions: CareConditionsInput(), locale: .en
+        )
+        do {
+            _ = try await service.analyze(changed)
+            XCTFail("Retry must keep the original context")
+        } catch AnalysisServiceFailure.unavailable {}
+        let finished = try await service.analyze(input)
+        XCTAssertEqual(finished.analysis?.jobId, jobId)
+        XCTAssertEqual(finished.analysis?.diagnosisStatus, .unknown)
+        XCTAssertNil(finished.identification)
+        XCTAssertEqual(finished.uploadedPhotoId, photo)
+        XCTAssertEqual(finished.photoOwnerId, owner)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "POST", "GET", "GET"])
+        XCTAssertTrue(requests.allSatisfy {
+            $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(guest.accessToken)"
+                && $0.value(forHTTPHeaderField: "X-Installation-Credential") == credential
+        })
+        guard requests.count == 6 else { return }
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[3].httpBody)) as? NSDictionary)
+        XCTAssertEqual(body, [
+            "operation_id": operationId.uuidString.lowercased(), "mode": "diagnosis",
+            "photo_asset_id": photo.uuidString.lowercased(),
+            "initial_context": ["light": "direct_sun", "watering_frequency": "sparse", "drainage": "no"]
+        ] as NSDictionary)
+        XCTAssertEqual(requests[4].url?.lastPathComponent, jobId.uuidString.lowercased())
+        XCTAssertEqual(requests[5].url, requests[4].url)
+        let other = try profileSession(ownerId: otherSyncOwner, claims: ["sub": otherSyncOwner.uuidString, "is_anonymous": true])
+        currentOwner = otherSyncOwner
+        await api.bindSyncSession(other)
+        do {
+            _ = try await service.analyze(input)
+            XCTFail("Another guest must not resume the original operation")
+        } catch AnalysisServiceFailure.unavailable {}
+        let after = await transport.capturedRequests()
+        XCTAssertEqual(after.count, requests.count)
+    }
+
+    func testGuestDiagnosisDropsStatusAfterBoundLeaseLoss() async throws {
+        let guest = try profileSession(ownerId: accessOwner, claims: ["sub": accessOwner.uuidString, "is_anonymous": true])
+        let transport = SuspendedCollectionTransport(diagnosisJob(id: operationId, status: "running"))
+        let api = client(transport)
+        await api.bindSyncSession(guest)
+        let lease = try await api.captureSyncContext(ownerId: accessOwner)
+        let id = operationId
+        let pending = Task {
+            try await api.fetchAnalysisJob(
+                id: id, mode: .diagnosis, locale: .en, context: lease,
+                guestCredential: "fixture-installation-credential"
+            )
+        }
+        await transport.waitForRequest()
+        await api.bindSyncSession(nil)
+        await api.bindSyncSession(guest)
+        await transport.resume()
+        do {
+            _ = try await pending.value
+            XCTFail("Guest status must not cross a lease generation")
+        } catch SyncWireValidationError.invalidSession {}
+    }
+
     func testInitialDiagnosisContextUsesClosedWireBodyAndRejectsConflictsBeforeHTTP() async throws {
         let transport = CatalogueTransport([.network, .network])
         let api = client(transport)
@@ -6067,7 +6167,7 @@ extension CollectionWireTests {
         for (mode, target, guest) in [
             (AnalysisMode.identification, Optional<UUID>.none, Optional<String>.none),
             (.diagnosis, Optional(serverPlantId), nil),
-            (.diagnosis, nil, Optional("fixture-guest")),
+            (.diagnosis, Optional(serverPlantId), Optional("fixture-guest")),
             (.legacyFollowUp, nil, nil)
         ] {
             do {
