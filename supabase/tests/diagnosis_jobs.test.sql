@@ -1236,5 +1236,133 @@ BEGIN
 END;
 $test$;
 SELECT * FROM pg_temp.test_initial_save_conditions();
+
+-- Reuse the real bound lease/provider settlement and diagnosis draft above.
+CREATE FUNCTION pg_temp.test_guest_claim_conditions() RETURNS SETOF text
+LANGUAGE plpgsql SET search_path = public, extensions, pg_temp AS $test$
+DECLARE
+    owner_uuid uuid := gen_random_uuid();
+    operation_uuid uuid := gen_random_uuid();
+    claim_uuid uuid;
+    plant_uuid uuid;
+    snapshot_uuid uuid;
+    query_sql text;
+    setup_sql text;
+    committed jsonb;
+    before_state jsonb;
+    snapshot public.condition_snapshots%ROWTYPE;
+BEGIN
+    IF position('Guest diagnosis conditions must come' IN pg_get_functiondef(
+        'public.process_guest_photo_claim(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 0 THEN
+        RETURN QUERY SELECT * FROM skip('009 guest claim conditions not installed',1);
+        RETURN;
+    END IF;
+    RETURN NEXT ok((SELECT current_snapshot_id IS NULL AND current_condition_snapshot_id IS NULL
+        FROM public.plants WHERE id=(SELECT (body->'receipt'->>'plant_id')::uuid FROM guest_commit)),
+        'legacy identification claim keeps its absent condition snapshot');
+    INSERT INTO public.profiles(id,anonymous) VALUES(owner_uuid,false);
+    PERFORM public.bind_installation_credential((SELECT id FROM bound_initial_install),owner_uuid,repeat('8',64));
+    claim_uuid := (public.prepare_guest_photo_claim(owner_uuid,gen_random_uuid(),
+        (SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt),repeat('8',64))->>'claim_id')::uuid;
+    query_sql := format('SELECT public.process_guest_photo_claim(%L::uuid,%L::uuid,%L::uuid,%L,true)',
+        owner_uuid,operation_uuid,claim_uuid,repeat('8',64));
+    RETURN NEXT throws_ok(query_sql,'22023','COPY_NOT_PREPARED','diagnosis publication requires verified copy phase');
+    RETURN NEXT is(public.process_guest_photo_claim(owner_uuid,operation_uuid,claim_uuid,repeat('8',64),false)->>'destination',
+        owner_uuid::text || '/' || (SELECT id::text FROM bound_initial_photo),
+        'diagnosis copy retains original photo identity and owner destination');
+    RETURN NEXT throws_ok(format('SELECT public.process_guest_photo_claim(%L::uuid,%L::uuid,%L::uuid,%L,true)',
+        owner_uuid,operation_uuid,claim_uuid,repeat('9',64)),
+        '42501','INSTALLATION_CREDENTIAL_MISMATCH','other installation cannot commit diagnosis conditions');
+    RETURN NEXT throws_ok(format('SELECT public.process_guest_photo_claim(%L::uuid,%L::uuid,%L::uuid,%L,true)',
+        '16300000-0000-4000-8000-000000000001',operation_uuid,claim_uuid,repeat('8',64)),
+        '42501','INSTALLATION_CREDENTIAL_MISMATCH','other permanent owner cannot commit diagnosis conditions');
+
+    CREATE TEMP VIEW guest_conditions_state AS SELECT jsonb_build_object(
+        'collection',(SELECT body FROM create_context_state),
+        'runtime',(SELECT to_jsonb(r) FROM public.diagnosis_job_runtime r WHERE job_id=(SELECT id FROM bound_initial_job)),
+        'draft',(SELECT to_jsonb(d) FROM public.guest_drafts d
+            WHERE id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt)),
+        'claims',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.draft_claims c
+            WHERE draft_id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt)),
+        'source',(SELECT to_jsonb(g) FROM public.guest_identification_sources g
+            WHERE photo_id=(SELECT id FROM bound_initial_photo))) body;
+    SELECT body INTO before_state FROM guest_conditions_state;
+    FOR setup_sql IN SELECT value FROM (VALUES
+        ('DELETE FROM public.diagnosis_job_runtime WHERE job_id=(SELECT id FROM bound_initial_job)'),
+        ('UPDATE public.analysis_jobs SET draft_id=NULL WHERE id=(SELECT id FROM bound_initial_job)'),
+        ('UPDATE public.analysis_jobs SET flow_id=gen_random_uuid() WHERE id=(SELECT id FROM bound_initial_job)'),
+        ('UPDATE public.analysis_jobs SET quota_installation_id=(SELECT id FROM bound_initial_other_install) WHERE id=(SELECT id FROM bound_initial_job)'),
+        ('UPDATE public.analysis_jobs SET mode=''identification'' WHERE id=(SELECT id FROM bound_initial_job)'),
+        ('UPDATE public.analysis_jobs SET quota_state=''released'' WHERE id=(SELECT id FROM bound_initial_job)'),
+        ('UPDATE public.diagnosis_job_runtime SET projection=NULL WHERE job_id=(SELECT id FROM bound_initial_job)'),
+        ('UPDATE public.guest_identification_sources SET expires_at=clock_timestamp() WHERE photo_id=(SELECT id FROM bound_initial_photo)'),
+        ('UPDATE public.photo_assets SET analysis_key=''foreign/path'' WHERE id=(SELECT id FROM bound_initial_photo)')
+    ) cases(value)
+    LOOP
+        RETURN NEXT is(pg_temp.diagnosis_draft_probe(setup_sql,query_sql),
+            'P0002:DIAGNOSIS_SOURCE_NOT_FOUND','claim rejects missing or misbound consumed diagnosis source');
+        RETURN NEXT is((SELECT body FROM guest_conditions_state),before_state,
+            'rejected diagnosis claim rolls back collection, snapshot, receipt, quota and source');
+    END LOOP;
+    RETURN NEXT is(pg_temp.diagnosis_draft_probe(
+        'UPDATE public.guest_drafts SET expires_at=clock_timestamp() WHERE id=(SELECT (body->>''draft_id'')::uuid FROM diagnosis_draft_receipt)',
+        query_sql),'P0002:DRAFT_EXPIRED','expired diagnosis draft cannot publish conditions');
+    RETURN NEXT is(pg_temp.diagnosis_draft_probe(
+        'UPDATE public.profiles SET anonymous=false WHERE id=''16320000-0000-4000-8000-000000000081''',
+        query_sql),'P0002:DRAFT_EXPIRED','claim requires original anonymous guest owner');
+    -- A successful claim must also remain atomic when its surrounding transaction rolls back.
+    RETURN NEXT is((pg_temp.diagnosis_draft_probe('',query_sql)::jsonb)->'receipt'->>'photo_id',
+        (SELECT id::text FROM bound_initial_photo),'rollback fixture reaches actual verified publication');
+    RETURN NEXT is((SELECT body FROM guest_conditions_state),before_state,
+        'publication rollback restores snapshot, pointers, watermark, photo, quota and projection');
+
+    EXECUTE query_sql INTO committed;
+    plant_uuid := (committed->'receipt'->>'plant_id')::uuid;
+    SELECT current_condition_snapshot_id INTO snapshot_uuid FROM public.plants WHERE id=plant_uuid;
+    SELECT * INTO snapshot FROM public.condition_snapshots WHERE id=snapshot_uuid;
+    RETURN NEXT is((SELECT jsonb_build_array(owner_id,main_photo_id,current_snapshot_id,revision,care_revision,updated_at)
+        FROM public.plants WHERE id=plant_uuid),
+        jsonb_build_array(owner_uuid,(SELECT id FROM bound_initial_photo),snapshot_uuid,1,1,
+            committed->'receipt'->'watermark'),'claim keeps original photo, snapshot aliases and single create watermark');
+    RETURN NEXT is((SELECT count(*) FROM public.condition_snapshots WHERE plant_id=plant_uuid),1::bigint,
+        'exactly one condition snapshot belongs to the claimed destination');
+    RETURN NEXT ok(snapshot.id IS NOT NULL AND snapshot.owner_id=owner_uuid
+        AND snapshot.plant_id=plant_uuid AND snapshot.draft_id IS NULL
+        AND snapshot.version=1 AND snapshot.revision=1
+        AND snapshot.created_at=(committed->'receipt'->>'watermark')::timestamptz
+        AND snapshot.updated_at=snapshot.created_at,'snapshot uses destination ownership and claim timestamp');
+    RETURN NEXT is(jsonb_build_array(snapshot.light_code,snapshot.light_level,snapshot.light_source,snapshot.light_confirmed,
+        snapshot.watering_code,snapshot.watering_habit,snapshot.drainage_code,snapshot.last_watered,
+        snapshot.pot_type,snapshot.season_override),
+        '["low","low","manual",true,"moderate","moderate","yes","unknown","unknown","auto"]'::jsonb,
+        'claim preserves three immutable answers with 008 defaults and no invented dates');
+    RETURN NEXT is((SELECT jsonb_build_array(owner_id,plant_id,draft_id,original_key,analysis_key)
+        FROM public.photo_assets WHERE id=(SELECT id FROM bound_initial_photo)),
+        jsonb_build_array(owner_uuid,plant_uuid,NULL,owner_uuid::text || '/' || (SELECT id::text FROM bound_initial_photo),
+            owner_uuid::text || '/' || (SELECT id::text FROM bound_initial_photo)),
+        'same source photo becomes destination-owned with canonical protected keys');
+    RETURN NEXT is(public.read_diagnosis_upload('16320000-0000-4000-8000-000000000081',
+        (SELECT id FROM bound_initial_photo)),NULL::jsonb,'guest cannot resolve the transferred photo');
+    RETURN NEXT is(public.read_guest_photo_cleanup((SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt))->0->>'abandoned_target',
+        NULL::text,'cleanup protects published destination photo');
+    RETURN NEXT ok((SELECT projection IS NULL AND initial_context=
+        '{"light":"low","watering_frequency":"moderate","drainage":"yes"}'::jsonb
+        FROM public.diagnosis_job_runtime WHERE job_id=(SELECT id FROM bound_initial_job)),
+        'source projection is cleared after snapshot attachment while immutable answers persist');
+    RETURN NEXT is((SELECT body - ARRAY['profiles','plants','snapshots','receipts','photos'] FROM create_context_state),
+        (before_state->'collection') - ARRAY['profiles','plants','snapshots','receipts','photos'],
+        'claim does not change settled jobs, quotas or installation consumption');
+    SELECT body INTO before_state FROM guest_conditions_state;
+    RETURN NEXT is(public.process_guest_photo_claim(owner_uuid,operation_uuid,claim_uuid,repeat('8',64),false),
+        committed,'retry returns original receipt without another copy');
+    RETURN NEXT is((SELECT body FROM guest_conditions_state),before_state,
+        'retry creates no second plant, snapshot, charge, watermark or claim');
+    RETURN NEXT throws_ok(format('SELECT public.process_guest_photo_claim(%L::uuid,%L::uuid,%L::uuid,%L,true)',
+        owner_uuid,gen_random_uuid(),claim_uuid,repeat('8',64)),
+        'P0002','DRAFT_EXPIRED','new operation cannot save the claimed diagnosis twice');
+    RETURN NEXT is((SELECT body FROM guest_conditions_state),before_state,'duplicate save leaves persisted state unchanged');
+END;
+$test$;
+SELECT * FROM pg_temp.test_guest_claim_conditions();
 SELECT * FROM finish();
 ROLLBACK;
