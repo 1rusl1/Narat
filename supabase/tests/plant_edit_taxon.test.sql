@@ -12,8 +12,10 @@ INSERT INTO public.profiles(id,anonymous)
 SELECT owner,false FROM taxon_edit UNION ALL SELECT stranger,false FROM taxon_edit;
 INSERT INTO public.plants(id,owner_id,creation_source,personal_name)
 SELECT plant,owner,'identification','Fixture name' FROM taxon_edit;
-INSERT INTO public.condition_snapshots(id,owner_id,plant_id,light_code,light_source,light_confirmed,watering_code)
-SELECT snapshot,owner,plant,'low','camera_estimate',true,'weekly' FROM taxon_edit;
+INSERT INTO public.condition_snapshots(id,owner_id,plant_id,light_code,light_source,light_confirmed,
+    watering_code,drainage_code,last_watered)
+SELECT snapshot,owner,plant,'low','camera_estimate',true,'weekly','no','over_7_days'
+FROM taxon_edit;
 UPDATE public.plants p SET current_condition_snapshot_id=f.snapshot FROM taxon_edit f WHERE p.id=f.plant;
 
 INSERT INTO public.basic_care_memberships(owner_id,plant_id) SELECT owner,plant FROM taxon_edit;
@@ -68,6 +70,7 @@ SELECT ok((SELECT p.taxon_id=f.target AND p.plant_id=f.slug AND p.personal_name=
     AND p.revision=2 AND p.care_revision=2 AND p.current_condition_snapshot_id<>f.snapshot
     FROM taxon_edit f JOIN public.plants p ON p.id=f.plant),'canonical taxon and slug change in the same revision');
 SELECT ok((SELECT s.version=2 AND s.light_code='low' AND s.light_source='camera_estimate' AND s.watering_code='weekly'
+    AND s.drainage_code='no' AND s.last_watered='over_7_days'
     FROM taxon_receipt r JOIN public.condition_snapshots s ON s.id=(r.body->>'condition_snapshot_id')::uuid),
     'species edit keeps condition values in the new snapshot');
 SELECT is((SELECT to_jsonb(s) FROM public.condition_snapshots s JOIN taxon_edit f ON s.id=f.snapshot),
@@ -84,6 +87,14 @@ SELECT is((SELECT pg_temp.change_taxon(jsonb_build_object('taxon_id',upper(targe
     (SELECT body FROM taxon_receipt),'canonical UUID replay returns the original receipt');
 SELECT is((SELECT pg_temp.change_taxon(jsonb_build_object('taxon_id',target),true) FROM taxon_edit),
     (SELECT body FROM taxon_receipt),'same species is a no-op');
+SELECT is((SELECT count(*) FROM public.condition_snapshots s JOIN taxon_edit f ON s.plant_id=f.plant),
+    2::bigint,'taxon replay and no-op create no extra snapshots');
+SELECT ok((SELECT s.last_watered='over_7_days' AND s.drainage_code='no' AND s.version=2
+    FROM taxon_edit f JOIN public.plants p ON p.id=f.plant
+    JOIN public.condition_snapshots s ON s.id=p.current_condition_snapshot_id),
+    'taxon replay and no-op preserve historical last-watered and known drainage');
+SELECT is((SELECT to_jsonb(s) FROM public.condition_snapshots s JOIN taxon_edit f ON s.id=f.snapshot),
+    (SELECT original FROM taxon_before),'taxon replay leaves the original snapshot byte-identical');
 
 SELECT * FROM finish();
 ROLLBACK;

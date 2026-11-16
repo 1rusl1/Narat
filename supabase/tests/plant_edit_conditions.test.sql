@@ -188,5 +188,86 @@ SELECT ok((pg_temp.edit_conditions('{"conditions":{"light_code":"low"}}',true)->
 SELECT ok((SELECT s.light_source='manual' AND s.light_confirmed FROM public.plants p
     JOIN condition_edit f ON p.id=f.plant JOIN public.condition_snapshots s ON s.id=p.current_condition_snapshot_id),
     'explicit light edit derives manual source');
+
+-- Reproduce the post-claim rename followed by a light-only edit, including
+-- genuine historical watering context and a plant without a prior snapshot.
+CREATE TEMP TABLE watered_edit AS
+SELECT label,watered,gen_random_uuid() AS owner,gen_random_uuid() AS plant,
+    gen_random_uuid() AS snapshot,gen_random_uuid() AS operation
+FROM (VALUES ('claim','unknown'),('historical','within_7_days'),('no_snapshot',NULL)) c(label,watered);
+INSERT INTO public.profiles(id,anonymous) SELECT owner,false FROM watered_edit;
+INSERT INTO public.plants(id,owner_id,creation_source,personal_name)
+SELECT plant,owner,'identification','Before rename' FROM watered_edit;
+INSERT INTO public.condition_snapshots(id,owner_id,plant_id,light_code,light_source,light_confirmed,
+    drainage_code,last_watered)
+SELECT snapshot,owner,plant,'low','manual',true,'no',watered FROM watered_edit WHERE watered IS NOT NULL;
+UPDATE public.plants p SET current_condition_snapshot_id=f.snapshot
+FROM watered_edit f WHERE p.id=f.plant AND f.watered IS NOT NULL;
+CREATE TEMP TABLE watered_old AS
+SELECT s.id,to_jsonb(s) AS body FROM public.condition_snapshots s
+JOIN watered_edit f ON s.id=f.snapshot;
+SELECT public.execute_plant_edit_command(owner,gen_random_uuid(),plant,
+    '{"personal_name":"Renamed"}') FROM watered_edit;
+CREATE TEMP TABLE watered_result AS
+SELECT label,public.execute_plant_edit_command(owner,operation,plant,
+    '{"conditions":{"light_code":"bright_indirect"}}') AS receipt FROM watered_edit;
+SELECT is((SELECT count(*) FROM watered_result),3::bigint,'all last-watered cases execute');
+SELECT ok((SELECT bool_and(s.last_watered=coalesce(f.watered,'unknown')
+    AND s.drainage_code=CASE WHEN f.watered IS NULL THEN 'unknown' ELSE 'no' END
+    AND s.light_code='bright_indirect' AND s.light_source='manual' AND s.light_confirmed
+    AND s.version=CASE WHEN f.watered IS NULL THEN 1 ELSE 2 END)
+    FROM watered_edit f JOIN watered_result r USING(label)
+    JOIN public.condition_snapshots s ON s.id=(r.receipt->>'condition_snapshot_id')::uuid),
+    'light-only edit preserves unknown and historical last-watered independently of known drainage');
+SELECT ok((SELECT bool_and(p.personal_name='Renamed' AND p.revision=3 AND p.care_revision=2)
+    FROM watered_edit f JOIN public.plants p ON p.id=f.plant),
+    'rename then light edit changes only the expected revisions');
+SELECT ok((SELECT bool_and(to_jsonb(s)=o.body) FROM watered_old o
+    JOIN public.condition_snapshots s ON s.id=o.id),
+    'light-only edits leave every original snapshot byte-identical');
+CREATE TEMP TABLE watered_after AS
+SELECT f.label,to_jsonb(p) AS plant_row,to_jsonb(s) AS snapshot_row
+FROM watered_edit f JOIN public.plants p ON p.id=f.plant
+JOIN public.condition_snapshots s ON s.id=p.current_condition_snapshot_id;
+SELECT ok((SELECT bool_and(public.execute_plant_edit_command(f.owner,f.operation,f.plant,
+    '{"conditions":{"light_code":"bright_indirect"}}')=r.receipt)
+    FROM watered_edit f JOIN watered_result r USING(label)),
+    'light-only exact replay returns each original receipt');
+SELECT ok((SELECT bool_and(public.execute_plant_edit_command(f.owner,gen_random_uuid(),f.plant,
+    '{"conditions":{"light_code":"bright_indirect"}}')=r.receipt)
+    FROM watered_edit f JOIN watered_result r USING(label)),
+    'light-only effective no-op returns each unchanged revision');
+SELECT ok((SELECT bool_and(to_jsonb(p)=a.plant_row AND to_jsonb(s)=a.snapshot_row)
+    FROM watered_edit f JOIN watered_after a USING(label)
+    JOIN public.plants p ON p.id=f.plant
+    JOIN public.condition_snapshots s ON s.id=p.current_condition_snapshot_id),
+    'replay and no-op preserve the entire current plant and snapshot');
+SELECT is((SELECT count(*) FROM public.condition_snapshots s
+    JOIN watered_edit f ON s.plant_id=f.plant),5::bigint,
+    'replay and no-op create no duplicate snapshots');
+
+-- Pin the separate legacy ambiguity without changing legacy writer behavior.
+SELECT public.execute_plant_edit_command(owner,gen_random_uuid(),plant,
+    '{"conditions":{"drainage_code":"unknown"}}') FROM watered_edit WHERE label='historical';
+SELECT ok((SELECT s.last_watered='within_7_days' AND s.drainage_code='within_7_days'
+    FROM watered_edit f JOIN public.plants p ON p.id=f.plant
+    JOIN public.condition_snapshots s ON s.id=p.current_condition_snapshot_id
+    WHERE f.label='historical'),
+    'explicit unknown drainage retains the existing legacy alias fallback');
+CREATE TEMP TABLE watered_legacy AS
+SELECT gen_random_uuid() AS plant,gen_random_uuid() AS snapshot,
+    gen_random_uuid() AS alias_snapshot,owner FROM watered_edit WHERE label='claim';
+INSERT INTO public.plants(id,owner_id,creation_source,personal_name)
+SELECT plant,owner,'identification','Legacy snapshot fixture' FROM watered_legacy;
+INSERT INTO public.condition_snapshots(id,owner_id,plant_id,drainage_code)
+SELECT snapshot,owner,plant,'yes' FROM watered_legacy;
+INSERT INTO public.condition_snapshots(id,owner_id,plant_id,version,last_watered)
+SELECT alias_snapshot,owner,plant,2,'over_7_days' FROM watered_legacy;
+SELECT ok((SELECT s.last_watered='yes' FROM watered_legacy f
+    JOIN public.condition_snapshots s ON s.id=f.snapshot),
+    'legacy drainage-only writers still populate last-watered');
+SELECT ok((SELECT s.drainage_code='over_7_days' FROM watered_legacy f
+    JOIN public.condition_snapshots s ON s.id=f.alias_snapshot),
+    'legacy last-watered-only writers still populate drainage');
 SELECT * FROM finish();
 ROLLBACK;
