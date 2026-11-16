@@ -883,6 +883,21 @@ final class PhotoAnalysisService: AnalysisService {
                 readStatus = true
                 try verify(lease, attempt: attempt)
             }
+            if job.status == .expired {
+                // Only a canonical, released first-diagnosis timeout permits a new
+                // create. Transport timeouts keep replaying the existing operation.
+                guard request.mode == .diagnosis, targetPlantId == nil,
+                      job.errorCode == "ANALYSIS_TIMEOUT", job.quotaState == .released,
+                      ["starter_diagnosis", "free_monthly", "paid_monthly"].contains(job.quotaKind),
+                      job.photoAssetId == nil || job.photoAssetId == photoId else {
+                    throw AnalysisServiceFailure.expiredTerminal
+                }
+                // Retain the confirmed upload and frozen request. A lost create
+                // reply must replay this replacement ID on the next explicit Retry.
+                progress.jobId = nil
+                progress.creationOperationId = UUID()
+                throw AnalysisServiceFailure.releasedTimeout
+            }
             if job.status == .failed, job.errorCode?.hasPrefix("PROVIDER_") == true {
                 if request.mode == .diagnosis, targetPlantId == nil, job.quotaState == .released {
                     // A terminal job cannot be replayed into a new run. Keep the upload

@@ -316,6 +316,14 @@ struct AnalysisUnavailableSection: View {
             return isPolish
                 ? "Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie."
                 : "The analysis provider is temporarily unavailable. Please retry."
+        case "analysis.error.timeout":
+            return isPolish
+                ? "Analiza przekroczyła limit czasu. Spróbuj ponownie z tym samym zdjęciem i odpowiedziami."
+                : "The analysis timed out. Retry with the same photo and answers."
+        case "analysis.error.expired_terminal":
+            return isPolish
+                ? "Analiza wygasła. Wróć i wybierz zdjęcie ponownie."
+                : "The analysis expired. Go back and choose a photo again."
         case "analysis.error.provider_terminal":
             if returnToPlant != nil { return "The provider could not complete the analysis. Choose a new photo from your plant card." }
             return isPolish
@@ -347,6 +355,7 @@ struct AnalysisUnavailableSection: View {
                 .accessibilityIdentifier("analysis.unavailable.title")
 
             if model.analysisError != "analysis.error.provider_terminal",
+               model.analysisError != "analysis.error.expired_terminal",
                model.analysisError != "analysis.error.quota_registration",
                model.analysisError != "analysis.error.quota_exhausted" {
                 Button(isPolish ? "Spróbuj ponownie" : "Retry") {

@@ -2646,8 +2646,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-guest-diagnosis-draft-ios: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 582.90 с, проверки — 142.88 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-guest-diagnosis-draft-ios](validation/automation/tasks/t170-guest-diagnosis-draft-ios.md).
+t039-retry-released-first-guest-timeout: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 383.89 с, проверки — 142.96 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t039-retry-released-first-guest-timeout](validation/automation/tasks/t039-retry-released-first-guest-timeout.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

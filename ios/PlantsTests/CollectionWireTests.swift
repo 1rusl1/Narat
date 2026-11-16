@@ -6674,6 +6674,171 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testReleasedTimeoutRetryPreservesFrozenInputThroughLostRepliesAndOwnerSwitch() async throws {
+        for isGuest in [true, false] {
+            let owner = accessOwner
+            let credential = isGuest ? "fixture-installation-credential" : nil
+            let boundSession = isGuest
+                ? try profileSession(ownerId: owner, claims: ["sub": owner.uuidString, "is_anonymous": true])
+                : accessSession
+            let photo = UUID(), firstJob = UUID(), retryJob = UUID()
+            let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+            let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+            let expired = diagnosisJob(id: firstJob, status: "expired", errorCode: #""ANALYSIS_TIMEOUT""#)
+                .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"released""#)
+                .replacingOccurrences(of: "free_monthly", with: isGuest ? "starter_diagnosis" : "paid_monthly")
+            let result = #"{"analysis_id":"\#(UUID().uuidString)","job_id":"\#(retryJob.uuidString)","kb_release_id":"\#(UUID().uuidString)","mode":"diagnosis","identification_status":"unknown","plant_id":null,"genus_id":null,"diagnosis_status":"insufficient_data","selected_condition_id":null,"candidates":[],"visual_markers":[],"evidence_basis":[],"limitations":[],"first_action_summary":null,"control_interval_days":null,"plan_availability":"diagnosis_unresolved","analysis_receipt":"test-receipt"}"#
+            let transport = CatalogueTransport([
+                .http(200, diagnosisTicket(url: url, photoId: photo)), .http(200, ready),
+                .http(202, diagnosisJob(id: firstJob, status: "queued")),
+                .inspect { _ in throw URLError(.timedOut) },
+                .http(200, expired), .network,
+                .http(202, diagnosisJob(id: retryJob, status: "queued")), .network,
+                .http(200, diagnosisJob(id: retryJob, status: "succeeded", result: result)
+                    .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"consumed""#))
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(boundSession)
+            var currentOwner = owner
+            let service = PhotoAnalysisService(api: api, guestCredential: credential) {
+                try await api.captureSyncContext(ownerId: currentOwner)
+            }
+            let model = AnalysisFlowModel(service: service)
+            model.router.selectIntent(.problem)
+            model.router.attachPhoto(identifier: "timeout-fixture")
+            model.preparedPhoto = PreparedAnalysisPhoto(
+                cloudNormalizedJPEG: Data([1, 2]), aiVisionJPEG: Data([1, 2]),
+                aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 2
+            )
+            model.selectLightLevel(.brightDirect)
+            model.selectWateringHabit(.sparse)
+            model.selectDrainage(.no)
+            let locale: SupportedLocale = isGuest ? .en : .pl
+            let otherLocale: SupportedLocale = isGuest ? .pl : .en
+            let first = try XCTUnwrap(model.submitAnalysis(locale: locale))
+            await first.value
+            XCTAssertEqual(model.analysisError, "analysis.error.failed")
+            let frozen = try XCTUnwrap(model.frozenRequest)
+            // A local transport timeout only resumes status; it cannot replace the job.
+            let confirmation = try XCTUnwrap(model.submitAnalysis(locale: otherLocale))
+            await confirmation.value
+            XCTAssertEqual(model.analysisError, "analysis.error.timeout")
+            let confirmedRequests = await transport.capturedRequests()
+            XCTAssertEqual(confirmedRequests.count, 5)
+            guard confirmedRequests.count == 5 else { return }
+            XCTAssertEqual(confirmedRequests[3].url, confirmedRequests[4].url)
+            XCTAssertEqual(confirmedRequests[4].httpMethod, "GET")
+
+            currentOwner = otherSyncOwner
+            let otherSession = try profileSession(ownerId: currentOwner, claims: [
+                "sub": currentOwner.uuidString, "is_anonymous": isGuest
+            ])
+            await api.bindSyncSession(otherSession)
+            let switched = try XCTUnwrap(model.submitAnalysis(locale: otherLocale))
+            await switched.value
+            XCTAssertEqual(model.analysisError, "analysis.error.failed")
+            let afterSwitch = await transport.capturedRequests()
+            XCTAssertEqual(afterSwitch.count, 5)
+            currentOwner = owner
+            await api.bindSyncSession(boundSession)
+
+            // UI edits and a language change must not change the frozen retry.
+            model.selectLightLevel(.low)
+            model.selectWateringHabit(.frequent)
+            model.selectDrainage(.yes)
+            for _ in 0..<2 {
+                let retry = try XCTUnwrap(model.submitAnalysis(locale: otherLocale))
+                _ = model.submitAnalysis(locale: otherLocale)
+                await retry.value
+                XCTAssertEqual(model.analysisError, "analysis.error.failed")
+                XCTAssertEqual(model.frozenRequest, frozen)
+                XCTAssertEqual(model.preparedPhoto, frozen.photo)
+                XCTAssertNil(model.preliminaryResult)
+            }
+            let finish = try XCTUnwrap(model.submitAnalysis(locale: otherLocale))
+            await finish.value
+            XCTAssertEqual(model.preliminaryResult?.jobId, retryJob)
+            XCTAssertEqual(model.diagnosisPhoto?.id, photo)
+            XCTAssertEqual(model.diagnosisPhoto?.owner, owner)
+            XCTAssertEqual(model.frozenRequest, frozen)
+            XCTAssertEqual(model.currentOperationId, frozen.operationId)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "GET", "GET", "POST", "POST", "GET", "GET"])
+            guard requests.count == 9 else { return }
+            let original = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[2].httpBody)) as? [String: Any])
+            let replacement = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests[5].httpBody)) as? [String: Any])
+            XCTAssertNotEqual(original["operation_id"] as? String, replacement["operation_id"] as? String)
+            XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(replacement["operation_id"] as? String)))
+            XCTAssertEqual(original["operation_id"] as? String, frozen.operationId.uuidString.lowercased())
+            XCTAssertEqual(replacement["photo_asset_id"] as? String, photo.uuidString.lowercased())
+            XCTAssertEqual(original["initial_context"] as? [String: String],
+                           ["light": "direct_sun", "watering_frequency": "sparse", "drainage": "no"])
+            XCTAssertEqual(replacement["initial_context"] as? [String: String], original["initial_context"] as? [String: String])
+            XCTAssertEqual(requests[5].httpBody, requests[6].httpBody)
+            XCTAssertEqual(requests[1].httpBody, frozen.photo.aiVisionJPEG)
+            XCTAssertEqual(requests[7].url, requests[8].url)
+            XCTAssertEqual(requests[8].url?.lastPathComponent, retryJob.uuidString.lowercased())
+            XCTAssertTrue(requests.allSatisfy {
+                $0.value(forHTTPHeaderField: "X-Client-Locale") == (isGuest ? "en" : "pl")
+                    && $0.value(forHTTPHeaderField: "X-Installation-Credential") == credential
+            })
+        }
+    }
+
+    @MainActor
+    func testExpiredUnsafeJobsNeverAllocateReplacementCreate() async throws {
+        for scenario in ["reserved", "consumed", "not_required", "other_error", "unknown_quota", "wrong_photo", "repeat", "identification"] {
+            let owner = accessOwner
+            let photo = UUID(), jobId = UUID()
+            let target = scenario == "repeat" ? RepeatDiagnosisTarget(plantId: serverPlantId, ownerId: owner) : nil
+            let mode: AnalysisMode = scenario == "identification" ? .identification : .diagnosis
+            var expired = diagnosisJob(id: jobId, status: "expired", errorCode: #""ANALYSIS_TIMEOUT""#,
+                                       target: target.map { ($0.plantId, photo) })
+                .replacingOccurrences(of: #""quota_state":"reserved""#, with: #""quota_state":"released""#)
+            if ["reserved", "consumed", "not_required"].contains(scenario) {
+                expired = expired.replacingOccurrences(of: #""quota_state":"released""#, with: "\"quota_state\":\"\(scenario)\"")
+            } else if scenario == "other_error" {
+                expired = expired.replacingOccurrences(of: "ANALYSIS_TIMEOUT", with: "OTHER_ERROR")
+            } else if scenario == "unknown_quota" {
+                expired = expired.replacingOccurrences(of: "free_monthly", with: "unknown")
+            } else if scenario == "wrong_photo" {
+                expired = expired.replacingOccurrences(of: #""result":null"#, with: #""photo_asset_id":"\#(UUID().uuidString)","result":null"#)
+            } else if scenario == "identification" {
+                expired = identificationJob(id: jobId, status: "expired", quota: "released")
+                    .replacingOccurrences(of: #""error_code":null"#, with: #""error_code":"ANALYSIS_TIMEOUT""#)
+            }
+            let url = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
+            let ready = #"{"photo_asset_id":"\#(photo.uuidString)","state":"ready"}"#
+            let transport = CatalogueTransport([
+                .http(200, diagnosisTicket(url: url, photoId: photo)), .http(200, ready),
+                .http(200, expired), .http(200, expired)
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(accessSession)
+            let service = PhotoAnalysisService(api: api, identificationEnabled: true, repeatDiagnosisTarget: target) {
+                try await api.captureSyncContext(ownerId: owner)
+            }
+            let input = AnalysisServiceRequest(
+                operationId: operationId, flowId: UUID(), mode: mode,
+                intent: mode == .diagnosis ? .problem : .care,
+                photo: PreparedAnalysisPhoto(
+                    cloudNormalizedJPEG: Data([1]), aiVisionJPEG: Data([1]),
+                    aiWidthPx: 1, aiHeightPx: 1, originalByteCount: 1
+                ), conditions: CareConditionsInput(), locale: .en, repeatDiagnosisTarget: target
+            )
+            for _ in 0..<2 {
+                do {
+                    _ = try await service.analyze(input)
+                    XCTFail("Unsafe expiry must require reselect: \(scenario)")
+                } catch AnalysisServiceFailure.expiredTerminal {}
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "GET"], scenario)
+            XCTAssertEqual(requests.last?.url?.lastPathComponent, jobId.uuidString.lowercased())
+        }
+    }
+
+    @MainActor
     func testCareRecommendationRefreshReplaysAfterRestartAndWaitsForCanonicalSync() async throws {
         let plant = serverPlantId
         let snapshot = UUID()

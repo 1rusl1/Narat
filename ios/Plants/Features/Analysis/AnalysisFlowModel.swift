@@ -99,6 +99,8 @@ struct PhotoIdentificationSelection: Equatable, Sendable {
 public enum AnalysisServiceFailure: Error, Sendable, Equatable {
     case retryableProvider
     case providerFailed
+    case releasedTimeout
+    case expiredTerminal
     case quotaRegistrationRequired
     case quotaExhausted
     case unavailable
@@ -455,6 +457,8 @@ public final class AnalysisFlowModel {
                 switch error as? AnalysisServiceFailure {
                 case .retryableProvider?: key = "analysis.error.provider"
                 case .providerFailed?: key = "analysis.error.provider_terminal"
+                case .releasedTimeout?: key = "analysis.error.timeout"
+                case .expiredTerminal?: key = "analysis.error.expired_terminal"
                 case .quotaRegistrationRequired?: key = "analysis.error.quota_registration"
                 case .quotaExhausted?: key = "analysis.error.quota_exhausted"
                 default: key = "analysis.error.failed"
