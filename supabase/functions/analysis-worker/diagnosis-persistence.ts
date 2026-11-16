@@ -27,6 +27,7 @@ interface Lease {
   quota_kind: string;
   deadline_at: string;
   repeat_context?: RepeatDiagnosisContext | null;
+  initial_context?: unknown;
   upload: {
     photo_asset_id: string;
     owner_id: string;
@@ -85,6 +86,7 @@ export function createDiagnosisPersistence(
         monthlyQuotaId: null,
         leaseExpiresAt: lease.deadline_at,
         repeatContext: lease.repeat_context ?? undefined,
+        ...("initial_context" in lease && { initialContext: lease.initial_context }),
       };
     },
 

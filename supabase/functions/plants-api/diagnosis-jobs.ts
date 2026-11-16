@@ -1,3 +1,4 @@
+import { validInitialContext } from "../_shared/initial-diagnosis-context.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ApiHttpError,
@@ -28,18 +29,6 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 interface DiagnosisWorker {
   ready(): boolean;
   run(jobId: string): Promise<unknown>;
-}
-
-function validInitialContext(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const context = value as Record<string, unknown>;
-  return Object.keys(context).length === 3 &&
-    typeof context.light === "string" &&
-    ["low", "medium", "bright_indirect", "direct_sun", "unknown"].includes(context.light) &&
-    typeof context.watering_frequency === "string" &&
-    ["frequent", "moderate", "sparse", "unknown"].includes(context.watering_frequency) &&
-    typeof context.drainage === "string" &&
-    ["yes", "no", "unknown"].includes(context.drainage);
 }
 
 function unavailable(ctx: RequestContext) {
