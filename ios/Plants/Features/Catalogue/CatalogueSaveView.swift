@@ -11,6 +11,66 @@ private enum CatalogueViewNotice {
     case invalidInput, unavailable, sessionChanged, nativeCancelled, authenticationFailed
 }
 
+/// Read-only recorded values shared by the saved result and collection card.
+struct CatalogueSavedConditionsView: View {
+    let conditions: PlantConditionCodes
+    let polish: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let light = conditions.light {
+                Text((polish ? "Światło: " : "Light: ") + lightLabel(light))
+                    .accessibilityIdentifier("catalogue.saved.conditions.light")
+            }
+            if let watering = conditions.watering {
+                Text((polish ? "Częstotliwość podlewania: " : "Watering frequency: ") + wateringLabel(watering))
+                    .accessibilityIdentifier("catalogue.saved.conditions.watering")
+            }
+            if let drainage = conditions.drainage {
+                Text((polish ? "Drenaż: " : "Drainage: ") + drainageLabel(drainage))
+                    .accessibilityIdentifier("catalogue.saved.conditions.drainage")
+            }
+        }
+        .font(.subheadline)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("catalogue.saved.conditions")
+    }
+
+    private func lightLabel(_ light: PlantLightCode) -> String {
+        guard polish else { return light.label }
+        return switch light {
+        case .low: "Słabe światło"
+        case .medium: "Umiarkowane światło"
+        case .brightIndirect: "Jasne, rozproszone światło"
+        case .directSun: "Bezpośrednie słońce"
+        case .unknown: "Nieznane"
+        }
+    }
+
+    private func wateringLabel(_ watering: PlantWateringCode) -> String {
+        guard polish else { return watering.label }
+        return switch watering {
+        case .severalWeekly: "Kilka razy w tygodniu"
+        case .weekly: "Raz w tygodniu"
+        case .lessOften: "Rzadziej"
+        case .frequent: "Częste podlewanie"
+        case .moderate: "Umiarkowane podlewanie"
+        case .sparse: "Rzadkie podlewanie"
+        case .unknown: "Nieznana"
+        }
+    }
+
+    private func drainageLabel(_ drainage: PlantDrainageCode) -> String {
+        guard polish else { return drainage.label }
+        return switch drainage {
+        case .yes: "Otwory odpływowe"
+        case .no: "Brak otworów odpływowych"
+        case .unknown: "Nieznany"
+        }
+    }
+
+}
+
 /// Only the current account may load or render the private image for a canonical card.
 @MainActor
 struct CataloguePrivatePhotoView: View {
@@ -395,7 +455,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                         .accessibilityIdentifier("catalogue.selected.scientific")
                 }
                 if let conditions = model.diagnosisConditions {
-                    savedConditions(conditions)
+                    CatalogueSavedConditionsView(conditions: conditions, polish: polish)
+                }
+                if let photo = summary.mainPhotoId, let scope {
+                    CataloguePrivatePhotoView(connection: connection, expected: scope, subject: .plant(summary.id), polish: polish)
+                        .id(photo)
                 }
                 if showsManualWateringActions(model) {
                     careRecommendation(model)
@@ -403,10 +467,6 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     wateringHistory(model)
                 }
                 if selected { speciesDetails() }
-                if let photo = summary.mainPhotoId, let scope {
-                    CataloguePrivatePhotoView(connection: connection, expected: scope, subject: .plant(summary.id), polish: polish)
-                        .id(photo)
-                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("catalogue.saved.card." + summary.id.uuidString.lowercased())
@@ -424,58 +484,6 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 Text(polish ? "Nie udało się potwierdzić zdjęcia." : "Couldn’t verify the saved photo.")
                     .accessibilityIdentifier("catalogue.saved.photo.error")
             }
-        }
-    }
-
-    private func savedConditions(_ conditions: PlantConditionCodes) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let light = conditions.light {
-                Text((polish ? "Światło: " : "Light: ") + lightLabel(light))
-                    .accessibilityIdentifier("catalogue.saved.conditions.light")
-            }
-            if let watering = conditions.watering {
-                Text((polish ? "Częstotliwość podlewania: " : "Watering frequency: ") + wateringLabel(watering))
-                    .accessibilityIdentifier("catalogue.saved.conditions.watering")
-            }
-            if let drainage = conditions.drainage {
-                Text((polish ? "Drenaż: " : "Drainage: ") + drainageLabel(drainage))
-                    .accessibilityIdentifier("catalogue.saved.conditions.drainage")
-            }
-        }
-        .font(.subheadline)
-        .accessibilityIdentifier("catalogue.saved.conditions")
-    }
-
-    private func lightLabel(_ light: PlantLightCode) -> String {
-        guard polish else { return light.label }
-        return switch light {
-        case .low: "Słabe światło"
-        case .medium: "Umiarkowane światło"
-        case .brightIndirect: "Jasne, rozproszone światło"
-        case .directSun: "Bezpośrednie słońce"
-        case .unknown: "Nieznane"
-        }
-    }
-
-    private func wateringLabel(_ watering: PlantWateringCode) -> String {
-        guard polish else { return watering.label }
-        return switch watering {
-        case .severalWeekly: "Kilka razy w tygodniu"
-        case .weekly: "Raz w tygodniu"
-        case .lessOften: "Rzadziej"
-        case .frequent: "Częste podlewanie"
-        case .moderate: "Umiarkowane podlewanie"
-        case .sparse: "Rzadkie podlewanie"
-        case .unknown: "Nieznana"
-        }
-    }
-
-    private func drainageLabel(_ drainage: PlantDrainageCode) -> String {
-        guard polish else { return drainage.label }
-        return switch drainage {
-        case .yes: "Otwory odpływowe"
-        case .no: "Brak otworów odpływowych"
-        case .unknown: "Nieznany"
         }
     }
 

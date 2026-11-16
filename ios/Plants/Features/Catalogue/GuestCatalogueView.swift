@@ -1157,6 +1157,9 @@ private struct CatalogueCollectionCardView: View {
                     if let name = currentSpecies?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
                     }
+                    if polish, let conditions = currentConditions {
+                        CatalogueSavedConditionsView(conditions: conditions, polish: polish)
+                    }
                     if !polish {
                         renameControls
                             .disabled(routineBusy)
@@ -1506,10 +1509,14 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func loadRename() async {
-        guard !polish, let repository = connection.repository else { return }
+        guard let repository = connection.repository else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
-            let pending = try await repository.pendingPlantEdit(plantId: card.id, context: lease)
+            let pending: CommandEnvelopeDTO? = if polish {
+                nil
+            } else {
+                try await repository.pendingPlantEdit(plantId: card.id, context: lease)
+            }
             let conditions = try await repository.syncedPlantConditions(for: card, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             pendingRename = pending

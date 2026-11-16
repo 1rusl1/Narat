@@ -40,6 +40,69 @@ final class CatalogueSaveUITests: XCTestCase {
         localizedText(run, "catalogue.saved.name", run.language.canonicalName, run.language.canonicalName)
     }
 
+    @MainActor func testPolishCollectionShowsRecordedConditionsAfterRestart() {
+        let run = Run("plantLightEdit", .pl)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "Moje rośliny")
+        tap(run, "Fixture 1")
+        let card = identity(run, "catalogue.saved.card.")
+        assertPolishConditions(run)
+        require(run.app.images["catalogue.saved.photo"])
+
+        restart(run)
+        tap(run, "collection.open", "Moje rośliny")
+        tap(run, "Fixture 1")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), card)
+        assertPolishConditions(run)
+        require(run.app.images["catalogue.saved.photo"])
+    }
+
+    @MainActor
+    private func assertPolishConditions(_ run: Run, light: String = "Umiarkowane światło") {
+        let values = [
+            ("light", "Światło: " + light),
+            ("watering", "Częstotliwość podlewania: Umiarkowane podlewanie"),
+            ("drainage", "Drenaż: Otwory odpływowe")
+        ]
+        for (field, label) in values {
+            let value = run.app.staticTexts["catalogue.saved.conditions." + field]
+            require(value)
+            XCTAssertEqual(value.label, label)
+        }
+        for edit in ["rename", "light", "watering.frequency", "drainage", "pot.type", "species"] {
+            XCTAssertFalse(run.app.buttons["collection." + edit + ".open"].exists)
+        }
+    }
+
+    @MainActor func testPolishCatalogueWithoutConditionsDoesNotInventValues() {
+        let run = Run("free2", .pl)
+        defer { run.app.terminate() }
+        openCatalogue(run)
+        enterName(run, run.language.input)
+        submit(run)
+        let saved = assertCard(run, name: run.language.canonicalName)
+        assertNoRecordedConditions(run)
+        restart(run)
+        tap(run, "collection.open", "Moje rośliny")
+        let plantId = saved.dropFirst("catalogue.saved.card.".count)
+        tap(run, "collection.plant." + plantId, run.language.canonicalName)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), saved)
+        assertNoRecordedConditions(run)
+    }
+
+    @MainActor
+    private func assertNoRecordedConditions(_ run: Run) {
+        let values = run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.conditions.")
+        )
+        let invented = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "count > 0"), object: values
+        )
+        invented.isInverted = true
+        XCTAssertEqual(XCTWaiter.wait(for: [invented], timeout: 1), .completed)
+    }
+
     @MainActor func testPlantDeletionLostReplyKeepsNeighbourAfterRestart() {
         let run = Run("plantDeletion", .en)
         defer { run.app.terminate() }
@@ -580,6 +643,16 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
         require(run.app.images["catalogue.saved.photo"])
         require(previous)
+
+        // Reopen the same persisted owner-bound snapshot in Polish after the EN edit.
+        run.app.terminate()
+        run.app.launch()
+        selectLanguage(run, .pl)
+        tap(run, "collection.open", "Moje rośliny")
+        tap(run, "Fixture 1")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        assertPolishConditions(run, light: "Bezpośrednie słońce")
+        require(run.app.images["catalogue.saved.photo"])
     }
 
     @MainActor func testPlantDrainageEditReplaysAndKeepsLightAndHistory() {
