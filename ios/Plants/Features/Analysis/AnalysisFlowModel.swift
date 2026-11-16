@@ -150,6 +150,17 @@ struct InitialDiagnosisExplanation {
             : "No conclusive diagnosis is available."
     }
 
+    func photoGuidance(isInitial: Bool) -> String? {
+        guard isInitial,
+              result.mode == .diagnosis,
+              result.diagnosisStatus == .unknown,
+              result.identificationStatus == .unknown || result.identificationStatus == .genusOnly
+        else { return nil }
+        return polish
+            ? "Jeśli później zrobisz kolejne zdjęcie, pokaż całą roślinę i liście z objawami w dobrym świetle."
+            : "If you try another photo later, show the whole plant and affected leaves in good light."
+    }
+
     var limitations: [String] {
         guard result.mode == .diagnosis else { return result.limitations }
         return result.limitations.filter { text in

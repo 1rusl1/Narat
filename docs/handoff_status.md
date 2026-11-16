@@ -2761,8 +2761,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-polish-saved-conditions-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 128.23 с, проверки — 441.59 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-polish-saved-conditions-acceptance](validation/automation/tasks/t170-polish-saved-conditions-acceptance.md).
+t039-unresolved-photo-next-step: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 3, reviewer 1, qa 1. Модели — 249.05 с, проверки — 322.01 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t039-unresolved-photo-next-step](validation/automation/tasks/t039-unresolved-photo-next-step.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

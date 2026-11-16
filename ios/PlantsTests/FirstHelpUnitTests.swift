@@ -131,6 +131,41 @@ final class FirstHelpUnitTests: XCTestCase {
         }
     }
 
+    func testPhotoGuidanceOnlyForInitialUnresolvedDiagnosisInBothLanguages() {
+        for polish in [false, true] {
+            let expected = polish
+                ? "Jeśli później zrobisz kolejne zdjęcie, pokaż całą roślinę i liście z objawami w dobrym świetle."
+                : "If you try another photo later, show the whole plant and affected leaves in good light."
+            for identification in [IdentificationStatus.unknown, .genusOnly] {
+                let unresolved = explanationFixture(
+                    status: .unknown, identification: identification,
+                    availability: .diagnosisUnresolved, polish: polish
+                )
+                XCTAssertEqual(unresolved.photoGuidance(isInitial: true), expected)
+                XCTAssertNil(unresolved.photoGuidance(isInitial: false))
+                XCTAssertNil(explanationFixture(
+                    mode: .identification, status: .unknown,
+                    identification: identification, polish: polish
+                ).photoGuidance(isInitial: true))
+                for status in [DiagnosisStatus.healthy, .conditionDetected, .outOfScope] {
+                    XCTAssertNil(explanationFixture(
+                        status: status, identification: identification, polish: polish
+                    ).photoGuidance(isInitial: true))
+                }
+            }
+            for identification in [IdentificationStatus.resolved, .outOfScope] {
+                XCTAssertNil(explanationFixture(
+                    status: .unknown, identification: identification,
+                    availability: .diagnosisUnresolved, polish: polish
+                ).photoGuidance(isInitial: true))
+            }
+            XCTAssertNil(explanationFixture(polish: polish).photoGuidance(isInitial: true))
+            XCTAssertNil(explanationFixture(
+                status: .healthy, polish: polish
+            ).photoGuidance(isInitial: true))
+        }
+    }
+
     func testHealthyAndUncertainResultsDoNotOfferAction() {
         for status in [DiagnosisStatus.healthy, .unknown, .outOfScope] {
             XCTAssertNil(explanationFixture(status: status).firstAction)
