@@ -1,6 +1,134 @@
 BEGIN;
 SELECT no_plan();
 
+-- Closed initial context uses an independent owner and the ordinary quota admission.
+INSERT INTO public.profiles(id,anonymous) VALUES
+    ('16310000-0000-4000-8000-000000000071',false),
+    ('16310000-0000-4000-8000-000000000078',true);
+CREATE TEMP TABLE initial_photo AS SELECT (public.create_diagnosis_upload(
+    '16310000-0000-4000-8000-000000000071','16310000-0000-4000-8000-000000000072',
+    'image/jpeg',4,repeat('d',64))->>'photo_asset_id')::uuid id;
+SELECT public.mark_diagnosis_upload_ready(
+    '16310000-0000-4000-8000-000000000071',(SELECT id FROM initial_photo),repeat('d',64));
+CREATE FUNCTION pg_temp.initial_job(
+    p_context JSONB,
+    p_operation UUID DEFAULT '16310000-0000-4000-8000-000000000074',
+    p_owner UUID DEFAULT '16310000-0000-4000-8000-000000000071',
+    p_dispatch BOOLEAN DEFAULT true
+) RETURNS JSONB LANGUAGE sql AS $$
+    SELECT public.create_initial_diagnosis_job(
+        p_owner,p_operation,(SELECT id FROM initial_photo),NULL,'en',p_dispatch,p_context)
+$$;
+SELECT ok(NOT has_function_privilege('anon',
+    'public.create_initial_diagnosis_job(uuid,uuid,uuid,uuid,text,boolean,jsonb)','execute'),
+    'anonymous role cannot supply initial context');
+SELECT ok(NOT has_function_privilege('authenticated',
+    'public.create_initial_diagnosis_job(uuid,uuid,uuid,uuid,text,boolean,jsonb)','execute'),
+    'owner clients cannot execute initial admission directly');
+SELECT ok(has_function_privilege('service_role',
+    'public.create_initial_diagnosis_job(uuid,uuid,uuid,uuid,text,boolean,jsonb)','execute'),
+    'service role can admit initial context');
+SELECT throws_ok(format($q$SELECT pg_temp.initial_job(%L::jsonb)$q$, invalid),
+    '22023','INVALID_INITIAL_CONTEXT','initial context rejects missing, extra or invalid values')
+FROM (VALUES
+    (NULL::jsonb), ('null'::jsonb), ('[]'::jsonb), ('{}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate"}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate","drainage":null}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate","drainage":true}'::jsonb),
+    ('{"light":"LOW","watering_frequency":"moderate","drainage":"yes"}'::jsonb),
+    ('{"light":"low","watering_frequency":"less_often","drainage":"yes"}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate","drainage":"yes","care_history":[]}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate","drainage":"yes","target_plant_id":"x"}'::jsonb)
+) invalid_context(invalid);
+SELECT throws_ok($q$SELECT pg_temp.initial_job(
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}',
+    p_owner=>'16310000-0000-4000-8000-000000000078')$q$,
+    '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','guest diagnosis remains forbidden');
+SELECT throws_ok($q$SELECT pg_temp.initial_job(
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}',
+    p_owner=>'16300000-0000-4000-8000-000000000001')$q$,
+    'P0002','PHOTO_NOT_READY','initial context cannot use a foreign photo');
+SELECT throws_ok($q$SELECT pg_temp.initial_job(
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}',
+    p_operation=>'16310000-0000-4000-8000-000000000072')$q$,
+    '23505','IDEMPOTENCY_CONFLICT','initial admission cannot overwrite an upload receipt');
+SELECT throws_ok($q$SELECT pg_temp.initial_job(
+    '{"light":"unknown","watering_frequency":"unknown","drainage":"unknown"}',
+    p_dispatch=>false)$q$,'P0001','PROVIDER_UNAVAILABLE','valid unknown context requires a worker for new work');
+SELECT throws_ok(format($q$SELECT pg_temp.initial_job(%L::jsonb,
+    p_operation=>gen_random_uuid(),p_dispatch=>false)$q$, valid),
+    'P0001','PROVIDER_UNAVAILABLE','supported initial enums pass SQL validation')
+FROM (
+    SELECT jsonb_build_object('light',light,'watering_frequency','moderate','drainage','yes') valid
+    FROM unnest(ARRAY['low','medium','bright_indirect','direct_sun','unknown']) light
+    UNION ALL
+    SELECT jsonb_build_object('light','low','watering_frequency',watering,'drainage','yes')
+    FROM unnest(ARRAY['frequent','moderate','sparse','unknown']) watering
+    UNION ALL
+    SELECT jsonb_build_object('light','low','watering_frequency','moderate','drainage',drainage)
+    FROM unnest(ARRAY['yes','no','unknown']) drainage
+) valid_context;
+CREATE TEMP TABLE initial_created AS SELECT pg_temp.initial_job(
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}') body;
+CREATE TEMP TABLE initial_job_id AS SELECT (body->'job'->>'job_id')::uuid id FROM initial_created;
+SELECT is(public.create_initial_diagnosis_job(
+    '16310000-0000-4000-8000-000000000071','16310000-0000-4000-8000-000000000074',
+    (SELECT id FROM initial_photo),NULL,'en',false,
+    '{"drainage":"yes","watering_frequency":"moderate","light":"low"}'),
+    (SELECT jsonb_set(body,'{replayed}','true') FROM initial_created),
+    'normalized exact context replays its accepted receipt without a worker');
+SELECT throws_ok(format($q$SELECT pg_temp.initial_job(%L::jsonb)$q$, changed),
+    '23505','IDEMPOTENCY_CONFLICT','each context field participates in exact replay')
+FROM (VALUES
+    ('{"light":"medium","watering_frequency":"moderate","drainage":"yes"}'::jsonb),
+    ('{"light":"low","watering_frequency":"sparse","drainage":"yes"}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate","drainage":"no"}'::jsonb)
+) changed_context(changed);
+SELECT throws_ok($q$SELECT public.create_diagnosis_job(
+    '16310000-0000-4000-8000-000000000071','16310000-0000-4000-8000-000000000074',
+    (SELECT id FROM initial_photo),NULL,'en',false)$q$,
+    '23505','IDEMPOTENCY_CONFLICT','omitting accepted context conflicts');
+SELECT throws_ok($q$SELECT public.create_photo_analysis_job(
+    '16310000-0000-4000-8000-000000000071','16310000-0000-4000-8000-000000000074',
+    (SELECT id FROM initial_photo),NULL,'en',false,'identification')$q$,
+    '23505','IDEMPOTENCY_CONFLICT','changing accepted initial mode conflicts');
+SELECT is((SELECT r.payload_hash FROM public.operation_receipts r
+    WHERE owner_id='16310000-0000-4000-8000-000000000071'
+      AND operation_id='16310000-0000-4000-8000-000000000074'),
+    (SELECT payload_hash FROM public.analysis_jobs WHERE id=(SELECT id FROM initial_job_id)),
+    'job and receipt share the exact context hash');
+SELECT ok((SELECT NOT (body->'job' ? 'initial_context') FROM initial_created),
+    'context stays outside the public receipt');
+SELECT is((SELECT initial_context FROM public.diagnosis_job_runtime
+    WHERE job_id=(SELECT id FROM initial_job_id)),
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}'::jsonb,
+    'initial values are persisted exactly');
+SELECT throws_ok($q$UPDATE public.diagnosis_job_runtime SET initial_context=NULL
+    WHERE job_id=(SELECT id FROM initial_job_id)$q$,
+    '22023','IMMUTABLE_INITIAL_CONTEXT','accepted initial context cannot be removed');
+SELECT throws_ok($q$UPDATE public.diagnosis_job_runtime
+    SET initial_context='{"light":"medium","watering_frequency":"moderate","drainage":"yes"}'
+    WHERE job_id=(SELECT id FROM initial_job_id)$q$,
+    '22023','IMMUTABLE_INITIAL_CONTEXT','accepted initial context cannot be rewritten');
+CREATE TEMP TABLE initial_lease AS SELECT public.lease_diagnosis_job((SELECT id FROM initial_job_id)) body;
+SELECT is((SELECT body->'initial_context' FROM initial_lease),
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}'::jsonb,
+    'only the leased initial job receives its closed context');
+SELECT is((SELECT body->'repeat_context' FROM initial_lease),'null'::jsonb,
+    'initial context does not become repeat context');
+SELECT is(public.lease_diagnosis_job((SELECT id FROM initial_job_id)),NULL::jsonb,
+    'initial admission retains the single lease guard');
+SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000001',
+    (SELECT id FROM initial_job_id)),NULL::jsonb,'initial status remains owner scoped');
+SELECT is(pg_temp.initial_job(
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}',p_dispatch=>false),
+    (SELECT jsonb_set(body,'{replayed}','true') FROM initial_created),
+    'lease does not change the original accepted receipt');
+SELECT is((SELECT count(*) FROM public.analysis_jobs
+    WHERE owner_id='16310000-0000-4000-8000-000000000071'),1::bigint,
+    'invalid and conflicting initial requests create no extra jobs');
+
+
 CREATE TEMP TABLE photo AS SELECT (public.create_diagnosis_upload(
     '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000011',
     'image/jpeg',4,repeat('a',64))->>'photo_asset_id')::uuid id;
@@ -21,6 +149,15 @@ CREATE TEMP TABLE created AS SELECT public.create_diagnosis_job(
     '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000012',
     (SELECT id FROM photo),NULL,'en',true) payload;
 CREATE TEMP TABLE job_id AS SELECT (payload->'job'->>'job_id')::uuid id FROM created;
+SELECT throws_ok($q$SELECT public.create_initial_diagnosis_job(
+    '16300000-0000-4000-8000-000000000002','16310000-0000-4000-8000-000000000012',
+    (SELECT id FROM photo),NULL,'en',true,
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}')$q$,
+    '23505','IDEMPOTENCY_CONFLICT','initial context cannot replace a legacy diagnosis receipt');
+SELECT is(public.create_diagnosis_job('16300000-0000-4000-8000-000000000002',
+    '16310000-0000-4000-8000-000000000012',(SELECT id FROM photo),NULL,'en',false),
+    (SELECT jsonb_set(payload,'{replayed}','true') FROM created),
+    'rejected context leaves the legacy receipt intact');
 SELECT is((SELECT payload->'job'->>'quota_state' FROM created),'reserved','creates and reserves atomically');
 SELECT is((SELECT payload->'job'->>'quota_kind' FROM created),'starter_diagnosis','uses accepted starter quota');
 SELECT is(public.create_diagnosis_job('16300000-0000-4000-8000-000000000002',
@@ -36,6 +173,8 @@ SELECT is((SELECT count(*) FROM public.analysis_jobs WHERE owner_id='16300000-00
 SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000001',(SELECT id FROM job_id)),NULL::jsonb,'status hides another owner');
 CREATE TEMP TABLE lease AS SELECT public.lease_diagnosis_job((SELECT id FROM job_id)) AS body;
 CREATE TEMP TABLE token AS SELECT (body->>'lease_token')::uuid id FROM lease;
+SELECT ok((SELECT NOT (body ? 'initial_context') FROM lease),
+    'legacy no-context lease omits initial_context');
 SELECT ok((SELECT id IS NOT NULL FROM token),'worker receives a lease');
 SELECT is(public.lease_diagnosis_job((SELECT id FROM job_id)),NULL::jsonb,'second dispatch cannot lease same job');
 SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000002',(SELECT id FROM job_id))->>'status','running','leased job is running');
@@ -107,8 +246,12 @@ SELECT throws_ok($q$SELECT public.create_photo_analysis_job(
     (SELECT id FROM photo),NULL,'en',true,'identification')$q$,'P0002','PHOTO_NOT_READY','another owner cannot identify from this photo');
 SELECT is(public.read_diagnosis_job('16300000-0000-4000-8000-000000000001',(SELECT id FROM identification_job)),
     NULL::jsonb,'another owner cannot read identification');
+CREATE TEMP TABLE identification_lease_payload AS
+    SELECT public.lease_diagnosis_job((SELECT id FROM identification_job)) body;
 CREATE TEMP TABLE identification_lease AS
-    SELECT (public.lease_diagnosis_job((SELECT id FROM identification_job))->>'lease_token')::uuid id;
+    SELECT (body->>'lease_token')::uuid id FROM identification_lease_payload;
+SELECT ok((SELECT NOT (body ? 'initial_context') FROM identification_lease_payload),
+    'identification lease omits initial_context');
 SELECT ok((SELECT id IS NOT NULL FROM identification_lease),'identification leases through the same queue');
 SELECT is(public.lease_diagnosis_job((SELECT id FROM identification_job)),NULL::jsonb,'identification does not lease twice');
 SELECT is(public.read_identification_catalog((SELECT id FROM identification_job),gen_random_uuid()),
@@ -429,5 +572,16 @@ SELECT is((public.read_guest_photo_cleanup((SELECT id FROM guest_draft))->0->>'s
     'published claim cleanup only removes the guest source');
 SELECT is((public.read_guest_photo_cleanup((SELECT id FROM guest_draft))->0->>'abandoned_target'),NULL::text,
     'cleanup never deletes the published private photo');
+-- Simulate an owned source being attached and then revoked before an exact replay.
+CREATE TEMP TABLE initial_saved_plant AS SELECT (public.execute_plant_create_command(
+    '16310000-0000-4000-8000-000000000071','16310000-0000-4000-8000-000000000079',
+    '{"creation_source":"catalogue","plant_id":"monstera_deliciosa"}')->>'plant_id')::uuid id;
+UPDATE public.photo_assets SET plant_id=(SELECT id FROM initial_saved_plant)
+WHERE id=(SELECT id FROM initial_photo);
+SELECT is(pg_temp.initial_job('{"light":"low","watering_frequency":"moderate","drainage":"yes"}',
+    p_dispatch=>false)->>'replayed','true','active linked source still permits exact replay');
+UPDATE public.plants SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM initial_saved_plant);
+SELECT throws_ok($q$SELECT pg_temp.initial_job('{"light":"low","watering_frequency":"moderate","drainage":"yes"}',
+    p_dispatch=>false)$q$,'P0002','PHOTO_NOT_READY','initial context replay respects source revocation');
 SELECT * FROM finish();
 ROLLBACK;
