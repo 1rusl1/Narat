@@ -132,11 +132,58 @@ final class PlantsUITests: XCTestCase {
     }
 
     @MainActor
+    func testConfirmedCatalogueCardOpensCollectionAndRestoresReceipt() {
+        for polish in [false, true] {
+            let app = openSavePresentationFixture(polish: polish)
+            defer { app.terminate() }
+            let open = app.buttons["catalogue.saved.collection"]
+            XCTAssertTrue(app.buttons["catalogue.save.submit"].waitForExistence(timeout: 15))
+            XCTAssertFalse(open.exists)
+            app.buttons["catalogue.save.submit"].tap()
+            let card = app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.card.")
+            ).firstMatch
+            XCTAssertTrue(card.waitForExistence(timeout: 20))
+            let cardID = card.identifier
+            let plantID = String(cardID.dropFirst("catalogue.saved.card.".count))
+            XCTAssertTrue(open.waitForExistence(timeout: 10))
+            XCTAssertEqual(open.label, polish ? "Moje rośliny" : "My plants")
+            open.tap()
+            let plant = app.buttons["collection.plant." + plantID]
+            XCTAssertTrue(plant.waitForExistence(timeout: 15))
+            app.buttons["collection.back"].tap()
+            XCTAssertTrue(open.waitForExistence(timeout: 10))
+            XCTAssertEqual(card.identifier, cardID)
+
+            app.terminate()
+            app.launch()
+            XCTAssertTrue(card.waitForExistence(timeout: 20))
+            XCTAssertEqual(card.identifier, cardID)
+            XCTAssertTrue(open.waitForExistence(timeout: 10))
+            open.tap()
+            XCTAssertTrue(plant.waitForExistence(timeout: 15))
+        }
+    }
+
+    @MainActor
+    func testPendingCatalogueSaveHidesCollectionAction() {
+        let app = openSavePresentationFixture(polish: false, scenario: "server503")
+        defer { app.terminate() }
+        let submit = app.buttons["catalogue.save.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["catalogue.saved.collection"].exists)
+        submit.tap()
+        XCTAssertTrue(app.staticTexts["catalogue.save.pending"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["catalogue.saved.collection"].exists)
+    }
+
+    @MainActor
     private func verifyResultSavePresentation(mode: String, polish: Bool) {
         let app = openSavePresentationFixture(polish: polish, mode: mode)
         defer { app.terminate() }
         let heading = app.staticTexts["analysis.result.species"]
         XCTAssertTrue(heading.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["catalogue.saved.collection"].exists)
         if mode == "identification" {
             let confirm = app.buttons["analysis.identification.confirm"]
             XCTAssertTrue(confirm.waitForExistence(timeout: 5))
@@ -155,14 +202,17 @@ final class PlantsUITests: XCTestCase {
         // Count the label too: a second header has no analysis accessibility ID.
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count, 1)
         XCTAssertFalse(app.staticTexts["catalogue.selected.scientific"].exists)
+        XCTAssertFalse(app.buttons["catalogue.saved.collection"].exists)
     }
 
     /// Fixture-only presentation; no live analysis, authentication or save is performed.
     @MainActor
-    private func openSavePresentationFixture(polish: Bool, mode: String? = nil) -> XCUIApplication {
+    private func openSavePresentationFixture(
+        polish: Bool, mode: String? = nil, scenario: String = "free2"
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--catalogue-fixture", "free2", "--catalogue-namespace", UUID().uuidString,
+            "--catalogue-fixture", scenario, "--catalogue-namespace", UUID().uuidString,
             "-AppleLanguages", polish ? "(pl)" : "(en)", "-AppleLocale", polish ? "pl_PL" : "en_US"
         ]
         if let mode { app.launchArguments += ["--result-save-presentation", mode] }

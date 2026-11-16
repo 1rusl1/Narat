@@ -139,6 +139,7 @@ struct RootContainerView: View {
                                     analysisSaveIdentity: resumed.flowId,
                                     identification: resumed.identification,
                                     diagnosisJobId: resumed.diagnosisJobId,
+                                    openCollection: openSavedCollection,
                                     selectionLocked: $stagingResumeLocked
                                 ) { EmptyView() }
                                 .id(resumed.flowId)
@@ -162,10 +163,12 @@ struct RootContainerView: View {
                             .disabled(stagingResumeLocked)
                             .accessibilityIdentifier("catalogue.back")
                         } else {
-                            GuestCatalogueView(connection: catalogue, polish: isPolish, back: closeCatalogue)
+                            GuestCatalogueView(connection: catalogue, polish: isPolish,
+                                           openCollection: openSavedCollection, back: closeCatalogue)
                         }
 #else
-                        GuestCatalogueView(connection: catalogue, polish: isPolish, back: closeCatalogue)
+                        GuestCatalogueView(connection: catalogue, polish: isPolish,
+                                           openCollection: openSavedCollection, back: closeCatalogue)
 #endif
                     } else {
                         if !startupFailed { ProgressView() }
@@ -183,7 +186,7 @@ struct RootContainerView: View {
                         model: analysisModel, languageStore: languageStore,
                         catalogueConnection: analysisOwner != nil && catalogue?.snapshot?.session.userId == analysisOwner
                             ? catalogue : nil,
-                        guestActions: guestIdentificationActions
+                        guestActions: guestIdentificationActions, openCollection: openSavedCollection
                     )
                 default:
                     welcomeIntentSection
@@ -326,6 +329,11 @@ struct RootContainerView: View {
         } else {
             analysisModel.router.flowState.currentStep = .selectIntent
         }
+    }
+
+    private func openSavedCollection(_ expected: CatalogueSDKSnapshot) {
+        guard let connection = catalogue, connection.snapshot == expected, !expected.isAnonymous else { return }
+        activate(.collection, connection: connection, snapshot: expected)
     }
 
     private func open(_ destination: AccountDestination) {

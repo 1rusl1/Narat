@@ -2378,6 +2378,7 @@ struct GuestCatalogueView: View {
     let connection: CatalogueConnection
     let polish: Bool
     var speciesPicker: SpeciesPicker? = nil
+    var openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil
     let back: () -> Void
     @State private var cards: [PublishedSpeciesCard] = []
     @State private var page: PublishedCataloguePage?
@@ -2479,7 +2480,7 @@ struct GuestCatalogueView: View {
                 CatalogueSaveView(
                     connection: connection, speciesSlug: slug,
                     displayName: card?.displayName ?? slug, scientificName: card?.scientificName ?? "",
-                    polish: polish, selectionLocked: $selectionLocked
+                    polish: polish, openCollection: openCollection, selectionLocked: $selectionLocked
                 ) {
                     if let card { speciesDetails(card) }
                 }
