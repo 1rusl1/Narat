@@ -2793,8 +2793,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-runtime-scrub-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 170.75 с, проверки — 84.50 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-runtime-scrub-acceptance](validation/automation/tasks/t083-runtime-scrub-acceptance.md).
+t083-auth-purge-dependency-inventory: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 185.37 с, проверки — 70.82 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-auth-purge-dependency-inventory](validation/automation/tasks/t083-auth-purge-dependency-inventory.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
