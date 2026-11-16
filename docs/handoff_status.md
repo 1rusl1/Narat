@@ -2712,9 +2712,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-guest-draft-ttl-lock-order: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 213.12 с, проверки — 96.33 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-guest-draft-ttl-lock-order](validation/automation/tasks/t170-guest-draft-ttl-lock-order.md).
+t170-guest-diagnosis-draft-edge: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 466.86 с, проверки — 6.98 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-guest-diagnosis-draft-edge](validation/automation/tasks/t170-guest-diagnosis-draft-edge.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 

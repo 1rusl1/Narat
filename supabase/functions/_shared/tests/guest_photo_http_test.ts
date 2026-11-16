@@ -212,6 +212,157 @@ Deno.test("Production guest route transfers verified private bytes once and repl
   assertEquals((await denied.json()).error.code, "DRAFT_EXPIRED");
 });
 
+Deno.test("Draft route accepts only exact identification or diagnosis bodies through one private RPC", async () => {
+  const operation = crypto.randomUUID();
+  const installationHash = await hashInstallationCredential(credential);
+  const receipt = { draft_id: draft, expires_at: "2026-11-19T08:00:00Z" };
+  const identification = {
+    operation_id: operation,
+    identification_job_id: job,
+    taxon_id: taxon,
+  };
+  const diagnosis = { operation_id: operation, diagnosis_job_id: job };
+  let expectedRpc = "create_bound_guest_diagnosis_draft";
+  let expectedOwner = guest;
+  let failure: { code: string; message: string } | null = null;
+  const calls: string[] = [];
+  const handler = createProductionPlantsApiHandler({
+    resolveRequestContext: (req) => {
+      const identity = req.headers.get("authorization")?.slice(7) ?? null;
+      return Promise.resolve({
+        ownerId: identity,
+        accountState: identity ? "active" : null,
+        isAnonymous: identity === guest || identity === other,
+        locale: "en",
+        installationCredential: req.headers.get("x-installation-credential"),
+        operationId: null,
+      });
+    },
+  }, {
+    env: (name) =>
+      ({ SUPABASE_URL: host, SUPABASE_SERVICE_ROLE_KEY: serviceKey })[name],
+    fetch: async (input, init) => {
+      const req = new Request(input, init);
+      // Count every outbound request: provider, Storage or extra lookups fail.
+      calls.push(req.url);
+      assertEquals(req.url, host + "/rest/v1/rpc/" + expectedRpc);
+      assertEquals(req.method, "POST");
+      assertEquals(req.headers.get("authorization"), "Bearer " + serviceKey);
+      assertEquals(await req.json(), {
+        p_owner_id: expectedOwner,
+        p_credential_hash: installationHash,
+        p_operation_id: operation,
+        p_job_id: job,
+        ...(expectedRpc === "create_guest_photo_draft"
+          ? { p_taxon_id: taxon }
+          : {}),
+      });
+      return failure
+        ? Response.json(failure, { status: 400 })
+        : Response.json(receipt);
+    },
+  });
+  const request = (
+    value: unknown,
+    identity: string | null = guest,
+    installationCredential: string | null = credential,
+  ) => {
+    const headers = new Headers({ "content-type": "application/json" });
+    if (identity !== null) headers.set("authorization", "Bearer " + identity);
+    if (installationCredential !== null) {
+      headers.set("x-installation-credential", installationCredential);
+    }
+    return handler(new Request(host + "/drafts", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(value),
+    }));
+  };
+  const expectError = async (
+    response: Response,
+    status: number,
+    code: string,
+  ) => {
+    assertEquals(response.status, status);
+    assertEquals(response.headers.get("cache-control"), "private, no-store");
+    const result = await response.json();
+    assertEquals(result.error.code, code);
+    return result;
+  };
+
+  for (const value of [identification, diagnosis, diagnosis]) {
+    expectedRpc = Object.hasOwn(value, "diagnosis_job_id")
+      ? "create_bound_guest_diagnosis_draft"
+      : "create_guest_photo_draft";
+    const before = calls.length;
+    const response = await request(value);
+    assertEquals(response.status, 200);
+    assertEquals(await response.json(), receipt);
+    assertEquals(response.headers.get("cache-control"), "private, no-store");
+    assertEquals(calls.length, before + 1);
+  }
+
+  const beforeInvalid = calls.length;
+  for (const value of [identification, diagnosis]) {
+    await expectError(await request(value, null), 401, "UNAUTHORIZED");
+    await expectError(await request(value, guest, null), 400, "VALIDATION_ERROR");
+    await expectError(await request(value, guest, "short"), 400, "VALIDATION_ERROR");
+  }
+  for (const value of [
+    null,
+    [],
+    "invalid",
+    {},
+    { diagnosis_job_id: job },
+    { operation_id: operation },
+    { ...diagnosis, operation_id: null },
+    { ...diagnosis, operation_id: "invalid" },
+    { ...diagnosis, diagnosis_job_id: null },
+    { ...diagnosis, diagnosis_job_id: "invalid" },
+    { ...diagnosis, taxon_id: taxon },
+    { ...diagnosis, identification_job_id: job },
+    { ...identification, diagnosis_job_id: job },
+    { ...diagnosis, extra: null },
+    { ...identification, extra: true },
+    { operation_id: operation, identification_job_id: job },
+    { ...identification, identification_job_id: null },
+    { ...identification, taxon_id: null },
+  ]) {
+    await expectError(await request(value), 400, "VALIDATION_ERROR");
+  }
+  assertEquals(calls.length, beforeInvalid);
+
+  // SQL owns scope, revocation, TTL and replay checks; never probe another source.
+  expectedRpc = "create_bound_guest_diagnosis_draft";
+  const scenarios = [
+    [other, "42501", "INSTALLATION_CREDENTIAL_MISMATCH", 403, "FORBIDDEN"],
+    [owner, "42501", "ACTIVE_GUEST_REQUIRED", 403, "FORBIDDEN"],
+    [guest, "42501", "INSTALLATION_CREDENTIAL_MISMATCH", 403, "FORBIDDEN"],
+    [other, "P0002", "DIAGNOSIS_SOURCE_NOT_FOUND", 404, "NOT_FOUND"],
+    [guest, "P0002", "DIAGNOSIS_SOURCE_NOT_FOUND", 404, "NOT_FOUND"],
+    [guest, "P0002", "DRAFT_EXPIRED", 410, "DRAFT_EXPIRED"],
+    [guest, "23505", "IDEMPOTENCY_CONFLICT", 409, "CONFLICT"],
+    [guest, "57014", "statement timeout", 503, "INTERNAL_ERROR"],
+  ] as const;
+  let notFound: unknown;
+  for (const [identity, code, message, status, api] of scenarios) {
+    expectedOwner = identity;
+    failure = { code, message };
+    const before = calls.length;
+    const result = await expectError(
+      await request(diagnosis, identity), status, api,
+    );
+    assertEquals(calls.length, before + 1);
+    assert(!result.error.message.includes(message));
+    assert(!JSON.stringify(result).includes(job));
+    assertEquals(result.error.retryable, status === 503);
+    if (status === 404) {
+      if (notFound !== undefined) assertEquals(result, notFound);
+      notFound = result;
+    }
+  }
+});
+
 Deno.test("Photo maintenance isolates a scoped cleanup and retries Storage removal before finishing", async () => {
   const source = `${owner}/${photo}`;
   const path = "/internal/guest-drafts/cleanup";
