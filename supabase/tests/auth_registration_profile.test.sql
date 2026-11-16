@@ -3332,5 +3332,179 @@ SELECT ok(NOT EXISTS (SELECT 1 FROM auth.users WHERE id IN (
     'a0180000-0000-4000-8000-000000000001'::uuid,
     'a0180000-0000-4000-8000-000000000002'::uuid)), '018 fixtures rolled back');
 
+-- 019 runs on both clean and upgraded rollback paths.
+CREATE FUNCTION pg_temp.installation_unlink_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0190000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0190000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0190000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_installation uuid;
+    v_job uuid;
+    v_plant uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_auth jsonb;
+    v_access jsonb;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.unlink_account_deletion_installations_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('019 installation unlink outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    SELECT jsonb_agg(to_jsonb(u) ORDER BY id) INTO v_auth FROM auth.users u;
+    INSERT INTO public.installation_access(credential_hash,linked_owner_ids,
+        starter_identification_consumed,starter_diagnosis_consumed,first_starter_success_at)
+    VALUES(repeat('a019',16),ARRAY[v_neighbor,v_owner,v_guest,v_owner,v_neighbor],
+        true,true,'2026-11-01 UTC') RETURNING id INTO v_installation;
+    INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+    VALUES(repeat('b019',16),ARRAY[v_owner,v_owner]),
+        (repeat('c019',16),ARRAY[v_guest,v_neighbor,v_neighbor]),
+        (repeat('d019',16),'{}');
+    INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,prompt_version,
+        operation_id,payload_hash,locale,quota_kind,quota_state,state,quota_installation_id)
+    VALUES(v_guest,gen_random_uuid(),'care','scan','identification','fixture',
+        gen_random_uuid(),'fixture','en','starter_identification','consumed','succeeded',v_installation)
+    RETURNING id INTO v_job;
+    UPDATE public.installation_access SET starter_identification_job_id=v_job WHERE id=v_installation;
+
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+        '019 active owner without deletion proof rejected');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_guest,v_operation),false,
+        '019 guest rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 missing proof is atomic');
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'019 predecessor hold','identification') RETURNING id INTO v_plant;
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_neighbor,v_operation),false,'019 wrong owner');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,gen_random_uuid()),false,'019 wrong operation');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(NULL,v_operation),false,'019 null owner');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,NULL),false,'019 null operation');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 scope rejection is atomic');
+
+    FOR v_case IN 1..5 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/019-hold');
+            ELSIF v_case=2 THEN
+                UPDATE public.operation_receipts SET payload_hash='forged'
+                    WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSIF v_case=3 THEN
+                DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSIF v_case=4 THEN
+                DELETE FROM public.account_deletion_requests WHERE owner_id=v_owner;
+            ELSE
+                INSERT INTO public.condition_snapshots(owner_id,plant_id) VALUES(v_neighbor,v_plant);
+            END IF;
+            v_before:=pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+                '019 fresh proof or exact predecessor hold '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 proof hold is atomic '||v_case);
+            RAISE SQLSTATE 'Z1919';
+        EXCEPTION WHEN SQLSTATE 'Z1919' THEN NULL;
+        END;
+    END LOOP;
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            UPDATE public.installation_access SET linked_owner_ids=CASE v_case
+                WHEN 1 THEN ARRAY[[v_owner,v_neighbor]]
+                WHEN 2 THEN ARRAY[v_owner,NULL::uuid]
+                ELSE array_fill(v_owner,ARRAY[2],ARRAY[0]) END
+                WHERE id=v_installation;
+            v_before:=pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+                '019 unsupported legacy aliases rejected '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 legacy rejection is atomic '||v_case);
+            RAISE SQLSTATE 'Z1919';
+        EXCEPTION WHEN SQLSTATE 'Z1919' THEN NULL;
+        END;
+    END LOOP;
+
+    -- Establish the accepted predecessor baseline before the exact diff.
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),true,
+        '019 accepted 018 predecessor is ready');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    SELECT jsonb_set(v_before,ARRAY['installation_access'],
+        jsonb_agg(e||jsonb_build_object('linked_owner_ids',
+            (SELECT coalesce(jsonb_agg(a.value ORDER BY a.ordinality),'[]'::jsonb)
+             FROM jsonb_array_elements(e->'linked_owner_ids') WITH ORDINALITY a(value,ordinality)
+             WHERE a.value<>to_jsonb(v_owner)))
+            ORDER BY (e||jsonb_build_object('linked_owner_ids',
+                (SELECT coalesce(jsonb_agg(a.value ORDER BY a.ordinality),'[]'::jsonb)
+                 FROM jsonb_array_elements(e->'linked_owner_ids') WITH ORDINALITY a(value,ordinality)
+                 WHERE a.value<>to_jsonb(v_owner))))::text))
+        INTO v_expected FROM jsonb_array_elements(v_before->'installation_access') e;
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),true,
+        '019 removes all matching owner aliases across installations');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '019 exact diff preserves ordered duplicates, digests, timestamps, attempts, pointers and neighbors');
+    RETURN NEXT is((SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM auth.users u),v_auth,'019 Auth unchanged');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    -- A separate invocation rereads persisted proof and the now-empty matching set.
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),true,'019 exact replay');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 replay changes nothing');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/019-replay');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+        '019 empty matching set still requires fresh Storage proof');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 failed replay is atomic');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/019-replay';
+
+    RETURN NEXT throws_ok(format('SELECT public.bind_installation_to_owner(%L,%L)',v_installation,v_owner),
+        '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','019 public bind cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.register_installation_access(%L,%L)',repeat('a019',16),v_owner),
+        '42501','ACTIVE_OWNER_REQUIRED','019 registration replay cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.bind_installation_credential(%L,%L,%L)',
+        v_installation,v_owner,repeat('a019',16)),
+        '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','019 credential bind cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.get_analysis_access_snapshot(%L,%L)',v_owner,repeat('a019',16)),
+        '42501','ACTIVE_OWNER_REQUIRED','019 access replay cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.commit_guest_claim(%L,%L,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid()),'42501','account_not_active',
+        '019 legacy guest claim cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.prepare_guest_photo_claim(%L,%L,%L,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid(),repeat('a019',16)),
+        '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','019 photo claim cannot use deleting target');
+
+    v_access:=public.get_analysis_access_snapshot(v_neighbor,repeat('a019',16),clock_timestamp());
+    RETURN NEXT is(v_access->'starter'->>'identification_remaining','0','019 remaining owner keeps spent identification');
+    RETURN NEXT is(v_access->'starter'->>'diagnosis_remaining','0','019 remaining owner keeps spent diagnosis');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.installation_access WHERE v_owner=ANY(linked_owner_ids)),
+        '019 surviving owner replay does not restore deleted alias');
+    RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.unlink_account_deletion_installations_internal(uuid,uuid)'::regprocedure),
+        '019 security definer has empty search path');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+        CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.unlink_account_deletion_installations_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'019 only SQL owner has execute grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied:=false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.unlink_account_deletion_installations_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied:=true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'019 actual execution denied for '||v_role);
+    END LOOP;
+    RAISE SQLSTATE 'Z1919';
+EXCEPTION WHEN SQLSTATE 'Z1919' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.installation_unlink_tests();
+SELECT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id IN (
+    'a0190000-0000-4000-8000-000000000001'::uuid,
+    'a0190000-0000-4000-8000-000000000002'::uuid,
+    'a0190000-0000-4000-8000-000000000003'::uuid)), '019 fixtures rolled back');
+
 SELECT * FROM finish();
 ROLLBACK;

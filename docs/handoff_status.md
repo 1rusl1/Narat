@@ -2806,8 +2806,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-auth-purge-dependency-inventory: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 185.37 с, проверки — 70.82 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-auth-purge-dependency-inventory](validation/automation/tasks/t083-auth-purge-dependency-inventory.md).
+t083-unlink-installation-owner: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 3, reviewer 1, qa 1. Модели — 525.57 с, проверки — 82.75 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-unlink-installation-owner](validation/automation/tasks/t083-unlink-installation-owner.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
