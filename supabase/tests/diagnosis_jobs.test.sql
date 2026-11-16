@@ -801,9 +801,20 @@ SELECT is(public.start_diagnosis_provider((SELECT id FROM bound_initial_job),
 SELECT is((SELECT started_calls FROM public.provider_daily_budget
     WHERE utc_date=(clock_timestamp() AT TIME ZONE 'UTC')::date),
     (SELECT started_calls+1 FROM bound_worker_budget),'guest provider debits budget exactly once');
-CREATE TEMP TABLE bound_worker_projection AS SELECT jsonb_build_object(
-    'job_id',id,'mode','diagnosis','kb_release_id',kb_release_id,'identification_status','unknown') body
+CREATE TEMP TABLE bound_worker_signed AS SELECT jsonb_build_object(
+    'analysis_id','16320000-0000-4000-8000-000000000090',
+    'kb_release_id',kb_release_id,'mode','diagnosis','plant_id','monstera_deliciosa',
+    'selected_condition_id',NULL,'decision_revision',1,'issued_at',clock_timestamp()) body
 FROM public.analysis_jobs WHERE id=(SELECT id FROM bound_initial_job);
+CREATE TEMP TABLE bound_worker_projection AS SELECT jsonb_build_object(
+    'analysis_id',s.body->'analysis_id','job_id',j.id,'mode','diagnosis',
+    'kb_release_id',j.kb_release_id,'locale',j.locale,
+    'identification_status','identified','plant_id','monstera_deliciosa',
+    'diagnosis_status','healthy','selected_condition_id',NULL,
+    -- Trusted resolver fixture. SQL does not possess the worker's HMAC secret.
+    'analysis_receipt',encode(convert_to(s.body::text,'UTF8'),'base64') || '.' || repeat('a',64)) body
+FROM public.analysis_jobs j CROSS JOIN bound_worker_signed s
+WHERE j.id=(SELECT id FROM bound_initial_job);
 SELECT is(public.finish_diagnosis_job((SELECT id FROM bound_initial_job),
     (SELECT (body->>'lease_token')::uuid FROM bound_worker_lease),
     (SELECT body FROM bound_worker_projection),false,NULL)->>'quota_state',
@@ -847,5 +858,209 @@ SELECT is(public.read_bound_guest_initial_diagnosis_job(
     NULL::jsonb,'revoked source is unavailable to bound status');
 SELECT throws_ok($q$SELECT pg_temp.bound_initial_create()$q$,
     'P0002','PHOTO_NOT_READY','revoked source prevents exact retry');
+-- Restore the source revoked by the preceding boundary fixture.
+UPDATE public.photo_assets SET deleted_at=NULL WHERE id=(SELECT id FROM bound_initial_photo);
+CREATE FUNCTION pg_temp.diagnosis_draft(
+    p_operation UUID DEFAULT '16320000-0000-4000-8000-000000000091',
+    p_job UUID DEFAULT NULL,
+    p_owner UUID DEFAULT '16320000-0000-4000-8000-000000000081',
+    p_credential TEXT DEFAULT repeat('8',64)
+) RETURNS JSONB LANGUAGE sql AS $$
+    SELECT public.create_bound_guest_diagnosis_draft(p_owner,p_operation,coalesce(p_job,(SELECT id FROM bound_initial_job)),p_credential)
+$$;
+SELECT ok(NOT has_function_privilege(role_name,
+    'public.create_bound_guest_diagnosis_draft(uuid,uuid,uuid,text)','execute'),
+    role_name || ' cannot create a diagnosis draft directly')
+FROM unnest(ARRAY['anon','authenticated']) role_name;
+SELECT ok(has_function_privilege('service_role',
+    'public.create_bound_guest_diagnosis_draft(uuid,uuid,uuid,text)','execute'),
+    'service can create a bound diagnosis draft');
+SELECT ok(NOT has_function_privilege(role_name,rpc,'execute'),'private diagnosis helper denied')
+FROM unnest(ARRAY['anon','authenticated','service_role']) role_name
+CROSS JOIN unnest(ARRAY['public._bound_guest_diagnosis_taxon(uuid)',
+    'public._retain_bound_guest_diagnosis_source()',
+    'public._clean_bound_guest_diagnosis_projection()']) rpc;
+SELECT is((SELECT expires_at-succeeded_at FROM public.guest_identification_sources
+    WHERE photo_id=(SELECT id FROM bound_initial_photo)),interval '7 days',
+    'normal guest settlement atomically retains source for seven days');
+SELECT is((SELECT succeeded_at FROM public.guest_identification_sources
+    WHERE photo_id=(SELECT id FROM bound_initial_photo)),
+    (SELECT updated_at FROM public.analysis_jobs WHERE id=(SELECT id FROM bound_initial_job)),
+    'retention uses original settlement time');
+
+-- Keep TAP assertions outside rolled-back fixture mutations so the final
+-- no_plan count includes every emitted assertion.
+CREATE FUNCTION pg_temp.diagnosis_draft_probe(
+    p_setup TEXT, p_query TEXT DEFAULT 'SELECT pg_temp.diagnosis_draft()::text'
+) RETURNS TEXT LANGUAGE plpgsql AS $$
+DECLARE
+    v_result TEXT;
+BEGIN
+    BEGIN
+        EXECUTE p_setup;
+        BEGIN
+            EXECUTE p_query INTO v_result;
+        EXCEPTION WHEN OTHERS THEN
+            v_result := SQLSTATE || ':' || SQLERRM;
+        END;
+        RAISE EXCEPTION 'ROLLBACK_FIXTURE' USING ERRCODE='ZX001';
+    EXCEPTION WHEN SQLSTATE 'ZX001' THEN
+        NULL;
+    END;
+    RETURN v_result;
+END;
+$$;
+
+DELETE FROM public.guest_identification_sources WHERE photo_id=(SELECT id FROM bound_initial_photo);
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.diagnosis_job_runtime SET projection=NULL WHERE job_id=(SELECT id FROM bound_initial_job);
+    UPDATE public.diagnosis_job_runtime SET projection=(SELECT body FROM bound_worker_projection)
+    WHERE job_id=(SELECT id FROM bound_initial_job);
+$setup$, $query$
+    SELECT EXISTS(SELECT 1 FROM public.guest_identification_sources
+        WHERE photo_id=(SELECT id FROM bound_initial_photo))::text
+$query$),'true','projection publication creates retention');
+SELECT ok(NOT EXISTS(SELECT 1 FROM public.guest_identification_sources
+    WHERE photo_id=(SELECT id FROM bound_initial_photo)),'rollback removes newly retained source');
+UPDATE public.diagnosis_job_runtime SET projection=NULL WHERE job_id=(SELECT id FROM bound_initial_job);
+UPDATE public.diagnosis_job_runtime SET projection=(SELECT body FROM bound_worker_projection)
+WHERE job_id=(SELECT id FROM bound_initial_job);
+SELECT is((SELECT count(*) FROM public.guest_identification_sources
+    WHERE photo_id=(SELECT id FROM bound_initial_photo)),1::bigint,'restored projection retains original source');
+
+CREATE FUNCTION pg_temp.diagnosis_draft_result_denials()
+RETURNS SETOF TEXT LANGUAGE plpgsql AS $$
+DECLARE
+    v_projection JSONB := (SELECT body FROM bound_worker_projection);
+    v_bad JSONB;
+BEGIN
+    FOR v_bad IN SELECT value FROM jsonb_array_elements(jsonb_build_array(
+        v_projection || '{"identification_status":"unknown"}'::jsonb,
+        v_projection || '{"identification_status":"genus_only"}'::jsonb,
+        v_projection || '{"plant_id":"unsupported_species"}'::jsonb,
+        v_projection || jsonb_build_object('plant_id',gen_random_uuid()),
+        v_projection || '{"analysis_receipt":"invalid"}'::jsonb,
+        v_projection || jsonb_build_object('analysis_id',gen_random_uuid()),
+        v_projection || '{"mode":"identification"}'::jsonb
+    )) LOOP
+        DELETE FROM public.guest_identification_sources WHERE photo_id=(SELECT id FROM bound_initial_photo);
+        UPDATE public.diagnosis_job_runtime SET projection=v_bad WHERE job_id=(SELECT id FROM bound_initial_job);
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.guest_identification_sources
+            WHERE photo_id=(SELECT id FROM bound_initial_photo)),'unsupported projection cannot retain source');
+        RETURN NEXT throws_ok('SELECT pg_temp.diagnosis_draft()',
+            'P0002','DIAGNOSIS_SOURCE_NOT_FOUND','unsupported projection cannot create a draft');
+    END LOOP;
+    UPDATE public.diagnosis_job_runtime SET projection=v_projection WHERE job_id=(SELECT id FROM bound_initial_job);
+END;
+$$;
+SELECT * FROM pg_temp.diagnosis_draft_result_denials();
+SELECT throws_ok($q$SELECT pg_temp.diagnosis_draft(p_owner=>'16320000-0000-4000-8000-000000000082')$q$,
+    '42501','INSTALLATION_CREDENTIAL_MISMATCH','foreign owner cannot use installation credential');
+SELECT throws_ok($q$SELECT pg_temp.diagnosis_draft(p_credential=>repeat('9',64))$q$,
+    'P0002','DIAGNOSIS_SOURCE_NOT_FOUND','same owner different linked installation cannot save this job');
+SELECT throws_ok($q$SELECT pg_temp.diagnosis_draft(p_job=>(SELECT id FROM guest_job))$q$,
+    'P0002','DIAGNOSIS_SOURCE_NOT_FOUND','identification job cannot enter diagnosis draft path');
+SELECT throws_ok($q$SELECT pg_temp.diagnosis_draft(p_operation=>NULL)$q$,
+    '22023','INVALID_DRAFT_INPUT','operation ID is mandatory');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+DELETE FROM public.guest_identification_sources WHERE photo_id=(SELECT id FROM bound_initial_photo);
+$setup$),'P0002:DRAFT_EXPIRED','missing retained source fails closed');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_identification_sources SET expires_at=clock_timestamp()
+    WHERE photo_id=(SELECT id FROM bound_initial_photo);
+$setup$),'P0002:DRAFT_EXPIRED','source expiry boundary rejects save');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_identification_sources SET expires_at=clock_timestamp()
+    WHERE photo_id=(SELECT id FROM bound_initial_photo);
+$setup$, $query$
+    SELECT EXISTS(SELECT 1 FROM jsonb_array_elements(public.read_guest_photo_cleanup(NULL)) x
+        WHERE x->>'source_photo_id'=(SELECT id::text FROM bound_initial_photo))::text
+$query$),'true','expired diagnosis source uses existing cleanup queue');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_identification_sources SET expires_at=clock_timestamp()
+    WHERE photo_id=(SELECT id FROM bound_initial_photo);
+    SELECT public.finish_guest_source_cleanup((SELECT id FROM bound_initial_photo));
+$setup$, $query$
+    SELECT (projection IS NULL)::text FROM public.diagnosis_job_runtime
+    WHERE job_id=(SELECT id FROM bound_initial_job)
+$query$),'true','source cleanup removes initial diagnosis projection');
+
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.analysis_jobs SET payload_hash=repeat('f',64) WHERE id=(SELECT id FROM bound_initial_job);
+UPDATE public.operation_receipts SET payload_hash=repeat('f',64)
+WHERE owner_id='16320000-0000-4000-8000-000000000081'
+  AND operation_id='16320000-0000-4000-8000-000000000084';
+$setup$),'P0002:DIAGNOSIS_SOURCE_NOT_FOUND','matching forged admission digests still fail recomputation');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.guest_identification_sources SET storage_cleaned_at=clock_timestamp()
+WHERE photo_id=(SELECT id FROM bound_initial_photo);
+$setup$),'P0002:DRAFT_EXPIRED','cleaned source cannot save');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.photo_assets SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM bound_initial_photo);
+$setup$),'P0002:DIAGNOSIS_SOURCE_NOT_FOUND','deleted photo cannot save');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.photo_assets SET original_key='foreign/path' WHERE id=(SELECT id FROM bound_initial_photo);
+$setup$),'P0002:DIAGNOSIS_SOURCE_NOT_FOUND','foreign storage key cannot save');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.installation_access SET starter_diagnosis_consumed=false
+WHERE id=(SELECT id FROM bound_initial_install);
+$setup$),'P0002:DIAGNOSIS_SOURCE_NOT_FOUND','unconsumed separate installation starter cannot save');
+
+CREATE TEMP TABLE diagnosis_draft_receipt AS SELECT pg_temp.diagnosis_draft() body;
+SELECT is(pg_temp.diagnosis_draft(),(SELECT body FROM diagnosis_draft_receipt),'draft replay returns exact receipt');
+SELECT is((SELECT body - ARRAY['draft_id','expires_at'] FROM diagnosis_draft_receipt),'{}'::jsonb,
+    'draft receipt retains existing shape');
+SELECT ok((SELECT d.intent='problem' AND d.add_method='scan'
+    AND d.confirmed_taxon_id=s.taxon_id AND d.analysis_job_id=j.id
+    AND d.photo_id=j.photo_ids[1] AND d.installation_id=j.quota_installation_id
+    AND d.source_storage_key=a.original_key AND a.draft_id=d.id AND j.draft_id=d.id
+    AND d.expires_at=g.expires_at
+    FROM public.guest_drafts d JOIN public.analysis_jobs j ON j.id=d.analysis_job_id
+    JOIN public.photo_assets a ON a.id=d.photo_id
+    JOIN public.guest_identification_sources g ON g.photo_id=a.id
+    JOIN public.diagnosis_job_runtime r ON r.job_id=j.id
+    JOIN public.catalogue_release_species s ON s.release_id=r.catalogue_release_id
+      AND s.plant_id='monstera_deliciosa'
+    WHERE d.id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt)),
+    'one problem draft binds canonical published taxon, exact job, photo, installation and original TTL');
+SELECT throws_ok($q$SELECT pg_temp.diagnosis_draft(p_operation=>gen_random_uuid())$q$,
+    '23505','DRAFT_ALREADY_EXISTS','second operation cannot create another draft');
+SELECT throws_ok($q$SELECT pg_temp.diagnosis_draft(p_job=>gen_random_uuid())$q$,
+    '23505','IDEMPOTENCY_CONFLICT','changed job conflicts before side effects');
+SELECT throws_ok($q$SELECT pg_temp.diagnosis_draft(p_credential=>repeat('9',64))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','changed installation cannot replay');
+SELECT throws_ok($q$SELECT public.create_guest_photo_draft(
+    '16320000-0000-4000-8000-000000000081','16320000-0000-4000-8000-000000000091',
+    (SELECT id FROM bound_initial_job),(SELECT taxon_id FROM public.catalogue_release_species
+    WHERE plant_id='monstera_deliciosa' LIMIT 1),repeat('8',64))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','old identification API cannot replay diagnosis operation');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.installation_access SET linked_owner_ids='{}' WHERE id=(SELECT id FROM bound_initial_install);
+$setup$),'42501:INSTALLATION_CREDENTIAL_MISMATCH','replay requires current installation link');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.profiles SET anonymous=false WHERE id='16320000-0000-4000-8000-000000000081';
+$setup$),'42501:ACTIVE_GUEST_REQUIRED','replay requires active guest');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.guest_drafts SET deleted_at=clock_timestamp()
+WHERE id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt);
+$setup$),'P0002:DRAFT_EXPIRED','deleted draft cannot replay');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+UPDATE public.guest_drafts SET claimed_at=clock_timestamp()
+WHERE id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt);
+$setup$),'P0002:DRAFT_EXPIRED','claimed draft cannot replay');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_identification_sources SET expires_at=clock_timestamp()
+    WHERE photo_id=(SELECT id FROM bound_initial_photo);
+$setup$),'P0002:DRAFT_EXPIRED','expired draft cannot replay');
+SELECT is(pg_temp.diagnosis_draft_probe($setup$
+    UPDATE public.guest_identification_sources SET expires_at=clock_timestamp()
+    WHERE photo_id=(SELECT id FROM bound_initial_photo);
+    UPDATE public.guest_drafts SET expires_at=clock_timestamp()
+    WHERE id=(SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt);
+    SELECT public.finish_guest_photo_cleanup((SELECT (body->>'draft_id')::uuid FROM diagnosis_draft_receipt));
+$setup$, $query$
+    SELECT (projection IS NULL)::text FROM public.diagnosis_job_runtime
+    WHERE job_id=(SELECT id FROM bound_initial_job)
+$query$),'true','draft cleanup removes initial diagnosis projection');
 SELECT * FROM finish();
 ROLLBACK;
