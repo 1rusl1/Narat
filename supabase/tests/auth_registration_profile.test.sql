@@ -1512,5 +1512,267 @@ END;
 $$;
 SELECT * FROM pg_temp.care_journal_purge_tests();
 
+-- Plan phase is gated so the same fixture supports prior-migration upgrades.
+CREATE FUNCTION pg_temp.care_plan_snapshot() RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+    v_result jsonb := pg_temp.care_journal_snapshot();
+    v_table text;
+    v_rows jsonb;
+BEGIN
+    FOREACH v_table IN ARRAY ARRAY['diagnostic_decisions','diagnostic_answers','diagnosis_upload_tickets'] LOOP
+        EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text),
+            ''[]''::jsonb) FROM public.%I r',v_table) INTO v_rows;
+        v_result := v_result || jsonb_build_object(v_table,v_rows);
+    END LOOP;
+    RETURN v_result || jsonb_build_object('storage_objects',
+        (SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY to_jsonb(s)::text),'[]'::jsonb)
+         FROM storage.objects s));
+END;
+$$;
+
+CREATE FUNCTION pg_temp.care_plan_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_a uuid := 'a0040000-0000-4000-8000-000000000001';
+    v_b uuid := 'a0040000-0000-4000-8000-000000000002';
+    v_owner uuid;
+    v_neighbor uuid;
+    v_operation uuid;
+    v_release uuid;
+    v_plant uuid;
+    v_snapshot uuid;
+    v_photo uuid;
+    v_job uuid;
+    v_result uuid;
+    v_decision uuid;
+    v_recovery uuid;
+    v_routine uuid;
+    v_rule uuid;
+    v_task uuid;
+    v_entry uuid;
+    v_observation uuid;
+    v_target uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_rows jsonb;
+    v_edge record;
+    v_table text;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_care_plans_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('004 plan purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    RETURN NEXT is((SELECT array_agg(c.relname||'.'||a.attname ORDER BY c.relname,a.attname)
+        FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid
+        JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=f.conkey[1]
+        WHERE f.contype='f' AND f.confrelid='public.care_plans'::regclass),
+        ARRAY['recovery_transitions.recovery_plan_id','recovery_transitions.routine_plan_id',
+              'task_rules.plan_id']::text[],'all actual incoming plan FK edges are covered');
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_a,false,clock_timestamp()),(v_b,false,clock_timestamp());
+    INSERT INTO public.kb_releases(version,state) VALUES('t083-plans-004','draft')
+        RETURNING id INTO v_release;
+    FOREACH v_owner IN ARRAY ARRAY[v_a,v_b] LOOP
+        INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'Plan purge fixture','identification') RETURNING id INTO v_plant;
+        INSERT INTO public.condition_snapshots(owner_id,plant_id)
+        VALUES(v_owner,v_plant) RETURNING id INTO v_snapshot;
+        v_photo := gen_random_uuid();
+        INSERT INTO public.photo_assets(id,owner_id,plant_id,purpose,original_key,content_hash)
+        VALUES(v_photo,v_owner,v_plant,'initial',v_owner::text||'/'||v_photo::text,repeat('a',64));
+        INSERT INTO public.diagnosis_upload_tickets(photo_asset_id,mime_type,byte_size,expires_at)
+        VALUES(v_photo,'image/jpeg',4,clock_timestamp()-interval '1 day');
+        INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,plant_id,mode,
+            kb_release_id,prompt_version,operation_id,payload_hash,locale,snapshot_id,
+            quota_kind,quota_state,state)
+        VALUES(v_owner,gen_random_uuid(),'problem','scan',v_plant,'diagnosis',v_release,
+            'fixture',gen_random_uuid(),'fixture','en',v_snapshot,'none','not_applicable','succeeded')
+            RETURNING id INTO v_job;
+        INSERT INTO public.analysis_results(origin_analysis_id,mode,job_id,origin_job_id,
+            owner_id,plant_id,source_photo_id,source_snapshot_id,locale,kb_release_id,
+            classification,identification,result_hash,analysis_receipt)
+        VALUES(gen_random_uuid(),'diagnosis',v_job,v_job,v_owner,v_plant,v_photo,v_snapshot,
+            'en',v_release,'{}','{}','fixture','fixture') RETURNING id INTO v_result;
+        v_decision := gen_random_uuid();
+        INSERT INTO public.diagnostic_decisions(id,revision,analysis_result_id,owner_id,
+            kb_release_id,policy_version,context_revision,original_candidates,decision_scores,
+            state,decision_receipt)
+        VALUES(v_decision,1,v_result,v_owner,v_release,'fixture',1,'[]','{}','resolved','fixture');
+        INSERT INTO public.diagnostic_answers(decision_id,question_id,answer_revision,answer,
+            operation_id,owner_id)
+        VALUES(v_decision,'fixture',1,'yes',gen_random_uuid(),v_owner);
+        INSERT INTO public.care_plans(owner_id,plant_id,operation_id,locale,plan_kind,access_tier,
+            source_kind,snapshot_id,kb_release_id,context_revision,full_body,
+            diagnostic_decision_id,diagnostic_decision_revision,source_analysis_id,source_photo_id)
+        VALUES(v_owner,v_plant,gen_random_uuid(),'en','recovery','full','analysis',v_snapshot,
+            v_release,1,'{}',v_decision,1,v_result,v_photo) RETURNING id INTO v_recovery;
+        INSERT INTO public.care_plans(owner_id,plant_id,operation_id,locale,plan_kind,access_tier,
+            source_kind,snapshot_id,kb_release_id,context_revision,full_body,deleted_at)
+        VALUES(v_owner,v_plant,gen_random_uuid(),'pl','routine','basic','catalogue',v_snapshot,
+            v_release,1,'{}',clock_timestamp()) RETURNING id INTO v_routine;
+        INSERT INTO public.task_rules(owner_id,plant_id,plan_id,access_class,action_code,
+            condition_code,interval_days)
+        VALUES(v_owner,v_plant,v_recovery,'premium','water','fixture',1) RETURNING id INTO v_rule;
+        INSERT INTO public.care_tasks(owner_id,plant_id,rule_id,occurrence_key,action_code,due_local_date)
+        VALUES(v_owner,v_plant,v_rule,'plan-fixture','water',current_date) RETURNING id INTO v_task;
+        INSERT INTO public.care_entries(owner_id,plant_id,task_id,action_code,occurred_at,
+            occurred_local_date,timezone,operation_id)
+        VALUES(v_owner,v_plant,v_task,'water',clock_timestamp(),current_date,'UTC',gen_random_uuid())
+            RETURNING id INTO v_entry;
+        UPDATE public.care_tasks SET completed_entry_id=v_entry WHERE id=v_task;
+        INSERT INTO public.care_observations(owner_id,plant_id,task_id,status_code,operation_id)
+        VALUES(v_owner,v_plant,v_task,'improved',gen_random_uuid()) RETURNING id INTO v_observation;
+        INSERT INTO public.recovery_transitions(owner_id,plant_id,recovery_plan_id,routine_plan_id,
+            observation_id,expected_care_revision,operation_id,state)
+        VALUES(v_owner,v_plant,v_recovery,v_routine,v_observation,1,gen_random_uuid(),'confirmed');
+        INSERT INTO public.care_reversals(owner_id,entry_id,operation_id)
+        VALUES(v_owner,v_entry,gen_random_uuid());
+        INSERT INTO public.schedule_changes(owner_id,plant_id,to_date,cause_code,explanation_code)
+        VALUES(v_owner,v_plant,current_date,'fixture','fixture');
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,gen_random_uuid()),false,
+            'active owner cannot purge plans');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'active owner graph unchanged');
+        PERFORM public.request_account_deletion_internal(v_owner,gen_random_uuid());
+    END LOOP;
+
+    -- Both directions are tested before either canonical graph is removed.
+    FOREACH v_owner IN ARRAY ARRAY[v_a,v_b] LOOP
+        v_neighbor := CASE WHEN v_owner=v_a THEN v_b ELSE v_a END;
+        SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,gen_random_uuid()),false,
+            'mismatched request cannot purge plans');
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(NULL,v_operation),false,
+            'null owner rejected');
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,NULL),false,
+            'null operation rejected');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'invalid requests leave no evidence or changes');
+        BEGIN
+            UPDATE public.operation_receipts SET payload_hash='forged'
+                WHERE owner_id=v_owner AND operation_id=v_operation;
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),false,
+                'forged receipt holds plans');
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'receipt hold is atomic');
+            RAISE SQLSTATE 'Z1604';
+        EXCEPTION WHEN SQLSTATE 'Z1604' THEN NULL;
+        END;
+
+        FOR v_edge IN SELECT * FROM (VALUES
+            ('task_rules','plan_id','care_plans','recovery'),
+            ('recovery_transitions','recovery_plan_id','care_plans','recovery'),
+            ('recovery_transitions','routine_plan_id','care_plans','routine'),
+            ('care_tasks','rule_id','task_rules',NULL)
+        ) AS edges(child_table,child_column,parent_table,plan_kind) LOOP
+            BEGIN
+                IF v_edge.parent_table='care_plans' THEN
+                    SELECT id INTO v_target FROM public.care_plans
+                        WHERE owner_id=v_owner AND plan_kind=v_edge.plan_kind;
+                ELSE
+                    SELECT id INTO v_target FROM public.task_rules WHERE owner_id=v_owner;
+                END IF;
+                EXECUTE format('UPDATE public.%I SET %I=$1,deleted_at=clock_timestamp() WHERE owner_id=$2',
+                    v_edge.child_table,v_edge.child_column) USING v_target,v_neighbor;
+                v_before := pg_temp.care_plan_snapshot();
+                RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),false,
+                    'foreign historical FK holds plans: '||v_edge.child_table||'.'||v_edge.child_column);
+                RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,
+                    'FK hold rolls back verification and retains both graphs');
+                PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+                v_before := pg_temp.care_plan_snapshot();
+                RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),false,
+                    'saved Storage proof cannot bypass foreign FK');
+                RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'saved evidence retained on FK hold');
+                RAISE SQLSTATE 'Z1604';
+            EXCEPTION WHEN SQLSTATE 'Z1604' THEN NULL;
+            END;
+        END LOOP;
+        BEGIN
+            SELECT id INTO v_target FROM public.care_tasks WHERE owner_id=v_owner;
+            UPDATE public.care_entries SET state='voided',task_id=v_target WHERE owner_id=v_neighbor;
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),false,
+                'nested 067 journal hold prevents plan removal');
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'nested hold rolls back outer verification');
+            RAISE SQLSTATE 'Z1604';
+        EXCEPTION WHEN SQLSTATE 'Z1604' THEN NULL;
+        END;
+
+        v_before := pg_temp.care_plan_snapshot();
+        CREATE TRIGGER t004_reject_plan BEFORE DELETE ON public.care_plans
+            FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+        RETURN NEXT throws_ok(format('SELECT public.purge_account_deletion_care_plans_internal(%L::uuid,%L::uuid)',
+            v_owner,v_operation),'Z0066','FIXTURE_LEAF_PURGE_FAILURE','late plan error propagates');
+        DROP TRIGGER t004_reject_plan ON public.care_plans;
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,
+            'late plan error restores journal, leaves, cascades and verification');
+
+        PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/plan-hold');
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),false,
+            'stale proof cannot bypass live Storage recheck');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'Storage hold changes no data or evidence');
+        DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/plan-hold';
+    END LOOP;
+
+    FOREACH v_owner IN ARRAY ARRAY[v_a,v_b] LOOP
+        SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+        PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+        v_before := pg_temp.care_plan_snapshot();
+        v_expected := v_before;
+        FOREACH v_table IN ARRAY ARRAY['care_plans','task_rules','care_tasks','care_entries',
+            'care_observations','recovery_transitions','care_reversals','schedule_changes','notification_claims'] LOOP
+            SELECT coalesce(jsonb_agg(e.value ORDER BY e.ordinality),'[]'::jsonb) INTO v_rows
+                FROM jsonb_array_elements(v_before->v_table) WITH ORDINALITY e(value,ordinality)
+                WHERE e.value->>'owner_id'<>v_owner::text;
+            v_expected := jsonb_set(v_expected,ARRAY[v_table],v_rows);
+        END LOOP;
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),true,
+            'verified owner journal then plans are removed');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_expected,
+            'only owner journal/plans and cascaded rules removed; decisions, receipts and neighbors retained');
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),true,
+            'exact successful replay accepted');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'exact replay changes nothing');
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/plan-replay');
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),false,
+            'reappearing object holds successful replay');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'replay Storage hold is atomic');
+        DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/plan-replay';
+    END LOOP;
+
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_plans_internal(uuid,uuid)'::regprocedure
+          AND prosecdef AND provolatile='v' AND proconfig @> ARRAY['search_path=""']),
+        'plan function is volatile SECURITY DEFINER with empty search path');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p,
+        LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_care_plans_internal(uuid,uuid)'::regprocedure
+          AND a.grantee<>p.proowner),'plan function strips all nonowner grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_care_plans_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual plan execution denied for '||v_role);
+    END LOOP;
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_care_plans_internal(uuid,uuid)'::regprocedure;
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,v_operation),true,
+        'SQL function owner can replay plan purge');
+    RESET ROLE;
+END;
+$$;
+SELECT * FROM pg_temp.care_plan_purge_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
