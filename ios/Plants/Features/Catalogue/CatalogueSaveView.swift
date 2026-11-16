@@ -153,13 +153,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @State private var presenter: UIViewController?
     @FocusState private var nameFocused: Bool
 
-    private var showsManualWateringActions: Bool {
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-        analysisSaveIdentity != nil && !polish
-            && ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis")
-#else
-        false
-#endif
+    private func showsManualWateringActions(_ saved: CatalogueSaveModel) -> Bool {
+        !polish && (analysisSaveIdentity != nil || saved.input?.diagnosisJobId != nil || saved.input?.identification != nil)
     }
 
     private var scopeIsCurrent: Bool {
@@ -386,11 +381,16 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .accessibilityIdentifier("catalogue.saved.name")
                 Text(selected ? displayName : (summary.speciesSlug ?? ""))
                     .accessibilityIdentifier("catalogue.saved.species")
-                if selected {
+                if selected, !scientificName.isEmpty {
                     Text(scientificName).italic()
                         .accessibilityIdentifier("catalogue.selected.scientific")
-                    speciesDetails()
                 }
+                if showsManualWateringActions(model) {
+                    careRecommendation(model)
+                        .task(id: summary.id) { await model.loadCareRecommendation() }
+                    wateringHistory(model)
+                }
+                if selected { speciesDetails() }
                 if let photo = summary.mainPhotoId, let scope {
                     CataloguePrivatePhotoView(connection: connection, expected: scope, subject: .plant(summary.id), polish: polish)
                         .id(photo)
@@ -398,15 +398,6 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("catalogue.saved.card." + summary.id.uuidString.lowercased())
-            if analysisSaveIdentity != nil && !polish {
-#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-                if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
-                    careRecommendation(model)
-                        .task(id: summary.id) { await model.loadCareRecommendation() }
-                }
-#endif
-                wateringHistory(model)
-            }
         } else {
             switch model.cardState {
             case .idle, .loading:
@@ -451,7 +442,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 ProgressView("Loading watering history…")
                     .accessibilityIdentifier("catalogue.saved.history.loading")
             case let .loaded(entries):
-                if showsManualWateringActions { wateringControls(model) }
+                if showsManualWateringActions(model) { wateringControls(model) }
                 if entries.isEmpty {
                     Text("No manual watering recorded.")
                         .accessibilityIdentifier("catalogue.saved.history.empty")
@@ -460,12 +451,13 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                         HStack {
                             Text(entry.occurredLocalDate)
                             Text(entry.state == "voided" ? "Undone" : "Active")
-                            if showsManualWateringActions, entry.state == "active",
+                            if showsManualWateringActions(model), entry.state == "active",
                                model.manualWateringState == .ready {
                                 Button("Undo") { Task { await model.undoWatering(entryId: entry.id) } }
                                     .accessibilityIdentifier("catalogue.care.undo." + entry.id.uuidString.lowercased())
                             }
                         }
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("catalogue.saved.history." + entry.id.uuidString.lowercased())
                     }
                 }
@@ -800,7 +792,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func loadIfSaved(_ model: CatalogueSaveModel) async {
-        if case .saved = model.state { await model.loadCard(includeManualWateringActions: showsManualWateringActions) }
+        if case .saved = model.state { await model.loadCard(includeManualWateringActions: showsManualWateringActions(model)) }
     }
 
     private func loadDetails(_ target: CatalogueSaveModel) {
@@ -809,7 +801,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         working = true
         work = Task { @MainActor in
             defer { if revision == ticket { working = false; work = nil } }
-            await target.loadCard(includeManualWateringActions: showsManualWateringActions)
+            await target.loadCard(includeManualWateringActions: showsManualWateringActions(target))
         }
     }
 }
