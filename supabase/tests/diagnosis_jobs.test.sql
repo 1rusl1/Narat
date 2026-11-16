@@ -696,8 +696,124 @@ SELECT is((SELECT payload_hash FROM public.operation_receipts
     'receipt and job share guest context provenance');
 SELECT throws_ok($q$SELECT pg_temp.bound_initial_create(p_operation=>gen_random_uuid())$q$,
     'P0001','QUOTA_DENIED','a second concurrent guest diagnosis cannot reserve another starter');
--- Settle directly through the existing quota service; no guest worker behavior is added here.
-SELECT public.finalize_analysis_quota((SELECT id FROM bound_initial_job),'succeeded',false,clock_timestamp());
+-- Exercise both worker gates on a real queued admission, then reuse its finalizer.
+SELECT ok(NOT has_function_privilege(role_name,
+    'public._lock_bound_guest_diagnosis_worker(uuid,uuid)','execute'),
+    role_name || ' cannot execute private worker admission')
+FROM unnest(ARRAY['anon','authenticated','service_role']) role_name;
+SELECT ok(NOT has_function_privilege(role_name,rpc,'execute'),
+    role_name || ' cannot execute worker entrypoint')
+FROM unnest(ARRAY['anon','authenticated']) role_name
+CROSS JOIN unnest(ARRAY['public.lease_diagnosis_job(uuid)',
+    'public.start_diagnosis_provider(uuid,uuid)']) rpc;
+CREATE TEMP TABLE bound_worker_original AS SELECT * FROM public.analysis_jobs
+WHERE id=(SELECT id FROM bound_initial_job);
+CREATE TEMP TABLE bound_worker_budget AS SELECT started_calls, max_calls
+FROM public.provider_daily_budget WHERE utc_date=(clock_timestamp() AT TIME ZONE 'UTC')::date;
+
+CREATE FUNCTION pg_temp.bound_worker_denials(p_token UUID DEFAULT NULL)
+RETURNS SETOF TEXT LANGUAGE plpgsql AS $$
+DECLARE
+    v_job public.analysis_jobs%ROWTYPE;
+    v_case TEXT;
+    v_actual JSONB;
+    v_expected JSONB := CASE WHEN p_token IS NULL THEN NULL::jsonb ELSE '{"allowed":false}'::jsonb END;
+BEGIN
+    SELECT * INTO STRICT v_job FROM bound_worker_original;
+    FOREACH v_case IN ARRAY ARRAY['inactive','unlinked','quota_pointer','unbound','legacy',
+                                  'receipt','foreign_photo','revoked','deadline'] LOOP
+        CASE v_case
+        WHEN 'inactive' THEN
+            UPDATE public.profiles SET account_state='deleting' WHERE id=v_job.owner_id;
+        WHEN 'unlinked' THEN
+            UPDATE public.installation_access SET linked_owner_ids='{}' WHERE id=v_job.quota_installation_id;
+        WHEN 'quota_pointer' THEN
+            UPDATE public.installation_access SET starter_diagnosis_job_id=NULL WHERE id=v_job.quota_installation_id;
+        WHEN 'unbound' THEN
+            UPDATE public.analysis_jobs SET quota_installation_id=NULL WHERE id=v_job.id;
+        WHEN 'legacy' THEN
+            -- Even a matching receipt cannot authorize an older/unbound hash.
+            UPDATE public.analysis_jobs SET payload_hash=repeat('0',64) WHERE id=v_job.id;
+            UPDATE public.operation_receipts SET payload_hash=repeat('0',64)
+            WHERE owner_id=v_job.owner_id AND operation_id=v_job.operation_id;
+        WHEN 'receipt' THEN
+            UPDATE public.operation_receipts SET payload_hash=repeat('0',64)
+            WHERE owner_id=v_job.owner_id AND operation_id=v_job.operation_id;
+        WHEN 'foreign_photo' THEN
+            UPDATE public.analysis_jobs SET photo_ids=ARRAY[(SELECT id FROM initial_photo)] WHERE id=v_job.id;
+        WHEN 'revoked' THEN
+            UPDATE public.photo_assets SET deleted_at=clock_timestamp() WHERE id=v_job.photo_ids[1];
+        WHEN 'deadline' THEN
+            UPDATE public.analysis_jobs SET deadline_at=clock_timestamp()-interval '1 second' WHERE id=v_job.id;
+        END CASE;
+        IF p_token IS NULL THEN
+            v_actual := public.lease_diagnosis_job(v_job.id);
+        ELSE
+            v_actual := public.start_diagnosis_provider(v_job.id,p_token);
+        END IF;
+        RETURN QUERY SELECT is(v_actual,v_expected,
+            CASE WHEN p_token IS NULL THEN 'guest lease rejects ' ELSE 'guest provider rejects ' END || v_case);
+        -- Restore only fixture mutations; an accidental lease/start remains visible.
+        UPDATE public.profiles SET account_state='active' WHERE id=v_job.owner_id AND v_case='inactive';
+        UPDATE public.installation_access SET linked_owner_ids=ARRAY[v_job.owner_id]
+        WHERE id=v_job.quota_installation_id AND v_case='unlinked';
+        UPDATE public.installation_access SET starter_diagnosis_job_id=v_job.id
+        WHERE id=v_job.quota_installation_id AND v_case='quota_pointer';
+        UPDATE public.analysis_jobs SET quota_installation_id=v_job.quota_installation_id,
+            payload_hash=v_job.payload_hash, photo_ids=v_job.photo_ids, deadline_at=v_job.deadline_at
+        WHERE id=v_job.id;
+        UPDATE public.operation_receipts SET payload_hash=v_job.payload_hash
+        WHERE owner_id=v_job.owner_id AND operation_id=v_job.operation_id AND v_case IN ('legacy','receipt');
+        UPDATE public.photo_assets SET deleted_at=NULL WHERE id=v_job.photo_ids[1] AND v_case='revoked';
+    END LOOP;
+END;
+$$;
+SELECT * FROM pg_temp.bound_worker_denials();
+CREATE TEMP TABLE bound_worker_lease AS SELECT public.lease_diagnosis_job((SELECT id FROM bound_initial_job)) body;
+SELECT ok((SELECT body->>'lease_token' IS NOT NULL FROM bound_worker_lease),'fresh bound guest receives a worker lease');
+SELECT is((SELECT body->'initial_context' FROM bound_worker_lease),
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}'::jsonb,'lease carries exact immutable guest answers');
+SELECT is((SELECT body->'repeat_context' FROM bound_worker_lease),'null'::jsonb,'guest initial lease has no repeat context');
+SELECT is((SELECT body->'upload'->>'photo_asset_id' FROM bound_worker_lease),
+    (SELECT id::text FROM bound_initial_photo),'worker receives the exact admitted raw photo');
+SELECT is(public.lease_diagnosis_job((SELECT id FROM bound_initial_job)),NULL::jsonb,'guest cannot lease twice');
+SELECT is(public.start_diagnosis_provider((SELECT id FROM bound_initial_job),gen_random_uuid())->>'allowed',
+    'false','wrong guest lease token cannot start provider');
+SELECT is(public.start_diagnosis_provider((SELECT id FROM bound_initial_job),NULL)->>'allowed',
+    'false','null guest lease token cannot start provider');
+SELECT * FROM pg_temp.bound_worker_denials((SELECT (body->>'lease_token')::uuid FROM bound_worker_lease));
+UPDATE public.provider_daily_budget SET max_calls=started_calls
+WHERE utc_date=(clock_timestamp() AT TIME ZONE 'UTC')::date;
+SELECT is(public.start_diagnosis_provider((SELECT id FROM bound_initial_job),
+    (SELECT (body->>'lease_token')::uuid FROM bound_worker_lease))->>'allowed',
+    'false','guest provider respects existing daily budget ceiling');
+UPDATE public.provider_daily_budget SET max_calls=(SELECT max_calls FROM bound_worker_budget)
+WHERE utc_date=(clock_timestamp() AT TIME ZONE 'UTC')::date;
+SELECT is((SELECT started_calls FROM public.provider_daily_budget
+    WHERE utc_date=(clock_timestamp() AT TIME ZONE 'UTC')::date),
+    (SELECT started_calls FROM bound_worker_budget),'denied guest dispatches do not debit provider budget');
+SELECT is(public.start_diagnosis_provider((SELECT id FROM bound_initial_job),
+    (SELECT (body->>'lease_token')::uuid FROM bound_worker_lease))->>'allowed',
+    'true','bound guest diagnosis starts provider');
+SELECT is(public.start_diagnosis_provider((SELECT id FROM bound_initial_job),
+    (SELECT (body->>'lease_token')::uuid FROM bound_worker_lease))->>'allowed',
+    'false','bound guest provider starts once');
+SELECT is((SELECT started_calls FROM public.provider_daily_budget
+    WHERE utc_date=(clock_timestamp() AT TIME ZONE 'UTC')::date),
+    (SELECT started_calls+1 FROM bound_worker_budget),'guest provider debits budget exactly once');
+CREATE TEMP TABLE bound_worker_projection AS SELECT jsonb_build_object(
+    'job_id',id,'mode','diagnosis','kb_release_id',kb_release_id,'identification_status','unknown') body
+FROM public.analysis_jobs WHERE id=(SELECT id FROM bound_initial_job);
+SELECT is(public.finish_diagnosis_job((SELECT id FROM bound_initial_job),
+    (SELECT (body->>'lease_token')::uuid FROM bound_worker_lease),
+    (SELECT body FROM bound_worker_projection),false,NULL)->>'quota_state',
+    'consumed','existing finalizer settles the leased guest diagnosis');
+SELECT is(public.read_bound_guest_initial_diagnosis_job(
+    '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_job),repeat('8',64))->'result',
+    (SELECT body FROM bound_worker_projection),'bound GET returns the actual finalized worker projection');
+SELECT is(public.finish_diagnosis_job((SELECT id FROM bound_initial_job),
+    (SELECT (body->>'lease_token')::uuid FROM bound_worker_lease),NULL,true,'RETRY')->>'already_finalized',
+    'true','guest finalizer retry cannot replace result or charge again');
 SELECT is(public.read_bound_guest_initial_diagnosis_job(
     '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_job),repeat('8',64))->>'quota_state',
     'consumed','successful fixture settlement consumes one starter');
