@@ -3506,5 +3506,167 @@ SELECT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id IN (
     'a0190000-0000-4000-8000-000000000002'::uuid,
     'a0190000-0000-4000-8000-000000000003'::uuid)), '019 fixtures rolled back');
 
+-- 020 is exercised by the same clean/upgrade runner as 019.
+CREATE FUNCTION pg_temp.account_work_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.analysis_purge_snapshot() || jsonb_build_object(
+        'work_jobs',(SELECT coalesce(jsonb_agg(to_jsonb(d) ORDER BY d.id),'[]'::jsonb)
+            FROM public.deletion_jobs d),
+        'work_auth',(SELECT coalesce(jsonb_agg(to_jsonb(u) ORDER BY u.id),'[]'::jsonb)
+            FROM auth.users u))
+$$;
+
+CREATE FUNCTION pg_temp.reject_account_work_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '020 injected insert failure' USING ERRCODE='22023';
+END;
+$$;
+
+CREATE FUNCTION pg_temp.account_work_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0200000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0200000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0200000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_plant uuid;
+    v_before jsonb;
+    v_job jsonb;
+    v_proof jsonb;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.anchor_account_deletion_work_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('020 work anchor outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+        VALUES(repeat('a020',16),ARRAY[v_neighbor,v_owner,v_owner]);
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,'020 active owner rejected');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_guest,v_operation),false,'020 guest rejected');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 missing prerequisites atomic');
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'020 predecessor hold','identification') RETURNING id INTO v_plant;
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    -- The same operation UUID belongs independently to another owner.
+    PERFORM public.request_account_deletion_internal(v_neighbor,v_operation);
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,gen_random_uuid()),false,'020 wrong operation');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_guest,v_operation),false,'020 cross owner');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(NULL,v_operation),false,'020 null owner');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,NULL),false,'020 null operation');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 invalid identity atomic');
+
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/020-hold');
+            ELSIF v_case=2 THEN
+                UPDATE public.operation_receipts SET payload_hash='forged'
+                    WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSE
+                INSERT INTO public.condition_snapshots(owner_id,plant_id) VALUES(v_neighbor,v_plant);
+            END IF;
+            v_before:=pg_temp.account_work_snapshot();
+            RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,
+                '020 fresh Storage/proof/predecessor hold '||v_case);
+            RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 hold rolls back all changes '||v_case);
+            RAISE SQLSTATE 'Z2020';
+        EXCEPTION WHEN SQLSTATE 'Z2020' THEN NULL;
+        END;
+    END LOOP;
+
+    FOR v_case IN 1..10 LOOP
+        BEGIN
+            INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id,state,
+                completed_at,encrypted_apple_ref)
+            VALUES(v_owner,v_operation,CASE WHEN v_case=1 THEN 'plant' ELSE 'account' END,
+                CASE WHEN v_case=2 THEN v_neighbor ELSE v_owner END,
+                CASE v_case WHEN 3 THEN 'revoke_access' WHEN 4 THEN 'purge_storage'
+                    WHEN 5 THEN 'revoke_apple' WHEN 6 THEN 'delete_auth'
+                    WHEN 7 THEN 'completed' WHEN 8 THEN 'failed' ELSE 'purge_data' END,
+                CASE WHEN v_case=9 THEN clock_timestamp() END,
+                CASE WHEN v_case=10 THEN 'fixture-only' END);
+            v_before:=pg_temp.account_work_snapshot();
+            RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,
+                '020 incompatible scope/target/state/metadata rejected '||v_case);
+            RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,
+                '020 late conflict preserves job and rolls back chain '||v_case);
+            RAISE SQLSTATE 'Z2020';
+        EXCEPTION WHEN SQLSTATE 'Z2020' THEN NULL;
+        END;
+    END LOOP;
+    BEGIN
+        CREATE TRIGGER reject_account_work_insert BEFORE INSERT ON public.deletion_jobs
+            FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_account_work_insert();
+        v_before:=pg_temp.account_work_snapshot();
+        RETURN NEXT throws_ok(format('SELECT public.anchor_account_deletion_work_internal(%L::uuid,%L::uuid)',
+            v_owner,v_operation),'22023','020 injected insert failure','020 late insert failure propagates');
+        RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 SQL failure rolls back predecessor chain');
+        RAISE SQLSTATE 'Z2020';
+    EXCEPTION WHEN SQLSTATE 'Z2020' THEN NULL;
+    END;
+
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),true,'020 creates validated reference');
+    SELECT to_jsonb(d) INTO v_job FROM public.deletion_jobs d
+        WHERE owner_id=v_owner AND operation_id=v_operation;
+    RETURN NEXT ok(v_job->>'scope'='account' AND v_job->>'target_id'=v_owner::text
+        AND v_job->>'state'='purge_data' AND v_job->>'completed_at' IS NULL
+        AND v_job->>'encrypted_apple_ref' IS NULL,'020 exact account processing state without Auth transition');
+    RETURN NEXT ok((SELECT storage_verified_at IS NOT NULL FROM public.account_deletion_requests
+        WHERE owner_id=v_owner),'020 fresh Storage evidence persisted');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.installation_access WHERE v_owner=ANY(linked_owner_ids)),
+        '020 accepted 019 chain applied');
+    SELECT jsonb_build_object('profile',to_jsonb(p),'request',to_jsonb(r),'receipt',to_jsonb(o))
+        INTO v_proof FROM public.profiles p JOIN public.account_deletion_requests r ON r.owner_id=p.id
+        JOIN public.operation_receipts o ON o.owner_id=p.id AND o.operation_id=r.operation_id
+        WHERE p.id=v_owner;
+    RETURN NEXT ok(v_proof->'profile'->>'account_state'='deleting'
+        AND v_proof->'request'->>'operation_id'=v_operation::text
+        AND v_proof->'receipt'->>'command_name'='account.delete'
+        AND EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner),'020 Auth/profile/claim/receipt retained');
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),true,'020 exact replay');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 replay byte-exact');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/020-replay');
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,'020 replay repeats fresh Storage check');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 replay hold preserves valid reference');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/020-replay';
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_neighbor,v_operation),true,'020 same operation across owners');
+    RETURN NEXT is((SELECT count(*) FROM public.deletion_jobs WHERE operation_id=v_operation),2::bigint,
+        '020 exactly one independent reference per owner');
+    RETURN NEXT is((SELECT to_jsonb(d) FROM public.deletion_jobs d
+        WHERE owner_id=v_owner AND operation_id=v_operation),v_job,'020 neighbor cannot overwrite original job');
+    RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.anchor_account_deletion_work_internal(uuid,uuid)'::regprocedure),
+        '020 security definer has empty search path');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+        CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.anchor_account_deletion_work_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'020 SQL owner only, including custom default grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied:=false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.anchor_account_deletion_work_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied:=true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'020 actual execution denied for '||v_role);
+    END LOOP;
+    RAISE SQLSTATE 'Z2020';
+EXCEPTION WHEN SQLSTATE 'Z2020' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.account_work_tests();
+SELECT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id IN (
+    'a0200000-0000-4000-8000-000000000001'::uuid,
+    'a0200000-0000-4000-8000-000000000002'::uuid,
+    'a0200000-0000-4000-8000-000000000003'::uuid)), '020 fixtures rolled back');
+
 SELECT * FROM finish();
 ROLLBACK;
