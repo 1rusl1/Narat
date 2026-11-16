@@ -2722,8 +2722,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t096-collection-plants-first-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 113.45 с, проверки — 594.14 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t096-collection-plants-first-acceptance](validation/automation/tasks/t096-collection-plants-first-acceptance.md).
+t036-explain-used-guest-analysis: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 328.29 с, проверки — 438.97 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t036-explain-used-guest-analysis](validation/automation/tasks/t036-explain-used-guest-analysis.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
