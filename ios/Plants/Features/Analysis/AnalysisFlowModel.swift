@@ -109,6 +109,47 @@ public protocol AnalysisService {
     func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult
 }
 
+/// Presentation of canonical initial-diagnosis content, independent of authentication.
+struct InitialDiagnosisExplanation {
+    let result: PreliminaryAnalysis
+    let polish: Bool
+
+    var firstAction: String? {
+        guard result.mode == .diagnosis,
+              result.identificationStatus == .resolved,
+              result.diagnosisStatus == .conditionDetected,
+              result.planAvailability == .available,
+              result.contextState == .current,
+              let condition = result.selectedConditionId,
+              !condition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let summary = result.firstActionSummary?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !summary.isEmpty else { return nil }
+        return summary
+    }
+
+    var evidence: [String] {
+        guard result.mode == .diagnosis else { return [] }
+        var seen = Set<String>()
+        return result.evidenceBasis.compactMap { code in
+            guard seen.insert(code).inserted else { return nil }
+            // Closed, user-safe vocabulary from the published diagnosis profile
+            // and ProtocolResolver's healthy response. Unknown codes stay hidden.
+            switch code {
+            case "yellowing_lower_leaves":
+                return polish ? "Dolne liście wydają się żółte." : "Lower leaves appear yellow."
+            case "standing_water_in_saucer":
+                return polish ? "Na podstawce widać stojącą wodę." : "Standing water is visible in the saucer."
+            case "no_pathological_markers_detected":
+                return polish
+                    ? "Na tym zdjęciu nie wykryto widocznych oznak problemu."
+                    : "No visible signs of a problem were detected in this photo."
+            default:
+                return nil
+            }
+        }
+    }
+}
+
 @MainActor
 @Observable
 public final class AnalysisFlowModel {

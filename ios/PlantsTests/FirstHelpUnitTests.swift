@@ -5,6 +5,71 @@ import ImageIO
 
 @MainActor
 final class FirstHelpUnitTests: XCTestCase {
+    private func explanationFixture(
+        mode: AnalysisMode = .diagnosis,
+        status: DiagnosisStatus = .conditionDetected,
+        identification: IdentificationStatus = .resolved,
+        availability: PlanAvailability = .available,
+        context: AnalysisContextState = .current,
+        condition: String? = "overwatering",
+        summary: String? = "  Check the potting mix. \n",
+        evidence: [String] = [],
+        polish: Bool = false
+    ) -> InitialDiagnosisExplanation {
+        InitialDiagnosisExplanation(result: PreliminaryAnalysis(
+            id: UUID(), jobId: UUID(), kbReleaseId: UUID(), mode: mode,
+            identificationStatus: identification, plantId: "monstera_deliciosa", genusId: nil,
+            diagnosisStatus: status, candidates: [], selectedConditionId: condition,
+            visualMarkers: ["standing_water_in_saucer"], evidenceBasis: evidence, limitations: [],
+            firstActionSummary: summary, controlIntervalDays: nil, contextState: context,
+            planAvailability: availability, analysisReceipt: ""
+        ), polish: polish)
+    }
+
+    func testInitialDiagnosisShowsOnlyApplicableCanonicalAction() {
+        XCTAssertEqual(explanationFixture().firstAction, "Check the potting mix.")
+        XCTAssertEqual(explanationFixture(summary: "Sprawdź podłoże.", polish: true).firstAction,
+                       "Sprawdź podłoże.")
+        XCTAssertNil(explanationFixture(summary: nil).firstAction)
+        XCTAssertNil(explanationFixture(summary: " \n\t").firstAction)
+        XCTAssertNil(explanationFixture(condition: nil).firstAction)
+        XCTAssertNil(explanationFixture(condition: " \n").firstAction)
+        XCTAssertNil(explanationFixture(context: .stale).firstAction)
+        XCTAssertNil(explanationFixture(mode: .identification).firstAction)
+        for availability in PlanAvailability.allCases where availability != .available {
+            XCTAssertNil(explanationFixture(availability: availability).firstAction)
+        }
+        for identification in [IdentificationStatus.unknown, .genusOnly, .outOfScope] {
+            XCTAssertNil(explanationFixture(identification: identification).firstAction)
+        }
+    }
+
+    func testHealthyAndUncertainResultsDoNotOfferAction() {
+        for status in [DiagnosisStatus.healthy, .unknown, .outOfScope] {
+            XCTAssertNil(explanationFixture(status: status).firstAction)
+        }
+        let codes = ["no_pathological_markers_detected"]
+        XCTAssertEqual(explanationFixture(status: .healthy, evidence: codes).evidence,
+                       ["No visible signs of a problem were detected in this photo."])
+        XCTAssertEqual(explanationFixture(status: .healthy, evidence: codes, polish: true).evidence,
+                       ["Na tym zdjęciu nie wykryto widocznych oznak problemu."])
+        XCTAssertTrue(explanationFixture(status: .unknown).evidence.isEmpty)
+    }
+
+    func testCanonicalEvidenceIsLocalizedOrderedAndDeduplicated() {
+        let codes = ["standing_water_in_saucer", "protocol_internal",
+                     "yellowing_lower_leaves", "standing_water_in_saucer"]
+        XCTAssertEqual(explanationFixture(evidence: codes).evidence, [
+            "Standing water is visible in the saucer.", "Lower leaves appear yellow."
+        ])
+        XCTAssertEqual(explanationFixture(evidence: codes, polish: true).evidence, [
+            "Na podstawce widać stojącą wodę.", "Dolne liście wydają się żółte."
+        ])
+        XCTAssertTrue(explanationFixture(evidence: ["unknown_code"]).evidence.isEmpty)
+        XCTAssertTrue(explanationFixture().evidence.isEmpty)
+        XCTAssertTrue(explanationFixture(mode: .identification, evidence: codes).evidence.isEmpty)
+    }
+
     func testPhotoCameraAccessRequiresBothHardwareAndPermission() {
         XCTAssertEqual(PhotoCameraAccess(available: true, authorization: .authorized), .ready)
         XCTAssertEqual(PhotoCameraAccess(available: true, authorization: .notDetermined), .request)

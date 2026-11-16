@@ -2625,8 +2625,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-guest-initial-diagnosis-ios: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 379.97 с, проверки — 155.46 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-guest-initial-diagnosis-ios](validation/automation/tasks/t170-guest-initial-diagnosis-ios.md).
+t170-first-diagnosis-explain-result: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 3, reviewer 1, qa 1. Модели — 403.00 с, проверки — 130.78 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-first-diagnosis-explain-result](validation/automation/tasks/t170-first-diagnosis-explain-result.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

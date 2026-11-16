@@ -95,6 +95,27 @@ public struct PreliminaryResultView: View {
                                 .accessibilityIdentifier("analysis.result.uncertainty")
                         }
                     }
+                    if model.repeatDiagnosisTarget == nil, result.mode == .diagnosis {
+                        let explanation = InitialDiagnosisExplanation(result: result, polish: isPolish)
+                        if !explanation.evidence.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(isPolish ? "Co widać na zdjęciu" : "What the photo shows")
+                                    .font(.headline)
+                                ForEach(explanation.evidence, id: \.self) { evidence in
+                                    Text(verbatim: evidence)
+                                }
+                            }
+                            .accessibilityIdentifier("analysis.result.evidence")
+                        }
+                        if let summary = explanation.firstAction {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(isPolish ? "Pierwsze działanie" : "First action")
+                                    .font(.headline)
+                                Text(verbatim: summary)
+                            }
+                            .accessibilityIdentifier("analysis.result.firstAction")
+                        }
+                    }
                     ForEach(Array(result.limitations.enumerated()), id: \.offset) { _, limitation in
                         Text(limitation)
                     }
