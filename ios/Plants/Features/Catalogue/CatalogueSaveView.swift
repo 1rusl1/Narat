@@ -831,7 +831,7 @@ struct PlantCareRecommendationContent: View {
 
 /// A mounted controller in the app's real window supplies the native presentation anchor.
 @MainActor
-private struct CatalogueWindowPresenter: UIViewControllerRepresentable {
+struct CatalogueWindowPresenter: UIViewControllerRepresentable {
     @Binding var controller: UIViewController?
 
     func makeUIViewController(context: Context) -> WindowController {

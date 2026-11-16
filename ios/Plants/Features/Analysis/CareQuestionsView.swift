@@ -281,14 +281,20 @@ public struct CareQuestionsView: View {
                      : "Unable to read this photo. Choose another.")
                     .accessibilityIdentifier("photo.error")
             }
-            AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+            if model.isReplacingQuestionPhoto {
+                Button(isPolish ? "Wstecz" : "Back") { model.navigateBack() }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("care.photo.replacement.back")
+            } else {
+                AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+            }
         }
     }
 
     private var photoChoices: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !isPolish {
-                Button("Take photo", action: openCamera)
+            if !isPolish || model.isReplacingQuestionPhoto {
+                Button(isPolish ? "Zrób zdjęcie" : "Take photo", action: openCamera)
                     .buttonStyle(.bordered)
                     .disabled(model.isPreparingPhoto || cameraPermissionTask != nil)
                     .accessibilityIdentifier("photo.select.camera")
@@ -380,6 +386,26 @@ public struct CareQuestionsView: View {
                 }
             }
 
+            if model.router.flowState.intent == .problem && model.repeatDiagnosisTarget == nil {
+                if let photo = model.preparedPhoto,
+                   let image = UIImage(data: photo.cloudNormalizedJPEG) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 160)
+                        .accessibilityLabel(isPolish ? "Wybrane zdjęcie rośliny" : "Selected plant photo")
+                        .accessibilityIdentifier("care.photo.preview")
+                }
+                Button(isPolish ? "Zmień zdjęcie" : "Replace photo") {
+                    model.replaceQuestionPhoto()
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint(isPolish
+                    ? "Wybierz aparat lub galerię. Odpowiedzi zostaną zachowane."
+                    : "Choose camera or gallery. Your answers will be kept.")
+                .accessibilityIdentifier("care.photo.replace")
+            }
+
             if step == 1 {
                 lightingQuestionView
             } else if step == 2 {
@@ -409,6 +435,7 @@ public struct CareQuestionsView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(model.router.flowState.intent == .problem && model.preparedPhoto == nil)
                 .accessibilityIdentifier("care.navigation.next")
             }
         }

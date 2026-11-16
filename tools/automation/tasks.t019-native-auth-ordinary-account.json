@@ -1,0 +1,34 @@
+{
+ "tasks":[{
+  "id":"t019-native-auth-ordinary-account",
+  "description":"Wire native Apple and configured Google sign-in into the ordinary account sheet with verified owner scope.",
+  "risk":"medium",
+  "complexity":"medium",
+  "depends_on":[],
+  "files":[
+   "ios/Plants/App/PlantsApp.swift",
+   "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+   "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+   "ios/Plants/Integrations/Auth/NativeAuthConfiguration.swift",
+   "ios/Plants/Integrations/Auth/NativeIdentityProvider.swift",
+   "ios/Plants/Integrations/Auth/NativeAuthService.swift",
+   "ios/PlantsTests/CatalogueConnectionTests.swift"
+  ],
+  "write_files":[
+   "ios/Plants/App/PlantsApp.swift",
+   "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+   "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+   "ios/Plants/Integrations/Auth/NativeAuthConfiguration.swift",
+   "ios/Plants/Integrations/Auth/NativeIdentityProvider.swift",
+   "ios/PlantsTests/CatalogueConnectionTests.swift"
+  ],
+  "constraints":[
+   "Return a unified Git diff in JSON. iOS local checks only. Reuse NativeAuthService/SDK and the existing presenter bridge; do not create token handling, a fallback identity, a guest migration, or any backend changes. Do not require or use real Apple/Google credentials for checks.",
+   "In the ordinary AccountSignInView, expose Apple and Google where actually configured, preserving email sign-in and test stand behavior. Reuse the owner snapshot/epoch binding. Explicit action only, serialize with email and existing catalogue-native actions. Decode/verify the SDK's persistent permanent identity and never hand a cross-account or stale session to caller. Do not log or persist tokens or an authorization code. Cancellation stays in the sheet with guest draft and original navigation preserved.",
+   "An existing guest photo transfer may claim only after the user explicitly signed in at its save step and a verified matching new permanent snapshot is installed. Preserve durable draft/operation IDs; collection/diagnosis sign-in without that explicit step performs no claim. Fixture tests cover cancellation, scope replacement, successful single ordinary callback, and no unintended writes. Real Apple/Google, revocation and physical iPhone remain open; reminders paused."
+  ],
+  "acceptance_criteria":[
+   {"id":"T019AN1","description":"Swift suite and local ordinary home smoke pass, with bounded native identity fixture coverage.","mode":"local","checks":["diff-check","ios-tests"]}
+  ]
+ }]
+}

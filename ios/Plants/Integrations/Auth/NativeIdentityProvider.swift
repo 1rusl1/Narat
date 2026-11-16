@@ -28,6 +28,14 @@ public final class NativeIdentityProvider: NativeIdentityProviding {
         self.googleServerClientId = googleServerClientId
     }
 
+    nonisolated static func isGoogleConfigured(clientId: String?, bundle: Bundle = .main) -> Bool {
+        guard let clientId, !clientId.isEmpty, !clientId.contains("$("),
+              clientId.hasSuffix(".apps.googleusercontent.com") else { return false }
+        let callbackScheme = clientId.split(separator: ".").reversed().joined(separator: ".")
+        let urlTypes = bundle.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        return urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }.contains(callbackScheme)
+    }
+
     public func credentials(for provider: NativeAuthProvider, presenting: UIViewController) async throws -> NativeAuthCredentials {
         guard presenting.viewIfLoaded?.window != nil else { throw NativeAuthFailure.presentationUnavailable }
         switch provider {
@@ -40,14 +48,9 @@ public final class NativeIdentityProvider: NativeIdentityProviding {
             defer { appleRequest = nil }
             return try await request.perform()
         case .google:
-            guard let clientId = googleClientId, !clientId.isEmpty,
-                  !clientId.contains("$("), clientId.hasSuffix(".apps.googleusercontent.com") else {
+            guard let clientId = googleClientId, Self.isGoogleConfigured(clientId: clientId) else {
                 throw NativeAuthFailure.configurationMissing
             }
-            let callbackScheme = clientId.split(separator: ".").reversed().joined(separator: ".")
-            let urlTypes = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
-            let schemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
-            guard schemes.contains(callbackScheme) else { throw NativeAuthFailure.configurationMissing }
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(
                 clientID: clientId, serverClientID: googleServerClientId
             )

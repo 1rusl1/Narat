@@ -1,6 +1,7 @@
 import SwiftUI
 import Supabase
 import Observation
+import UIKit
 
 @main
 struct PlantsApp: App {
@@ -111,6 +112,7 @@ struct RootContainerView: View {
                         welcomeIntentSection
                     } else {
                         PlantHomeView(
+                            polish: isPolish,
                             busy: opening != nil,
                             unavailable: catalogue?.unavailable != nil || startupFailed,
                             guestAccessFailed: guestAccessFailed,
@@ -216,12 +218,12 @@ struct RootContainerView: View {
                 AccountSignInView(
                     connection: catalogue,
                     cancel: { accountDestination = nil }
-                ) { snapshot in
+                ) { snapshot, original in
                     switch destination {
                     case .collection:
                         collectionAfterSignIn = true
                     case .guestTransfer:
-                        finishGuestSignIn(snapshot)
+                        finishGuestSignIn(snapshot, original: original)
                     case .diagnosis, .identification:
                         activate(destination, connection: catalogue, snapshot: snapshot)
                     }
@@ -234,7 +236,7 @@ struct RootContainerView: View {
             AccountSignInView(
                 connection: account.connection, staging: true,
                 cancel: account.guestTransfer ? { stagingAccount = nil } : nil
-            ) { snapshot in finishStagingSignIn(account, snapshot: snapshot) }
+            ) { snapshot, original in finishStagingSignIn(account, snapshot: snapshot, original: original) }
         }
 #endif
         .sheet(isPresented: $showingGuestTransfer, onDismiss: {
@@ -371,10 +373,10 @@ struct RootContainerView: View {
         return claim
     }
 
-    private func finishGuestSignIn(_ snapshot: CatalogueSDKSnapshot) {
+    private func finishGuestSignIn(_ snapshot: CatalogueSDKSnapshot, original: CatalogueSDKSnapshot?) {
         do {
-            guard let guestPhotoClaim else { throw SyncWireValidationError.invalidSession }
-            try guestPhotoClaim.acceptDestination(snapshot)
+            guard let guestPhotoClaim, let original else { throw SyncWireValidationError.invalidSession }
+            try guestPhotoClaim.acceptDestination(snapshot, from: original)
             analysisModel.installAnalysisService(nil)
             analysisOwner = nil
             analysisCredential = nil
@@ -461,7 +463,7 @@ struct RootContainerView: View {
 #endif
         guard let catalogue else { return }
         if !usesLegacyWelcome {
-            languageStore.currentLocale = .en
+            languageStore.currentLocale = SupportedLocale.resolveInitial()
         }
         do {
             if usesLegacyWelcome { _ = try await catalogue.sessionOwner() }
@@ -567,11 +569,11 @@ struct RootContainerView: View {
     }
 
     @MainActor
-    private func finishStagingSignIn(_ account: StagingAccountPresentation, snapshot: CatalogueSDKSnapshot) {
+    private func finishStagingSignIn(_ account: StagingAccountPresentation, snapshot: CatalogueSDKSnapshot, original: CatalogueSDKSnapshot?) {
         if account.guestTransfer {
             do {
-                guard let claim = guestPhotoClaim else { throw SyncWireValidationError.invalidSession }
-                try claim.acceptDestination(snapshot)
+                guard let claim = guestPhotoClaim, let original else { throw SyncWireValidationError.invalidSession }
+                try claim.acceptDestination(snapshot, from: original)
             } catch {
                 startupFailed = true
                 stagingAccount = nil
@@ -1015,8 +1017,8 @@ final class GuestPhotoClaim {
         }
     }
 
-    func acceptDestination(_ expected: CatalogueSDKSnapshot) throws {
-        guard !expected.isAnonymous, connection.snapshot == expected,
+    func acceptDestination(_ expected: CatalogueSDKSnapshot, from original: CatalogueSDKSnapshot) throws {
+        guard canResumeDraft(for: original), !expected.isAnonymous, connection.snapshot == expected,
               var current = journal, current.draft != nil, current.destinationOwner == nil else {
             throw SyncWireValidationError.invalidSession
         }
@@ -1137,16 +1139,32 @@ private struct AccountSignInView: View {
     let connection: CatalogueConnection
     var staging = false
     let cancel: (() -> Void)?
-    let signedIn: @MainActor (CatalogueSDKSnapshot) -> Void
+    let signedIn: @MainActor (CatalogueSDKSnapshot, CatalogueSDKSnapshot?) -> Void
 
     @State private var email = ""
     @State private var password = ""
     @State private var signingIn = false
     @State private var failed = false
+    @State private var scope: CatalogueAccountScope?
+    @State private var presenter: UIViewController?
+    @State private var work: Task<Void, Never>?
+    @State private var active = false
+    @State private var completed = false
+
+    private var busy: Bool { signingIn || connection.authenticationInFlight }
 
     var body: some View {
         NavigationStack {
             Form {
+                if !staging {
+                    ForEach(connection.accountProviders, id: \.rawValue) { provider in
+                        Button(provider == .apple ? "Continue with Apple" : "Continue with Google") {
+                            signIn(provider)
+                        }
+                        .disabled(busy || scope == nil || presenter?.viewIfLoaded?.window == nil)
+                        .accessibilityIdentifier("account.signin." + provider.rawValue)
+                    }
+                }
                 TextField("Email", text: $email)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never)
@@ -1164,46 +1182,76 @@ private struct AccountSignInView: View {
                 Button(signingIn ? "Signing in…" : "Sign in") {
                     signIn()
                 }
-                .disabled(signingIn || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                .disabled(busy || scope == nil || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
                 .accessibilityIdentifier(staging ? "staging.signin" : "account.signin")
             }
             .navigationTitle(staging ? "Test account" : "Sign in to Narat")
             .toolbar {
                 if let cancel {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel", action: cancel).disabled(signingIn)
+                        Button("Cancel", action: cancel).disabled(busy)
                     }
                 }
             }
         }
-        .interactiveDismissDisabled(cancel == nil || signingIn)
+        .background(CatalogueWindowPresenter(controller: $presenter).frame(width: 0, height: 0))
+        .interactiveDismissDisabled(cancel == nil || busy)
+        .task {
+            active = true
+            guard scope == nil else { return }
+            do { scope = try await connection.accountScope() }
+            catch { failed = true }
+        }
+        .onDisappear {
+            active = false
+            work?.cancel()
+            password = ""
+        }
     }
 
     private func signIn() {
-        guard !signingIn, let client = connection.client else { return }
+        guard !busy, let scope else { return }
         let loginEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let loginPassword = password
         password = ""
+        start(scope: scope) {
+            try await connection.signInAccount(email: loginEmail, password: loginPassword, scope: scope)
+        }
+    }
+
+    private func signIn(_ provider: NativeAuthProvider) {
+        guard !busy, let scope, let presenter, presenter.viewIfLoaded?.window != nil else { return }
+        start(scope: scope) {
+            try await connection.signInAccount(with: provider, presenting: presenter, scope: scope)
+        }
+    }
+
+    private func start(
+        scope: CatalogueAccountScope,
+        action: @escaping @MainActor () async throws -> CatalogueSDKSnapshot?
+    ) {
+        guard active, !completed else { return }
         signingIn = true
         failed = false
-        Task { @MainActor in
-            defer { signingIn = false }
+        work = Task { @MainActor in
+            defer {
+                signingIn = false
+                work = nil
+            }
             do {
-                let session = try await client.auth.signIn(email: loginEmail, password: loginPassword)
-                let snapshot = try await connection.sessionSnapshot()
-                guard !snapshot.isAnonymous, snapshot.session.userId == session.user.id,
-                      snapshot.session.accessToken == session.accessToken else {
-                    throw AnalysisServiceFailure.unavailable
-                }
-                signedIn(snapshot)
+                guard let snapshot = try await action() else { return }
+                guard active, !completed, !Task.isCancelled, connection.snapshot == snapshot else { return }
+                completed = true
+                signedIn(snapshot, scope.snapshot)
             } catch {
-                failed = true
+                if active, !Task.isCancelled { failed = true }
             }
         }
     }
 }
 
 private struct PlantHomeView<GuestActions: View>: View {
+    let polish: Bool
     let busy: Bool
     let unavailable: Bool
     let guestAccessFailed: Bool
@@ -1225,7 +1273,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                         .accessibilityIdentifier("welcome.title")
                     Spacer()
                     Button(action: collection) {
-                        Label("My plants", systemImage: "leaf")
+                        Label(polish ? "Moje rośliny" : "My plants", systemImage: "leaf")
                             .font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
@@ -1236,13 +1284,13 @@ private struct PlantHomeView<GuestActions: View>: View {
                     Image(systemName: "leaf.circle")
                         .font(.system(size: 44, weight: .light))
                         .accessibilityHidden(true)
-                    Text("How’s your plant doing?")
+                    Text(polish ? "Jak się ma Twoja roślina?" : "How’s your plant doing?")
                         .font(.system(.largeTitle, design: .serif).weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
-                    Text("Use a photo to see what your plant might need.")
+                    Text(polish ? "Dodaj zdjęcie, aby sprawdzić, czego może potrzebować Twoja roślina." : "Use a photo to see what your plant might need.")
                         .font(.body)
                     Button(action: check) {
-                        Label("Check a plant", systemImage: "camera")
+                        Label(polish ? "Sprawdź roślinę" : "Check a plant", systemImage: "camera")
                             .font(.headline)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
@@ -1257,29 +1305,29 @@ private struct PlantHomeView<GuestActions: View>: View {
                 .background(green, in: RoundedRectangle(cornerRadius: 28))
 
                 VStack(spacing: 0) {
-                    destination("Identify a plant", systemImage: "viewfinder", id: "welcome.identify", action: identify)
+                    destination(polish ? "Rozpoznaj roślinę" : "Identify a plant", systemImage: "viewfinder", id: "welcome.identify", action: identify)
                         .disabled(unavailable)
                     Divider().padding(.leading, 52)
-                    destination("Browse catalogue", systemImage: "books.vertical", id: "welcome.catalogue", action: browse)
+                    destination(polish ? "Przeglądaj katalog" : "Browse catalogue", systemImage: "books.vertical", id: "welcome.catalogue", action: browse)
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
 
                 guestActions()
 
                 if unavailable {
-                    Text("Narat can’t connect right now. Check the app’s connection settings.")
+                    Text(polish ? "Narat nie może się teraz połączyć. Sprawdź ustawienia połączenia aplikacji." : "Narat can’t connect right now. Check the app’s connection settings.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("welcome.unavailable")
                 }
                 if guestAccessFailed {
-                    Text("Couldn’t start guest identification. Try again.")
+                    Text(polish ? "Nie udało się rozpocząć rozpoznawania bez logowania. Spróbuj ponownie." : "Couldn’t start guest identification. Try again.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("welcome.guest.error")
                 }
                 if busy {
-                    ProgressView("Opening…")
+                    ProgressView(polish ? "Otwieranie…" : "Opening…")
                         .accessibilityIdentifier("welcome.opening")
                 }
             }

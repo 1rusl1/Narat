@@ -16,11 +16,11 @@ final class FirstHelpUnitTests: XCTestCase {
     }
 
     // Image data is a test fixture only; production must never offer generated photos.
-    private func photoFixture(largeOver10MB: Bool = false) -> Data {
+    private func photoFixture(largeOver10MB: Bool = false, color: UIColor = .systemGreen) -> Data {
         let size = CGSize(width: 600, height: 800)
         let renderer = UIGraphicsImageRenderer(size: size)
         var data = renderer.pngData { context in
-            UIColor.systemGreen.setFill()
+            color.setFill()
             context.fill(CGRect(origin: .zero, size: size))
         }
         if largeOver10MB {
@@ -537,6 +537,99 @@ final class FirstHelpUnitTests: XCTestCase {
         await current.value
         XCTAssertEqual(model.preliminaryResult, response.analysis)
         XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
+    }
+
+    func testQuestionReplacementChoicesAndPickerCancellationKeepAnswersAndPosition() throws {
+        for locale in [SupportedLocale.en, .pl] {
+            for step in 1...3 {
+                let service = GalleryAnalysisFixture(response: serviceResult())
+                let model = AnalysisFlowModel(service: service)
+                model.router.selectIntent(.problem)
+                model.selectPhotoData(photoFixture(), locale: locale)
+                model.selectLightLevel(.medium)
+                model.selectWateringHabit(.sparse)
+                model.selectDrainage(.no)
+                model.router.flowState.questionIndex = step
+                let before = model.router.flowState
+                let photo = try XCTUnwrap(model.preparedPhoto)
+                model.replaceQuestionPhoto()
+                XCTAssertTrue(model.isReplacingQuestionPhoto)
+                XCTAssertEqual(model.router.flowState.currentStep, .selectPhoto)
+                XCTAssertFalse(model.isPreparingPhoto)
+                XCTAssertEqual(model.preparedPhoto, photo)
+                XCTAssertEqual(model.router.flowState.conditions, before.conditions)
+                XCTAssertEqual(model.router.flowState.questionIndex, step)
+                XCTAssertTrue(service.requests.isEmpty)
+                // Cancelling a system picker produces no selection callback.
+                model.navigateBack()
+                XCTAssertEqual(model.router.flowState, before)
+                XCTAssertFalse(model.isReplacingQuestionPhoto)
+                XCTAssertEqual(model.preparedPhoto, photo)
+                XCTAssertTrue(service.requests.isEmpty)
+            }
+        }
+    }
+
+    func testInvalidThenValidQuestionReplacementUsesNewBytesAndIgnoresOldOperation() async throws {
+        let response = serviceResult()
+        let service = GalleryAnalysisFixture(response: response)
+        service.suspend = true
+        let model = AnalysisFlowModel(service: service)
+        model.router.selectIntent(.problem)
+        model.selectPhotoData(photoFixture())
+        model.selectLightLevel(.low)
+        model.selectWateringHabit(.sparse)
+        model.selectDrainage(.yes)
+        model.router.flowState.questionIndex = 2
+        let conditions = model.router.flowState.conditions
+        let originalPhoto = try XCTUnwrap(model.preparedPhoto)
+        let oldTask = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await service.waitForRequestCount(1)
+        let oldOperation = try XCTUnwrap(model.currentOperationId)
+        model.navigateBack()
+        model.replaceQuestionPhoto()
+        model.selectPhotoData(Data([0, 1, 2]))
+        XCTAssertNotNil(model.photoError)
+        XCTAssertNil(model.preparedPhoto)
+        XCTAssertNil(model.frozenRequest)
+        XCTAssertEqual(model.router.flowState.conditions, conditions)
+        XCTAssertEqual(model.router.flowState.questionIndex, 2)
+        XCTAssertEqual(service.requests.count, 1)
+        let obsolete = model.beginPhotoSelection()
+        let selection = model.beginPhotoSelection()
+        model.completePhotoSelection(photoFixture(), selectionId: obsolete, locale: .pl)
+        XCTAssertNil(model.preparedPhoto)
+        let replacement = photoFixture(color: .systemBlue)
+        model.completePhotoSelection(replacement, selectionId: selection, locale: .pl)
+        let prepared = try XCTUnwrap(model.preparedPhoto)
+        XCTAssertEqual(prepared, try AnalysisPhotoInput().preparePhoto(from: replacement))
+        XCTAssertNotEqual(prepared.cloudNormalizedJPEG, originalPhoto.cloudNormalizedJPEG)
+        XCTAssertEqual(model.router.flowState.currentStep, .careQuestions)
+        XCTAssertEqual(model.router.flowState.questionIndex, 2)
+        XCTAssertEqual(model.router.flowState.conditions, conditions)
+        XCTAssertFalse(model.isReplacingQuestionPhoto)
+        XCTAssertNil(model.currentOperationId)
+        XCTAssertEqual(service.requests.count, 1)
+        model.advanceQuestionOrStartAnalysis(locale: .pl)
+        XCTAssertEqual(model.router.flowState.questionIndex, 3)
+        XCTAssertEqual(service.requests.count, 1)
+        model.advanceQuestionOrStartAnalysis(locale: .pl)
+        let newTask = try XCTUnwrap(model.submitAnalysis(locale: .pl))
+        await service.waitForRequestCount(2)
+        let newOperation = try XCTUnwrap(model.currentOperationId)
+        XCTAssertNotEqual(newOperation, oldOperation)
+        XCTAssertEqual(service.requests.last?.photo, prepared)
+        XCTAssertEqual(service.requests.last?.conditions, conditions)
+        XCTAssertEqual(service.requests.last?.locale, .pl)
+        service.completeNext(response)
+        await oldTask.value
+        XCTAssertNil(model.preliminaryResult)
+        XCTAssertTrue(model.isAnalyzing)
+        XCTAssertEqual(model.currentOperationId, newOperation)
+        service.completeNext(response)
+        await newTask.value
+        XCTAssertEqual(model.preliminaryResult, response.analysis)
+        XCTAssertEqual(service.requests.count, 2)
     }
 
     func testFailedOrObsoletePhotoLoadCannotSubmitPreviousBytes() async throws {

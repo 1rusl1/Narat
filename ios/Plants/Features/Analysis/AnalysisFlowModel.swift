@@ -135,6 +135,7 @@ public final class AnalysisFlowModel {
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
     private var generation = UUID()
     private var photoSelectionId: UUID?
+    private(set) var isReplacingQuestionPhoto = false
 
     public var hasAnalysisService: Bool { service != nil }
 
@@ -229,18 +230,36 @@ public final class AnalysisFlowModel {
     }
 
     public func returnFromAnalysis() {
+        isReplacingQuestionPhoto = false
         if hasAnalysisService { cancelAnalysis() }
         router.returnFromUnavailableAnalysis()
     }
 
     public func showCatalogue() {
+        isReplacingQuestionPhoto = false
         if hasAnalysisService { cancelAnalysis() }
         router.showCatalogue()
     }
 
     public func navigateBack() {
+        if isReplacingQuestionPhoto && router.flowState.currentStep == .selectPhoto {
+            cancelAnalysis()
+            isReplacingQuestionPhoto = false
+            router.flowState.currentStep = .careQuestions
+            return
+        }
         if hasAnalysisService { cancelAnalysis() }
         router.navigateBack()
+    }
+
+    /// Reveal source choices without opening a picker or changing answered conditions.
+    func replaceQuestionPhoto() {
+        guard repeatDiagnosisTarget == nil, router.flowState.intent == .problem,
+              router.flowState.currentStep == .careQuestions else { return }
+        cancelAnalysis()
+        isReplacingQuestionPhoto = true
+        photoError = nil
+        router.flowState.currentStep = .selectPhoto
     }
 
     @discardableResult
@@ -276,6 +295,7 @@ public final class AnalysisFlowModel {
             isPreparingPhoto = false
             preparedPhoto = prepared
             router.attachPhoto(identifier: identifier, skipQuestions: repeatDiagnosisTarget != nil)
+            isReplacingQuestionPhoto = false
             if hasAnalysisService && router.flowState.currentStep == .analyzing {
                 submitAnalysis(locale: locale)
             }
