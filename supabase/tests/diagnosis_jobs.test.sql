@@ -583,5 +583,153 @@ SELECT is(pg_temp.initial_job('{"light":"low","watering_frequency":"moderate","d
 UPDATE public.plants SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM initial_saved_plant);
 SELECT throws_ok($q$SELECT pg_temp.initial_job('{"light":"low","watering_frequency":"moderate","drainage":"yes"}',
     p_dispatch=>false)$q$,'P0002','PHOTO_NOT_READY','initial context replay respects source revocation');
+
+-- SQL-only guest initial admission; worker/transport remain a separate package.
+INSERT INTO public.profiles(id,anonymous) VALUES
+    ('16320000-0000-4000-8000-000000000081',true),
+    ('16320000-0000-4000-8000-000000000082',true);
+CREATE TEMP TABLE bound_initial_install AS SELECT (public.register_installation_access(
+    repeat('8',64),'16320000-0000-4000-8000-000000000081')->>'installation_id')::uuid id;
+CREATE TEMP TABLE bound_initial_other_install AS SELECT (public.register_installation_access(
+    repeat('9',64),'16320000-0000-4000-8000-000000000081')->>'installation_id')::uuid id;
+CREATE TEMP TABLE bound_initial_photo AS SELECT (public.create_bound_photo_upload(
+    '16320000-0000-4000-8000-000000000081',gen_random_uuid(),
+    'image/jpeg',4,repeat('d',64),repeat('8',64))->>'photo_asset_id')::uuid id;
+SELECT public.mark_diagnosis_upload_ready(
+    '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_photo),repeat('d',64));
+CREATE FUNCTION pg_temp.bound_initial_create(
+    p_context JSONB DEFAULT '{"light":"low","watering_frequency":"moderate","drainage":"yes"}',
+    p_operation UUID DEFAULT '16320000-0000-4000-8000-000000000084',
+    p_credential TEXT DEFAULT repeat('8',64), p_dispatch BOOLEAN DEFAULT true
+) RETURNS JSONB LANGUAGE sql AS $$
+    SELECT public.create_bound_guest_initial_diagnosis_job(
+        '16320000-0000-4000-8000-000000000081',p_operation,
+        (SELECT id FROM bound_initial_photo),NULL,'en',p_dispatch,p_context,p_credential)
+$$;
+SELECT ok(NOT has_function_privilege(role_name,rpc,'execute'),
+    role_name || ' cannot execute ' || rpc)
+FROM unnest(ARRAY['anon','authenticated']) role_name
+CROSS JOIN unnest(ARRAY[
+    'public.create_bound_guest_initial_diagnosis_job(uuid,uuid,uuid,uuid,text,boolean,jsonb,text)',
+    'public.read_bound_guest_initial_diagnosis_job(uuid,uuid,text)',
+    'public._create_bound_photo_analysis_job(uuid,uuid,uuid,uuid,text,boolean,text,text,jsonb)'
+]) rpc;
+SELECT ok(NOT has_function_privilege('service_role',
+    'public._create_bound_photo_analysis_job(uuid,uuid,uuid,uuid,text,boolean,text,text,jsonb)','execute'),
+    'private admission helper is not service callable');
+SELECT ok(has_function_privilege('service_role',rpc,'execute'),'service can execute ' || rpc)
+FROM unnest(ARRAY[
+    'public.create_bound_guest_initial_diagnosis_job(uuid,uuid,uuid,uuid,text,boolean,jsonb,text)',
+    'public.read_bound_guest_initial_diagnosis_job(uuid,uuid,text)'
+]) rpc;
+SELECT throws_ok(format($q$SELECT pg_temp.bound_initial_create(%L::jsonb)$q$,invalid),
+    '22023','INVALID_INITIAL_CONTEXT','guest context is closed')
+FROM (VALUES (NULL::jsonb),('null'::jsonb),('[]'::jsonb),('{}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate","drainage":null}'::jsonb),
+    ('{"light":"low","watering_frequency":"moderate","drainage":"yes","extra":true}'::jsonb),
+    ('{"light":"invalid","watering_frequency":"moderate","drainage":"yes"}'::jsonb)
+) invalid_context(invalid);
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create(p_credential=>repeat('7',64))$q$,
+    '42501','INSTALLATION_CREDENTIAL_MISMATCH','admission requires a linked installation');
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create(p_dispatch=>false)$q$,
+    'P0001','PROVIDER_UNAVAILABLE','new guest work retains dispatch gate');
+SELECT throws_ok($q$SELECT public.create_bound_guest_initial_diagnosis_job(
+    '16310000-0000-4000-8000-000000000071',gen_random_uuid(),
+    (SELECT id FROM bound_initial_photo),NULL,'en',true,
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}',repeat('8',64))$q$,
+    '42501','ACTIVE_ANONYMOUS_OWNER_REQUIRED','new RPC does not replace permanent admission');
+SELECT throws_ok($q$SELECT public.create_bound_guest_initial_diagnosis_job(
+    '16320000-0000-4000-8000-000000000081',gen_random_uuid(),
+    (SELECT id FROM initial_photo),NULL,'en',true,
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}',repeat('8',64))$q$,
+    'P0002','PHOTO_NOT_READY','guest cannot diagnose a foreign ready photo');
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create()$q$,
+    'P0001','PUBLISHED_RELEASE_UNAVAILABLE','guest diagnosis requires a published care KB');
+-- Restore the KB retired by the earlier identification fixture.
+UPDATE public.kb_releases SET state='published'
+WHERE id=(SELECT kb_release_id FROM public.analysis_jobs
+    WHERE id=(SELECT id FROM initial_job_id));
+CREATE TEMP TABLE bound_initial_created AS SELECT pg_temp.bound_initial_create() body;
+CREATE TEMP TABLE bound_initial_job AS SELECT (body->'job'->>'job_id')::uuid id FROM bound_initial_created;
+SELECT is((SELECT body->'job'->>'quota_kind' FROM bound_initial_created),
+    'starter_diagnosis','guest diagnosis uses the existing separate starter');
+SELECT is(pg_temp.bound_initial_create(p_dispatch=>false),
+    (SELECT jsonb_set(body,'{replayed}','true') FROM bound_initial_created),
+    'exact retry returns the original receipt without dispatch');
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create(
+    '{"light":"medium","watering_frequency":"moderate","drainage":"yes"}')$q$,
+    '23505','IDEMPOTENCY_CONFLICT','changed answers conflict');
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create(p_credential=>repeat('9',64))$q$,
+    '23505','IDEMPOTENCY_CONFLICT','same-owner different installation cannot replay admission');
+SELECT is(public.read_bound_guest_initial_diagnosis_job(
+    '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_job),repeat('8',64)),
+    (SELECT body->'job' FROM bound_initial_created),'bound status reads the admitted job');
+SELECT is(public.read_bound_guest_initial_diagnosis_job(owner_id,(SELECT id FROM bound_initial_job),credential),
+    NULL::jsonb,'wrong owner or installation cannot read guest diagnosis')
+FROM (VALUES
+    ('16320000-0000-4000-8000-000000000081'::uuid,repeat('7',64)),
+    ('16320000-0000-4000-8000-000000000081'::uuid,repeat('9',64)),
+    ('16320000-0000-4000-8000-000000000082'::uuid,repeat('8',64))
+) denied(owner_id,credential);
+SELECT is(public.read_diagnosis_job(
+    '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_job)),
+    NULL::jsonb,'old uncredentialed status cannot expose guest diagnosis');
+SELECT is(public.read_bound_guest_initial_diagnosis_job(
+    '16310000-0000-4000-8000-000000000061',(SELECT id FROM guest_job),repeat('e',64)),
+    NULL::jsonb,'new diagnosis status does not expose old guest identification');
+SELECT throws_ok($q$SELECT public.create_photo_analysis_job(
+    '16320000-0000-4000-8000-000000000081',gen_random_uuid(),
+    (SELECT id FROM bound_initial_photo),NULL,'en',true,'diagnosis')$q$,
+    '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','legacy uncredentialed guest diagnosis remains unavailable');
+SELECT throws_ok($q$SELECT public.create_bound_photo_analysis_job(
+    '16320000-0000-4000-8000-000000000081',gen_random_uuid(),
+    (SELECT id FROM bound_initial_photo),NULL,'en',true,'diagnosis',repeat('8',64))$q$,
+    '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','old bound identification entry cannot admit guest diagnosis');
+SELECT ok((SELECT NOT (body->'job' ?| ARRAY['initial_context','credential_hash','installation_id'])
+    FROM bound_initial_created),'admission payload omits answers and installation credentials');
+SELECT is((SELECT initial_context FROM public.diagnosis_job_runtime WHERE job_id=(SELECT id FROM bound_initial_job)),
+    '{"light":"low","watering_frequency":"moderate","drainage":"yes"}'::jsonb,'guest answers persist privately');
+SELECT is((SELECT payload_hash FROM public.operation_receipts
+    WHERE owner_id='16320000-0000-4000-8000-000000000081'
+      AND operation_id='16320000-0000-4000-8000-000000000084'),
+    (SELECT payload_hash FROM public.analysis_jobs WHERE id=(SELECT id FROM bound_initial_job)),
+    'receipt and job share guest context provenance');
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create(p_operation=>gen_random_uuid())$q$,
+    'P0001','QUOTA_DENIED','a second concurrent guest diagnosis cannot reserve another starter');
+-- Settle directly through the existing quota service; no guest worker behavior is added here.
+SELECT public.finalize_analysis_quota((SELECT id FROM bound_initial_job),'succeeded',false,clock_timestamp());
+SELECT is(public.read_bound_guest_initial_diagnosis_job(
+    '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_job),repeat('8',64))->>'quota_state',
+    'consumed','successful fixture settlement consumes one starter');
+CREATE TEMP TABLE bound_initial_quota_before AS SELECT to_jsonb(i) body FROM public.installation_access i
+WHERE id=(SELECT id FROM bound_initial_install);
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create(p_operation=>gen_random_uuid())$q$,
+    'P0001','QUOTA_DENIED','a consumed guest starter cannot be used again');
+SELECT is(pg_temp.bound_initial_create(p_dispatch=>false),
+    (SELECT jsonb_set(body,'{replayed}','true') FROM bound_initial_created),
+    'consumed job retry still returns the exact receipt');
+SELECT is((SELECT to_jsonb(i) FROM public.installation_access i WHERE id=(SELECT id FROM bound_initial_install)),
+    (SELECT body FROM bound_initial_quota_before),'denials and retries produce no extra installation debit');
+SELECT ok((SELECT starter_diagnosis_consumed AND NOT starter_identification_consumed
+    FROM public.installation_access WHERE id=(SELECT id FROM bound_initial_install)),
+    'diagnosis consumption leaves identification starter untouched');
+SELECT is((SELECT count(*) FROM public.analysis_jobs
+    WHERE owner_id='16320000-0000-4000-8000-000000000081'),1::bigint,
+    'conflicts and second admissions create no extra job');
+UPDATE public.installation_access SET linked_owner_ids='{}'
+WHERE id=(SELECT id FROM bound_initial_install);
+SELECT is(public.read_bound_guest_initial_diagnosis_job(
+    '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_job),repeat('8',64)),
+    NULL::jsonb,'status requires a current installation link');
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create()$q$,
+    '42501','INSTALLATION_CREDENTIAL_MISMATCH','retry requires a current installation link');
+UPDATE public.installation_access SET linked_owner_ids=ARRAY['16320000-0000-4000-8000-000000000081'::uuid]
+WHERE id=(SELECT id FROM bound_initial_install);
+UPDATE public.photo_assets SET deleted_at=clock_timestamp() WHERE id=(SELECT id FROM bound_initial_photo);
+SELECT is(public.read_bound_guest_initial_diagnosis_job(
+    '16320000-0000-4000-8000-000000000081',(SELECT id FROM bound_initial_job),repeat('8',64)),
+    NULL::jsonb,'revoked source is unavailable to bound status');
+SELECT throws_ok($q$SELECT pg_temp.bound_initial_create()$q$,
+    'P0002','PHOTO_NOT_READY','revoked source prevents exact retry');
 SELECT * FROM finish();
 ROLLBACK;

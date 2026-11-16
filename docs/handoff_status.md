@@ -2647,9 +2647,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-account-data-care-plan-purge: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 526.31 с, проверки — 46.21 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-account-data-care-plan-purge](validation/automation/tasks/t083-account-data-care-plan-purge.md).
+t170-guest-initial-diagnosis-sql: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 3, reviewer 1, qa 1. Модели — 581.20 с, проверки — 71.03 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-guest-initial-diagnosis-sql](validation/automation/tasks/t170-guest-initial-diagnosis-sql.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
