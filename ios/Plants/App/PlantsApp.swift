@@ -337,8 +337,8 @@ struct RootContainerView: View {
             defer { opening = nil }
             if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
                 activate(destination, connection: connection, snapshot: snapshot)
-            } else if destination == .identification {
-                do { try await openGuestIdentification(connection) }
+            } else if destination == .identification || destination == .diagnosis {
+                do { try await openGuestAnalysis(destination, connection: connection) }
                 catch {
                     if !Task.isCancelled { guestAccessFailed = true }
                 }
@@ -348,11 +348,11 @@ struct RootContainerView: View {
         }
     }
 
-    private func openGuestIdentification(_ connection: CatalogueConnection) async throws {
+    private func openGuestAnalysis(_ destination: AccountDestination, connection: CatalogueConnection) async throws {
         _ = try await connection.sessionOwner()
         let expected = try await connection.sessionSnapshot()
         if !expected.isAnonymous {
-            activate(.identification, connection: connection, snapshot: expected)
+            activate(destination, connection: connection, snapshot: expected)
             return
         }
         let claim = await photoClaim(for: connection)
@@ -362,8 +362,12 @@ struct RootContainerView: View {
         }
         installAnalysis(connection: connection, owner: expected.session.userId,
                         identificationEnabled: true, guestCredential: claim.credential)
-        analysisModel.router.selectIntent(.care)
-        analysisModel.router.selectCareMethod(.scan)
+        if destination == .diagnosis {
+            analysisModel.router.selectIntent(.problem)
+        } else {
+            analysisModel.router.selectIntent(.care)
+            analysisModel.router.selectCareMethod(.scan)
+        }
     }
 
     private func photoClaim(for connection: CatalogueConnection) async -> GuestPhotoClaim {
@@ -772,7 +776,7 @@ final class PhotoAnalysisService: AnalysisService {
 
     func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
         guard request.repeatDiagnosisTarget == repeatDiagnosisTarget,
-              (guestCredential == nil && request.mode == .diagnosis) ||
+              (request.mode == .diagnosis && (guestCredential == nil || repeatDiagnosisTarget == nil)) ||
               (repeatDiagnosisTarget == nil && identificationEnabled && request.mode == .identification) else {
             throw AnalysisServiceFailure.unavailable
         }
@@ -842,7 +846,7 @@ final class PhotoAnalysisService: AnalysisService {
                     operationId: progress.creationOperationId, mode: request.mode, photoAssetId: photoId,
                     flowId: request.mode == .identification || targetPlantId != nil ? request.flowId : nil,
                     targetPlantId: targetPlantId,
-                    initialContext: request.mode == .diagnosis && targetPlantId == nil && guestCredential == nil
+                    initialContext: request.mode == .diagnosis && targetPlantId == nil
                         ? InitialDiagnosisContext(conditions: request.conditions) : nil,
                     locale: locale, context: lease, guestCredential: guestCredential
                 )
@@ -1321,7 +1325,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                         .accessibilityIdentifier("welcome.unavailable")
                 }
                 if guestAccessFailed {
-                    Text(polish ? "Nie udało się rozpocząć rozpoznawania bez logowania. Spróbuj ponownie." : "Couldn’t start guest identification. Try again.")
+                    Text(polish ? "Nie udało się rozpocząć analizy zdjęcia. Spróbuj ponownie." : "Couldn’t start photo analysis. Try again.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("welcome.guest.error")

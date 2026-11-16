@@ -1959,7 +1959,8 @@ extension PlantsAPIClient {
     ) async throws -> AnalysisJobWire {
         guard mode == .diagnosis || mode == .identification,
               targetPlantId == nil || (mode == .diagnosis && guestCredential == nil),
-              initialContext == nil || (mode == .diagnosis && targetPlantId == nil && guestCredential == nil) else {
+              initialContext == nil || (mode == .diagnosis && targetPlantId == nil),
+              guestCredential == nil || mode != .diagnosis || initialContext != nil else {
             throw AnalysisHTTPError.invalidResponse
         }
         let encoder = JSONEncoder()

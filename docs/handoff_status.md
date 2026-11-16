@@ -2614,8 +2614,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t039-replace-photo-keep-answers: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 325.12 с, проверки — 188.42 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t039-replace-photo-keep-answers](validation/automation/tasks/t039-replace-photo-keep-answers.md).
+t170-guest-initial-diagnosis-ios: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 379.97 с, проверки — 155.46 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-guest-initial-diagnosis-ios](validation/automation/tasks/t170-guest-initial-diagnosis-ios.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
