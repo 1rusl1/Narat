@@ -2693,8 +2693,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-resumed-guest-email-binding: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 209.29 с, проверки — 406.21 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-resumed-guest-email-binding](validation/automation/tasks/t170-resumed-guest-email-binding.md).
+t170-saved-diagnosis-condition-summary: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 377.32 с, проверки — 327.12 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t170-saved-diagnosis-condition-summary](validation/automation/tasks/t170-saved-diagnosis-condition-summary.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

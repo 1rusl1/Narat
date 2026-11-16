@@ -71,6 +71,7 @@ final class CatalogueSaveModel {
     private var cancelled = false
     @ObservationIgnored private var work: Task<Void, Never>?
     private var detailsPhase: CatalogueCardState = .idle
+    private var confirmedConditions: PlantConditionCodes?
     private var historyPhase: CatalogueWateringHistoryState = .idle
     private var recommendationPhase: CatalogueCareRecommendationState = .idle
     @ObservationIgnored private var recommendationRead = 0
@@ -96,6 +97,19 @@ final class CatalogueSaveModel {
     var cardSummary: CatalogueCardSummary? {
         guard case let .loaded(summary) = cardState else { return nil }
         return summary
+    }
+
+    /// Only synchronized conditions for this confirmed diagnosis and current lease.
+    var diagnosisConditions: PlantConditionCodes? {
+        guard frozenInput.diagnosisJobId != nil,
+              case let .saved(confirmation) = state,
+              let card = cardSummary, card.id == confirmation.receipt.plantId,
+              card.mainPhotoId == confirmation.receipt.photoId,
+              card.speciesSlug == frozenInput.speciesSlug,
+              let conditions = confirmedConditions,
+              conditions.plantId == card.id,
+              conditions.id == card.currentConditionSnapshotId else { return nil }
+        return conditions
     }
 
     var careRecommendationState: CatalogueCareRecommendationState {
@@ -400,6 +414,7 @@ final class CatalogueSaveModel {
     ) async {
         do {
             try publish {
+                confirmedConditions = nil
                 detailsPhase = .loading
                 historyPhase = .loading
                 if manualWateringPhase != .saving { manualWateringPhase = .unavailable }
@@ -412,6 +427,14 @@ final class CatalogueSaveModel {
                 throw CatalogueSaveUnavailable.sessionChanged
             }
             try publish { detailsPhase = .loaded(summary) }
+            if frozenInput.diagnosisJobId != nil {
+                // Optional local read: absent/old snapshots or storage errors cannot fail the card.
+                let conditions = try? await repository.syncedPlantConditions(for: summary, context: context)
+                try validateAuthority()
+                guard case let .saved(current) = state, current == confirmation,
+                      cardSummary == summary else { throw CatalogueSaveUnavailable.sessionChanged }
+                try publish { confirmedConditions = conditions }
+            }
             let history = try await repository.manualWateringHistory(
                 card: summary, confirmation: confirmation, context: context
             )
@@ -444,6 +467,7 @@ final class CatalogueSaveModel {
         cancelled = true
         work?.cancel()
         detailsTask?.cancel()
+        confirmedConditions = nil
         detailsPhase = .unavailable
         historyPhase = .unavailable
         manualWateringPhase = .unavailable
