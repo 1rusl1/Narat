@@ -2902,8 +2902,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-retired-runtime-terminal-replay: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 577.45 с, проверки — 76.77 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-retired-runtime-terminal-replay](validation/automation/tasks/t083-retired-runtime-terminal-replay.md).
+t083-runtime-retirement-core-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 135.72 с, проверки — 90.32 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-runtime-retirement-core-acceptance](validation/automation/tasks/t083-runtime-retirement-core-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
