@@ -97,6 +97,8 @@ final class CatalogueConnection {
     private var observedSnapshot: CatalogueSDKSnapshot?
     private(set) var hasResolvedAuth = false
     private(set) var lastDeletedPlant: UUID?
+    private(set) var didSignOut = false
+    private(set) var signOutServerUnconfirmed = false
     @ObservationIgnored private let sdkEpoch: CatalogueSDKEpoch
     @ObservationIgnored private var observer: Task<any AuthStateChangeListenerRegistration, Never>?
     @ObservationIgnored private var pending: Task<UUID, Error>?
@@ -146,7 +148,10 @@ final class CatalogueConnection {
         resumeDefaults: UserDefaults = .standard
     ) {
         // Seed before initial-session delivery can delete storage and swallow its refresh error.
-        sdkEpoch = CatalogueSDKEpoch(hasEstablishedSession: client.auth.currentSession != nil)
+        sdkEpoch = CatalogueSDKEpoch(
+            hasEstablishedSession: client.auth.currentSession != nil
+                || resumeDefaults.bool(forKey: "catalogue.explicitSignOut")
+        )
         let api = PlantsAPIClient(
             baseURL: configuration.supabaseURL.appendingPathComponent("functions/v1/plants-api"),
             transport: transport, clientLocale: clientLocale
@@ -159,6 +164,7 @@ final class CatalogueConnection {
         repository = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
         unavailable = nil
         self.resumeDefaults = resumeDefaults
+        didSignOut = resumeDefaults.bool(forKey: "catalogue.explicitSignOut")
         accountProviders = configuration.supportsGoogleSignIn ? [.apple, .google] : [.apple]
         if let identityProvider {
             nativeAuth = NativeAuthService(
@@ -382,10 +388,35 @@ final class CatalogueConnection {
         return expected
     }
 
+    /// Uses the settings presentation's snapshot and the existing native exchange gate.
+    func signOutAccount(expected: CatalogueSDKSnapshot) async throws {
+        guard let client else { throw NativeAuthFailure.configurationMissing }
+        guard nativeFlow == nil else { throw NativeAuthFailure.providerFailed }
+        try validate(expected)
+        guard !expected.isAnonymous else { throw CatalogueSaveUnavailable.sessionChanged }
+        nativeFlow = UUID()
+        defer { nativeFlow = nil }
+        resumeDefaults.set(true, forKey: "catalogue.explicitSignOut")
+        try validate(expected)
+        didSignOut = true
+        signOutServerUnconfirmed = false
+        do {
+            // SDK removes local storage and emits signedOut BEFORE the HTTP request.
+            try await client.auth.signOut(scope: .local)
+        } catch {
+            // Never restore A or sign out B after a delayed transport response.
+            signOutServerUnconfirmed = client.auth.currentSession == nil
+            throw error
+        }
+    }
+
     /// Root and catalogue startup join exactly one anonymous signup.
     func sessionOwner() async throws -> UUID {
         guard let client else { throw unavailable ?? .configurationMissing }
         if let pending { return try await pending.value }
+        if client.auth.currentSession == nil, resumeDefaults.bool(forKey: "catalogue.explicitSignOut") {
+            throw CatalogueSaveUnavailable.sessionChanged
+        }
         let task = Task {
             _ = await observer?.value
             let epoch = sdkEpoch.read()
@@ -800,8 +831,11 @@ struct CatalogueCollectionView: View {
                 Group {
                     if let scope = accountSettingsScope,
                        scope == connection.snapshot, !scope.isAnonymous {
-                        ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
-                            .id(scope.session.userId)
+                        VStack {
+                            ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
+                            AccountSignOutSettings(connection: connection, expected: scope, polish: polish)
+                        }
+                        .id(scope.session.userId)
                     }
                 }
                 .navigationTitle(polish ? "Ustawienia konta" : "Account settings")
@@ -899,6 +933,49 @@ struct CatalogueCollectionView: View {
         }
         loadedScope = expected
         loading = false
+    }
+}
+
+private struct AccountSignOutSettings: View {
+    let connection: CatalogueConnection
+    let expected: CatalogueSDKSnapshot
+    let polish: Bool
+    @State private var confirming = false
+    @State private var busy = false
+    @State private var failed = false
+
+    var body: some View {
+        if connection.snapshot == expected {
+            VStack {
+                Button(polish ? "Wyloguj się" : "Sign out", role: .destructive) {
+                    confirming = true
+                }
+                .accessibilityIdentifier("account.signOut.open")
+                .disabled(busy || connection.authenticationInFlight)
+                if busy { ProgressView().accessibilityIdentifier("account.signOut.busy") }
+                if failed {
+                    Text(polish ? "Nie udało się wylogować. Spróbuj ponownie." : "Couldn’t sign out. Try again.")
+                        .accessibilityIdentifier("account.signOut.failed")
+                }
+            }
+            .alert(polish ? "Wylogować się?" : "Sign out?", isPresented: $confirming) {
+                Button(polish ? "Anuluj" : "Cancel", role: .cancel) {}
+                    .accessibilityIdentifier("account.signOut.cancel")
+                Button(polish ? "Wyloguj się" : "Sign out", role: .destructive) {
+                    guard !busy else { return }
+                    busy = true
+                    failed = false
+                    Task { @MainActor in
+                        defer { busy = false }
+                        do { try await connection.signOutAccount(expected: expected) }
+                        catch { failed = true }
+                    }
+                }
+                .accessibilityIdentifier("account.signOut.confirm")
+            } message: {
+                Text(polish ? "Twoje rośliny pozostaną zapisane na koncie." : "Your plants will remain saved in your account.")
+            }
+        }
     }
 }
 

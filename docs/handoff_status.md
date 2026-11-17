@@ -1,5 +1,39 @@
 # Narat — текущий статус и передача работы
 
+## T084 и подготовка ручного прогона на iPhone — 17 ноября 2026
+
+A принял и отправил `20fea5f`. В текущую ветку перенесён патч `a38b3e3`
+в `PlantsApp.swift`, `CatalogueUIFixtures.swift`, `GuestCatalogueView.swift`,
+`CatalogueConnectionTests.swift` и `CatalogueSaveUITests.swift` с отчётом
+`docs/validation/automation/tasks/t084-signout-checkpoint-acceptance.md`.
+Обновлены mvp-acceptance, quickstart, critical-path и частичные T084/T098.
+
+Локально в A прошли 308 XCTest, 3 Swift Testing, smoke (10 PASS,
+1 ожидаемый staging-only skip), два целевых UI-теста (выход EN/PL и
+регрессия expiry), независимые Review/QA. В текущей копии `diff --check`,
+сборки Release для Simulator и arm64 iPhone, обе проверки codesign — PASS.
+
+Живой EN Release на Simulator с двумя синтетическими staging-владельцами:
+отмена сохранила коллекцию A; выход пережил холодный запуск; вход в B
+показал только B. SQL подтвердил сохранность обеих карточек, адресная
+очистка двух аккаунтов и карточек подтверждена. Лог
+`/private/tmp/narat-signout-live-20261117.log`, четыре снимка в
+`/private/tmp/narat-signout-live-evidence/`. Отдельно создана пустая учётка
+для тестировщика, живые email-вход и owner sync прошли; учётка оставлена
+для прогона. Данные доступа лежат локально в файле режима 0600
+`/private/tmp/narat-first-human-beta-login.json`.
+
+iPhone Release `0.1.0 (2)` подписан Personal Team для `narat-staging`.
+Бинарь в `/private/tmp/narat-device-beta-preflight/Build/Products/Release-iphoneos/Plants.app`.
+На момент проверки был доступен только прежний iPhone 15; установка на
+устройство тестировщика и ручной захват ещё впереди. Следующий шаг —
+подключить разблокированный iPhone тестировщика к Mac, подтвердить доверие
+и Developer Mode, выбрать его destination в Xcode, переподписать для него
+с `Personal.local.xcconfig`, установить и запустить. Затем выполнить
+[ручной сценарий](../specs/001-plants-ios-mvp/quickstart.md#первый-ручной-прогон-на-iphone)
+и внести результат по фото, карточке, поливу и отмене в mvp-acceptance.
+T084/T096/T098 остаются открытыми. Сброс Codex сохранён.
+
 ## T083 — граница удаления пустого аккаунта принята — 17 ноября 2026
 
 Возобновлены A и B. Первые запуски упёрлись в ограничения песочницы

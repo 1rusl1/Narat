@@ -2229,6 +2229,131 @@ final class CatalogueConnectionTests: XCTestCase {
         }
     }
 
+    func testConfirmedAccountLocalSignOutRetainsOutboxAndRefusesGuestRecreation() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        await h.ready()
+        try auth(h, owner: owner)
+        try await h.signIn()
+        let expected = try await h.connection.sessionSnapshot()
+        let model = try await h.connection.makeModel(
+            input: input, flowId: UUID(), operationId: UUID(), expected: expected
+        )
+        let api = try XCTUnwrap(h.connection.apiClient)
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let checkpoint = try await h.connection.rememberModel(model, expected: expected)
+        _ = try await h.store.catalogueCreateJournal(
+            checkpoint.envelope, mode: .enqueue(canCreate: true), context: lease, authority: api.syncAuthority
+        )
+        let queue = try await h.store.pendingOutboxEntries(for: owner)
+        XCTAssertEqual(queue.count, 1)
+        h.fixture.append(.init(method: "POST", path: "/auth/v1/logout", data: Data(), query: "scope=local"))
+        try await h.connection.signOutAccount(expected: expected)
+        XCTAssertNil(h.client.auth.currentSession)
+        XCTAssertNil(h.connection.snapshot)
+        assertRedacted(model)
+        XCTAssertFalse(h.connection.signOutServerUnconfirmed)
+        for connection in [h.connection, try reopenedConnection(h)] {
+            do {
+                _ = try await connection.sessionOwner()
+                XCTFail("Logout must require explicit sign-in")
+            } catch { XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged) }
+        }
+        try auth(h, owner: other, token: "fixture-b", grant: "password")
+        _ = try await h.connection.signInAccount(
+            email: "fixture@example.invalid", password: "fixture",
+            scope: try await h.connection.accountScope()
+        )
+        XCTAssertEqual(h.client.auth.currentSession?.user.id, other)
+        let retained = try await h.store.pendingOutboxEntries(for: owner)
+        let foreign = try await h.store.pendingOutboxEntries(for: other)
+        XCTAssertEqual(retained, queue)
+        XCTAssertTrue(foreign.isEmpty)
+        XCTAssertFalse(h.fixture.captured.contains { $0.url?.path.contains("/plants-api/") == true })
+        assertClosed(h)
+    }
+
+    func testAccountSignOutRejectsStaleOwnerAndABASnapshotsWithoutHTTP() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        await h.ready()
+        try auth(h, owner: owner)
+        try await h.signIn()
+        let stale = try await h.connection.sessionSnapshot()
+        for id in [other, owner] {
+            try auth(h, owner: id, token: "fixture-replacement")
+            try await h.signIn()
+            let current = try await h.connection.sessionSnapshot()
+            let requests = h.fixture.captured.count
+            do {
+                try await h.connection.signOutAccount(expected: stale)
+                XCTFail("A delayed confirmation must not log out the current session")
+            } catch { XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged) }
+            XCTAssertEqual(h.connection.snapshot, current)
+            XCTAssertEqual(h.fixture.captured.count, requests)
+        }
+        assertClosed(h)
+    }
+
+    func testAccountSignOutTransportFailureUsesRealSDKLocalRemovalAndDoesNotTouchLaterOwner() async throws {
+        for replaceOwner in [false, true] {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner)
+            try await h.signIn()
+            let expected = try await h.connection.sessionSnapshot()
+            let model = try await h.connection.makeModel(
+                input: input, flowId: UUID(), operationId: UUID(), expected: expected
+            )
+            h.fixture.append(.init(
+                method: "POST", path: "/auth/v1/logout", data: Data(), suspend: true,
+                query: "scope=local", failure: .notConnectedToInternet
+            ))
+            // Pinned Auth HTTP retries POST once, including an offline local logout.
+            h.fixture.append(.init(
+                method: "POST", path: "/auth/v1/logout", data: Data(),
+                query: "scope=local", failure: .notConnectedToInternet
+            ))
+            let logout = Task { try await h.connection.signOutAccount(expected: expected) }
+            try await waitForSuspension(h.fixture)
+            XCTAssertNil(h.client.auth.currentSession)
+            XCTAssertNil(h.connection.snapshot)
+            assertRedacted(model)
+            XCTAssertTrue(h.connection.authenticationInFlight)
+            do {
+                _ = try await h.connection.signInAccount(
+                    email: "fixture@example.invalid", password: "fixture",
+                    scope: try await h.connection.accountScope()
+                )
+                XCTFail("Auth exchanges must serialize with logout")
+            } catch { XCTAssertEqual(error as? NativeAuthFailure, .providerFailed) }
+            if replaceOwner {
+                try auth(h, owner: other, token: "fixture-b")
+                try await h.signIn()
+                _ = try await h.connection.sessionSnapshot()
+            }
+            h.fixture.release()
+            do {
+                try await logout.value
+                XCTFail("Offline HTTP must not claim server logout succeeded")
+            } catch {
+                XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+            }
+            let logoutRequests = h.fixture.captured.filter { $0.url?.path == "/auth/v1/logout" }
+            XCTAssertEqual(logoutRequests.count, 2)
+            XCTAssertTrue(logoutRequests.allSatisfy {
+                $0.httpMethod == "POST" && $0.url?.query == "scope=local"
+                    && $0.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-a"
+            })
+            XCTAssertFalse(h.connection.authenticationInFlight)
+            XCTAssertEqual(h.connection.signOutServerUnconfirmed, !replaceOwner)
+            XCTAssertEqual(h.client.auth.currentSession?.user.id, replaceOwner ? other : nil)
+            assertRedacted(model)
+            assertClosed(h)
+        }
+    }
+
     func testSDKCallbackInvalidatesSynchronouslyBeforeMainActorCanObserve() async throws {
         let h = try Harness()
         defer { h.close() }

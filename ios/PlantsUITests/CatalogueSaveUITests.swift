@@ -218,6 +218,54 @@ final class CatalogueSaveUITests: XCTestCase {
         enabled(run.app.buttons["collection.settings.open"])
     }
 
+    @MainActor func testAccountSignOutCancelConfirmAndRestart() {
+        for language in [Language.en, .pl] {
+            let run = Run("accountSignOut", language)
+            defer { run.app.terminate() }
+            launch(run)
+            tap(run, "collection.open", language.text("My plants", "Moje rośliny"))
+            enabled(run.app.buttons["Fixture 1"])
+            tap(run, "collection.settings.open", language.text("Account settings", "Ustawienia konta"))
+            tap(run, "account.signOut.open", language.text("Sign out", "Wyloguj się"))
+            let confirmation = run.app.alerts[language.text("Sign out?", "Wylogować się?")]
+            require(confirmation)
+            // SwiftUI exposes the alert action as nested buttons with the same ID.
+            let cancel = confirmation.buttons["account.signOut.cancel"].firstMatch
+            enabled(cancel)
+            XCTAssertEqual(cancel.label, language.text("Cancel", "Anuluj"))
+            cancel.tap()
+            enabled(run.app.buttons["account.signOut.open"])
+            XCTAssertFalse(run.app.staticTexts["account.signedOut"].exists)
+            tap(run, "collection.settings.close", language.text("Close", "Zamknij"))
+            tap(run, "Fixture 1")
+            require(run.app.staticTexts["catalogue.saved.name"])
+            tap(run, "collection.back", language.text("Back", "Wstecz"))
+            tap(run, "collection.settings.open", language.text("Account settings", "Ustawienia konta"))
+            tap(run, "account.signOut.open", language.text("Sign out", "Wyloguj się"))
+            require(confirmation)
+            let confirm = confirmation.buttons["account.signOut.confirm"].firstMatch
+            enabled(confirm)
+            XCTAssertEqual(confirm.label, language.text("Sign out", "Wyloguj się"))
+            confirm.tap()
+            for restartNeeded in [false, true] {
+                if restartNeeded { restart(run) }
+                let loggedOut = run.app.staticTexts["account.signedOut"]
+                require(loggedOut)
+                XCTAssertEqual(loggedOut.label, language.text("You’re signed out on this device.", "Wylogowano na tym urządzeniu."))
+                XCTAssertFalse(run.app.buttons["account.signOut.open"].exists)
+                XCTAssertFalse(run.app.buttons["collection.settings.close"].exists)
+                XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+                enabled(run.app.buttons["welcome.intent.care"])
+                // Fixture uses legacy welcome with ordinary collection/settings.
+                tap(run, "collection.open", language.text("My plants", "Moje rośliny"))
+                require(run.app.staticTexts["collection.signInRequired"])
+                XCTAssertFalse(run.app.buttons["Fixture 1"].exists)
+                XCTAssertFalse(run.app.buttons["collection.settings.open"].exists)
+                tap(run, "collection.back", language.text("Close", "Zamknij"))
+            }
+        }
+    }
+
     @MainActor func testProfileReminderHourSurvivesRestart() {
         let run = Run("profileReminderHour", .en)
         defer { run.app.terminate() }
