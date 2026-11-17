@@ -106,6 +106,16 @@ struct RootContainerView: View {
                     Text(isPolish ? "Katalog jest niedostępny." : "Catalogue unavailable.")
                         .accessibilityIdentifier("catalogue.error")
                 }
+                if let catalogue, catalogue.didSignOut, catalogue.snapshot == nil {
+                    Text(isPolish ? "Wylogowano na tym urządzeniu." : "You’re signed out on this device.")
+                        .accessibilityIdentifier("account.signedOut")
+                    if catalogue.signOutServerUnconfirmed {
+                        Text(isPolish
+                             ? "Nie potwierdzono wylogowania na serwerze. Zaloguj się ponownie, aby spróbować jeszcze raz."
+                             : "Server logout wasn’t confirmed. Sign in again to retry.")
+                            .accessibilityIdentifier("account.signOut.serverUnconfirmed")
+                    }
+                }
                 switch analysisModel.router.flowState.currentStep {
                 case .selectIntent:
                     if usesLegacyWelcome {
@@ -198,6 +208,22 @@ struct RootContainerView: View {
                 }
                 if usesLegacyWelcome { guestSaveButtons }
             }
+        }
+        .onChange(of: catalogue?.snapshot) { previous, current in
+            guard let previous, !previous.isAnonymous,
+                  previous.session.userId != current?.session.userId else { return }
+            showingCollection = false
+            accountDestination = nil
+            collectionAfterSignIn = false
+            opening = nil
+            showingGuestTransfer = false
+            openClaimCollection = false
+            guestPhotoClaim = nil
+            guestAccessFailed = false
+            analysisOwner = nil
+            analysisCredential = nil
+            analysisModel.installAnalysisService(nil)
+            analysisModel.router.flowState = AddFlowState()
         }
         .task { await prepareCatalogue() }
         .task(id: reminderRead) { await observeTrialReminder(reminderRead) }

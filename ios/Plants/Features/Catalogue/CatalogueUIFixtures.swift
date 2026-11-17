@@ -11,7 +11,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
     case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry, routineLateEntitlement
-    case profileReminderHour
+    case profileReminderHour, accountSignOut
 
     var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry || self == .routineLateEntitlement }
 
@@ -125,12 +125,15 @@ enum CatalogueUIFixtures {
         )
         do {
             // Reuse the SDK's file-backed session; never manufacture a model session.
-            if client.auth.currentSession == nil && !scenario.startsAnonymous {
+            if client.auth.currentSession == nil && !scenario.startsAnonymous
+                && !(scenario == .accountSignOut && defaults.bool(forKey: "catalogue.explicitSignOut")) {
                 _ = try await client.auth.signIn(
                     email: "fixture@" + name + ".invalid", password: "fixture-only-password"
                 )
             }
-            _ = try await connection.sessionOwner()
+            if scenario != .accountSignOut || client.auth.currentSession != nil {
+                _ = try await connection.sessionOwner()
+            }
             if prepareACK {
                 // Prepare exactly once through accepted APIs, with no command HTTP or
                 // manufactured model phase. Reopening must replay this same disk intent.
@@ -537,7 +540,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 return Reply(status: 200, data: try json(user(caller)))
             }
             if method == "POST", url.path == "/auth/v1/logout",
-               query.isEmpty || (query.count == 1 && query[0].name == "scope" && query[0].value == "global") {
+               query.isEmpty || (query.count == 1 && query[0].name == "scope" && ["global", "local"].contains(query[0].value ?? "")) {
                 var next = ledger; next.revoked.insert(caller); try persist(next)
                 return Reply(status: 204, data: Data())
             }

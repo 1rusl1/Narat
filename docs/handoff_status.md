@@ -1,5 +1,46 @@
 # Narat — текущий статус и передача работы
 
+## Остановка на 50% лимита — sign-out НЕ принят
+
+17 ноября: run `t084-ordinary-account-sign-out-codex-20261117-49`
+остановлен SIGINT, exit130, WAITING/qa_checks. Дочерняя группа остановлена;
+проверка процессов не обнаружила активных orchestrator, codex exec или
+xcodebuild этого пакета. Новые проверки после порога не запускались.
+
+Сохранён НЕПРИНЯТЫЙ checkpoint: `PlantsApp.swift`, `GuestCatalogueView.swift`,
+`CatalogueUIFixtures.swift`, `CatalogueConnectionTests.swift`,
+`CatalogueSaveUITests.swift`. Добавлены EN/PL выход с подтверждением,
+local SDK logout и возврат к старту, cold signed-out marker, сохранение
+owner-bound данных/outbox. SDK сначала удаляет локальную сессию, затем
+делает HTTP; ошибка сети обозначена как неподтверждённый серверный выход.
+
+Реально: последний diff-check PASS, 308 XCTest+3 Swift Testing PASS,
+Reviewer PASS. Ранний smoke10PASS/1expected staging-only skip. Целевой
+signoutUI упал на неоднозначном селекторе системного Cancel; селектор
+исправлен в alert-scoped query с проверкой EN/PL подписи, но новый
+целевой UI ещё НЕ выполнен. Expiry regression в том прогоне PASS.
+Повторный smoke check9 прерван по лимиту; QA не запускался. T084/T086
+не закрыты, обычный Release live sign-out не запускался.
+
+Следующий шаг после разрешения продолжения — read-only приёмка точного
+checkpoint (старый run после commit нельзя resume из-за смены HEAD):
+
+```sh
+cd /private/tmp/narat-ios-initial-context-20261116
+python3 tools/automation/orchestrator.py run --config /private/tmp/narat-orchestrated.aZQ6ZH/parallel-ios-codex-signout.config.json --manifest /private/tmp/narat-orchestrated.aZQ6ZH/tasks.t084-signout-checkpoint-acceptance.json --run-id t084-signout-checkpoint-acceptance-codex-next
+```
+
+Manifest candidate_base=`cdb7496` (полный SHA сохранён в JSON), write_files=[];
+он включает пять исходных файлов и этот handoff. После фактической
+приёмки root интегрирует патч и запускает ordinary Release cancel →
+logout → cold → B без данных A. Root harness уже подготовлен.
+
+Отдельно root подтвердил новый expiry runtime в ordinary Release `bbe6839`:
+изолированный owner, реальный published next_check, синтетический paid
+срок две минуты. После expiry скрыты дата/новая отметка, сохранены
+журнал/исправление/undo и поведение после cold restart. Polling2.916с —
+время наблюдения, не измеренная задержка перехода. Тестовые данные очищены.
+
 ## T164 — поздний entitlement и настоящий таймер приняты локально
 
 Кандидат `0761360`, независимая приёмка `7955660` отправлены в origin.
