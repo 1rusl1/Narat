@@ -1294,13 +1294,22 @@ private struct CatalogueCollectionCardView: View {
             }
             .task(id: scenePhase) {
                 routineClock = Date()
-                if scenePhase == .active { await loadRoutineAccess() }
+                guard scenePhase == .active, let sync = connection.syncEngine else { return }
+                // Subscribe before reading so a concurrent canonical publish is not missed.
+                let updates = await sync.canonicalSyncUpdates()
+                await loadRoutineAccess()
+                for await _ in updates {
+                    guard !Task.isCancelled, connection.snapshot == expected else { return }
+                    await loadRoutineAccess()
+                }
             }
             .task(id: routineEntitlement?.verifiedAccessUntil) {
                 guard let expiry = routineEntitlement?.verifiedAccessUntil else { return }
                 do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) }
                 catch { return }
-                routineClock = Date()
+                guard !Task.isCancelled, connection.snapshot == expected,
+                      routineEntitlement?.verifiedAccessUntil == expiry else { return }
+                routineClock = max(Date(), expiry)
             }
             .task { await retryWhenConnected() }
             .alert("Undo this soil check?", isPresented: $showingRoutineUndo) {

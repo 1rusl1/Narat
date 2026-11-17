@@ -10,10 +10,10 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
-    case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry
+    case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry, routineLateEntitlement
     case profileReminderHour
 
-    var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry }
+    var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry || self == .routineLateEntitlement }
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
@@ -281,6 +281,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var signupCount = 0
         var tick = 0
         var revoked: Set<UUID> = []
+        var routineEntitlementDeadline: Date?
+        var routineEntitlementState: String?
     }
     struct Reply {
         let status: Int
@@ -309,6 +311,20 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             try JSONEncoder().encode(ledger).write(to: file, options: .atomic)
         }
     }
+    /// Change server authority only; clients must receive this via SDK sync.
+    func setRoutineEntitlement(deadline: Date, state: String = "active") throws {
+        try lock.withLock {
+            guard ledger.scenario == .routineLateEntitlement else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            var next = ledger
+            next.tick += 1
+            next.routineEntitlementDeadline = deadline
+            next.routineEntitlementState = state
+            try persist(next)
+        }
+    }
+
     private static func time(_ tick: Int) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -538,7 +554,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     let anchor = try (!undone ? completion : nil).map { try routineLocalDate($0) } ?? "1999-12-25"
                     let due = completion == nil || undone ? "2000-01-01" : routineNextDate(anchor)
                     let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
-                    return Reply(status: 200, data: try json([
+                    var response: [String: Any] = [
                         "plant_id": plant.id.uuidString, "status": "available",
                         "next_check": ["due_on": due, "anchor_on": anchor, "interval_days": 7,
                                        "basis": "Based on the last soil check.", "source": source] as [String: Any],
@@ -548,7 +564,13 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "recommendation": ["action_id": "fixture_soil_check", "action_code": "check_soil",
                                            "text": "Check the soil before watering.",
                                            "next_check_interval_days": 7, "source": source] as [String: Any]
-                    ]))
+                    ]
+                    if ledger.scenario == .routineLateEntitlement, ledger.routineEntitlementDeadline == nil {
+                        // Refresh is offered only while there is no scheduled next check.
+                        response["next_check"] = NSNull()
+                        response["routine_check"] = NSNull()
+                    }
+                    return Reply(status: 200, data: try json(response))
                 }
                 let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
                 let check: Any = ledger.scenario != .careRecommendationRefresh || ledger.commits.isEmpty ? NSNull() : [
@@ -729,6 +751,19 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "valid_until": "2099-01-01T00:00:01Z", "grace_until": NSNull(),
                         "trial_end_at": NSNull(), "auto_renew_enabled": false
                     ] as [String: Any]
+                case .routineLateEntitlement where caller == ledger.permanent:
+                    if let deadline = ledger.routineEntitlementDeadline {
+                        let formatter = ISO8601DateFormatter()
+                        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                        entitlement = [
+                            "product_id": "fixture-only-paid",
+                            "state": ledger.routineEntitlementState ?? "active", "offer_kind": "paid",
+                            "valid_until": formatter.string(from: deadline), "grace_until": NSNull(),
+                            "trial_end_at": NSNull(), "auto_renew_enabled": false
+                        ] as [String: Any]
+                    } else {
+                        entitlement = NSNull()
+                    }
                 case .photoHistory:
                     entitlement = [
                         "product_id": "fixture-only-paid", "state": "expired", "offer_kind": "paid",
@@ -738,7 +773,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 default:
                     entitlement = NSNull()
                 }
-                if ledger.scenario == .routineKnownExpiry, since == nil,
+                if (ledger.scenario == .routineKnownExpiry || ledger.scenario == .routineLateEntitlement), since == nil,
                    let plant = plants.first(where: { $0.id == ledger.plants.first?.id }) {
                     let id = "19190000-0000-4000-8000-000000000005"
                     changes.append([
@@ -854,7 +889,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 try persist(next)
                 throw URLError(.networkConnectionLost)
             }
-            if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected),
+            if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected
+                || ledger.scenario == .routineLateEntitlement),
                let refresh = CareRecommendationRefreshCommand(envelope) {
                 guard let plant = ledger.plants.first, plant.id == envelope.plantId, plant.owner == caller,
                       refresh.careRevision == 1,
@@ -876,6 +912,14 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     "state": "refreshed", "reason": NSNull(), "watermark": Self.time(next.tick)
                 ])
                 next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)
+                if ledger.scenario == .routineLateEntitlement {
+                    // Arm only after the open card's initial nil entitlement was read.
+                    // Persist the real deadline; reopening cannot grant another interval.
+                    next.routineEntitlementDeadline = Date().addingTimeInterval(6)
+                    next.routineEntitlementState = "active"
+                    try persist(next)
+                    return Reply(status: 200, data: receipt)
+                }
                 try persist(next)
                 throw URLError(.networkConnectionLost)
             }

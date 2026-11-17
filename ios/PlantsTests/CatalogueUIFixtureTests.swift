@@ -51,6 +51,70 @@ final class CatalogueUIFixtureTests: XCTestCase {
         XCTAssertTrue(CatalogueRoutineAccessPolicy.allows(nil, at: expiry.addingTimeInterval(1)))
     }
 
+    func testRoutineLateEntitlementIsDeliveredAfterInitialNilAndUpdatesCanonically() async throws {
+        let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .routineLateEntitlement)
+        defer { try? h.cleanup() }
+        let expected = try await h.connection.sessionSnapshot()
+        let lease = try await h.connection.collectionLease(expected: expected)
+        let sync = try XCTUnwrap(h.connection.syncEngine)
+        let repository = try XCTUnwrap(h.connection.repository)
+        _ = try await sync.syncNow(for: expected.session.userId)
+        let initial = try await h.connection.syncedTrialEntitlement(expected: expected)
+        XCTAssertNil(initial)
+        XCTAssertNil(h.server.snapshot.routineEntitlementDeadline)
+        XCTAssertNil(h.connection.routineFixtureNow, "This fixture must use real Date deadlines")
+
+        let plant = try XCTUnwrap(h.server.snapshot.plants.first)
+        let api = try XCTUnwrap(h.connection.apiClient)
+        let initialAdvice = try await api.fetchCareRecommendation(plantId: plant.id, context: lease)
+        XCTAssertNotNil(initialAdvice)
+        XCTAssertNil(initialAdvice?.nextCheck)
+        XCTAssertNil(initialAdvice?.routineContext)
+        let command = try await repository.enqueueCareRecommendationRefresh(plantId: plant.id, context: lease)
+        let started = Date()
+        let outcome = try await repository.retryCareRecommendationRefresh(command, context: lease)
+        guard case .confirmed = outcome else { return XCTFail("Refresh must publish a canonical sync window") }
+        let delivered = try await h.connection.syncedTrialEntitlement(expected: expected)
+        let deadline = try XCTUnwrap(delivered?.verifiedAccessUntil)
+        XCTAssertGreaterThan(deadline, started)
+        XCTAssertLessThanOrEqual(deadline, Date().addingTimeInterval(6))
+        XCTAssertTrue(CatalogueRoutineAccessPolicy.allows(delivered, at: deadline.addingTimeInterval(-1)))
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(delivered, at: deadline))
+        XCTAssertNotNil(h.server.snapshot.routineEntitlementDeadline)
+        let refreshedAdvice = try await api.fetchCareRecommendation(plantId: plant.id, context: lease)
+        XCTAssertEqual(refreshedAdvice?.nextCheck?.dueOn, "2000-01-01")
+        XCTAssertNotNil(refreshedAdvice?.routineContext)
+
+        // Canonical renewal replaces the old deadline; revocation denies immediately.
+        let renewedDeadline = deadline.addingTimeInterval(30)
+        try h.server.setRoutineEntitlement(deadline: renewedDeadline)
+        let beforeSync = try await h.connection.syncedTrialEntitlement(expected: expected)
+        XCTAssertEqual(beforeSync, delivered, "Server changes must not bypass canonical delivery")
+        _ = try await sync.syncNow(for: expected.session.userId)
+        let renewed = try await h.connection.syncedTrialEntitlement(expected: expected)
+        XCTAssertEqual(try XCTUnwrap(renewed?.verifiedAccessUntil).timeIntervalSince1970,
+                       renewedDeadline.timeIntervalSince1970, accuracy: 0.002)
+        XCTAssertTrue(CatalogueRoutineAccessPolicy.allows(renewed, at: deadline))
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(renewed, at: renewedDeadline))
+        try h.server.setRoutineEntitlement(deadline: renewedDeadline, state: "expired")
+        _ = try await sync.syncNow(for: expected.session.userId)
+        let revoked = try await h.connection.syncedTrialEntitlement(expected: expected)
+        XCTAssertEqual(revoked?.state, "expired")
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(revoked, at: Date()))
+
+        let other = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .free2)
+        defer { try? other.cleanup() }
+        let foreign = try await other.connection.sessionSnapshot()
+        do {
+            _ = try await h.connection.syncedTrialEntitlement(expected: foreign)
+            XCTFail("A foreign owner read must throw, never return nil Free access")
+        } catch CatalogueSaveUnavailable.sessionChanged {
+        }
+        let afterFailedRead = try await h.connection.syncedTrialEntitlement(expected: expected)
+        XCTAssertEqual(afterFailedRead, revoked)
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(afterFailedRead, at: Date()))
+    }
+
     func testFreeSaveCanonicalReadbackAndExactReplay() async throws {
         let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .free2)
         defer { try? h.cleanup() }

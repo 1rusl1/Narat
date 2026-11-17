@@ -544,6 +544,58 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.buttons[undo].exists)
     }
 
+    @MainActor func testRoutineLateEntitlementUsesRealDeadline() {
+        let run = Run("routineLateEntitlement", .en)
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let date = run.app.staticTexts["catalogue.saved.care.next.date"]
+        let action = run.app.buttons["collection.routine.complete"]
+        // The initial card has nil entitlement and no scheduled check, so refresh is offered.
+        let refresh = run.app.buttons["collection.care.refresh"]
+        enabled(refresh)
+        XCTAssertFalse(date.exists)
+        XCTAssertFalse(action.exists)
+        let entry = "19190000-0000-4000-8000-000000000005"
+        let journal = run.app.staticTexts["catalogue.saved.history." + entry]
+        require(journal)
+        let started = Date()
+        // This real command delivers the first paid entitlement through canonical sync.
+        XCTAssertEqual(refresh.label, "Update care recommendation")
+        refresh.tap()
+        enabled(action)
+        require(date)
+        XCTAssertEqual(date.label, "Next soil check · 2000-01-01")
+        XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
+
+        // No refresh, artificial clock, backgrounding or navigation until both disappear.
+        let dateGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: date)
+        let actionGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: action)
+        XCTAssertEqual(XCTWaiter.wait(for: [dateGone, actionGone], timeout: 10), .completed)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+        require(journal)
+        require(run.app.buttons["collection.watering.correct." + entry])
+        require(run.app.buttons["collection.watering.undo." + entry])
+        XCTAssertFalse(run.app.staticTexts["collection.routine.pending"].exists)
+
+        tap(run, "collection.back", "Back")
+        tap(run, "Fixture 1")
+        require(journal)
+        XCTAssertFalse(date.exists)
+        XCTAssertFalse(action.exists)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(journal)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(date.exists)
+        XCTAssertFalse(action.exists)
+        require(run.app.buttons["collection.watering.correct." + entry])
+        require(run.app.buttons["collection.watering.undo." + entry])
+    }
+
     @MainActor func testRoutineKnownExpiryHidesDateAndNewCompletionAfterRestart() {
         let run = Run("routineKnownExpiry", .en)
         defer { run.app.terminate() }

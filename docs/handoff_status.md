@@ -1,5 +1,26 @@
 # Narat — текущий статус и передача работы
 
+## T164 — поздний sync и настоящий timer приняты — 17 ноября 2026
+
+Интегрированы четыре iOS-файла кандидата `0761360`, принятого в `7955660`,
+и `docs/validation/automation/tasks/t164-routine-late-entitlement-acceptance.md`.
+Эти четыре файла совпадают с принятым исходником. Карточка подписывается
+на canonicalSyncUpdates до первого чтения, перечитывает entitlement при
+sync, отбрасывает чужого владельца/устаревший timer и учитывает дробную
+границу expiry. Исходные локализованные camera resources root сохранены.
+
+Оркестратор: 305 XCTest + 3 Swift Testing, обычный smoke (10 PASS,
+один ожидаемый staging-only skip), четыре целевых UI (включая поздний
+canonical paid срок и настоящий таймер без clock override), Review/QA PASS.
+Первый новый UI setup исправлялся до приёмки; stale прежний FAIL отделён.
+В root: diff-check, совпадение четырёх файлов, обычный подписанный Release
+и codesign verify PASS. Артефакт тот же каталог narat-expiry-original-release.
+
+Это локальная приёмка нового патча. Причина первого старого live снимка
+по-прежнему не доказана; повтор старой сборки с bounded polling прошёл.
+Следующий шаг — обычный live expiry на новой сборке с фиксацией времени
+polling, локального canonical entitlement, истории и cold restart.
+
 ## T083 — серверная очистка runtime интегрирована — 17 ноября 2026
 
 В основную рабочую копию перенесён точный серверный checkpoint `e85d9e4`
