@@ -531,3 +531,25 @@ last_watered unknown. Изменён именно taxon_id. Данные очи�
 потери ответа не объявляется проверенным. Локальные fixture-тесты повторов
 этим прогоном не заменены. Лог `/private/tmp/narat-original-v10-live-recovery.log`,
 снимок `/private/tmp/narat-original-v10-live-evidence/09-edits-after-cold-launch.png`.
+
+
+## V19/T164 — обычный Release и реальное наступление expiry
+
+17 ноября 2026, EN Release `bbe6839`, staging v33/016, без аргументов
+запуска. На отдельной тестовой учётке через HTTP созданы Monstera и
+исторический полив; SQL назначил синтетический paid entitlement с
+двухминутным сроком до обычного email-входа. UI включил и обновил уход,
+показал опубликованную дату и completion. Local canonical entitlement
+совпал с SQL. После срока скрылись дата и новое completion, остались
+история и correction/undo; холодный запуск подтвердил ту же политику.
+
+Bounded polling начат через четыре секунды после срока и занял 2.916 с;
+после restart — 0.282 с. Это продолжительность UI-наблюдения, не точное
+время перехода. Exit 0, тестовые данные очищены. Лог
+`/private/tmp/narat-routine-expiry-accepted-live.log`, снимки
+`/private/tmp/narat-routine-expiry-live-evidence/02-expired-open-card.png`
+и `03-expired-cold-relaunch.png`. Первый снимок старого `5a1d4ab` дал FAIL,
+но повтор той же старой сборки с bounded polling прошёл; причина непостоянства
+не доказана. Новый патч отдельно принят с delayed-sync и настоящим timer UI
+на fixtures. Это живой HTTP/Simulator с synthetic paid access, не StoreKit
+или доставка напоминаний. Полные T164/T171 остаются открытыми.
