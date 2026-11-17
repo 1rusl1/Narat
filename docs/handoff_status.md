@@ -1,5 +1,27 @@
 # Narat — текущий статус и передача работы
 
+## V10 — живые частота, горшок и вид — 17 ноября 2026
+
+Исходный подписанный Release `2c9db64`, обычный EN-запуск без флагов,
+staging v33/016. После гостевой диагностики и email claim изменены
+частота на Once a week, горшок на Glazed ceramic, опубликованный вид
+на Epipremnum aureum. Холодный запуск подтвердил те же значения,
+исходное фото и UUID `411619b1-866b-48d0-b7b1-e9723a651f98`.
+SQL: ровно три plant.edit receipt, одна карточка и исходный job;
+weekly/glazed_ceramic/bright_indirect/no, last_watered unknown.
+Тестовые данные очищены, успешный прогон завершился exit 0.
+
+Предыдущие попытки не засчитаны: сбой swipe помощника и pending sync
+при правке горшка. Harness дополнен штатным cold restart/retry,
+но успешный финальный прогон не попал в pending; живой exact retry
+этим результатом не подтверждается. Его прежние fixture-проверки
+не повторялись. Изменены handoff, acceptance и частичное описание
+T071 в tasks; полные продуктовые checkbox оставлены открытыми.
+Лог `/private/tmp/narat-original-v10-live-recovery.log`, снимок
+`/private/tmp/narat-original-v10-live-evidence/09-edits-after-cold-launch.png`.
+Следующий шаг — принять iOS expiry через Review/QA, собрать обычный
+подписанный Release и проверить expiry на отдельной тестовой учётке.
+
 ## Продолжение до 50% расхода: исходный Release — 17 ноября 2026
 
 Владелец выделил ещё 20 процентных пунктов недельного лимита: старт 30%,
