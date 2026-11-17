@@ -3881,5 +3881,199 @@ END;
 $$;
 SELECT * FROM pg_temp.account_proof_tests();
 
+-- 022: SQL-owner-only synthetic missing-runtime fixtures, NOT physical retirement.
+-- Both clean and seeded-upgrade runners execute this existing test file.
+CREATE FUNCTION pg_temp.retired_runtime_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.account_proof_snapshot() || jsonb_build_object('retired_runtime_identities',
+        (SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.job_id),'[]'::jsonb)
+         FROM public.account_deleted_runtime_identities t))
+$$;
+
+CREATE FUNCTION pg_temp.retired_runtime_replay_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0220000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0220000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0220000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_who uuid;
+    v_release uuid;
+    v_installation uuid;
+    v_job public.analysis_jobs%ROWTYPE;
+    v_lease uuid;
+    v_initial jsonb;
+    v_before jsonb;
+    v_response jsonb;
+    v_mode text;
+    v_state text;
+    v_role text;
+    v_command text;
+    v_case integer;
+    v_denied boolean;
+BEGIN
+    IF to_regclass('public.account_deleted_runtime_identities') IS NULL THEN
+        RETURN QUERY SELECT skip('022 runtime identity outside selected migration version',1);
+        RETURN;
+    END IF;
+    v_initial:=pg_temp.retired_runtime_snapshot();
+    BEGIN
+        INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+            (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+            (v_guest,true,clock_timestamp());
+        FOREACH v_who IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+            PERFORM public.request_account_deletion_internal(v_who,v_operation);
+            RETURN NEXT is(public.persist_account_deletion_proof_internal(v_who,v_operation),true,
+                '022 real 021 prerequisite before synthetic jobs: '||v_who);
+        END LOOP;
+        -- A deliberately invalid anonymous-owner proof is constructed only by
+        -- the SQL owner to verify the finisher independently checks the profile.
+        UPDATE public.profiles SET account_state='deleting' WHERE id=v_guest;
+        INSERT INTO public.account_deletion_proofs
+            (owner_id,operation_id,deletion_job_id,requested_at,storage_verified_at)
+            SELECT v_guest,operation_id,gen_random_uuid(),requested_at,storage_verified_at
+            FROM public.account_deletion_proofs WHERE owner_id=v_owner;
+        INSERT INTO public.kb_releases(version,state)
+            VALUES('t083-replay-022','draft') RETURNING id INTO v_release;
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+            VALUES(repeat('a022',16),ARRAY[v_owner,v_neighbor]) RETURNING id INTO v_installation;
+
+        FOREACH v_who IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+            FOREACH v_mode IN ARRAY ARRAY['identification','diagnosis'] LOOP
+                FOREACH v_state IN ARRAY ARRAY['succeeded','failed','timed_out'] LOOP
+                    -- Never create, scrub, delete or retire a runtime here.
+                    -- Missing runtime + identity is an owner-constructed fixture.
+                    INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,kb_release_id,
+                        prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,
+                        state,lease_token,quota_installation_id,quota_owner_id)
+                    VALUES(v_who,gen_random_uuid(),'problem','scan',v_mode,v_release,
+                        'fixture',gen_random_uuid(),'fixture','en','paid_monthly',
+                        CASE WHEN v_state='succeeded' THEN 'consumed' ELSE 'released' END,
+                        v_state,gen_random_uuid(),v_installation,v_who) RETURNING * INTO v_job;
+                    INSERT INTO public.account_quota_usage(job_id,owner_id,period_start,period_end,quota_state)
+                        VALUES(v_job.id,v_who,'2026-11-01 UTC','2026-12-01 UTC',v_job.quota_state);
+                    INSERT INTO public.account_deleted_runtime_identities(job_id,owner_id,operation_id)
+                        VALUES(v_job.id,v_who,v_operation);
+                    v_before:=pg_temp.retired_runtime_snapshot();
+                    SET LOCAL ROLE service_role;
+                    v_response:=public.finish_diagnosis_job(v_job.id,v_job.lease_token,
+                        '{"ignored":"terminal"}',false,'IGNORED');
+                    RESET ROLE;
+                    RETURN NEXT is(v_response,jsonb_build_object('already_finalized',true,
+                        'quota_state',v_job.quota_state,'outcome',v_state),
+                        '022 exact worker terminal response: '||v_mode||'/'||v_state||'/'||v_who);
+                    RETURN NEXT is(public.finish_diagnosis_job(v_job.id,v_job.lease_token,NULL,NULL,NULL),
+                        v_response,'022 repeated response ignores result/error inputs');
+                    RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_before,
+                        '022 success/retry preserves full jobs/quota/runtime/receipts/proofs/Auth graph');
+                    IF v_who=v_neighbor THEN CONTINUE; END IF;
+
+                    FOR v_case IN 1..19 LOOP
+                        BEGIN
+                            v_lease:=v_job.lease_token;
+                            CASE v_case
+                            WHEN 1 THEN DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_job.id;
+                            WHEN 2 THEN UPDATE public.account_deleted_runtime_identities SET owner_id=v_neighbor WHERE job_id=v_job.id;
+                            WHEN 3 THEN UPDATE public.account_deleted_runtime_identities SET operation_id=gen_random_uuid() WHERE job_id=v_job.id;
+                            WHEN 4 THEN UPDATE public.account_deleted_runtime_identities SET job_id=gen_random_uuid() WHERE job_id=v_job.id;
+                            WHEN 5 THEN DELETE FROM public.account_deletion_proofs WHERE owner_id=v_owner;
+                            WHEN 6 THEN UPDATE public.account_deletion_proofs SET operation_id=gen_random_uuid() WHERE owner_id=v_owner;
+                            WHEN 7 THEN UPDATE public.account_deletion_proofs SET owner_id=gen_random_uuid() WHERE owner_id=v_owner;
+                            WHEN 8 THEN UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+                            WHEN 9 THEN UPDATE public.profiles SET account_state='deleted' WHERE id=v_owner;
+                            WHEN 10 THEN
+                                UPDATE public.analysis_jobs SET owner_id=v_guest WHERE id=v_job.id;
+                                UPDATE public.account_deleted_runtime_identities SET owner_id=v_guest WHERE job_id=v_job.id;
+                            WHEN 11 THEN UPDATE public.analysis_jobs SET state='queued' WHERE id=v_job.id;
+                            WHEN 12 THEN UPDATE public.analysis_jobs SET state='running' WHERE id=v_job.id;
+                            WHEN 13 THEN UPDATE public.analysis_jobs SET quota_state='reserved' WHERE id=v_job.id;
+                            WHEN 14 THEN UPDATE public.analysis_jobs SET mode='follow_up' WHERE id=v_job.id;
+                            WHEN 15 THEN v_lease:=gen_random_uuid();
+                            WHEN 16 THEN v_lease:=NULL;
+                            WHEN 17 THEN UPDATE public.analysis_jobs SET lease_token=NULL WHERE id=v_job.id;
+                            WHEN 18 THEN UPDATE public.analysis_jobs SET quota_state='not_applicable' WHERE id=v_job.id;
+                            WHEN 19 THEN
+                                DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_job.id;
+                                PERFORM set_config('app.account_deletion_runtime_retired','true',true);
+                            END CASE;
+                            v_before:=pg_temp.retired_runtime_snapshot();
+                            RETURN NEXT throws_ok(format(
+                                'SELECT public.finish_diagnosis_job(%L::uuid,%L::uuid,NULL,true,NULL)',
+                                v_job.id,v_lease),'42501','STALE_LEASE',
+                                '022 rejected identity/state/lease case '||v_case||'/'||v_mode||'/'||v_state);
+                            RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_before,
+                                '022 negative preserves complete graph: '||v_case);
+                            RAISE SQLSTATE 'Z2222';
+                        EXCEPTION WHEN SQLSTATE 'Z2222' THEN NULL;
+                        END;
+                    END LOOP;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+
+        RETURN NEXT is((SELECT count(*) FROM public.account_deletion_proofs
+            WHERE owner_id IN (v_owner,v_neighbor) AND operation_id=v_operation),2::bigint,
+            '022 same operation has independent owner proofs');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.diagnosis_job_runtime r
+            JOIN public.analysis_jobs j ON j.id=r.job_id WHERE j.owner_id IN (v_owner,v_neighbor)),
+            '022 no runtime rehydration; fixtures never exercised retirement');
+        RETURN NEXT is((SELECT array_agg(attname::text ORDER BY attnum) FROM pg_attribute
+            WHERE attrelid='public.account_deleted_runtime_identities'::regclass
+              AND attnum>0 AND NOT attisdropped),ARRAY['job_id','owner_id','operation_id']::text[],
+            '022 identity contains no content or retention policy');
+        RETURN NEXT is((SELECT count(*) FROM pg_constraint
+            WHERE conrelid='public.account_deleted_runtime_identities'::regclass AND contype='f'),
+            0::bigint,'022 no transient parent FK');
+        RETURN NEXT ok((SELECT relrowsecurity FROM pg_class
+            WHERE oid='public.account_deleted_runtime_identities'::regclass),'022 RLS enabled');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_class c
+            CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+            WHERE c.oid='public.account_deleted_runtime_identities'::regclass AND a.grantee<>c.relowner),
+            '022 all non-owner default/custom/inherited ACL sources removed');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname='public'
+              AND p.prosrc ~* '\minsert\s+into\s+(public[.])?account_deleted_runtime_identities\M'),
+            '022 no public function inserts retirement identities');
+        RETURN NEXT ok(has_function_privilege('service_role',
+            'public.finish_diagnosis_job(uuid,uuid,jsonb,boolean,text)','EXECUTE')
+            AND NOT has_function_privilege('anon',
+            'public.finish_diagnosis_job(uuid,uuid,jsonb,boolean,text)','EXECUTE')
+            AND NOT has_function_privilege('authenticated',
+            'public.finish_diagnosis_job(uuid,uuid,jsonb,boolean,text)','EXECUTE'),
+            '022 worker finish permissions retained');
+
+        CREATE ROLE t083_retired_runtime_reader NOLOGIN INHERIT;
+        GRANT anon,authenticated,service_role TO t083_retired_runtime_reader;
+        FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role','t083_retired_runtime_reader'] LOOP
+            RETURN NEXT ok(NOT has_table_privilege(v_role,'public.account_deleted_runtime_identities',
+                'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'),
+                '022 effective table privileges denied: '||v_role);
+            FOREACH v_command IN ARRAY ARRAY[
+                'SELECT * FROM public.account_deleted_runtime_identities',
+                'INSERT INTO public.account_deleted_runtime_identities VALUES(gen_random_uuid(),gen_random_uuid(),gen_random_uuid())',
+                'UPDATE public.account_deleted_runtime_identities SET operation_id=operation_id',
+                'DELETE FROM public.account_deleted_runtime_identities',
+                'TRUNCATE public.account_deleted_runtime_identities'
+            ] LOOP
+                v_denied:=false;
+                BEGIN
+                    EXECUTE format('SET LOCAL ROLE %I',v_role);
+                    EXECUTE v_command;
+                    RESET ROLE;
+                    RAISE SQLSTATE 'Z2223';
+                EXCEPTION
+                    WHEN insufficient_privilege THEN v_denied:=true;
+                    WHEN SQLSTATE 'Z2223' THEN NULL;
+                END;
+                RESET ROLE;
+                RETURN NEXT ok(v_denied,'022 actual table access denied: '||v_role||'/'||split_part(v_command,' ',1));
+            END LOOP;
+        END LOOP;
+        RAISE SQLSTATE 'Z2222';
+    EXCEPTION WHEN SQLSTATE 'Z2222' THEN NULL;
+    END;
+    RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_initial,'022 all synthetic fixtures rolled back');
+END;
+$$;
+SELECT * FROM pg_temp.retired_runtime_replay_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
