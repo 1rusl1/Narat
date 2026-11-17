@@ -1,5 +1,76 @@
 # Narat — текущий статус и передача работы
 
+## Остановка на 50% недельного расхода — 17 ноября 2026
+
+Использован согласованный дополнительный бюджет: 30% → 50% расхода
+(50% осталось). A остановлен SIGINT на пороге; B завершил работу на 49%.
+Оба контроллера подтвердили отсутствие активных дочерних orchestrator,
+codex exec и xcodebuild. После порога новые продуктовые прогоны не запускались.
+
+### Принято и интегрировано в основной рабочей копии
+
+- Исходный подписанный Release без флагов прошёл живой EN guest → анализ →
+  Cancel/restart → email claim → та же карточка/исходное фото/три условия.
+- V10: на живом staging сохранены частота, горшок и опубликованный вид;
+  cold restart/SQL подтвердили три правки, исходные карточку/photo/job и
+  last_watered. Live lost-response replay этого среза не подтверждён.
+- T164: приняты canonical sync subscription и настоящий timer. Новый
+  ordinary Release `bbe6839` прошёл живой expiry на synthetic paid сроке,
+  сохранил history/correction/undo и cold поведение. Это не StoreKit.
+- Серверный checkpoint `e85d9e4` до 023 включён в root (`dc24543`): durable
+  proof, terminal replay, физическое retirement runtime и запрет rehydration.
+  Staging остаётся v33/016; новые серверные миграции туда не развёрнуты.
+
+Изменены четыре iOS-файла expiry, серверные миграции 010–014/017–023,
+SQL-тест аккаунта, отчёты, `docs/validation/mvp-acceptance.md`, частичные
+описания T071/T083/T164/T171 в `specs/001-plants-ios-mvp/tasks.md` и handoff.
+Полные checkbox не закрывались. Последний основной commit до этой записи
+`679cdf0`; изменения предыдущих завершённых этапов отправлены в origin.
+
+Реальные локальные проверки: 305 XCTest+3 Swift Testing, четыре целевых UI
+expiry/replay/undo, EN/PL smoke 10 PASS/один ожидаемый staging-only skip,
+независимые Review/QA в A; обычная Release-сборка и codesign verify в root.
+Сервер: 436 Deno и Review/QA в B; в root повторены 2016 auth pgTAP clean и
+2016 upgrade, полный SQL gate и реальные конкурентные finish/retire/replay/
+INSERT/UPSERT для обоих режимов анализа. Все перечисленные принятые проверки
+PASS. Живые прогоны выше отдельно использовали тестовые аккаунты на staging;
+их адресная очистка подтверждена. Полное удаление Auth, native Apple/Google,
+физическая камера, качество на реальной выборке и напоминания остаются открыты.
+
+### Непринятые checkpoints — не включены в root
+
+**A: sign-out `a38b3e3`**, origin/codex/plants-ios-diagnosis-context, дерево
+чистое. 308 XCTest+3 Swift Testing и Reviewer PASS. Первый целевой UI упал
+на неоднозначном Cancel; исправленный селектор ещё не прошёл target UI,
+повторный smoke прерван, QA не запускался. Live sign-out не выполнялся.
+Первый следующий шаг после разрешения нового бюджета:
+
+```sh
+cd /private/tmp/narat-ios-initial-context-20261116
+python3 tools/automation/orchestrator.py run --config /private/tmp/narat-orchestrated.aZQ6ZH/parallel-ios-codex-signout.config.json --manifest /private/tmp/narat-orchestrated.aZQ6ZH/tasks.t084-signout-checkpoint-acceptance.json --run-id t084-signout-checkpoint-acceptance-codex-next
+```
+
+После приёмки — интегрировать кандидат, собрать ordinary Release и выполнить
+`/private/tmp/narat-run-signout-live.py`: cancel → logout → cold → B без A.
+Build helper `/private/tmp/narat-signout-release-build.py` подготовлен.
+
+**B: 024 `de3d8a3`**, origin/codex/plants-backend-proof, дерево чистое.
+2137 auth pgTAP clean/upgrade,436 Deno и Reviewer PASS; QA заблокирован
+отсутствующим в его контексте отрицательным baseline evidence. Старый вариант
+с новыми тестами дал 9/2137 FAIL, включая чужую FK-строку; безопасный report
+сохранён в `docs/validation/automation/t083-empty-boundary-negative-baseline.md`
+серверной ветки. Код 024 не принят и не интегрирован. Следующая независимая
+приёмка уже подготовлена, но на 49% не запускалась:
+
+```sh
+cd /private/tmp/narat-backend-proof-20261117
+python3 tools/automation/orchestrator.py run --config /private/tmp/narat-backend-proof.config.json --manifest /private/tmp/narat-t083-empty-account-boundary-final-acceptance.json --run-id t083-empty-account-boundary-final-acceptance-20261117-70
+```
+
+Даже после неё остаётся отдельный email Auth adapter с реальным Admin delete
+и подтверждением отсутствия Auth. Непустые jobs/claims/billing и Apple не
+покрываются ограниченным empty-account SQL кандидатом.
+
 ## T164 — новый обычный Release прошёл живой expiry — 17 ноября 2026
 
 Исходный подписанный EN Release `bbe6839`, штатная конфигурация Xcode,
