@@ -1,5 +1,21 @@
 # Narat — текущий статус и передача работы
 
+## T083 — runtime023 принят локально; гонки проходят
+
+Read-only candidate66 принял полный023 после исправлений фикстур.
+SQL clean/upgrade (2016 auth assertions на каждый), Deno436,
+deno-check/diff-check и Review/QA — PASS. Реально удаляется только
+очищенный terminal runtime; jobs, quotas, receipts и Auth сохраняются.
+Приватный permit действует только в текущей транзакции; контекст нельзя
+восстановить INSERT/UPSERT, retired jobs нельзя изменять/удалять.
+
+Отдельный controller gate также прошёл clean/upgrade для обоих modes:
+наблюдаемое ожидание finish→retire и retire→finish/точный повтор,
+отказ конкурентного INSERT и INSERT/UPSERT послеcommit, сохранность
+полных job/quota/receipt snapshots. Независимая приёмка гонок — следующий
+шаг. Затем ограниченный финализатор пустого аккаунта; содержательные
+claim/analysis графы остаются hold. Staging не менялся, T083 открыта.
+
 ## T083 — кандидат023, проверки ещё не завершены
 
 Run65 остановлен лимитом трёх Developer-вызовов. Новая023 реализует
