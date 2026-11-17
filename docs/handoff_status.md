@@ -7,7 +7,8 @@ retirement с приватными transaction permits и защитой вос�
 auth_registration_profile дополнен сценариями. Первый SQL-прогон
 нашёл несовместимые initial/repeat context в тестовой фикстуре;
 второй — устаревший запрет любого identity writer и неверное ожидание
-каскада Auth→profile. Developer исправил фикстуры; итоговый кандидат
+каскада Auth→profile. Developer предложил исправления; его последний patch не применился
+по контексту. Контроллер перенёс две точные правки фикстур; итоговый кандидат
 ещё не прошёл полный SQL и независимую приёмку, не считается готовым.
 
 Следующий шаг — read-only candidate acceptance с clean/upgrade SQL,

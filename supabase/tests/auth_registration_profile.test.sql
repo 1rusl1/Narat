@@ -4039,8 +4039,10 @@ BEGIN
             '022 all non-owner default/custom/inherited ACL sources removed');
         RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
             WHERE n.nspname='public'
+              AND p.oid IS DISTINCT FROM to_regprocedure(
+                  'public.retire_account_deletion_runtime_internal(uuid,uuid)')
               AND p.prosrc ~* '\minsert\s+into\s+(public[.])?account_deleted_runtime_identities\M'),
-            '022 no public function inserts retirement identities');
+            '022/023 only the private retirement entry point inserts identities');
         RETURN NEXT ok(has_function_privilege('service_role',
             'public.finish_diagnosis_job(uuid,uuid,jsonb,boolean,text)','EXECUTE')
             AND NOT has_function_privilege('anon',
@@ -4282,7 +4284,7 @@ BEGIN
                 WHEN 5 THEN UPDATE public.analysis_jobs SET payload_hash='restore' WHERE id=v_ids[1];
                 WHEN 6 THEN DELETE FROM public.analysis_jobs WHERE id=v_ids[1];
                 WHEN 7 THEN DELETE FROM public.profiles WHERE id=v_owner;
-                WHEN 8 THEN DELETE FROM auth.users WHERE id=v_owner;
+                WHEN 8 THEN UPDATE public.analysis_jobs SET lease_token=gen_random_uuid() WHERE id=v_ids[1];
                 WHEN 9 THEN DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_ids[1];
                 WHEN 10 THEN UPDATE public.account_deleted_runtime_identities SET operation_id=gen_random_uuid() WHERE job_id=v_ids[1];
                 WHEN 11 THEN
