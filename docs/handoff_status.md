@@ -22,6 +22,13 @@ FK-каскаде. Безопасное доказательство с hashes �
 Точный следующий шаг — один read-only candidate acceptance полной024
 отb3a6827, включив указанный baseline report в evidence_files; повторить
 обязательные gates и получить QA PASS. Затем лишь интеграция принятой024.
+Команда продолжения из `/private/tmp/narat-backend-proof-20261117`
+(после нового разрешения бюджета; этот run ещё не запускался):
+
+```sh
+python3 tools/automation/orchestrator.py run --config /private/tmp/narat-backend-proof.config.json --manifest /private/tmp/narat-t083-empty-account-boundary-final-acceptance.json --run-id t083-empty-account-boundary-final-acceptance-20261117-70
+```
+
 После неё необходим отдельный server-only email Auth adapter: provider/owner
 preflight, private service wrapper, реальный Admin delete, подтверждённое
 отсутствие Auth и complete RPC. Этот adapter не начинался. Текущая024
