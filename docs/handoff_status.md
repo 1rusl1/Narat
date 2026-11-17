@@ -1,5 +1,20 @@
 # Narat — текущий статус и передача работы
 
+## T083 — terminal replay при удалённом runtime принят локально
+
+d99df38 опубликован. Новая022 и auth_registration_profile fixtures
+сохраняют точный ответ finish_diagnosis_job без runtime только при
+верном lease, совпадающей приватной retired identity и021/deleting owner.
+Обычный finisher и его ACL сохранены. Deno436, clean/upgrade SQL,
+diff-check/deno-check и независимые Review/QA — PASS.
+
+Это SQL-owner-constructed fixture отсутствующего runtime; фактическое
+retirement ещё не реализовано, Auth/profile не удалялись. Staging
+не менялся, T083 открыта. Следующий шаг —023 физически удаляет только
+scrubbed runtime в разрешённой транзакции и запрещает восстановление,
+сохраняя jobs/квотные и claim-квитанции. После локального core нужны
+отдельные гонки с worker replay и прямыми writer-путями.
+
 ## T083 — проверен протокол retirement runtime — 17 ноября 2026
 
 Read-only run63 принят и опубликован. Изменений runtime нет.
