@@ -2897,8 +2897,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t164-routine-late-entitlement-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 112.19 с, проверки — 558.37 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t164-routine-late-entitlement-acceptance](validation/automation/tasks/t164-routine-late-entitlement-acceptance.md).
+t084-signout-checkpoint-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 115.85 с, проверки — 581.83 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t084-signout-checkpoint-acceptance](validation/automation/tasks/t084-signout-checkpoint-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
