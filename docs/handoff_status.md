@@ -1,5 +1,27 @@
 # Narat — текущий статус и передача работы
 
+## T083 — приватное доказательство независимо от удаляемых строк — 17 ноября 2026
+
+c97f404 принят оркестратором и опубликован в `codex/plants-backend-proof`.
+Добавлены `202611170021_account_deletion_durable_proof.sql` и сценарии
+в `auth_registration_profile.test.sql`. Минимальная запись owner/operation,
+job и двух timestamp сохраняется без FK к profiles/Auth. Каждый повтор
+снова проходит свежую проверку Storage через020; конфликт откатывает
+предыдущие шаги. Запись не означает разрешение или завершение удаления.
+
+Проверки на фикстурах: 436 Deno, 1551 pgTAP auth_registration_profile
+на clean и upgrade плюс существующая полная SQL-регрессия и гонки,
+deno-check/diff-check и независимые Review/QA — PASS. Проверено
+сохранение proof после удаления disposable request/receipt/job;
+Auth/profile не удалялись, отсутствие зависимости проверено по FK.
+Первый CLI запуск остановлен sandbox, разрешённый resume прошёл.
+Живые интеграции и staging не запускались; T083 остаётся открытой.
+
+Следующий шаг — определить и реализовать узкий протокол снятия
+runtime tombstone перед удалением terminal jobs без восстановления
+контекста и без нарушения claim/квотного replay. Retention, Apple revoke
+и Auth finalization ещё не реализованы.
+
 ## T083 — один результат при одновременном повторе задания
 
 1a8bed1 опубликован. Две настоящие сессии PostgreSQL
