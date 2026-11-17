@@ -185,6 +185,15 @@ final class NativeAuthTests: XCTestCase {
         ])
         XCTAssertEqual(config.supabaseURL.host, "project.supabase.co")
         XCTAssertNil(config.googleClientId)
+        XCTAssertTrue(config.supportsAppleSignIn)
+    }
+
+    func testPersonalConfigurationDisablesAppleSignIn() throws {
+        let config = try NativeAuthConfiguration(values: [
+            "NaratSupabaseURL": "https://project.supabase.co", "NaratSupabasePublishableKey": "public-key",
+            "NaratAppleSignInEnabled": "NO"
+        ])
+        XCTAssertFalse(config.supportsAppleSignIn)
     }
 
     func testNonceIsFreshAndSHA256MatchesRawNonce() throws {

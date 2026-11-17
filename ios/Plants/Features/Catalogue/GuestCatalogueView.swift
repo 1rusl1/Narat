@@ -165,7 +165,10 @@ final class CatalogueConnection {
         unavailable = nil
         self.resumeDefaults = resumeDefaults
         didSignOut = resumeDefaults.bool(forKey: "catalogue.explicitSignOut")
-        accountProviders = configuration.supportsGoogleSignIn ? [.apple, .google] : [.apple]
+        var providers: [NativeAuthProvider] = []
+        if configuration.supportsAppleSignIn { providers.append(.apple) }
+        if configuration.supportsGoogleSignIn { providers.append(.google) }
+        accountProviders = providers
         if let identityProvider {
             nativeAuth = NativeAuthService(
                 identityProvider: identityProvider, exchange: SupabaseAuthExchange(client: client)
@@ -335,6 +338,9 @@ final class CatalogueConnection {
         scope: CatalogueAccountScope
     ) async throws -> CatalogueSDKSnapshot? {
         guard let nativeAuth else { throw NativeAuthFailure.configurationMissing }
+        guard provider != .apple || accountProviders.contains(.apple) else {
+            throw NativeAuthFailure.configurationMissing
+        }
         return try await signInAccount(scope: scope) {
             let result = await nativeAuth.signIn(
                 with: provider, presenting: presenting,
@@ -595,7 +601,8 @@ final class CatalogueConnection {
         presenting: UIViewController
     ) async -> CatalogueNativeOutcome {
         guard nativeFlow == nil else { return .busy }
-        guard let nativeAuth, let store, let apiClient else {
+        guard let nativeAuth, let store, let apiClient,
+              provider != .apple || accountProviders.contains(.apple) else {
             return .unavailable(.storageOrServiceUnavailable)
         }
         let intent = UUID()

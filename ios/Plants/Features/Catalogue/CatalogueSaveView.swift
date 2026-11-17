@@ -381,9 +381,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         case .signInRequired:
             Text(polish ? "Zaloguj się, aby zapisać wybraną roślinę." : "Sign in to save your chosen plant.")
                 .accessibilityIdentifier("catalogue.save.signInRequired")
-            Button(polish ? "Kontynuuj z Apple" : "Continue with Apple") { signIn(.apple) }
-                .accessibilityIdentifier("catalogue.save.apple")
-                .disabled(working || presenter?.viewIfLoaded?.window == nil)
+            if connection.accountProviders.contains(.apple) {
+                Button(polish ? "Kontynuuj z Apple" : "Continue with Apple") { signIn(.apple) }
+                    .accessibilityIdentifier("catalogue.save.apple")
+                    .disabled(working || presenter?.viewIfLoaded?.window == nil)
+            }
             Button(polish ? "Kontynuuj z Google" : "Continue with Google") { signIn(.google) }
                 .accessibilityIdentifier("catalogue.save.google")
                 .disabled(working || presenter?.viewIfLoaded?.window == nil)

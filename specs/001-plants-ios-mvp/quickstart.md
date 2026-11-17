@@ -97,7 +97,7 @@ Native Apple/Google sign-in и съёмка фото дополнительно 
 
 ## Первый ручной прогон на iPhone
 
-Подключите разблокированный iPhone к Mac, подтвердите доверие компьютеру и включите Developer Mode. В Xcode выберите этот iPhone и установите Release с локальной подписью Personal Team. [Профиль действует семь дней](https://developer.apple.com/help/account/basics/about-your-developer-account).
+Подключите разблокированный iPhone к Mac, подтвердите доверие компьютеру и включите Developer Mode. В Xcode откройте `ios/Plants.xcodeproj`, выберите схему **Plants Personal**, нужный iPhone и нажмите **Run**. Схема берёт команду подписи из локального `ios/Configuration/Personal.local.xcconfig`. Для входа используйте email тестовой учётки. [Профиль действует семь дней](https://developer.apple.com/help/account/basics/about-your-developer-account).
 
 Стенд `narat-staging`, английский интерфейс, отдельная тестовая учётка и своё фото растения. Для первого прогона подойдёт Monstera. Запишите модель iPhone, версию iOS и номер сборки.
 

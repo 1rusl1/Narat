@@ -31,6 +31,8 @@
 	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
 	<key>GIDServerClientID</key>
 	<string>$(GOOGLE_SERVER_CLIENT_ID)</string>
+	<key>NaratAppleSignInEnabled</key>
+	<string>$(NARAT_APPLE_SIGN_IN_ENABLED)</string>
 	<key>NaratSupabasePublishableKey</key>
 	<string>$(NARAT_SUPABASE_PUBLISHABLE_KEY)</string>
 	<key>NaratStagingAnalysisHost</key>

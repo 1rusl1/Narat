@@ -6,6 +6,7 @@ public struct NativeAuthConfiguration: Sendable {
     public let supabasePublishableKey: String
     public let googleClientId: String?
     public let googleServerClientId: String?
+    public let supportsAppleSignIn: Bool
 
     public var supportsGoogleSignIn: Bool {
         NativeIdentityProvider.isGoogleConfigured(clientId: googleClientId)
@@ -27,6 +28,7 @@ public struct NativeAuthConfiguration: Sendable {
         supabasePublishableKey = key
         googleClientId = configured("GIDClientID")
         googleServerClientId = configured("GIDServerClientID")
+        supportsAppleSignIn = configured("NaratAppleSignInEnabled") != "NO"
     }
 
     public init(bundle: Bundle = .main) throws {

@@ -1,0 +1,4 @@
+#include "Auth.xcconfig"
+
+CODE_SIGN_STYLE = Automatic
+#include? "Personal.local.xcconfig"

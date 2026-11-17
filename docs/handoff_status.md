@@ -1,5 +1,30 @@
 # Narat — текущий статус и передача работы
 
+## Сборка для Personal Team без Sign in with Apple — 17 ноября 2026
+
+В `ios/project.yml`, `Plants.xcodeproj` и `Configuration` добавлена схема
+`Plants Personal` с отдельным bundle ID и entitlement-файлом. Она берёт
+команду подписи из игнорируемого `Personal.local.xcconfig`. В
+`NativeAuthConfiguration.swift`, `GuestCatalogueView.swift` и
+`CatalogueSaveView.swift` отключены кнопки и запуск Apple для этой сборки.
+Обычная схема `Plants` использует Sign in with Apple. Обновлены quickstart,
+состояние ручного прогона в T098 и целевой тест в `NativeAuthTests.swift`.
+
+Сборка `Plants Personal` для подключённого iPhone 15 и `codesign --verify`
+прошли. Готовый `0.1.0 (3)` и встроенный профиль проверены: entitlement
+Apple отсутствует, а флаг обычной сборки `Plants` включает Apple. На
+Simulator прошли 11 NativeAuthTests. Отдельно HTTP-вход существующей
+тестовой учёткой с параметрами новой сборки получил 200 на живом staging.
+`git diff --check` прошёл. Логи в `/private/tmp/narat-personal-scheme-device.log`
+и `/private/tmp/narat-personal-scheme-auth-tests.log`.
+
+Сборка находится в
+`/private/tmp/narat-device-beta-preflight/Build/Products/Personal-iphoneos/Plants.app`.
+На iPhone тестировщика её ещё предстоит запустить. Следующий шаг: открыть
+`ios/Plants.xcodeproj`, выбрать **Plants Personal** и iPhone тестировщика,
+нажать **Run**, войти по email и выполнить сценарий из quickstart. Чекбоксы
+T084/T096/T098 открыты.
+
 ## T084 и подготовка ручного прогона на iPhone — 17 ноября 2026
 
 A принял и отправил `20fea5f`. В текущую ветку перенесён патч `a38b3e3`
