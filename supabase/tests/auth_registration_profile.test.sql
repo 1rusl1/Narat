@@ -4361,6 +4361,69 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+-- Rollback regressions for populated incoming edges; these also reproduce
+-- the unsafe positive result when run against the unrepaired 024 baseline.
+CREATE FUNCTION pg_temp.empty_auth_incoming_edge_tests(
+    p_owner uuid,p_neighbor uuid,p_operation uuid,p_complete boolean)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_case integer;
+    v_token uuid := gen_random_uuid();
+    v_before jsonb;
+    v_edge jsonb;
+    v_after jsonb;
+    v_label text := CASE WHEN p_complete THEN 'complete' ELSE 'prepare' END;
+BEGIN
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id)
+                    VALUES(p_neighbor,gen_random_uuid(),'account',p_owner);
+                SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) INTO v_edge
+                    FROM public.deletion_jobs t WHERE owner_id=p_neighbor;
+            ELSE
+                UPDATE public.profiles SET app_account_token=v_token WHERE id=p_owner;
+                RETURN NEXT ok(v_token IS DISTINCT FROM p_owner,
+                    '024 referenced token differs from owner UUID '||v_label||'/'||v_case);
+                IF v_case=2 THEN
+                    CREATE TABLE public.t083_empty_token_edge(
+                        owner_id uuid, opaque uuid REFERENCES public.profiles(app_account_token) ON DELETE CASCADE);
+                    INSERT INTO public.t083_empty_token_edge VALUES(p_neighbor,v_token);
+                    SELECT jsonb_agg(to_jsonb(t)) INTO v_edge FROM public.t083_empty_token_edge t;
+                ELSE
+                    CREATE SCHEMA t083_empty_fk;
+                    ALTER TABLE public.profiles ADD CONSTRAINT t083_empty_profile_pair UNIQUE(app_account_token,id);
+                    -- Misleading child names and non-id-first referenced key.
+                    CREATE TABLE t083_empty_fk.edge(
+                        owner_id uuid, profile_id uuid, app_account_token uuid,
+                        FOREIGN KEY(profile_id,app_account_token)
+                            REFERENCES public.profiles(app_account_token,id) ON DELETE CASCADE);
+                    INSERT INTO t083_empty_fk.edge VALUES(p_neighbor,v_token,p_owner);
+                    SELECT jsonb_agg(to_jsonb(t)) INTO v_edge FROM t083_empty_fk.edge t;
+                END IF;
+            END IF;
+            v_before:=pg_temp.retirement_snapshot();
+            RETURN NEXT is(CASE WHEN p_complete
+                THEN public.complete_empty_account_auth_deletion_internal(p_owner,p_operation)
+                ELSE public.prepare_empty_account_auth_deletion_internal(p_owner,p_operation) END,
+                false,'024 incoming edge holds '||v_label||'/'||v_case);
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,
+                '024 incoming edge preserves full snapshot '||v_label||'/'||v_case);
+            IF v_case=1 THEN
+                SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) INTO v_after
+                    FROM public.deletion_jobs t WHERE owner_id=p_neighbor;
+            ELSIF v_case=2 THEN
+                SELECT jsonb_agg(to_jsonb(t)) INTO v_after FROM public.t083_empty_token_edge t;
+            ELSE
+                SELECT jsonb_agg(to_jsonb(t)) INTO v_after FROM t083_empty_fk.edge t;
+            END IF;
+            RETURN NEXT is(v_after,v_edge,'024 foreign row unchanged '||v_label||'/'||v_case);
+            RAISE SQLSTATE 'Z2424';
+        EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+        END;
+    END LOOP;
+END;
+$$;
 CREATE FUNCTION pg_temp.empty_auth_boundary_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
 DECLARE
     v_owner uuid := 'a0240000-0000-4000-8000-000000000001';
@@ -4466,6 +4529,8 @@ BEGIN
             END;
         END LOOP;
 
+        RETURN QUERY SELECT * FROM pg_temp.empty_auth_incoming_edge_tests(v_owner,v_neighbor,v_op,false);
+
         RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),true,'024 first prepare');
         RETURN NEXT ok(EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner)
             AND EXISTS(SELECT 1 FROM public.profiles WHERE id=v_owner AND account_state='deleting')
@@ -4520,6 +4585,8 @@ BEGIN
         DELETE FROM auth.users WHERE id=v_owner;
         RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner)
             AND EXISTS(SELECT 1 FROM public.profiles WHERE id=v_owner),'024 disposable Auth absent, profile still deleting');
+        -- Late edges are created after prepare and disposable Auth removal.
+        RETURN QUERY SELECT * FROM pg_temp.empty_auth_incoming_edge_tests(v_owner,v_neighbor,v_op,true);
         FOR v_case IN 1..7 LOOP
             BEGIN
                 CASE v_case

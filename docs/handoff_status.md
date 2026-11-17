@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## Остановка B на49% недельного расхода — 17 ноября2026
+
+Последний принятый серверный срез —023 с гонками, e85d9e4 (handoffb3a6827).
+Новых запусков при49% не выполнялось. Staging не менялся.
+
+024 исправлена после двух safety findings: чужой deletion_jobs.target_id
+и входящий FK на non-id/composite unique ключ профиля. Изменены
+`202611170024_empty_account_auth_boundary.sql` и
+`auth_registration_profile.test.sql`. Run69: Deno436, clean/upgrade
+по2137 auth assertions плюс полная SQL-регрессия, deno-check/diff-check
+и Reviewer PASS. QA BLOCKED: ему не был передан отрицательный baseline.
+Код024 поэтому НЕ принят и НЕ должен интегрироваться как готовый.
+
+Отрицательный контроль действительно выполнен: fc15c07 с новыми тестами
+дал9 отказов из2137, включая фактическое исчезновение чужой строки при
+FK-каскаде. Безопасное доказательство с hashes и командой сохранено в
+`docs/validation/automation/t083-empty-boundary-negative-baseline.md`.
+Повторная независимая приёмка не запущена: счётчик уже49%.
+
+Точный следующий шаг — один read-only candidate acceptance полной024
+отb3a6827, включив указанный baseline report в evidence_files; повторить
+обязательные gates и получить QA PASS. Затем лишь интеграция принятой024.
+После неё необходим отдельный server-only email Auth adapter: provider/owner
+preflight, private service wrapper, реальный Admin delete, подтверждённое
+отсутствие Auth и complete RPC. Этот adapter не начинался. Текущая024
+только для пустого поддержанного графа; jobs/claims/billing остаются hold,
+Apple/UI/live Auth и T083 в целом открыты.
+
 ## T083 —024 остановлена на проверке безопасности, не принята
 
 Run68: после исправлений CASE и порядка fixture прошли Deno436 и

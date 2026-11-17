@@ -21,6 +21,7 @@ DECLARE
     v_pass integer;
     v_table record;
     v_column record;
+    v_fk record;
     v_match text;
     v_allow text;
     v_hit boolean;
@@ -130,7 +131,41 @@ BEGIN
             END IF;
         END IF;
 
-        -- Discover ownership columns AND arbitrary incoming profile FK columns.
+        -- Resolve incoming FKs by ordinal conkey/confkey pairs, including
+        -- non-id/composite profile keys and dependencies in other schemas.
+        -- This runs before any 021 mutation and again after fresh verification.
+        FOR v_fk IN
+            SELECT n.nspname,c.relname,
+                string_agg(format('t.%I=p.%I',a.attname,b.attname),
+                    ' AND ' ORDER BY k.ordinality) AS predicate,
+                count(*)=1 AND bool_and(a.attname='owner_id' AND b.attname='id') AS canonical
+            FROM pg_constraint f
+            JOIN pg_class c ON c.oid=f.conrelid
+            JOIN pg_namespace n ON n.oid=c.relnamespace
+            CROSS JOIN LATERAL unnest(f.conkey) WITH ORDINALITY k(attnum,ordinality)
+            JOIN pg_attribute a ON a.attrelid=f.conrelid AND a.attnum=k.attnum
+            JOIN pg_attribute b ON b.attrelid=f.confrelid
+                AND b.attnum=f.confkey[k.ordinality::integer]
+            WHERE f.contype='f' AND f.confrelid='public.profiles'::regclass
+            GROUP BY f.oid,n.nspname,c.relname
+            ORDER BY f.oid
+        LOOP
+            v_allow := 'false';
+            IF NOT v_replay AND v_fk.canonical AND v_fk.nspname='public'
+                AND v_fk.relname IN ('account_deletion_requests','operation_receipts','account_quota_anchors') THEN
+                v_allow := 't.owner_id=$1';
+            END IF;
+            EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I.%I t
+                JOIN public.profiles p ON %s
+                WHERE p.id=$1 AND NOT coalesce((%s),false))',
+                v_fk.nspname,v_fk.relname,v_fk.predicate,v_allow)
+                INTO v_hit USING p_owner_id;
+            IF v_hit THEN
+                RAISE EXCEPTION 'unsupported incoming profile FK' USING ERRCODE='P1624';
+            END IF;
+        END LOOP;
+
+        -- Discover semantic ownership independently of referenced FK values.
         -- Inspect only existence; never fetch a neighbor's payload as own data.
         FOR v_column IN
             SELECT DISTINCT n.nspname,c.relname,a.attname
@@ -139,10 +174,8 @@ BEGIN
             WHERE c.relkind IN ('r','p') AND (
                 (n.nspname='public' AND (a.attname ~ '(^|_)owner_id$'
                     OR a.attname IN ('user_id','linked_owner_ids')
-                    OR (c.oid='public.profiles'::regclass AND a.attname='id')))
-                OR EXISTS (SELECT 1 FROM pg_constraint f
-                    WHERE f.contype='f' AND f.conrelid=c.oid
-                        AND f.confrelid='public.profiles'::regclass AND a.attnum=ANY(f.conkey)))
+                    OR (c.oid='public.deletion_jobs'::regclass AND a.attname='target_id')
+                    OR (c.oid='public.profiles'::regclass AND a.attname='id'))))
             ORDER BY n.nspname,c.relname,a.attname
         LOOP
             v_match := format(
