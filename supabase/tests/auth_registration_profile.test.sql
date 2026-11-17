@@ -4351,5 +4351,343 @@ END;
 $$;
 SELECT * FROM pg_temp.runtime_retirement_tests();
 
+-- 024: disposable SQL-owner Auth removal below is a fixture, NOT a live
+-- Supabase Admin/HTTP integration. Full T083 and Apple preflight remain open.
+CREATE FUNCTION pg_temp.reject_empty_completion() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.state='completed' THEN
+        RAISE EXCEPTION '024 injected late failure' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+-- Rollback regressions for populated incoming edges; these also reproduce
+-- the unsafe positive result when run against the unrepaired 024 baseline.
+CREATE FUNCTION pg_temp.empty_auth_incoming_edge_tests(
+    p_owner uuid,p_neighbor uuid,p_operation uuid,p_complete boolean)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_case integer;
+    v_token uuid := gen_random_uuid();
+    v_before jsonb;
+    v_edge jsonb;
+    v_after jsonb;
+    v_label text := CASE WHEN p_complete THEN 'complete' ELSE 'prepare' END;
+BEGIN
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id)
+                    VALUES(p_neighbor,gen_random_uuid(),'account',p_owner);
+                SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) INTO v_edge
+                    FROM public.deletion_jobs t WHERE owner_id=p_neighbor;
+            ELSE
+                UPDATE public.profiles SET app_account_token=v_token WHERE id=p_owner;
+                RETURN NEXT ok(v_token IS DISTINCT FROM p_owner,
+                    '024 referenced token differs from owner UUID '||v_label||'/'||v_case);
+                IF v_case=2 THEN
+                    CREATE TABLE public.t083_empty_token_edge(
+                        owner_id uuid, opaque uuid REFERENCES public.profiles(app_account_token) ON DELETE CASCADE);
+                    INSERT INTO public.t083_empty_token_edge VALUES(p_neighbor,v_token);
+                    SELECT jsonb_agg(to_jsonb(t)) INTO v_edge FROM public.t083_empty_token_edge t;
+                ELSE
+                    CREATE SCHEMA t083_empty_fk;
+                    ALTER TABLE public.profiles ADD CONSTRAINT t083_empty_profile_pair UNIQUE(app_account_token,id);
+                    -- Misleading child names and non-id-first referenced key.
+                    CREATE TABLE t083_empty_fk.edge(
+                        owner_id uuid, profile_id uuid, app_account_token uuid,
+                        FOREIGN KEY(profile_id,app_account_token)
+                            REFERENCES public.profiles(app_account_token,id) ON DELETE CASCADE);
+                    INSERT INTO t083_empty_fk.edge VALUES(p_neighbor,v_token,p_owner);
+                    SELECT jsonb_agg(to_jsonb(t)) INTO v_edge FROM t083_empty_fk.edge t;
+                END IF;
+            END IF;
+            v_before:=pg_temp.retirement_snapshot();
+            RETURN NEXT is(CASE WHEN p_complete
+                THEN public.complete_empty_account_auth_deletion_internal(p_owner,p_operation)
+                ELSE public.prepare_empty_account_auth_deletion_internal(p_owner,p_operation) END,
+                false,'024 incoming edge holds '||v_label||'/'||v_case);
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,
+                '024 incoming edge preserves full snapshot '||v_label||'/'||v_case);
+            IF v_case=1 THEN
+                SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) INTO v_after
+                    FROM public.deletion_jobs t WHERE owner_id=p_neighbor;
+            ELSIF v_case=2 THEN
+                SELECT jsonb_agg(to_jsonb(t)) INTO v_after FROM public.t083_empty_token_edge t;
+            ELSE
+                SELECT jsonb_agg(to_jsonb(t)) INTO v_after FROM t083_empty_fk.edge t;
+            END IF;
+            RETURN NEXT is(v_after,v_edge,'024 foreign row unchanged '||v_label||'/'||v_case);
+            RAISE SQLSTATE 'Z2424';
+        EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+        END;
+    END LOOP;
+END;
+$$;
+CREATE FUNCTION pg_temp.empty_auth_boundary_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0240000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0240000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0240000-0000-4000-8000-000000000003';
+    v_op uuid := gen_random_uuid();
+    v_before jsonb;
+    v_initial jsonb;
+    v_installation jsonb;
+    v_proof jsonb;
+    v_job jsonb;
+    v_case integer;
+    v_release uuid;
+    v_job_id uuid;
+    v_neighbors jsonb;
+    v_role text;
+    v_name text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.prepare_empty_account_auth_deletion_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('024 outside selected migration version',1);
+        RETURN;
+    END IF;
+    v_initial:=pg_temp.retirement_snapshot();
+    BEGIN
+        INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+            (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+            (v_guest,true,clock_timestamp());
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids,
+            starter_identification_consumed,starter_diagnosis_consumed)
+            VALUES(repeat('a024',16),ARRAY[v_neighbor,v_owner,v_owner,v_neighbor],true,true);
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),false,'024 active denied');
+        RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_guest,v_op),false,'024 anonymous denied');
+        RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,v_op),false,'024 active completion denied');
+        RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_guest,v_op),false,'024 anonymous completion denied');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 invalid owners unchanged');
+        -- A fresh 021 must never silently turn a nonempty account into supported.
+        BEGIN
+            INSERT INTO public.plants(owner_id,personal_name,creation_source)
+                VALUES(v_owner,'024 must remain','identification');
+            PERFORM public.request_account_deletion_internal(v_owner,v_op);
+            v_before:=pg_temp.retirement_snapshot();
+            RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),false,
+                '024 content holds before destructive predecessor');
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 nonempty hold restores entire graph');
+            RAISE SQLSTATE 'Z2424';
+        EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+        END;
+        PERFORM public.request_account_deletion_internal(v_owner,v_op);
+
+        INSERT INTO public.kb_releases(version,state) VALUES('t083-empty-024','draft') RETURNING id INTO v_release;
+        FOR v_case IN 1..6 LOOP
+            BEGIN
+                IF v_case<=2 THEN
+                    INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,
+                        kb_release_id,prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,state)
+                        VALUES(v_owner,gen_random_uuid(),'problem','scan','identification',
+                            v_release,'fixture',gen_random_uuid(),'fixture','en','none','not_applicable','succeeded')
+                        RETURNING id INTO v_job_id;
+                    IF v_case=2 THEN
+                        INSERT INTO public.account_deleted_runtime_identities(job_id,owner_id,operation_id)
+                            VALUES(v_job_id,v_owner,v_op);
+                    END IF;
+                ELSIF v_case=3 THEN
+                    INSERT INTO public.monthly_quotas(owner_id,quota_kind,period_start,period_end,limit_count)
+                        VALUES(v_owner,'free_monthly','2026-11-01 UTC','2026-12-01 UTC',1);
+                ELSIF v_case=4 THEN
+                    INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id)
+                        VALUES(v_owner,gen_random_uuid(),'plant',gen_random_uuid());
+                ELSIF v_case=5 THEN
+                    INSERT INTO public.account_deleted_runtime_identities(job_id,owner_id,operation_id)
+                        VALUES(gen_random_uuid(),v_owner,v_op);
+                ELSE
+                    INSERT INTO public.account_deletion_runtime_permits(transaction_id,job_id,owner_id,operation_id)
+                        VALUES(pg_current_xact_id(),gen_random_uuid(),v_owner,v_op);
+                END IF;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),false,
+                    '024 jobs/retired jobs/monthly/plant job/identity/permit unsupported '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 unsupported graph retained '||v_case);
+                RAISE SQLSTATE 'Z2424';
+            EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+            END;
+        END LOOP;
+
+        CREATE TABLE public.t083_empty_unknown(
+            owner_id uuid,guest_owner_id uuid,
+            opaque uuid REFERENCES public.profiles(id) ON DELETE SET NULL);
+        FOR v_case IN 1..3 LOOP
+            BEGIN
+                INSERT INTO public.t083_empty_unknown VALUES
+                    (CASE WHEN v_case=1 THEN v_owner ELSE v_neighbor END,
+                     CASE WHEN v_case=2 THEN v_owner END,
+                     CASE WHEN v_case=3 THEN v_owner END);
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),false,
+                    '024 unknown owner/foreign guest/arbitrary FK hold '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 unknown hold is atomic '||v_case);
+                RETURN NEXT is((SELECT count(*) FROM public.t083_empty_unknown),1::bigint,'024 unknown row retained');
+                RAISE SQLSTATE 'Z2424';
+            EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+            END;
+        END LOOP;
+
+        RETURN QUERY SELECT * FROM pg_temp.empty_auth_incoming_edge_tests(v_owner,v_neighbor,v_op,false);
+
+        RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),true,'024 first prepare');
+        RETURN NEXT ok(EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner)
+            AND EXISTS(SELECT 1 FROM public.profiles WHERE id=v_owner AND account_state='deleting')
+            AND EXISTS(SELECT 1 FROM public.account_deletion_requests WHERE owner_id=v_owner)
+            AND EXISTS(SELECT 1 FROM public.operation_receipts WHERE owner_id=v_owner)
+            AND EXISTS(SELECT 1 FROM public.account_quota_anchors WHERE owner_id=v_owner),
+            '024 Auth/profile/request/receipt/anchor retained');
+        RETURN NEXT ok(EXISTS(SELECT 1 FROM public.deletion_jobs
+            WHERE owner_id=v_owner AND state='delete_auth' AND completed_at IS NULL),
+            '024 prepared is not completed');
+        SELECT to_jsonb(p) INTO v_proof FROM public.account_deletion_proofs p WHERE owner_id=v_owner;
+        SELECT to_jsonb(j) INTO v_job FROM public.deletion_jobs j WHERE owner_id=v_owner;
+        SELECT to_jsonb(i) INTO v_installation FROM public.installation_access i WHERE credential_hash=repeat('a024',16);
+        RETURN NEXT is(v_installation->'linked_owner_ids',jsonb_build_array(v_neighbor,v_neighbor),
+            '024 021 removed only exact aliases');
+        RETURN NEXT ok((v_installation->>'starter_identification_consumed')::boolean
+            AND (v_installation->>'starter_diagnosis_consumed')::boolean,'024 anti-abuse counters retained');
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),true,'024 prepare exact replay uses 065');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 prepare replay byte-identical');
+        RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,v_op),false,'024 existing Auth forbids complete');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 existing Auth denial byte-identical');
+
+        FOR v_case IN 1..9 LOOP
+            BEGIN
+                CASE v_case
+                    WHEN 1 THEN UPDATE public.account_deletion_proofs SET operation_id=gen_random_uuid() WHERE owner_id=v_owner;
+                    WHEN 2 THEN UPDATE public.account_deletion_proofs SET deletion_job_id=gen_random_uuid() WHERE owner_id=v_owner;
+                    WHEN 3 THEN UPDATE public.deletion_jobs SET scope='plant' WHERE owner_id=v_owner;
+                    WHEN 4 THEN UPDATE public.deletion_jobs SET target_id=v_neighbor WHERE owner_id=v_owner;
+                    WHEN 5 THEN UPDATE public.deletion_jobs SET encrypted_apple_ref='fixture' WHERE owner_id=v_owner;
+                    WHEN 6 THEN UPDATE public.deletion_jobs SET state='failed' WHERE owner_id=v_owner;
+                    WHEN 7 THEN INSERT INTO storage.objects(bucket_id,name)
+                        VALUES('analysis-inputs',v_owner::text||'/024-stale');
+                    WHEN 8 THEN UPDATE public.operation_receipts SET payload_hash='forged' WHERE owner_id=v_owner;
+                    WHEN 9 THEN UPDATE public.installation_access SET linked_owner_ids=ARRAY[v_neighbor,v_owner]
+                        WHERE credential_hash=repeat('a024',16);
+                END CASE;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),false,
+                    '024 prepared replay revalidates identity/Storage/graph '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 prepared hold atomic '||v_case);
+                RAISE SQLSTATE 'Z2424';
+            EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+            END;
+        END LOOP;
+        RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,gen_random_uuid()),false,
+            '024 wrong prepare operation denied');
+
+        -- This SQL-owner action models actual database absence, not an input
+        -- flag and not production Auth deletion.
+        DELETE FROM auth.users WHERE id=v_owner;
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner)
+            AND EXISTS(SELECT 1 FROM public.profiles WHERE id=v_owner),'024 disposable Auth absent, profile still deleting');
+        -- Late edges are created after prepare and disposable Auth removal.
+        RETURN QUERY SELECT * FROM pg_temp.empty_auth_incoming_edge_tests(v_owner,v_neighbor,v_op,true);
+        FOR v_case IN 1..7 LOOP
+            BEGIN
+                CASE v_case
+                    WHEN 1 THEN INSERT INTO storage.objects(bucket_id,name)
+                        VALUES('analysis-inputs',v_owner::text||'/024-complete-stale');
+                    WHEN 2 THEN UPDATE public.account_deletion_proofs SET deletion_job_id=gen_random_uuid() WHERE owner_id=v_owner;
+                    WHEN 3 THEN INSERT INTO public.t083_empty_unknown(opaque,owner_id) VALUES(v_owner,v_neighbor);
+                    WHEN 4 THEN UPDATE public.deletion_jobs SET target_id=v_neighbor WHERE owner_id=v_owner;
+                    WHEN 5 THEN UPDATE public.account_deletion_proofs SET storage_verified_at=storage_verified_at-interval '1 second' WHERE owner_id=v_owner;
+                    WHEN 6 THEN UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+                    WHEN 7 THEN
+                        CREATE TRIGGER t083_empty_late_failure BEFORE UPDATE ON public.deletion_jobs
+                            FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_empty_completion();
+                END CASE;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,v_op),false,
+                    '024 complete fresh/foreign/state/late failure hold '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 complete rollback is byte-identical '||v_case);
+                RAISE SQLSTATE 'Z2424';
+            EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+            END;
+        END LOOP;
+        RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,gen_random_uuid()),false,
+            '024 wrong completion operation denied');
+        SELECT jsonb_object_agg(k,(
+            SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb)
+            FROM jsonb_array_elements(a) e
+            WHERE e->>'owner_id' IS DISTINCT FROM v_owner::text AND e->>'id' IS DISTINCT FROM v_owner::text))
+            INTO v_neighbors FROM jsonb_each(pg_temp.retirement_snapshot()) s(k,a);
+        RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,v_op),true,'024 actual absence permits completion');
+        RETURN NEXT is((SELECT jsonb_object_agg(k,(
+            SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb)
+            FROM jsonb_array_elements(a) e
+            WHERE e->>'owner_id' IS DISTINCT FROM v_owner::text AND e->>'id' IS DISTINCT FROM v_owner::text))
+            FROM jsonb_each(pg_temp.retirement_snapshot()) s(k,a)),v_neighbors,
+            '024 every neighbor and retained installation row byte-identical');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.profiles WHERE id=v_owner)
+            AND NOT EXISTS(SELECT 1 FROM public.account_deletion_requests WHERE owner_id=v_owner)
+            AND NOT EXISTS(SELECT 1 FROM public.operation_receipts WHERE owner_id=v_owner)
+            AND NOT EXISTS(SELECT 1 FROM public.account_quota_anchors WHERE owner_id=v_owner),
+            '024 only own profile/request/receipts/anchor removed');
+        RETURN NEXT is((SELECT to_jsonb(p) FROM public.account_deletion_proofs p WHERE owner_id=v_owner),
+            v_proof,'024 durable proof unchanged');
+        RETURN NEXT is((SELECT to_jsonb(j)-'state'-'completed_at' FROM public.deletion_jobs j WHERE owner_id=v_owner),
+            v_job-'state'-'completed_at','024 durable job identity unchanged');
+        RETURN NEXT ok(EXISTS(SELECT 1 FROM public.deletion_jobs WHERE owner_id=v_owner
+            AND state='completed' AND completed_at IS NOT NULL),'024 completed only after absence');
+        RETURN NEXT is((SELECT to_jsonb(i) FROM public.installation_access i WHERE credential_hash=repeat('a024',16)),
+            v_installation,'024 installation quota and aliases unchanged by completion');
+        RETURN NEXT ok(EXISTS(SELECT 1 FROM auth.users WHERE id=v_neighbor)
+            AND EXISTS(SELECT 1 FROM public.profiles WHERE id=v_neighbor),'024 neighbor survives');
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,v_op),true,'024 exact completed replay');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 completed replay byte-identical');
+        RETURN NEXT is(public.prepare_empty_account_auth_deletion_internal(v_owner,v_op),false,'024 completed cannot prepare');
+        RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,gen_random_uuid()),false,
+            '024 completed wrong operation denied');
+        FOR v_case IN 1..2 LOOP
+            BEGIN
+                IF v_case=1 THEN
+                    INSERT INTO public.profiles(id,anonymous,account_state) VALUES(v_owner,false,'deleting');
+                ELSE
+                    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES(v_owner,false,clock_timestamp());
+                END IF;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.complete_empty_account_auth_deletion_internal(v_owner,v_op),false,
+                    '024 resurrected profile/Auth denies replay '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'024 resurrection hold atomic '||v_case);
+                RAISE SQLSTATE 'Z2424';
+            EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+            END;
+        END LOOP;
+
+        FOREACH v_name IN ARRAY ARRAY['prepare_empty_account_auth_deletion_internal',
+            'complete_empty_account_auth_deletion_internal'] LOOP
+            RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+                FROM pg_proc WHERE oid=to_regprocedure('public.'||v_name||'(uuid,uuid)')),
+                '024 private security definer empty search_path '||v_name);
+            RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+                CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+                WHERE p.oid=to_regprocedure('public.'||v_name||'(uuid,uuid)') AND a.grantee<>p.proowner),
+                '024 strips every default ACL '||v_name);
+            FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+                v_denied:=false;
+                BEGIN
+                    EXECUTE format('SET LOCAL ROLE %I',v_role);
+                    EXECUTE format('SELECT public.%I(%L::uuid,%L::uuid)',v_name,v_owner,v_op);
+                    RESET ROLE;
+                EXCEPTION WHEN insufficient_privilege THEN v_denied:=true;
+                END;
+                RESET ROLE;
+                RETURN NEXT ok(v_denied,'024 actual role denied '||v_role||'/'||v_name);
+            END LOOP;
+        END LOOP;
+        RAISE SQLSTATE 'Z2424';
+    EXCEPTION WHEN SQLSTATE 'Z2424' THEN NULL;
+    END;
+    RETURN NEXT is(pg_temp.retirement_snapshot(),v_initial,'024 all disposable fixtures rolled back');
+END;
+$$;
+SELECT * FROM pg_temp.empty_auth_boundary_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
