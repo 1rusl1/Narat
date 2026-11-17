@@ -5,6 +5,14 @@ import Supabase
 import SwiftUI
 import UIKit
 
+/// Missing canonical entitlement preserves Free behavior; known invalid access grants nothing.
+enum CatalogueRoutineAccessPolicy {
+    static func allows(_ entitlement: SyncWireEntitlementDTO?, at now: Date) -> Bool {
+        guard let entitlement else { return true }
+        return entitlement.verifiedAccessUntil.map { $0 > now } ?? false
+    }
+}
+
 enum CatalogueConnectionUnavailable: Error, Sendable, Equatable {
     case configurationMissing
     case storageUnavailable
@@ -75,6 +83,11 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
 @MainActor
 @Observable
 final class CatalogueConnection {
+    #if DEBUG
+    var routineFixtureNow: Date?
+    @ObservationIgnored var advanceRoutineFixtureClock: (() -> Void)?
+    #endif
+
     let client: SupabaseClient?
     let store: LocalStore?
     let apiClient: PlantsAPIClient?
@@ -1107,6 +1120,10 @@ private struct CatalogueCollectionCardView: View {
     @State private var firstAidFailed = false
     @State private var historyFailed = false
     @State private var adviceFailed = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var routineEntitlement: SyncWireEntitlementDTO?
+    @State private var routineAccessLoaded = false
+    @State private var routineClock = Date()
     @State private var pendingRoutine: RoutineSoilCheckCompletionCommand?
     @State private var routineHistory: [CatalogueCareJournalEntry] = []
     @State private var pendingRoutineUndo: RoutineSoilCheckUndoCommand?
@@ -1183,10 +1200,16 @@ private struct CatalogueCollectionCardView: View {
                         if let advice {
                             PlantCareRecommendationContent(
                                 recommendation: advice,
-                                showNextCheck: adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy
+                                showNextCheck: routineAccessAvailable && adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy
                             )
                         }
                         routineCompletionControls
+                        #if DEBUG
+                        if connection.routineFixtureNow != nil {
+                            Button("Advance entitlement clock") { connection.advanceRoutineFixtureClock?() }
+                                .accessibilityIdentifier("collection.routine.fixture.expire")
+                        }
+                        #endif
                         routineJournal
                         basicCareEnableControls
                             .disabled(routineBusy)
@@ -1268,6 +1291,16 @@ private struct CatalogueCollectionCardView: View {
                 do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) }
                 catch { return }
                 if firstAid?.accessUntil == expiry { firstAid?.controls.removeAll() }
+            }
+            .task(id: scenePhase) {
+                routineClock = Date()
+                if scenePhase == .active { await loadRoutineAccess() }
+            }
+            .task(id: routineEntitlement?.verifiedAccessUntil) {
+                guard let expiry = routineEntitlement?.verifiedAccessUntil else { return }
+                do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) }
+                catch { return }
+                routineClock = Date()
             }
             .task { await retryWhenConnected() }
             .alert("Undo this soil check?", isPresented: $showingRoutineUndo) {
@@ -1815,6 +1848,29 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
+    private var routineNow: Date {
+        #if DEBUG
+        if let now = connection.routineFixtureNow { return now }
+        #endif
+        return max(Date(), routineClock)
+    }
+
+    private var routineAccessAvailable: Bool {
+        routineAccessLoaded && CatalogueRoutineAccessPolicy.allows(routineEntitlement, at: routineNow)
+    }
+
+    @MainActor
+    private func loadRoutineAccess() async {
+        do {
+            let entitlement = try await connection.syncedTrialEntitlement(expected: expected)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            routineEntitlement = entitlement
+            routineAccessLoaded = true
+        } catch {
+            // A failed read must not turn unknown or expired access into Free.
+        }
+    }
+
     private var routineBusy: Bool {
         !polish && (checkingRoutine || savingRoutine || pendingRoutine != nil || pendingRoutineUndo != nil)
     }
@@ -1830,7 +1886,7 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private var dueRoutine: PlantCareRecommendation.RoutineContext? {
-        guard !checkingRoutine, !routineFailed, adviceResponse == adviceRequest,
+        guard routineAccessAvailable, !checkingRoutine, !routineFailed, adviceResponse == adviceRequest,
               !adviceFailed, basicCareEnabled == true,
               let context = advice?.routineContext, context.plantId == card.id,
               context.check.careRevision == card.careRevision,
@@ -1982,6 +2038,13 @@ private struct CatalogueCollectionCardView: View {
             if let pendingRoutine {
                 command = pendingRoutine
             } else if let captured {
+                // Recheck after lease acquisition. Exact pending replay and undo
+                // deliberately bypass this gate.
+                let entitlement = try await connection.syncedTrialEntitlement(expected: expected)
+                guard CatalogueRoutineAccessPolicy.allows(entitlement, at: routineNow) else {
+                    await loadRoutineAccess()
+                    return
+                }
                 let formatter = ISO8601DateFormatter()
                 formatter.formatOptions = [.withInternetDateTime]
                 command = try await repository.enqueueRoutineCompletion(
