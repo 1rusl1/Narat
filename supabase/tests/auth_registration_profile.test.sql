@@ -3668,5 +3668,218 @@ SELECT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id IN (
     'a0200000-0000-4000-8000-000000000002'::uuid,
     'a0200000-0000-4000-8000-000000000003'::uuid)), '020 fixtures rolled back');
 
+-- 021 uses the same clean and seeded upgrade runner; all fixtures roll back.
+CREATE FUNCTION pg_temp.account_proof_snapshot() RETURNS jsonb LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN pg_temp.account_work_snapshot() || jsonb_build_object('durable_proofs',
+        (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.owner_id),'[]'::jsonb)
+         FROM public.account_deletion_proofs p));
+END;
+$$;
+
+CREATE FUNCTION pg_temp.account_proof_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0210000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0210000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0210000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_job uuid;
+    v_before jsonb;
+    v_initial jsonb;
+    v_saved jsonb;
+    v_auth jsonb;
+    v_profiles jsonb;
+    v_case integer;
+    v_role text;
+    v_command text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.persist_account_deletion_proof_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('021 durable proof outside selected migration version',1);
+        RETURN;
+    END IF;
+    v_initial:=pg_temp.account_proof_snapshot();
+    BEGIN
+        INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+            (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+            (v_guest,true,clock_timestamp());
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+            VALUES(repeat('a021',16),ARRAY[v_neighbor,v_owner,v_owner]);
+        INSERT INTO public.plants(owner_id,personal_name,creation_source)
+            VALUES(v_owner,'021 rollback predecessor','identification');
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,'021 active rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_guest,v_operation),false,'021 anonymous rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(gen_random_uuid(),v_operation),false,'021 missing owner rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(NULL,v_operation),false,'021 null owner rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,NULL),false,'021 null operation rejected');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 invalid owners leave all rows unchanged');
+        PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+        PERFORM public.request_account_deletion_internal(v_neighbor,v_operation);
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,gen_random_uuid()),false,'021 wrong operation rejected');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 wrong operation atomic');
+
+        FOR v_case IN 1..4 LOOP
+            BEGIN
+                IF v_case=1 THEN
+                    DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                ELSIF v_case=2 THEN
+                    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/021-hold');
+                ELSIF v_case=3 THEN
+                    INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id,state)
+                        VALUES(v_owner,v_operation,'account',v_neighbor,'purge_data');
+                ELSE
+                    UPDATE public.operation_receipts SET payload_hash='forged'
+                        WHERE owner_id=v_owner AND operation_id=v_operation;
+                END IF;
+                v_before:=pg_temp.account_proof_snapshot();
+                RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+                    '021 missing receipt/Storage/foreign job/forged receipt rejected '||v_case);
+                RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 readiness hold atomic '||v_case);
+                RAISE SQLSTATE 'Z2021';
+            EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+            END;
+        END LOOP;
+
+        -- Exact expected identity, with one conflicting saved field per case.
+        -- The pending plant and installation unlink make the late rollback observable.
+        FOR v_case IN 1..4 LOOP
+            BEGIN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+                INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id,state)
+                    VALUES(v_owner,v_operation,'account',v_owner,'purge_data') RETURNING id INTO v_job;
+                INSERT INTO public.account_deletion_proofs
+                    (owner_id,operation_id,deletion_job_id,requested_at,storage_verified_at)
+                    SELECT owner_id,CASE WHEN v_case=1 THEN gen_random_uuid() ELSE operation_id END,
+                        CASE WHEN v_case=2 THEN gen_random_uuid() ELSE v_job END,
+                        requested_at + CASE WHEN v_case=3 THEN interval '1 second' ELSE interval '0' END,
+                        storage_verified_at + CASE WHEN v_case=4 THEN interval '1 second' ELSE interval '0' END
+                    FROM public.account_deletion_requests WHERE owner_id=v_owner;
+                v_before:=pg_temp.account_proof_snapshot();
+                RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+                    '021 saved identity conflict is a hold '||v_case);
+                RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,
+                    '021 late conflict restores plant, installation, request, job and proof '||v_case);
+                RAISE SQLSTATE 'Z2021';
+            EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+            END;
+        END LOOP;
+
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),true,'021 persists prerequisite');
+        SELECT to_jsonb(p) INTO v_saved FROM public.account_deletion_proofs p WHERE owner_id=v_owner;
+        RETURN NEXT is(v_saved,(SELECT jsonb_build_object('owner_id',r.owner_id,'operation_id',r.operation_id,
+            'deletion_job_id',d.id,'requested_at',r.requested_at,'storage_verified_at',r.storage_verified_at)
+            FROM public.account_deletion_requests r JOIN public.deletion_jobs d
+                ON d.owner_id=r.owner_id AND d.operation_id=r.operation_id WHERE r.owner_id=v_owner),
+            '021 exact accepted request and processing identity');
+        RETURN NEXT ok((SELECT storage_verified_at IS NOT NULL FROM public.account_deletion_proofs WHERE owner_id=v_owner),
+            '021 Storage evidence is nonnull');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.plants WHERE owner_id=v_owner)
+            AND NOT EXISTS(SELECT 1 FROM public.installation_access WHERE v_owner=ANY(linked_owner_ids)),
+            '021 accepted predecessor chain applied');
+        RETURN NEXT ok(EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner)
+            AND EXISTS(SELECT 1 FROM public.profiles WHERE id=v_owner AND account_state='deleting')
+            AND EXISTS(SELECT 1 FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation),
+            '021 Auth/profile/receipt retained without finalization');
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),true,'021 exact replay accepted');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 replay byte-exact across all chain tables');
+
+        FOR v_case IN 1..3 LOOP
+            BEGIN
+                IF v_case=1 THEN
+                    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/021-replay');
+                ELSIF v_case=2 THEN
+                    DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                ELSE
+                    UPDATE public.operation_receipts SET response_payload='{}'::jsonb
+                        WHERE owner_id=v_owner AND operation_id=v_operation;
+                END IF;
+                v_before:=pg_temp.account_proof_snapshot();
+                RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+                    '021 saved proof cannot bypass fresh Storage/receipt validation '||v_case);
+                RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 failed replay preserves exact proof '||v_case);
+                RAISE SQLSTATE 'Z2021';
+            EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+            END;
+        END LOOP;
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_neighbor,v_operation),true,'021 same operation distinct owner accepted');
+        RETURN NEXT is((SELECT count(*) FROM public.account_deletion_proofs WHERE operation_id=v_operation),2::bigint,
+            '021 one independent proof per owner');
+        RETURN NEXT is((SELECT to_jsonb(p) FROM public.account_deletion_proofs p WHERE owner_id=v_owner),v_saved,
+            '021 neighbor preserves original identity');
+        RETURN NEXT ok((SELECT count(DISTINCT deletion_job_id)=2 FROM public.account_deletion_proofs
+            WHERE owner_id IN (v_owner,v_neighbor)),'021 processing identities isolated');
+
+        RETURN NEXT ok((SELECT count(*)=5 AND bool_and(attnotnull) FROM pg_attribute
+            WHERE attrelid='public.account_deletion_proofs'::regclass AND attnum>0 AND NOT attisdropped),
+            '021 exactly five nonnull columns');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_constraint
+            WHERE conrelid='public.account_deletion_proofs'::regclass AND contype='f'),
+            '021 no foreign keys to transient parents');
+        RETURN NEXT ok((SELECT relrowsecurity FROM pg_class WHERE oid='public.account_deletion_proofs'::regclass),
+            '021 RLS enabled');
+        RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+            FROM pg_proc WHERE oid='public.persist_account_deletion_proof_internal(uuid,uuid)'::regprocedure),
+            '021 security definer has empty search path');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+            CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+            WHERE p.oid='public.persist_account_deletion_proof_internal(uuid,uuid)'::regprocedure AND a.grantee<>p.proowner),
+            '021 function strips all default grants including custom roles');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_class c
+            CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+            WHERE c.oid='public.account_deletion_proofs'::regclass AND a.grantee<>c.relowner),
+            '021 table strips all default grants including custom roles');
+
+        FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+            RETURN NEXT ok(NOT has_function_privilege(v_role,
+                'public.persist_account_deletion_proof_internal(uuid,uuid)','EXECUTE')
+                AND NOT has_table_privilege(v_role,'public.account_deletion_proofs',
+                    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'),
+                '021 effective inherited privileges denied for '||v_role);
+            FOREACH v_command IN ARRAY ARRAY[
+                format('SELECT public.persist_account_deletion_proof_internal(%L::uuid,%L::uuid)',v_owner,v_operation),
+                'SELECT * FROM public.account_deletion_proofs',
+                format('INSERT INTO public.account_deletion_proofs SELECT * FROM public.account_deletion_proofs WHERE owner_id=%L::uuid',v_owner),
+                format('UPDATE public.account_deletion_proofs SET operation_id=operation_id WHERE owner_id=%L::uuid',v_owner),
+                format('DELETE FROM public.account_deletion_proofs WHERE owner_id=%L::uuid',v_owner)
+            ] LOOP
+                v_denied:=false;
+                BEGIN
+                    EXECUTE format('SET LOCAL ROLE %I',v_role);
+                    EXECUTE v_command;
+                EXCEPTION WHEN insufficient_privilege THEN v_denied:=true;
+                END;
+                RESET ROLE;
+                RETURN NEXT ok(v_denied,'021 actual function/table access denied for '||v_role||': '||split_part(v_command,' ',1));
+            END LOOP;
+        END LOOP;
+
+        -- Fixture-only cleanup of disposable request/receipt/job references.
+        -- Auth/profile removal is deliberately not exercised: no finalization here.
+        -- Independence from those two parents is established by the no-FK catalog assertion.
+        SELECT jsonb_agg(to_jsonb(u) ORDER BY id) INTO v_auth FROM auth.users u;
+        SELECT jsonb_agg(to_jsonb(p) ORDER BY id) INTO v_profiles FROM public.profiles p;
+        DELETE FROM public.operation_receipts WHERE owner_id=v_owner;
+        DELETE FROM public.account_deletion_requests WHERE owner_id=v_owner;
+        DELETE FROM public.deletion_jobs WHERE owner_id=v_owner;
+        RETURN NEXT is((SELECT to_jsonb(p) FROM public.account_deletion_proofs p WHERE owner_id=v_owner),v_saved,
+            '021 identity survives explicit disposable prerequisite cleanup');
+        RETURN NEXT is((SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM auth.users u),v_auth,'021 no Auth deletion');
+        RETURN NEXT is((SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.profiles p),v_profiles,'021 no profile deletion/state transition');
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+            '021 surviving proof alone never authorizes work');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 absent prerequisites preserve surviving identity');
+        RAISE SQLSTATE 'Z2021';
+    EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+    END;
+    RETURN NEXT is(pg_temp.account_proof_snapshot(),v_initial,'021 all fixtures and chain mutations rolled back');
+END;
+$$;
+SELECT * FROM pg_temp.account_proof_tests();
+
 SELECT * FROM finish();
 ROLLBACK;
