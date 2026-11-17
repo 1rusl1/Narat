@@ -2859,8 +2859,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t083-account-durable-proof: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 418.21 с, проверки — 76.36 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t083-account-durable-proof](validation/automation/tasks/t083-account-durable-proof.md).
+t083-runtime-retirement-design: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 249.20 с, проверки — 84.59 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [t083-runtime-retirement-design](validation/automation/tasks/t083-runtime-retirement-design.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
