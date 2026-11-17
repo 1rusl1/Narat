@@ -3969,6 +3969,7 @@ BEGIN
                     FOR v_case IN 1..19 LOOP
                         BEGIN
                             v_lease:=v_job.lease_token;
+                            v_before:=pg_temp.retired_runtime_snapshot();
                             CASE v_case
                             WHEN 1 THEN DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_job.id;
                             WHEN 2 THEN UPDATE public.account_deleted_runtime_identities SET owner_id=v_neighbor WHERE job_id=v_job.id;
@@ -4002,7 +4003,15 @@ BEGIN
                             RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_before,
                                 '022 negative preserves complete graph: '||v_case);
                             RAISE SQLSTATE 'Z2222';
-                        EXCEPTION WHEN SQLSTATE 'Z2222' THEN NULL;
+                        EXCEPTION
+                            WHEN SQLSTATE '22023' THEN
+                                RETURN NEXT ok(
+                                    to_regprocedure('public.retire_account_deletion_runtime_internal(uuid,uuid)') IS NOT NULL
+                                    AND v_case IN (1,2,3,4,10,11,12,13,14,17,18,19),
+                                    '023 rejects identity/retained-job fixture mutation '||v_case);
+                                RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_before,
+                                    '023 rejected fixture mutation preserves full graph');
+                            WHEN SQLSTATE 'Z2222' THEN NULL;
                         END;
                     END LOOP;
                 END LOOP;
@@ -4074,6 +4083,271 @@ BEGIN
 END;
 $$;
 SELECT * FROM pg_temp.retired_runtime_replay_tests();
+
+-- 023: real runtimes, fresh predecessor chain and physical retirement.
+CREATE FUNCTION pg_temp.retirement_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.retired_runtime_snapshot() || jsonb_build_object('runtime_permits',
+        (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.job_id),'[]'::jsonb)
+         FROM public.account_deletion_runtime_permits p))
+$$;
+
+CREATE FUNCTION pg_temp.reject_runtime_retirement() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '023 injected late hold' USING ERRCODE='P1623';
+END;
+$$;
+
+CREATE FUNCTION pg_temp.runtime_retirement_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0230000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0230000-0000-4000-8000-000000000002';
+    v_operation uuid := gen_random_uuid();
+    v_release uuid; v_catalogue uuid; v_installation uuid; v_job uuid; v_draft uuid;
+    v_ids uuid[] := '{}';
+    v_who uuid; v_mode text; v_kind text; v_state text;
+    v_before jsonb; v_initial jsonb; v_expected jsonb; v_response jsonb;
+    v_saved_runtime public.diagnosis_job_runtime%ROWTYPE;
+    v_saved_job public.analysis_jobs%ROWTYPE;
+    v_case integer; v_denied boolean; v_role text; v_command text;
+BEGIN
+    IF to_regprocedure('public.retire_account_deletion_runtime_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('023 outside selected migration version',1);
+        RETURN;
+    END IF;
+    v_initial:=pg_temp.retirement_snapshot();
+    BEGIN
+        INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+            (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+        INSERT INTO public.kb_releases(version,state) VALUES('t083-runtime-023','draft') RETURNING id INTO v_release;
+        INSERT INTO public.catalogue_releases(version,kb_release_id,state)
+            VALUES('t083-runtime-023',v_release,'draft') RETURNING id INTO v_catalogue;
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+            VALUES(repeat('a023',16),ARRAY[v_neighbor,v_owner]) RETURNING id INTO v_installation;
+        FOREACH v_who IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+            FOREACH v_mode IN ARRAY ARRAY['identification','diagnosis'] LOOP
+                FOREACH v_kind IN ARRAY ARRAY['paid_monthly','none','starter'] LOOP
+                    FOREACH v_state IN ARRAY ARRAY['succeeded','failed','timed_out'] LOOP
+                        INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,kb_release_id,
+                            prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,state,
+                            lease_token,quota_installation_id,quota_owner_id)
+                        VALUES(v_who,gen_random_uuid(),'problem','scan',v_mode,v_release,
+                            'fixture',gen_random_uuid(),'fixture','en',
+                            CASE WHEN v_kind='starter' THEN 'starter_'||v_mode ELSE v_kind END,
+                            CASE WHEN v_kind='none' THEN 'not_applicable'
+                                 WHEN v_state='succeeded' THEN 'consumed' ELSE 'released' END,
+                            v_state,gen_random_uuid(),v_installation,v_who) RETURNING id INTO v_job;
+                        IF v_kind='paid_monthly' THEN
+                            INSERT INTO public.account_quota_usage(job_id,owner_id,period_start,period_end,quota_state)
+                            VALUES(v_job,v_who,'2026-11-01 UTC','2026-12-01 UTC',
+                                CASE WHEN v_state='succeeded' THEN 'consumed' ELSE 'released' END);
+                        END IF;
+                        INSERT INTO public.diagnosis_job_runtime(job_id,catalogue_release_id,projection,
+                            initial_context,repeat_context)
+                        VALUES(v_job,v_catalogue,'{"private":"result"}',
+                            CASE WHEN v_state='succeeded' THEN '{"light":"low","watering_frequency":"sparse","drainage":"yes"}'::jsonb END,
+                            CASE WHEN v_state<>'succeeded' THEN '{"private":"history"}'::jsonb END);
+                        IF v_who=v_owner THEN v_ids:=array_append(v_ids,v_job); END IF;
+                    END LOOP;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+        UPDATE public.profiles SET starter_identification_consumed=true,starter_diagnosis_consumed=true
+            WHERE id IN (v_owner,v_neighbor);
+        SELECT * INTO v_saved_runtime FROM public.diagnosis_job_runtime WHERE job_id=v_ids[1];
+        SELECT * INTO v_saved_job FROM public.analysis_jobs WHERE id=v_ids[1];
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),false,'023 no request/proof');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 no request leaves full graph unchanged');
+        PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+        -- Every hold starts with unsanitized runtime and an installation alias:
+        -- a late hold must roll the entire predecessor chain back.
+        FOR v_case IN 1..15 LOOP
+            BEGIN
+                CASE v_case
+                WHEN 1 THEN DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                WHEN 2 THEN INSERT INTO storage.objects(bucket_id,name)
+                    VALUES('analysis-inputs',v_owner::text||'/023-stale');
+                WHEN 3 THEN UPDATE public.analysis_jobs SET state='running' WHERE id=v_ids[1];
+                WHEN 4 THEN UPDATE public.analysis_jobs SET quota_state='reserved' WHERE id=v_ids[1];
+                WHEN 5 THEN UPDATE public.analysis_jobs SET mode='follow_up' WHERE id=v_ids[1];
+                WHEN 6 THEN UPDATE public.account_quota_usage SET quota_state='released' WHERE job_id=v_ids[1];
+                WHEN 7 THEN DELETE FROM public.account_quota_usage WHERE job_id=v_ids[1];
+                WHEN 8 THEN INSERT INTO public.account_deleted_runtime_identities
+                    VALUES(v_ids[1],v_neighbor,v_operation);
+                WHEN 9 THEN INSERT INTO public.account_deleted_runtime_identities
+                    VALUES(v_ids[1],v_owner,gen_random_uuid());
+                WHEN 10 THEN DELETE FROM public.diagnosis_job_runtime WHERE job_id=v_ids[1];
+                WHEN 11 THEN
+                    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+                        VALUES(v_neighbor,gen_random_uuid(),'problem','scan') RETURNING id INTO v_draft;
+                    UPDATE public.analysis_jobs SET draft_id=v_draft WHERE id=v_ids[1];
+                WHEN 12 THEN
+                    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method,analysis_job_id)
+                        VALUES(v_neighbor,gen_random_uuid(),'problem','scan',v_ids[1]);
+                WHEN 13 THEN
+                    CREATE TABLE public.t023_runtime_child(
+                        job_id uuid REFERENCES public.diagnosis_job_runtime(job_id) ON DELETE CASCADE,
+                        payload text);
+                    INSERT INTO public.t023_runtime_child VALUES(v_ids[1],'retain byte exactly');
+                WHEN 14 THEN
+                    CREATE TRIGGER t023_late_hold AFTER DELETE ON public.diagnosis_job_runtime
+                        FOR EACH STATEMENT EXECUTE FUNCTION pg_temp.reject_runtime_retirement();
+                WHEN 15 THEN
+                    -- No runtime: 018 would omit this unsupported owner job.
+                    DELETE FROM public.diagnosis_job_runtime WHERE job_id=v_ids[1];
+                    UPDATE public.analysis_jobs SET mode='follow_up' WHERE id=v_ids[1];
+                END CASE;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),false,
+                    '023 fresh/identity/accounting/anchor/FK/late hold '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 full rollback including predecessors '||v_case);
+                IF v_case=13 THEN
+                    RETURN NEXT is((SELECT to_jsonb(c) FROM public.t023_runtime_child c),
+                        jsonb_build_object('job_id',v_ids[1],'payload','retain byte exactly'),'023 unknown child retained');
+                END IF;
+                RAISE SQLSTATE 'Z2323';
+            EXCEPTION WHEN SQLSTATE 'Z2323' THEN NULL;
+            END;
+        END LOOP;
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,gen_random_uuid()),false,'023 wrong operation');
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_neighbor,v_operation),false,'023 wrong owner');
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(NULL,v_operation),false,'023 null owner');
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,NULL),false,'023 null operation');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 scope holds byte exact');
+        -- Establish the exact 021 baseline; retirement must revalidate it freshly.
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),true,'023 accepted 021 baseline');
+            PERFORM set_config('app.account_deletion_runtime_retired','true',true);
+            v_before:=pg_temp.retirement_snapshot();
+            RETURN NEXT throws_ok(format('DELETE FROM public.diagnosis_job_runtime WHERE job_id=%L',v_ids[1]),
+                '22023','IMMUTABLE_RUNTIME_SCRUB','023 saved proof and forged GUC cannot delete');
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 unauthorized delete byte exact');
+            v_expected:=jsonb_set(v_before,ARRAY['public.diagnosis_job_runtime'],
+                (SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb)
+                 FROM jsonb_array_elements(v_before->'public.diagnosis_job_runtime') e
+                 WHERE NOT ((e->>'job_id')::uuid=ANY(v_ids))));
+            v_expected:=jsonb_set(v_expected,ARRAY['retired_runtime_identities'],
+                (SELECT jsonb_agg(e ORDER BY e->>'job_id') FROM (
+                    SELECT e FROM jsonb_array_elements(v_before->'retired_runtime_identities') e
+                    UNION ALL
+                    SELECT jsonb_build_object('job_id',id,'owner_id',v_owner,'operation_id',v_operation)
+                    FROM unnest(v_ids) id) entries));
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),true,'023 physically retires fresh scrubbed runtime');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_expected,
+            '023 only runtime removed and minimal identities added to full 021 snapshot; jobs/ledger/claims/receipts/neighbors/Auth retained');
+        RETURN NEXT is((SELECT count(*) FROM public.account_deletion_runtime_permits),0::bigint,'023 no surviving permits');
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),true,'023 exact retirement replay');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 replay has zero mutation');
+        FOR v_case IN 1..3 LOOP
+            BEGIN
+                CASE v_case
+                WHEN 1 THEN INSERT INTO storage.objects(bucket_id,name)
+                    VALUES('analysis-inputs',v_owner::text||'/023-stale');
+                WHEN 2 THEN DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                WHEN 3 THEN
+                    DELETE FROM public.account_deletion_proofs WHERE owner_id=v_owner;
+                    INSERT INTO storage.objects(bucket_id,name)
+                        VALUES('analysis-inputs',v_owner::text||'/023-stale-proof');
+                END CASE;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),false,'023 replay requires fresh readiness '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 stale replay full rollback '||v_case);
+                RAISE SQLSTATE 'Z2323';
+            EXCEPTION WHEN SQLSTATE 'Z2323' THEN NULL;
+            END;
+        END LOOP;
+        FOREACH v_job IN ARRAY v_ids LOOP
+            SELECT * INTO v_saved_job FROM public.analysis_jobs WHERE id=v_job;
+            v_before:=pg_temp.retirement_snapshot();
+            SET LOCAL ROLE service_role;
+            v_response:=public.finish_diagnosis_job(v_job,v_saved_job.lease_token,NULL,false,'ignored');
+            RESET ROLE;
+            RETURN NEXT is(v_response,jsonb_build_object('already_finalized',true,
+                'quota_state',v_saved_job.quota_state,'outcome',v_saved_job.state),'023 exact 022 terminal lease replay');
+            RETURN NEXT throws_ok(format('SELECT public.finish_diagnosis_job(%L,%L,NULL,true,NULL)',v_job,gen_random_uuid()),
+                '42501','STALE_LEASE','023 wrong lease rejected');
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 terminal finish retains complete graph');
+        END LOOP;
+        FOR v_case IN 1..12 LOOP
+            v_before:=pg_temp.retirement_snapshot();
+            v_denied:=false;
+            BEGIN
+                CASE v_case
+                WHEN 1 THEN INSERT INTO public.diagnosis_job_runtime SELECT v_saved_runtime.*;
+                WHEN 2 THEN INSERT INTO public.diagnosis_job_runtime SELECT v_saved_runtime.*
+                    ON CONFLICT(job_id) DO UPDATE SET projection=EXCLUDED.projection;
+                WHEN 3 THEN UPDATE public.analysis_jobs SET id=gen_random_uuid() WHERE id=v_ids[1];
+                WHEN 4 THEN UPDATE public.analysis_jobs SET owner_id=v_neighbor WHERE id=v_ids[1];
+                WHEN 5 THEN UPDATE public.analysis_jobs SET payload_hash='restore' WHERE id=v_ids[1];
+                WHEN 6 THEN DELETE FROM public.analysis_jobs WHERE id=v_ids[1];
+                WHEN 7 THEN DELETE FROM public.profiles WHERE id=v_owner;
+                WHEN 8 THEN DELETE FROM auth.users WHERE id=v_owner;
+                WHEN 9 THEN DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_ids[1];
+                WHEN 10 THEN UPDATE public.account_deleted_runtime_identities SET operation_id=gen_random_uuid() WHERE job_id=v_ids[1];
+                WHEN 11 THEN
+                    -- An ordinary runtime may not be retargeted to a retired id.
+                    UPDATE public.diagnosis_job_runtime SET job_id=v_ids[1] WHERE job_id=(
+                        SELECT id FROM public.analysis_jobs WHERE owner_id=v_neighbor ORDER BY id LIMIT 1);
+                WHEN 12 THEN INSERT INTO public.analysis_jobs SELECT v_saved_job.*;
+                END CASE;
+                RAISE SQLSTATE 'Z2324';
+            EXCEPTION
+                WHEN SQLSTATE '22023' THEN v_denied:=true;
+                WHEN SQLSTATE '23503' THEN v_denied:=true;
+                WHEN SQLSTATE '23505' THEN v_denied:=(v_case=12);
+                WHEN SQLSTATE 'Z2324' THEN NULL;
+            END;
+            RETURN NEXT ok(v_denied,'023 controlled owner DML rejected '||v_case);
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 rejected DML preserves full graph '||v_case);
+        END LOOP;
+        -- Effective inherited privileges and actual execution, including service_role.
+        CREATE ROLE t083_retirement_reader NOLOGIN INHERIT;
+        GRANT anon,authenticated,service_role TO t083_retirement_reader;
+        FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role','t083_retirement_reader'] LOOP
+            FOREACH v_command IN ARRAY ARRAY[
+                format('SELECT public.retire_account_deletion_runtime_internal(%L,%L)',v_owner,v_operation),
+                'SELECT * FROM public.account_deletion_runtime_permits',
+                format('INSERT INTO public.account_deletion_runtime_permits VALUES(pg_current_xact_id(),%L,%L,%L)',v_ids[1],v_owner,v_operation),
+                'UPDATE public.account_deletion_runtime_permits SET owner_id=owner_id',
+                'DELETE FROM public.account_deletion_runtime_permits',
+                'TRUNCATE public.account_deletion_runtime_permits',
+                'DELETE FROM public.analysis_jobs WHERE false',
+                'DELETE FROM public.diagnosis_job_runtime WHERE false'
+            ] LOOP
+                v_denied:=false;
+                BEGIN
+                    EXECUTE format('SET LOCAL ROLE %I',v_role);
+                    EXECUTE v_command;
+                    RESET ROLE;
+                    RAISE SQLSTATE 'Z2324';
+                EXCEPTION
+                    WHEN insufficient_privilege THEN v_denied:=true;
+                    WHEN SQLSTATE 'Z2324' THEN NULL;
+                END;
+                RESET ROLE;
+                RETURN NEXT ok(v_denied,'023 actual ACL deny '||v_role||'/'||split_part(v_command,' ',1));
+            END LOOP;
+        END LOOP;
+        RETURN NEXT ok((SELECT relrowsecurity FROM pg_class
+            WHERE oid='public.account_deletion_runtime_permits'::regclass),'023 permits RLS');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_class c
+            CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+            WHERE c.oid='public.account_deletion_runtime_permits'::regclass AND a.grantee<>c.relowner),
+            '023 no non-owner permit ACL');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+            CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+            WHERE p.oid IN ('public.retire_account_deletion_runtime_internal(uuid,uuid)'::regprocedure,
+                'public.guard_retired_analysis_job()'::regprocedure,
+                'public.guard_account_deleted_runtime_identity()'::regprocedure) AND a.grantee<>p.proowner),
+            '023 no non-owner function ACL');
+        RAISE SQLSTATE 'Z2323';
+    EXCEPTION WHEN SQLSTATE 'Z2323' THEN NULL;
+    END;
+    RETURN NEXT is(pg_temp.retirement_snapshot(),v_initial,'023 all fixtures rolled back');
+END;
+$$;
+SELECT * FROM pg_temp.runtime_retirement_tests();
 
 SELECT * FROM finish();
 ROLLBACK;

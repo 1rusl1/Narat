@@ -1,5 +1,18 @@
 # Narat — текущий статус и передача работы
 
+## T083 — кандидат023, проверки ещё не завершены
+
+Run65 остановлен лимитом трёх Developer-вызовов. Новая023 реализует
+retirement с приватными transaction permits и защитой восстановления;
+auth_registration_profile дополнен сценариями. Первый SQL-прогон
+нашёл несовместимые initial/repeat context в тестовой фикстуре;
+второй — устаревший запрет любого identity writer и неверное ожидание
+каскада Auth→profile. Developer исправил фикстуры; итоговый кандидат
+ещё не прошёл полный SQL и независимую приёмку, не считается готовым.
+
+Следующий шаг — read-only candidate acceptance с clean/upgrade SQL,
+Review/QA и затем реальные гонки. Staging/Auth не изменялись.
+
 ## T083 — terminal replay при удалённом runtime принят локально
 
 d99df38 опубликован. Новая022 и auth_registration_profile fixtures
