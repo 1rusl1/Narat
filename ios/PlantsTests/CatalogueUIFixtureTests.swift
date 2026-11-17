@@ -32,6 +32,25 @@ final class CatalogueUIFixtureTests: XCTestCase {
         return value
     }
 
+    func testRoutineKnownEntitlementDeadlinePolicy() throws {
+        let expiry = SQLTimestamp.date(from: "2099-01-01T00:00:01Z")!
+        func entitlement(state: String = "active", date: String? = "2099-01-01T00:00:01Z") throws -> SyncWireEntitlementDTO {
+            let json: [String: Any] = [
+                "product_id": "fixture-only-paid", "state": state, "offer_kind": "paid",
+                "valid_until": date.map { $0 as Any } ?? NSNull(), "grace_until": NSNull(), "trial_end_at": NSNull(),
+                "auto_renew_enabled": false
+            ]
+            return try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: JSONSerialization.data(withJSONObject: json))
+        }
+        let active = try entitlement()
+        XCTAssertTrue(CatalogueRoutineAccessPolicy.allows(active, at: expiry.addingTimeInterval(-1)))
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(active, at: expiry))
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(active, at: expiry.addingTimeInterval(1)))
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(try entitlement(state: "expired"), at: expiry.addingTimeInterval(-1)))
+        XCTAssertFalse(CatalogueRoutineAccessPolicy.allows(try entitlement(date: nil), at: expiry.addingTimeInterval(-1)))
+        XCTAssertTrue(CatalogueRoutineAccessPolicy.allows(nil, at: expiry.addingTimeInterval(1)))
+    }
+
     func testFreeSaveCanonicalReadbackAndExactReplay() async throws {
         let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .free2)
         defer { try? h.cleanup() }

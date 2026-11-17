@@ -10,10 +10,10 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
-    case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo
+    case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry
     case profileReminderHour
 
-    var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo }
+    var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry }
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
@@ -106,6 +106,19 @@ enum CatalogueUIFixtures {
             )
         }
         let connection = connect(storage)
+        if scenario == .routineKnownExpiry {
+            // One deterministic second, persisted independently of process launches.
+            let start = SQLTimestamp.date(from: "2099-01-01T00:00:00Z")!
+            let key = "routine.fixture.clock"
+            connection.routineFixtureNow = defaults.object(forKey: key) == nil
+                ? start : Date(timeIntervalSince1970: defaults.double(forKey: key))
+            connection.advanceRoutineFixtureClock = { [weak connection] in
+                guard let connection, let now = connection.routineFixtureNow else { return }
+                let advanced = now.addingTimeInterval(1)
+                defaults.set(advanced.timeIntervalSince1970, forKey: key)
+                connection.routineFixtureNow = advanced
+            }
+        }
         let context = CatalogueUIFixtureContext(
             namespace: name, directory: directory, suite: suite, connection: connection,
             http: http, server: server, identity: identity
@@ -710,6 +723,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "valid_until": "2099-01-08T12:00:00Z", "grace_until": NSNull(),
                         "trial_end_at": "2099-01-08T12:00:00Z", "auto_renew_enabled": true
                     ] as [String: Any]
+                case .routineKnownExpiry:
+                    entitlement = [
+                        "product_id": "fixture-only-paid", "state": "active", "offer_kind": "paid",
+                        "valid_until": "2099-01-01T00:00:01Z", "grace_until": NSNull(),
+                        "trial_end_at": NSNull(), "auto_renew_enabled": false
+                    ] as [String: Any]
                 case .photoHistory:
                     entitlement = [
                         "product_id": "fixture-only-paid", "state": "expired", "offer_kind": "paid",
@@ -718,6 +737,18 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     ] as [String: Any]
                 default:
                     entitlement = NSNull()
+                }
+                if ledger.scenario == .routineKnownExpiry, since == nil,
+                   let plant = plants.first(where: { $0.id == ledger.plants.first?.id }) {
+                    let id = "19190000-0000-4000-8000-000000000005"
+                    changes.append([
+                        "entity_type": "care_entries", "id": id, "updated_at": plant.timestamp,
+                        "deleted_at": NSNull(), "data": [
+                            "id": id, "plant_id": plant.id.uuidString, "action_code": "water",
+                            "state": "active", "occurred_at": "2026-10-30T12:00:00Z",
+                            "occurred_local_date": "2026-10-30", "timezone": "UTC"
+                        ] as [String: Any]
+                    ])
                 }
                 let orderedChanges = (firstAid + changes).sorted {
                     ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)

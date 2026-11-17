@@ -1,5 +1,23 @@
 # Narat — текущий статус и передача работы
 
+## T164 — принятый клиентский expiry интегрирован — 17 ноября 2026
+
+Принятая дельта iOS `1e02b98` перенесена без конфликтов: GuestCatalogueView,
+CatalogueUIFixtures, CatalogueUIFixtureTests, CatalogueSaveUITests и отчёт
+`docs/validation/automation/tasks/t164-routine-client-expiry.md`.
+Известное окончание доступа скрывает следующую дату и новое completion
+по таймеру/foreground; журнал, pending replay и undo сохранены.
+
+В оркестраторе: 304 XCTest + 3 Swift Testing, три целевых XCUITest
+(expiry/restart, routine replay, undo), Review/QA PASS. Обычный EN/PL
+smoke: 10 passed, один ожидаемый staging-only skipped; это не live.
+В основной рабочей копии: diff-check, исходная Release-сборка Xcode
+со штатной конфигурацией и codesign verify PASS. Новый артефакт
+`/private/tmp/narat-expiry-original-release/Build/Products/Release-iphonesimulator/Plants.app`.
+Полные T164/T171 остаются открыты: напоминания отложены, живая
+клиентская проверка expiry ещё впереди. Следующий шаг — отдельная
+staging-учётка с коротким synthetic paid expiry и обычным запуском.
+
 ## V10 — живые частота, горшок и вид — 17 ноября 2026
 
 Исходный подписанный Release `2c9db64`, обычный EN-запуск без флагов,
