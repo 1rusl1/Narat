@@ -1,5 +1,30 @@
 # Narat — текущий статус и передача работы
 
+## T083 — серверная очистка runtime интегрирована — 17 ноября 2026
+
+В основную рабочую копию перенесён точный серверный checkpoint `e85d9e4`
+из `codex/plants-backend-proof`: миграции 010–014, 017–023 и расширение
+`supabase/tests/auth_registration_profile.test.sql`, отсутствовавшие отчёты
+`docs/validation/automation/tasks/`. Весь `supabase` совпадает с принятой B
+побайтно (`git diff --exit-code e85d9e4 -- supabase` PASS).
+021 сохраняет минимальное durable proof независимо от profile/Auth;
+022 сохраняет точный terminal replay, 023 физически удаляет scrubbed runtime
+и запрещает его восстановление запоздалым writer. Auth пока сохраняется.
+
+В основной рабочей копии повторён полный изолированный PostgreSQL gate:
+2016 auth_registration_profile pgTAP на clean и 2016 на upgrade, остальные
+SQL-регрессии и гонки квот, реальные finish/retire/retry lock waits,
+concurrent INSERT и последующие INSERT/UPSERT для identification/diagnosis
+PASS, exit 0. Лог `/private/tmp/narat-root-runtime-retirement-races.log`.
+Diff-check PASS. 436 Deno и независимые Review/QA выполнены в B до переноса;
+Deno отдельно в root не повторялся, TS/API-функции не менялись.
+
+Это только локальные fixtures/конкурентные соединения; staging остаётся
+v33/016, новые миграции туда не развёрнуты. Полные T082/T083 открыты.
+Следующий серверный шаг — ограниченный email empty-account prepare/complete
+с запретом завершения до проверенного отсутствия Auth. Клиентский run48
+параллельно ещё принимает поздний canonical sync/реальный expiry.
+
 ## T164 — уточнение первого live FAIL — 17 ноября 2026
 
 Независимый GET /sync после создания тестового paid entitlement подтвердил

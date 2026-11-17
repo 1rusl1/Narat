@@ -1530,6 +1530,1252 @@ BEGIN
 END;
 $$;
 
+-- Reuse the canonical two-owner plan graphs; every diagnostic test rolls back
+-- before the existing 004 acceptance continues, on clean and upgraded schemas.
+CREATE FUNCTION pg_temp.diagnostic_purge_tests(v_owner uuid,v_neighbor uuid)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_operation uuid;
+    v_neighbor_operation uuid;
+    v_decision uuid;
+    v_foreign_decision uuid;
+    v_answer uuid;
+    v_foreign_answer uuid;
+    v_photo uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_rows jsonb;
+    v_table text;
+    v_role text;
+    v_case integer;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('010 diagnostic purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    SELECT operation_id INTO v_neighbor_operation FROM public.account_deletion_requests WHERE owner_id=v_neighbor;
+    SELECT id INTO v_decision FROM public.diagnostic_decisions WHERE owner_id=v_owner LIMIT 1;
+    SELECT id INTO v_foreign_decision FROM public.diagnostic_decisions WHERE owner_id=v_neighbor LIMIT 1;
+    SELECT id INTO v_answer FROM public.diagnostic_answers WHERE owner_id=v_owner LIMIT 1;
+    SELECT id INTO v_foreign_answer FROM public.diagnostic_answers WHERE owner_id=v_neighbor LIMIT 1;
+    SELECT id INTO v_photo FROM public.photo_assets WHERE owner_id=v_owner LIMIT 1;
+
+    RETURN NEXT is((SELECT array_agg(c.relname||'.'||a.attname ORDER BY c.relname,k.ord)
+        FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid
+        CROSS JOIN LATERAL unnest(f.conkey) WITH ORDINALITY k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=k.attnum
+        WHERE f.contype='f' AND f.confrelid IN
+            ('public.diagnostic_decisions'::regclass,'public.diagnostic_answers'::regclass)),
+        ARRAY['care_plans.diagnostic_decision_id','care_plans.diagnostic_decision_revision']::text[],
+        'actual diagnostic incoming FK inventory covers the composite plan key');
+
+    v_before := pg_temp.care_plan_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_neighbor_operation),false,
+        'another deleting owner operation is rejected');
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_neighbor,v_operation),false,
+        'operation cannot be applied to another owner');
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(NULL,v_operation),false,
+        'null diagnostic owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,NULL),false,
+        'null diagnostic operation rejected');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'invalid diagnostic requests are atomic');
+    BEGIN
+        UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+            'old deletion receipt cannot purge an active owner');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'old receipt preserves the graph');
+        RAISE SQLSTATE 'Z1610';
+    EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+    END;
+    BEGIN
+        UPDATE public.operation_receipts SET payload_hash='forged'
+            WHERE owner_id=v_owner AND operation_id=v_operation;
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+            'forged diagnostic deletion receipt rejected');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'forged receipt hold is atomic');
+        RAISE SQLSTATE 'Z1610';
+    EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+    END;
+
+    FOR v_case IN 1..12 LOOP
+        BEGIN
+            CASE v_case
+            WHEN 1 THEN
+                UPDATE public.care_plans SET diagnostic_decision_id=v_decision,
+                    diagnostic_decision_revision=1,deleted_at=clock_timestamp()
+                    WHERE owner_id=v_neighbor AND plan_kind='recovery';
+            WHEN 2 THEN
+                UPDATE public.diagnostic_answers SET decision_id=v_decision,
+                    question_id='cross-owner-fixture',deleted_at=clock_timestamp()
+                    WHERE id=v_foreign_answer;
+            WHEN 3 THEN
+                UPDATE public.diagnostic_decisions SET origin_decision_id=v_decision
+                    WHERE id=v_foreign_decision;
+            WHEN 4 THEN
+                UPDATE public.diagnostic_decisions SET answer_snapshot_ids=ARRAY[v_answer]
+                    WHERE id=v_foreign_decision;
+            WHEN 5 THEN
+                INSERT INTO public.diagnostic_decisions(id,revision,analysis_result_id,owner_id,
+                    kb_release_id,policy_version,original_candidates,decision_scores,state,decision_receipt)
+                SELECT v_decision,2,analysis_result_id,v_neighbor,kb_release_id,policy_version,
+                    original_candidates,decision_scores,state,decision_receipt
+                    FROM public.diagnostic_decisions WHERE id=v_foreign_decision;
+            WHEN 6 THEN
+                UPDATE public.diagnostic_decisions SET answer_snapshot_ids=ARRAY[v_foreign_answer]
+                    WHERE id=v_decision;
+            WHEN 7 THEN
+                UPDATE public.diagnostic_answers SET decision_id=v_foreign_decision,
+                    question_id='cross-owner-fixture' WHERE id=v_answer;
+            WHEN 8 THEN
+                UPDATE public.diagnostic_decisions SET origin_decision_id=v_foreign_decision WHERE id=v_decision;
+            WHEN 9 THEN
+                UPDATE public.care_plans SET diagnostic_decision_id=v_decision,
+                    diagnostic_decision_revision=NULL WHERE owner_id=v_neighbor AND plan_kind='routine';
+            WHEN 10 THEN
+                UPDATE public.diagnostic_decisions SET analysis_result_id=(
+                    SELECT analysis_result_id FROM public.diagnostic_decisions WHERE id=v_foreign_decision)
+                    WHERE id=v_decision;
+            WHEN 11 THEN
+                -- Hold a dependency owned by the caller as well: no cascade or
+                -- restrictive reference outside this phase may be silently removed.
+                CREATE TABLE public.t010_restrictive_reference(
+                    decision_id uuid,revision integer,
+                    CONSTRAINT t010_exact_dependency FOREIGN KEY(decision_id,revision)
+                        REFERENCES public.diagnostic_decisions(id,revision));
+                INSERT INTO public.t010_restrictive_reference VALUES(v_decision,1);
+            WHEN 12 THEN
+                CREATE TABLE public.t010_answer_reference(
+                    answer_id uuid CONSTRAINT t010_answer_dependency
+                        REFERENCES public.diagnostic_answers(id) ON DELETE CASCADE);
+                INSERT INTO public.t010_answer_reference VALUES(v_answer);
+            END CASE;
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+                'diagnostic association holds before predecessor mutation, case '||v_case);
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'diagnostic hold is atomic, case '||v_case);
+            PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+                'saved proof cannot bypass diagnostic dependency, case '||v_case);
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'saved proof hold is atomic, case '||v_case);
+            IF v_case=11 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t010_restrictive_reference),1::bigint,
+                    'restrictive dependency is retained');
+            END IF;
+            IF v_case=12 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t010_answer_reference),1::bigint,
+                    'unowned cascading answer dependency is retained');
+            END IF;
+            RAISE SQLSTATE 'Z1610';
+        EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+        END;
+    END LOOP;
+    BEGIN
+        UPDATE public.care_entries SET task_id=(SELECT id FROM public.care_tasks WHERE owner_id=v_owner),
+            state='voided' WHERE owner_id=v_neighbor;
+        v_before := pg_temp.care_plan_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+            '004 predecessor hold blocks diagnostic deletion');
+        RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'nested hold rolls back the entire diagnostic phase');
+        RAISE SQLSTATE 'Z1610';
+    EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+    END;
+
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            IF v_case>1 THEN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+            END IF;
+            IF v_case=3 THEN
+                UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()+interval '1 hour'
+                    WHERE photo_asset_id=v_photo;
+            ELSE
+                INSERT INTO storage.objects(bucket_id,name)
+                    VALUES('analysis-inputs',v_owner::text||'/diagnostic-hold');
+            END IF;
+            v_before := pg_temp.care_plan_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+                'fresh Storage check holds absent/old proof or unexpired upload, case '||v_case);
+            RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'Storage hold preserves all rows and evidence');
+            RAISE SQLSTATE 'Z1610';
+        EXCEPTION WHEN SQLSTATE 'Z1610' THEN NULL;
+        END;
+    END LOOP;
+
+    -- Canonical versioned decisions with both stored associations.
+    INSERT INTO public.diagnostic_decisions(id,revision,origin_decision_id,analysis_result_id,owner_id,
+        kb_release_id,policy_version,original_candidates,answer_snapshot_ids,decision_scores,state,decision_receipt)
+    SELECT id,2,id,analysis_result_id,owner_id,kb_release_id,policy_version,original_candidates,
+        ARRAY[v_answer],decision_scores,state,decision_receipt
+        FROM public.diagnostic_decisions WHERE id=v_decision AND revision=1;
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.care_plan_snapshot();
+    CREATE TRIGGER t010_reject_decision BEFORE DELETE ON public.diagnostic_decisions
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format(
+        'SELECT public.purge_account_deletion_diagnostic_decisions_internal(%L::uuid,%L::uuid)',
+        v_owner,v_operation),'Z0066','FIXTURE_LEAF_PURGE_FAILURE','late diagnostic failure propagates');
+    DROP TRIGGER t010_reject_decision ON public.diagnostic_decisions;
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'late failure restores answers and all predecessors');
+
+    v_expected := v_before;
+    FOREACH v_table IN ARRAY ARRAY['care_plans','task_rules','care_tasks','care_entries',
+        'care_observations','recovery_transitions','care_reversals','schedule_changes','notification_claims',
+        'diagnostic_answers','diagnostic_decisions'] LOOP
+        SELECT coalesce(jsonb_agg(e.value ORDER BY e.ordinality),'[]'::jsonb) INTO v_rows
+            FROM jsonb_array_elements(v_before->v_table) WITH ORDINALITY e(value,ordinality)
+            WHERE e.value->>'owner_id'<>v_owner::text;
+        v_expected := jsonb_set(v_expected,ARRAY[v_table],v_rows);
+    END LOOP;
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),true,
+        'expired uploads and clean Storage permit canonical owner diagnostic cleanup after 004');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_expected,
+        'only owner diagnostics and eligible predecessors removed; foreign graph, analysis, quota, receipts and Auth retained');
+    RETURN NEXT is((SELECT account_state FROM public.profiles WHERE id=v_owner),'deleting',
+        'diagnostic cleanup does not finalize Auth');
+    v_before := pg_temp.care_plan_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),true,
+        'exact diagnostic replay succeeds');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'exact diagnostic replay changes no row');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/diagnostic-replay');
+    v_before := pg_temp.care_plan_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),false,
+        'successful diagnostic replay still requires fresh Storage readiness');
+    RETURN NEXT is(pg_temp.care_plan_snapshot(),v_before,'replay hold is atomic');
+
+    RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid=
+            'public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)'::regprocedure),
+        'diagnostic phase is SECURITY DEFINER with an empty search path');
+    RETURN NEXT ok(NOT EXISTS (
+        SELECT 1 FROM pg_proc p CROSS JOIN LATERAL
+            aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'diagnostic function has no nonowner grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'actual diagnostic execution denied for '||v_role);
+    END LOOP;
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/diagnostic-replay';
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_diagnostic_decisions_internal(uuid,uuid)'::regprocedure;
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_diagnostic_decisions_internal(v_owner,v_operation),true,
+        'SQL function owner can execute diagnostic replay');
+    RESET ROLE;
+    RAISE SQLSTATE 'Z1610';
+EXCEPTION WHEN SQLSTATE 'Z1610' THEN
+    RETURN;
+END;
+$$;
+
+-- 011 reuses the canonical owner graphs and rolls back before 010/004 tests.
+CREATE FUNCTION pg_temp.analysis_purge_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.care_plan_snapshot() || pg_temp.media_inventory_snapshot()
+$$;
+
+-- Compare only this backend's granted writer barriers on 017's seven tables.
+-- 014 may legitimately take some of them on upgraded schemas; measure it in
+-- a rolled-back subtransaction instead of asserting that all locks are absent.
+CREATE FUNCTION pg_temp.guest_purge_writer_locks() RETURNS text[] LANGUAGE sql AS $$
+    SELECT coalesce(array_agg(relation::text||':'||mode ORDER BY relation,mode),'{}'::text[])
+    FROM pg_locks
+    WHERE pid=pg_backend_pid() AND locktype='relation' AND granted
+      AND mode IN ('ShareLock','ShareRowExclusiveLock','ExclusiveLock','AccessExclusiveLock')
+      AND relation=ANY(ARRAY['public.guest_drafts'::regclass,'public.draft_claims'::regclass,
+          'public.analysis_jobs'::regclass,'public.condition_snapshots'::regclass,
+          'public.photo_assets'::regclass,'public.analysis_results'::regclass,'public.plants'::regclass])
+$$;
+
+CREATE FUNCTION pg_temp.empty_guest_draft_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0170000-0000-4000-8000-000000000011';
+    v_neighbor uuid := 'a0170000-0000-4000-8000-000000000012';
+    v_operation uuid := gen_random_uuid();
+    v_plant uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_locks text[];
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_guest_drafts_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('017 empty draft purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_locks
+        WHERE pid=pg_backend_pid() AND relation='public.guest_drafts'::regclass
+          AND mode='ShareRowExclusiveLock' AND granted),
+        '017 lock regression starts without a preexisting guest draft writer barrier');
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'Empty draft owner','identification') RETURNING id INTO v_plant;
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_neighbor,'Neighbor retained','identification');
+    RETURN NEXT throws_ok(format(
+        'SELECT public.create_guest_photo_draft(%L::uuid,%L::uuid,%L::uuid,%L::uuid,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),'fixture'),
+        '42501','ACTIVE_GUEST_REQUIRED','017 identification producer requires a guest');
+    RETURN NEXT throws_ok(format(
+        'SELECT public.create_bound_guest_diagnosis_draft(%L::uuid,%L::uuid,%L::uuid,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid(),'fixture'),
+        '42501','ACTIVE_GUEST_REQUIRED','017 diagnosis producer requires a guest');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+        '017 active permanent owner with no drafts rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 active empty graph unchanged');
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_neighbor,v_operation),false,
+        '017 empty graph wrong owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,gen_random_uuid()),false,
+        '017 empty graph wrong operation rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 invalid empty scope unchanged');
+    BEGIN
+        UPDATE public.operation_receipts SET payload_hash='forged'
+            WHERE owner_id=v_owner AND operation_id=v_operation;
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 empty graph forged proof rejected');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 forged proof hold is atomic');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO public.condition_snapshots(owner_id,plant_id) VALUES(v_neighbor,v_plant);
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 empty draft path retains 014 cross-owner child hold');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 empty predecessor hold is atomic');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    BEGIN
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+            '017 empty path can establish fresh proof');
+        RETURN NEXT ok((SELECT storage_verified_at IS NOT NULL FROM public.account_deletion_requests
+            WHERE owner_id=v_owner),'017 empty path persists verified Storage proof');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    BEGIN
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/empty-hold');
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 empty path rechecks saved proof against live Storage');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 stale proof hold is atomic');
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    -- Normalize the proof timestamp before comparing exact predecessor effects.
+    BEGIN
+        RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),true,
+            '017 empty fixture has a successful 014 baseline');
+        v_expected := pg_temp.analysis_purge_snapshot();
+        v_locks := pg_temp.guest_purge_writer_locks();
+        RAISE SQLSTATE 'Z1718';
+    EXCEPTION WHEN SQLSTATE 'Z1718' THEN NULL;
+    END;
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+        '017 verified no-draft owner delegates cleanup');
+    RETURN NEXT is(pg_temp.guest_purge_writer_locks(),v_locks,
+        '017 empty path adds no writer barriers beyond 014');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '017 empty path exactly matches 014 cleanup and retained proof/neighbor/audit');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM public.plants WHERE id=v_plant),
+        '017 empty path actually removes the owner plant');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+        '017 empty path exact replay accepted');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 empty replay changes nothing');
+    RETURN NEXT is(pg_temp.guest_purge_writer_locks(),v_locks,'017 empty replay adds no writer barriers');
+    RAISE SQLSTATE 'Z1718';
+EXCEPTION WHEN SQLSTATE 'Z1718' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.empty_guest_draft_purge_tests();
+
+CREATE FUNCTION pg_temp.analysis_purge_tests(v_owner uuid,v_neighbor uuid)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_operation uuid;
+    v_result uuid;
+    v_foreign_result uuid;
+    v_photo uuid;
+    v_draft uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_rows jsonb;
+    v_table text;
+    v_role text;
+    v_case integer;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_analysis_results_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('011 result purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    SELECT id INTO v_result FROM public.analysis_results WHERE owner_id=v_owner LIMIT 1;
+    SELECT id INTO v_foreign_result FROM public.analysis_results WHERE owner_id=v_neighbor LIMIT 1;
+    SELECT source_photo_id INTO v_photo FROM public.analysis_results WHERE id=v_result;
+    RETURN NEXT ok(v_result IS NOT NULL AND v_foreign_result IS NOT NULL,
+        '011 tests have both canonical owner results');
+    RETURN NEXT is((SELECT array_agg(c.relname||'.'||a.attname ORDER BY c.relname,k.ord)
+        FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid
+        CROSS JOIN LATERAL unnest(f.conkey) WITH ORDINALITY k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=k.attnum
+        WHERE f.contype='f' AND f.confrelid='public.analysis_results'::regclass),
+        ARRAY['care_plans.source_analysis_id','diagnostic_decisions.analysis_result_id']::text[],
+        '011 actual incoming inventory includes nulling plans and cascading decisions');
+
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_owner,gen_random_uuid()),false,
+        '011 wrong operation rejected');
+    RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_neighbor,v_operation),false,
+        '011 other deleting owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(NULL,v_operation),false,
+        '011 null owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_owner,NULL),false,
+        '011 null operation rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'011 invalid identity preserves full graph');
+
+    FOR v_case IN 1..18 LOOP
+        BEGIN
+            CASE v_case
+            WHEN 1 THEN
+                UPDATE public.analysis_results SET job_id=(
+                    SELECT job_id FROM public.analysis_results WHERE id=v_foreign_result) WHERE id=v_result;
+            WHEN 2 THEN
+                UPDATE public.analysis_results SET origin_job_id=(
+                    SELECT job_id FROM public.analysis_results WHERE id=v_foreign_result) WHERE id=v_result;
+            WHEN 3 THEN
+                UPDATE public.analysis_results SET plant_id=(
+                    SELECT plant_id FROM public.analysis_results WHERE id=v_foreign_result) WHERE id=v_result;
+            WHEN 4 THEN
+                UPDATE public.analysis_results SET source_photo_id=(
+                    SELECT source_photo_id FROM public.analysis_results WHERE id=v_foreign_result) WHERE id=v_result;
+            WHEN 5 THEN
+                UPDATE public.analysis_results SET source_snapshot_id=(
+                    SELECT source_snapshot_id FROM public.analysis_results WHERE id=v_foreign_result) WHERE id=v_result;
+            WHEN 6 THEN
+                INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+                    VALUES(v_neighbor,gen_random_uuid(),'care','catalogue') RETURNING id INTO v_draft;
+                UPDATE public.analysis_results SET draft_id=v_draft WHERE id=v_result;
+            WHEN 7 THEN
+                UPDATE public.diagnostic_decisions SET analysis_result_id=v_foreign_result WHERE owner_id=v_owner;
+            WHEN 8 THEN
+                UPDATE public.diagnostic_decisions SET analysis_result_id=v_result WHERE owner_id=v_neighbor;
+            WHEN 9 THEN
+                UPDATE public.care_plans SET source_analysis_id=v_foreign_result
+                    WHERE owner_id=v_owner AND plan_kind='recovery';
+            WHEN 10 THEN
+                UPDATE public.care_plans SET source_analysis_id=v_result
+                    WHERE owner_id=v_neighbor AND plan_kind='recovery';
+            WHEN 11 THEN
+                ALTER TABLE public.analysis_results ADD CONSTRAINT t011_composite UNIQUE(id,owner_id);
+                CREATE TABLE public.t011_reference(
+                    result_id uuid,owner_id uuid,
+                    FOREIGN KEY(result_id,owner_id) REFERENCES public.analysis_results(id,owner_id));
+                INSERT INTO public.t011_reference VALUES(v_result,v_owner);
+            WHEN 12 THEN
+                CREATE TABLE public.t011_reference(
+                    result_id uuid REFERENCES public.analysis_results(id) ON DELETE CASCADE);
+                INSERT INTO public.t011_reference VALUES(v_result);
+            WHEN 13 THEN
+                CREATE TABLE public.t011_reference(
+                    result_id uuid REFERENCES public.analysis_results(id) ON DELETE SET NULL);
+                INSERT INTO public.t011_reference VALUES(v_result);
+            WHEN 14 THEN
+                UPDATE public.diagnostic_decisions SET origin_decision_id=(
+                    SELECT id FROM public.diagnostic_decisions WHERE owner_id=v_neighbor LIMIT 1)
+                    WHERE owner_id=v_owner;
+            WHEN 15 THEN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/011-hold');
+            WHEN 16 THEN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+                UPDATE public.diagnosis_upload_tickets SET expires_at=clock_timestamp()+interval '1 hour'
+                    WHERE photo_asset_id=v_photo;
+            WHEN 17 THEN
+                UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+            WHEN 18 THEN
+                UPDATE public.operation_receipts SET payload_hash='forged'
+                    WHERE owner_id=v_owner AND operation_id=v_operation;
+            END CASE;
+            v_before := pg_temp.analysis_purge_snapshot();
+            CREATE TRIGGER t011_predecessor_guard BEFORE DELETE ON public.care_tasks
+                FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+            RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_owner,v_operation),false,
+                '011 malformed graph or fresh proof hold, case '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,
+                '011 hold preserves predecessors, results and evidence, case '||v_case);
+            IF v_case BETWEEN 11 AND 13 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t011_reference),1::bigint,
+                    '011 unknown reference remains intact');
+            END IF;
+            RAISE SQLSTATE 'Z1611';
+        EXCEPTION WHEN SQLSTATE 'Z1611' THEN NULL;
+        END;
+    END LOOP;
+
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    CREATE TRIGGER t011_reject_result BEFORE DELETE ON public.analysis_results
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format(
+        'SELECT public.purge_account_deletion_analysis_results_internal(%L::uuid,%L::uuid)',v_owner,v_operation),
+        'Z0066','FIXTURE_LEAF_PURGE_FAILURE','011 late result failure propagates');
+    DROP TRIGGER t011_reject_result ON public.analysis_results;
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'011 late failure restores all predecessor deletions');
+
+    v_expected := v_before;
+    FOREACH v_table IN ARRAY ARRAY['care_plans','task_rules','care_tasks','care_entries',
+        'care_observations','recovery_transitions','care_reversals','schedule_changes','notification_claims',
+        'diagnostic_answers','diagnostic_decisions','analysis_results'] LOOP
+        SELECT coalesce(jsonb_agg(e.value ORDER BY e.ordinality),'[]'::jsonb) INTO v_rows
+            FROM jsonb_array_elements(v_before->v_table) WITH ORDINALITY e(value,ordinality)
+            WHERE e.value->>'owner_id'<>v_owner::text;
+        v_expected := jsonb_set(v_expected,ARRAY[v_table],v_rows);
+    END LOOP;
+    RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_owner,v_operation),true,
+        '011 canonical cleanup follows validated 010 under fresh proof');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '011 removes only owner results and allowed children; neighbors, jobs, runtime, quotas, profiles and Auth retained');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_owner,v_operation),true,
+        '011 exact operation replay succeeds');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'011 replay changes no rows');
+    BEGIN
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/011-replay');
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_owner,v_operation),false,
+            '011 replay still requires fresh Storage readiness');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'011 replay hold is atomic');
+        RAISE SQLSTATE 'Z1611';
+    EXCEPTION WHEN SQLSTATE 'Z1611' THEN NULL;
+    END;
+
+    RETURN NEXT ok((SELECT prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.purge_account_deletion_analysis_results_internal(uuid,uuid)'::regprocedure),
+        '011 is volatile SECURITY DEFINER with empty search path');
+    RETURN NEXT ok(NOT EXISTS (
+        SELECT 1 FROM pg_proc p CROSS JOIN LATERAL
+            aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_analysis_results_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'011 has no nonowner grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_analysis_results_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'011 execution denied for '||v_role);
+    END LOOP;
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_analysis_results_internal(uuid,uuid)'::regprocedure;
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_analysis_results_internal(v_owner,v_operation),true,
+        '011 SQL owner can replay');
+    RESET ROLE;
+    RAISE SQLSTATE 'Z1611';
+EXCEPTION WHEN SQLSTATE 'Z1611' THEN
+    RETURN;
+END;
+$$;
+
+-- 012 runs against the same canonical predecessor graph and rolls back all cases.
+CREATE FUNCTION pg_temp.snapshot_purge_tests(v_owner uuid,v_neighbor uuid)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_operation uuid;
+    v_snapshot uuid;
+    v_foreign_snapshot uuid;
+    v_plant uuid;
+    v_foreign_plant uuid;
+    v_draft uuid;
+    v_draft_snapshot uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_rows jsonb;
+    v_table text;
+    v_role text;
+    v_case integer;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_condition_snapshots_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('012 snapshot purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    SELECT source_snapshot_id,plant_id INTO v_snapshot,v_plant
+        FROM public.analysis_results WHERE owner_id=v_owner LIMIT 1;
+    SELECT source_snapshot_id,plant_id INTO v_foreign_snapshot,v_foreign_plant
+        FROM public.analysis_results WHERE owner_id=v_neighbor LIMIT 1;
+    RETURN NEXT ok(v_snapshot IS NOT NULL AND v_foreign_snapshot IS NOT NULL,
+        '012 has canonical results, diagnostics, plans and journal predecessors');
+    RETURN NEXT is((SELECT array_agg(c.relname||'.'||a.attname ORDER BY c.relname,a.attname)
+        FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid
+        JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=f.conkey[1]
+        WHERE f.contype='f' AND f.confrelid='public.condition_snapshots'::regclass),
+        ARRAY['analysis_jobs.snapshot_id','analysis_results.source_snapshot_id','care_plans.snapshot_id',
+            'guest_drafts.condition_snapshot_id','plants.current_condition_snapshot_id']::text[],
+        '012 inventories all five real incoming FKs; legacy alias has no FK');
+
+    v_before := pg_temp.analysis_purge_snapshot();
+    CREATE TRIGGER t012_predecessor_guard BEFORE DELETE ON public.care_tasks
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation),false,
+        '012 same-owner retained job input blocks before predecessor execution');
+    DROP TRIGGER t012_predecessor_guard ON public.care_tasks;
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'012 job hold changes no rows or evidence');
+
+    -- Only fixture preparation unlinks retained job inputs, never the finalizer.
+    UPDATE public.analysis_jobs SET snapshot_id=NULL WHERE owner_id=v_owner;
+    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+        VALUES(v_owner,gen_random_uuid(),'care','catalogue') RETURNING id INTO v_draft;
+    INSERT INTO public.condition_snapshots(owner_id,draft_id,deleted_at)
+        VALUES(v_owner,v_draft,clock_timestamp()) RETURNING id INTO v_draft_snapshot;
+    UPDATE public.guest_drafts SET condition_snapshot_id=v_draft_snapshot WHERE id=v_draft;
+    UPDATE public.plants SET current_snapshot_id=v_snapshot,
+        current_condition_snapshot_id=v_snapshot WHERE id=v_plant;
+
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,gen_random_uuid()),false,
+        '012 wrong operation rejected');
+    RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_neighbor,v_operation),false,
+        '012 other deleting owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(NULL,v_operation),false,
+        '012 null owner rejected');
+    RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,NULL),false,
+        '012 null operation rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'012 invalid calls preserve full graph');
+
+    FOR v_case IN 1..18 LOOP
+        BEGIN
+            CASE v_case
+            WHEN 1 THEN
+                UPDATE public.plants SET current_snapshot_id=v_snapshot,
+                    current_condition_snapshot_id=v_snapshot WHERE id=v_foreign_plant;
+            WHEN 2 THEN
+                ALTER TABLE public.plants DISABLE TRIGGER trg_plants_sync_columns;
+                UPDATE public.plants SET current_snapshot_id=v_snapshot,
+                    current_condition_snapshot_id=NULL WHERE id=v_foreign_plant;
+                ALTER TABLE public.plants ENABLE TRIGGER trg_plants_sync_columns;
+            WHEN 3 THEN
+                UPDATE public.plants SET current_snapshot_id=v_foreign_snapshot,
+                    current_condition_snapshot_id=v_foreign_snapshot WHERE id=v_plant;
+            WHEN 4 THEN
+                UPDATE public.condition_snapshots
+                    SET plant_id=v_foreign_plant,
+                        version=(SELECT coalesce(max(s.version),0)+1
+                            FROM public.condition_snapshots s WHERE s.plant_id=v_foreign_plant)
+                    WHERE id=v_snapshot;
+            WHEN 5 THEN
+                UPDATE public.condition_snapshots SET owner_id=v_neighbor WHERE id=v_snapshot;
+            WHEN 6 THEN
+                UPDATE public.guest_drafts SET guest_owner_id=v_neighbor WHERE id=v_draft;
+            WHEN 7 THEN
+                UPDATE public.care_plans SET snapshot_id=v_snapshot WHERE owner_id=v_neighbor;
+            WHEN 8 THEN
+                UPDATE public.analysis_results SET source_snapshot_id=v_snapshot WHERE owner_id=v_neighbor;
+            WHEN 9 THEN
+                UPDATE public.analysis_jobs SET snapshot_id=v_snapshot WHERE owner_id=v_neighbor;
+            WHEN 10 THEN
+                CREATE TABLE public.t012_reference(
+                    snapshot_id uuid REFERENCES public.condition_snapshots(id));
+                INSERT INTO public.t012_reference VALUES(v_snapshot);
+            WHEN 11 THEN
+                CREATE TABLE public.t012_reference(
+                    snapshot_id uuid REFERENCES public.condition_snapshots(id) ON DELETE CASCADE);
+                INSERT INTO public.t012_reference VALUES(v_snapshot);
+            WHEN 12 THEN
+                CREATE TABLE public.t012_reference(
+                    snapshot_id uuid REFERENCES public.condition_snapshots(id) ON DELETE SET NULL);
+                INSERT INTO public.t012_reference VALUES(v_snapshot);
+            WHEN 13 THEN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/012-hold');
+            WHEN 14 THEN
+                UPDATE public.operation_receipts SET payload_hash='forged'
+                    WHERE owner_id=v_owner AND operation_id=v_operation;
+            WHEN 15 THEN
+                UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+            WHEN 16 THEN
+                -- Same owner, wrong parent is not authorized for alias cleanup.
+                UPDATE public.plants SET current_snapshot_id=v_draft_snapshot,
+                    current_condition_snapshot_id=v_draft_snapshot WHERE id=v_plant;
+            WHEN 17 THEN
+                ALTER TABLE public.plants DISABLE TRIGGER trg_plants_sync_columns;
+                UPDATE public.plants SET current_snapshot_id=gen_random_uuid() WHERE id=v_plant;
+                ALTER TABLE public.plants ENABLE TRIGGER trg_plants_sync_columns;
+            WHEN 18 THEN
+                ALTER TABLE public.condition_snapshots ADD CONSTRAINT t012_parent_key UNIQUE(id,owner_id);
+                CREATE TABLE public.t012_reference(
+                    snapshot_id uuid,owner_id uuid,
+                    FOREIGN KEY(snapshot_id,owner_id) REFERENCES public.condition_snapshots(id,owner_id));
+                INSERT INTO public.t012_reference VALUES(v_snapshot,v_owner);
+            END CASE;
+            v_before := pg_temp.analysis_purge_snapshot();
+            CREATE TRIGGER t012_predecessor_guard BEFORE DELETE ON public.care_tasks
+                FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+            RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation),false,
+                '012 preflight fails closed before predecessor, case '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,
+                '012 hold preserves graph and fresh/stale evidence, case '||v_case);
+            IF v_case BETWEEN 10 AND 12 OR v_case=18 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t012_reference),1::bigint,
+                    '012 unknown ordinary child retained');
+            END IF;
+            RAISE SQLSTATE 'Z1612';
+        EXCEPTION WHEN SQLSTATE 'Z1612' THEN NULL;
+        END;
+    END LOOP;
+
+    BEGIN
+        CREATE TABLE public.t012_result_reference(
+            result_id uuid REFERENCES public.analysis_results(id));
+        INSERT INTO public.t012_result_reference
+            SELECT id FROM public.analysis_results WHERE owner_id=v_owner;
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation),false,
+            '012 nested 011 restrictive dependency holds the whole phase');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,
+            '012 predecessor hold restores verification and keeps every reference');
+        RAISE SQLSTATE 'Z1612';
+    EXCEPTION WHEN SQLSTATE 'Z1612' THEN NULL;
+    END;
+
+    -- Late errors must roll back successful predecessor work and alias clearing.
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    CREATE TRIGGER t012_reject_snapshot BEFORE DELETE ON public.condition_snapshots
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format(
+        'SELECT public.purge_account_deletion_condition_snapshots_internal(%L::uuid,%L::uuid)',v_owner,v_operation),
+        'Z0066','FIXTURE_LEAF_PURGE_FAILURE','012 late failure propagates');
+    DROP TRIGGER t012_reject_snapshot ON public.condition_snapshots;
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'012 late failure restores entire graph');
+
+    -- Exercise canonical-only, legacy-only and synchronized aliases.
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            ALTER TABLE public.plants DISABLE TRIGGER trg_plants_sync_columns;
+            UPDATE public.plants
+                SET current_condition_snapshot_id=CASE WHEN v_case=2 THEN NULL ELSE v_snapshot END,
+                    current_snapshot_id=CASE WHEN v_case=1 THEN NULL ELSE v_snapshot END
+                WHERE id=v_plant;
+            ALTER TABLE public.plants ENABLE TRIGGER trg_plants_sync_columns;
+            v_before := pg_temp.analysis_purge_snapshot();
+            v_expected := v_before;
+            FOREACH v_table IN ARRAY ARRAY['care_plans','task_rules','care_tasks','care_entries',
+                'care_observations','recovery_transitions','care_reversals','schedule_changes','notification_claims',
+                'diagnostic_answers','diagnostic_decisions','analysis_results','condition_snapshots'] LOOP
+                SELECT coalesce(jsonb_agg(e.value ORDER BY e.ordinality),'[]'::jsonb) INTO v_rows
+                    FROM jsonb_array_elements(v_before->v_table) WITH ORDINALITY e(value,ordinality)
+                    WHERE e.value->>'owner_id'<>v_owner::text;
+                v_expected := jsonb_set(v_expected,ARRAY[v_table],v_rows);
+            END LOOP;
+            SELECT jsonb_agg(x.row_value ORDER BY x.row_value::text) INTO v_rows FROM (
+                SELECT CASE WHEN e->>'id'=v_plant::text
+                    THEN e || '{"current_condition_snapshot_id":null,"current_snapshot_id":null}'::jsonb
+                    ELSE e END AS row_value FROM jsonb_array_elements(v_before->'plants') e) x;
+            v_expected := jsonb_set(v_expected,ARRAY['plants'],v_rows);
+            SELECT jsonb_agg(x.row_value ORDER BY x.row_value::text) INTO v_rows FROM (
+                SELECT CASE WHEN e->>'id'=v_draft::text
+                    THEN e || '{"condition_snapshot_id":null}'::jsonb ELSE e END AS row_value
+                FROM jsonb_array_elements(v_before->'public.guest_drafts') e) x;
+            v_expected := jsonb_set(v_expected,ARRAY['public.guest_drafts'],v_rows);
+            RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation),true,
+                '012 safe canonical predecessor cleanup and alias variant '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+                '012 exact allowed changes only; jobs, Auth, receipts, foreign graph retained, variant '||v_case);
+            v_before := pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation),true,
+                '012 exact operation replay succeeds');
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'012 replay changes no rows');
+            INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/012-replay');
+            v_before := pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation),false,
+                '012 replay requires fresh Storage readiness');
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'012 stale proof replay hold is atomic');
+            RAISE SQLSTATE 'Z1612';
+        EXCEPTION WHEN SQLSTATE 'Z1612' THEN NULL;
+        END;
+    END LOOP;
+
+    RETURN NEXT ok((SELECT prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.purge_account_deletion_condition_snapshots_internal(uuid,uuid)'::regprocedure),
+        '012 volatile SECURITY DEFINER uses empty search path');
+    RETURN NEXT ok(NOT EXISTS (
+        SELECT 1 FROM pg_proc p CROSS JOIN LATERAL
+            aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_condition_snapshots_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'012 has no nonowner grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'012 execution denied for '||v_role);
+    END LOOP;
+    SELECT pg_get_userbyid(proowner) INTO v_role FROM pg_proc
+        WHERE oid='public.purge_account_deletion_condition_snapshots_internal(uuid,uuid)'::regprocedure;
+    -- The function owner can execute a real purge as well as exact replay.
+    EXECUTE format('SET LOCAL ROLE %I',v_role);
+    RETURN NEXT is(public.purge_account_deletion_condition_snapshots_internal(v_owner,v_operation),true,
+        '012 SQL owner can execute');
+    RESET ROLE;
+    RAISE SQLSTATE 'Z1612';
+EXCEPTION WHEN SQLSTATE 'Z1612' THEN
+    RETURN;
+END;
+$$;
+
+-- 013 shares the canonical owner graphs and rolls every scenario back.
+CREATE FUNCTION pg_temp.photo_row_purge_tests(v_owner uuid,v_neighbor uuid)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_operation uuid;
+    v_photo uuid;
+    v_foreign_photo uuid;
+    v_plant uuid;
+    v_foreign_plant uuid;
+    v_draft uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_rows jsonb;
+    v_table text;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_photo_rows_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('013 photo purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    SELECT id,plant_id INTO v_photo,v_plant FROM public.photo_assets WHERE owner_id=v_owner LIMIT 1;
+    SELECT id,plant_id INTO v_foreign_photo,v_foreign_plant
+        FROM public.photo_assets WHERE owner_id=v_neighbor LIMIT 1;
+    -- Only fixture preparation unlinks snapshots. Preserve the job's photo audit.
+    UPDATE public.analysis_jobs SET snapshot_id=NULL,photo_ids=ARRAY[v_photo] WHERE owner_id=v_owner;
+    UPDATE public.plants SET main_photo_id=v_photo WHERE id=v_plant;
+    UPDATE public.care_observations SET photo_id=v_photo WHERE owner_id=v_owner;
+    UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp() WHERE id=v_photo;
+    INSERT INTO public.guest_identification_sources(photo_id,succeeded_at,expires_at,storage_cleaned_at)
+        VALUES(v_photo,clock_timestamp()-interval '2 days',clock_timestamp()-interval '1 day',clock_timestamp());
+    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method,photo_id,deleted_at,storage_cleaned_at)
+        VALUES(v_owner,gen_random_uuid(),'care','catalogue',v_photo,clock_timestamp(),clock_timestamp()) RETURNING id INTO v_draft;
+
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,gen_random_uuid()),false,
+        '013 rejects wrong operation');
+    RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_neighbor,v_operation),false,
+        '013 rejects another owner operation');
+    RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(NULL,v_operation),false,
+        '013 rejects null owner');
+    RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,NULL),false,
+        '013 rejects null operation');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'013 invalid callers preserve full graph');
+
+    FOR v_case IN 1..19 LOOP
+        BEGIN
+            CASE v_case
+            WHEN 1 THEN UPDATE public.plants SET main_photo_id=v_photo WHERE id=v_foreign_plant;
+            WHEN 2 THEN UPDATE public.plants SET main_photo_id=v_foreign_photo WHERE id=v_plant;
+            WHEN 3 THEN UPDATE public.photo_assets SET plant_id=v_foreign_plant WHERE id=v_photo;
+            WHEN 4 THEN UPDATE public.photo_assets SET plant_id=v_plant WHERE id=v_foreign_photo;
+            WHEN 5 THEN UPDATE public.guest_drafts SET guest_owner_id=v_neighbor WHERE id=v_draft;
+            WHEN 6 THEN UPDATE public.guest_drafts SET photo_id=v_foreign_photo WHERE id=v_draft;
+            WHEN 7 THEN UPDATE public.care_observations SET photo_id=v_photo WHERE owner_id=v_neighbor;
+            WHEN 8 THEN UPDATE public.care_observations SET photo_id=v_foreign_photo WHERE owner_id=v_owner;
+            WHEN 9 THEN UPDATE public.analysis_results SET source_photo_id=v_photo WHERE owner_id=v_neighbor;
+            WHEN 10 THEN UPDATE public.care_plans SET source_photo_id=v_photo WHERE owner_id=v_neighbor;
+            WHEN 11 THEN UPDATE public.analysis_jobs SET photo_ids=ARRAY[v_photo] WHERE owner_id=v_neighbor;
+            WHEN 12 THEN UPDATE public.analysis_jobs SET photo_ids=ARRAY[v_foreign_photo] WHERE owner_id=v_owner;
+            WHEN 13 THEN
+                CREATE TABLE public.t013_reference(photo_id uuid REFERENCES public.photo_assets(id));
+                INSERT INTO public.t013_reference VALUES(v_photo);
+            WHEN 14 THEN
+                CREATE TABLE public.t013_reference(photo_id uuid REFERENCES public.photo_assets(id) ON DELETE CASCADE);
+                INSERT INTO public.t013_reference VALUES(v_photo);
+            WHEN 15 THEN
+                CREATE TABLE public.t013_reference(photo_id uuid REFERENCES public.photo_assets(id) ON DELETE SET NULL);
+                INSERT INTO public.t013_reference VALUES(v_photo);
+            WHEN 16 THEN
+                CREATE TABLE public.t013_reference(photo_id uuid REFERENCES public.diagnosis_upload_tickets(photo_asset_id) ON DELETE CASCADE);
+                INSERT INTO public.t013_reference VALUES(v_photo);
+            WHEN 17 THEN
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/'||v_photo::text);
+            WHEN 18 THEN
+                ALTER TABLE public.photo_assets ADD COLUMN t013_parent uuid REFERENCES public.plants(id);
+                UPDATE public.photo_assets SET t013_parent=v_plant WHERE id=v_photo;
+            WHEN 19 THEN
+                ALTER TABLE public.photo_assets ADD UNIQUE(id,owner_id);
+                CREATE TABLE public.t013_reference(photo_id uuid,owner_id uuid,
+                    FOREIGN KEY(photo_id,owner_id) REFERENCES public.photo_assets(id,owner_id) ON DELETE CASCADE);
+                INSERT INTO public.t013_reference VALUES(v_photo,v_owner);
+            END CASE;
+            UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                WHERE owner_id=v_owner;
+            v_before := pg_temp.analysis_purge_snapshot();
+            CREATE TRIGGER t013_predecessor_guard BEFORE DELETE ON public.care_tasks
+                FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+            RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,v_operation),false,
+                '013 fails before predecessor for malformed graph/proof '||v_case);
+            DROP TRIGGER t013_predecessor_guard ON public.care_tasks;
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'013 hold is atomic '||v_case);
+            IF v_case BETWEEN 13 AND 16 OR v_case=19 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t013_reference),1::bigint,
+                    '013 retains ordinary restrictive/cascade/nulling child');
+            END IF;
+            RAISE SQLSTATE 'Z1613';
+        EXCEPTION WHEN SQLSTATE 'Z1613' THEN NULL;
+        END;
+    END LOOP;
+
+    -- A nested 012 hold and a late unexpected failure both restore earlier work.
+    BEGIN
+        UPDATE public.analysis_jobs SET snapshot_id=(
+            SELECT id FROM public.condition_snapshots WHERE owner_id=v_owner LIMIT 1)
+            WHERE owner_id=v_owner;
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,v_operation),false,
+            '013 respects retained real snapshot input in 012');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'013 nested hold restores proof and graph');
+        RAISE SQLSTATE 'Z1613';
+    EXCEPTION WHEN SQLSTATE 'Z1613' THEN NULL;
+    END;
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    CREATE TRIGGER t013_reject_photo BEFORE DELETE ON public.photo_assets
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format(
+        'SELECT public.purge_account_deletion_photo_rows_internal(%L::uuid,%L::uuid)',v_owner,v_operation),
+        'Z0066','FIXTURE_LEAF_PURGE_FAILURE','013 late error propagates');
+    DROP TRIGGER t013_reject_photo ON public.photo_assets;
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'013 late error restores all predecessors');
+
+    -- Compute the complete allowed delta, including duplicate snapshot keys.
+    v_expected := v_before;
+    FOREACH v_table IN ARRAY ARRAY['care_plans','task_rules','care_tasks','care_entries',
+        'care_observations','recovery_transitions','care_reversals','schedule_changes','notification_claims',
+        'diagnostic_answers','diagnostic_decisions','analysis_results','condition_snapshots','photo_assets'] LOOP
+        SELECT coalesce(jsonb_agg(e.value ORDER BY e.ordinality),'[]'::jsonb) INTO v_rows
+            FROM jsonb_array_elements(v_before->v_table) WITH ORDINALITY e(value,ordinality)
+            WHERE e.value->>'owner_id'<>v_owner::text;
+        v_expected := jsonb_set(v_expected,ARRAY[v_table],v_rows);
+    END LOOP;
+    FOREACH v_table IN ARRAY ARRAY['diagnosis_upload_tickets','public.diagnosis_upload_tickets',
+        'public.first_aid_photo_upload_tickets','public.guest_identification_sources'] LOOP
+        SELECT coalesce(jsonb_agg(e.value ORDER BY e.ordinality),'[]'::jsonb) INTO v_rows
+            FROM jsonb_array_elements(v_before->v_table) WITH ORDINALITY e(value,ordinality)
+            WHERE coalesce(e.value->>'photo_asset_id',e.value->>'photo_id')<>v_photo::text;
+        v_expected := jsonb_set(v_expected,ARRAY[v_table],v_rows);
+    END LOOP;
+    SELECT jsonb_agg(x.value ORDER BY x.value::text) INTO v_rows FROM (
+        SELECT CASE WHEN e->>'id'=v_plant::text THEN
+            e || '{"main_photo_id":null,"current_condition_snapshot_id":null,"current_snapshot_id":null}'::jsonb
+            ELSE e END AS value FROM jsonb_array_elements(v_before->'plants') e) x;
+    v_expected := jsonb_set(v_expected,ARRAY['plants'],v_rows);
+    SELECT jsonb_agg(x.value ORDER BY x.value::text) INTO v_rows FROM (
+        SELECT CASE WHEN e->>'id'=v_draft::text THEN e || '{"photo_id":null}'::jsonb ELSE e END AS value
+            FROM jsonb_array_elements(v_before->'public.guest_drafts') e) x;
+    v_expected := jsonb_set(v_expected,ARRAY['public.guest_drafts'],v_rows);
+
+    RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,v_operation),true,
+        '013 purges verified tombstone and supported ownerless leaves after 012');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '013 exact delta retains jobs, Auth, keys, receipts, ledger and unrelated rows');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,v_operation),true,'013 exact replay');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'013 replay changes nothing');
+    BEGIN
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/013-replay');
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,v_operation),false,
+            '013 replay rechecks Storage after photos have gone');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'013 replay hold retains old evidence');
+        RAISE SQLSTATE 'Z1613';
+    EXCEPTION WHEN SQLSTATE 'Z1613' THEN NULL;
+    END;
+
+    RETURN NEXT ok((SELECT prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.purge_account_deletion_photo_rows_internal(uuid,uuid)'::regprocedure),
+        '013 private volatile definer has empty search path');
+    RETURN NEXT ok(NOT EXISTS (
+        SELECT 1 FROM pg_proc p CROSS JOIN LATERAL
+            aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_photo_rows_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'013 grants no nonowner execution');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_photo_rows_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'013 actual execution denied for '||v_role);
+    END LOOP;
+    RAISE SQLSTATE 'Z1613';
+EXCEPTION WHEN SQLSTATE 'Z1613' THEN RETURN;
+END;
+$$;
+
+-- 014 reuses the two-owner graph and rolls every case back for older phases.
+CREATE FUNCTION pg_temp.plant_row_purge_tests(v_owner uuid,v_neighbor uuid)
+RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_operation uuid;
+    v_plant uuid;
+    v_foreign_plant uuid;
+    v_photo uuid;
+    v_snapshot uuid;
+    v_draft uuid;
+    v_claim uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_rows jsonb;
+    v_edge record;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_plant_rows_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('014 plant purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
+    SELECT plant_id INTO v_plant FROM public.photo_assets WHERE owner_id=v_owner LIMIT 1;
+    SELECT plant_id INTO v_foreign_plant FROM public.photo_assets WHERE owner_id=v_neighbor LIMIT 1;
+    SELECT id INTO v_photo FROM public.photo_assets WHERE owner_id=v_owner LIMIT 1;
+    SELECT id INTO v_snapshot FROM public.condition_snapshots WHERE owner_id=v_owner LIMIT 1;
+    UPDATE public.analysis_jobs SET snapshot_id=NULL,photo_ids=ARRAY[v_photo] WHERE owner_id=v_owner;
+    UPDATE public.plants SET main_photo_id=v_photo,current_snapshot_id=v_snapshot,
+        current_condition_snapshot_id=v_snapshot WHERE id=v_plant;
+    UPDATE public.photo_assets SET state='deleted',deleted_at=clock_timestamp() WHERE id=v_photo;
+    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method,storage_cleaned_at)
+        VALUES(v_neighbor,gen_random_uuid(),'care','catalogue',clock_timestamp()) RETURNING id INTO v_draft;
+    INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,
+        payload_hash,overrides,result_plant_id,state)
+        VALUES(v_draft,'retained-proof',v_owner,gen_random_uuid(),'retained-hash',
+            '{"personal_name":"retained"}',v_plant,'published') RETURNING id INTO v_claim;
+    RETURN NEXT is((SELECT count(*) FROM pg_constraint
+        WHERE contype='f' AND confrelid='public.plants'::regclass),14::bigint,
+        '014 canonical and upgraded graph inventories all fourteen incoming plant FKs');
+
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,gen_random_uuid()),false,'014 wrong operation');
+    RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_neighbor,v_operation),false,'014 wrong owner');
+    RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(NULL,v_operation),false,'014 null owner');
+    RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,NULL),false,'014 null operation');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'014 invalid identities preserve entire graph');
+
+    -- Each current owner-bearing child is checked in both directions before
+    -- 013 can mutate anything, including soft-deleted rows.
+    FOR v_edge IN SELECT * FROM (VALUES
+        ('analysis_jobs'),('condition_snapshots'),('photo_assets'),('analysis_results'),
+        ('care_plans'),('task_rules'),('care_tasks'),('care_entries'),
+        ('schedule_changes'),('care_observations'),('recovery_transitions')
+    ) AS e(child_table) LOOP
+        FOR v_case IN 1..2 LOOP
+            BEGIN
+                EXECUTE format('UPDATE public.%I SET plant_id=$1%s WHERE owner_id=$2',v_edge.child_table,
+                    CASE v_edge.child_table
+                        WHEN 'condition_snapshots' THEN ',version=version+100'
+                        WHEN 'care_tasks' THEN ',occurrence_key=occurrence_key||''-foreign'''
+                        ELSE '' END)
+                    USING CASE WHEN v_case=1 THEN v_plant ELSE v_foreign_plant END,
+                          CASE WHEN v_case=1 THEN v_neighbor ELSE v_owner END;
+                v_before := pg_temp.analysis_purge_snapshot();
+                CREATE TRIGGER t014_predecessor_guard BEFORE DELETE ON public.care_tasks
+                    FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+                RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),false,
+                    '014 foreign plant link before predecessor: '||v_edge.child_table||'/'||v_case);
+                DROP TRIGGER t014_predecessor_guard ON public.care_tasks;
+                RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'014 foreign-link hold is atomic');
+                RAISE SQLSTATE 'Z1614';
+            EXCEPTION WHEN SQLSTATE 'Z1614' THEN NULL;
+            END;
+        END LOOP;
+    END LOOP;
+
+    FOR v_case IN 1..20 LOOP
+        BEGIN
+            CASE v_case
+            WHEN 1 THEN UPDATE public.draft_claims SET target_owner_id=v_neighbor WHERE id=v_claim;
+            WHEN 2 THEN UPDATE public.draft_claims SET target_owner_id=NULL WHERE id=v_claim;
+            WHEN 3 THEN UPDATE public.draft_claims SET result_plant_id=v_foreign_plant WHERE id=v_claim;
+            WHEN 4 THEN
+                CREATE TABLE public.t014_reference(plant_id uuid REFERENCES public.plants(id) ON DELETE CASCADE);
+                INSERT INTO public.t014_reference VALUES(v_plant);
+            WHEN 5 THEN
+                CREATE TABLE public.t014_reference(plant_id uuid REFERENCES public.plants(id) ON DELETE SET NULL);
+                INSERT INTO public.t014_reference VALUES(v_plant);
+            WHEN 6 THEN
+                CREATE TABLE public.t014_reference(plant_id uuid REFERENCES public.plants(id));
+                INSERT INTO public.t014_reference VALUES(v_plant);
+            WHEN 7 THEN
+                ALTER TABLE public.plants ADD UNIQUE(id,owner_id);
+                CREATE TABLE public.t014_reference(plant_id uuid,owner_id uuid,
+                    FOREIGN KEY(plant_id,owner_id) REFERENCES public.plants(id,owner_id) ON DELETE CASCADE);
+                INSERT INTO public.t014_reference VALUES(v_plant,v_owner);
+            WHEN 8 THEN
+                ALTER TABLE public.draft_claims RENAME COLUMN target_owner_id TO legacy_owner;
+            WHEN 9 THEN
+                ALTER TABLE public.analysis_jobs RENAME COLUMN owner_id TO legacy_owner;
+            WHEN 10 THEN
+                ALTER TABLE public.plants DISABLE TRIGGER trg_plants_sync_columns;
+                UPDATE public.plants SET current_snapshot_id=(
+                    SELECT id FROM public.condition_snapshots WHERE owner_id=v_neighbor LIMIT 1)
+                    WHERE id=v_plant;
+                ALTER TABLE public.plants ENABLE TRIGGER trg_plants_sync_columns;
+            WHEN 11 THEN
+                INSERT INTO public.basic_care_memberships(owner_id,plant_id) VALUES(v_owner,v_plant);
+            WHEN 12 THEN
+                ALTER TABLE public.analysis_jobs DROP CONSTRAINT analysis_jobs_plant_id_fkey;
+            WHEN 13 THEN
+                ALTER TABLE public.plants ADD COLUMN t014_parent uuid REFERENCES public.plants(id);
+                UPDATE public.plants SET t014_parent=v_foreign_plant WHERE id=v_plant;
+            WHEN 14 THEN
+                ALTER TABLE public.plants DISABLE TRIGGER trg_plants_sync_columns;
+                UPDATE public.plants SET current_snapshot_id=gen_random_uuid() WHERE id=v_plant;
+                ALTER TABLE public.plants ENABLE TRIGGER trg_plants_sync_columns;
+            WHEN 15 THEN
+                ALTER TABLE public.analysis_jobs DROP CONSTRAINT analysis_jobs_plant_id_fkey;
+                ALTER TABLE public.analysis_jobs ADD FOREIGN KEY(plant_id)
+                    REFERENCES public.plants(id) ON DELETE CASCADE;
+            WHEN 16 THEN
+                ALTER TABLE public.care_entries DROP CONSTRAINT care_entries_plant_id_fkey;
+                UPDATE public.care_entries SET plant_id=v_foreign_plant WHERE owner_id=v_owner;
+            WHEN 17 THEN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/014-hold');
+            WHEN 18 THEN
+                UPDATE public.operation_receipts SET payload_hash='forged'
+                    WHERE owner_id=v_owner AND operation_id=v_operation;
+            WHEN 19,20 THEN
+                INSERT INTO public.first_aid_followups(owner_id,plant_id,origin_analysis_id,
+                    kb_release_id,action_code,first_action_snapshot)
+                    SELECT CASE WHEN v_case=19 THEN v_owner ELSE v_neighbor END,
+                        v_plant,gen_random_uuid(),kb_release_id,'water','{}'::jsonb
+                    FROM public.analysis_jobs WHERE owner_id=v_owner LIMIT 1;
+            END CASE;
+            v_before := pg_temp.analysis_purge_snapshot();
+            CREATE TRIGGER t014_predecessor_guard BEFORE DELETE ON public.care_tasks
+                FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+            RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),false,
+                '014 malformed schema, retained child or unknown FK holds before predecessor '||v_case);
+            DROP TRIGGER t014_predecessor_guard ON public.care_tasks;
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'014 malformed hold is atomic '||v_case);
+            IF v_case BETWEEN 4 AND 7 THEN
+                RETURN NEXT is((SELECT count(*) FROM public.t014_reference),1::bigint,
+                    '014 preserves ordinary unknown FK child');
+            END IF;
+            RAISE SQLSTATE 'Z1614';
+        EXCEPTION WHEN SQLSTATE 'Z1614' THEN NULL;
+        END;
+    END LOOP;
+
+    BEGIN
+        UPDATE public.analysis_jobs SET snapshot_id=v_snapshot WHERE owner_id=v_owner;
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),false,
+            '014 respects 012 retained snapshot hold');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'014 nested hold restores proof and predecessors');
+        RAISE SQLSTATE 'Z1614';
+    EXCEPTION WHEN SQLSTATE 'Z1614' THEN NULL;
+    END;
+
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    CREATE TRIGGER t014_late_failure BEFORE DELETE ON public.plants
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_care_leaf_purge();
+    RETURN NEXT throws_ok(format('SELECT public.purge_account_deletion_plant_rows_internal(%L::uuid,%L::uuid)',
+        v_owner,v_operation),'Z0066','FIXTURE_LEAF_PURGE_FAILURE','014 late error propagates');
+    DROP TRIGGER t014_late_failure ON public.plants;
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'014 late error restores full 013 chain');
+
+    -- Accepted 013 defines the predecessor delta; 014 may additionally remove
+    -- only owner instances and null the two retained audit anchors.
+    BEGIN
+        RETURN NEXT is(public.purge_account_deletion_photo_rows_internal(v_owner,v_operation),true,
+            '014 baseline 013 dependency is approved');
+        v_expected := pg_temp.analysis_purge_snapshot();
+        RAISE SQLSTATE 'Z1614';
+    EXCEPTION WHEN SQLSTATE 'Z1614' THEN NULL;
+    END;
+    SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb) INTO v_rows
+        FROM jsonb_array_elements(v_expected->'plants') e WHERE e->>'owner_id'<>v_owner::text;
+    v_expected := jsonb_set(v_expected,ARRAY['plants'],v_rows);
+    SELECT jsonb_agg(CASE WHEN e->>'owner_id'=v_owner::text THEN e||'{"plant_id":null}'::jsonb ELSE e END
+        ORDER BY e::text) INTO v_rows FROM jsonb_array_elements(v_expected->'analysis_jobs') e;
+    v_expected := jsonb_set(v_expected,ARRAY['analysis_jobs'],v_rows);
+    SELECT jsonb_agg(CASE WHEN e->>'id'=v_claim::text THEN e||'{"result_plant_id":null}'::jsonb ELSE e END
+        ORDER BY e::text) INTO v_rows FROM jsonb_array_elements(v_expected->'public.draft_claims') e;
+    v_expected := jsonb_set(v_expected,ARRAY['public.draft_claims'],v_rows);
+
+    RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),true,
+        '014 removes verified owner instances after approved 013');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '014 exact delta retains Auth, profile, jobs/quotas, draft receipts, proof, tombstones and other owners');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),true,'014 exact replay');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'014 replay changes no data or proof');
+    BEGIN
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/014-replay');
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_plant_rows_internal(v_owner,v_operation),false,
+            '014 replay checks fresh storage readiness after instance removal');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'014 replay hold retains evidence');
+        RAISE SQLSTATE 'Z1614';
+    EXCEPTION WHEN SQLSTATE 'Z1614' THEN NULL;
+    END;
+
+    RETURN NEXT ok((SELECT prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.purge_account_deletion_plant_rows_internal(uuid,uuid)'::regprocedure),
+        '014 volatile definer has empty search path');
+    RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM pg_proc p CROSS JOIN LATERAL
+        aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.purge_account_deletion_plant_rows_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'014 no nonowner ACL');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied := false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.purge_account_deletion_plant_rows_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied := true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'014 actual execution denied for '||v_role);
+    END LOOP;
+    RAISE SQLSTATE 'Z1614';
+EXCEPTION WHEN SQLSTATE 'Z1614' THEN RETURN;
+END;
+$$;
+
 CREATE FUNCTION pg_temp.care_plan_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
 DECLARE
     v_a uuid := 'a0040000-0000-4000-8000-000000000001';
@@ -1630,6 +2876,11 @@ BEGIN
         VALUES(v_owner,v_entry,gen_random_uuid());
         INSERT INTO public.schedule_changes(owner_id,plant_id,to_date,cause_code,explanation_code)
         VALUES(v_owner,v_plant,current_date,'fixture','fixture');
+        -- Collection inserts require an active account, including tombstones.
+        IF to_regprocedure('public.purge_account_deletion_plant_rows_internal(uuid,uuid)') IS NOT NULL THEN
+            INSERT INTO public.plants(owner_id,personal_name,creation_source,deleted_at)
+                VALUES(v_owner,'Retired instance','identification',clock_timestamp());
+        END IF;
         v_before := pg_temp.care_plan_snapshot();
         RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,gen_random_uuid()),false,
             'active owner cannot purge plans');
@@ -1637,9 +2888,19 @@ BEGIN
         PERFORM public.request_account_deletion_internal(v_owner,gen_random_uuid());
     END LOOP;
 
+    RETURN QUERY SELECT * FROM pg_temp.plant_row_purge_tests(v_a,v_b);
+    RETURN QUERY SELECT * FROM pg_temp.plant_row_purge_tests(v_b,v_a);
+    RETURN QUERY SELECT * FROM pg_temp.photo_row_purge_tests(v_a,v_b);
+    RETURN QUERY SELECT * FROM pg_temp.photo_row_purge_tests(v_b,v_a);
+    RETURN QUERY SELECT * FROM pg_temp.snapshot_purge_tests(v_a,v_b);
+    RETURN QUERY SELECT * FROM pg_temp.snapshot_purge_tests(v_b,v_a);
+    RETURN QUERY SELECT * FROM pg_temp.analysis_purge_tests(v_a,v_b);
+    RETURN QUERY SELECT * FROM pg_temp.analysis_purge_tests(v_b,v_a);
+
     -- Both directions are tested before either canonical graph is removed.
     FOREACH v_owner IN ARRAY ARRAY[v_a,v_b] LOOP
         v_neighbor := CASE WHEN v_owner=v_a THEN v_b ELSE v_a END;
+        RETURN QUERY SELECT * FROM pg_temp.diagnostic_purge_tests(v_owner,v_neighbor);
         SELECT operation_id INTO v_operation FROM public.account_deletion_requests WHERE owner_id=v_owner;
         v_before := pg_temp.care_plan_snapshot();
         RETURN NEXT is(public.purge_account_deletion_care_plans_internal(v_owner,gen_random_uuid()),false,
@@ -1773,6 +3034,1322 @@ BEGIN
 END;
 $$;
 SELECT * FROM pg_temp.care_plan_purge_tests();
+
+-- 017 acceptance is rollback-only on both clean and upgraded schemas.
+-- Still blocked: every claim (even expired same-owner), any job replay anchor,
+-- foreign/unknown dependencies, and destination provenance backed by a new FK.
+CREATE FUNCTION pg_temp.guest_draft_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0170000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0170000-0000-4000-8000-000000000002';
+    v_operation uuid := gen_random_uuid();
+    v_draft uuid;
+    v_foreign uuid;
+    v_plant uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_case integer;
+    v_constraint text;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_guest_drafts_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('017 guest purge is outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+        VALUES(v_owner,gen_random_uuid(),'care','catalogue') RETURNING id INTO v_draft;
+    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+        VALUES(v_neighbor,gen_random_uuid(),'care','catalogue') RETURNING id INTO v_foreign;
+    INSERT INTO public.plants(owner_id,personal_name,creation_source,origin_draft_id)
+        VALUES(v_neighbor,'Committed destination','identification',v_draft) RETURNING id INTO v_plant;
+    RETURN NEXT is((SELECT array_agg(c.relname||'.'||a.attname ORDER BY c.relname,a.attname)
+        FROM pg_constraint f JOIN pg_class c ON c.oid=f.conrelid
+        JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=f.conkey[1]
+        WHERE f.contype='f' AND f.confrelid='public.guest_drafts'::regclass),
+        ARRAY['analysis_jobs.draft_id','analysis_results.draft_id','condition_snapshots.draft_id',
+            'draft_claims.draft_id','photo_assets.draft_id']::text[],
+        '017 actual clean/upgrade incoming FK inventory');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+        '017 unverified active owner rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 unverified request changes nothing');
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_neighbor,v_operation),false,'017 wrong owner');
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,gen_random_uuid()),false,'017 wrong operation');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 invalid scope changes nothing');
+    FOR v_case IN 1..4 LOOP
+        BEGIN
+            INSERT INTO public.draft_claims(draft_id,proof_hash,target_owner_id,operation_id,state,expires_at)
+                VALUES(v_draft,'retained-proof',
+                    CASE WHEN v_case=2 THEN v_neighbor ELSE v_owner END,gen_random_uuid(),
+                    CASE WHEN v_case=3 THEN 'published' ELSE 'prepared' END,
+                    clock_timestamp()+CASE WHEN v_case=4 THEN interval '-1 day' ELSE interval '1 day' END);
+            v_before := pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+                '017 replay/active/cross-owner claim hold '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 claim hold has zero mutation '||v_case);
+            RAISE SQLSTATE 'Z1717';
+        EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+        END;
+    END LOOP;
+    BEGIN
+        CREATE TABLE public.t083_guest_dependency(draft_id uuid REFERENCES public.guest_drafts(id) ON DELETE CASCADE);
+        INSERT INTO public.t083_guest_dependency VALUES(v_draft);
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 unknown cascading dependency fails closed');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 unknown dependency changes nothing');
+        RETURN NEXT is((SELECT count(*) FROM public.t083_guest_dependency),1::bigint,'017 unknown child retained');
+        RAISE SQLSTATE 'Z1717';
+    EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+    END;
+    BEGIN
+        -- Exercise the semantic hold on upgrades where this FK is absent.
+        FOR v_constraint IN SELECT conname FROM pg_constraint
+            WHERE contype='f' AND conrelid='public.condition_snapshots'::regclass
+              AND confrelid='public.guest_drafts'::regclass
+        LOOP
+            EXECUTE format('ALTER TABLE public.condition_snapshots DROP CONSTRAINT %I',v_constraint);
+        END LOOP;
+        INSERT INTO public.condition_snapshots(owner_id,draft_id) VALUES(v_neighbor,v_draft);
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 nonempty legacy graph retains cross-owner semantic child without FK');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 semantic child hold is atomic');
+        RAISE SQLSTATE 'Z1717';
+    EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+    END;
+    BEGIN
+        ALTER TABLE public.plants ADD CONSTRAINT t017_origin_draft
+            FOREIGN KEY(origin_draft_id) REFERENCES public.guest_drafts(id) ON DELETE SET NULL NOT VALID;
+        v_before := pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),false,
+            '017 actual foreign destination FK holds nonempty graph');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 destination FK hold is atomic');
+        RAISE SQLSTATE 'Z1717';
+    EXCEPTION WHEN SQLSTATE 'Z1717' THEN NULL;
+    END;
+    v_before := pg_temp.analysis_purge_snapshot();
+    v_expected := jsonb_set(v_before,ARRAY['public.guest_drafts'],
+        (SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb)
+         FROM jsonb_array_elements(v_before->'public.guest_drafts') e WHERE e->>'id'<>v_draft::text));
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+        '017 no-alias owner draft purged after verified predecessors');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '017 exact owner scope preserves destination, other owners, proof/storage, quota, Auth and receipts');
+    RETURN NEXT ok(EXISTS (SELECT 1 FROM public.plants WHERE id=v_plant AND owner_id=v_neighbor
+        AND origin_draft_id=v_draft),'017 committed foreign destination provenance retained');
+    v_before := pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,'017 exact purge replay');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'017 replay has zero mutation');
+    RETURN NEXT ok(NOT has_function_privilege('service_role',
+        'public.purge_account_deletion_guest_drafts_internal(uuid,uuid)','EXECUTE')
+        AND NOT has_function_privilege('authenticated',
+        'public.purge_account_deletion_guest_drafts_internal(uuid,uuid)','EXECUTE')
+        AND NOT has_function_privilege('anon',
+        'public.purge_account_deletion_guest_drafts_internal(uuid,uuid)','EXECUTE'),'017 SQL owner only');
+    RAISE SQLSTATE 'Z1717';
+EXCEPTION WHEN SQLSTATE 'Z1717' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.guest_draft_purge_tests();
+
+-- Rollback restores pgTAP's transactional curr_test cache, but its sequence
+-- retains emitted assertion numbers. Assert outside the rollback before finish.
+SELECT ok(NOT EXISTS (
+    SELECT 1 FROM auth.users WHERE id IN (
+        'a0170000-0000-4000-8000-000000000001'::uuid,
+        'a0170000-0000-4000-8000-000000000002'::uuid,
+        'a0170000-0000-4000-8000-000000000011'::uuid,
+        'a0170000-0000-4000-8000-000000000012'::uuid)
+), '017 rollback fixtures leave no fixture accounts');
+-- 018 fixtures run unchanged on clean and upgraded schemas, then roll back.
+CREATE FUNCTION pg_temp.diagnosis_runtime_purge_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0180000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0180000-0000-4000-8000-000000000002';
+    v_operation uuid := gen_random_uuid();
+    v_who uuid;
+    v_job uuid;
+    v_jobs uuid[] := '{}';
+    v_release uuid;
+    v_catalogue uuid;
+    v_plant uuid;
+    v_predecessor_plant uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_context jsonb := '{"light":"low","watering_frequency":"sparse","drainage":"yes"}';
+    v_case integer;
+    v_i integer;
+    v_role text;
+BEGIN
+    IF to_regprocedure('public.purge_account_deletion_diagnosis_runtime_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('018 runtime purge outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+    INSERT INTO public.kb_releases(version,state) VALUES('t083-runtime-018','draft') RETURNING id INTO v_release;
+    INSERT INTO public.catalogue_releases(version,kb_release_id,state)
+        VALUES('t083-runtime-018',v_release,'draft') RETURNING id INTO v_catalogue;
+    FOREACH v_who IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+        FOR v_i IN 1..3 LOOP
+            INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,kb_release_id,
+                prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,state,lease_token)
+            VALUES(v_who,gen_random_uuid(),'problem','scan',
+                CASE WHEN v_i=3 THEN 'identification' ELSE 'diagnosis' END,v_release,
+                'fixture',gen_random_uuid(),'fixture','en','paid_monthly',
+                CASE WHEN v_i=1 THEN 'consumed' ELSE 'released' END,
+                (ARRAY['succeeded','failed','timed_out'])[v_i],gen_random_uuid()) RETURNING id INTO v_job;
+            INSERT INTO public.account_quota_usage(job_id,owner_id,period_start,period_end,quota_state)
+                VALUES(v_job,v_who,'2026-11-01 UTC','2026-12-01 UTC',
+                    CASE WHEN v_i=1 THEN 'consumed' ELSE 'released' END);
+            INSERT INTO public.diagnosis_job_runtime(job_id,catalogue_release_id,projection,
+                initial_context,repeat_context)
+            VALUES(v_job,v_catalogue,jsonb_build_object('private_result',v_who),
+                CASE WHEN v_i=1 THEN v_context END,
+                CASE WHEN v_i=2 THEN jsonb_build_object('care_history','private') END);
+            IF v_who=v_owner THEN v_jobs:=array_append(v_jobs,v_job); END IF;
+        END LOOP;
+    END LOOP;
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),false,
+        '018 active/unrequested owner rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 active rejection is atomic');
+    RETURN NEXT throws_ok(format('UPDATE public.diagnosis_job_runtime SET initial_context=NULL WHERE job_id=%L',
+        v_jobs[1]),'22023','IMMUTABLE_INITIAL_CONTEXT','018 ordinary initial input remains immutable');
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'Predecessor hold','identification') RETURNING id INTO v_predecessor_plant;
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_neighbor,v_operation),false,'018 wrong owner');
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,gen_random_uuid()),false,'018 wrong operation');
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(NULL,v_operation),false,'018 null owner');
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,NULL),false,'018 null operation');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 scope failures change nothing');
+    FOR v_case IN 1..7 LOOP
+        BEGIN
+            IF v_case IN (1,2) THEN
+                UPDATE public.analysis_jobs SET state=CASE WHEN v_case=1 THEN 'queued' ELSE 'running' END
+                    WHERE id=v_jobs[1];
+            ELSIF v_case=3 THEN
+                UPDATE public.analysis_jobs SET quota_state='reserved' WHERE id=v_jobs[1];
+            ELSIF v_case=4 THEN
+                UPDATE public.analysis_jobs SET mode='follow_up' WHERE id=v_jobs[1];
+            ELSIF v_case=5 THEN
+                UPDATE public.account_quota_usage SET quota_state='reserved' WHERE job_id=v_jobs[1];
+            ELSIF v_case=6 THEN
+                UPDATE public.account_quota_usage SET owner_id=v_neighbor WHERE job_id=v_jobs[1];
+            ELSE
+                INSERT INTO public.plants(owner_id,personal_name,creation_source)
+                    VALUES(v_neighbor,'Foreign runtime dependency','identification') RETURNING id INTO v_plant;
+                UPDATE public.diagnosis_job_runtime SET repeat_context=jsonb_build_object(
+                    'target_plant_id',v_plant,'care_history','private') WHERE job_id=v_jobs[2];
+            END IF;
+            v_before:=pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),false,
+                '018 active/unknown/foreign hold '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 hold is atomic '||v_case);
+            RAISE SQLSTATE 'Z1818';
+        EXCEPTION WHEN SQLSTATE 'Z1818' THEN NULL;
+        END;
+    END LOOP;
+    BEGIN
+        INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/runtime-hold');
+        v_before:=pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),false,
+            '018 saved Storage proof is freshly rechecked');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 stale proof hold is atomic');
+        RAISE SQLSTATE 'Z1818';
+    EXCEPTION WHEN SQLSTATE 'Z1818' THEN NULL;
+    END;
+    BEGIN
+        UPDATE public.operation_receipts SET payload_hash='forged'
+            WHERE owner_id=v_owner AND operation_id=v_operation;
+        v_before:=pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),false,
+            '018 forged operation receipt rejected');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 forged proof hold is atomic');
+        RAISE SQLSTATE 'Z1818';
+    EXCEPTION WHEN SQLSTATE 'Z1818' THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO public.condition_snapshots(owner_id,plant_id)
+            VALUES(v_neighbor,v_predecessor_plant);
+        v_before:=pg_temp.analysis_purge_snapshot();
+        RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),false,
+            '018 exact predecessor chain retains cross-owner semantic dependency');
+        RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 predecessor hold rolls back every phase');
+        RAISE SQLSTATE 'Z1818';
+    EXCEPTION WHEN SQLSTATE 'Z1818' THEN NULL;
+    END;
+    -- Prove the accepted predecessor makes no other changes for this graph.
+    RETURN NEXT is(public.purge_account_deletion_guest_drafts_internal(v_owner,v_operation),true,
+        '018 accepted predecessor ready');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    SELECT jsonb_set(v_before,ARRAY['public.diagnosis_job_runtime'],
+        jsonb_agg(CASE WHEN e->>'job_id'=ANY(v_jobs::text[]) THEN
+            e||jsonb_build_object('projection',NULL,'repeat_context',NULL,'initial_context',NULL,
+                'account_deletion_operation_id',v_operation) ELSE e END
+            ORDER BY (CASE WHEN e->>'job_id'=ANY(v_jobs::text[]) THEN
+                e||jsonb_build_object('projection',NULL,'repeat_context',NULL,'initial_context',NULL,
+                    'account_deletion_operation_id',v_operation) ELSE e END)::text))
+        INTO v_expected FROM jsonb_array_elements(v_before->'public.diagnosis_job_runtime') e;
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),true,
+        '018 terminal runtime scrub succeeds with retained lease tokens');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '018 exact diff: private JSON only, neighbor/Auth/jobs/ledger/windows/receipts retained');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),true,'018 exact replay');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 replay changes nothing');
+    RETURN NEXT throws_ok(format('UPDATE public.diagnosis_job_runtime SET projection=%L::jsonb WHERE job_id=%L',
+        '{"rehydrated":true}',v_jobs[1]),'22023','ACCOUNT_RUNTIME_SCRUBBED','018 projection rehydration denied');
+    RETURN NEXT throws_ok(format('UPDATE public.diagnosis_job_runtime SET initial_context=%L::jsonb WHERE job_id=%L',
+        v_context,v_jobs[1]),'22023','ACCOUNT_RUNTIME_SCRUBBED','018 initial rehydration denied');
+    RETURN NEXT throws_ok(format('UPDATE public.diagnosis_job_runtime SET repeat_context=%L::jsonb WHERE job_id=%L',
+        '{}',v_jobs[2]),'22023','ACCOUNT_RUNTIME_SCRUBBED','018 repeat rehydration denied');
+    RETURN NEXT throws_ok(format('UPDATE public.diagnosis_job_runtime SET account_deletion_operation_id=NULL WHERE job_id=%L',
+        v_jobs[1]),'22023','IMMUTABLE_RUNTIME_SCRUB','018 scrub marker cannot be removed');
+    RETURN NEXT throws_ok(format('DELETE FROM public.diagnosis_job_runtime WHERE job_id=%L',
+        v_jobs[1]),'22023','IMMUTABLE_RUNTIME_SCRUB','018 delete/reinsert cannot bypass scrub');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'018 rejected transitions change nothing');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        RETURN NEXT ok(NOT has_function_privilege(v_role,
+            'public.purge_account_deletion_diagnosis_runtime_internal(uuid,uuid)','EXECUTE')
+            AND NOT has_function_privilege(v_role,'public.guard_account_deleted_diagnosis_runtime()','EXECUTE'),
+            '018 private functions deny '||v_role);
+    END LOOP;
+    RAISE SQLSTATE 'Z1818';
+EXCEPTION WHEN SQLSTATE 'Z1818' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.diagnosis_runtime_purge_tests();
+SELECT ok(NOT EXISTS (SELECT 1 FROM auth.users WHERE id IN (
+    'a0180000-0000-4000-8000-000000000001'::uuid,
+    'a0180000-0000-4000-8000-000000000002'::uuid)), '018 fixtures rolled back');
+
+-- 019 runs on both clean and upgraded rollback paths.
+CREATE FUNCTION pg_temp.installation_unlink_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0190000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0190000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0190000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_installation uuid;
+    v_job uuid;
+    v_plant uuid;
+    v_before jsonb;
+    v_expected jsonb;
+    v_auth jsonb;
+    v_access jsonb;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.unlink_account_deletion_installations_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('019 installation unlink outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    SELECT jsonb_agg(to_jsonb(u) ORDER BY id) INTO v_auth FROM auth.users u;
+    INSERT INTO public.installation_access(credential_hash,linked_owner_ids,
+        starter_identification_consumed,starter_diagnosis_consumed,first_starter_success_at)
+    VALUES(repeat('a019',16),ARRAY[v_neighbor,v_owner,v_guest,v_owner,v_neighbor],
+        true,true,'2026-11-01 UTC') RETURNING id INTO v_installation;
+    INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+    VALUES(repeat('b019',16),ARRAY[v_owner,v_owner]),
+        (repeat('c019',16),ARRAY[v_guest,v_neighbor,v_neighbor]),
+        (repeat('d019',16),'{}');
+    INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,prompt_version,
+        operation_id,payload_hash,locale,quota_kind,quota_state,state,quota_installation_id)
+    VALUES(v_guest,gen_random_uuid(),'care','scan','identification','fixture',
+        gen_random_uuid(),'fixture','en','starter_identification','consumed','succeeded',v_installation)
+    RETURNING id INTO v_job;
+    UPDATE public.installation_access SET starter_identification_job_id=v_job WHERE id=v_installation;
+
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+        '019 active owner without deletion proof rejected');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_guest,v_operation),false,
+        '019 guest rejected');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 missing proof is atomic');
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'019 predecessor hold','identification') RETURNING id INTO v_plant;
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    PERFORM public.verify_account_deletion_storage_internal(v_owner,v_operation);
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_neighbor,v_operation),false,'019 wrong owner');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,gen_random_uuid()),false,'019 wrong operation');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(NULL,v_operation),false,'019 null owner');
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,NULL),false,'019 null operation');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 scope rejection is atomic');
+
+    FOR v_case IN 1..5 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/019-hold');
+            ELSIF v_case=2 THEN
+                UPDATE public.operation_receipts SET payload_hash='forged'
+                    WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSIF v_case=3 THEN
+                DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSIF v_case=4 THEN
+                DELETE FROM public.account_deletion_requests WHERE owner_id=v_owner;
+            ELSE
+                INSERT INTO public.condition_snapshots(owner_id,plant_id) VALUES(v_neighbor,v_plant);
+            END IF;
+            v_before:=pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+                '019 fresh proof or exact predecessor hold '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 proof hold is atomic '||v_case);
+            RAISE SQLSTATE 'Z1919';
+        EXCEPTION WHEN SQLSTATE 'Z1919' THEN NULL;
+        END;
+    END LOOP;
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            UPDATE public.installation_access SET linked_owner_ids=CASE v_case
+                WHEN 1 THEN ARRAY[[v_owner,v_neighbor]]
+                WHEN 2 THEN ARRAY[v_owner,NULL::uuid]
+                ELSE array_fill(v_owner,ARRAY[2],ARRAY[0]) END
+                WHERE id=v_installation;
+            v_before:=pg_temp.analysis_purge_snapshot();
+            RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+                '019 unsupported legacy aliases rejected '||v_case);
+            RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 legacy rejection is atomic '||v_case);
+            RAISE SQLSTATE 'Z1919';
+        EXCEPTION WHEN SQLSTATE 'Z1919' THEN NULL;
+        END;
+    END LOOP;
+
+    -- Establish the accepted predecessor baseline before the exact diff.
+    RETURN NEXT is(public.purge_account_deletion_diagnosis_runtime_internal(v_owner,v_operation),true,
+        '019 accepted 018 predecessor is ready');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    SELECT jsonb_set(v_before,ARRAY['installation_access'],
+        jsonb_agg(e||jsonb_build_object('linked_owner_ids',
+            (SELECT coalesce(jsonb_agg(a.value ORDER BY a.ordinality),'[]'::jsonb)
+             FROM jsonb_array_elements(e->'linked_owner_ids') WITH ORDINALITY a(value,ordinality)
+             WHERE a.value<>to_jsonb(v_owner)))
+            ORDER BY (e||jsonb_build_object('linked_owner_ids',
+                (SELECT coalesce(jsonb_agg(a.value ORDER BY a.ordinality),'[]'::jsonb)
+                 FROM jsonb_array_elements(e->'linked_owner_ids') WITH ORDINALITY a(value,ordinality)
+                 WHERE a.value<>to_jsonb(v_owner))))::text))
+        INTO v_expected FROM jsonb_array_elements(v_before->'installation_access') e;
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),true,
+        '019 removes all matching owner aliases across installations');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_expected,
+        '019 exact diff preserves ordered duplicates, digests, timestamps, attempts, pointers and neighbors');
+    RETURN NEXT is((SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM auth.users u),v_auth,'019 Auth unchanged');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    -- A separate invocation rereads persisted proof and the now-empty matching set.
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),true,'019 exact replay');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 replay changes nothing');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/019-replay');
+    v_before:=pg_temp.analysis_purge_snapshot();
+    RETURN NEXT is(public.unlink_account_deletion_installations_internal(v_owner,v_operation),false,
+        '019 empty matching set still requires fresh Storage proof');
+    RETURN NEXT is(pg_temp.analysis_purge_snapshot(),v_before,'019 failed replay is atomic');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/019-replay';
+
+    RETURN NEXT throws_ok(format('SELECT public.bind_installation_to_owner(%L,%L)',v_installation,v_owner),
+        '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','019 public bind cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.register_installation_access(%L,%L)',repeat('a019',16),v_owner),
+        '42501','ACTIVE_OWNER_REQUIRED','019 registration replay cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.bind_installation_credential(%L,%L,%L)',
+        v_installation,v_owner,repeat('a019',16)),
+        '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','019 credential bind cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.get_analysis_access_snapshot(%L,%L)',v_owner,repeat('a019',16)),
+        '42501','ACTIVE_OWNER_REQUIRED','019 access replay cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.commit_guest_claim(%L,%L,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid()),'42501','account_not_active',
+        '019 legacy guest claim cannot relink deleting owner');
+    RETURN NEXT throws_ok(format('SELECT public.prepare_guest_photo_claim(%L,%L,%L,%L)',
+        v_owner,gen_random_uuid(),gen_random_uuid(),repeat('a019',16)),
+        '42501','ACTIVE_PERMANENT_OWNER_REQUIRED','019 photo claim cannot use deleting target');
+
+    v_access:=public.get_analysis_access_snapshot(v_neighbor,repeat('a019',16),clock_timestamp());
+    RETURN NEXT is(v_access->'starter'->>'identification_remaining','0','019 remaining owner keeps spent identification');
+    RETURN NEXT is(v_access->'starter'->>'diagnosis_remaining','0','019 remaining owner keeps spent diagnosis');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.installation_access WHERE v_owner=ANY(linked_owner_ids)),
+        '019 surviving owner replay does not restore deleted alias');
+    RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.unlink_account_deletion_installations_internal(uuid,uuid)'::regprocedure),
+        '019 security definer has empty search path');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+        CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.unlink_account_deletion_installations_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'019 only SQL owner has execute grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied:=false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.unlink_account_deletion_installations_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied:=true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'019 actual execution denied for '||v_role);
+    END LOOP;
+    RAISE SQLSTATE 'Z1919';
+EXCEPTION WHEN SQLSTATE 'Z1919' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.installation_unlink_tests();
+SELECT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id IN (
+    'a0190000-0000-4000-8000-000000000001'::uuid,
+    'a0190000-0000-4000-8000-000000000002'::uuid,
+    'a0190000-0000-4000-8000-000000000003'::uuid)), '019 fixtures rolled back');
+
+-- 020 is exercised by the same clean/upgrade runner as 019.
+CREATE FUNCTION pg_temp.account_work_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.analysis_purge_snapshot() || jsonb_build_object(
+        'work_jobs',(SELECT coalesce(jsonb_agg(to_jsonb(d) ORDER BY d.id),'[]'::jsonb)
+            FROM public.deletion_jobs d),
+        'work_auth',(SELECT coalesce(jsonb_agg(to_jsonb(u) ORDER BY u.id),'[]'::jsonb)
+            FROM auth.users u))
+$$;
+
+CREATE FUNCTION pg_temp.reject_account_work_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '020 injected insert failure' USING ERRCODE='22023';
+END;
+$$;
+
+CREATE FUNCTION pg_temp.account_work_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0200000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0200000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0200000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_plant uuid;
+    v_before jsonb;
+    v_job jsonb;
+    v_proof jsonb;
+    v_case integer;
+    v_role text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.anchor_account_deletion_work_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('020 work anchor outside selected migration version',1);
+        RETURN;
+    END IF;
+    INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+        (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+        (v_guest,true,clock_timestamp());
+    INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+        VALUES(repeat('a020',16),ARRAY[v_neighbor,v_owner,v_owner]);
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,'020 active owner rejected');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_guest,v_operation),false,'020 guest rejected');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 missing prerequisites atomic');
+    INSERT INTO public.plants(owner_id,personal_name,creation_source)
+        VALUES(v_owner,'020 predecessor hold','identification') RETURNING id INTO v_plant;
+    PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+    -- The same operation UUID belongs independently to another owner.
+    PERFORM public.request_account_deletion_internal(v_neighbor,v_operation);
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,gen_random_uuid()),false,'020 wrong operation');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_guest,v_operation),false,'020 cross owner');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(NULL,v_operation),false,'020 null owner');
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,NULL),false,'020 null operation');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 invalid identity atomic');
+
+    FOR v_case IN 1..3 LOOP
+        BEGIN
+            IF v_case=1 THEN
+                INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/020-hold');
+            ELSIF v_case=2 THEN
+                UPDATE public.operation_receipts SET payload_hash='forged'
+                    WHERE owner_id=v_owner AND operation_id=v_operation;
+            ELSE
+                INSERT INTO public.condition_snapshots(owner_id,plant_id) VALUES(v_neighbor,v_plant);
+            END IF;
+            v_before:=pg_temp.account_work_snapshot();
+            RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,
+                '020 fresh Storage/proof/predecessor hold '||v_case);
+            RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 hold rolls back all changes '||v_case);
+            RAISE SQLSTATE 'Z2020';
+        EXCEPTION WHEN SQLSTATE 'Z2020' THEN NULL;
+        END;
+    END LOOP;
+
+    FOR v_case IN 1..10 LOOP
+        BEGIN
+            INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id,state,
+                completed_at,encrypted_apple_ref)
+            VALUES(v_owner,v_operation,CASE WHEN v_case=1 THEN 'plant' ELSE 'account' END,
+                CASE WHEN v_case=2 THEN v_neighbor ELSE v_owner END,
+                CASE v_case WHEN 3 THEN 'revoke_access' WHEN 4 THEN 'purge_storage'
+                    WHEN 5 THEN 'revoke_apple' WHEN 6 THEN 'delete_auth'
+                    WHEN 7 THEN 'completed' WHEN 8 THEN 'failed' ELSE 'purge_data' END,
+                CASE WHEN v_case=9 THEN clock_timestamp() END,
+                CASE WHEN v_case=10 THEN 'fixture-only' END);
+            v_before:=pg_temp.account_work_snapshot();
+            RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,
+                '020 incompatible scope/target/state/metadata rejected '||v_case);
+            RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,
+                '020 late conflict preserves job and rolls back chain '||v_case);
+            RAISE SQLSTATE 'Z2020';
+        EXCEPTION WHEN SQLSTATE 'Z2020' THEN NULL;
+        END;
+    END LOOP;
+    BEGIN
+        CREATE TRIGGER reject_account_work_insert BEFORE INSERT ON public.deletion_jobs
+            FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_account_work_insert();
+        v_before:=pg_temp.account_work_snapshot();
+        RETURN NEXT throws_ok(format('SELECT public.anchor_account_deletion_work_internal(%L::uuid,%L::uuid)',
+            v_owner,v_operation),'22023','020 injected insert failure','020 late insert failure propagates');
+        RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 SQL failure rolls back predecessor chain');
+        RAISE SQLSTATE 'Z2020';
+    EXCEPTION WHEN SQLSTATE 'Z2020' THEN NULL;
+    END;
+
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),true,'020 creates validated reference');
+    SELECT to_jsonb(d) INTO v_job FROM public.deletion_jobs d
+        WHERE owner_id=v_owner AND operation_id=v_operation;
+    RETURN NEXT ok(v_job->>'scope'='account' AND v_job->>'target_id'=v_owner::text
+        AND v_job->>'state'='purge_data' AND v_job->>'completed_at' IS NULL
+        AND v_job->>'encrypted_apple_ref' IS NULL,'020 exact account processing state without Auth transition');
+    RETURN NEXT ok((SELECT storage_verified_at IS NOT NULL FROM public.account_deletion_requests
+        WHERE owner_id=v_owner),'020 fresh Storage evidence persisted');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.installation_access WHERE v_owner=ANY(linked_owner_ids)),
+        '020 accepted 019 chain applied');
+    SELECT jsonb_build_object('profile',to_jsonb(p),'request',to_jsonb(r),'receipt',to_jsonb(o))
+        INTO v_proof FROM public.profiles p JOIN public.account_deletion_requests r ON r.owner_id=p.id
+        JOIN public.operation_receipts o ON o.owner_id=p.id AND o.operation_id=r.operation_id
+        WHERE p.id=v_owner;
+    RETURN NEXT ok(v_proof->'profile'->>'account_state'='deleting'
+        AND v_proof->'request'->>'operation_id'=v_operation::text
+        AND v_proof->'receipt'->>'command_name'='account.delete'
+        AND EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner),'020 Auth/profile/claim/receipt retained');
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),true,'020 exact replay');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 replay byte-exact');
+    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/020-replay');
+    v_before:=pg_temp.account_work_snapshot();
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_owner,v_operation),false,'020 replay repeats fresh Storage check');
+    RETURN NEXT is(pg_temp.account_work_snapshot(),v_before,'020 replay hold preserves valid reference');
+    DELETE FROM storage.objects WHERE bucket_id='analysis-inputs' AND name=v_owner::text||'/020-replay';
+    RETURN NEXT is(public.anchor_account_deletion_work_internal(v_neighbor,v_operation),true,'020 same operation across owners');
+    RETURN NEXT is((SELECT count(*) FROM public.deletion_jobs WHERE operation_id=v_operation),2::bigint,
+        '020 exactly one independent reference per owner');
+    RETURN NEXT is((SELECT to_jsonb(d) FROM public.deletion_jobs d
+        WHERE owner_id=v_owner AND operation_id=v_operation),v_job,'020 neighbor cannot overwrite original job');
+    RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+        FROM pg_proc WHERE oid='public.anchor_account_deletion_work_internal(uuid,uuid)'::regprocedure),
+        '020 security definer has empty search path');
+    RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+        CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid='public.anchor_account_deletion_work_internal(uuid,uuid)'::regprocedure
+            AND a.grantee<>p.proowner),'020 SQL owner only, including custom default grants');
+    FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+        v_denied:=false;
+        BEGIN
+            EXECUTE format('SET LOCAL ROLE %I',v_role);
+            PERFORM public.anchor_account_deletion_work_internal(v_owner,v_operation);
+        EXCEPTION WHEN insufficient_privilege THEN v_denied:=true;
+        END;
+        RESET ROLE;
+        RETURN NEXT ok(v_denied,'020 actual execution denied for '||v_role);
+    END LOOP;
+    RAISE SQLSTATE 'Z2020';
+EXCEPTION WHEN SQLSTATE 'Z2020' THEN RETURN;
+END;
+$$;
+SELECT * FROM pg_temp.account_work_tests();
+SELECT ok(NOT EXISTS(SELECT 1 FROM auth.users WHERE id IN (
+    'a0200000-0000-4000-8000-000000000001'::uuid,
+    'a0200000-0000-4000-8000-000000000002'::uuid,
+    'a0200000-0000-4000-8000-000000000003'::uuid)), '020 fixtures rolled back');
+
+-- 021 uses the same clean and seeded upgrade runner; all fixtures roll back.
+CREATE FUNCTION pg_temp.account_proof_snapshot() RETURNS jsonb LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN pg_temp.account_work_snapshot() || jsonb_build_object('durable_proofs',
+        (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.owner_id),'[]'::jsonb)
+         FROM public.account_deletion_proofs p));
+END;
+$$;
+
+CREATE FUNCTION pg_temp.account_proof_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0210000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0210000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0210000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_job uuid;
+    v_before jsonb;
+    v_initial jsonb;
+    v_saved jsonb;
+    v_auth jsonb;
+    v_profiles jsonb;
+    v_case integer;
+    v_role text;
+    v_command text;
+    v_denied boolean;
+BEGIN
+    IF to_regprocedure('public.persist_account_deletion_proof_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('021 durable proof outside selected migration version',1);
+        RETURN;
+    END IF;
+    v_initial:=pg_temp.account_proof_snapshot();
+    BEGIN
+        INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+            (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+            (v_guest,true,clock_timestamp());
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+            VALUES(repeat('a021',16),ARRAY[v_neighbor,v_owner,v_owner]);
+        INSERT INTO public.plants(owner_id,personal_name,creation_source)
+            VALUES(v_owner,'021 rollback predecessor','identification');
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,'021 active rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_guest,v_operation),false,'021 anonymous rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(gen_random_uuid(),v_operation),false,'021 missing owner rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(NULL,v_operation),false,'021 null owner rejected');
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,NULL),false,'021 null operation rejected');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 invalid owners leave all rows unchanged');
+        PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+        PERFORM public.request_account_deletion_internal(v_neighbor,v_operation);
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,gen_random_uuid()),false,'021 wrong operation rejected');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 wrong operation atomic');
+
+        FOR v_case IN 1..4 LOOP
+            BEGIN
+                IF v_case=1 THEN
+                    DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                ELSIF v_case=2 THEN
+                    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/021-hold');
+                ELSIF v_case=3 THEN
+                    INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id,state)
+                        VALUES(v_owner,v_operation,'account',v_neighbor,'purge_data');
+                ELSE
+                    UPDATE public.operation_receipts SET payload_hash='forged'
+                        WHERE owner_id=v_owner AND operation_id=v_operation;
+                END IF;
+                v_before:=pg_temp.account_proof_snapshot();
+                RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+                    '021 missing receipt/Storage/foreign job/forged receipt rejected '||v_case);
+                RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 readiness hold atomic '||v_case);
+                RAISE SQLSTATE 'Z2021';
+            EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+            END;
+        END LOOP;
+
+        -- Exact expected identity, with one conflicting saved field per case.
+        -- The pending plant and installation unlink make the late rollback observable.
+        FOR v_case IN 1..4 LOOP
+            BEGIN
+                UPDATE public.account_deletion_requests SET storage_verified_at='2000-01-01 UTC'
+                    WHERE owner_id=v_owner;
+                INSERT INTO public.deletion_jobs(owner_id,operation_id,scope,target_id,state)
+                    VALUES(v_owner,v_operation,'account',v_owner,'purge_data') RETURNING id INTO v_job;
+                INSERT INTO public.account_deletion_proofs
+                    (owner_id,operation_id,deletion_job_id,requested_at,storage_verified_at)
+                    SELECT owner_id,CASE WHEN v_case=1 THEN gen_random_uuid() ELSE operation_id END,
+                        CASE WHEN v_case=2 THEN gen_random_uuid() ELSE v_job END,
+                        requested_at + CASE WHEN v_case=3 THEN interval '1 second' ELSE interval '0' END,
+                        storage_verified_at + CASE WHEN v_case=4 THEN interval '1 second' ELSE interval '0' END
+                    FROM public.account_deletion_requests WHERE owner_id=v_owner;
+                v_before:=pg_temp.account_proof_snapshot();
+                RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+                    '021 saved identity conflict is a hold '||v_case);
+                RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,
+                    '021 late conflict restores plant, installation, request, job and proof '||v_case);
+                RAISE SQLSTATE 'Z2021';
+            EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+            END;
+        END LOOP;
+
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),true,'021 persists prerequisite');
+        SELECT to_jsonb(p) INTO v_saved FROM public.account_deletion_proofs p WHERE owner_id=v_owner;
+        RETURN NEXT is(v_saved,(SELECT jsonb_build_object('owner_id',r.owner_id,'operation_id',r.operation_id,
+            'deletion_job_id',d.id,'requested_at',r.requested_at,'storage_verified_at',r.storage_verified_at)
+            FROM public.account_deletion_requests r JOIN public.deletion_jobs d
+                ON d.owner_id=r.owner_id AND d.operation_id=r.operation_id WHERE r.owner_id=v_owner),
+            '021 exact accepted request and processing identity');
+        RETURN NEXT ok((SELECT storage_verified_at IS NOT NULL FROM public.account_deletion_proofs WHERE owner_id=v_owner),
+            '021 Storage evidence is nonnull');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.plants WHERE owner_id=v_owner)
+            AND NOT EXISTS(SELECT 1 FROM public.installation_access WHERE v_owner=ANY(linked_owner_ids)),
+            '021 accepted predecessor chain applied');
+        RETURN NEXT ok(EXISTS(SELECT 1 FROM auth.users WHERE id=v_owner)
+            AND EXISTS(SELECT 1 FROM public.profiles WHERE id=v_owner AND account_state='deleting')
+            AND EXISTS(SELECT 1 FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation),
+            '021 Auth/profile/receipt retained without finalization');
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),true,'021 exact replay accepted');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 replay byte-exact across all chain tables');
+
+        FOR v_case IN 1..3 LOOP
+            BEGIN
+                IF v_case=1 THEN
+                    INSERT INTO storage.objects(bucket_id,name) VALUES('analysis-inputs',v_owner::text||'/021-replay');
+                ELSIF v_case=2 THEN
+                    DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                ELSE
+                    UPDATE public.operation_receipts SET response_payload='{}'::jsonb
+                        WHERE owner_id=v_owner AND operation_id=v_operation;
+                END IF;
+                v_before:=pg_temp.account_proof_snapshot();
+                RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+                    '021 saved proof cannot bypass fresh Storage/receipt validation '||v_case);
+                RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 failed replay preserves exact proof '||v_case);
+                RAISE SQLSTATE 'Z2021';
+            EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+            END;
+        END LOOP;
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_neighbor,v_operation),true,'021 same operation distinct owner accepted');
+        RETURN NEXT is((SELECT count(*) FROM public.account_deletion_proofs WHERE operation_id=v_operation),2::bigint,
+            '021 one independent proof per owner');
+        RETURN NEXT is((SELECT to_jsonb(p) FROM public.account_deletion_proofs p WHERE owner_id=v_owner),v_saved,
+            '021 neighbor preserves original identity');
+        RETURN NEXT ok((SELECT count(DISTINCT deletion_job_id)=2 FROM public.account_deletion_proofs
+            WHERE owner_id IN (v_owner,v_neighbor)),'021 processing identities isolated');
+
+        RETURN NEXT ok((SELECT count(*)=5 AND bool_and(attnotnull) FROM pg_attribute
+            WHERE attrelid='public.account_deletion_proofs'::regclass AND attnum>0 AND NOT attisdropped),
+            '021 exactly five nonnull columns');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_constraint
+            WHERE conrelid='public.account_deletion_proofs'::regclass AND contype='f'),
+            '021 no foreign keys to transient parents');
+        RETURN NEXT ok((SELECT relrowsecurity FROM pg_class WHERE oid='public.account_deletion_proofs'::regclass),
+            '021 RLS enabled');
+        RETURN NEXT ok((SELECT prosecdef AND proconfig=ARRAY['search_path=""']
+            FROM pg_proc WHERE oid='public.persist_account_deletion_proof_internal(uuid,uuid)'::regprocedure),
+            '021 security definer has empty search path');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+            CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+            WHERE p.oid='public.persist_account_deletion_proof_internal(uuid,uuid)'::regprocedure AND a.grantee<>p.proowner),
+            '021 function strips all default grants including custom roles');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_class c
+            CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+            WHERE c.oid='public.account_deletion_proofs'::regclass AND a.grantee<>c.relowner),
+            '021 table strips all default grants including custom roles');
+
+        FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+            RETURN NEXT ok(NOT has_function_privilege(v_role,
+                'public.persist_account_deletion_proof_internal(uuid,uuid)','EXECUTE')
+                AND NOT has_table_privilege(v_role,'public.account_deletion_proofs',
+                    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'),
+                '021 effective inherited privileges denied for '||v_role);
+            FOREACH v_command IN ARRAY ARRAY[
+                format('SELECT public.persist_account_deletion_proof_internal(%L::uuid,%L::uuid)',v_owner,v_operation),
+                'SELECT * FROM public.account_deletion_proofs',
+                format('INSERT INTO public.account_deletion_proofs SELECT * FROM public.account_deletion_proofs WHERE owner_id=%L::uuid',v_owner),
+                format('UPDATE public.account_deletion_proofs SET operation_id=operation_id WHERE owner_id=%L::uuid',v_owner),
+                format('DELETE FROM public.account_deletion_proofs WHERE owner_id=%L::uuid',v_owner)
+            ] LOOP
+                v_denied:=false;
+                BEGIN
+                    EXECUTE format('SET LOCAL ROLE %I',v_role);
+                    EXECUTE v_command;
+                EXCEPTION WHEN insufficient_privilege THEN v_denied:=true;
+                END;
+                RESET ROLE;
+                RETURN NEXT ok(v_denied,'021 actual function/table access denied for '||v_role||': '||split_part(v_command,' ',1));
+            END LOOP;
+        END LOOP;
+
+        -- Fixture-only cleanup of disposable request/receipt/job references.
+        -- Auth/profile removal is deliberately not exercised: no finalization here.
+        -- Independence from those two parents is established by the no-FK catalog assertion.
+        SELECT jsonb_agg(to_jsonb(u) ORDER BY id) INTO v_auth FROM auth.users u;
+        SELECT jsonb_agg(to_jsonb(p) ORDER BY id) INTO v_profiles FROM public.profiles p;
+        DELETE FROM public.operation_receipts WHERE owner_id=v_owner;
+        DELETE FROM public.account_deletion_requests WHERE owner_id=v_owner;
+        DELETE FROM public.deletion_jobs WHERE owner_id=v_owner;
+        RETURN NEXT is((SELECT to_jsonb(p) FROM public.account_deletion_proofs p WHERE owner_id=v_owner),v_saved,
+            '021 identity survives explicit disposable prerequisite cleanup');
+        RETURN NEXT is((SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM auth.users u),v_auth,'021 no Auth deletion');
+        RETURN NEXT is((SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.profiles p),v_profiles,'021 no profile deletion/state transition');
+        v_before:=pg_temp.account_proof_snapshot();
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),false,
+            '021 surviving proof alone never authorizes work');
+        RETURN NEXT is(pg_temp.account_proof_snapshot(),v_before,'021 absent prerequisites preserve surviving identity');
+        RAISE SQLSTATE 'Z2021';
+    EXCEPTION WHEN SQLSTATE 'Z2021' THEN NULL;
+    END;
+    RETURN NEXT is(pg_temp.account_proof_snapshot(),v_initial,'021 all fixtures and chain mutations rolled back');
+END;
+$$;
+SELECT * FROM pg_temp.account_proof_tests();
+
+-- 022: SQL-owner-only synthetic missing-runtime fixtures, NOT physical retirement.
+-- Both clean and seeded-upgrade runners execute this existing test file.
+CREATE FUNCTION pg_temp.retired_runtime_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.account_proof_snapshot() || jsonb_build_object('retired_runtime_identities',
+        (SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.job_id),'[]'::jsonb)
+         FROM public.account_deleted_runtime_identities t))
+$$;
+
+CREATE FUNCTION pg_temp.retired_runtime_replay_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0220000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0220000-0000-4000-8000-000000000002';
+    v_guest uuid := 'a0220000-0000-4000-8000-000000000003';
+    v_operation uuid := gen_random_uuid();
+    v_who uuid;
+    v_release uuid;
+    v_installation uuid;
+    v_job public.analysis_jobs%ROWTYPE;
+    v_lease uuid;
+    v_initial jsonb;
+    v_before jsonb;
+    v_response jsonb;
+    v_mode text;
+    v_state text;
+    v_role text;
+    v_command text;
+    v_case integer;
+    v_denied boolean;
+BEGIN
+    IF to_regclass('public.account_deleted_runtime_identities') IS NULL THEN
+        RETURN QUERY SELECT skip('022 runtime identity outside selected migration version',1);
+        RETURN;
+    END IF;
+    v_initial:=pg_temp.retired_runtime_snapshot();
+    BEGIN
+        INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+            (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp()),
+            (v_guest,true,clock_timestamp());
+        FOREACH v_who IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+            PERFORM public.request_account_deletion_internal(v_who,v_operation);
+            RETURN NEXT is(public.persist_account_deletion_proof_internal(v_who,v_operation),true,
+                '022 real 021 prerequisite before synthetic jobs: '||v_who);
+        END LOOP;
+        -- A deliberately invalid anonymous-owner proof is constructed only by
+        -- the SQL owner to verify the finisher independently checks the profile.
+        UPDATE public.profiles SET account_state='deleting' WHERE id=v_guest;
+        INSERT INTO public.account_deletion_proofs
+            (owner_id,operation_id,deletion_job_id,requested_at,storage_verified_at)
+            SELECT v_guest,operation_id,gen_random_uuid(),requested_at,storage_verified_at
+            FROM public.account_deletion_proofs WHERE owner_id=v_owner;
+        INSERT INTO public.kb_releases(version,state)
+            VALUES('t083-replay-022','draft') RETURNING id INTO v_release;
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+            VALUES(repeat('a022',16),ARRAY[v_owner,v_neighbor]) RETURNING id INTO v_installation;
+
+        FOREACH v_who IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+            FOREACH v_mode IN ARRAY ARRAY['identification','diagnosis'] LOOP
+                FOREACH v_state IN ARRAY ARRAY['succeeded','failed','timed_out'] LOOP
+                    -- Never create, scrub, delete or retire a runtime here.
+                    -- Missing runtime + identity is an owner-constructed fixture.
+                    INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,kb_release_id,
+                        prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,
+                        state,lease_token,quota_installation_id,quota_owner_id)
+                    VALUES(v_who,gen_random_uuid(),'problem','scan',v_mode,v_release,
+                        'fixture',gen_random_uuid(),'fixture','en','paid_monthly',
+                        CASE WHEN v_state='succeeded' THEN 'consumed' ELSE 'released' END,
+                        v_state,gen_random_uuid(),v_installation,v_who) RETURNING * INTO v_job;
+                    INSERT INTO public.account_quota_usage(job_id,owner_id,period_start,period_end,quota_state)
+                        VALUES(v_job.id,v_who,'2026-11-01 UTC','2026-12-01 UTC',v_job.quota_state);
+                    INSERT INTO public.account_deleted_runtime_identities(job_id,owner_id,operation_id)
+                        VALUES(v_job.id,v_who,v_operation);
+                    v_before:=pg_temp.retired_runtime_snapshot();
+                    SET LOCAL ROLE service_role;
+                    v_response:=public.finish_diagnosis_job(v_job.id,v_job.lease_token,
+                        '{"ignored":"terminal"}',false,'IGNORED');
+                    RESET ROLE;
+                    RETURN NEXT is(v_response,jsonb_build_object('already_finalized',true,
+                        'quota_state',v_job.quota_state,'outcome',v_state),
+                        '022 exact worker terminal response: '||v_mode||'/'||v_state||'/'||v_who);
+                    RETURN NEXT is(public.finish_diagnosis_job(v_job.id,v_job.lease_token,NULL,NULL,NULL),
+                        v_response,'022 repeated response ignores result/error inputs');
+                    RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_before,
+                        '022 success/retry preserves full jobs/quota/runtime/receipts/proofs/Auth graph');
+                    IF v_who=v_neighbor THEN CONTINUE; END IF;
+
+                    FOR v_case IN 1..19 LOOP
+                        BEGIN
+                            v_lease:=v_job.lease_token;
+                            v_before:=pg_temp.retired_runtime_snapshot();
+                            CASE v_case
+                            WHEN 1 THEN DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_job.id;
+                            WHEN 2 THEN UPDATE public.account_deleted_runtime_identities SET owner_id=v_neighbor WHERE job_id=v_job.id;
+                            WHEN 3 THEN UPDATE public.account_deleted_runtime_identities SET operation_id=gen_random_uuid() WHERE job_id=v_job.id;
+                            WHEN 4 THEN UPDATE public.account_deleted_runtime_identities SET job_id=gen_random_uuid() WHERE job_id=v_job.id;
+                            WHEN 5 THEN DELETE FROM public.account_deletion_proofs WHERE owner_id=v_owner;
+                            WHEN 6 THEN UPDATE public.account_deletion_proofs SET operation_id=gen_random_uuid() WHERE owner_id=v_owner;
+                            WHEN 7 THEN UPDATE public.account_deletion_proofs SET owner_id=gen_random_uuid() WHERE owner_id=v_owner;
+                            WHEN 8 THEN UPDATE public.profiles SET account_state='active' WHERE id=v_owner;
+                            WHEN 9 THEN UPDATE public.profiles SET account_state='deleted' WHERE id=v_owner;
+                            WHEN 10 THEN
+                                UPDATE public.analysis_jobs SET owner_id=v_guest WHERE id=v_job.id;
+                                UPDATE public.account_deleted_runtime_identities SET owner_id=v_guest WHERE job_id=v_job.id;
+                            WHEN 11 THEN UPDATE public.analysis_jobs SET state='queued' WHERE id=v_job.id;
+                            WHEN 12 THEN UPDATE public.analysis_jobs SET state='running' WHERE id=v_job.id;
+                            WHEN 13 THEN UPDATE public.analysis_jobs SET quota_state='reserved' WHERE id=v_job.id;
+                            WHEN 14 THEN UPDATE public.analysis_jobs SET mode='follow_up' WHERE id=v_job.id;
+                            WHEN 15 THEN v_lease:=gen_random_uuid();
+                            WHEN 16 THEN v_lease:=NULL;
+                            WHEN 17 THEN UPDATE public.analysis_jobs SET lease_token=NULL WHERE id=v_job.id;
+                            WHEN 18 THEN UPDATE public.analysis_jobs SET quota_state='not_applicable' WHERE id=v_job.id;
+                            WHEN 19 THEN
+                                DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_job.id;
+                                PERFORM set_config('app.account_deletion_runtime_retired','true',true);
+                            END CASE;
+                            v_before:=pg_temp.retired_runtime_snapshot();
+                            RETURN NEXT throws_ok(format(
+                                'SELECT public.finish_diagnosis_job(%L::uuid,%L::uuid,NULL,true,NULL)',
+                                v_job.id,v_lease),'42501','STALE_LEASE',
+                                '022 rejected identity/state/lease case '||v_case||'/'||v_mode||'/'||v_state);
+                            RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_before,
+                                '022 negative preserves complete graph: '||v_case);
+                            RAISE SQLSTATE 'Z2222';
+                        EXCEPTION
+                            WHEN SQLSTATE '22023' THEN
+                                RETURN NEXT ok(
+                                    to_regprocedure('public.retire_account_deletion_runtime_internal(uuid,uuid)') IS NOT NULL
+                                    AND v_case IN (1,2,3,4,10,11,12,13,14,17,18,19),
+                                    '023 rejects identity/retained-job fixture mutation '||v_case);
+                                RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_before,
+                                    '023 rejected fixture mutation preserves full graph');
+                            WHEN SQLSTATE 'Z2222' THEN NULL;
+                        END;
+                    END LOOP;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+
+        RETURN NEXT is((SELECT count(*) FROM public.account_deletion_proofs
+            WHERE owner_id IN (v_owner,v_neighbor) AND operation_id=v_operation),2::bigint,
+            '022 same operation has independent owner proofs');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM public.diagnosis_job_runtime r
+            JOIN public.analysis_jobs j ON j.id=r.job_id WHERE j.owner_id IN (v_owner,v_neighbor)),
+            '022 no runtime rehydration; fixtures never exercised retirement');
+        RETURN NEXT is((SELECT array_agg(attname::text ORDER BY attnum) FROM pg_attribute
+            WHERE attrelid='public.account_deleted_runtime_identities'::regclass
+              AND attnum>0 AND NOT attisdropped),ARRAY['job_id','owner_id','operation_id']::text[],
+            '022 identity contains no content or retention policy');
+        RETURN NEXT is((SELECT count(*) FROM pg_constraint
+            WHERE conrelid='public.account_deleted_runtime_identities'::regclass AND contype='f'),
+            0::bigint,'022 no transient parent FK');
+        RETURN NEXT ok((SELECT relrowsecurity FROM pg_class
+            WHERE oid='public.account_deleted_runtime_identities'::regclass),'022 RLS enabled');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_class c
+            CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+            WHERE c.oid='public.account_deleted_runtime_identities'::regclass AND a.grantee<>c.relowner),
+            '022 all non-owner default/custom/inherited ACL sources removed');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname='public'
+              AND p.oid IS DISTINCT FROM to_regprocedure(
+                  'public.retire_account_deletion_runtime_internal(uuid,uuid)')
+              AND p.prosrc ~* '\minsert\s+into\s+(public[.])?account_deleted_runtime_identities\M'),
+            '022/023 only the private retirement entry point inserts identities');
+        RETURN NEXT ok(has_function_privilege('service_role',
+            'public.finish_diagnosis_job(uuid,uuid,jsonb,boolean,text)','EXECUTE')
+            AND NOT has_function_privilege('anon',
+            'public.finish_diagnosis_job(uuid,uuid,jsonb,boolean,text)','EXECUTE')
+            AND NOT has_function_privilege('authenticated',
+            'public.finish_diagnosis_job(uuid,uuid,jsonb,boolean,text)','EXECUTE'),
+            '022 worker finish permissions retained');
+
+        CREATE ROLE t083_retired_runtime_reader NOLOGIN INHERIT;
+        GRANT anon,authenticated,service_role TO t083_retired_runtime_reader;
+        FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role','t083_retired_runtime_reader'] LOOP
+            RETURN NEXT ok(NOT has_table_privilege(v_role,'public.account_deleted_runtime_identities',
+                'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'),
+                '022 effective table privileges denied: '||v_role);
+            FOREACH v_command IN ARRAY ARRAY[
+                'SELECT * FROM public.account_deleted_runtime_identities',
+                'INSERT INTO public.account_deleted_runtime_identities VALUES(gen_random_uuid(),gen_random_uuid(),gen_random_uuid())',
+                'UPDATE public.account_deleted_runtime_identities SET operation_id=operation_id',
+                'DELETE FROM public.account_deleted_runtime_identities',
+                'TRUNCATE public.account_deleted_runtime_identities'
+            ] LOOP
+                v_denied:=false;
+                BEGIN
+                    EXECUTE format('SET LOCAL ROLE %I',v_role);
+                    EXECUTE v_command;
+                    RESET ROLE;
+                    RAISE SQLSTATE 'Z2223';
+                EXCEPTION
+                    WHEN insufficient_privilege THEN v_denied:=true;
+                    WHEN SQLSTATE 'Z2223' THEN NULL;
+                END;
+                RESET ROLE;
+                RETURN NEXT ok(v_denied,'022 actual table access denied: '||v_role||'/'||split_part(v_command,' ',1));
+            END LOOP;
+        END LOOP;
+        RAISE SQLSTATE 'Z2222';
+    EXCEPTION WHEN SQLSTATE 'Z2222' THEN NULL;
+    END;
+    RETURN NEXT is(pg_temp.retired_runtime_snapshot(),v_initial,'022 all synthetic fixtures rolled back');
+END;
+$$;
+SELECT * FROM pg_temp.retired_runtime_replay_tests();
+
+-- 023: real runtimes, fresh predecessor chain and physical retirement.
+CREATE FUNCTION pg_temp.retirement_snapshot() RETURNS jsonb LANGUAGE sql AS $$
+    SELECT pg_temp.retired_runtime_snapshot() || jsonb_build_object('runtime_permits',
+        (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.job_id),'[]'::jsonb)
+         FROM public.account_deletion_runtime_permits p))
+$$;
+
+CREATE FUNCTION pg_temp.reject_runtime_retirement() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '023 injected late hold' USING ERRCODE='P1623';
+END;
+$$;
+
+CREATE FUNCTION pg_temp.runtime_retirement_tests() RETURNS SETOF text LANGUAGE plpgsql AS $$
+DECLARE
+    v_owner uuid := 'a0230000-0000-4000-8000-000000000001';
+    v_neighbor uuid := 'a0230000-0000-4000-8000-000000000002';
+    v_operation uuid := gen_random_uuid();
+    v_release uuid; v_catalogue uuid; v_installation uuid; v_job uuid; v_draft uuid;
+    v_ids uuid[] := '{}';
+    v_who uuid; v_mode text; v_kind text; v_state text;
+    v_before jsonb; v_initial jsonb; v_expected jsonb; v_response jsonb;
+    v_saved_runtime public.diagnosis_job_runtime%ROWTYPE;
+    v_saved_job public.analysis_jobs%ROWTYPE;
+    v_case integer; v_denied boolean; v_role text; v_command text;
+BEGIN
+    IF to_regprocedure('public.retire_account_deletion_runtime_internal(uuid,uuid)') IS NULL THEN
+        RETURN QUERY SELECT skip('023 outside selected migration version',1);
+        RETURN;
+    END IF;
+    v_initial:=pg_temp.retirement_snapshot();
+    BEGIN
+        INSERT INTO auth.users(id,is_anonymous,created_at) VALUES
+            (v_owner,false,clock_timestamp()),(v_neighbor,false,clock_timestamp());
+        INSERT INTO public.kb_releases(version,state) VALUES('t083-runtime-023','draft') RETURNING id INTO v_release;
+        INSERT INTO public.catalogue_releases(version,kb_release_id,state)
+            VALUES('t083-runtime-023',v_release,'draft') RETURNING id INTO v_catalogue;
+        INSERT INTO public.installation_access(credential_hash,linked_owner_ids)
+            VALUES(repeat('a023',16),ARRAY[v_neighbor,v_owner]) RETURNING id INTO v_installation;
+        FOREACH v_who IN ARRAY ARRAY[v_owner,v_neighbor] LOOP
+            FOREACH v_mode IN ARRAY ARRAY['identification','diagnosis'] LOOP
+                FOREACH v_kind IN ARRAY ARRAY['paid_monthly','none','starter'] LOOP
+                    FOREACH v_state IN ARRAY ARRAY['succeeded','failed','timed_out'] LOOP
+                        INSERT INTO public.analysis_jobs(owner_id,flow_id,intent,add_method,mode,kb_release_id,
+                            prompt_version,operation_id,payload_hash,locale,quota_kind,quota_state,state,
+                            lease_token,quota_installation_id,quota_owner_id)
+                        VALUES(v_who,gen_random_uuid(),'problem','scan',v_mode,v_release,
+                            'fixture',gen_random_uuid(),'fixture','en',
+                            CASE WHEN v_kind='starter' THEN 'starter_'||v_mode ELSE v_kind END,
+                            CASE WHEN v_kind='none' THEN 'not_applicable'
+                                 WHEN v_state='succeeded' THEN 'consumed' ELSE 'released' END,
+                            v_state,gen_random_uuid(),v_installation,v_who) RETURNING id INTO v_job;
+                        IF v_kind='paid_monthly' THEN
+                            INSERT INTO public.account_quota_usage(job_id,owner_id,period_start,period_end,quota_state)
+                            VALUES(v_job,v_who,'2026-11-01 UTC','2026-12-01 UTC',
+                                CASE WHEN v_state='succeeded' THEN 'consumed' ELSE 'released' END);
+                        END IF;
+                        INSERT INTO public.diagnosis_job_runtime(job_id,catalogue_release_id,projection,
+                            initial_context,repeat_context)
+                        VALUES(v_job,v_catalogue,'{"private":"result"}',
+                            CASE WHEN v_state='succeeded' THEN '{"light":"low","watering_frequency":"sparse","drainage":"yes"}'::jsonb END,
+                            CASE WHEN v_state<>'succeeded' THEN '{"private":"history"}'::jsonb END);
+                        IF v_who=v_owner THEN v_ids:=array_append(v_ids,v_job); END IF;
+                    END LOOP;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+        UPDATE public.profiles SET starter_identification_consumed=true,starter_diagnosis_consumed=true
+            WHERE id IN (v_owner,v_neighbor);
+        SELECT * INTO v_saved_runtime FROM public.diagnosis_job_runtime WHERE job_id=v_ids[1];
+        SELECT * INTO v_saved_job FROM public.analysis_jobs WHERE id=v_ids[1];
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),false,'023 no request/proof');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 no request leaves full graph unchanged');
+        PERFORM public.request_account_deletion_internal(v_owner,v_operation);
+        -- Every hold starts with unsanitized runtime and an installation alias:
+        -- a late hold must roll the entire predecessor chain back.
+        FOR v_case IN 1..15 LOOP
+            BEGIN
+                CASE v_case
+                WHEN 1 THEN DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                WHEN 2 THEN INSERT INTO storage.objects(bucket_id,name)
+                    VALUES('analysis-inputs',v_owner::text||'/023-stale');
+                WHEN 3 THEN UPDATE public.analysis_jobs SET state='running' WHERE id=v_ids[1];
+                WHEN 4 THEN UPDATE public.analysis_jobs SET quota_state='reserved' WHERE id=v_ids[1];
+                WHEN 5 THEN UPDATE public.analysis_jobs SET mode='follow_up' WHERE id=v_ids[1];
+                WHEN 6 THEN UPDATE public.account_quota_usage SET quota_state='released' WHERE job_id=v_ids[1];
+                WHEN 7 THEN DELETE FROM public.account_quota_usage WHERE job_id=v_ids[1];
+                WHEN 8 THEN INSERT INTO public.account_deleted_runtime_identities
+                    VALUES(v_ids[1],v_neighbor,v_operation);
+                WHEN 9 THEN INSERT INTO public.account_deleted_runtime_identities
+                    VALUES(v_ids[1],v_owner,gen_random_uuid());
+                WHEN 10 THEN DELETE FROM public.diagnosis_job_runtime WHERE job_id=v_ids[1];
+                WHEN 11 THEN
+                    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method)
+                        VALUES(v_neighbor,gen_random_uuid(),'problem','scan') RETURNING id INTO v_draft;
+                    UPDATE public.analysis_jobs SET draft_id=v_draft WHERE id=v_ids[1];
+                WHEN 12 THEN
+                    INSERT INTO public.guest_drafts(guest_owner_id,flow_id,intent,add_method,analysis_job_id)
+                        VALUES(v_neighbor,gen_random_uuid(),'problem','scan',v_ids[1]);
+                WHEN 13 THEN
+                    CREATE TABLE public.t023_runtime_child(
+                        job_id uuid REFERENCES public.diagnosis_job_runtime(job_id) ON DELETE CASCADE,
+                        payload text);
+                    INSERT INTO public.t023_runtime_child VALUES(v_ids[1],'retain byte exactly');
+                WHEN 14 THEN
+                    CREATE TRIGGER t023_late_hold AFTER DELETE ON public.diagnosis_job_runtime
+                        FOR EACH STATEMENT EXECUTE FUNCTION pg_temp.reject_runtime_retirement();
+                WHEN 15 THEN
+                    -- No runtime: 018 would omit this unsupported owner job.
+                    DELETE FROM public.diagnosis_job_runtime WHERE job_id=v_ids[1];
+                    UPDATE public.analysis_jobs SET mode='follow_up' WHERE id=v_ids[1];
+                END CASE;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),false,
+                    '023 fresh/identity/accounting/anchor/FK/late hold '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 full rollback including predecessors '||v_case);
+                IF v_case=13 THEN
+                    RETURN NEXT is((SELECT to_jsonb(c) FROM public.t023_runtime_child c),
+                        jsonb_build_object('job_id',v_ids[1],'payload','retain byte exactly'),'023 unknown child retained');
+                END IF;
+                RAISE SQLSTATE 'Z2323';
+            EXCEPTION WHEN SQLSTATE 'Z2323' THEN NULL;
+            END;
+        END LOOP;
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,gen_random_uuid()),false,'023 wrong operation');
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_neighbor,v_operation),false,'023 wrong owner');
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(NULL,v_operation),false,'023 null owner');
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,NULL),false,'023 null operation');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 scope holds byte exact');
+        -- Establish the exact 021 baseline; retirement must revalidate it freshly.
+        RETURN NEXT is(public.persist_account_deletion_proof_internal(v_owner,v_operation),true,'023 accepted 021 baseline');
+            PERFORM set_config('app.account_deletion_runtime_retired','true',true);
+            v_before:=pg_temp.retirement_snapshot();
+            RETURN NEXT throws_ok(format('DELETE FROM public.diagnosis_job_runtime WHERE job_id=%L',v_ids[1]),
+                '22023','IMMUTABLE_RUNTIME_SCRUB','023 saved proof and forged GUC cannot delete');
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 unauthorized delete byte exact');
+            v_expected:=jsonb_set(v_before,ARRAY['public.diagnosis_job_runtime'],
+                (SELECT coalesce(jsonb_agg(e ORDER BY e::text),'[]'::jsonb)
+                 FROM jsonb_array_elements(v_before->'public.diagnosis_job_runtime') e
+                 WHERE NOT ((e->>'job_id')::uuid=ANY(v_ids))));
+            v_expected:=jsonb_set(v_expected,ARRAY['retired_runtime_identities'],
+                (SELECT jsonb_agg(e ORDER BY e->>'job_id') FROM (
+                    SELECT e FROM jsonb_array_elements(v_before->'retired_runtime_identities') e
+                    UNION ALL
+                    SELECT jsonb_build_object('job_id',id,'owner_id',v_owner,'operation_id',v_operation)
+                    FROM unnest(v_ids) id) entries));
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),true,'023 physically retires fresh scrubbed runtime');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_expected,
+            '023 only runtime removed and minimal identities added to full 021 snapshot; jobs/ledger/claims/receipts/neighbors/Auth retained');
+        RETURN NEXT is((SELECT count(*) FROM public.account_deletion_runtime_permits),0::bigint,'023 no surviving permits');
+        v_before:=pg_temp.retirement_snapshot();
+        RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),true,'023 exact retirement replay');
+        RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 replay has zero mutation');
+        FOR v_case IN 1..3 LOOP
+            BEGIN
+                CASE v_case
+                WHEN 1 THEN INSERT INTO storage.objects(bucket_id,name)
+                    VALUES('analysis-inputs',v_owner::text||'/023-stale');
+                WHEN 2 THEN DELETE FROM public.operation_receipts WHERE owner_id=v_owner AND operation_id=v_operation;
+                WHEN 3 THEN
+                    DELETE FROM public.account_deletion_proofs WHERE owner_id=v_owner;
+                    INSERT INTO storage.objects(bucket_id,name)
+                        VALUES('analysis-inputs',v_owner::text||'/023-stale-proof');
+                END CASE;
+                v_before:=pg_temp.retirement_snapshot();
+                RETURN NEXT is(public.retire_account_deletion_runtime_internal(v_owner,v_operation),false,'023 replay requires fresh readiness '||v_case);
+                RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 stale replay full rollback '||v_case);
+                RAISE SQLSTATE 'Z2323';
+            EXCEPTION WHEN SQLSTATE 'Z2323' THEN NULL;
+            END;
+        END LOOP;
+        FOREACH v_job IN ARRAY v_ids LOOP
+            SELECT * INTO v_saved_job FROM public.analysis_jobs WHERE id=v_job;
+            v_before:=pg_temp.retirement_snapshot();
+            SET LOCAL ROLE service_role;
+            v_response:=public.finish_diagnosis_job(v_job,v_saved_job.lease_token,NULL,false,'ignored');
+            RESET ROLE;
+            RETURN NEXT is(v_response,jsonb_build_object('already_finalized',true,
+                'quota_state',v_saved_job.quota_state,'outcome',v_saved_job.state),'023 exact 022 terminal lease replay');
+            RETURN NEXT throws_ok(format('SELECT public.finish_diagnosis_job(%L,%L,NULL,true,NULL)',v_job,gen_random_uuid()),
+                '42501','STALE_LEASE','023 wrong lease rejected');
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 terminal finish retains complete graph');
+        END LOOP;
+        FOR v_case IN 1..12 LOOP
+            v_before:=pg_temp.retirement_snapshot();
+            v_denied:=false;
+            BEGIN
+                CASE v_case
+                WHEN 1 THEN INSERT INTO public.diagnosis_job_runtime SELECT v_saved_runtime.*;
+                WHEN 2 THEN INSERT INTO public.diagnosis_job_runtime SELECT v_saved_runtime.*
+                    ON CONFLICT(job_id) DO UPDATE SET projection=EXCLUDED.projection;
+                WHEN 3 THEN UPDATE public.analysis_jobs SET id=gen_random_uuid() WHERE id=v_ids[1];
+                WHEN 4 THEN UPDATE public.analysis_jobs SET owner_id=v_neighbor WHERE id=v_ids[1];
+                WHEN 5 THEN UPDATE public.analysis_jobs SET payload_hash='restore' WHERE id=v_ids[1];
+                WHEN 6 THEN DELETE FROM public.analysis_jobs WHERE id=v_ids[1];
+                WHEN 7 THEN DELETE FROM public.profiles WHERE id=v_owner;
+                WHEN 8 THEN UPDATE public.analysis_jobs SET lease_token=gen_random_uuid() WHERE id=v_ids[1];
+                WHEN 9 THEN DELETE FROM public.account_deleted_runtime_identities WHERE job_id=v_ids[1];
+                WHEN 10 THEN UPDATE public.account_deleted_runtime_identities SET operation_id=gen_random_uuid() WHERE job_id=v_ids[1];
+                WHEN 11 THEN
+                    -- An ordinary runtime may not be retargeted to a retired id.
+                    UPDATE public.diagnosis_job_runtime SET job_id=v_ids[1] WHERE job_id=(
+                        SELECT id FROM public.analysis_jobs WHERE owner_id=v_neighbor ORDER BY id LIMIT 1);
+                WHEN 12 THEN INSERT INTO public.analysis_jobs SELECT v_saved_job.*;
+                END CASE;
+                RAISE SQLSTATE 'Z2324';
+            EXCEPTION
+                WHEN SQLSTATE '22023' THEN v_denied:=true;
+                WHEN SQLSTATE '23503' THEN v_denied:=true;
+                WHEN SQLSTATE '23505' THEN v_denied:=(v_case=12);
+                WHEN SQLSTATE 'Z2324' THEN NULL;
+            END;
+            RETURN NEXT ok(v_denied,'023 controlled owner DML rejected '||v_case);
+            RETURN NEXT is(pg_temp.retirement_snapshot(),v_before,'023 rejected DML preserves full graph '||v_case);
+        END LOOP;
+        -- Effective inherited privileges and actual execution, including service_role.
+        CREATE ROLE t083_retirement_reader NOLOGIN INHERIT;
+        GRANT anon,authenticated,service_role TO t083_retirement_reader;
+        FOREACH v_role IN ARRAY ARRAY['anon','authenticated','service_role','t083_retirement_reader'] LOOP
+            FOREACH v_command IN ARRAY ARRAY[
+                format('SELECT public.retire_account_deletion_runtime_internal(%L,%L)',v_owner,v_operation),
+                'SELECT * FROM public.account_deletion_runtime_permits',
+                format('INSERT INTO public.account_deletion_runtime_permits VALUES(pg_current_xact_id(),%L,%L,%L)',v_ids[1],v_owner,v_operation),
+                'UPDATE public.account_deletion_runtime_permits SET owner_id=owner_id',
+                'DELETE FROM public.account_deletion_runtime_permits',
+                'TRUNCATE public.account_deletion_runtime_permits',
+                'DELETE FROM public.analysis_jobs WHERE false',
+                'DELETE FROM public.diagnosis_job_runtime WHERE false'
+            ] LOOP
+                v_denied:=false;
+                BEGIN
+                    EXECUTE format('SET LOCAL ROLE %I',v_role);
+                    EXECUTE v_command;
+                    RESET ROLE;
+                    RAISE SQLSTATE 'Z2324';
+                EXCEPTION
+                    WHEN insufficient_privilege THEN v_denied:=true;
+                    WHEN SQLSTATE 'Z2324' THEN NULL;
+                END;
+                RESET ROLE;
+                RETURN NEXT ok(v_denied,'023 actual ACL deny '||v_role||'/'||split_part(v_command,' ',1));
+            END LOOP;
+        END LOOP;
+        RETURN NEXT ok((SELECT relrowsecurity FROM pg_class
+            WHERE oid='public.account_deletion_runtime_permits'::regclass),'023 permits RLS');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_class c
+            CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a
+            WHERE c.oid='public.account_deletion_runtime_permits'::regclass AND a.grantee<>c.relowner),
+            '023 no non-owner permit ACL');
+        RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM pg_proc p
+            CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+            WHERE p.oid IN ('public.retire_account_deletion_runtime_internal(uuid,uuid)'::regprocedure,
+                'public.guard_retired_analysis_job()'::regprocedure,
+                'public.guard_account_deleted_runtime_identity()'::regprocedure) AND a.grantee<>p.proowner),
+            '023 no non-owner function ACL');
+        RAISE SQLSTATE 'Z2323';
+    EXCEPTION WHEN SQLSTATE 'Z2323' THEN NULL;
+    END;
+    RETURN NEXT is(pg_temp.retirement_snapshot(),v_initial,'023 all fixtures rolled back');
+END;
+$$;
+SELECT * FROM pg_temp.runtime_retirement_tests();
 
 SELECT * FROM finish();
 ROLLBACK;
