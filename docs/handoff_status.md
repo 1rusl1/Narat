@@ -1,5 +1,20 @@
 # Narat — текущий статус и передача работы
 
+## T083 — реальные гонки runtime retirement приняты
+
+e85d9e4 опубликован. Run67 повторил controller wrapper с полным
+clean/upgrade SQL (по2016 auth assertions) и реальными двумя/тремя
+сессиями для identification и diagnosis. Finish/retire/точный повтор
+действительно ожидали Lock; конкурентное восстановление и INSERT/UPSERT
+послеcommit отклонены, job/quota/receipt byte snapshots сохранены.
+Deno436, deno-check/diff-check, независимые Review/QA — PASS.
+
+Код023/fixtures и отчёт t083-runtime-retirement-races.md приняты только
+локально. Staging/Auth не менялись. Следующий шаг —024: строгий prepare
+пустого аккаунта и завершение только после подтверждённого отсутствия
+Auth в БД. Непустые jobs/claims/billing остаются hold, Apple/API/UI
+удаление открыты, T083 не закрывается.
+
 ## T083 — runtime023 принят локально; гонки проходят
 
 Read-only candidate66 принял полный023 после исправлений фикстур.
