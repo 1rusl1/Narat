@@ -1,5 +1,32 @@
 # Narat — текущий статус и передача работы
 
+## T164 — поздний entitlement и настоящий таймер приняты локально
+
+Кандидат `0761360`, независимая приёмка `7955660` отправлены в origin.
+`GuestCatalogueView.swift` подписывается на canonical sync до первого
+чтения entitlement, обновляет права при каждой публикации, проверяет
+владельца и отмену перед срабатыванием таймера. Точка таймера не раньше
+самого expiry. Остальные изменения — `CatalogueUIFixtures.swift`,
+`CatalogueUIFixtureTests.swift`, `CatalogueSaveUITests.swift`.
+
+Run48: 305 XCTest +3 Swift Testing PASS, Review/QA PASS, четыре целевых
+XCUITest PASS. Новый тест доставляет первый entitlement после nil через
+штатную команду refresh и настоящий sync, ждёт реальный шестисекундный
+срок без подмены часов и проверяет исчезновение даты/новой отметки,
+сохранение журнала и cold restart. Fixtures также проверяют renewal,
+revocation и чужого владельца. Обычный EN/PL smoke:10 PASS, один ожидаемый
+staging-only skip. Первый вариант fixture в run47 обращался к отсутствующей
+кнопке; исправлен, затем проверен заново в read-only candidate acceptance.
+
+Уточнение предыдущего live отчёта: root повторил прежний `1e02b98`
+с bounded polling20с и получил PASS открытой карточки/cold restart.
+Canonical entitlement был в SQLite до expiry. Первый моментальный FAIL
+не доказывает устойчивую ошибку таймера или конкретную root cause.
+Поздняя canonical подписка — отдельный проверенный локальный сценарий.
+Новый кандидат ещё требует обычного Release live у root; полный T164 и
+напоминания не закрыты. Следующий шаг A — возобновить узкий sign-out
+через новый run с текущей базой; root выполняет live expiry.
+
 ## T164 — живой expiry не прошёл; sign-out приостановлен
 
 Root проверил обычный подписанный Release с `1e02b98` на staging.
