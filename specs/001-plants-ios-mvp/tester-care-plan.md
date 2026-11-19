@@ -112,7 +112,9 @@ trial, расширенный платный уход, новые способы
 Текущий шаг: этапы0 и технический/online срез этапа1 приняты: `b7845a8`
 (327 Swift,13 EN UI и exact replay ledger; fixtures) и ordinary signed Release
 `df71eb5` с теми же исходниками ([живой цикл](../../docs/validation/tester-care-stage1-live-2026-11-19.md)).
-Далее этап2: один read RPC и отдельный additive GET-only Edge `care-overview`,
-чтобы не перевыкладывать действующие plants-api33/worker, затем общий owner cache
-и «Сегодня». Физические B01–B11 остаются открыты; расширение рекомендаций и покупки
+В этапе2 принят SQL read RPC `25a5e92`:149automation/436Deno,140overview
+assertions × clean/upgrade двух баз (fullcurrent и exact92care), Review/QA PASS.
+Это только localfixtures, не deployment. Далее отдельный additive GET-only Edge
+`care-overview`, чтобы не перевыкладывать plants-api33/worker, затем coherent
+owner cache и «Сегодня». Физические B01–B11 остаются открыты; расширение рекомендаций и покупки
 по-прежнему отложены.
