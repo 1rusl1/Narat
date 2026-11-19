@@ -155,6 +155,8 @@
 
   - `cd51702`: existing-card record UI принят: 316 Swift, 9 EN care UI, MCP, Review/QA PASS. Отдельный ordinary signed Release/staging подтвердил record→next→correction→undo с cold reopen и одним фактом; физический offline/iPhone и общий foreground/reconnect reconcile ещё открыты. Полный T065 не закрыт.
 
+  - `000e230`: принят общий bounded owner-care reconcile, 322 Swift/MCP/Review/QA PASS; disk replay, typed edit ordering, owner/ABA/cancel и busy проверены fixtures. Подключение к Root foreground/reconnect и живой offline/iPhone ещё открыты.
+
 - [ ] T066 Обновить `TodayView.swift`: текущие/просроченные активные задачи и условный полив. Неприменимые/остановленные после expiry задания не остаются активным уходом. Доступ к карточке, истории и ручной записи сохраняется; никаких нейтральных reminders по старому плану. Покрытие: FR-022, FR-023, FR-024, FR-025, FR-028.
 
 - [ ] T067 Создать `CareHistoryView.swift` для фактов/прошедшей даты/отмены. Текущую следующую дату с коротким основанием показывать в карточке; отдельный NextCheckReasonView и история всех пересчётов не требуются. Покрытие: FR-026, FR-027, FR-028, FR-029, FR-030.

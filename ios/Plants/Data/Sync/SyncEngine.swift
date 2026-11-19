@@ -79,6 +79,9 @@ public struct EffectiveCareTaskView: Codable, Sendable, Equatable {
 }
 
 public actor SyncEngine {
+    private enum CareDrainFailure: Error {
+        case busy
+    }
     enum WateringRecordFailure: Error {
         case rejected
     }
@@ -98,6 +101,7 @@ public actor SyncEngine {
     private let store: LocalStore
     private let apiClient: PlantsAPIClient
     private var drainingOwners = Set<UUID>()
+    private var reconcilingCareOwners = Set<UUID>()
     private var planHistoryByOwner: [UUID: [UUID: CachedPlanHistoryEntry]] = [:]
     private var reportCacheByOwner: [UUID: [String: ProgressReportDTO]] = [:]
     private var canonicalSyncObservers: [UUID: AsyncStream<Void>.Continuation] = [:]
@@ -144,6 +148,38 @@ public actor SyncEngine {
     func flushPlantCommand(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws -> Int {
         try apiClient.syncAuthority.withBoundValid(context) {}
         return try await flushOutbox(for: context.ownerId, context: context, onlyOperation: command.operationId)
+    }
+
+    /// One ordered snapshot attempt and one canonical refresh; no per-card retry loop.
+    func reconcilePendingCare(context: SyncSessionLease) async throws -> CareReconciliationOutcome {
+        try Task.checkCancellation()
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        guard reconcilingCareOwners.insert(context.ownerId).inserted else { return .busy }
+        defer { reconcilingCareOwners.remove(context.ownerId) }
+        do {
+            _ = try await flushOutbox(for: context.ownerId, context: context, careOnly: true)
+        } catch CareDrainFailure.busy {
+            return try apiClient.syncAuthority.withPermanentBoundValid(context) { .busy }
+        }
+        _ = try await pullDelta(for: context.ownerId, pageSize: 200, fullRefresh: false, context: context)
+        let remaining = try await store.pendingOutboxEntries(for: context.ownerId)
+        try Task.checkCancellation()
+        return try apiClient.syncAuthority.withPermanentBoundValid(context) {
+            remaining.isEmpty ? .completed : .pending
+        }
+    }
+
+    private func isCareReconciliationCommand(_ entry: OutboxEntrySnapshot) -> Bool {
+        switch entry.commandName {
+        case "care.record", ManualWateringAction.correctionCommand, ManualWateringAction.undoCommand,
+             FirstAidRecordCommand.name, FirstAidObservationCommand.name, FirstAidObservationPhotoDraft.name,
+             RoutineSoilCheckCompletionCommand.name, RoutineSoilCheckUndoCommand.name,
+             CareRecommendationRefreshCommand.name, BasicCareEnableReceipt.commandName,
+             PlantEditCommand.name, "profile.update":
+            return true
+        default:
+            return false
+        }
     }
 
     func flushProfileReminderHour(
@@ -194,12 +230,16 @@ public actor SyncEngine {
     }
 
     private func flushOutbox(
-        for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil
+        for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil,
+        careOnly: Bool = false
     ) async throws -> Int {
         guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
         // Actor reentrancy must not dispatch a second copy of this owner's snapshot.
-        guard drainingOwners.insert(ownerId).inserted else { return 0 }
+        guard drainingOwners.insert(ownerId).inserted else {
+            if careOnly { throw CareDrainFailure.busy }
+            return 0
+        }
         defer { drainingOwners.remove(ownerId) }
         let pending = try await store.pendingOutboxEntries(for: ownerId)
         try await apiClient.validateSyncContext(context)
@@ -213,6 +253,13 @@ public actor SyncEngine {
         })
 
         for entry in pending {
+            try Task.checkCancellation()
+            if careOnly, !isCareReconciliationCommand(entry) {
+                // A filtered predecessor still owns its position in the plant/global chain.
+                if let plantId = entry.plantId { blockedPlantIds.insert(plantId) }
+                else { GlobalChainBlocked = true }
+                continue
+            }
             if let commandName, entry.commandName != commandName { continue }
             if let onlyOperation, entry.operationId != onlyOperation { continue }
             if let plantId = entry.plantId {
@@ -400,16 +447,17 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
-                    // Scope terminal record handling to this explicit retry. Generic post-save
-                    // drains retain their existing retry behavior.
-                    if !receivedReceipt, onlyOperation == entry.operationId,
+                    // Explicit care retries discard terminal rejection without claiming success.
+                    // Generic post-save drains retain their existing retry behavior.
+                    if !receivedReceipt, (onlyOperation == entry.operationId || careOnly),
                        ManualWateringAction(envelope: envelope) == .record,
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
                         try await store.finishOutboxEntry(
                             operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                         )
-                        throw WateringRecordFailure.rejected
+                        if onlyOperation == entry.operationId { throw WateringRecordFailure.rejected }
+                        continue
                     }
                     let observation = envelope.commandName == FirstAidObservationCommand.name
                     let deletion = envelope.commandName == PlantDeleteReceipt.commandName

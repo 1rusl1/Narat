@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## Принят общий проход сохранённого ухода — 19 ноября 2026
+
+Интегрирован `000e230`: CollectionRepository.reconcilePendingCare и общий
+bounded owner-pass SyncEngine. Один permanent lease, ordered snapshot,
+manual/routine/firstaid/photo/edit/profile-hour через прежние typed handlers,
+явные completed/pending/busy. Unsupported predecessor и pending deletion
+блокируют последующий уход того же растения; очереди других владельцев
+не отправляются. Canonical refresh обязателен, завершение прохода не равно
+подтверждению отдельного действия. Generic post-save drain не изменён.
+Изменены CollectionRepository.swift, SyncEngine.swift, CollectionWireTests.swift;
+добавлены manifests и отчёт core acceptance. Новый SwiftData schema/API отсутствует.
+
+Run `tester-care-reconcile-core-acceptance-20261119-02`: 149 automation,
+322 Swift (319 XCTest + 3 Swift Testing), ordinary welcome1, MCP smoke,
+Reviewer/QA — PASS. Первый compile FAIL сохранён: fixture исправлен с
+PlantEditCommand.make на его envelope; production guards не ослаблены.
+Новые 6 тестов: disk/lost response, routine/profile, ordering/edit,
+unsupported/delete/foreign owner, busy/finalGET, owner/ABA/cancellation.
+Это локальные fixtures, нового живого HTTP/UI/iPhone-прогона этим пакетом нет.
+Root: diff-check и побайтное совпадение трёх Swift с accepted SHA — PASS;
+полные suites повторно не запускались, исходные 3 пользовательских файла сохранены.
+
+Полный T065 и этап1 открыты: common seam ещё необходимо подключить к Root
+foreground/reconnect и обновлению карточки. Следующий точный шаг — отдельный
+wiring candidate с сериализацией lifecycle, idle-wakeup без polling,
+исправлением missing-condition guard и реальными 11 EN UI; затем приёмка
+цикла и Today → reminders. Последующие этапы не ожидают подтверждения владельца.
+
 ## Принят UI записи полива существующей карточки — 19 ноября 2026
 
 Интегрирован `cd51702`: EN-кнопка Record watering в повторно открытой
@@ -210,6 +238,48 @@ Routing/checks взяты из последнего согласованного
 Точный следующий шаг: дождаться baseline gate в указанном worktree,
 устранить выявленные ошибки, затем через следующие узкие пакеты завершить
 цикл ухода и перейти к canonical списку/«Сегодня», затем reminders.
+## Core candidate: mechanical typed fixture repair — 19 ноября 2026
+
+Read-only core acceptance01 честно BLOCKED на compile gate: новый test
+смешал typed PlantEditCommand и CommandEnvelopeDTO в одном array, Swift
+вывел Any; production files ещё не проверены runtime. Контроллер исправил
+только fixture `.make(...).envelope`, сохранив exact ordering/canonical
+assertions. Реальные ошибки/build log сохранены в q-6e906ec9e92b8e718f758ed6.
+Новый run `tester-care-reconcile-core-acceptance-20261119-02` повторяет
+тот же full candidate contract/checks/Review/QA, не помечает старый PASS.
+
+## Принят UI ручного полива; candidate общего care reconcile — 19 ноября 2026
+
+UI full candidate-base run `tester-care-record-ui-jwt-acceptance-20261119-01`
+принят/отправлен коммитом `cd51702885bed0479517cf24d80ee0983bc5559b`.
+Реальные проверки:149automation,316Swift (313XCTest+3SwiftTesting),
+ordinary welcome1, MCP,9ENcareUI, fresh Review1/QA1 PASS. Два новых UI
+подтвердили cache/offline fault injection, restart/exact operation,
+один canonical fact/undo и terminal rejection без ложного success.
+Production UI совпадает с ordinary signed2fb parent live evidence;
+исправление JWT ограничено DEBUG fixture. Не physical iPhone/offline proof,
+не полное завершение stage1/B01–B11.
+
+После приёмки применён отдельный явно НЕпринятый controller-authored core
+candidate. Родитель подготовил два production files и six compact tests
+в /tmp вне active checkout; child проверил scope/hunks/git apply --check,
+применил их к принятому UI, удалил только DRAFT notes из test snippet.
+Это не успешный Developer call, предыдущие CLI transport timeouts сохранены.
+Изменены CollectionRepository,SyncEngine,CollectionWireTests: один
+permanent-owner ordered care+typededit+profile+existing photo-draft pass,
+busy guard всего pass, retained unsupported/deletion ordering и финальный
+canonical pull. Outcome описывает pass, не подтверждение отдельного действия.
+Шесть новых tests покрывают disk/lost reply,typedroutine/profile,
+unsupported/delete/foreign owner,edit→care,concurrent busy finalpull и
+owner/ABA/cancel. Сборка/тесты candidate пока не запускались.
+
+Следующий actual read-only run:
+`tester-care-reconcile-core-acceptance-20261119-01`, manifest
+`tools/automation/tasks.tester-care-reconcile-core-acceptance.json`,
+shared resource config. После gates/Review/QA — lifecycle wiring на
+foreground/reconnect и cache-condition edge; затем живая stage1 приёмка,
+Today и reminders. Parent checkbox остаются открыты.
+
 ## Выявлен fixture JWT guard; новый непринятый candidate — 19 ноября 2026
 
 Узкий Developer repair остановлен после900s transport timeout (catalog,
@@ -3778,8 +3848,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-saved-watering-ui-jwt-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 201.60 с, проверки — 534.15 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-saved-watering-ui-jwt-acceptance](validation/automation/tasks/tester-care-saved-watering-ui-jwt-acceptance.md).
+tester-care-owner-reconcile-core-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 162.23 с, проверки — 183.44 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-owner-reconcile-core-acceptance](validation/automation/tasks/tester-care-owner-reconcile-core-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
