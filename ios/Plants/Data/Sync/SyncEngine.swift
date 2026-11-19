@@ -79,6 +79,10 @@ public struct EffectiveCareTaskView: Codable, Sendable, Equatable {
 }
 
 public actor SyncEngine {
+    enum WateringRecordFailure: Error {
+        case rejected
+    }
+
     enum RoutineUndoFailure: Error {
         case rejected
     }
@@ -396,6 +400,17 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
+                    // Scope terminal record handling to this explicit retry. Generic post-save
+                    // drains retain their existing retry behavior.
+                    if !receivedReceipt, onlyOperation == entry.operationId,
+                       ManualWateringAction(envelope: envelope) == .record,
+                       !apiError.error.retryable,
+                       ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
+                        try await store.finishOutboxEntry(
+                            operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                        )
+                        throw WateringRecordFailure.rejected
+                    }
                     let observation = envelope.commandName == FirstAidObservationCommand.name
                     let deletion = envelope.commandName == PlantDeleteReceipt.commandName
                     if !receivedReceipt, (entry.commandName == ManualWateringAction.undoCommand
