@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-19",
+  "status": "PASS",
+  "scope": "ordinary signed EN Release, existing Free owner, live staging online on owned Simulator",
+  "source_candidate": "df71eb52d592037a4db8e2cf04d8bc02af3f2071",
+  "accepted_source": "b7845a88c1bebcb47e3088802f6df25242b8a88e",
+  "executable_sha256": "a81670ea4f4b2f54490eb2386a5aa0a243121512accf41a360c30d7a23cbc87f",
+  "configuration": "ordinary Release",
+  "fixture_exclusion_verified": true,
+  "signed_verified": true,
+  "owner_sha256": "9d48084524ad31a7155672c7ff919fe7fd918a6c58ef6ef3c8501e57f522663c",
+  "plant_id": "afca18d9-43cc-4d07-959c-3500935bacd9",
+  "prior_history": {
+    "entries": 1,
+    "reversals": 0,
+    "analyses": 0,
+    "unchanged": true
+  },
+  "new_facts": [
+    {
+      "intent": "01-water-today",
+      "entry_id": "52df7ccc-db1f-4d94-b9ba-611d9e1276a2",
+      "operation_id": "a860044c-3f4b-42bc-8533-c1e756aabf78",
+      "action_code": "water",
+      "state": "voided",
+      "original_local_date": "2026-11-19",
+      "final_local_date": "2026-11-18"
+    },
+    {
+      "intent": "routine",
+      "entry_id": "00ee482c-d4bb-4c61-ab07-e602ee6a271a",
+      "operation_id": "0bf50ec7-fd91-46db-b77f-6f2f7d2f559a",
+      "action_code": "check_soil",
+      "state": "voided",
+      "original_local_date": "2026-11-19",
+      "final_local_date": "2026-11-19"
+    },
+    {
+      "intent": "09-manual-while-paused",
+      "entry_id": "d3b13dcb-8435-41b9-b936-f5b8dda792be",
+      "operation_id": "57bfbad4-ca7e-4510-98a0-1898ccf702a4",
+      "action_code": "water",
+      "state": "voided",
+      "original_local_date": "2026-11-19",
+      "final_local_date": "2026-11-19"
+    }
+  ],
+  "final": {
+    "total_water_facts": 3,
+    "new_water_facts": 2,
+    "new_routine_facts": 1,
+    "all_new_facts_voided": true,
+    "active_water_count": 0,
+    "next_check": null,
+    "routine_check": null,
+    "care_revision": 3,
+    "light": "medium"
+  },
+  "steps": [
+    {
+      "name": "01-water-today",
+      "light": "medium",
+      "care_revision": 1,
+      "next_due": "2026-11-26",
+      "anchor_kind": "water",
+      "active_water_count": 1
+    },
+    {
+      "name": "04-backdate-to-due-today",
+      "light": "medium",
+      "care_revision": 1,
+      "next_due": "2026-11-19",
+      "anchor_kind": "water",
+      "active_water_count": 1
+    },
+    {
+      "name": "05-routine-complete",
+      "light": "medium",
+      "care_revision": 1,
+      "next_due": "2026-11-26",
+      "anchor_kind": "check_soil",
+      "active_water_count": 1
+    },
+    {
+      "name": "06-routine-undo",
+      "light": "medium",
+      "care_revision": 1,
+      "next_due": "2026-11-19",
+      "anchor_kind": "water",
+      "active_water_count": 1
+    },
+    {
+      "name": "07-correct-to-yesterday",
+      "light": "medium",
+      "care_revision": 1,
+      "next_due": "2026-11-25",
+      "anchor_kind": "water",
+      "active_water_count": 1
+    },
+    {
+      "name": "08-pause-low-light",
+      "light": "low",
+      "care_revision": 2,
+      "next_due": null,
+      "anchor_kind": null,
+      "active_water_count": 1
+    },
+    {
+      "name": "09-manual-while-paused",
+      "light": "low",
+      "care_revision": 2,
+      "next_due": null,
+      "anchor_kind": null,
+      "active_water_count": 2
+    },
+    {
+      "name": "10-restore-medium-still-paused",
+      "light": "medium",
+      "care_revision": 3,
+      "next_due": null,
+      "anchor_kind": null,
+      "active_water_count": 2
+    },
+    {
+      "name": "11-explicit-refresh",
+      "light": "medium",
+      "care_revision": 3,
+      "next_due": "2026-11-26",
+      "anchor_kind": "water",
+      "active_water_count": 2
+    },
+    {
+      "name": "12-undo-paused-manual-water",
+      "light": "medium",
+      "care_revision": 3,
+      "next_due": "2026-11-25",
+      "anchor_kind": "water",
+      "active_water_count": 1
+    },
+    {
+      "name": "13-undo-first-water",
+      "light": "medium",
+      "care_revision": 3,
+      "next_due": null,
+      "anchor_kind": null,
+      "active_water_count": 0
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "00-existing-history.png",
+      "bytes": 233448,
+      "sha256": "b61e7a7d1a67286623e86f044d75316c0608af921c68a16969580f6f8d240e1f"
+    },
+    {
+      "file": "01-water-today-confirm.png",
+      "bytes": 531250,
+      "sha256": "f67db6c32c423a87155361ffb7ae2c17f0135e2fbf52035f380c6b47d644b930"
+    },
+    {
+      "file": "01-water-today.png",
+      "bytes": 314255,
+      "sha256": "e6ce76dca79d5bcaec79f5a067dea3885ef4b99d2129bd9b1e8a2e6c55a514f5"
+    },
+    {
+      "file": "03-cold-first-water.png",
+      "bytes": 354563,
+      "sha256": "08f6ba5d3233070a6695ea1d714c14f7fb50ac0e94f12ae60016968405c6b661"
+    },
+    {
+      "file": "04-backdate-to-due-today.png",
+      "bytes": 315068,
+      "sha256": "127e30397d7b837657dcb7b0d034d24cf46c2efc6b64dd3ca380ae6f58db976b"
+    },
+    {
+      "file": "05-routine-complete.png",
+      "bytes": 353036,
+      "sha256": "28cfcc57d965890c02e84c897cb421c50c2c0951280b1359f6edfb0e6b9cf0a6"
+    },
+    {
+      "file": "06-routine-undo.png",
+      "bytes": 351729,
+      "sha256": "b3da74460f87426af21958e33e78f269fbce516a481ea0871c902abbe3a3d7b4"
+    },
+    {
+      "file": "07-correct-to-yesterday.png",
+      "bytes": 316155,
+      "sha256": "d890a0e9c97fad7b1e15572be20e8fd023310a594934b82914f2141d3536bf95"
+    },
+    {
+      "file": "08-pause-low-light.png",
+      "bytes": 349397,
+      "sha256": "ede440a69c49fbeafe484f6237848df86ff37409593939f701e582d6e608372d"
+    },
+    {
+      "file": "09-manual-while-paused-confirm.png",
+      "bytes": 562796,
+      "sha256": "c0489e486aa4cd069f4c1492a8dcde42bc624d93c2615d37affe1d7a0ea506b7"
+    },
+    {
+      "file": "09-manual-while-paused.png",
+      "bytes": 340300,
+      "sha256": "42e2f76ba40ff5e81f5ff2d4e0991ada0725ebc05b7a56333be1a39e552e3266"
+    },
+    {
+      "file": "10-restore-medium-still-paused.png",
+      "bytes": 285973,
+      "sha256": "7e873e1e5e8eef538f860ddf481a6cd140a06f71d3f175d22fc45c87b81d90d3"
+    },
+    {
+      "file": "11-explicit-refresh.png",
+      "bytes": 356840,
+      "sha256": "aec6b439682a5d19bceccdc4e4be6c38dab46b7540a0c072edc6582b673cc468"
+    },
+    {
+      "file": "12-undo-paused-manual-water.png",
+      "bytes": 315915,
+      "sha256": "b9b347db93e751ef76e633f63896e175162692ef1fbaf5a6168d319607e777cf"
+    },
+    {
+      "file": "13-undo-first-water.png",
+      "bytes": 303042,
+      "sha256": "19a7dd01b68d48b352cc1625a74bb42b3a64ac3e06624dab5e9feff72ac0a724"
+    },
+    {
+      "file": "14-cold-final-history.png",
+      "bytes": 334197,
+      "sha256": "0568253377df0f99719c893999377143e4cd99bbf2f7918fcebf06c7360446bf"
+    }
+  ],
+  "harness_recovery": {
+    "initial_confirmation_wait_failed_before_confirm_zero_new_facts": true,
+    "later_offscreen_light_control_stop_preserved_first_water_and_routine": true,
+    "native_dialog_reentry_fixed_before_light_write": true,
+    "resume_started_only_at_incomplete_step08": true,
+    "earlier_care_writes_not_repeated": true,
+    "product_source_unchanged": true
+  },
+  "limitations": [
+    "No physical iPhone acceptance",
+    "No real network outage/radio reconnect; fixture coverage separate",
+    "First-aid real positive diagnosis/control not exercised; no new AI",
+    "Source withdrawal/expiry proof belongs to fixture suites, not this live run",
+    "Today and care notifications not implemented by this stage"
+  ],
+  "private_evidence_directory": "/private/tmp/narat-tester-care-wiring-live-evidence-20261119",
+  "signed_app_archive": "/private/tmp/narat-tester-care-wiring-live-evidence-20261119/signed-release-df71eb52d592/Plants.app"
+}

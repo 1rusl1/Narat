@@ -1,5 +1,45 @@
 # Narat — текущий статус и передача работы
 
+## Этап 1: ordinary live online цикл принят — 19 ноября 2026
+
+Живой V2 завершён PASS на signed EN Release `df71eb5`, ios tree которого
+побайтно равен accepted `b7845a8` (root integration `9d0df93`). Проверены:
+record/cold → backdate/due today → routine complete/undo → correction →
+low-light pause → manual record не resume → medium ещё pause → explicit
+refresh → undo нового/старого полива с fallback date → null/cold history.
+Ровно2 intentional water +1 routine новых факта, три разных UUID/operation,
+все3 voided в конце. Прежние entry/reversal/analysis и identities сохранены.
+API/SQL runtime не выкладывались; текущий care сервер использован как есть.
+
+Новые файлы: `docs/validation/tester-care-stage1-live-2026-11-19.{md,json}`.
+327 Swift/149 automation/13 UI/MCP/Review/QA относятся к отдельно принятому
+fixture пакету b7845; V2 — настоящий обычный UI+HTTP, не injected transport.
+Root просмотрел3 PNG: manual на low pause, refresh date26Nov и cold history.
+Первый private driver FAIL был до Confirm/no new facts; поздние остановки
+были на offscreen/native-dialog navigation перед step08. Checkpoints/FAIL
+сохранены, продолжены только оставшиеся действия; предыдущие care writes
+не повторялись. Private harness py_compile PASS; product source не менялся.
+
+Signed app архивирован после codesign/SHA проверки:
+`/private/tmp/narat-tester-care-wiring-live-evidence-20261119/signed-release-df71eb52d592/Plants.app`.
+Executable SHA256 a81670ea4f4b2f54490eb2386a5aa0a243121512accf41a360c30d7a23cbc87f.
+16 основных PNG, raw checkpoints/logs и frozen source сохранены; удалён только
+наш воспроизводимый DD. Sanitized JSON/result/credential-pattern check и
+root diff-check PASS; credentials и бинарные артефакты в git не добавлялись.
+Исходные пользовательские3 файла остаются отдельно без изменений с нашей стороны.
+
+Технический и online срез этапа1 принят; физический iPhone/radio offline,
+B07 ordinary positive diagnosis/control и полный T065/B01–B11 ещё открыты.
+Старые firstaid liveStorage доказательства маркированного входа не выдаются
+за ordinary positive; новых диагнозов/неподтверждённых интервалов не создавали.
+Точный следующий шаг — stage2 SQL read RPC+explicit PG17/TAP, затем отдельный
+GET-only care-overview Edge, coherent owner cache и Today UI; далее reminders.
+Существующие plants-api33/worker не перевыкладываются. Read-only metadata33 и
+92 migration rows подтверждены; официальный download остановился на schema
+path guard, private raw-source credential provider недоступен, обходов не было.
+Additive slug снимает риск отката текущей диагностики. Повторного подтверждения
+владельца между этапами не требуется.
+
 ## Приняты lifecycle и восстановление ухода — 19 ноября 2026
 
 Интегрирован `b7845a8`, продуктовые файлы равны frozen candidate `df71eb5`.
