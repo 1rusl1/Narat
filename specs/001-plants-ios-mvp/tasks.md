@@ -162,6 +162,7 @@
   - V2 online signed Release `df71eb5` (accepted ios tree `b7845a8`) прошёл record/cold/backdate/routine complete+undo/conditions pause/manual no-resume/explicit refresh/undo/cold. Ровно2 намеренных water+1 routine, прежняя история сохранена. [Живой отчёт](../../docs/validation/tester-care-stage1-live-2026-11-19.md). Radio/iPhone и полный T065 не закрыты.
 
 - [ ] T066 Обновить `TodayView.swift`: текущие/просроченные активные задачи и условный полив. Неприменимые/остановленные после expiry задания не остаются активным уходом. Доступ к карточке, истории и ручной записи сохраняется; никаких нейтральных reminders по старому плану. Покрытие: FR-022, FR-023, FR-024, FR-025, FR-028.
+  - Серверный overview принят25a5e92/0aff69f и отдельно выложен: migration92→93, care-overview1; live EN/PL card parity/7 negative reads/canonical unchanged PASS. Это один owner с null date, не Today UI/iPhone. [Отчёт](../../docs/validation/tester-care-overview-live-2026-11-19.md).
 
   - Stage2 SQL `25a5e92`: owner read RPC принят локально —149automation/436Deno,4×140overview TAP (fullcurrent/exact92 clean+upgrade), Review/QA PASS. HTTP/native Today/live ещё не реализованы; полный T066 остаётся открытым.
 

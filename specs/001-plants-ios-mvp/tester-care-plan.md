@@ -119,3 +119,5 @@ compile и полный candidate-base Review/QA PASS. Deployed/live parity от
 Далее nativeA DTO/transport/coherent reader, nativeB durable owner cache и nativeC
 «Сегодня». Отдельный additive care-overview сохраняет plants-api33/worker безredeploy. Физические B01–B11 остаются открыты; расширение рекомендаций и покупки
 по-прежнему отложены.
+
+Серверный срез этапа2 выложен и проверен отдельно: [live overview](../../docs/validation/tester-care-overview-live-2026-11-19.md), migration93/care-overview1, прежние plants-api33/worker9 сохранены. NativeA DTO/paging выполняется; cache/Today UI/reminders и физическая матрица открыты.

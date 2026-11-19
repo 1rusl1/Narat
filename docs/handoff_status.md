@@ -1,5 +1,37 @@
 # Narat — текущий статус и передача работы
 
+## Этап2: backend выложен и проверен live — 19 ноября 2026
+
+Root integration `d3ba202` принятого HTTP `0aff69f` отправлен в origin.
+Применена только independent migration202611190001: history92→93 с сохранением
+всех прежних version/name; exact RPC prosrc/ACL/STABLE/UTC readback PASS.
+Новый care-overview ACTIVEv1; полные metadata plants-api33/worker9 неизменны.
+Изолированный accepted source compile PASS. Операторский local PG17:14 assertions,
+включая rollback CREATE при отказе history INSERT; care RPC не вызывался.
+
+Live normal Free read-only HTTP: EN/PL exact card parity,7 negative statuses+
+no-store и неизменный canonical digest PASS. Один существующий Monstera, текущая
+дата null/controls0; dated/multiowner/paging пока fixtures. SQL fixtures4×140,
+446Deno/149automation/3actualentrypoints/ReviewQA относятся к принятому серверному
+пакету, не iPhone. [Отчёт](validation/tester-care-overview-live-2026-11-19.md),
+[sanitized JSON](validation/tester-care-overview-live-2026-11-19.json).
+Первый preflight был false mismatch только порядка function list; исправлено
+sorted exact comparison, исходные logs сохранены, DDL начались после fresh PASS.
+
+В root по-прежнему только исходные пользовательские3 unstaged ios-файла;
+ни Swift, ни локальные Auth/Personal настройки этим этапом не менялись.
+Точный следующий шаг: NativeA run tester-care-overview-native-read-20261119-01
+(Developer,3 existing Swift files: DTO/sibling transport/coherent paging), затем
+B durable cache/invalidation и C Today UI. Полный этап2 и B01–B11 ещё открыты.
+
+Ресурсное указание владельца: после exhaustion допускается ровно1 reset,
+истекающий1декабря, затем оставить>=10% нового allowance. Reset не использован;
+последний actual account counter65% used/35% remaining. Перед большим пакетом
+counter перечитывается; после reset новые LLM calls останавливаем заранее около
+85% used,90% ceiling. Другой reset/покупка credits не разрешены. Это Codex usage,
+не квоты Narat; opaque reset ID/idempotency policy сохранены только в private/tmp.
+
+
 ## Этап 2: полный HTTP принят; следующий native read packet — 19 ноября 2026
 
 Accepted/pushed HTTP `0aff69f7f50a5c0fff235285548cd29b9fca586c`.
