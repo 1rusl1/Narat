@@ -3610,8 +3610,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-saved-watering-ui-jwt-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 201.60 с, проверки — 534.15 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-saved-watering-ui-jwt-acceptance](validation/automation/tasks/tester-care-saved-watering-ui-jwt-acceptance.md).
+tester-care-owner-reconcile-core-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 162.23 с, проверки — 183.44 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-owner-reconcile-core-acceptance](validation/automation/tasks/tester-care-owner-reconcile-core-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
