@@ -1,0 +1,23 @@
+{
+  "source_url": "https://growspotapp.com/data/species-light-levels.csv",
+  "retrieved_date": "2026-11-19",
+  "license": "CC-BY-4.0",
+  "license_evidence": "https://growspotapp.com/data/species-light-levels/",
+  "sha256": "75b4fb55698495bda7f7efee9b17fe988a05679f2dc0680487252fff2267dc95",
+  "bytes": 174091,
+  "source_metadata": [
+    "# GrowSpot species light levels — snapshot 2026-11-16 — CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/) — attribution: GrowSpot — growspotapp.com"
+  ],
+  "source_rows": 3525,
+  "catalogue_rows": 606,
+  "unique_exact_name_matches": 492,
+  "unmatched_without_guessing": 114,
+  "duplicate_scientific_names": 0,
+  "matched_light_tiers": {
+    "medium": 204,
+    "low": 18,
+    "high": 157,
+    "very_high": 113
+  },
+  "published_to_database": false
+}
