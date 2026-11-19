@@ -1,5 +1,26 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлена живая проверка existing-card record — 19 ноября 2026
+
+В отдельной уже существующей Free-учётке обычный HTTP создал ровно одну
+Monstera; до setup коллекция пуста, после одна карточка и ноль care фактов,
+entitlement=null. Локальной квитанции app create у этой карточки нет.
+Никаких новых постоянных аккаунтов, Admin/SQL/AI/purchase операций не было.
+Подробности в `docs/validation/tester-care-existing-card-live-2026-11-19.md`.
+Временный harness `/private/tmp/narat-tester-care-live.py`: py_compile PASS,
+живой HTTP `prepare` PASS. Private fixture mode0600 только в tmp, без пароля
+и токенов. Runtime/БД менялись лишь штатным созданием этой тестовой карточки;
+новый полив и UI-путь ещё не проверены. `git diff --check` — PASS.
+
+Сейчас оркестратор выполняет `tester-care-record-ui-20261119-01`
+(preparation `87be27a`, config `tester-care-ui.config.json` в ignored runs).
+Первый Developer turn; новый UI ещё не принят. Simulator/Xcode в root
+не запускались, ресурс оставлен его gates. Точный следующий шаг: принять
+UI, после освобождения ресурса собрать ordinary signed Release с чистого
+accepted SHA и выполнить подготовленный record/cold/correct/undo/cold
+harness. Контроллер параллельно готовит следующий care reconcile пакет.
+Все полные checkbox и B01–B11 остаются открытыми.
+
 ## Принят API записи полива существующего растения — 19 ноября 2026
 
 Интегрирован опубликованный `fd7186b` из очереди тестовой версии.
