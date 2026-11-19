@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## Core candidate: mechanical typed fixture repair — 19 ноября 2026
+
+Read-only core acceptance01 честно BLOCKED на compile gate: новый test
+смешал typed PlantEditCommand и CommandEnvelopeDTO в одном array, Swift
+вывел Any; production files ещё не проверены runtime. Контроллер исправил
+только fixture `.make(...).envelope`, сохранив exact ordering/canonical
+assertions. Реальные ошибки/build log сохранены в q-6e906ec9e92b8e718f758ed6.
+Новый run `tester-care-reconcile-core-acceptance-20261119-02` повторяет
+тот же full candidate contract/checks/Review/QA, не помечает старый PASS.
+
 ## Принят UI ручного полива; candidate общего care reconcile — 19 ноября 2026
 
 UI full candidate-base run `tester-care-record-ui-jwt-acceptance-20261119-01`

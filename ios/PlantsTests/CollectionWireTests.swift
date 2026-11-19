@@ -7971,7 +7971,7 @@ extension CollectionWireTests {
                         "current_condition_snapshot_id": snapshot.uuidString] as [String: Any]
         let editReceipt = try syncJSON(["plant_id": serverPlantId.uuidString, "revision": 2,
             "care_revision": 2, "condition_snapshot_id": snapshot.uuidString, "watermark": editedAt])
-        let edit = try PlantEditCommand.make(plantId: serverPlantId, change: .watering(.weekly))
+        let edit = try PlantEditCommand.make(plantId: serverPlantId, change: .watering(.weekly)).envelope
         let water = try ManualWateringAction.record.envelope(plantId: serverPlantId)
         var entry = syncChange(wateredAt, id: fact.uuidString, entity: "care_entries")
         entry["data"] = ["id": fact.uuidString, "plant_id": serverPlantId.uuidString,
