@@ -1,5 +1,38 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: HTTP candidate — узкий repair перед полной приёмкой
+
+SQL accepted25a5e92 и root merge4492190 сохранены. HTTP initial realrun
+`tester-care-overview-http-20261119-01` дал полный Developer1 candidate:
+shared pure projection, старый card handler delegation, новый standalone
+GET-only care-overview/index+handler,390-line real-client/mockfetch tests,
+config. Никакой deploy/Swift. Candidate пока НЕ принят.
+
+Run корректно BLOCKED при compile: controller скопировал stale deno.json
+список пяти targets, но billing-webhook/index.ts и maintenance/index.ts вrepo
+вообще отсутствуют. Developer2 предоставил точный TS2339 guarded-delete patch,
+но заблокировался на phantom paths внеscope. Controller применил ровно этот
+patch и исправил trusted config/deno task на реально существующие три:
+plants-api,analysis-worker,care-overview. Fake modules/покупки не создавались.
+Старые2 compile targets сохранены, новый3 реально компилируется.
+
+Диагностически реально:3-entrypoint deno check PASS; полный Deno444PASS/1FAIL.
+FAIL в forged JWT fixture: btoa(payload) оставляет '=' внутриJWT передsignature,
+production regex верно отклоняет. Нужна корректная base64url fixture без
+ослабления bearer. Root audit также выявил две exact boundary gaps: projected
+routine revision должна совпасть с outerplant revision; firstaid action_id
+должен соответствовать existing029 pattern. Обе требуют503, в том числе при
+automation=false, а не тихого удаления данных.
+
+Следующий actual run `tester-care-overview-http-repair-acceptance-20261119-01`:
+узкий Developer repair ТОЛЬКО handler+test → checks/Review/QA, затем зависимая
+полная read-only candidate_base приёмка ВСЕХ семи файлов от accepted prep
+9d4146ef1b66f5bf2250477b30e9f50fd312e78a. Manifest
+`tools/automation/tasks.tester-care-overview-http-repair-acceptance.json`,
+config ignored `docs/validation/automation/runs/tester-care-overview-http-actual.config.json`.
+Routing/budgets/900s прежние. Полный HTTP готов только после второй задачи.
+Никаких serverwrites/claims fullToday; cache/UI/notifications далее последовательно.
+
 ## Этап 2: SQL overview принят; следующий HTTP packet — 19 ноября 2026
 
 SQL accepted/pushed `25a5e92e0e350bd55d2bb9552098db1520c62c23`.

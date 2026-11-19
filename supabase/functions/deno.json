@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "strict": true,
-    "lib": ["deno.window", "deno.ns"]
+    "lib": [
+      "deno.window",
+      "deno.ns"
+    ]
   },
   "imports": {
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2.46.1",
@@ -13,7 +16,7 @@
     "@std/crypto": "jsr:@std/crypto@^1.0.3"
   },
   "tasks": {
-    "check": "deno check plants-api/index.ts analysis-worker/index.ts billing-webhook/index.ts maintenance/index.ts",
+    "check": "deno check plants-api/index.ts analysis-worker/index.ts care-overview/index.ts",
     "test": "deno test --allow-env --allow-read --allow-net=127.0.0.1,localhost _shared/tests/"
   }
 }
