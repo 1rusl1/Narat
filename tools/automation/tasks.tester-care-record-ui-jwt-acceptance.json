@@ -1,0 +1,71 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-saved-watering-ui-jwt-acceptance",
+      "description": "Let an existing English collection card record new manual watering with the accepted owner-scoped core, honest pending/retry/rejection and canonical history refresh.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "tools/automation/tasks.tester-care-record-ui.json",
+        "tools/automation/tasks.tester-care-record-ui-acceptance.json",
+        "tools/automation/tasks.tester-care-record-ui-cache-repair.json",
+        "tools/automation/tasks.tester-care-record-ui-jwt-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only full candidate acceptance from fd7186b, including original UI+selectors and minimal DEBUG fixture JWT branch fix. Prior candidate acceptance02 correctly FAILED2 newUI after original7 PASS; narrow Developer repair timed out due provider transport with no patch. Parent explicitly authorized controller temporary diagnostic and minimal fixture candidate. Diagnostic one target UI proved SyncWireValidationError.invalidSession; token(_:) emitted JWT only profileReminderHour, watering got plain token, so fail-closed permanent-owner proof rejected before enqueue. Controller restored View/Store instrumentation byte-for-byte and changed exactly existing DEBUG JWT branch to also testsSavedWatering. No production guard or UI assertion weakening. Verify actual complete diff and fresh gates; old failures remain failures, not stage1/B01-B11 full acceptance.",
+        "Accepted core/API is fd7186b: use enqueueSavedPlantWatering(plantId:date:timezone:context:) and retrySavedPlantWatering(_:context:) returning SavedWateringOutcome. The earlier broad core run timed out; its unaccepted draft is not a prerequisite.",
+        "Prerequisite: accepted tester-care-saved-watering-core. Reuse its existing-card repository API and outcome semantics, ManualWateringAction and existing store/outbox. Do not create another model/queue/HTTP API. No Today, notifications, billing, source import or new plant profile.",
+        "Add visible Record watering to the reopened EN CatalogueCollectionCardView. It records a user-confirmed factual watering, independently of basic-care membership, rule/profile, routine due date or entitlement. No create-confirmation needed. Keep disabled/hidden only for stale owner, invalid/deleted card, pending deletion, active save/conflicting edit or existing pending manual operation. Do not gate on routineWriteAvailable/routineAccessAvailable/dueRoutine or require a published profile. Existing PL screens need no new acceptance but do not break them.",
+        "Before network freeze and save the command through accepted core. Restore pending from disk after reopen; retry exact original op/body/date instead of allocating a new operation. Present watering-record-specific pending/progress/retry/failure copy (not watering-date correction copy). Distinguish confirmed/pending/permanent rejected/unconfirmed; dequeue on rejection never shows success. Only canonical receipt+sync confirmation updates history and next-check display. After successful record reload canonical history and advice without clearing prior history during network failure. A double tap while pending cannot create a second fact.",
+        "Preserve existing correction/undo/routine/firstaid/history/edit/delete controls. The new record may share the current manual change state with explicit action discrimination. Guard all publication after await by exact expected SDK snapshot; an owner switch including A-B-A cannot display old pending/success.",
+        "Add isolated DEBUG fixtures collectionWateringRecord and collectionWateringRecordRejected. First fixture starts with saved owner plant and no create confirmation/profile/rule, persists one canonical care.record, returns simulated reply loss, and supports exact retry/restart with one entry bound to the real operation. Assert same plant UUID, visible fact after canonical confirmation, no duplicate operation and ability to use existing correct/undo. Second fixture returns permanent rejection, no fact/pending/success, and a fresh user attempt uses a new operation. Fixtures remain DEBUG and no live external calls.",
+        "Name EN tests testCollectionRecordsWateringAfterRestart and testCollectionWateringRejectionDoesNotShowSuccess for the trusted gate. Use current stable accessibility IDs and actual UI interactions. Do not weaken assertions/skip old tests or add production fixture bypass.",
+        "Critical offline guard: do not depend on firstAidWriteAvailable, advice availability/loading, routineWriteAvailable, or network reads. An advice/firstaid GET failure must not block local manual recording from the canonical cached active card. In the target fixture start with cached active owner plant and failing advice GET, then persist record before first delivery failure, restart same namespace, exact retry and canonical one-fact confirmation. This is labelled UI fault injection, not a physical network outage proof."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "RECORDUI1",
+          "description": "Application build and full unit suite pass with existing post-save/manual/routine flows preserved.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "RECORDUI2",
+          "description": "Ordinary Simulator smoke passes.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "RECORDUI3",
+          "description": "Targeted EN XCUITest verify existing-card record lost-response restart and terminal rejection, plus accepted existing care scenarios.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui"
+          ]
+        }
+      ],
+      "candidate_base": "fd7186b68a517574d03eff4e94cfabbee4492eb8",
+      "evidence_files": [
+        "docs/validation/automation/runs/tester-care-cache-enqueue-diagnostic-20261119-01/summary.json",
+        "docs/validation/automation/runs/tester-care-cache-enqueue-diagnostic-20261119-01/care-ui.stdout.log"
+      ]
+    }
+  ]
+}

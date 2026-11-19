@@ -1,5 +1,32 @@
 # Narat — текущий статус и передача работы
 
+## Принят UI записи полива существующей карточки — 19 ноября 2026
+
+Интегрирован `cd51702`: EN-кнопка Record watering в повторно открытой
+карточке, подтверждение, durable pending/exact retry, честные состояния
+и обновление журнала. Изменены GuestCatalogueView.swift,
+CatalogueUIFixtures.swift и CatalogueSaveUITests.swift; добавлены task manifests
+и отчёт `docs/validation/automation/tasks/tester-care-saved-watering-ui-jwt-acceptance.md`.
+Полив не требует create receipt, подписки или включённого ухода.
+
+Run `tester-care-record-ui-jwt-acceptance-20261119-01`: 149 automation,
+316 Swift (313 XCTest + 3 Swift Testing), ordinary welcome1, MCP smoke,
+все 9 EN care UI, fresh Reviewer/QA — PASS; skipped/missing0.
+Причина прежних двух UI FAIL — plain token в новых fixtures; исправлена
+только JWT-ветка фикстуры, production permanent-owner guard сохранён.
+Production UI/tests побайтно соответствуют signed candidate `2fbf99d`,
+на котором отдельно прошёл живой staging record→next→correct→undo с cold
+reopen и одним canonical fact (отчёт existing-card-live). Живая проверка
+не включала физический iPhone или реальное отключение сети; offline/rejection
+сейчас доказаны локальными fixtures/UI, не подменяются живым positive path.
+
+Root: merge с сохранением обеих handoff histories, diff-check и сравнение
+трёх Swift-файлов с accepted SHA — PASS. Полные suites повторно не запускались.
+Исходные пользовательские pbxproj/две xcstrings не включены в commit.
+T065/B01–B11 и полный этап1 остаются открытыми. Точный следующий шаг:
+общий bounded owner-care reconcile (controller draft + реальные gates/Review/QA),
+затем foreground/reconnect wiring и приёмка этапа; после этого Today и reminders.
+
 ## Ordinary candidate: живой existing-card цикл прошёл — 19 ноября 2026
 
 Frozen UI candidate `2fbf99d` (ещё не принят полностью оркестратором) прошёл
@@ -183,6 +210,120 @@ Routing/checks взяты из последнего согласованного
 Точный следующий шаг: дождаться baseline gate в указанном worktree,
 устранить выявленные ошибки, затем через следующие узкие пакеты завершить
 цикл ухода и перейти к canonical списку/«Сегодня», затем reminders.
+## Выявлен fixture JWT guard; новый непринятый candidate — 19 ноября 2026
+
+Узкий Developer repair остановлен после900s transport timeout (catalog,
+websocket/HTTP; answer/patch отсутствует). Approved medium Sol config не
+имеет fallback. Родитель разрешил controller diagnostic и read-only
+candidate acceptance. Один DEBUG-only target UI с неизменёнными guards
+реально подтвердил `Plants.SyncWireValidationError: invalidSession`.
+Снимок SQLite показал active owner plant с правильными UUID/revision,
+outbox0 и HTTP attempts0. Причина доказана: fixture `token(_:)` выдавал
+JWT только profileReminderHour, новые watering cases получали plain token;
+production permanent-owner gate закономерно отвергал его до enqueue.
+
+Обе временные instrumentation правки View/LocalStore удалены побайтно.
+Кандидат меняет одну fixture-only строку: existing JWT branch включает
+`testsSavedWatering`. Production authority/owner/date/canonical guards и
+UI assertions не изменены. Диагностика — artificial fixture, её ожидаемый
+FAIL не выдаётся за acceptance. Evidence:
+`docs/validation/automation/runs/tester-care-cache-enqueue-diagnostic-20261119-01/`.
+Новый full candidate-base run:
+`tester-care-record-ui-jwt-acceptance-20261119-01`, shared config,
+316Swift/welcome/MCP/9ENUI и fresh Review/QA обязательны. Статус UI и этапа1
+до этих проверок остаётся частичным. Затем owner care reconcile/wiring.
+
+## Saved watering UI: текущая точка после реальной проверки — 19 ноября 2026
+
+Candidate `2fbf99de` пока не принят. Read-only acceptance01 остановился
+на host simctl timeout до Xcode; acceptance02 реально прошёл 149 automation,
+316 Swift (313 XCTest+3 Swift Testing), ordinary welcome1, MCP и fresh Review.
+Target EN UI: семь прежних care scenarios PASS; два новых FAIL уже после
+правильного Confirm watering: outer `recordWatering` catch показывает
+`collection.watering.record.failed` вместо pending/rejected. Старые отказы
+и фактический XCResult сохранены. Это не PASS/не полная приёмка этапа1.
+
+Отдельное живое доказательство родителя: ordinary signed Release того же
+`2fbf99de`, без fixture launch args, permanent Free Monstera с HTTP setup,
+UI record→enable/refresh→next check+source→cold→date correction→cold→undo→cold
+прошёл. Ровно один canonical water fact сохранил operation/entry identity;
+после undo state voided и next/routine null. Это живой staging/Simulator,
+не physical iPhone и не offline proof. Private parent evidence:
+`/private/tmp/narat-tester-care-live-evidence-20261119/summary.json`.
+Root сохраняет sanitized report отдельно, секреты в Git не включались.
+
+Следующий узкий run `tester-care-record-ui-cache-repair-20261119-01` сначала
+доказывает точный thrown error/guard offline fixture, затем исправляет
+причину с прежними9UI assertions. Fixture Auth expiry уже Date()+3600;
+контрольный Foundation probe показал truncation ISO8601 до секунды (не
+округление в будущее), это не подтверждённые причины. Core ACK/date/owner
+защиты не ослаблять. Manifest:
+`tools/automation/tasks.tester-care-record-ui-cache-repair.json`.
+После принятой UI — общий owner ordered care reconcile и lifecycle wiring,
+включая existing photo draft и typed plant.edit, затем живой stage1,
+Today/reminders. Parent T*/B01–B11 остаются открыты.
+
+## UI candidate: scoped alert selectors после transport/CLI отказов — 19 ноября 2026
+
+`tester-care-record-ui-20261119-01` остаётся WAITING/developer, не PASS.
+Применённые три UI/fixture/test файла прошли 316 Swift, ordinary welcome,
+MCP smoke и два Review. Первый target UI прогон выявил неверную offline
+fixture: HTTP503 не переводил collection read в transport cache fallback;
+Developer заменил его на URLError.connectionLost, advice GET остаётся503.
+Следующий target UI: семь прежних care tests прошли, два новых упали на
+неоднозначном глобальном запросе SwiftUI alert buttons.
+
+Третий Developer выдал небольшой selector patch, но CLI/provider завершился
+с timeout/stream errors, поэтому engine его не применил. Контроллер проверил
+source-only/test-only scope и git apply --check, обратимо применил ровно
+этот draft: нужный alert, firstMatch и сохранённая проверка label. Ответ
+старого run не объявляется успешным. Новый candidate-base read-only run
+`tester-care-record-ui-acceptance-20261119-01` принимает итоговый diff от
+`fd7186b`: actual unit/MCP/9 EN UI и независимые Review/QA.
+
+Для следующей очереди подготовлен прозрачный global resource adapter
+`/private/tmp/narat-tester-care-resource.py` с lock
+`/private/tmp/narat-tester-care-resource.lock`; исходные check argv,
+run-id, summary validation и exit codes сохранены. Проверены реальная
+сериализация, передача checkout lock FD, SIGTERM waiting/active, отсутствие
+orphan child и exit0/7. Это проверка адаптера, не приложения.
+Shared config: ignored `docs/validation/automation/runs/tester-care-shared.config.json`.
+
+Продуктовый UI пока кандидат. Все parent checkbox/B01–B11 открыты;
+живые запись/перезапуск/дата/undo ещё не приняты. Root подготовил отдельный
+ordinary live harness и одну staging Monstera без care facts; вторую
+setup карточку не создавать. Следующий шаг — принять этот candidate,
+передать shared ресурс для frozen live UI, затем общий owner care reconcile.
+Известный отдельный cache-edge follow-up: pending edit metadata следует
+отделить от загрузки condition snapshot, чтобы missing cached conditions
+не удерживали loadingRename и не блокировали ручной журнал.
+
+## Принят saved-plant manual watering API — 19 ноября 2026
+
+Run `tester-care-record-api-20261119-01` принял и отправил `fd7186b`.
+Repository/LocalStore/SyncEngine/CollectionWireTests: owner-bound enqueue
+нового полива сохранённой карточки без create receipt/профиля/paid gate,
+точный frozen retry и confirmed/pending/rejected/unconfirmed outcomes.
+Единый identity probe используется и ACK, и новым retry, и post-save record.
+Permanent record rejection ограничен exact onlyOperation, старый generic
+post-save drain не получил ложный success от dequeue.
+
+Проверки после repair: 316 Swift (313 XCTest+3 Swift Testing), ordinary
+welcome 1 и MCP smoke PASS; Review/QA PASS. Первый patch имел stale hunk;
+первый unit gate выявил неправильную baseline row в delta fixture.
+Оба отказа сохранены; fixture исправлен под since, валидатор не ослаблен.
+ACK дополнительно фильтрует точный receipt entry UUID. Это local/fixtures;
+новых живых записей/deploy/iPhone-проверок не было.
+
+Подготовлен UI-пакет `tools/automation/tasks.tester-care-record-ui.json`:
+Record watering в повторно открытой EN-card, сохранение offline, pending/
+restart/exact retry и rejection без false success. Кнопка не зависит от
+advice/firstaid/routine network loaders или entitlement. Девять целевых EN
+UI tests: семь прежних care + два новых. Config с прежними routing/budgets:
+ignored `docs/validation/automation/runs/tester-care-ui.config.json`.
+Run `tester-care-record-ui-20261119-01`, затем общий care reconcile и
+живая приёмка этапа 1. Today/reminders ещё не начинались.
+
 ## Принят canonical ACK ручного полива — 19 ноября 2026
 
 Оркестратор `tester-care-record-ack-20261119-01` принял и отправил `992c26a`.
@@ -3637,8 +3778,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-saved-watering-api: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 3, reviewer 1, qa 1. Модели — 941.38 с, проверки — 259.77 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-saved-watering-api](validation/automation/tasks/tester-care-saved-watering-api.md).
+tester-care-saved-watering-ui-jwt-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 201.60 с, проверки — 534.15 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-saved-watering-ui-jwt-acceptance](validation/automation/tasks/tester-care-saved-watering-ui-jwt-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

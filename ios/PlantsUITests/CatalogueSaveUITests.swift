@@ -747,6 +747,141 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(pending.exists)
     }
 
+    @MainActor func testCollectionRecordsWateringAfterRestart() {
+        let run = Run("collectionWateringRecord", .en)
+        defer { screenshot(run, "final"); run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        require(run.app.staticTexts["collection.cached"])
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        require(run.app.buttons["Retry care details"]) // Advice GET fails; this must not gate the local write.
+        XCTAssertFalse(run.app.staticTexts["catalogue.save.saved"].exists)
+        XCTAssertFalse(run.app.buttons["collection.routine.complete"].exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering", doubleTap: true)
+        let pending = run.app.staticTexts["collection.watering.record.pending"]
+        require(pending)
+        let operation = pending.value as? String ?? ""
+        XCTAssertNotNil(UUID(uuidString: operation))
+        XCTAssertFalse(run.app.buttons["collection.watering.record"].isEnabled)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 0)
+
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        require(run.app.staticTexts["collection.cached"])
+        tap(run, "Fixture 1")
+        require(pending)
+        XCTAssertEqual(pending.value as? String, operation)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(run.app.buttons["collection.watering.record"].isEnabled)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        // The fixture requires the same operation, original date, envelope and byte-identical body.
+        wateringTap(run, "collection.watering.record.retry")
+        require(run.app.staticTexts["collection.watering.record.confirmed"])
+        XCTAssertFalse(pending.exists)
+        let journal = run.app.staticTexts["catalogue.saved.history." + operation]
+        require(journal)
+        XCTAssertTrue(journal.label.hasSuffix(" · Active"))
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 1)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        // No profile or published rule: recording a fact must not invent a next check.
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+        require(run.app.buttons["Retry care details"])
+        wateringTap(run, "collection.watering.correct." + operation)
+        require(run.app.descendants(matching: .any).matching(identifier: "collection.watering.date").firstMatch)
+        tap(run, "Cancel")
+        wateringTap(run, "collection.watering.undo." + operation)
+        wateringAlertTap(run, title: "Undo this watering?", identifier: "collection.watering.undo.confirm",
+                         label: "Undo watering")
+        let undone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label ENDSWITH %@", " · Undone"), object: journal
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [undone], timeout: 15), .completed)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 1)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(journal)
+        XCTAssertTrue(journal.label.hasSuffix(" · Undone"))
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+    }
+
+    @MainActor func testCollectionWateringRejectionDoesNotShowSuccess() {
+        let run = Run("collectionWateringRecordRejected", .en)
+        defer { screenshot(run, "final"); run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        require(run.app.staticTexts["collection.cached"])
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering")
+        let rejected = run.app.staticTexts["collection.watering.record.rejected"]
+        require(rejected)
+        let firstOperation = rejected.value as? String ?? ""
+        XCTAssertNotNil(UUID(uuidString: firstOperation))
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.pending"].exists)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        XCTAssertFalse(run.app.buttons["collection.watering.record.retry"].exists)
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering")
+        let fresh = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND value != %@", firstOperation), object: rejected
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [fresh], timeout: 15), .completed)
+        XCTAssertNotNil(UUID(uuidString: rejected.value as? String ?? ""))
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.pending"].exists)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 0)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["No manual watering recorded."])
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.pending"].exists)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 0)
+    }
+
+    @MainActor
+    private func wateringAlertTap(
+        _ run: Run, title: String, identifier: String, label: String, doubleTap: Bool = false
+    ) {
+        // SwiftUI alerts expose nested button wrappers with the same identifier on iOS 26.
+        let button = run.app.alerts[title].buttons.matching(identifier: identifier).firstMatch
+        enabled(button)
+        XCTAssertEqual(button.label, label)
+        if doubleTap { button.doubleTap() } else { button.tap() }
+    }
+
+    @MainActor
+    private func wateringTap(_ run: Run, _ identifier: String) {
+        let button = run.app.buttons[identifier]
+        require(button)
+        for _ in 0..<6 {
+            if button.isHittable { break }
+            run.app.swipeUp()
+        }
+        enabled(button)
+        button.tap()
+    }
+
     @MainActor func testCareRecommendationRefreshRejectionShowsFailure() {
         let run = Run("careRecommendationRefreshRejected", .en)
         defer { run.app.terminate() }
