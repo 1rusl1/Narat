@@ -1,5 +1,83 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: полный HTTP принят; следующий native read packet — 19 ноября 2026
+
+Accepted/pushed HTTP `0aff69f7f50a5c0fff235285548cd29b9fca586c`.
+Run `tester-care-overview-http-repair-acceptance-20261119-01` завершил обе
+зависимые задачи: узкий Developer repair и полную candidate_base приёмку
+ВСЕГО HTTP от9d4146e. Full Review1/QA1 PASS без findings. Реальные checks:
+446 Deno (436 прежних+10 новых),149 automation, diff-check и deno-check
+трёх фактических entrypoints plants-api/analysis-worker/care-overview PASS.
+Это local/fixture scope, НЕ deployed/live parity или готовый Today.
+Отчёт `docs/validation/automation/tasks/tester-care-overview-http-full-acceptance.md`.
+
+Приняты семь source/config файлов: pure shared projection и old card delegation,
+новые care-overview/index.ts+handler.ts, real Supabase/mockfetch HTTP tests,
+deno.json и additive config.toml. getUser verified owner → один read RPC/page,
+no-store, strict metadata/cursor/control, same-card EN/PL projection, fail-closed
+access clamp. Revision routine сравнивается с outerrow ДО clamp, action_id
+соответствует existing029 regex. SQLblob принят25a и не менялся. Старый API33/
+worker9 НЕ redeploy. Parent готовит isolated target SQL+newslug и live parity
+отдельно, только после accepted SHA; generic db push запрещён.
+
+Сохранены actual failures: initial5-entrypoint check ссылался на два никогда
+не существовавших billing/maintenance index; исправлено на реальные3, безfake
+modules. Старый forged JWT fixture был некорректным base64url; productionBearer
+не ослаблен. Narrow first patch имел неверныеhunk counts, Developer пересоздал.
+Review пережил длительную паузу host/WebSocket reconnect, затем дал настоящий
+PASS; отсутствующий ответ не подменялся приёмкой. Intermediatee0b598c принимал
+толькоrepair, окончательный0aff69f принимает весь actualcandidate.
+
+Следующий точный packet A: `tools/automation/tasks.tester-care-overview-native-read.json`,
+actualrun `tester-care-overview-native-read-20261119-01`. Только три existing
+Swift файла: APIModels.swift,PlantsAPIClient.swift,CollectionWireTests.swift.
+Typed FULLcardwire DTO + fixed same-origin sibling transport/onepermanentSDKlease
++ coherent ALLpages reader. Reuse existing card validator. Codable сохраняет
+outer next_check/routine_check; encode→file→decode→validated test должен доказать,
+что дата/правило/источник переживают сохранение. Pending cache и UI сюда не входят.
+Ignored config `docs/validation/automation/runs/tester-care-overview-native.config.json`
+сохраняет approved routing/budgets/900s и shared resource wrapper для всех iOS gates.
+
+Далее packet B: reserved owner cache, atomic canonical generation/request token,
+full-refresh stale retention, ABA/disk/pending overlay и ahead-of-sync alignment.
+Repository фактически Sendable STRUCT, не переделывать вactor. Затем packet C:
+permanent Today home/collection navigation/UI с точечным newfile membership.
+Физические B01–B11, full T066/T068/T075/T077/T098, offline/iPhone и ordinary
+positive firstaid остаются открытыми. Рекомендации/покупки/AI не расширяются.
+
+## Этап 2: HTTP candidate — узкий repair перед полной приёмкой
+
+SQL accepted25a5e92 и root merge4492190 сохранены. HTTP initial realrun
+`tester-care-overview-http-20261119-01` дал полный Developer1 candidate:
+shared pure projection, старый card handler delegation, новый standalone
+GET-only care-overview/index+handler,390-line real-client/mockfetch tests,
+config. Никакой deploy/Swift. Candidate пока НЕ принят.
+
+Run корректно BLOCKED при compile: controller скопировал stale deno.json
+список пяти targets, но billing-webhook/index.ts и maintenance/index.ts вrepo
+вообще отсутствуют. Developer2 предоставил точный TS2339 guarded-delete patch,
+но заблокировался на phantom paths внеscope. Controller применил ровно этот
+patch и исправил trusted config/deno task на реально существующие три:
+plants-api,analysis-worker,care-overview. Fake modules/покупки не создавались.
+Старые2 compile targets сохранены, новый3 реально компилируется.
+
+Диагностически реально:3-entrypoint deno check PASS; полный Deno444PASS/1FAIL.
+FAIL в forged JWT fixture: btoa(payload) оставляет '=' внутриJWT передsignature,
+production regex верно отклоняет. Нужна корректная base64url fixture без
+ослабления bearer. Root audit также выявил две exact boundary gaps: projected
+routine revision должна совпасть с outerplant revision; firstaid action_id
+должен соответствовать existing029 pattern. Обе требуют503, в том числе при
+automation=false, а не тихого удаления данных.
+
+Следующий actual run `tester-care-overview-http-repair-acceptance-20261119-01`:
+узкий Developer repair ТОЛЬКО handler+test → checks/Review/QA, затем зависимая
+полная read-only candidate_base приёмка ВСЕХ семи файлов от accepted prep
+9d4146ef1b66f5bf2250477b30e9f50fd312e78a. Manifest
+`tools/automation/tasks.tester-care-overview-http-repair-acceptance.json`,
+config ignored `docs/validation/automation/runs/tester-care-overview-http-actual.config.json`.
+Routing/budgets/900s прежние. Полный HTTP готов только после второй задачи.
+Никаких serverwrites/claims fullToday; cache/UI/notifications далее последовательно.
+
 ## Этап 2: SQL overview принят; следующий HTTP packet — 19 ноября 2026
 
 SQL accepted/pushed `25a5e92e0e350bd55d2bb9552098db1520c62c23`.
@@ -4119,8 +4197,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-owner-overview-sql-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 208.04 с, проверки — 162.79 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-owner-overview-sql-acceptance](validation/automation/tasks/tester-care-owner-overview-sql-acceptance.md).
+tester-care-overview-http-full-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 176.72 с, проверки — 57.48 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-overview-http-full-acceptance](validation/automation/tasks/tester-care-overview-http-full-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

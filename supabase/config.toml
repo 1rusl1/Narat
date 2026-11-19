@@ -63,3 +63,6 @@ verify_jwt = false
 
 [functions.maintenance]
 verify_jwt = false
+
+[functions.care-overview]
+verify_jwt = false
