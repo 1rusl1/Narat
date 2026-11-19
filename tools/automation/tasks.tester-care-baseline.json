@@ -1,0 +1,64 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-baseline-repaired-20261119",
+      "description": "Independently review controller-owned stale welcome smoke repair and verify actual care baseline before implementation. No product task is accepted from local fixtures.",
+      "risk": "low",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/validation/tester-care-baseline-2026-11-19.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "specs/001-plants-ios-mvp/contracts/plant-care-recommendation-http.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "docs/handoff_status.md",
+        "tools/automation/doctor.py",
+        "tools/automation/simulator_smoke.py",
+        "tools/automation/tasks.tester-care-baseline.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only baseline. Verify report against actual current sources. Earlier handoff live results are historical evidence, not a new staging or iPhone run. Confirm existing care/outbox implementation is reused, Today and care notifications absent, and canonical aggregate read-model must be settled before dependent UI. No full product tasks may be closed.",
+        "The previous run failed correctly because the chosen welcome test had been removed and zero tests executed. Controller-owned automation paths cannot be edited by Developer; review the exact cdd38bb..HEAD gate repair. Require one real current ordinary welcome test, unchanged no-skip/zero-test rejection and backend isolation, plus actual MCP catalogue navigation with fresh native ref and different screenshots. Do not restore removed intent UI or weaken gates."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "BASE1",
+          "description": "Actual app unit/build gate and ordinary Simulator smoke pass on this snapshot; report accurately distinguishes existing code and unbuilt scope.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "BASE2",
+          "description": "Complete current Deno suite and targeted care EN UI fixtures pass; results remain labelled local fixtures, not live.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "tester-care-ui"
+          ]
+        },
+        {
+          "id": "BASE3",
+          "description": "Existing 149 automation tests pass; exact gate repair selects real current app routes while preserving strict evidence validation.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "candidate_base": "cdd38bb88f74ee120206ee920e8b0c2e6a68990c"
+    }
+  ]
+}

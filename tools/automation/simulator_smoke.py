@@ -104,25 +104,25 @@ def run_smoke(doctor, device):
         mobile.call("mobile_list_elements_on_screen", {"device": device, "format": "json"}, 120)
         doctor.add("ui-agent-ready", "PASS")
         build.call("launch_app_sim", {}, 90)
-        welcome = wait_for_ui(mobile, device, ["welcome.title", "welcome.intent.problem", "welcome.intent.care"])
+        welcome = wait_for_ui(mobile, device, ["welcome.title", "welcome.catalogue", "welcome.unavailable"])
         write_json(doctor.run_dir / "welcome.elements.json", welcome)
         before = doctor.run_dir / "welcome.png"
         mobile.call("mobile_save_screenshot", {"device": device, "saveTo": str(before)}, 90)
         doctor.add("welcome-ui", "PASS", screenshot=png_evidence(before))
         # Re-read immediately before tapping: refs are valid for the current layout only.
-        welcome = wait_for_ui(mobile, device, ["welcome.intent.care"])
-        target = element_by_id(welcome, "welcome.intent.care")
-        if not target.get("ref"): raise MCPError("The care button has no native element ref")
+        welcome = wait_for_ui(mobile, device, ["welcome.catalogue"])
+        target = element_by_id(welcome, "welcome.catalogue")
+        if not target.get("ref"): raise MCPError("The catalogue button has no native element ref")
         mobile.call("mobile_click_on_screen_at_coordinates", {"device": device, "ref": target["ref"]})
-        after_elements = wait_for_ui(mobile, device, ["care.method.title", "care.method.scan", "care.method.catalogue"])
-        if any(x.get("identifier") == "welcome.intent.care" for x in after_elements):
-            raise MCPError("Welcome care button is still visible after navigation")
-        write_json(doctor.run_dir / "care-method.elements.json", after_elements)
-        after = doctor.run_dir / "care-method.png"
+        after_elements = wait_for_ui(mobile, device, ["catalogue.error", "catalogue.retry", "catalogue.back"])
+        if any(x.get("identifier") == "welcome.catalogue" for x in after_elements):
+            raise MCPError("Welcome catalogue button is still visible after navigation")
+        write_json(doctor.run_dir / "catalogue.elements.json", after_elements)
+        after = doctor.run_dir / "catalogue.png"
         mobile.call("mobile_save_screenshot", {"device": device, "saveTo": str(after)}, 90)
         proof = png_evidence(after)
         if proof["sha256"] == png_evidence(before)["sha256"]: raise MCPError("Screenshots did not change")
-        doctor.add("care-navigation", "PASS", tapped_identifier="welcome.intent.care", screenshot=proof,
+        doctor.add("catalogue-navigation", "PASS", tapped_identifier="welcome.catalogue", screenshot=proof,
                    mode="local-ui; backend disabled; locale acceptance not performed")
 
 

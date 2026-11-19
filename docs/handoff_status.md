@@ -1,5 +1,34 @@
 # Narat — текущий статус и передача работы
 
+## Baseline принят, следующий пакет — запись полива — 19 ноября 2026
+
+В рабочую ветку интегрирован опубликованный `ecd5ab0` из
+`codex/tester-care-20261119`: исправлены только doctor/simulator smoke
+под актуальный стартовый экран, добавлены manifest и отчёты baseline.
+Конфликт handoff разрешён сохранением обеих историй и этого текущего статуса.
+Три исходных незакоммиченных файла iOS не изменялись этим merge.
+
+Оркестратор run `tester-care-baseline-20261119-02`: 149 automation,
+436 Deno, 312 Swift (309 XCTest + 3 Swift Testing), один обычный welcome,
+MCP smoke и 7 EN care UI — PASS; независимые Reviewer/QA — PASS.
+Это локальные/fixture проверки в отдельном worktree, не повторный прогон
+основной рабочей копии. В root проверены merge/diff и сохранность локального
+патча iOS. Отдельный живой read-only HTTP baseline: email auth, /me и /sync
+200; постоянный Free-владелец, entitlement=null, пустая коллекция, час 9.
+Серверные данные не создавались; это не сквозная приёмка B01–B11.
+
+Открыты два конкретных разрыва этапа 1: запись нового полива доступна
+только post-save, а не в повторно открытой карточке; reconnect/foreground
+не отправляет автоматически все виды ожидающих care-команд. Оркестратор
+готовит saved-plant record core → UI → общий owner-bound care reconcile,
+затем каноническую проекцию/Today и reminders без новых подтверждений.
+Родительские checkbox остаются открытыми. Физическая доставка уведомлений,
+новый сквозной уход и итоговая версия для тестировщика ещё не приняты.
+Первый core implementation run `tester-care-record-core-20261119-01`
+уже запущен из `9d8bc7b` в `/private/tmp/narat-tester-care-20261119`;
+prepare — PASS, реализация/проверки ещё не приняты. Точный следующий шаг:
+дождаться его gate/Review/QA, затем выполнить пакет UI.
+
 ## Поиск источников и запуск очереди ухода — 19 ноября 2026
 
 Владелец поручил последовательно выполнять уход → «Сегодня» → напоминания
@@ -35,6 +64,48 @@ Routing/checks взяты из последнего согласованного
 Точный следующий шаг: дождаться baseline gate в указанном worktree,
 устранить выявленные ошибки, затем через следующие узкие пакеты завершить
 цикл ухода и перейти к canonical списку/«Сегодня», затем reminders.
+## Baseline: найден устаревший welcome gate — 19 ноября 2026
+
+Run `tester-care-baseline-20261119-01` остановлен корректным FAIL:
+удалённый `testWelcomeScreenDisplaysBothEqualIntents` дал ноль tests при
+exit 0 Xcode. Deno: 436 PASS. Unit/care UI/Review/QA не завершены.
+Контроллер подготовил минимальный кандидат в `tools/automation/doctor.py`
+и `simulator_smoke.py` под существующие ordinary home/catalogue selectors.
+Strict count/skips, изоляция и PNG/native-ref evidence сохранены.
+Automation paths защищены от Developer patch самим engine, поэтому их
+меняет контроллер с последующей независимой candidate-base Review/QA.
+Локальный `unittest discover tools/automation/tests -q`: 149 PASS.
+
+Обновлены baseline report и manifest. Новый run
+`tester-care-baseline-20261119-02` повторяет полный baseline и принимает
+точный diff от `cdd38bb`. Это только local/fixtures. Приложение не менялось,
+живой staging/iPhone не проверены. Следующий шаг — завершить этот run,
+затем узкий implementation пакет канонического списка задач ухода.
+
+## Запуск очереди версии ухода — 19 ноября 2026
+
+Пользователь поручил проходить этапы tester-care-plan последовательно через
+оркестраторы без повторных подтверждений. Созданы отдельные worktree
+`/private/tmp/narat-tester-care-20261119` и ветка `codex/tester-care-20261119`
+от `3444be7`. Сторонние изменения основного checkout не переносились.
+Сохранён последний принятый routing/budgets/checks iOS Sol lane из
+`/private/tmp/narat-orchestrated.aZQ6ZH/parallel-ios-codex-sol.config.json`;
+в игнорируемом `docs/validation/automation/runs/tester-care.config.json`
+заменена только ветка публикации и добавлен целевой care UI gate.
+
+Подготовлены baseline report и read-only manifest
+`tools/automation/tasks.tester-care-baseline.json`. `prepare` — PASS,
+проверки baseline ещё не завершены. Новый run
+`tester-care-baseline-20261119-01`: Deno, PlantsTests, обычный Simulator
+smoke, семь выбранных EN XCUITest, независимые Review/QA. Это local/fixtures,
+не новая приёмка staging/iPhone. Копии игнорируемых Node/SPM caches
+переиспользованы для запуска, секреты и local configs не коммитятся.
+
+Открыто: B01–B11, весь этап 1 и последующие Today/reminders. Следующий
+шаг — завершить baseline, исправить реальные отказы и по его результатам
+выполнить узкий пакет единой канонической проекции задач; новые источники
+или справочные seasonal intervals не превращать в календарные care rules.
+Сохранение подготовки и публикация принятого baseline выполняются отдельно.
 
 ## План версии для тестировщика: уход, «Сегодня», напоминания — 19 ноября 2026
 
@@ -3381,8 +3452,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-persist-conditions-on-diagnosis-save: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 388.31 с, проверки — 52.24 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-persist-conditions-on-diagnosis-save](validation/automation/tasks/t170-persist-conditions-on-diagnosis-save.md).
+tester-care-baseline-repaired-20261119: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 337.15 с, проверки — 421.46 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-baseline-repaired-20261119](validation/automation/tasks/tester-care-baseline-repaired-20261119.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

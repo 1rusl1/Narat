@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNS = ROOT / "docs/validation/automation/runs"
 BUNDLED_CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
 SIMULATOR = "32009F39-32EF-426B-A91E-31B368D6C27E"
-WELCOME = "PlantsUITests/PlantsUITests/testWelcomeScreenDisplaysBothEqualIntents"
+WELCOME = "PlantsUITests/PlantsUITests/testOrdinaryLaunchShowsPhotoAndCollectionRoutes"
 LOCAL_UI_SETTINGS = ["CODE_SIGNING_ALLOWED=NO", "NARAT_SUPABASE_URL=",
                      "NARAT_SUPABASE_PUBLISHABLE_KEY=", "GOOGLE_IOS_CLIENT_ID=",
                      "GOOGLE_SERVER_CLIENT_ID=", "GOOGLE_REVERSED_CLIENT_ID="]
@@ -269,7 +269,7 @@ def check_ios(doctor, args):
     valid = report["status"] == "PASS" and welcome_summary_ok(json.loads(doctor.read_stdout(report)))
     doctor.add("welcome-acceptance", "PASS" if valid else "FAIL", test=WELCOME,
                mode="local-ui-en", result_bundle=result.name,
-               scope="Только welcome: запуск приложения и наличие двух намерений; без live backend")
+               scope="Только обычный welcome: фото, определение, каталог и коллекция; без live backend")
 
 
 def positive_int(value):
