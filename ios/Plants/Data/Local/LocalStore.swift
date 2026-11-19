@@ -571,6 +571,28 @@ public actor LocalStore {
         return command
     }
 
+    /// A replay proves creation even after a later correction or undo.
+    /// The original payload must never overwrite the current canonical fact.
+    func confirmedWateringRecord(
+        _ command: CommandEnvelopeDTO, entryId: UUID, watermark: Int64,
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> Bool {
+        try authority.withBoundValid(context) {
+            guard let plantId = command.plantId, ManualWateringAction(envelope: command) == .record,
+                  let raw = try currentWatermarkRaw(ownerId: context.ownerId),
+                  let current = SQLTimestamp.microseconds(from: raw), current >= watermark else { return false }
+            return try activeSyncedEntities(ownerId: context.ownerId, entityType: "care_entries").contains { row in
+                guard row.id == entryId,
+                      let entry = try? JSONDecoder().decode(
+                        CatalogueCareJournalEntry.self, from: Data(row.payloadJSON.utf8)
+                      ) else { return false }
+                return entry.id == entryId && entry.operationId == command.operationId
+                    && entry.plantId == plantId && entry.taskId == nil && entry.actionCode == "water"
+                    && entry.hasCanonicalDatesAndState
+            }
+        }
+    }
+
     func confirmedFirstAidEntry(
         _ command: FirstAidRecordCommand, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> UUID? {

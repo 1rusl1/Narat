@@ -1117,6 +1117,7 @@ final class SyncSessionAuthority: @unchecked Sendable {
 enum OutboxCommandResult: Sendable {
     case generic
     case catalogueCreate(PlantCreateReceiptDTO)
+    case wateringRecorded(entryId: UUID, watermark: Int64)
     case wateringDateCorrection(watermark: Int64)
     case careUndone(reversalId: UUID, watermark: Int64)
     case firstAidRecorded(FirstAidRecordReceipt)
@@ -1390,7 +1391,7 @@ public actor PlantsAPIClient {
             let receipt = try await execute(request, as: ManualWateringReceipt.self, expectedStatus: 200)
             let watermark = try receipt.validate(plantId: envelope.plantId, action: manualWatering)
             switch manualWatering {
-            case .record: result = .generic
+            case .record: result = .wateringRecorded(entryId: receipt.entryId, watermark: watermark)
             case .correctDate: result = .wateringDateCorrection(watermark: watermark)
             case .undo:
                 guard let reversalId = receipt.reversalId else { throw SyncWireValidationError.invalidPage }
