@@ -1,5 +1,31 @@
 # Narat — текущий статус и передача работы
 
+## Принят saved-plant manual watering API — 19 ноября 2026
+
+Run `tester-care-record-api-20261119-01` принял и отправил `fd7186b`.
+Repository/LocalStore/SyncEngine/CollectionWireTests: owner-bound enqueue
+нового полива сохранённой карточки без create receipt/профиля/paid gate,
+точный frozen retry и confirmed/pending/rejected/unconfirmed outcomes.
+Единый identity probe используется и ACK, и новым retry, и post-save record.
+Permanent record rejection ограничен exact onlyOperation, старый generic
+post-save drain не получил ложный success от dequeue.
+
+Проверки после repair: 316 Swift (313 XCTest+3 Swift Testing), ordinary
+welcome 1 и MCP smoke PASS; Review/QA PASS. Первый patch имел stale hunk;
+первый unit gate выявил неправильную baseline row в delta fixture.
+Оба отказа сохранены; fixture исправлен под since, валидатор не ослаблен.
+ACK дополнительно фильтрует точный receipt entry UUID. Это local/fixtures;
+новых живых записей/deploy/iPhone-проверок не было.
+
+Подготовлен UI-пакет `tools/automation/tasks.tester-care-record-ui.json`:
+Record watering в повторно открытой EN-card, сохранение offline, pending/
+restart/exact retry и rejection без false success. Кнопка не зависит от
+advice/firstaid/routine network loaders или entitlement. Девять целевых EN
+UI tests: семь прежних care + два новых. Config с прежними routing/budgets:
+ignored `docs/validation/automation/runs/tester-care-ui.config.json`.
+Run `tester-care-record-ui-20261119-01`, затем общий care reconcile и
+живая приёмка этапа 1. Today/reminders ещё не начинались.
+
 ## Принят canonical ACK ручного полива — 19 ноября 2026
 
 Оркестратор `tester-care-record-ack-20261119-01` принял и отправил `992c26a`.
