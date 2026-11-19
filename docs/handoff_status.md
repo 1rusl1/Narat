@@ -3388,8 +3388,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-t170-persist-conditions-on-diagnosis-save: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 388.31 с, проверки — 52.24 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [t170-persist-conditions-on-diagnosis-save](validation/automation/tasks/t170-persist-conditions-on-diagnosis-save.md).
+tester-care-baseline-repaired-20261119: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 337.15 с, проверки — 421.46 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-baseline-repaired-20261119](validation/automation/tasks/tester-care-baseline-repaired-20261119.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
