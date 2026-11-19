@@ -1,6 +1,40 @@
 # Живая проверка полива существующей карточки — 19 ноября 2026
 
-Статус: **setup выполнен, UI-прогон ещё не запускался**.
+Статус: **PASS конкретного живого прогона UI-кандидата; весь этап ухода открыт**.
+
+Ordinary EN Release собран из frozen candidate
+`2fbf99de163a546f51654511e230cf5a3664fb1e`, подпись и отсутствие DEBUG fixtures
+проверены. Установленный executable совпал по SHA-256 с собранным. Это не
+принятие полной девятки UI-фикстур: два новых offline/rejection сценария ещё
+исправляются отдельным оркестратором; старые семь прошли. Контент/Today/
+notifications этим прогоном не расширялись.
+
+## Реально пройдено на живом staging
+
+- Existing Free card из HTTP setup → Record watering → обязательное
+  подтверждение в обычном UI → ровно один канонический факт.
+- Enable/refresh базового ухода → дата 2026-11-26, основание и источник.
+- Cold launch → та же запись/карточка и дата.
+- Correct date на 2026-11-18 → та же entry/operation identity, следующая
+  проверка 2026-11-25; cold launch сохранил изменение.
+- Undo → тот же факт voided, next_check/routine_check=null; cold launch
+  сохранил историю отмены. Второго факта не создано.
+
+[Санитизированный отчёт и хеши кадров](tester-care-existing-card-live-2026-11-19.json).
+Root визуально просмотрел next-check и cold-undone PNG. Установка сначала
+превысила 70s timeout и закончилась позднее; первый UI-agent старт вывел Home,
+а runner не дождался confirmation. Эти неуспехи сохранены отдельно; после
+исправления только временного runner успешный лог —
+`/private/tmp/narat-tester-care-live-evidence-20261119/ordinary-care-ui-retry-ae02f33d.log`.
+Product candidate между попытками не менялся. Это не настоящий offline-тест.
+
+Signed app сохранён в
+`/private/tmp/narat-tester-care-live-evidence-20261119/signed-release-2fbf99de163a/Plants.app`.
+Перед удалением только своего воспроизводимого DerivedData (1.1GiB) архив
+сверен по SHA-256 и `codesign --verify --deep --strict`; исходники, кадры,
+build logs, shared caches и тестовый Simulator сохранены.
+
+## Подготовка и воспроизведение
 
 Обычный HTTP-вход выделенного постоянного Free-владельца, затем
 `POST /commands plant.create` с одним замороженным operation ID создали
@@ -23,7 +57,7 @@ Operation/receipt/UUID сохранены в локальном файле ре�
 `/private/tmp/narat-tester-care-live-evidence-20261119/fixture.json`.
 Пароля и токенов в этом файле нет; доступ хранится отдельно вне Git.
 
-После приёмки UI-пакета: собрать подписанный ordinary EN Release с чистого
+Для повторной проверки после изменения product sources: собрать подписанный ordinary EN Release с чистого
 accepted SHA, проверить отсутствие DEBUG fixtures, установить в выделенный
 Simulator и выполнить collection → existing card → Record watering →
 канонический журнал → enable/refresh текущего ухода → следующая дата →
@@ -33,6 +67,6 @@ operation/entry ID, исправленную дату и voided после от�
 без тестовых аргументов. До согласованного освобождения Simulator/Xcode
 оркестратором режимы `build/run` не выполняются.
 
-Это подготовка живой приёмки конкретного нового пути. B01–B11, физический
+Это приёмка только указанного нового пути в candidate. B01–B11 целиком, физический
 iPhone, настоящий offline/reconnect, Today и доставка care notifications
 этим setup не приняты.

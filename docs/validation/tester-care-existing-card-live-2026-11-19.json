@@ -1,0 +1,57 @@
+{
+  "status": "PASS",
+  "scope": "ordinary signed EN Release + live staging, existing Free card",
+  "plant_created_by": "HTTP setup, not local app create",
+  "plant_id": "afca18d9-43cc-4d07-959c-3500935bacd9",
+  "record_enable_refresh_date_cold_correct_date_undo_cold": true,
+  "canonical_water_facts": 1,
+  "new_AI_or_purchase": false,
+  "limitations": [
+    "No physical network outage in this run",
+    "No Today or care notification acceptance",
+    "Candidate product sources; 9-test orchestration suite not yet fully accepted",
+    "No physical iPhone acceptance in this run"
+  ],
+  "source_commit": "2fbf99de163a546f51654511e230cf5a3664fb1e",
+  "product_acceptance": "UI orchestration repair pending; whole care stage remains open",
+  "signed_app": "/private/tmp/narat-tester-care-live-evidence-20261119/signed-release-2fbf99de163a/Plants.app",
+  "executable_sha256": "00c6820a9787f7b5f6807046ec3a94676f769ed4bd23051dc206813e4a5588b4",
+  "app_version": "0.1.0",
+  "build": "1",
+  "checked_dates": {
+    "initial_next": "2026-11-26",
+    "corrected_watering": "2026-11-18",
+    "corrected_next": "2026-11-25",
+    "after_undo_next": null
+  },
+  "evidence": [
+    {
+      "path": "/private/tmp/narat-tester-care-live-evidence-20261119/01-existing-card.png",
+      "sha256": "89ef73a5d09554cc8bd897d0781a10b370f305f8d32aaf3bf5b4fb8dd96405f8"
+    },
+    {
+      "path": "/private/tmp/narat-tester-care-live-evidence-20261119/01-confirm-watering.png",
+      "sha256": "ad2c93d7bac2145be12072980b6db9e55b8506e0b9edf7b99e06afd31274e228"
+    },
+    {
+      "path": "/private/tmp/narat-tester-care-live-evidence-20261119/02-record-confirmed.png",
+      "sha256": "934e825c7d1403737c7b19f9ecb85b1d85a6a17dba648f8ecba00cbd365ace1b"
+    },
+    {
+      "path": "/private/tmp/narat-tester-care-live-evidence-20261119/02-next-check.png",
+      "sha256": "1c9e71a5d1873fd9dbad9c579f8a55f96eebcf4623c72187e72929d43a8d1bab"
+    },
+    {
+      "path": "/private/tmp/narat-tester-care-live-evidence-20261119/03-cold-record.png",
+      "sha256": "dc8d852005ac9e5fbeedf6dd4339105ff273ab2c11b2953fc3202614085436ee"
+    },
+    {
+      "path": "/private/tmp/narat-tester-care-live-evidence-20261119/04-corrected.png",
+      "sha256": "243890b08b59e0f336b3db1afe50b72700c0a07d10686ca135ee7300d7603290"
+    },
+    {
+      "path": "/private/tmp/narat-tester-care-live-evidence-20261119/05-cold-undone.png",
+      "sha256": "3d4319c4e4cf71e33e83ff5963ae1f96816ae253eaa2f69a862f31087fea4817"
+    }
+  ]
+}

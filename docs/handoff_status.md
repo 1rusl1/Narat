@@ -1,5 +1,35 @@
 # Narat — текущий статус и передача работы
 
+## Ordinary candidate: живой existing-card цикл прошёл — 19 ноября 2026
+
+Frozen UI candidate `2fbf99d` (ещё не принят полностью оркестратором) прошёл
+ordinary signed EN Release на отдельном owned Simulator и живом staging:
+HTTP-created existing Free card → UI record/confirm → enable/refresh →
+next26Nov → cold → correction18Nov/next25Nov → cold → undo → cold.
+Канонический факт один, entry/operation identity сохранены; после отмены
+voided и next_check/routine_check=null. Это не injected transport/AI.
+Подпись, DEBUG fixture exclusion и совпадение installed/build binary SHA
+проверены. Root просмотрел два итоговых PNG. Отчёт и sanitized JSON:
+`docs/validation/tester-care-existing-card-live-2026-11-19.{md,json}`.
+
+Предыдущие install timeout и runner warm/confirmation ошибки сохранены;
+только последний retry-ae02f33d — PASS. Новых Auth Admin, SQL, AI и purchase
+операций нет; использована созданная ранее тестовая Monstera. Её история
+сохранена для дальнейшей проверки. Архив signed app, build logs и 7 кадров
+в tmp; после SHA/codesign проверки удалён только наш DD 1.1 GiB. Source и
+общие caches/чужие артефакты не удалялись. Root diff-check — PASS.
+
+UI suite остаётся открытым: acceptance02 — 316 Swift/welcome/MCP/Review
+PASS, 7 прежних target UI PASS, 2 новых FAIL до enqueue confirmation.
+Новая диагностика/repair `tester-care-record-ui-cache-repair-20261119-01`
+из preparation `d127206` сейчас выполняется в lane worktree; точный error
+сначала доказывается, validators/assertions не ослабляются. Живой positive
+путь не заменяет offline/rejection tests. Исходник 2fb до этой проверки не
+изменялся; root UI-кандидат не интегрирован и полные checkbox не закрыты.
+Точный следующий шаг: завершить этот repair/gates/Review/QA, принять UI,
+затем ordered care reconcile core/lifecycle и повторная приёмка этапа;
+после него Today → reminders. Пользовательских подтверждений не требуется.
+
 ## Подготовлена живая проверка existing-card record — 19 ноября 2026
 
 В отдельной уже существующей Free-учётке обычный HTTP создал ровно одну
