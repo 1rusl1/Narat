@@ -1,5 +1,41 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: подготовлен SQL overview packet — 19 ноября 2026
+
+Lane ff-only приняла root `a79170a`: online stage 1 PASS зафиксирован в
+`tester-care-stage1-live-2026-11-19.{md,json}`. Дерево ios от b7845 не менялось.
+Физический offline/iPhone и ordinary positive B07 остаются открытыми.
+
+Следующий узкий Developer packet: `tester-care-owner-overview-sql`.
+Новая миграция `202611190001_care_overview_read.sql`, RPC
+`read_owner_care_overview(UUID,UUID,INTEGER)`, tests `care_overview.test.sql`.
+Только read RPC: active permanent owner, service-role ACL, UUID paging,
+no-schedule plants, существующие routine/firstaid authority, publication
+fingerprint и текущая граница доступа. HTTP/client/deployment сюда не входят.
+
+Controller добавил явный `--care-overview` TAP и опциональный строгий
+`--migration-history` в существующий PG17 gate. Проверки запустят новый
+suite на clean/upgrade для полного root и для ровно 92 staging versions
+плюс новой миграции. Список и local source hashes записаны в
+`docs/validation/care-overview-staging-baseline-2026-11-19.json`; hashes
+являются provenance локальных файлов, не доказательством remote DDL bytes.
+Все 92 локальных источника найдены. py_compile/help PASS; отрицательный
+контроль без нового SQL правильно FAIL до запуска PostgreSQL. Реальный
+SQL/TAP пока не запускался, миграция ещё не реализована.
+
+Manifest: `tools/automation/tasks.tester-care-overview-sql.json`.
+Config: ignored `docs/validation/automation/runs/tester-care-overview-sql.config.json`.
+Используется прежняя approved routing/budgets; высокий риск private owner
+RPC выбирает имеющийся high route. Следующий actual run:
+`tester-care-overview-sql-20261119-01`: Developer → Deno/PG17 → Review → QA.
+
+Будущий HTTP — отдельный additive care-overview slug с verified getUser,
+не redeploy plants-api33/worker9. Их metadata/hash получены read-only;
+официальный download остановился на schema path guard, credential lookup
+остановлен. Guard не обходим. Никакого общего db push, pending account
+migrations, новых интервалов, AI или покупок. После принятого SQL — HTTP,
+затем coherent cache/Today; ahead-of-sync DTO не объявляется canonical.
+
 ## Этап 1: ordinary live online цикл принят — 19 ноября 2026
 
 Живой V2 завершён PASS на signed EN Release `df71eb5`, ios tree которого

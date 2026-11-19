@@ -22,6 +22,7 @@ INSTALLATIONS = '202611090011_installation_access_api.sql'
 ACCESS = '202611090012_analysis_access_snapshot.sql'
 CARE_JOURNAL = '202611110016_manual_care_journal.sql'
 CARE_PROFILE_READ = '202611110017_plant_care_profile_read.sql'
+CARE_OVERVIEW = '202611190001_care_overview_read.sql'
 CAP_OWNER = '15800000-0000-4000-8000-000000000001'
 A = '16300000-0000-4000-8000-000000000001'
 B = '16300000-0000-4000-8000-000000000002'
@@ -46,11 +47,19 @@ def main():
     parser.add_argument('--diagnosis-upload', action='store_true')
     parser.add_argument('--diagnosis-jobs', action='store_true')
     parser.add_argument('--accounting', action='store_true')
+    parser.add_argument('--care-overview', action='store_true', help='Explicit owner overview pgTAP suite')
+    parser.add_argument('--migration-history', type=Path, help='Read-only staged history receipt; only those versions plus overview are applied locally')
     parser.add_argument('--baseline', action='store_true', help='Negative control; expected product rejection is NOT acceptance')
     args = parser.parse_args()
     assert not args.installations or args.bind, '--installations requires --bind'
     assert not args.access or args.installations, '--access requires --installations'
     assert not args.diagnosis_jobs or args.diagnosis_upload, '--diagnosis-jobs requires --diagnosis-upload'
+    if args.care_overview:
+        assert args.diagnosis_jobs and args.access and args.bind, '--care-overview requires full care prerequisites'
+        assert not any((args.baseline, args.anchors, args.reserve, args.accounting)), 'Overview requires complete care schema'
+        assert (ROOT/'supabase/migrations'/CARE_OVERVIEW).is_file(), 'Overview migration missing'
+        assert (ROOT/'supabase/tests/care_overview.test.sql').is_file(), 'Overview pgTAP suite missing'
+    assert not args.migration_history or args.care_overview, '--migration-history is scoped to overview validation'
     assert BIN.joinpath('initdb').is_file() and PGTAP.is_file(), 'PG17/pgTAP required'
     work = Path(tempfile.mkdtemp(prefix='narat-backend-quota-'))
     sock = work / 'socket'
@@ -843,6 +852,23 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
         migrations = sorted((ROOT/'supabase/migrations').glob('*.sql'))
         ceiling = '999999999999' if args.legacy_guard else LEDGER if args.anchors else RESERVE if args.accounting else SECOND if args.reserve else '999999999999'
         selected = [m for m in migrations if m.name < FIRST or not args.baseline and m.name < ceiling]
+        if args.migration_history:
+            history = json.loads(args.migration_history.read_text())
+            rows = history.get('rows')
+            assert isinstance(rows, list) and rows, 'Staged history rows missing'
+            versions = [row.get('version') for row in rows]
+            assert all(isinstance(v, str) and re.fullmatch(r'[0-9]{12}', v) for v in versions), 'Invalid staged migration version'
+            assert len(versions) == len(set(versions)), 'Duplicate staged migration version'
+            mapped = {m.name.split('_', 1)[0]: m for m in migrations}
+            assert set(versions) <= set(mapped), 'Staged migration source missing locally'
+            overview_version = CARE_OVERVIEW.split('_', 1)[0]
+            assert overview_version not in versions, 'New overview is already in recorded baseline'
+            selected = [m for m in selected if m.name.split('_', 1)[0] in set(versions) or m.name == CARE_OVERVIEW]
+            assert {m.name.split('_', 1)[0] for m in selected} == set(versions) | {overview_version}, 'Staged selection expanded beyond exact receipt plus overview'
+            print(f'INFO staged-history: {len(versions)} applied versions plus one new overview; local cluster only', flush=True)
+        if args.care_overview:
+            assert any(m.name == CARE_OVERVIEW for m in selected), 'Overview migration not selected'
+
         if not args.baseline:
             assert any(m.name == FIRST for m in selected), 'Registration migration required'
             if args.reserve:
@@ -973,6 +999,8 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                         tap(case, ROOT/'supabase/tests/first_aid_observation_photo.test.sql')
                     for offset, winner in enumerate(('observe', 'undo', 'expiry'), start=1):
                         first_aid_observation_race(case, winner, 900 + offset * 10, with_photo)
+                if args.care_overview:
+                    tap(case, ROOT/'supabase/tests/care_overview.test.sql')
                 if any(migration.name == '202611120032_first_aid_photo_cleanup.sql' for migration in selected):
                     tap(case, ROOT/'supabase/tests/first_aid_photo_cleanup.test.sql')
                     first_aid_cleanup_race(case, cleanup_first=True, offset=940)
