@@ -1,5 +1,27 @@
 # Narat — текущий статус и передача работы
 
+## Принят canonical ACK ручного полива — 19 ноября 2026
+
+Оркестратор `tester-care-record-ack-20261119-01` принял и отправил `992c26a`.
+Изменены LocalStore, PlantsAPIClient, SyncEngine и CollectionWireTests:
+care.record сохраняет typed entry UUID/watermark; удаление outbox требует
+канонического owner journal linkage к той же операции. Поздние законные
+исправление даты и undo не блокируют ACK и не переписываются исходным retry.
+
+Проверки: build/ordinary welcome 1 PASS, 313 Swift tests
+(310 XCTest+3 Swift Testing) PASS, MCP smoke PASS, Review/QA PASS.
+Новый disk-backed regression содержит 11 вариантов отсутствующего/чужого/
+неправильного linkage, sync failure и exact retry по corrected/voided факту.
+Это local/fixtures; новых живых записей, deploy и iPhone-прогона не было.
+Новый UI/полный этап ухода этим срезом не приняты.
+
+Следующий пакет `tools/automation/tasks.tester-care-record-api.json` —
+owner-bound enqueue/retry уже сохранённого растения без create receipt,
+профиля или paid gate. Использует единый identity probe с новым ACK;
+permanent rejection не считается успехом. Run
+`tester-care-record-api-20261119-01`, затем UI и общий care reconcile.
+Прежний большой core run остаётся WAITING/timeout, его draft не принят.
+
 ## Core timeout: пакет разделён перед повтором — 19 ноября 2026
 
 Run `tester-care-record-core-20261119-01` остановился в WAITING/developer:
