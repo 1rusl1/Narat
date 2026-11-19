@@ -102,6 +102,7 @@ public actor SyncEngine {
     private let apiClient: PlantsAPIClient
     private var drainingOwners = Set<UUID>()
     private var reconcilingCareOwners = Set<UUID>()
+    private var outboxIdleObservers: [UUID: (owner: UUID, continuation: AsyncStream<Void>.Continuation)] = [:]
     private var planHistoryByOwner: [UUID: [UUID: CachedPlanHistoryEntry]] = [:]
     private var reportCacheByOwner: [UUID: [String: ProgressReportDTO]] = [:]
     private var canonicalSyncObservers: [UUID: AsyncStream<Void>.Continuation] = [:]
@@ -109,6 +110,31 @@ public actor SyncEngine {
     public init(store: LocalStore, apiClient: PlantsAPIClient) {
         self.store = store
         self.apiClient = apiClient
+    }
+
+    /// A lock-release signal, independent of canonical sync publication.
+    func outboxIdleUpdates(for ownerId: UUID) -> AsyncStream<Void> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        outboxIdleObservers[id] = (ownerId, continuation)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeOutboxIdleObserver(id) }
+        }
+        return stream
+    }
+
+    private func removeOutboxIdleObserver(_ id: UUID) { outboxIdleObservers[id] = nil }
+
+    private func publishOutboxIdle(for ownerId: UUID) {
+        guard !drainingOwners.contains(ownerId), !reconcilingCareOwners.contains(ownerId) else { return }
+        for observer in outboxIdleObservers.values where observer.owner == ownerId {
+            observer.continuation.yield(())
+        }
+    }
+
+    private func releaseOutboxOwner(_ ownerId: UUID) {
+        drainingOwners.remove(ownerId)
+        publishOutboxIdle(for: ownerId)
     }
 
     func canonicalSyncUpdates() -> AsyncStream<Void> {
@@ -155,7 +181,10 @@ public actor SyncEngine {
         try Task.checkCancellation()
         try apiClient.syncAuthority.withPermanentBoundValid(context) {}
         guard reconcilingCareOwners.insert(context.ownerId).inserted else { return .busy }
-        defer { reconcilingCareOwners.remove(context.ownerId) }
+        defer {
+            reconcilingCareOwners.remove(context.ownerId)
+            publishOutboxIdle(for: context.ownerId)
+        }
         do {
             _ = try await flushOutbox(for: context.ownerId, context: context, careOnly: true)
         } catch CareDrainFailure.busy {
@@ -190,7 +219,7 @@ public actor SyncEngine {
             context: context, authority: apiClient.syncAuthority
         )?.envelope == command.envelope else { return .unconfirmed }
         guard drainingOwners.insert(context.ownerId).inserted else { return .pending }
-        defer { drainingOwners.remove(context.ownerId) }
+        defer { releaseOutboxOwner(context.ownerId) }
         return try await sendProfileReminderHour(command, context: context)
     }
 
@@ -240,7 +269,7 @@ public actor SyncEngine {
             if careOnly { throw CareDrainFailure.busy }
             return 0
         }
-        defer { drainingOwners.remove(ownerId) }
+        defer { releaseOutboxOwner(ownerId) }
         let pending = try await store.pendingOutboxEntries(for: ownerId)
         try await apiClient.validateSyncContext(context)
         guard !pending.isEmpty else { return 0 }

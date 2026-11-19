@@ -1,5 +1,47 @@
 # Narat — текущий статус и передача работы
 
+## Принят care core; candidate lifecycle/closed-card reconcile — 19 ноября 2026
+
+Core run02 принят и отправлен `000e23054fb17d54540e23da5e7e559b5989c20f`:
+322Swift (319XCTest+3SwiftTesting), welcome1,MCP,149automation,
+fresh Review1/QA1 PASS. Run01 compileFAIL сохранён, единственное mechanical
+исправление — typed edit.envelope в test. Полный care stage1 ещё не закрыт.
+
+Собран явно НЕпринятый controller candidate в6existingSwiftfiles:
+App Root owner/foreground/reconnect coordinator; SyncEngine owner idle stream;
+Guest card local canonical rereads + once-per-idle/foreground advice GET;
+CollectionWireTests purecoalescer regression appended after6coretests;
+CatalogueUIFixtures/UITests детерминированные lifecycle сценарии.
+Источник productiondraft — parent/care_sources в /tmp вне activecheckout;
+child проверил и применил hunks, добавил согласованные DEBUG fixtures,
+UI assertions и Guest детали. Успешного Developer call не подставляли.
+
+Root не зависит от открытой карточки, сохраняет latest generation,
+обрабатывает busy только по idle-event без polling/self-retry.
+Access читается до busy guard; expiry снимает будущие controls, ручная
+история сохраняется. Missing optional condition row даёт отдельное
+'Some plant details are unavailable.', не ложную ошибку редактирования.
+Advice GET на owner idle нужен также при empty delta/remote source change;
+GET не публикует sync и не запускает drain. DEBUG-only withdrawal phase
+доказывает unchanged watermark+empty changes и снятие даты на открытой
+карточке, не меняет настоящую KB/SQL.
+
+Trusted UI gate расширен до12named tests с zero skips/missing:
+9existing care, missingconditions, wateringFrequencyEdit и lateEntitlement.
+JWT расширен только на выбранные care fixtures+representative typed edit;
+watering network flag остаётся offline через cold launch до явного DEBUG
+Root reconnect. Postcold assertions проверяют автоматическую canonical
+доставку, initial pending/exact body/onefact не ослаблены. Это fixture
+fault injection, не физический offline/device proof.
+
+Следующий actual read-only run:
+`tester-care-reconcile-wiring-acceptance-20261119-01`, manifest
+`tools/automation/tasks.tester-care-reconcile-wiring-acceptance.json`,
+ignored `docs/validation/automation/runs/tester-care-lifecycle-shared.config.json`.
+После реальных gates/Review/QA parent повторит ordinary signed live на
+existing Monstera, затем Today. Новые Auth/AI/purchases/SQL не выполнялись;
+родительские task checkbox и B01–B11 остаются открыты.
+
 ## Core candidate: mechanical typed fixture repair — 19 ноября 2026
 
 Read-only core acceptance01 честно BLOCKED на compile gate: новый test

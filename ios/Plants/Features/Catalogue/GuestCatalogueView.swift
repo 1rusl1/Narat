@@ -1,5 +1,4 @@
 import Foundation
-import Network
 import PhotosUI
 import Supabase
 import SwiftUI
@@ -85,6 +84,8 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
 final class CatalogueConnection {
     #if DEBUG
     var routineFixtureNow: Date?
+    @ObservationIgnored var reconcileFixtureReconnect: (() -> Void)?
+    @ObservationIgnored var withdrawCareSourceFixture: (() throws -> Void)?
     @ObservationIgnored var advanceRoutineFixtureClock: (() -> Void)?
     #endif
 
@@ -1137,6 +1138,11 @@ private struct CatalogueCollectionCardView: View {
         let locale: SupportedLocale
     }
 
+    private struct CanonicalCareRead: Equatable {
+        let revision: Int
+        let active: Bool
+    }
+
     private enum CorrectionPhase: Equatable {
         case loading, ready, saving, pending(CommandEnvelopeDTO), blocked, failed
         case recordSaving, recordPending(CommandEnvelopeDTO)
@@ -1180,6 +1186,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var loadingRename = true
     @State private var savingRename = false
     @State private var renameFailed = false
+    @State private var detailsReadFailed = false
     @State private var editingName = false
     @State private var nameInput = ""
     @State private var rejectedNameInput: String?
@@ -1231,6 +1238,7 @@ private struct CatalogueCollectionCardView: View {
     @State private var attempt = 0
     @State private var adviceRequest = 0
     @State private var adviceResponse: Int?
+    @State private var canonicalCareFingerprint: String?
     @State private var correction: CorrectionPhase = .loading
     @State private var dateEdit: WateringDateEdit?
     @State private var wateringUndoEntry: UUID?
@@ -1295,6 +1303,10 @@ private struct CatalogueCollectionCardView: View {
                         }
                         routineCompletionControls
                         #if DEBUG
+                        if connection.withdrawCareSourceFixture != nil {
+                            Button("Withdraw fixture care source") { try? connection.withdrawCareSourceFixture?() }
+                                .accessibilityIdentifier("collection.care.fixture.withdraw")
+                        }
                         if connection.routineFixtureNow != nil {
                             Button("Advance entitlement clock") { connection.advanceRoutineFixtureClock?() }
                                 .accessibilityIdentifier("collection.routine.fixture.expire")
@@ -1383,15 +1395,24 @@ private struct CatalogueCollectionCardView: View {
                 catch { return }
                 if firstAid?.accessUntil == expiry { firstAid?.controls.removeAll() }
             }
-            .task(id: scenePhase) {
+            .task(id: CanonicalCareRead(revision: card.revision, active: scenePhase == .active)) {
                 routineClock = Date()
                 guard scenePhase == .active, let sync = connection.syncEngine else { return }
-                // Subscribe before reading so a concurrent canonical publish is not missed.
                 let updates = await sync.canonicalSyncUpdates()
-                await loadRoutineAccess()
+                await rereadCanonicalCare(refreshOnForeground: true)
                 for await _ in updates {
                     guard !Task.isCancelled, connection.snapshot == expected else { return }
-                    await loadRoutineAccess()
+                    await rereadCanonicalCare()
+                }
+            }
+            .task(id: CanonicalCareRead(revision: card.revision, active: scenePhase == .active)) {
+                guard scenePhase == .active, let sync = connection.syncEngine else { return }
+                let idle = await sync.outboxIdleUpdates(for: expected.session.userId)
+                for await _ in idle {
+                    guard !Task.isCancelled, connection.snapshot == expected else { return }
+                    // A bounded owner pass can reveal publication changes with no owner rows.
+                    // This GET revalidation does not drain or publish sync, so cannot self-retry.
+                    await rereadCanonicalCare(refreshOnForeground: true)
                 }
             }
             .task(id: routineEntitlement?.verifiedAccessUntil) {
@@ -1402,7 +1423,6 @@ private struct CatalogueCollectionCardView: View {
                       routineEntitlement?.verifiedAccessUntil == expiry else { return }
                 routineClock = max(Date(), expiry)
             }
-            .task { await retryWhenConnected() }
             .alert("Undo this soil check?", isPresented: $showingRoutineUndo) {
                 Button("Undo soil check", role: .destructive) {
                     let entry = routineUndoSelection
@@ -1632,6 +1652,10 @@ private struct CatalogueCollectionCardView: View {
             Button("Change species") { editingSpecies = true }
                 .accessibilityIdentifier("collection.species.open")
         }
+        if detailsReadFailed {
+            Text("Some plant details are unavailable.")
+                .accessibilityIdentifier("collection.details.unavailable")
+        }
         if renameFailed {
             Text("Couldn’t save the plant edit.")
                 .accessibilityIdentifier("collection.rename.failed")
@@ -1654,6 +1678,7 @@ private struct CatalogueCollectionCardView: View {
 
     private func loadRename() async {
         guard let repository = connection.repository else { return }
+        loadingRename = true
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let pending: CommandEnvelopeDTO? = if polish {
@@ -1661,11 +1686,21 @@ private struct CatalogueCollectionCardView: View {
             } else {
                 try await repository.pendingPlantEdit(plantId: card.id, context: lease)
             }
-            let conditions = try await repository.syncedPlantConditions(for: card, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
+            // Pending identity is mandatory; missing optional condition fields must not
+            // leave manual care locked after the pending read already succeeded.
             pendingRename = pending
-            currentConditions = conditions
             loadingRename = false
+            do {
+                let conditions = try await repository.syncedPlantConditions(for: card, context: lease)
+                guard !Task.isCancelled, connection.snapshot == expected else { return }
+                currentConditions = conditions
+                detailsReadFailed = false
+            } catch {
+                guard !Task.isCancelled, connection.snapshot == expected else { return }
+                currentConditions = nil
+                detailsReadFailed = true
+            }
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             renameFailed = true
@@ -2067,7 +2102,6 @@ private struct CatalogueCollectionCardView: View {
             correction = .loading
             do {
                 try await loadHistory(repository, lease: lease)
-                await retryCorrection()
             } catch {
                 guard !Task.isCancelled, connection.snapshot == expected else { return }
                 historyFailed = true
@@ -2088,6 +2122,80 @@ private struct CatalogueCollectionCardView: View {
     }
 
     @MainActor
+    private func rereadCanonicalCare(refreshOnForeground: Bool = false) async {
+        guard !polish, connection.snapshot == expected, let repository = connection.repository,
+              let store = connection.store, let api = connection.apiClient else { return }
+        // Access publication is safety-critical even while an action owns mutable journal state.
+        await loadRoutineAccess()
+        guard !Task.isCancelled, connection.snapshot == expected else { return }
+        if !routineAccessAvailable { firstAid?.controls.removeAll() }
+        guard !savingRename, !savingFirstAid, !savingRoutine, !enablingBasicCare, !refreshingAdvice,
+              correction != .saving, correction != .recordSaving else { return }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            let current = try await store.syncedCollectionCard(plantId: card.id, context: lease,
+                                                               authority: api.syncAuthority)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            guard let current else {
+                if try await store.plantDeletionWatermark(plantId: card.id, context: lease,
+                                                          authority: api.syncAuthority) != nil {
+                    guard !Task.isCancelled, connection.snapshot == expected else { return }
+                    onDeleted()
+                }
+                return
+            }
+            if current != card {
+                if current.careRevision != card.careRevision {
+                    advice = nil
+                    adviceResponse = nil
+                    adviceRequest += 1
+                    firstAid?.controls.removeAll()
+                }
+                onRenamed(current)
+                return // The new card/revision task will reread its own context.
+            }
+            var parts: [String] = []
+            for kind in ["plants", "condition_snapshots", "care_entries", "care_reversals", "care_tasks",
+                         "care_plan_summaries", "basic_care_memberships", "first_aid_followups", "care_observations"] {
+                for row in try await store.activeSyncedEntities(ownerId: lease.ownerId, entityType: kind) {
+                    let body = try? JSONSerialization.jsonObject(with: Data(row.payloadJSON.utf8)) as? [String: Any]
+                    let target = (body?["plant_id"] as? String).flatMap(UUID.init(uuidString:))
+                    if (kind == "plants" && row.id == card.id) || target == card.id {
+                        let normalized = try JSONSerialization.data(withJSONObject: body ?? [:], options: [.sortedKeys])
+                        parts.append(kind + ":" + row.id.uuidString + ":" + String(decoding: normalized, as: UTF8.self))
+                    }
+                }
+            }
+            let fingerprint = parts.sorted().joined(separator: "\n")
+            let previous = canonicalCareFingerprint
+            let record: CommandEnvelopeDTO?
+            if case let .recordPending(command) = correction { record = command } else { record = nil }
+            try await loadHistory(repository, lease: lease)
+            // Drained/disappeared does not mean the watering fact was confirmed.
+            if let record, try await repository.pendingManualWatering(plantId: card.id, context: lease) == nil {
+                let entry = try await store.confirmedWateringRecord(record, context: lease, authority: api.syncAuthority)
+                guard !Task.isCancelled, connection.snapshot == expected else { return }
+                wateringRecordOperation = record.operationId
+                wateringRecordOutcome = entry == nil ? .unconfirmed : .confirmed
+                if entry == nil { correction = .blocked }
+            }
+            await loadPendingRoutine()
+            await loadPendingAdviceRefresh()
+            await loadBasicCareState()
+            await loadFirstAidJournal()
+            await loadAnalysisHistory()
+            await loadRename()
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            canonicalCareFingerprint = fingerprint
+            // GET does not publish sync. Do not re-fetch merely because another sync
+            // was published with the same care facts (including this GET's own callers).
+            if previous != nil && (previous != fingerprint || refreshOnForeground) { adviceRequest += 1 }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            historyFailed = true
+        }
+    }
+
     private func loadRoutineAccess() async {
         do {
             let entitlement = try await connection.syncedTrialEntitlement(expected: expected)
@@ -2498,20 +2606,7 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
-    private func retryWhenConnected() async {
-        guard !polish else { return }
-        let monitor = NWPathMonitor()
-        let updates = AsyncStream<Bool>(bufferingPolicy: .bufferingNewest(1)) { stream in
-            monitor.pathUpdateHandler = { stream.yield($0.status == .satisfied) }
-            stream.onTermination = { _ in monitor.cancel() }
-        }
-        monitor.start(queue: DispatchQueue(label: "narat.watering.connectivity"))
-        var wasConnected: Bool?
-        for await connected in updates {
-            if wasConnected == false, connected { await retryCorrection() }
-            wasConnected = connected
-        }
-    }
+
 }
 
 private struct FirstAidObservationActions: View {

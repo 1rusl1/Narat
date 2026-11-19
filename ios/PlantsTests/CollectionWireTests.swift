@@ -8090,3 +8090,70 @@ extension CollectionWireTests {
         }
     }
 }
+
+extension CollectionWireTests {
+    @MainActor
+    func testCareLifecycleBusyIdleRaceCoalescesLatestRequestWithoutSelfRetries() async throws {
+        let coordinator = CareLifecycleCoordinator()
+        var calls = 0
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            coordinator.request {
+                calls += 1
+                if calls == 1 {
+                    // Deliberately signal before .busy is returned. No timer/poll is used.
+                    coordinator.didBecomeIdle()
+                    return .busy
+                }
+                XCTAssertEqual(calls, 2)
+                if calls == 2 { done.resume() }
+                return .pending
+            }
+        }
+        XCTAssertEqual(calls, 2)
+        // A successful/pending pass must not convert its own idle event into more work.
+        coordinator.didBecomeIdle()
+        coordinator.didBecomeIdle()
+        var release: CheckedContinuation<Void, Never>?
+        var cancelledOld = false
+        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+            coordinator.request {
+                await withCheckedContinuation { continuation in
+                    release = continuation
+                    entered.resume()
+                }
+                cancelledOld = Task.isCancelled
+                return .busy // A cancelled operation can still report busy late.
+            }
+        }
+        var obsolete = 0, latest = 0
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            coordinator.request(replacingCurrent: true) { obsolete += 1; return .completed }
+            coordinator.request(replacingCurrent: true) { latest += 1; done.resume(); return .completed }
+            release?.resume()
+        }
+        XCTAssertTrue(cancelledOld)
+        XCTAssertEqual(obsolete, 0)
+        XCTAssertEqual(latest, 1)
+        XCTAssertEqual(calls, 2)
+        var staleCalls = 0
+        var releaseStale: CheckedContinuation<Void, Never>?
+        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+            coordinator.request {
+                staleCalls += 1
+                if staleCalls == 1 {
+                    await withCheckedContinuation { continuation in
+                        releaseStale = continuation
+                        entered.resume()
+                    }
+                }
+                return .busy
+            }
+        }
+        let cancellation = coordinator.suspend()
+        releaseStale?.resume()
+        await cancellation?.value
+        coordinator.didBecomeIdle()
+        coordinator.didBecomeIdle()
+        XCTAssertEqual(staleCalls, 1, "Late busy must not revive the suspended lifecycle request")
+    }
+}
