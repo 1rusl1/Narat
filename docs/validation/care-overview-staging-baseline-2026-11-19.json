@@ -1,0 +1,577 @@
+{
+  "scope": "Read-only staging metadata/history receipt, no SQL or Edge mutation; local source hashes are provenance, not remote DDL byte proof.",
+  "observed_date": "2026-11-19",
+  "project_ref": "ijwnyjdomwvnzmmcurkt",
+  "functions": [
+    {
+      "slug": "plants-api",
+      "status": "ACTIVE",
+      "version": 33,
+      "verify_jwt": false,
+      "ezbr_sha256": "8ce745d95be02097417c5058cc87b63799765e13065fabd10f68849fd4fbc739"
+    },
+    {
+      "slug": "analysis-worker",
+      "status": "ACTIVE",
+      "version": 9,
+      "verify_jwt": false,
+      "ezbr_sha256": "31ea088a5962017d8c053188b68cc81e033310bcffc3ce849fde032f0de006df"
+    }
+  ],
+  "rows": [
+    {
+      "version": "202610200001",
+      "name": "ownership_sync",
+      "local_file": "supabase/migrations/202610200001_ownership_sync.sql",
+      "local_sha256": "afeb30c9312c5fa99f1ed279404de383a9f8240f1debcb63a766d538d8d53239"
+    },
+    {
+      "version": "202610200002",
+      "name": "catalogue",
+      "local_file": "supabase/migrations/202610200002_catalogue.sql",
+      "local_sha256": "a3fca228bd1031318b72da92b4eac6a5b613e7766bfc9285c43b882c18e49bb9"
+    },
+    {
+      "version": "202610200003",
+      "name": "editorial",
+      "local_file": "supabase/migrations/202610200003_editorial.sql",
+      "local_sha256": "605498aed75d0bd13aabf364dbb01f7cc507276fee2806c60966241b5cbcb006"
+    },
+    {
+      "version": "202610200004",
+      "name": "collection",
+      "local_file": "supabase/migrations/202610200004_collection.sql",
+      "local_sha256": "f426ee753c33b8058e5ec6d25f479756a8abd36d9220de5a59a6dba5ff8c0f38"
+    },
+    {
+      "version": "202610200005",
+      "name": "analysis_care",
+      "local_file": "supabase/migrations/202610200005_analysis_care.sql",
+      "local_sha256": "74fc04b543f210993e9db44b641cda8534df236eaf5d5363a0decf1661d84f0c"
+    },
+    {
+      "version": "202610200006",
+      "name": "billing",
+      "local_file": "supabase/migrations/202610200006_billing.sql",
+      "local_sha256": "cbe15b6d8c915cb1d60bbd0687b5fbcf5f58ab36c4393352b0ba40ecf5eff56c"
+    },
+    {
+      "version": "202610200007",
+      "name": "analysis_quota",
+      "local_file": "supabase/migrations/202610200007_analysis_quota.sql",
+      "local_sha256": "35b11ef990d0d183bd4d33430b1a6ca1628c520ab86d4b54c42fda84fb7fdfab"
+    },
+    {
+      "version": "202610200008",
+      "name": "deletion",
+      "local_file": "supabase/migrations/202610200008_deletion.sql",
+      "local_sha256": "f272453298a60017db12d03b4bd2ca9066348575cf807cdf8036ae97aed7e315"
+    },
+    {
+      "version": "202610200009",
+      "name": "access_policies",
+      "local_file": "supabase/migrations/202610200009_access_policies.sql",
+      "local_sha256": "88582a3e51d61b4def46a2d17e5f95dea3d95282aa385e993903c3ceeb5874ef"
+    },
+    {
+      "version": "202610200010",
+      "name": "command_protocol",
+      "local_file": "supabase/migrations/202610200010_command_protocol.sql",
+      "local_sha256": "cc85d76eda93fa596a08564a6875dbaf4f9374164f5fd7f3a20e314bb4056c8c"
+    },
+    {
+      "version": "202610200011",
+      "name": "schedule_calculator",
+      "local_file": "supabase/migrations/202610200011_schedule_calculator.sql",
+      "local_sha256": "76a6137b48482298940f14fd5a5844bedda0689539597212b98158f42028e1a8"
+    },
+    {
+      "version": "202610200012",
+      "name": "quota_operations",
+      "local_file": "supabase/migrations/202610200012_quota_operations.sql",
+      "local_sha256": "b4f418f728ffaa28646b2a43ad00dc76ef8c1e26d55f85bc8abb280e7f3ef705"
+    },
+    {
+      "version": "202610200013",
+      "name": "guest_claim",
+      "local_file": "supabase/migrations/202610200013_guest_claim.sql",
+      "local_sha256": "e483a9c8270cba98b5f7ef38eb70d9f38db32c922f6d3d7055a22bfa2b00412f"
+    },
+    {
+      "version": "202610200014",
+      "name": "collection_commands",
+      "local_file": "supabase/migrations/202610200014_collection_commands.sql",
+      "local_sha256": "ec544290a431e7fcc9ea4e3bcd51bb2ec3d9f4e2bd3cdcc81d7f4da583e10e6b"
+    },
+    {
+      "version": "202611010001",
+      "name": "notification_claims",
+      "local_file": "supabase/migrations/202611010001_notification_claims.sql",
+      "local_sha256": "dca07a3415eba640782eb8fc6e617954f374320af92c724c15d91c9c8c495ae4"
+    },
+    {
+      "version": "202611010002",
+      "name": "basic_care",
+      "local_file": "supabase/migrations/202611010002_basic_care.sql",
+      "local_sha256": "a081d054ee269fe8ee83f466e7012867414205c7c76c77e08e199cc7fe754d40"
+    },
+    {
+      "version": "202611050001",
+      "name": "catalogue_skeleton",
+      "local_file": "supabase/migrations/202611050001_catalogue_skeleton.sql",
+      "local_sha256": "7370c35c2403bd473969eab90a2d24a34383df004951e6c28290e0f40267bbd0"
+    },
+    {
+      "version": "202611060001",
+      "name": "catalogue_release_activation",
+      "local_file": "supabase/migrations/202611060001_catalogue_release_activation.sql",
+      "local_sha256": "8b4911badf95b46cd8c8e821039b9cc31833ebf54bc61a345f7a28f733465317"
+    },
+    {
+      "version": "202611060002",
+      "name": "service_rpc_permissions",
+      "local_file": "supabase/migrations/202611060002_service_rpc_permissions.sql",
+      "local_sha256": "f40a1630b63ae0009f32a61d25a15a0e2c39da096f9ea186ee95b32f147a6206"
+    },
+    {
+      "version": "202611060003",
+      "name": "profile_context_read",
+      "local_file": "supabase/migrations/202611060003_profile_context_read.sql",
+      "local_sha256": "15e15a97cd028f45269f8d301836715d130ae20902fe07b52cb2dbdcbfb3ffa5"
+    },
+    {
+      "version": "202611060004",
+      "name": "guest_profile",
+      "local_file": "supabase/migrations/202611060004_guest_profile.sql",
+      "local_sha256": "cb2e41964c1f5169a379b92a799b8234a56119ee013972fdb052e1985bbd99fd"
+    },
+    {
+      "version": "202611090001",
+      "name": "analysis_mode_guard",
+      "local_file": "supabase/migrations/202611090001_analysis_mode_guard.sql",
+      "local_sha256": "65147e7665b1720b81e9f4fd84085e5bf7ac1f2e3fff11c56a1be6c6ae5ce062"
+    },
+    {
+      "version": "202611090002",
+      "name": "retire_rooms",
+      "local_file": "supabase/migrations/202611090002_retire_rooms.sql",
+      "local_sha256": "152d0092556bbd944686e3b445be82dc802885624bd999892f1f98597fcb45b9"
+    },
+    {
+      "version": "202611090003",
+      "name": "collection_cap",
+      "local_file": "supabase/migrations/202611090003_collection_cap.sql",
+      "local_sha256": "945386c6bf7248948034faae1638ea71799f7fb33b7671197d64921f00ce7c9b"
+    },
+    {
+      "version": "202611090004",
+      "name": "retire_free_slots",
+      "local_file": "supabase/migrations/202611090004_retire_free_slots.sql",
+      "local_sha256": "7035ea0690ff0f6831c1f154eae60f297619f9812acdcb5041e96b2375817107"
+    },
+    {
+      "version": "202611090005",
+      "name": "registration_quotas",
+      "local_file": "supabase/migrations/202611090005_registration_quotas.sql",
+      "local_sha256": "eb9383fce268c87d5c55bd21228b3de068a04c47b0ff3918e145bc19ae98b49d"
+    },
+    {
+      "version": "202611090006",
+      "name": "registration_ledger",
+      "local_file": "supabase/migrations/202611090006_registration_ledger.sql",
+      "local_sha256": "651a554607288302130d3339fc7e41775f6360522274017915d5d14707e61e1d"
+    },
+    {
+      "version": "202611090007",
+      "name": "registration_state_guard",
+      "local_file": "supabase/migrations/202611090007_registration_state_guard.sql",
+      "local_sha256": "176d4a62b2d94df4d190ff95b2165c9751d9179c67e477aa2cec325b277dbf2a"
+    },
+    {
+      "version": "202611090008",
+      "name": "quota_reservation",
+      "local_file": "supabase/migrations/202611090008_quota_reservation.sql",
+      "local_sha256": "3f0b2c64a06767958f30bd5f139ebbc1fce44cd2d321fdb8be9866f9ef3cff15"
+    },
+    {
+      "version": "202611090009",
+      "name": "quota_settlement",
+      "local_file": "supabase/migrations/202611090009_quota_settlement.sql",
+      "local_sha256": "b8c1131f0b090c58bc697c96fc31990b555e6906f142d35639c3e85c63a12ffc"
+    },
+    {
+      "version": "202611090010",
+      "name": "installation_quota_bind",
+      "local_file": "supabase/migrations/202611090010_installation_quota_bind.sql",
+      "local_sha256": "02abe310e211de550689750c5466ccf1d2dbb5255905896ac02b5d888e084634"
+    },
+    {
+      "version": "202611090011",
+      "name": "installation_access_api",
+      "local_file": "supabase/migrations/202611090011_installation_access_api.sql",
+      "local_sha256": "ee509ff66b8a36a7c05ca03290038d85433d822c47c8c91f8e87c8e318cf2249"
+    },
+    {
+      "version": "202611090012",
+      "name": "analysis_access_snapshot",
+      "local_file": "supabase/migrations/202611090012_analysis_access_snapshot.sql",
+      "local_sha256": "f69a16023826fcf94f4cb45e6c675fde9240c1b2a2415976d61b8cf82db6016e"
+    },
+    {
+      "version": "202611110013",
+      "name": "diagnosis_upload",
+      "local_file": "supabase/migrations/202611110013_diagnosis_upload.sql",
+      "local_sha256": "e50e6e593fa0c1c52096e0effab57b4fb013e505a26461f032326f8b8f3becf1"
+    },
+    {
+      "version": "202611110014",
+      "name": "diagnosis_jobs",
+      "local_file": "supabase/migrations/202611110014_diagnosis_jobs.sql",
+      "local_sha256": "8f6a370a7f9f9f5174315516adb71b5e5201c21fe626d18900c9c3ed4f39bab5"
+    },
+    {
+      "version": "202611110015",
+      "name": "plant_create_pgcrypto",
+      "local_file": "supabase/migrations/202611110015_plant_create_pgcrypto.sql",
+      "local_sha256": "b7a7ac6cb4e40bc0673fa3d7dcf4568edbe8e450bed04e219832b5f4dcd906b7"
+    },
+    {
+      "version": "202611110016",
+      "name": "manual_care_journal",
+      "local_file": "supabase/migrations/202611110016_manual_care_journal.sql",
+      "local_sha256": "f57f917b2eff4a7ac71a49e538dce2fc76e4e324adb05d1ab19e5808e3a4b794"
+    },
+    {
+      "version": "202611110017",
+      "name": "plant_care_profile_read",
+      "local_file": "supabase/migrations/202611110017_plant_care_profile_read.sql",
+      "local_sha256": "51efe6e262ab9d459e2af04f8a5357e2a8d7bdac4344877efb77f300d6969797"
+    },
+    {
+      "version": "202611120018",
+      "name": "catalogue_pl_description_fallback",
+      "local_file": "supabase/migrations/202611120018_catalogue_pl_description_fallback.sql",
+      "local_sha256": "1a8e1f81defb30b6964f1b0274815c81803a74c7418a027a4ae590877ee69f7d"
+    },
+    {
+      "version": "202611120019",
+      "name": "identification_jobs",
+      "local_file": "supabase/migrations/202611120019_identification_jobs.sql",
+      "local_sha256": "220df82ccbb5711f986f747ec5377a77b06d3697d5cc933b27b1a54769a20d3e"
+    },
+    {
+      "version": "202611120020",
+      "name": "identification_plant_photo",
+      "local_file": "supabase/migrations/202611120020_identification_plant_photo.sql",
+      "local_sha256": "9ed37455eaffac39765d5c43901ba1d3bf536cc10308a07f9fb37d4d016534e4"
+    },
+    {
+      "version": "202611120021",
+      "name": "guest_photo_claim",
+      "local_file": "supabase/migrations/202611120021_guest_photo_claim.sql",
+      "local_sha256": "65aa7ae70ac7aeff1dae99119c19f6e9ad24ff42c0351e6f070a56c59f67995b"
+    },
+    {
+      "version": "202611120022",
+      "name": "auth_registration_profile",
+      "local_file": "supabase/migrations/202611120022_auth_registration_profile.sql",
+      "local_sha256": "3856cd1d967d0a0bf204adf0917fc7d4c9e4193d025cc5dd61a6230d9951dfb9"
+    },
+    {
+      "version": "202611120023",
+      "name": "retire_notification_claim_writes",
+      "local_file": "supabase/migrations/202611120023_retire_notification_claim_writes.sql",
+      "local_sha256": "4acebf5793264a6aff8c3312808415d515d4d2ec68a3a2ce0d83ddd3be203dae"
+    },
+    {
+      "version": "202611120025",
+      "name": "repeat_plant_diagnosis",
+      "local_file": "supabase/migrations/202611120025_repeat_plant_diagnosis.sql",
+      "local_sha256": "d97866937173f70797d6ec66bcc7806b1d46a021d12f95d28011b41442fdbc6d"
+    },
+    {
+      "version": "202611120026",
+      "name": "manual_care_date_correction",
+      "local_file": "supabase/migrations/202611120026_manual_care_date_correction.sql",
+      "local_sha256": "8ebb4c3ddfcebf66818c65c4eb30d363d301d13574ef0b976d6bb0d6ed1a313d"
+    },
+    {
+      "version": "202611120027",
+      "name": "plant_next_check",
+      "local_file": "supabase/migrations/202611120027_plant_next_check.sql",
+      "local_sha256": "940783c6fdd4022636d78cb45dc8d3657284ef9e72d075e426c2add653ec741b"
+    },
+    {
+      "version": "202611120028",
+      "name": "first_aid_control",
+      "local_file": "supabase/migrations/202611120028_first_aid_control.sql",
+      "local_sha256": "cb054d438007afa2acc969e0ead27a50e5dbf73c63ca33fea0e864e08c52f7e1"
+    },
+    {
+      "version": "202611120029",
+      "name": "first_aid_action_status",
+      "local_file": "supabase/migrations/202611120029_first_aid_action_status.sql",
+      "local_sha256": "9403a066aa3ea4b1d9a0da382014dc1c53b81505a40c38527cc3fa77daa42001"
+    },
+    {
+      "version": "202611120030",
+      "name": "first_aid_observation",
+      "local_file": "supabase/migrations/202611120030_first_aid_observation.sql",
+      "local_sha256": "eec7ae9e91c2946a0660ef9867a5a05bfbaed4c17fbc1fffe4eb690f637ac0d2"
+    },
+    {
+      "version": "202611120031",
+      "name": "first_aid_observation_photo",
+      "local_file": "supabase/migrations/202611120031_first_aid_observation_photo.sql",
+      "local_sha256": "68fc35d9e811ba9c1d8251e9fe4ce749a092cfc77d3480c65b1fffb1cc60ef21"
+    },
+    {
+      "version": "202611120032",
+      "name": "first_aid_photo_cleanup",
+      "local_file": "supabase/migrations/202611120032_first_aid_photo_cleanup.sql",
+      "local_sha256": "15cd9c5a047053d659c1f32832c32b4391f7f61a34c5914e7e801a056f445c52"
+    },
+    {
+      "version": "202611120033",
+      "name": "plant_delete_core",
+      "local_file": "supabase/migrations/202611120033_plant_delete_core.sql",
+      "local_sha256": "3ec50089026d28a0d5c80dc586420fcd4f1677b10681aa36ca4f3d954bf2f1e6"
+    },
+    {
+      "version": "202611130034",
+      "name": "plant_delete_access",
+      "local_file": "supabase/migrations/202611130034_plant_delete_access.sql",
+      "local_sha256": "7797329be36844f6eb830227726e7a325f01c4c730a268a7b896a355f8104b7b"
+    },
+    {
+      "version": "202611130035",
+      "name": "plant_delete_storage",
+      "local_file": "supabase/migrations/202611130035_plant_delete_storage.sql",
+      "local_sha256": "050af614461ce6d010084e05870ce7d4129bd23951d79f8dabd3ef7d4df2ca70"
+    },
+    {
+      "version": "202611130036",
+      "name": "plant_delete_analysis_data",
+      "local_file": "supabase/migrations/202611130036_plant_delete_analysis_data.sql",
+      "local_sha256": "a1850a17fd0233c240ca697f17a5e9c656be0100df4aede08230fe5310bf01ef"
+    },
+    {
+      "version": "202611130037",
+      "name": "plant_delete_expired_lease",
+      "local_file": "supabase/migrations/202611130037_plant_delete_expired_lease.sql",
+      "local_sha256": "68596a547a69334b302ce0e96a4221579811b4f39a9261bb1f58e55d83db5ce2"
+    },
+    {
+      "version": "202611130038",
+      "name": "plant_delete_personal_text",
+      "local_file": "supabase/migrations/202611130038_plant_delete_personal_text.sql",
+      "local_sha256": "c746f755625b8097c27b68ff44523ed0a187b7873df776be225de40313f7ff4c"
+    },
+    {
+      "version": "202611130039",
+      "name": "plant_delete_data_pass",
+      "local_file": "supabase/migrations/202611130039_plant_delete_data_pass.sql",
+      "local_sha256": "201d64e9c3dac886e97eef23403a1c51751755b142fb85d21f3d05a11eddd50d"
+    },
+    {
+      "version": "202611130040",
+      "name": "plant_delete_queue",
+      "local_file": "supabase/migrations/202611130040_plant_delete_queue.sql",
+      "local_sha256": "e01486ea9728a98df90541e39ba384f735858d1ce66b56c128e7a57ebf08b5ab"
+    },
+    {
+      "version": "202611130041",
+      "name": "plant_edit_name",
+      "local_file": "supabase/migrations/202611130041_plant_edit_name.sql",
+      "local_sha256": "f46081f8a079bb8b9623c2ebed92c8edd779820f82471aa9d44f46d4c2097533"
+    },
+    {
+      "version": "202611130042",
+      "name": "plant_edit_conditions",
+      "local_file": "supabase/migrations/202611130042_plant_edit_conditions.sql",
+      "local_sha256": "59fd42a2aa25d6ee9917d17f5940d71f4ebcc47e6dad4790c3c09bc2255f7b88"
+    },
+    {
+      "version": "202611130043",
+      "name": "plant_edit_taxon",
+      "local_file": "supabase/migrations/202611130043_plant_edit_taxon.sql",
+      "local_sha256": "49fdf6078f31f1460b23e61bdbf2a73a0da019130cc77ae2c9111bd8d4cd2f55"
+    },
+    {
+      "version": "202611130044",
+      "name": "care_refresh_evidence",
+      "local_file": "supabase/migrations/202611130044_care_refresh_evidence.sql",
+      "local_sha256": "a0a09b51dc35596793c1b8d3c29f3ae8005fbfc5794c24517dfeb7a56e705a32"
+    },
+    {
+      "version": "202611130045",
+      "name": "care_refresh_candidate",
+      "local_file": "supabase/migrations/202611130045_care_refresh_candidate.sql",
+      "local_sha256": "17f7facf8e15d8fafe70f46f021881e1141a87e682036b8af53aa58d1ebbf5c4"
+    },
+    {
+      "version": "202611130046",
+      "name": "care_refresh_paused_receipt",
+      "local_file": "supabase/migrations/202611130046_care_refresh_paused_receipt.sql",
+      "local_sha256": "36d64cc6ecf7a66d27b3ca419e924e903803e479c1666a7e242d2997086a26e0"
+    },
+    {
+      "version": "202611140047",
+      "name": "care_refresh_rule",
+      "local_file": "supabase/migrations/202611140047_care_refresh_rule.sql",
+      "local_sha256": "720130a8db0128ea08f929c8b91c94edf18a7da0102a50c3f55413283b8bf67e"
+    },
+    {
+      "version": "202611150048",
+      "name": "guard_edited_care_calendar",
+      "local_file": "supabase/migrations/202611150048_guard_edited_care_calendar.sql",
+      "local_sha256": "4e7cf1001aaaca5ef512914c9f810a517b8cd5e1e8a343a374272b1f58d39910"
+    },
+    {
+      "version": "202611150049",
+      "name": "basic_care_receipt_hash",
+      "local_file": "supabase/migrations/202611150049_basic_care_receipt_hash.sql",
+      "local_sha256": "935cfd48bae8b8a618ea8e9bdedf7a5bf21f22c95bed0c8c940252be24449117"
+    },
+    {
+      "version": "202611150050",
+      "name": "revalidate_refreshed_care_calendar",
+      "local_file": "supabase/migrations/202611150050_revalidate_refreshed_care_calendar.sql",
+      "local_sha256": "65e9e6b588e92ffdc2c0baf1d16280f0072db7f8416eb320ee3bc11daac46da5"
+    },
+    {
+      "version": "202611150051",
+      "name": "routine_soil_check_record",
+      "local_file": "supabase/migrations/202611150051_routine_soil_check_record.sql",
+      "local_sha256": "bf2aafcf9534a53ec2f6fc2e966eb0c567dbb6b0db81485b08a2bd3a812c123b"
+    },
+    {
+      "version": "202611150052",
+      "name": "routine_soil_check_recurrence",
+      "local_file": "supabase/migrations/202611150052_routine_soil_check_recurrence.sql",
+      "local_sha256": "9bb20f8cc7f9416059905cd2ba0f285eb2390092be17550b4cc1f907811c0ba3"
+    },
+    {
+      "version": "202611150053",
+      "name": "routine_soil_check_permissions",
+      "local_file": "supabase/migrations/202611150053_routine_soil_check_permissions.sql",
+      "local_sha256": "9855f1c7364b474ff6074b682a7af95e0e53fd150b97e22a76b2b4d88d04d470"
+    },
+    {
+      "version": "202611150054",
+      "name": "routine_soil_check_undo",
+      "local_file": "supabase/migrations/202611150054_routine_soil_check_undo.sql",
+      "local_sha256": "3eedc5a3260d1baeebade262120e7a462fdb7dadad6c976952fad53e4af4eea7"
+    },
+    {
+      "version": "202611150055",
+      "name": "routine_soil_check_undo_permissions",
+      "local_file": "supabase/migrations/202611150055_routine_soil_check_undo_permissions.sql",
+      "local_sha256": "d2f569bbe40ffb43c173b75bf2d99f399a179a27a3f8670701b651446acc36ee"
+    },
+    {
+      "version": "202611150056",
+      "name": "require_explicit_contextual_calendar",
+      "local_file": "supabase/migrations/202611150056_require_explicit_contextual_calendar.sql",
+      "local_sha256": "87c3d5260aafb923e0b52b0bfbf84a51e5e609d6c52d0e3068af627e87a71a43"
+    },
+    {
+      "version": "202611150057",
+      "name": "retire_season_override_owner_sync",
+      "local_file": "supabase/migrations/202611150057_retire_season_override_owner_sync.sql",
+      "local_sha256": "e81afbe151766c1abff2ab74aa0d38ffddb7a58bdecef978271283a4c2b19e74"
+    },
+    {
+      "version": "202611150058",
+      "name": "guard_new_plant_create_context",
+      "local_file": "supabase/migrations/202611150058_guard_new_plant_create_context.sql",
+      "local_sha256": "9d10fef81647df5cb0af30bdf1d0753e12f3361297cc46b93fabefee088514ca"
+    },
+    {
+      "version": "202611150059",
+      "name": "profile_reminder_hour",
+      "local_file": "supabase/migrations/202611150059_profile_reminder_hour.sql",
+      "local_sha256": "b6c05454fb844fae850a144e0fb1c32dfcff63119d2fe8eccbe116e57bf25f23"
+    },
+    {
+      "version": "202611150060",
+      "name": "account_deletion_intent",
+      "local_file": "supabase/migrations/202611150060_account_deletion_intent.sql",
+      "local_sha256": "a29b1bcc398dae0d2d51ef737cd1cfc1f5e697db47303ae65d896f11b6818ef9"
+    },
+    {
+      "version": "202611150061",
+      "name": "account_deletion_media_inventory",
+      "local_file": "supabase/migrations/202611150061_account_deletion_media_inventory.sql",
+      "local_sha256": "1d681afe9e785ce4ef78d0b5b83c1aaa0c51317a5ba8ea2c76cd1fc10e178615"
+    },
+    {
+      "version": "202611150062",
+      "name": "account_deletion_namespace_holds",
+      "local_file": "supabase/migrations/202611150062_account_deletion_namespace_holds.sql",
+      "local_sha256": "51b5f19691da06b30d1dc06f3460fbdebfb91927bd0df99196f80db7ce66349a"
+    },
+    {
+      "version": "202611150063",
+      "name": "account_deletion_storage_work_plan",
+      "local_file": "supabase/migrations/202611150063_account_deletion_storage_work_plan.sql",
+      "local_sha256": "a8fdb52108221d521ab4b7daa444f41987e220344f6cd5aba57efe2a0f5bc96e"
+    },
+    {
+      "version": "202611150064",
+      "name": "account_deletion_storage_service",
+      "local_file": "supabase/migrations/202611150064_account_deletion_storage_service.sql",
+      "local_sha256": "dec7a9f5e3fa242cee2a74f68cd37c5e4fe0c27149b81995e843a3c27cd49ab7"
+    },
+    {
+      "version": "202611160001",
+      "name": "diagnosis_plant_photo",
+      "local_file": "supabase/migrations/202611160001_diagnosis_plant_photo.sql",
+      "local_sha256": "5e1286603f59b4ab577701995d8be2b1a702617237be6a5e06fed635ae089aee"
+    },
+    {
+      "version": "202611160002",
+      "name": "initial_diagnosis_context",
+      "local_file": "supabase/migrations/202611160002_initial_diagnosis_context.sql",
+      "local_sha256": "22d39f981632ef53b3d302790a8478ff1499c106d22c9a70dc406027e2bc7750"
+    },
+    {
+      "version": "202611160005",
+      "name": "bound_guest_initial_diagnosis",
+      "local_file": "supabase/migrations/202611160005_bound_guest_initial_diagnosis.sql",
+      "local_sha256": "daea19dd2b352d70dd0af403191ec142958ed57baa6c13646e10b589703dd7e1"
+    },
+    {
+      "version": "202611160006",
+      "name": "bound_guest_diagnosis_worker",
+      "local_file": "supabase/migrations/202611160006_bound_guest_diagnosis_worker.sql",
+      "local_sha256": "7927e7302f57a1e9a30b2e851d6a9e475e188b004085b24932cf0405dd386e4b"
+    },
+    {
+      "version": "202611160007",
+      "name": "guest_diagnosis_draft",
+      "local_file": "supabase/migrations/202611160007_guest_diagnosis_draft.sql",
+      "local_sha256": "27e1041bb33a27121a95a2e05da6c1481f78b5922d4737749a4fcba8f9ebc762"
+    },
+    {
+      "version": "202611160008",
+      "name": "initial_diagnosis_conditions_on_save",
+      "local_file": "supabase/migrations/202611160008_initial_diagnosis_conditions_on_save.sql",
+      "local_sha256": "6a73e27ae4555789677b99bf7a5a1f0ddc9cd613833dd2ae77e4592494c2f9bf"
+    },
+    {
+      "version": "202611160009",
+      "name": "guest_diagnosis_conditions_on_claim",
+      "local_file": "supabase/migrations/202611160009_guest_diagnosis_conditions_on_claim.sql",
+      "local_sha256": "b947d66282d28ca9ef0dbfd768e89ff400d96f89df7263f4bf0d7abd2af6e524"
+    },
+    {
+      "version": "202611160016",
+      "name": "preserve_last_watered_on_plant_edit",
+      "local_file": "supabase/migrations/202611160016_preserve_last_watered_on_plant_edit.sql",
+      "local_sha256": "25c1831c49b2a9d30c7418ac91f7d32d006ee275cfae0676083ac305b5738565"
+    }
+  ],
+  "history_count": 92,
+  "deployment_boundary": "New standalone GET-only care-overview plus independent read RPC; never replace plants-api33/worker or push unrelated pending migrations."
+}

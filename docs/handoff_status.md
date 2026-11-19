@@ -1,5 +1,98 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: SQL overview принят; следующий HTTP packet — 19 ноября 2026
+
+SQL accepted/pushed `25a5e92e0e350bd55d2bb9552098db1520c62c23`.
+Реальный run `tester-care-overview-sql-acceptance-20261119-01` COMPLETED:
+diff-check,149 automation,436 Deno PASS; PG17 fullcurrent broad clean/upgrade
+и exact92 care-only clean/upgrade PASS, по140 overview assertions в каждом
+из четырёх случаев. Review1/QA1 high-risk route PASS без findings. Evidence:
+`docs/validation/automation/runs/q-983a118684bfa1cf0292f816/summary.json` и
+`docs/validation/automation/tasks/tester-care-owner-overview-sql-acceptance.md`.
+Это local fixture acceptance, НЕ staging deployment/live/Today готовность.
+
+Приняты: новая `202611190001_care_overview_read.sql`, `care_overview.test.sql`,
+controller `parallel_backend_quota_gate.py`, manifests. Один STABLE read RPC
+`read_owner_care_overview(UUID,UUID,INTEGER)`: active permanent owner,
+service-role ACL, UUID paging/no-schedule/>3 legacy rows, текущие056/029
+routine/firstaid authority, profile watermark/publication fingerprint/access.
+SQL ничего не пишет. Exact92 gate сверяет paths/local hashes receipt, не
+применяет посторонние account-delete leaves. Fullcurrent broad tests сохранены.
+
+Исходный run `tester-care-overview-sql-20261119-01` сохранён BLOCKED:
+Developer1 дал полный SQL; два fixture repair исправили legitimate paid→Free
+setup и UTC facts comparison. Затем controller staged gate неверно запустил
+current auth test с отсутствующей на92baseline account_deleted_runtime_identities.
+Это исправлено explicit staged care-only suite; новый actual candidate_base
+run принял реальные gates. Никакого фиктивного Developer PASS/retroactive PASS.
+
+Ограничение источников: accepted056/029 проверяют published profile/protocol/
+embedded evidence. External registry-only change меняет fingerprint, но не
+вводит новую temporal rights policy. HTTP сохраняет этот паритет и обязан
+применить существующий serializer и access envelope, не пересчитывать даты.
+
+Подготовлен HTTP manifest `tools/automation/tasks.tester-care-overview-http.json`:
+семь writable TS/config файлов, новый GET-only `care-overview`, getUser verified
+owner + один accepted RPC/page, unchanged shared card serializer. Public row:
+plant_id/care_revision/care_recommendation:<FULLcardwire>/first_aid_controls.
+Protected current plants-api33/worker9 НЕ redeploy. Config ignored
+`docs/validation/automation/runs/tester-care-overview-http.config.json`: approved
+routing/budgets сохранены, deno-check явно компилирует пять entrypoints включая
+новый care-overview; прежний check компилировал только два. Сам deno task check
+также будет дополнен Developer. HTTP пока НЕ реализован/проверен.
+
+Следующий точный шаг: `tester-care-overview-http-20261119-01`, Developer →
+full Deno tests + actual standalone deno check → high-risk Review → QA →
+commit/push. Затем targeted independent SQL+newslug deployment/live parity,
+coherent native cache/Today, reminders. Ahead-of-sync DTO не становится
+canonical/actionable без согласованной проверки. Full T066/T068/T075/T077/
+T098/B01–B11 остаются открытыми; physical offline/iPhone и ordinary positive
+B07 не подтверждены. Нет общего db push/новых интервалов/AI/Auth Admin/покупок.
+
+## Этап 2: SQL candidate, приёмка ещё не завершена — 19 ноября 2026
+
+Реальный run `tester-care-overview-sql-20261119-01` выполнил Developer1
+(SQL160строк + TAP), два узких fixture repair: legitimate paid→Free setup
+коллекции >3 и UTC нормализация сравнения фактов. Product SQL не менялся.
+`read_owner_care_overview(UUID,UUID,INTEGER)` — service-role/read-only,
+active permanent owner, UUID paging, no-schedule rows, текущие056/029
+routine/firstaid authority, access metadata и publication fingerprint.
+Никакого HTTP/Swift/deploy/новых интервалов.
+
+Реально PASS: diff-check,149 automation tests, полный current-root PG17
+clean + populated upgrade, включая по140 overview assertions и старые
+auth/quota/diagnosis/care/cleanup/race suites. Исходный exact92 baseline
+остановился ДО overview: current auth_registration_profile.test.sql требует
+`account_deleted_runtime_identities` из намеренно неприменённых account-delete
+leaves. Run корректно BLOCKED после трёх Developer calls. Это ошибка scope
+controller gate, не доказанная ошибка read RPC; FAIL сохраняется.
+
+Controller исправил только staged branch gate: сверяет paths/hashes всех92
+локальных исходников с read-only receipt, применяет ровно их+newoverview,
+сохраняет исторические rows при upgrade и явно исполняет девять care TAP
+suites (manual/date/profile/next/routine/firstaid/observation/photo/overview).
+Полный current broad gate остаётся. Strict TAP plan/prove/noSKIP/TODO не
+ослаблены; непроверенное не объявлено PASS. py_compile/diff-check PASS.
+
+Следующий точный шаг: новый read-only candidate_base run
+`tester-care-overview-sql-acceptance-20261119-01`, все actual gates →
+high-risk Review → QA → commit/push. Base `4bba9545092cbe631a30b1e3845dd6fdeede35bd`.
+Manifest `tools/automation/tasks.tester-care-overview-sql-acceptance.json`;
+config ignored `docs/validation/automation/runs/tester-care-overview-sql.config.json`.
+Нет фиктивного Developer PASS для controller gate. SQL ещё НЕ принят.
+
+Source withdrawal здесь означает published profile/protocol/embedded evidence,
+которые проверяют принятые056/029. External registry-only change меняет
+fingerprint, но не вводит новую temporal rights policy. HTTP обязан сохранить
+паритет card serializer и fail closed по access envelope. Затем coherent
+cache/Today; ahead-of-sync DTO не является canonical/actionable автоматически.
+
+Stage1 online ordinary Release PASS зафиксирован root `a79170a`; physical
+offline/iPhone и ordinary positive B07 остаются открытыми. Future HTTP — новый
+additive `care-overview` slug, НЕ redeploy plants-api33/worker9. Current92
+receipt с local provenance в `care-overview-staging-baseline-2026-11-19.json`,
+это НЕ remote DDL byte proof. Никакого общего db push/AI/Auth Admin/покупок.
+
 ## Этап 1: ordinary live online цикл принят — 19 ноября 2026
 
 Живой V2 завершён PASS на signed EN Release `df71eb5`, ios tree которого
@@ -4026,8 +4119,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-owner-reconcile-recovery-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 245.50 с, проверки — 677.68 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-owner-reconcile-recovery-acceptance](validation/automation/tasks/tester-care-owner-reconcile-recovery-acceptance.md).
+tester-care-owner-overview-sql-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 208.04 с, проверки — 162.79 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-owner-overview-sql-acceptance](validation/automation/tasks/tester-care-owner-overview-sql-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

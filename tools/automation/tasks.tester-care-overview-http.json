@@ -1,0 +1,73 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-overview-http",
+      "description": "Expose accepted owner-care read through additive authenticated GET-only Edge handler and unchanged shared card projection.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/functions/_shared/care-recommendation-projection.ts",
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "supabase/functions/care-overview/index.ts",
+        "supabase/functions/care-overview/handler.ts",
+        "supabase/functions/_shared/tests/care_overview_http_test.ts",
+        "supabase/functions/deno.json",
+        "supabase/config.toml",
+        "supabase/migrations/202611190001_care_overview_read.sql",
+        "supabase/functions/_shared/http.ts",
+        "supabase/functions/_shared/KnowledgeTypes.ts",
+        "supabase/functions/_shared/tests/care_recommendation_http_test.ts",
+        "supabase/functions/_shared/tests/auth_profile_test.ts",
+        "supabase/functions/plants-api/index.ts",
+        "docs/validation/automation/runs/care-overview-projection-draft.patch",
+        "docs/validation/automation/runs/care-overview-http-contract-fixtures.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "docs/validation/automation/tasks/tester-care-owner-overview-sql-acceptance.md"
+      ],
+      "write_files": [
+        "supabase/functions/_shared/care-recommendation-projection.ts",
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "supabase/functions/care-overview/index.ts",
+        "supabase/functions/care-overview/handler.ts",
+        "supabase/functions/_shared/tests/care_overview_http_test.ts",
+        "supabase/functions/deno.json",
+        "supabase/config.toml"
+      ],
+      "constraints": [
+        "Accepted SQL25a5e92e0e350bd55d2bb9552098db1520c62c23:149automation,436Deno,4x140overview+fullcurrent broad/exact92care, high-riskReviewQA PASS; localfixtures only, no deployment. Only after accepted SQL read RPC. Add a NEW standalone GET-only care-overview Edge slug; no deployment, client/Swift, SQL change, AI, care content, purchases, Auth Admin or maintenance activation. Existing deployed plants-api33/worker9 must remain untouched. Never import plants-api/index.ts into new slug; it pulls unrelated routes. All production edits remain exactly in seven writable files. Do not change dependencies/model pins/lock files. config.toml add only care-overview verify_jwt=false entry: handler verifies user explicitly.",
+        "Extract existing sourceFor/addCalendarDays and pure projection from care-recommendation.ts to _shared/care-recommendation-projection.ts without semantic changes; old handler retains exact requireActiveOwner/query/UUID/RPC/notfound guards and delegates only projection. Controller scratch patch is a reviewed starting point, not accepted implementation: inspect it against current source. Preserve existing fixed EN/PL/null/date/leap-day/routine/source expectations in care_recommendation_http_test.ts; helper==handler alone is circular. Do not create another calendar calculator or change source applicability policy.",
+        "Final public row is {plant_id,care_revision,care_recommendation:<FULL existing card response>,first_aid_controls}; NOT recommendation:<fullresponse>. Parent fixed this layout for reuse of existing Swift DTO. Page metadata exactly follows accepted SQL owner_id,server_now,owner_watermark,publication_fingerprint,reminder_hour_local,automation_allowed,verified_access_until,plants,next_after. No raw care_profile/KB/provenance, private errors, credentials, source bodies. Validate all boundaries before serialization; any malformed/foreign identity/cursor/control invalidates whole page, never silently drop rows/turn failure into empty collection.",
+        "Create actual standalone entrypoint plus independently testable handler factory, using existing pinned Supabase client. Production bearer auth MUST call auth.getUser(token), verified id only; never decode-only or accept owner/context query/body, install fallback or trust missing is_anonymous as permanent. SQL active permanent guard is atomic and mandatory even if getUser passes; no extra profile query needed. Auth network/service failure503 vs invalid/expired/missing401, known anonymous403; no privileged RPC for failed auth. One service-role read_owner_care_overview RPC/page using p_owner_id verified id,p_after UUID|null,p_limit1..200. No commands/writes/sync/watermark/fanout/providers.",
+        "Route allow only root/direct care-overview/functions-v1-care-overview exact prefixes, trailing slash okay; unrelated subpaths404. GET and OPTIONS only, othermethods405/Allow, no privileged calls for OPTIONS. Exact query whitelist after/limit, at most one each, reject unknown/duplicate/empty parameters, invalidUUID, signed/decimal/exponent/space/overflow limits, bounds1..200(default100). Do not add generation/cursor pinning params. Locale from existing resolveLocale headers. Every success AND error private,no-store; CORS allowed methods GET,OPTIONS only, no response body leaks SQL hint/details/stack.",
+        "RPC errors42501 with exact ACTIVE_PERMANENT_OWNER_REQUIRED ->403;22023 exact INVALID_CARE_OVERVIEW_LIMIT->400; unrelated42501 or private DB/null failures503. Strict ownerUUID equality, finite UTC timestamp strings preserved verbatim incl microseconds, lowercase64hex fingerprint, hour0..23, boolean access, null/finite verified deadline. automation_allowed true with nonnull deadline requires >server_now. Returned plants<=requested limit, strictly ascending unique UUIDs after requested cursor, care_revision positiveint; care_profile identity sameplant and object; no-profile inner profile:null stillincluded. next_after when nonnull equals last returned row, advances and requires full page; emptyrowspage cannot have cursor. Never cap to Free3.",
+        "Existing raw056 may expose calendar data for malformed retained entitlement, but overview envelope is upper guard: automation_allowed=false clamps public next_check=null, removes routine_check and first_aid_controls=[], while retaining published advice/source. Pure shared card serializer remains unchanged; clamp happens afterwards. Null deadline alone never implies Free or permits automation. Do not calculate any date anew. Calendar due/anchor day strings preserved; overdue never becomes today. Registry-only change conservatively invalidates generation but does not add new rights/temporal policy beyond accepted056/029 authority.",
+        "Firstaid actual compact keys from SQL are control_id,action_entry_id,job_id,origin_analysis_id,kb_release_id,protocol_id,context_revision,action_id,action_code=check_soil,policy{due_on,interval_days,source{url,locator}}. Strict UUID/type/uniquecontrol/contextrevision/validGregorianYMD/intervalinteger1..90/HTTPS-no-credentials/nonemptylocator; return only compact known fields. Revalidate shape, do not recalculate due/interval or fabricate a dated control. Whole page fails on malformed controls even when access disabled; upper clamp is not excuse to ignore foreign/malformed data.",
+        "Meaningful Deno tests MUST exercise actual new handler through REAL Supabase clients with mocked fetch, inspecting auth GET then exact RPC URL/args/headers and callcounts. Cover security auth missing/malformed/expired/forged owner/anonymous/SQLdenial including emptyowner, authtransport failure; strict GET query/method/subpath/OPTIONS; sanitized RPCerrors; foreignowner/plant,duplicate/descending IDs,badcursors,badrevision,timestamps/hours; two pages totaling>200 inclnoschedule (noFree3cap); fixedEN/PLprojection, sourcewithdrawal/unavailableprofile, expired-envelopecalendarclamp, malformedcontrols/date/source, no-store errorsuccess. Future mixedpage aggregator belongs Swift, do not claim server pins snapshot; pages merely expose metadata. Reuse compact transport/helpers, no hundreds of mirrored JSON vectors.",
+        "Add care-overview/index.ts to existing deno task check so actual standalone export/Deno.serve is compiled; do not just rely on test discovery. Run full existing Deno suite and deno check with no skipped/missing; no changing old fixed expectation solely to pass. This fixture slice does not prove deployment/live/card parity. Report actual result/limits. Next after accepted HTTP is coherent native cache/Today, then notifications."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "OVHTTP1",
+          "description": "Full fixed existing Deno tests and new real-client/mock-fetch auth/query/page/access/firstaid fixtures pass with safe private no-store responses and unchanged card projection.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests"
+          ]
+        },
+        {
+          "id": "OVHTTP2",
+          "description": "Actual standalone entrypoint is included in full deno check; no deployment or unrelated runtime activation; new slug security/boundary independently reviewed.",
+          "mode": "local",
+          "checks": [
+            "deno-check"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/runs/care-overview-http-contract-fixtures.md",
+        "docs/validation/automation/tasks/tester-care-owner-overview-sql-acceptance.md"
+      ]
+    }
+  ]
+}
