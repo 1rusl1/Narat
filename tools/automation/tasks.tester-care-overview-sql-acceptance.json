@@ -1,0 +1,75 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-owner-overview-sql-acceptance",
+      "description": "Accept actual SQL overview candidate and corrected exact92 care regression gate, with current-root broad checks preserved.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "supabase/migrations/202611190001_care_overview_read.sql",
+        "supabase/tests/care_overview.test.sql",
+        "supabase/migrations/202610200001_ownership_sync.sql",
+        "supabase/migrations/202610200003_editorial.sql",
+        "supabase/migrations/202610200011_schedule_calculator.sql",
+        "supabase/migrations/202611150050_revalidate_refreshed_care_calendar.sql",
+        "supabase/migrations/202611150052_routine_soil_check_recurrence.sql",
+        "supabase/migrations/202611150056_require_explicit_contextual_calendar.sql",
+        "supabase/migrations/202611120028_first_aid_control.sql",
+        "supabase/migrations/202611120029_first_aid_action_status.sql",
+        "supabase/migrations/202611120031_first_aid_observation_photo.sql",
+        "supabase/tests/routine_soil_check.test.sql",
+        "supabase/tests/first_aid_observation.test.sql",
+        "supabase/tests/first_aid_control.test.sql",
+        "supabase/functions/plants-api/care-recommendation.ts",
+        "docs/validation/care-overview-staging-baseline-2026-11-19.json",
+        "docs/validation/tester-care-stage1-live-2026-11-19.md",
+        "docs/validation/automation/runs/care-overview-stage2-contract.md",
+        "tools/automation/parallel_backend_quota_gate.py",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "docs/handoff_status.md",
+        "tools/automation/tasks.tester-care-overview-sql-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Honest candidate-base acceptance: prior real run tester-care-overview-sql-20261119-01 Developer1 returned full SQL/TAP; Developer2 repaired legitimate paid-to-Free oversized fixture setup and Developer3 normalized facts timestamps UTC. Full current-root clean/upgrade PASS including overview140 assertions each, but exact92 baseline stopped before overview because current auth_registration_profile.test.sql references account_deleted_runtime_identities from deliberately unapplied unrelated account-delete leaves. Old run is BLOCKED with exhausted3 Developer calls, not accepted. Controller now corrects ONLY staged gate scope; productSQL remains the real Developer candidate. No invented Developer PASS for controller gate or this fresh read-only run.",
+        "Inspect controller gate delta: exact92 local branch validates recorded local source hashes/paths and applies only92 versions+newoverview; populated-upgrade preserves historical rows. It explicitly executes nine care suites (manual/date/profile/next/routine/firstaid/control/observation/photo/overview) and strict nonempty TAP/noSKIP/TODO, while full-current path keeps all existing broad auth/quota/diagnosis/cleanup/concurrency suites. Current auth suite cannot run on recorded92 schema; do not add unrelated migrations or substitute empty success. The trusted wrapper requires overview TAP on BOTH clean and upgrade for BOTH baselines. Test data only, no real staging writes.",
+        "Scope of source withdrawal: existing056/029 authority revalidates published care/condition profiles and embedded approved provenance/evidence. Registry-only status/time changes conservatively alter generation fingerprint, but do not create new applicability or temporal-rights policy; do not claim that broader gate. Preserve exact card parity and accepted single date authority.",
+        "Stage1 is accepted online ordinary Release (b7845 source, parent a79170a evidence); physical offline/iPhone/B07 ordinary positive remain open. This is only SQL and SQL tests, not Today UI, notifications, new content, new intervals, billing, Auth Admin, maintenance or deployment. Do not rewrite applied migrations or accepted writers/resolvers. Do not import catalogue.watering intervals into scheduling or materialize hypothetical future care_tasks.",
+        "Implement public.read_owner_care_overview(p_owner_id UUID,p_after UUID DEFAULT NULL,p_limit INTEGER DEFAULT100) RETURNS JSONB in NEW migration202611190001. Strict limit1..200, no null limit; UUID keyset page ordered by active plant UUID, limit+1 continuation, plants without schedule still included, no silent Free3 truncation for legacy/paid collections. Explicit active permanent profile check; unknown/inactive/anonymous owner rejected. SECURITY DEFINER, empty search_path, read-only/STABLE and service_role EXECUTE only; revoke PUBLIC/anon/authenticated. No writes, locks for writes, receipts or owner watermark advancement.",
+        "Internal service-role RPC envelope: owner_id,server_now,owner_watermark,publication_fingerprint,reminder_hour_local,automation_allowed,verified_access_until,plants[],next_after. owner_watermark is profiles.updated_at (existing monotonic mutation clock), NOT current clock_timestamp on every read. Each plant has plant_id,care_revision,care_profile (raw existing read_plant_care_profile response for later pure HTTP serializer),first_aid_controls[]. Private raw care_profile is RPC-only; later HTTP must prune/validate through existing card serializer. Include only compact firstaid IDs/entry identity/context/policy source/date; never invent an interval or date.",
+        "For routine use current056 read_plant_care_profile and its single resolve_routine_soil_check authority, preserving contextual/paused/withdrawal gates and rule identity. Do not derive a second calendar from raw completed care_tasks or legacy last-watered fields. read_plant_care_profile may return null/no schedule while the plant row remains in the page.",
+        "For firstaid reuse read_first_aid_action (029) plus latest031 eligibility: active supported followup, control_task_id absent, current owner/plant/care_revision/snapshot, linked active nonvoided check_soil entry with first_aid_job_id, successful diagnosis/current published KB and protocol/source evidence. Revalidate current interval/source and policy due_on rather than trusting stored state=active or snapshot policy. Malformed, unsupported, withdrawn or missing evidence gives no dated control. Compare due_on with a trusted computed date instead of unsafe casts of arbitrary JSON. Existing observation/completed/undo/deleted controls excluded; no AI call or treatment chain.",
+        "Access exactly matches public.has_verified_paid_access and Swift SyncWireEntitlementDTO.verifiedAccessUntil: true Free ONLY no entitlement row. active/grace paid valid_until; trial requires valid_until AND trial_end_at and uses min. grace_until does not extend. paused/expired/unknown/malformed entitlement never becomes Free or resumes automation. No new TTL/billing policy. Suppress automated occurrences without affecting manual journal/plant inclusion.",
+        "All pages expose a coherent generation from owner_watermark + publication_fingerprint + access/hour metadata. Publication fingerprint MUST cover actual catalogue/KB publication state and profile/protocol/evidence contents relevant to applicability, including in-place withdrawal within SAME release/without owner mutation. Release IDs alone are insufficient. Do not include private KB bodies in fingerprint output or manufacture an owner mutation to invalidate cache. Capture one statement-time access reference per RPC; do not require equal server_now across pages.",
+        "Add compact meaningful pgTAP suite, synthetic fixtures with rollback, using existing canonical care commands and published Monstera fixture/helpers where reasonable. Prove ACL/search_path/activepermanent owner, foreign owner/plant exclusion, UUID paging with more than3plants and no_schedule rows, stable generation for unchanged data, data/access/hour changes and in-place source withdrawal, read purity (watermarks/receipts/facts/quota unchanged), existing recurrence/correction/undo and condition pause, supported firstaid/observation/withdrawn/no-date controls. Do not replace required scenarios by tautological existence/build tests, SKIP/TODO or hundreds of mirrored JSON lines.",
+        "Controller gate now explicitly invokes care_overview.test.sql on clean and populated-upgrade PG17 clusters, both full current root history and exact92staging versions+this ONE new migration. Controller prepared gate/manifest/baseline doc before Developer; inspect tools/automation/parallel_backend_quota_gate.py changes versus a79170a as part of verification, do not patch protected automation. New suite is NOT autodiscovered. Existing strict TAP plan/prove/no skip and full Deno checks remain. A local pass is not staging deployment/live acceptance.",
+        "All92 recorded staging versions have local immutable source files. Unapplied root migrations include notification projection024 and account deletion leaves065..067/160004/160010..24: never deploy them with care. Future Edge is a NEW standalone GET-only care-overview slug; plants-api33 and analysis-worker9 stay untouched. No credential lookup or bypass of download path guards. This task executes only local isolated PostgreSQL and fixture checks; no server/network data writes.",
+        "Keep the package to two writable files. Use rg and targeted ranges in source/examples, not wholesale unrelated schemas or handoff history. Report actual limits without claiming all MVP parent tasks complete. Meaningful failures go through Developer repair; no weakening existing authority or validators."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "OVSQL1",
+          "description": "Diff and existing full Deno suite pass without changing existing HTTP behavior or writers; new SQL read-only owner/ACL/paging/source/access contract independently reviewed.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests"
+          ]
+        },
+        {
+          "id": "OVSQL2",
+          "description": "Overview140 meaningful pgTAP assertions execute clean+populated upgrade on full current broad gate AND exact92 care-only regression (nine suites), no SKIP/TODO/nonempty TAP, unchanged92 source provenance and no unrelated migrations/server writes.",
+          "mode": "fixture",
+          "checks": [
+            "care-overview-sql"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/tester-care-stage1-live-2026-11-19.md",
+        "docs/validation/care-overview-staging-baseline-2026-11-19.json"
+      ],
+      "candidate_base": "4bba9545092cbe631a30b1e3845dd6fdeede35bd"
+    }
+  ]
+}

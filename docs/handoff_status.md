@@ -1,40 +1,48 @@
 # Narat — текущий статус и передача работы
 
-## Этап 2: подготовлен SQL overview packet — 19 ноября 2026
+## Этап 2: SQL candidate, приёмка ещё не завершена — 19 ноября 2026
 
-Lane ff-only приняла root `a79170a`: online stage 1 PASS зафиксирован в
-`tester-care-stage1-live-2026-11-19.{md,json}`. Дерево ios от b7845 не менялось.
-Физический offline/iPhone и ordinary positive B07 остаются открытыми.
+Реальный run `tester-care-overview-sql-20261119-01` выполнил Developer1
+(SQL160строк + TAP), два узких fixture repair: legitimate paid→Free setup
+коллекции >3 и UTC нормализация сравнения фактов. Product SQL не менялся.
+`read_owner_care_overview(UUID,UUID,INTEGER)` — service-role/read-only,
+active permanent owner, UUID paging, no-schedule rows, текущие056/029
+routine/firstaid authority, access metadata и publication fingerprint.
+Никакого HTTP/Swift/deploy/новых интервалов.
 
-Следующий узкий Developer packet: `tester-care-owner-overview-sql`.
-Новая миграция `202611190001_care_overview_read.sql`, RPC
-`read_owner_care_overview(UUID,UUID,INTEGER)`, tests `care_overview.test.sql`.
-Только read RPC: active permanent owner, service-role ACL, UUID paging,
-no-schedule plants, существующие routine/firstaid authority, publication
-fingerprint и текущая граница доступа. HTTP/client/deployment сюда не входят.
+Реально PASS: diff-check,149 automation tests, полный current-root PG17
+clean + populated upgrade, включая по140 overview assertions и старые
+auth/quota/diagnosis/care/cleanup/race suites. Исходный exact92 baseline
+остановился ДО overview: current auth_registration_profile.test.sql требует
+`account_deleted_runtime_identities` из намеренно неприменённых account-delete
+leaves. Run корректно BLOCKED после трёх Developer calls. Это ошибка scope
+controller gate, не доказанная ошибка read RPC; FAIL сохраняется.
 
-Controller добавил явный `--care-overview` TAP и опциональный строгий
-`--migration-history` в существующий PG17 gate. Проверки запустят новый
-suite на clean/upgrade для полного root и для ровно 92 staging versions
-плюс новой миграции. Список и local source hashes записаны в
-`docs/validation/care-overview-staging-baseline-2026-11-19.json`; hashes
-являются provenance локальных файлов, не доказательством remote DDL bytes.
-Все 92 локальных источника найдены. py_compile/help PASS; отрицательный
-контроль без нового SQL правильно FAIL до запуска PostgreSQL. Реальный
-SQL/TAP пока не запускался, миграция ещё не реализована.
+Controller исправил только staged branch gate: сверяет paths/hashes всех92
+локальных исходников с read-only receipt, применяет ровно их+newoverview,
+сохраняет исторические rows при upgrade и явно исполняет девять care TAP
+suites (manual/date/profile/next/routine/firstaid/observation/photo/overview).
+Полный current broad gate остаётся. Strict TAP plan/prove/noSKIP/TODO не
+ослаблены; непроверенное не объявлено PASS. py_compile/diff-check PASS.
 
-Manifest: `tools/automation/tasks.tester-care-overview-sql.json`.
-Config: ignored `docs/validation/automation/runs/tester-care-overview-sql.config.json`.
-Используется прежняя approved routing/budgets; высокий риск private owner
-RPC выбирает имеющийся high route. Следующий actual run:
-`tester-care-overview-sql-20261119-01`: Developer → Deno/PG17 → Review → QA.
+Следующий точный шаг: новый read-only candidate_base run
+`tester-care-overview-sql-acceptance-20261119-01`, все actual gates →
+high-risk Review → QA → commit/push. Base `4bba9545092cbe631a30b1e3845dd6fdeede35bd`.
+Manifest `tools/automation/tasks.tester-care-overview-sql-acceptance.json`;
+config ignored `docs/validation/automation/runs/tester-care-overview-sql.config.json`.
+Нет фиктивного Developer PASS для controller gate. SQL ещё НЕ принят.
 
-Будущий HTTP — отдельный additive care-overview slug с verified getUser,
-не redeploy plants-api33/worker9. Их metadata/hash получены read-only;
-официальный download остановился на schema path guard, credential lookup
-остановлен. Guard не обходим. Никакого общего db push, pending account
-migrations, новых интервалов, AI или покупок. После принятого SQL — HTTP,
-затем coherent cache/Today; ahead-of-sync DTO не объявляется canonical.
+Source withdrawal здесь означает published profile/protocol/embedded evidence,
+которые проверяют принятые056/029. External registry-only change меняет
+fingerprint, но не вводит новую temporal rights policy. HTTP обязан сохранить
+паритет card serializer и fail closed по access envelope. Затем coherent
+cache/Today; ahead-of-sync DTO не является canonical/actionable автоматически.
+
+Stage1 online ordinary Release PASS зафиксирован root `a79170a`; physical
+offline/iPhone и ordinary positive B07 остаются открытыми. Future HTTP — новый
+additive `care-overview` slug, НЕ redeploy plants-api33/worker9. Current92
+receipt с local provenance в `care-overview-staging-baseline-2026-11-19.json`,
+это НЕ remote DDL byte proof. Никакого общего db push/AI/Auth Admin/покупок.
 
 ## Этап 1: ordinary live online цикл принят — 19 ноября 2026
 

@@ -1,6 +1,7 @@
 """Controller-owned T163 PostgreSQL17 gate; private clusters, synthetic data only."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -844,6 +845,17 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 blocker.kill()
                 blocker.communicate(timeout=10)
 
+    def seed_care_catalogue(db):
+        catalogue = json.loads((ROOT/'catalogue/releases/skeleton-300-v1/plants.json').read_text())
+        plant = next(x for x in catalogue['plants'] if x['plant_id'] == 'monstera_deliciosa')
+        encoded = json.dumps(plant, ensure_ascii=False)
+        assert '$fixture$' not in encoded
+        release = job(880)
+        sql(db, f"INSERT INTO public.catalogue_releases(id, version) VALUES('{release}', 'diagnosis-gate'); "
+            f"SELECT public.upsert_catalogue_skeleton_species('{release}', $fixture${encoded}$fixture$::jsonb, true); "
+            f"SELECT public.publish_catalogue_release('{release}');")
+        return release
+
     try:
         command([str(BIN/'initdb'), '-D', str(work/'data'), '-A', 'trust', '-U', 'postgres', '--no-locale', '--encoding=UTF8'])
         command([str(BIN/'pg_ctl'), '-D', str(work/'data'), '-l', str(work/'postgres.log'), '-o', f'-h "" -k {sock} -p 55493', '-w', 'start'])
@@ -861,6 +873,10 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
             assert len(versions) == len(set(versions)), 'Duplicate staged migration version'
             mapped = {m.name.split('_', 1)[0]: m for m in migrations}
             assert set(versions) <= set(mapped), 'Staged migration source missing locally'
+            for row in rows:
+                source = mapped[row['version']]
+                assert source.relative_to(ROOT).as_posix() == row.get('local_file'), 'Staged source path differs from receipt'
+                assert hashlib.sha256(source.read_bytes()).hexdigest() == row.get('local_sha256'), 'Staged local source differs from recorded provenance'
             overview_version = CARE_OVERVIEW.split('_', 1)[0]
             assert overview_version not in versions, 'New overview is already in recorded baseline'
             selected = [m for m in selected if m.name.split('_', 1)[0] in set(versions) or m.name == CARE_OVERVIEW]
@@ -918,6 +934,26 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
                 after = snapshot(case)
                 assert all(after[t] == value for t,value in before.items()), 'Forward upgrade changed legacy rows/owners/leases/counters/receipts'
                 print('PASS upgrade: every preexisting public row retained byte-for-byte', flush=True)
+            if args.migration_history:
+                # This receipt deliberately excludes pending account-deletion
+                # leaves. Current auth tests require their runtime identity table;
+                # never apply unrelated SQL just to make that suite executable.
+                # The full-current path below still executes every broad suite.
+                seed_care_catalogue(case)
+                for suite in (
+                    'manual_care_journal.test.sql',
+                    'manual_care_date_correction.test.sql',
+                    'plant_care_profile_read.test.sql',
+                    'plant_next_check.test.sql',
+                    'routine_soil_check.test.sql',
+                    'first_aid_control.test.sql',
+                    'first_aid_observation.test.sql',
+                    'first_aid_observation_photo.test.sql',
+                    'care_overview.test.sql',
+                ):
+                    tap(case, ROOT/'supabase/tests'/suite)
+                print(f'PASS {case}: exact staged history care-only regression; no unrelated schema applied', flush=True)
+                continue
             if args.baseline:
                 sql(case, f"UPDATE public.profiles SET first_starter_success_at='2026-10-01' WHERE id='{A}'; INSERT INTO public.installation_access(id,credential_hash,starter_identification_consumed,starter_diagnosis_consumed) VALUES('{job(101)}','baseline-fixture',true,true);")
                 old = json.loads(sql(case, f"SELECT public.admit_analysis_quota('diagnosis','{A}','{job(101)}','{job(901)}','{NOW}');"))
@@ -945,14 +981,7 @@ SELECT pg_temp.probe_legacy_flip()::text;"""
             if args.diagnosis_upload:
                 tap(case, ROOT/'supabase/tests/diagnosis_upload.test.sql')
             if args.diagnosis_jobs:
-                catalogue = json.loads((ROOT/'catalogue/releases/skeleton-300-v1/plants.json').read_text())
-                plant = next(x for x in catalogue['plants'] if x['plant_id'] == 'monstera_deliciosa')
-                encoded = json.dumps(plant, ensure_ascii=False)
-                assert '$fixture$' not in encoded
-                release = job(880)
-                sql(case, f"INSERT INTO public.catalogue_releases(id, version) VALUES('{release}', 'diagnosis-gate'); "
-                    f"SELECT public.upsert_catalogue_skeleton_species('{release}', $fixture${encoded}$fixture$::jsonb, true); "
-                    f"SELECT public.publish_catalogue_release('{release}');")
+                release = seed_care_catalogue(case)
                 tap(case, ROOT/'supabase/tests/diagnosis_jobs.test.sql')
                 if any(m.name == '202611160001_diagnosis_plant_photo.sql' for m in selected):
                     tap(case, ROOT/'supabase/tests/diagnosis_plant_photo.test.sql')
