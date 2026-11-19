@@ -12,6 +12,14 @@ entitlement=null. Локальной квитанции app create у этой �
 и токенов. Runtime/БД менялись лишь штатным созданием этой тестовой карточки;
 новый полив и UI-путь ещё не проверены. `git diff --check` — PASS.
 
+Дополнительный read-only HTTP подтвердил текущую рекомендацию Monstera:
+available/check_soil, interval7, источник есть; next_check/routine_check
+пока отсутствуют. Harness также проверит enable/refresh, дату после полива,
+её сдвиг после исправления и отсутствие даты после отмены единственного факта.
+После расширения harness py_compile и root diff-check — PASS. Уточнена
+документация API: SavedWateringOutcome имеет четыре состояния, удаление
+проверяется guard, отдельного deleted case нет.
+
 Сейчас оркестратор выполняет `tester-care-record-ui-20261119-01`
 (preparation `87be27a`, config `tester-care-ui.config.json` в ignored runs).
 Первый Developer turn; новый UI ещё не принят. Simulator/Xcode в root
@@ -27,7 +35,7 @@ harness. Контроллер параллельно готовит следую
 Изменены `CollectionRepository.swift`, `LocalStore.swift`, `SyncEngine.swift`
 и `CollectionWireTests.swift`: owner-bound enqueue/retry существующей
 карточки, сохранение операции на диск, общий canonical identity probe,
-честные confirmed/pending/rejected/unconfirmed/deleted outcomes. Вызов не
+честные confirmed/pending/rejected/unconfirmed outcomes и проверка удаления. Вызов не
 требует create-confirmation, профиля, включённой автоматики или подписки.
 Старый post-save record также проверяет canonical identity и ACK.
 Точечный permanent rejection не превращает dequeue в ложный успех.

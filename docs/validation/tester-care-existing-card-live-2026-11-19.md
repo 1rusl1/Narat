@@ -13,6 +13,10 @@ plastic pot — как в существующем опубликованном 
 Новые рекомендации, Auth Admin, SQL-изменения, AI и покупки не использованы.
 Тестовая карточка оставлена для следующего прогона; повторную не создавать.
 
+Отдельное живое readback рекомендации: available, check_soil, опубликованный
+интервал проверки 7 дней и источник; next_check/routine_check отсутствуют
+до факта ухода и включения/явного обновления. Это не готовая задача.
+
 Детерминированный harness: `/private/tmp/narat-tester-care-live.py`.
 `python3 -m py_compile` — PASS; реальный режим `prepare` — PASS.
 Operation/receipt/UUID сохранены в локальном файле режима 0600:
@@ -22,7 +26,8 @@ Operation/receipt/UUID сохранены в локальном файле ре�
 После приёмки UI-пакета: собрать подписанный ordinary EN Release с чистого
 accepted SHA, проверить отсутствие DEBUG fixtures, установить в выделенный
 Simulator и выполнить collection → existing card → Record watering →
-канонический журнал → cold reopen → correct date → cold reopen → undo →
+канонический журнал → enable/refresh текущего ухода → следующая дата →
+cold reopen → correct date/пересчёт → cold reopen → undo →
 cold reopen. HTTP-readback должен подтвердить один исходный факт, тот же
 operation/entry ID, исправленную дату и voided после отмены. App запускать
 без тестовых аргументов. До согласованного освобождения Simulator/Xcode
