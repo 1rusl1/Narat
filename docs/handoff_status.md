@@ -1,5 +1,53 @@
 # Narat — текущий статус и передача работы
 
+## Приняты lifecycle и восстановление ухода — 19 ноября 2026
+
+Интегрирован `b7845a8`, продуктовые файлы равны frozen candidate `df71eb5`.
+Изменены PlantsApp.swift, CollectionRepository.swift, SyncEngine.swift,
+GuestCatalogueView.swift, CatalogueUIFixtures.swift, CollectionWireTests.swift,
+CatalogueSaveUITests.swift; добавлены manifests и отчёт
+`docs/validation/automation/tasks/tester-care-owner-reconcile-recovery-acceptance.md`.
+Один Root monitor/coordinator отправляет owner-bound очередь при foreground/
+reconnect, сериализует смену lease и один busy-wakeup без polling/feedback.
+Карточка перечитывает canonical/cache, при idle проверяет актуальность совета
+даже при пустом delta; expiry применяется и во время UI write. Missing cached
+conditions не блокируют ручной полив после успешного pending-identity read.
+
+Known terminal record rejection до receipt остаётся в той же outbox с version1
+error marker: после cold виден needs-review и тот же UUID, автоматические повторы
+остановлены, цепочка этого растения не обходится. Явный exact retry и старый
+post-save ordered retry работают; accepted receipt + failed canonical read не
+становится terminal. Неопределённый outcome не разблокируется пустой историей:
+Reload подтверждает только положительным linkage, explicit original retry
+сохраняет прежние UUID/body. Новый schema/server protocol не добавлены.
+
+Run `tester-care-reconcile-recovery-acceptance-20261119-01`: 327 Swift
+(324 XCTest+3 Swift Testing), 149 automation, ordinary welcome1, MCP,
+13 EN care UI (skipped/missing0), fresh Review/QA — PASS. Отдельный read-only
+fixture ledger подтвердил ровно4 POST: первые3 byte-identical/same operation,
+четвёртый новый intent, ровно1 committed fact. Это fixtures/transport;
+source withdrawal/expiry/reconnect UI не выдаются за физический radio test.
+Первый wiring run с 10/12 PASS сохранён: исправлены Close label и nil condition
+flag, assertions не ослаблены; последующий whole13 run прошёл заново.
+
+Root: семь Swift побайтно равны accepted SHA; весь ios diff df71→b784 пуст,
+diff-check PASS, suites повторно не запускались. Исходные пользовательские
+pbxproj/две xcstrings сохранены вне commit. Frozen ordinary signed EN Release
+на df71 собран, staging host/fixture exclusion проверены. Живой V2 текущего
+цикла ещё выполняется через shared resource на owned Simulator; новый PASS
+до его результата не объявляется. Private driver session24495, checkpoint
+`/private/tmp/narat-tester-care-wiring-live-evidence-20261119/checkpoint.json`.
+Точный следующий шаг: завершить bounded V2 record/routine/undo/conditions-pause/
+refresh/cold, оформить реальные HTTP/UI результаты; затем этап Today.
+Физический iPhone/offline, полный T065 и B01–B11 остаются открытыми.
+
+Параллельная подготовка backend была только read-only: актуальный plants-api
+ACTIVE v33/hash и 92 migration version/name прочитаны. CLI source download
+остановлен path safety на легитимном contracts/schema вне functions-root;
+развёртывания/SQL/данных/секретных exports не было. Для Today потребуется
+полный source под version/hash fence в новой tmp-папке; старый stage-exact
+может откатить позднюю диагностику и не используется как current baseline.
+
 ## Принят общий проход сохранённого ухода — 19 ноября 2026
 
 Интегрирован `000e230`: CollectionRepository.reconcilePendingCare и общий
@@ -238,6 +286,96 @@ Routing/checks взяты из последнего согласованного
 Точный следующий шаг: дождаться baseline gate в указанном worktree,
 устранить выявленные ошибки, затем через следующие узкие пакеты завершить
 цикл ухода и перейти к canonical списку/«Сегодня», затем reminders.
+## Wiring01: реальный FAIL и расширенный recovery candidate — 19 ноября 2026
+
+Wiring01 на `7ec6db2` завершился BLOCKED: 323 Swift, welcome 1,
+149 automation, MCP и Review 1 PASS; 10 из 12 UI PASS. Два FAIL сохранены:
+второй collection.back имеет label Close; missing condition row возвращает
+nil. Исправлены label и detailsReadFailed при nil с заданным snapshot ID.
+Source withdrawal с пустым окном, typed edit и оба expiry tests прошли;
+старый run не объявляется PASS. Artifact: q-263299ec81468f2d26b8d175.
+
+Собран controller candidate: родитель и care_sources подготовили terminal
+marker, три disk/receipt/post-save tests, Guest recovery, Repo frozen retry
+и ещё один disk test вне checkout. Child проверил и применил hunks,
+добавил fixture/UI13 и обновление истории после положительного original
+retry. Успешный Developer call не подставлялся.
+
+Terminal rejection до receipt сохраняет versioned marker в существующем
+outbox.lastError. Operation и ошибка переживают cold launch; automatic
+drains пропускают marker и блокируют цепочку этого растения. Plain JSON
+и ошибка canonical GET после accepted receipt остаются обычным pending.
+Explicit saved-card Retry отправляет тот же op. Post-save Retry допускает
+только точный reviewingWateringOperation внутри прежних ordering и
+confirmation guards; при ошибке сохраняет marker и возвращает false,
+при успехе требует canonical proof.
+
+Исчезновение queue не означает success: UI сохраняет frozen original и
+блокирует новый UUID. Reload подтверждает только положительный факт;
+отрицательное окно block не снимает. Explicit Retry original сохраняет
+и повторяет тот же UUID/body через существующий outbox. Новое намерение
+разрешается после positive proof либо explicit terminal outcome. Passive
+reread не включает новый Record до проверки. Restored terminal показывает
+needs-review с original UUID и обычным Retry.
+
+Trusted gate: 13 named UI, без skips/missing. Новый сценарий проверяет
+pre-commit loss → Root 409 → cold с тем же op/error → foreground без resend
+→ explicit Retry 409 → новое намерение и один факт. Fixture отклоняет
+новый intent при лишнем automatic request. Read-only ledger gate требует
+4 POST: первые три идентичны, четвёртый новый, commit ровно один. SDK-файл
+не читается. Pure validator: valid + 7 negative variants PASS; py_compile
+PASS. Это проверка gate, а не приёмка приложения.
+
+Следующий run: `tester-care-reconcile-recovery-acceptance-20261119-01`.
+Manifest: `tools/automation/tasks.tester-care-reconcile-recovery-acceptance.json`.
+Config: ignored `docs/validation/automation/runs/tester-care-expanded-shared.config.json`.
+Обязательны свежие build/unit/welcome/MCP/13 UI/Review/QA. Затем родитель
+проверяет ordinary signed V2 на принятом SHA. Физический offline/iPhone
+ещё отдельно не приняты; stage 1, B01–B11 и родительские checkbox остаются
+частичными. Today не начат.
+
+## Принят care core; candidate lifecycle/closed-card reconcile — 19 ноября 2026
+
+Core run02 принят и отправлен `000e23054fb17d54540e23da5e7e559b5989c20f`:
+322Swift (319XCTest+3SwiftTesting), welcome1,MCP,149automation,
+fresh Review1/QA1 PASS. Run01 compileFAIL сохранён, единственное mechanical
+исправление — typed edit.envelope в test. Полный care stage1 ещё не закрыт.
+
+Собран явно НЕпринятый controller candidate в6existingSwiftfiles:
+App Root owner/foreground/reconnect coordinator; SyncEngine owner idle stream;
+Guest card local canonical rereads + once-per-idle/foreground advice GET;
+CollectionWireTests purecoalescer regression appended after6coretests;
+CatalogueUIFixtures/UITests детерминированные lifecycle сценарии.
+Источник productiondraft — parent/care_sources в /tmp вне activecheckout;
+child проверил и применил hunks, добавил согласованные DEBUG fixtures,
+UI assertions и Guest детали. Успешного Developer call не подставляли.
+
+Root не зависит от открытой карточки, сохраняет latest generation,
+обрабатывает busy только по idle-event без polling/self-retry.
+Access читается до busy guard; expiry снимает будущие controls, ручная
+история сохраняется. Missing optional condition row даёт отдельное
+'Some plant details are unavailable.', не ложную ошибку редактирования.
+Advice GET на owner idle нужен также при empty delta/remote source change;
+GET не публикует sync и не запускает drain. DEBUG-only withdrawal phase
+доказывает unchanged watermark+empty changes и снятие даты на открытой
+карточке, не меняет настоящую KB/SQL.
+
+Trusted UI gate расширен до12named tests с zero skips/missing:
+9existing care, missingconditions, wateringFrequencyEdit и lateEntitlement.
+JWT расширен только на выбранные care fixtures+representative typed edit;
+watering network flag остаётся offline через cold launch до явного DEBUG
+Root reconnect. Postcold assertions проверяют автоматическую canonical
+доставку, initial pending/exact body/onefact не ослаблены. Это fixture
+fault injection, не физический offline/device proof.
+
+Следующий actual read-only run:
+`tester-care-reconcile-wiring-acceptance-20261119-01`, manifest
+`tools/automation/tasks.tester-care-reconcile-wiring-acceptance.json`,
+ignored `docs/validation/automation/runs/tester-care-lifecycle-shared.config.json`.
+После реальных gates/Review/QA parent повторит ordinary signed live на
+existing Monstera, затем Today. Новые Auth/AI/purchases/SQL не выполнялись;
+родительские task checkbox и B01–B11 остаются открыты.
+
 ## Core candidate: mechanical typed fixture repair — 19 ноября 2026
 
 Read-only core acceptance01 честно BLOCKED на compile gate: новый test
@@ -3848,8 +3986,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-owner-reconcile-core-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 162.23 с, проверки — 183.44 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-owner-reconcile-core-acceptance](validation/automation/tasks/tester-care-owner-reconcile-core-acceptance.md).
+tester-care-owner-reconcile-recovery-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 245.50 с, проверки — 677.68 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-owner-reconcile-recovery-acceptance](validation/automation/tasks/tester-care-owner-reconcile-recovery-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

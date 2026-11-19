@@ -8090,3 +8090,350 @@ extension CollectionWireTests {
         }
     }
 }
+
+extension CollectionWireTests {
+    @MainActor
+    func testCareLifecycleBusyIdleRaceCoalescesLatestRequestWithoutSelfRetries() async throws {
+        let coordinator = CareLifecycleCoordinator()
+        var calls = 0
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            coordinator.request {
+                calls += 1
+                if calls == 1 {
+                    // Deliberately signal before .busy is returned. No timer/poll is used.
+                    coordinator.didBecomeIdle()
+                    return .busy
+                }
+                XCTAssertEqual(calls, 2)
+                if calls == 2 { done.resume() }
+                return .pending
+            }
+        }
+        XCTAssertEqual(calls, 2)
+        // A successful/pending pass must not convert its own idle event into more work.
+        coordinator.didBecomeIdle()
+        coordinator.didBecomeIdle()
+        var release: CheckedContinuation<Void, Never>?
+        var cancelledOld = false
+        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+            coordinator.request {
+                await withCheckedContinuation { continuation in
+                    release = continuation
+                    entered.resume()
+                }
+                cancelledOld = Task.isCancelled
+                return .busy // A cancelled operation can still report busy late.
+            }
+        }
+        var obsolete = 0, latest = 0
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            coordinator.request(replacingCurrent: true) { obsolete += 1; return .completed }
+            coordinator.request(replacingCurrent: true) { latest += 1; done.resume(); return .completed }
+            release?.resume()
+        }
+        XCTAssertTrue(cancelledOld)
+        XCTAssertEqual(obsolete, 0)
+        XCTAssertEqual(latest, 1)
+        XCTAssertEqual(calls, 2)
+        var staleCalls = 0
+        var releaseStale: CheckedContinuation<Void, Never>?
+        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+            coordinator.request {
+                staleCalls += 1
+                if staleCalls == 1 {
+                    await withCheckedContinuation { continuation in
+                        releaseStale = continuation
+                        entered.resume()
+                    }
+                }
+                return .busy
+            }
+        }
+        let cancellation = coordinator.suspend()
+        releaseStale?.resume()
+        await cancellation?.value
+        coordinator.didBecomeIdle()
+        coordinator.didBecomeIdle()
+        XCTAssertEqual(staleCalls, 1, "Late busy must not revive the suspended lifecycle request")
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testCareTerminalWateringRejectionSurvivesRestartUntilExactExplicitRetry() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rejection = try syncJSON(["error": ["code": "CONFLICT", "message": "Fixture rejection", "retryable": false]])
+        let empty = try careReconcilePage(syncUntil)
+        let command: CommandEnvelopeDTO
+        let rejectedSnapshot: OutboxEntrySnapshot
+        let later = try PlantEditCommand.make(plantId: serverPlantId, change: .watering(.weekly)).envelope
+        let foreign = try ManualWateringAction.record.envelope(plantId: UUID())
+        let foreignBefore: [OutboxEntrySnapshot]
+        let firstTransport = CatalogueTransport([
+            .http(200, try savedWateringBaseline()), .http(409, rejection), .http(200, empty)
+        ])
+        do {
+            let api = client(firstTransport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let engine = SyncEngine(store: store, apiClient: api)
+            _ = try await engine.pullDelta(for: syncOwner)
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+            try await repo.enqueueWateringEdit(.record, plantId: serverPlantId, context: lease)
+            let pending = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+            command = try XCTUnwrap(pending)
+            for (owner, envelope) in [(syncOwner, later), (otherSyncOwner, foreign)] {
+                _ = try await store.enqueueCommand(operationId: envelope.operationId, ownerId: owner,
+                    plantId: envelope.plantId, commandName: envelope.commandName, payloadJSON: envelope.payloadJSON)
+            }
+            foreignBefore = try await store.pendingOutboxEntries(for: otherSyncOwner)
+            let outcome = try await repo.reconcilePendingCare(context: lease)
+            XCTAssertEqual(outcome, .pending)
+            let retained = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(retained.map(\.envelope), [command, later])
+            rejectedSnapshot = try XCTUnwrap(retained.first)
+            XCTAssertEqual(rejectedSnapshot.envelope, command)
+            XCTAssertEqual(rejectedSnapshot.retryCount, 1)
+            XCTAssertEqual(rejectedSnapshot.lastAPIError?.error.code, "CONFLICT")
+            let marker = try JSONDecoder().decode(PersistedWateringRejection.self,
+                from: Data(try XCTUnwrap(rejectedSnapshot.lastError).utf8))
+            XCTAssertTrue(marker.requiresExplicitWateringRetry)
+            XCTAssertEqual(marker.wateringRejectionVersion, 1)
+            XCTAssertTrue(PersistedWateringRejection.requiresReview(rejectedSnapshot))
+        }
+        // New container, API, engine and lease: no in-memory failed-action state survives.
+        let transport = CatalogueTransport([.http(200, empty), .http(409, rejection)])
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+        let restored = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(restored.first, rejectedSnapshot)
+        let review = try await repo.pendingWateringRecordRequiresReview(command, context: lease)
+        XCTAssertTrue(review)
+        let automatic = try await repo.reconcilePendingCare(context: lease)
+        let generic = try await engine.flushOutbox(context: lease)
+        XCTAssertEqual(automatic, .pending)
+        XCTAssertEqual(generic, 0)
+        let afterAutomatic = try await store.pendingOutboxEntries(for: syncOwner)
+        let foreignAfter = try await store.pendingOutboxEntries(for: otherSyncOwner)
+        XCTAssertEqual(afterAutomatic, restored) // Exact body, retryCount, error and ordering unchanged.
+        XCTAssertEqual(foreignAfter, foreignBefore)
+        let automaticRequests = await transport.capturedRequests()
+        XCTAssertEqual(automaticRequests.map(\.httpMethod), ["GET"])
+
+        // An explicit retry sends the frozen intent once; terminal rejection removes only it.
+        let retry = try await repo.retrySavedPlantWatering(command, context: lease)
+        XCTAssertEqual(retry, .rejected)
+        let afterRetry = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(afterRetry, Array(restored.dropFirst()))
+        let firstRequests = await firstTransport.capturedRequests()
+        let retryRequests = await transport.capturedRequests()
+        let firstPOST = try XCTUnwrap(firstRequests.first { $0.httpMethod == "POST" })
+        let retryPOSTs = retryRequests.filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(retryPOSTs.count, 1)
+        XCTAssertEqual(retryPOSTs.first?.httpBody, firstPOST.httpBody)
+        XCTAssertEqual(retryPOSTs.first?.value(forHTTPHeaderField: "X-Operation-Id"),
+                       firstPOST.value(forHTTPHeaderField: "X-Operation-Id"))
+        let noLongerReview = try await repo.pendingWateringRecordRequiresReview(command, context: lease)
+        XCTAssertFalse(noLongerReview)
+        try await repo.enqueueWateringEdit(.record, plantId: serverPlantId, context: lease)
+        let newIntent = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+        XCTAssertNotEqual(try XCTUnwrap(newIntent).operationId, command.operationId)
+
+        // A plain old API error, malformed/versioned data, or another command never acquires this meaning.
+        func snapshot(_ raw: String, commandName: String? = nil) -> OutboxEntrySnapshot {
+            OutboxEntrySnapshot(operationId: rejectedSnapshot.operationId, ownerId: rejectedSnapshot.ownerId,
+                plantId: rejectedSnapshot.plantId, commandName: commandName ?? rejectedSnapshot.commandName,
+                payloadJSON: rejectedSnapshot.payloadJSON, sequenceNumber: rejectedSnapshot.sequenceNumber,
+                retryCount: rejectedSnapshot.retryCount, lastError: raw, createdAt: rejectedSnapshot.createdAt)
+        }
+        let stored = try XCTUnwrap(rejectedSnapshot.lastError)
+        var markerObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(stored.utf8)) as? [String: Any])
+        var wrongVersion = markerObject
+        wrongVersion["wateringRejectionVersion"] = 2
+        var retryable = markerObject
+        retryable["error"] = ["code": "CONFLICT", "message": "Try later", "retryable": true]
+        markerObject["requiresExplicitWateringRetry"] = false
+        var malformed = wrongVersion
+        malformed["wateringRejectionVersion"] = "1"
+        for raw in [rejection, "{malformed", try syncJSON(malformed), try syncJSON(wrongVersion),
+                    try syncJSON(retryable), try syncJSON(markerObject)] {
+            XCTAssertFalse(PersistedWateringRejection.requiresReview(snapshot(raw)), raw)
+        }
+        XCTAssertFalse(PersistedWateringRejection.requiresReview(
+            snapshot(stored, commandName: ManualWateringAction.undoCommand)))
+    }
+
+    @MainActor
+    func testAcceptedWateringReceiptThenForbiddenCanonicalReadRemainsReplayable() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let fact = UUID(), watermark = "2026-11-03T09:10:00.000001+00:00"
+        let command = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+        var receipt = manualWateringReceipt(entryId: fact, state: "active")
+        receipt["watermark"] = watermark
+        var row = syncChange(watermark, id: fact.uuidString, entity: "care_entries")
+        row["data"] = ["id": fact.uuidString, "plant_id": serverPlantId.uuidString,
+            "operation_id": command.operationId.uuidString, "task_id": NSNull(), "action_code": "water",
+            "state": "active", "timezone": "UTC", "occurred_at": "2026-11-02T07:00:00Z",
+            "occurred_local_date": "2026-11-02"] as [String: Any]
+        let forbidden = try syncJSON(["error": ["code": "FORBIDDEN", "message": "Canonical read failed", "retryable": false]])
+        let accepted = try syncJSON(receipt)
+        let transport = CatalogueTransport([
+            .http(200, try savedWateringBaseline()),
+            .http(200, accepted), .http(403, forbidden), .http(403, forbidden),
+            .http(200, accepted), .http(200, try careReconcilePage(watermark, changes: [row])),
+            .http(200, try careReconcilePage(watermark))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        _ = try await engine.pullDelta(for: syncOwner)
+        _ = try await store.enqueueCommand(operationId: command.operationId, ownerId: syncOwner,
+            plantId: serverPlantId, commandName: command.commandName, payloadJSON: command.payloadJSON)
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+        do {
+            _ = try await repo.reconcilePendingCare(context: lease)
+            XCTFail("The outer canonical read should fail too")
+        } catch let error as APIErrorResponse {
+            XCTAssertEqual(error.error.code, "FORBIDDEN")
+        }
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        let retained = try XCTUnwrap(pending.first)
+        XCTAssertEqual(pending.map(\.envelope), [command])
+        XCTAssertEqual(retained.lastAPIError?.error.code, "FORBIDDEN")
+        XCTAssertFalse(PersistedWateringRejection.requiresReview(retained))
+        let review = try await repo.pendingWateringRecordRequiresReview(command, context: lease)
+        XCTAssertFalse(review) // The receipt was accepted; a failed read must not become terminal rejection.
+        let replayOutcome = try await repo.reconcilePendingCare(context: lease)
+        XCTAssertEqual(replayOutcome, .completed)
+        let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(remaining.isEmpty)
+        let history = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history.map(\.operationId), [command.operationId])
+        let requests = await transport.capturedRequests()
+        let posts = requests.filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(posts.count, 2)
+        XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+        XCTAssertEqual(posts.first?.value(forHTTPHeaderField: "X-Operation-Id"),
+                       posts.last?.value(forHTTPHeaderField: "X-Operation-Id"))
+    }
+
+    @MainActor
+    func testPostSaveExplicitWateringRetryReviewsMarkerWithoutFalseConfirmation() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let create = createCommand()
+        _ = try await seedEngineCreate(url, command: create)
+        let command = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+        let fact = UUID(), watermark = "2026-11-03T09:10:00.000001+00:00"
+        let rejection = try syncJSON(["error": ["code": "CONFLICT", "message": "Fixture rejection", "retryable": false]])
+        var receipt = manualWateringReceipt(entryId: fact, state: "active")
+        receipt["watermark"] = watermark
+        var row = syncChange(watermark, id: fact.uuidString, entity: "care_entries")
+        row["data"] = ["id": fact.uuidString, "plant_id": serverPlantId.uuidString,
+            "operation_id": command.operationId.uuidString, "task_id": NSNull(), "action_code": "water",
+            "state": "active", "timezone": "UTC", "occurred_at": "2026-11-02T07:00:00Z",
+            "occurred_local_date": "2026-11-02"] as [String: Any]
+        let transport = CatalogueTransport([
+            .http(200, try savedWateringBaseline()), .http(409, rejection),
+            .http(200, try careReconcilePage(syncUntil)), .http(409, rejection),
+            .http(200, try syncJSON(receipt)), .http(200, try careReconcilePage(watermark, changes: [row]))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        // Persist the real create receipt using the existing guarded ACK, not a hand-built confirmation.
+        try await store.acknowledgeCatalogueCreate(
+            create, receipt: decodedCreateReceipt(), context: lease, authority: api.syncAuthority
+        )
+        let saved = try await store.catalogueCreateConfirmation(ownerId: syncOwner, operationId: create.operationId)
+        let confirmation = try XCTUnwrap(saved)
+        let engine = SyncEngine(store: store, apiClient: api)
+        _ = try await engine.pullDelta(for: syncOwner)
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+        try await store.enqueueManualWatering(command, context: lease, authority: api.syncAuthority)
+        let background = try await repo.reconcilePendingCare(context: lease)
+        XCTAssertEqual(background, .pending)
+        let initiallyMarked = try await repo.pendingWateringRecordRequiresReview(command, context: lease)
+        XCTAssertTrue(initiallyMarked)
+        let rejected = try await repo.submitManualWatering(command, confirmation: confirmation, context: lease)
+        XCTAssertFalse(rejected)
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(pending.map(\.envelope), [command])
+        let retained = try XCTUnwrap(pending.first)
+        XCTAssertEqual(retained.retryCount, 2)
+        XCTAssertTrue(PersistedWateringRejection.requiresReview(retained))
+        XCTAssertEqual(retained.lastAPIError?.error.code, "CONFLICT")
+        let confirmed = try await repo.submitManualWatering(command, confirmation: confirmation, context: lease)
+        XCTAssertTrue(confirmed)
+        let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(remaining.isEmpty)
+        let history = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history.map(\.operationId), [command.operationId])
+        let requests = await transport.capturedRequests()
+        let posts = requests.filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(posts.count, 3)
+        let bodies = try posts.map { try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap($0.httpBody)) }
+        XCTAssertEqual(bodies, [command, command, command])
+        XCTAssertEqual(Set(posts.compactMap(\.httpBody)).count, 1)
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testExplicitOrphanWateringRetryPersistsFrozenIdentityBeforeLostResponseAndReplays() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let original = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+        let transport = SavedWateringReplayTransport(baseline: try savedWateringBaseline(), plantId: serverPlantId)
+        do {
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let engine = SyncEngine(store: store, apiClient: api)
+            _ = try await engine.pullDelta(for: syncOwner)
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+            let initiallyEmpty = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(initiallyEmpty.isEmpty)
+            // Explicit recovery starts with no queue row; the first POST commits but loses its response.
+            let pending = try await repo.retryUncertainSavedPlantWatering(original, context: lease)
+            XCTAssertEqual(pending, .pending)
+            let durable = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(durable.map(\.envelope), [original])
+        }
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let repo = CollectionRepository(store: store, apiClient: api,
+                                        syncEngine: SyncEngine(store: store, apiClient: api))
+        let restored = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(restored.map(\.envelope), [original])
+        let confirmed = try await repo.retryUncertainSavedPlantWatering(original, context: lease)
+        XCTAssertEqual(confirmed, .confirmed)
+        let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(remaining.isEmpty)
+        let history = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history.map(\.operationId), [original.operationId])
+        let requests = await transport.capturedRequests()
+        let posts = requests.filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(posts.count, 2)
+        let commands = try posts.map { try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap($0.httpBody)) }
+        XCTAssertEqual(commands, [original, original])
+        XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+        XCTAssertEqual(posts.first?.value(forHTTPHeaderField: "X-Operation-Id"),
+                       posts.last?.value(forHTTPHeaderField: "X-Operation-Id"))
+        let factCount = await transport.journalCount()
+        XCTAssertEqual(factCount, 1)
+    }
+}

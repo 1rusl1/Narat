@@ -102,6 +102,7 @@ public actor SyncEngine {
     private let apiClient: PlantsAPIClient
     private var drainingOwners = Set<UUID>()
     private var reconcilingCareOwners = Set<UUID>()
+    private var outboxIdleObservers: [UUID: (owner: UUID, continuation: AsyncStream<Void>.Continuation)] = [:]
     private var planHistoryByOwner: [UUID: [UUID: CachedPlanHistoryEntry]] = [:]
     private var reportCacheByOwner: [UUID: [String: ProgressReportDTO]] = [:]
     private var canonicalSyncObservers: [UUID: AsyncStream<Void>.Continuation] = [:]
@@ -109,6 +110,31 @@ public actor SyncEngine {
     public init(store: LocalStore, apiClient: PlantsAPIClient) {
         self.store = store
         self.apiClient = apiClient
+    }
+
+    /// A lock-release signal, independent of canonical sync publication.
+    func outboxIdleUpdates(for ownerId: UUID) -> AsyncStream<Void> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        outboxIdleObservers[id] = (ownerId, continuation)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeOutboxIdleObserver(id) }
+        }
+        return stream
+    }
+
+    private func removeOutboxIdleObserver(_ id: UUID) { outboxIdleObservers[id] = nil }
+
+    private func publishOutboxIdle(for ownerId: UUID) {
+        guard !drainingOwners.contains(ownerId), !reconcilingCareOwners.contains(ownerId) else { return }
+        for observer in outboxIdleObservers.values where observer.owner == ownerId {
+            observer.continuation.yield(())
+        }
+    }
+
+    private func releaseOutboxOwner(_ ownerId: UUID) {
+        drainingOwners.remove(ownerId)
+        publishOutboxIdle(for: ownerId)
     }
 
     func canonicalSyncUpdates() -> AsyncStream<Void> {
@@ -134,9 +160,13 @@ public actor SyncEngine {
     }
 
     /// Repository composition keeps one bound lease through refresh, drain and disk read.
-    func flushOutbox(context: SyncSessionLease) async throws -> Int {
+    func flushOutbox(
+        context: SyncSessionLease, reviewingWateringOperation: UUID? = nil
+    ) async throws -> Int {
         try apiClient.syncAuthority.withBoundValid(context) {}
-        return try await flushOutbox(for: context.ownerId, context: context)
+        return try await flushOutbox(
+            for: context.ownerId, context: context, reviewingWateringOperation: reviewingWateringOperation
+        )
     }
 
     func flushPlantDeletions(context: SyncSessionLease) async throws {
@@ -155,7 +185,10 @@ public actor SyncEngine {
         try Task.checkCancellation()
         try apiClient.syncAuthority.withPermanentBoundValid(context) {}
         guard reconcilingCareOwners.insert(context.ownerId).inserted else { return .busy }
-        defer { reconcilingCareOwners.remove(context.ownerId) }
+        defer {
+            reconcilingCareOwners.remove(context.ownerId)
+            publishOutboxIdle(for: context.ownerId)
+        }
         do {
             _ = try await flushOutbox(for: context.ownerId, context: context, careOnly: true)
         } catch CareDrainFailure.busy {
@@ -190,7 +223,7 @@ public actor SyncEngine {
             context: context, authority: apiClient.syncAuthority
         )?.envelope == command.envelope else { return .unconfirmed }
         guard drainingOwners.insert(context.ownerId).inserted else { return .pending }
-        defer { drainingOwners.remove(context.ownerId) }
+        defer { releaseOutboxOwner(context.ownerId) }
         return try await sendProfileReminderHour(command, context: context)
     }
 
@@ -231,7 +264,7 @@ public actor SyncEngine {
 
     private func flushOutbox(
         for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil,
-        careOnly: Bool = false
+        careOnly: Bool = false, reviewingWateringOperation: UUID? = nil
     ) async throws -> Int {
         guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
@@ -240,7 +273,7 @@ public actor SyncEngine {
             if careOnly { throw CareDrainFailure.busy }
             return 0
         }
-        defer { drainingOwners.remove(ownerId) }
+        defer { releaseOutboxOwner(ownerId) }
         let pending = try await store.pendingOutboxEntries(for: ownerId)
         try await apiClient.validateSyncContext(context)
         guard !pending.isEmpty else { return 0 }
@@ -268,6 +301,14 @@ public actor SyncEngine {
                     continue
                 }
             } else if GlobalChainBlocked {
+                continue
+            }
+
+            if onlyOperation != entry.operationId, reviewingWateringOperation != entry.operationId,
+               PersistedWateringRejection.requiresReview(entry) {
+                // An automatic retry must not erase a durable rejection or bypass it.
+                // Existing deletion/exact-operation filters have already retained their priority.
+                if let plantId = entry.plantId { blockedPlantIds.insert(plantId) }
                 continue
             }
 
@@ -447,16 +488,26 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
-                    // Explicit care retries discard terminal rejection without claiming success.
-                    // Generic post-save drains retain their existing retry behavior.
-                    if !receivedReceipt, (onlyOperation == entry.operationId || careOnly),
+                    // Only the explicit exact-operation retry can dismiss this rejection.
+                    // Automatic delivery preserves the command/error across app restarts.
+                    if !receivedReceipt, (onlyOperation == entry.operationId || careOnly
+                                          || reviewingWateringOperation == entry.operationId),
                        ManualWateringAction(envelope: envelope) == .record,
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
+                        if onlyOperation == entry.operationId {
+                            try await store.finishOutboxEntry(
+                                operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                            )
+                            throw WateringRecordFailure.rejected
+                        }
+                        let rejected = String(decoding: try JSONEncoder().encode(PersistedWateringRejection(apiError)),
+                                              as: UTF8.self)
                         try await store.finishOutboxEntry(
-                            operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                            operationId: entry.operationId, context: context, authority: apiClient.syncAuthority,
+                            failure: rejected
                         )
-                        if onlyOperation == entry.operationId { throw WateringRecordFailure.rejected }
+                        if let plantId = entry.plantId { blockedPlantIds.insert(plantId) }
                         continue
                     }
                     let observation = envelope.commandName == FirstAidObservationCommand.name

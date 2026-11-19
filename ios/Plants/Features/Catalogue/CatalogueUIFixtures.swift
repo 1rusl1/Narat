@@ -12,9 +12,15 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
 
     case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry, routineLateEntitlement
     case profileReminderHour, accountSignOut
-    case collectionWateringRecord, collectionWateringRecordRejected
+    case collectionWateringRecord, collectionWateringRecordRejected, collectionWateringMissingConditions, collectionWateringBackgroundFailure
 
-    var testsSavedWatering: Bool { self == .collectionWateringRecord || self == .collectionWateringRecordRejected }
+    var testsSavedWatering: Bool { self == .collectionWateringRecord || self == .collectionWateringRecordRejected || self == .collectionWateringMissingConditions || self == .collectionWateringBackgroundFailure }
+
+    var testsCareLifecycle: Bool {
+        testsSavedWatering || self == .profileReminderHour || self == .basicCareEnable
+            || self == .careRecommendationRefresh || self == .careRecommendationRefreshRejected
+            || testsRoutine || self == .firstAidControl || self == .plantWateringEdit
+    }
 
     var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry || self == .routineLateEntitlement }
 
@@ -123,6 +129,14 @@ enum CatalogueUIFixtures {
                 connection.routineFixtureNow = advanced
             }
         }
+        if scenario == .careRecommendationRefresh {
+            connection.withdrawCareSourceFixture = { [weak connection] in
+                guard let connection, let reconnect = connection.reconcileFixtureReconnect
+                else { throw CatalogueUIFixtureError.invalidRequest }
+                try server.withdrawCareSource()
+                reconnect()
+            }
+        }
         let context = CatalogueUIFixtureContext(
             namespace: name, directory: directory, suite: suite, connection: connection,
             http: http, server: server, identity: identity
@@ -188,6 +202,18 @@ final class CatalogueUIFixtureContext {
     ) {
         self.namespace = namespace; self.directory = directory; self.suite = suite
         self.connection = connection; self.http = http; self.server = server; self.identity = identity
+    }
+
+    var supportsCareReconnect: Bool {
+        server.snapshot.scenario.testsSavedWatering && server.snapshot.scenario != .collectionWateringRecordRejected
+    }
+
+    /// Explicit fixture transport availability; Root receives the same reconnect trigger as production.
+    func reconnectCare() throws {
+        guard supportsCareReconnect, let reconnect = connection.reconcileFixtureReconnect
+        else { throw CatalogueUIFixtureError.invalidRequest }
+        try server.resumeCareNetwork()
+        reconnect()
     }
 
     /// Releases the connection without erasing SDK state, SQLite, receipts or scenario flags.
@@ -296,6 +322,10 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var routineEntitlementDeadline: Date?
         var routineEntitlementState: String?
         var wateringCachePrimed: Bool?
+        var wateringNetworkResumed: Bool?
+        var careSourceWithdrawn: Bool?
+        var careSourceEmptyWindowProved: Bool?
+        var backgroundWateringRejected: Bool?
     }
     struct Reply {
         let status: Int
@@ -349,8 +379,28 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         try JSONEncoder().encode(next).write(to: file, options: .atomic)
         ledger = next
     }
+    func withdrawCareSource() throws {
+        try lock.withLock {
+            guard ledger.scenario == .careRecommendationRefresh else { throw CatalogueUIFixtureError.invalidRequest }
+            var next = ledger
+            next.careSourceWithdrawn = true
+            next.careSourceEmptyWindowProved = false
+            // No owner revision/tick change: this models a remote publication withdrawal.
+            try persist(next)
+        }
+    }
+
+    func resumeCareNetwork() throws {
+        try lock.withLock {
+            guard ledger.scenario.testsSavedWatering else { throw CatalogueUIFixtureError.invalidRequest }
+            var next = ledger
+            next.wateringNetworkResumed = true
+            try persist(next)
+        }
+    }
+
     private func token(_ owner: UUID) -> String {
-        guard ledger.scenario == .profileReminderHour || ledger.scenario.testsSavedWatering else {
+        guard ledger.scenario.testsCareLifecycle else {
             return "fixture-only-" + namespace + "-" + owner.uuidString.lowercased()
         }
         // Exercise the production permanent-owner claim gate through the SDK bearer.
@@ -565,6 +615,13 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                method == "GET", query.isEmpty,
                let plant = ledger.plants.first, caller == plant.owner,
                url.path == "/functions/v1/plants-api/plants/\(plant.id.uuidString.lowercased())/care/recommendation" {
+                if ledger.careSourceWithdrawn == true {
+                    guard ledger.careSourceEmptyWindowProved == true else { throw CatalogueUIFixtureError.invalidRequest }
+                    return Reply(status: 200, data: try json([
+                        "plant_id": plant.id.uuidString, "status": "unavailable",
+                        "recommendation": NSNull(), "next_check": NSNull(), "routine_check": NSNull()
+                    ]))
+                }
                 if ledger.scenario.testsRoutine {
                     let completion = ledger.commits.values.first {
                         $0.envelope.commandName == RoutineSoilCheckCompletionCommand.name
@@ -628,6 +685,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "revision": 1, "care_revision": 1,
                         "created_at": plant.timestamp
                      ]]
+                }
+                if ledger.scenario == .collectionWateringMissingConditions,
+                   let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
+                   let index = changes.firstIndex(where: { $0["id"] as? String == plant.id.uuidString }),
+                   var data = changes[index]["data"] as? [String: Any] {
+                    // A valid plant can outlive a condition row absent from this offline cache.
+                    // Manual journal access must depend on pending metadata, not this optional read.
+                    data["current_condition_snapshot_id"] = plant.id.uuidString
+                    changes[index]["data"] = data
                 }
                 if ledger.scenario == .analysisHistory || ledger.scenario.testsPlantEdit,
                    let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
@@ -806,11 +872,10 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 }
                 if ledger.scenario.testsSavedWatering {
                     let record = ledger.commits.values.first { ManualWateringAction(envelope: $0.envelope) == .record }
-                    let delivered = record.map { record in
-                        ledger.attempts.filter { $0.body == record.body }.count >= 2
-                    } ?? false
-                    // Prime the real SQLite cache once; fail subsequent reads until exact command replay.
-                    if ledger.wateringCachePrimed == true && !delivered {
+                    // Foreground retries must not implicitly restore the fixture network.
+                    // Persist offline across every process launch until explicit Root reconnect.
+                    if ledger.wateringCachePrimed == true && ledger.wateringNetworkResumed != true
+                        && !(ledger.scenario == .collectionWateringBackgroundFailure && ledger.backgroundWateringRejected == true) {
                         // collectionCards falls back to disk on transport loss, not HTTP errors.
                         // This remains isolated UI fault injection; advice GET still returns 503.
                         throw URLError(.networkConnectionLost)
@@ -830,6 +895,14 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
                 }
                 let until = Self.time(ledger.tick)
+                if ledger.careSourceWithdrawn == true {
+                    guard orderedChanges.isEmpty, let since,
+                          SQLTimestamp.microseconds(from: since) == SQLTimestamp.microseconds(from: until)
+                    else { throw CatalogueUIFixtureError.invalidRequest }
+                    var next = ledger
+                    next.careSourceEmptyWindowProved = true
+                    try persist(next)
+                }
                 return Reply(status: 200, data: try json([
                     "until": until, "has_more": false, "last_cursor": NSNull(), "next_since": until,
                     "profile": ["preferred_locale": "pl",
@@ -1026,7 +1099,38 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             guard commit.owner == caller, commit.body == body, commit.envelope == envelope
             else { throw CatalogueUIFixtureError.invalidRequest }
             try persist(next)
+            if action == .record && ledger.wateringNetworkResumed != true {
+                throw URLError(.networkConnectionLost)
+            }
             return Reply(status: 200, data: commit.receipt)
+        }
+        if ledger.scenario == .collectionWateringBackgroundFailure {
+            guard action == .record else { throw CatalogueUIFixtureError.invalidRequest }
+            guard let first = ledger.attempts.first else {
+                // Fault injection before server commit: the original fact does not yet exist.
+                try persist(next)
+                throw URLError(.networkConnectionLost)
+            }
+            let original = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: first.body)
+            if envelope.operationId == original.operationId {
+                guard envelope == original, body == first.body else { throw CatalogueUIFixtureError.invalidRequest }
+                next.backgroundWateringRejected = true
+                try persist(next)
+                return try error(409, "CONFLICT")
+            }
+            // Exactly original loss, one automatic rejection, one explicit retry.
+            // Any automatic resend on cold/foreground makes a later new record fail.
+            guard ledger.backgroundWateringRejected == true, ledger.attempts.count == 3,
+                  ledger.commits.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }
+            next.tick += 1
+            let receipt = try json([
+                "plant_id": plant.id.uuidString, "entry_id": envelope.operationId.uuidString,
+                "state": "active", "watermark": Self.time(next.tick)
+            ])
+            next.commits[key] = Commit(owner: caller, envelope: envelope, body: body,
+                                       receipt: receipt, plantID: plant.id)
+            try persist(next)
+            return Reply(status: 200, data: receipt)
         }
         if ledger.scenario == .collectionWateringRecordRejected {
             guard action == .record, !ledger.attempts.contains(where: {

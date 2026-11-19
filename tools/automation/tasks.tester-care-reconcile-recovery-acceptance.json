@@ -1,0 +1,83 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-owner-reconcile-recovery-acceptance",
+      "description": "Finish owner lifecycle care with durable terminal failures, safe frozen-identity recovery, canonical readback and closed-card automatic reconciliation.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/handoff_status.md",
+        "tools/automation/tasks.tester-care-reconcile-wiring-acceptance.json",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "tools/automation/tasks.tester-care-reconcile-recovery-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Expanded full candidate-base read-only acceptance from accepted000e2305. Prior wiring7ec run correctly BLOCKED:10/12UI passed,2newUI failed on controller secondBack label (actualClose) and missingconditions returnnil notthrow. These are repaired, oldFAIL retained. Parent controller prepared versioned terminal marker +orderedexplicitpostsave allowance; care_sources supplied3meaningful tests, finalGuest recovery,10-lineRepo frozenretry helper and1disk lostresponse/reopen test; child inspected/appliedexact patches, removeddraftcomments only, added positive fallback history reread afterproof, updated13UI/fixture/gate. No successful Developer call is invented; verify entire actual delta including original lifecycle code and allnewguards.",
+        "Read-only acceptance of explicitly controller-authored candidate. Parent/care_sources prepared3production lifecycle/idle files and purecoalescer regression outside activecheckout; child inspected exact hunks, gitapply--check PASS, appended test AFTER all6acceptedcoretests. Parent authorized child fixture/UI adaptations and tiny Guest hunks: truepermanent JWT for selectedcarecases+representativewateringedit, persisted offline until explicit DEBUG reconnect through SAME Root coordinator, detailsReadFailed, owner-idle GET revalidation, and access read BEFORE busy guard. No fictional Developer PASS. Review full actual delta from accepted000e2305, actual new gates and independentQA. Stage1/B01-B11 remains partial; no physicaloffline proof.",
+        "Call the accepted common bounded care-only seam on permanent-owner foreground and false-to-true network transitions at Root, even with card closed. Subscribe before initial read; capture one bound exact SDK snapshot/lease; cancel old-owner tasks on logout/auth ABA. Coalesce triggers, don't poll or create duplicate sends. Never launch new create/guest analysis/AI as care retry.",
+        "Canonical update subscriptions reread local/pending/history/advice/access only; never start network reconciliation from every self-published canonical sync event. Reuse existing connection and canonical stream; no new queue/schema/server endpoint. Preserve TrialReminder scheduler behavior.",
+        "Current card reconnect only retries correction. Replace redundant action-specific retry with common owner lifecycle path and refresh restored manual, routine, firstaid/photo, basic enable/refresh state after canonical publication. Success requires exact canonical evidence, never queue disappearance or flush count. No fabricated next date.",
+        "Manual new watering remains enabled for active cached owner card when advice/firstaid/routine loaders fail offline or access expired. In loadRename, isolate pending edit metadata from syncedPlantConditions read: a missing condition snapshot must not leave loadingRename=true forever or disable unrelated manual journal, while failed inspection of pending edit still fails closed. Preserve owner/deletion/conflicting write safety.",
+        "Focused ordinary EN UI proof: restore pending care from disk with card closed, simulate reconnect/foreground, open card and see one canonical record and refreshed advice/history without manual Retry; preserve lost-response operation identity and no duplicate fact. Add missing cached condition row case for manual Record. Reuse fixture helpers; do not weaken old assertions, edit fixture transport only to represent actual event semantics. No claim live/iPhone acceptance.",
+        "Root subscribes to owner idle before attempt; coalescer keeps only latest external trigger, cancels stale generation, late busy cannot revive cancelled request, idle only wakes a genuinely busy external request. Own completed/pending pass idle event does not cause send retry loops. Canonical update callbacks never drain.",
+        "An open card must revalidate GET on once-per-owner-idle/foreground, since KB/source withdrawal can yield identical owner rows and watermark. GET itself does not publish sync, no feedback loop. Ordinary canonical callback otherwise rereads local facts/pending. Access/expiry local read must run before saving/action busy guards, immediately hiding ineligible future/firstaid controls while retaining manual history.",
+        "Targeted EN trusted gate requires13namedtests with zero skips/missing. Existing initial pending, exact body/operation/cold identity/onefact assertions remain; postcold assertions now require canonical automatic delivery without card Retry. Representative typed watering edit replays at Root; missing cached condition row does not block record and does not falsely claim edit failure. Existing refresh test withdraws DEBUG source while SAME card remains open: fixture enforces emptyownerchanges and unchangedwatermark before GETunavailable; nextdate/source/action disappear without navigation/manualRetry/foreground. This is marked artificial fixture, not realKB withdrawal or physical network proof.",
+        "A permanent record rejection is persisted only when NO accepted receipt was received and a known nonretryable error is returned. Store a versioned typed wrapper in existing outbox.lastError, not new queue/schema. Plain legacy APIErrorJSON and acceptedReceipt->failedcanonicalGET remain replayable pending, never terminal. Automatic drains skip a recognized marker and block its sameplant successors; foreignowner,unsupportedpredecessor,deletion and normal ordering stay enforced. Exact-operation explicit saved-card retry keeps original rejected/confirmed semantics.",
+        "Post-save explicit user Retry must still work through the generic ordered drain: reviewingWateringOperation bypasses only that precise marker AFTER existing createconfirmation/enqueue proof. It preserves error/queue on pre-receipt rejection and returnsfalse, never false success; canonical positive ACK is required for true. Other marked operations remainblocked.",
+        "Restored marked record is visible as needs-review/failed with its ORIGINAL operation accessibilityValue and existing Retrybutton. Cold/foreground must not resend it automatically. Background failure UI13 has a precommit loss, Root409retention, cold exactidentity/error, anotherforeground withnoretry, explicit exact409dismissal, thennewuserintent acceptedonefact. Fixture hardfails an extraautomaticrequest; trusted read-only ledger gate separately verifies exactly4POST, first3byteidentical/sameop/owner/plant and one distinct4th acceptedcommit. SDKfiles are never read.",
+        "Unexpected/legacy queue disappearance retains frozenoriginal and blocks newUUID. Explicit Reload performs a fresh complete canonical window: positive typed proof mayconfirm, a negativewindow cannot prove a late commit willneveroccur and must stayblocked. Only an explicit Retryoriginal may persist/retry EXACT original UUID/body through existingstore/outbox. A newintent is available only after positivecanonicalproof or explicitterminal outcome. Passive history rereads must not override recordSaving or briefly enable newrecord beforeproof; samelease/owner guards apply afterawaits."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "RECONUI1",
+          "description": "Build/fullSwift/welcome and purecoalescer regression prove captured-owner cancellation/generation/busy behavior, preserving accepted6core tests and safety gates.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "RECONUI2",
+          "description": "Ordinary Simulator smoke passes after Root lifecycle wiring; independent Review verifies no feedback loop or ownership leak.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "RECONUI3",
+          "description": "All13targeted EN careUI pass with no skips/missing: closed-card auto retry, exact restart identity, offlineuntilreconnect, cachedconditions, typededit, emptydelta sourcewithdrawal and lateexpiry.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui"
+          ]
+        },
+        {
+          "id": "RECOVERY1",
+          "description": "Disk tests verify durable typed rejection/noautomaticresend, acceptedReceipt+GET403 exactreplay, orderedpostsaveRetry andexplicitfrozenorphanrestore withonefact; nofalseconfirmation/newUUID fromemptyqueue ornegativewindow.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        }
+      ],
+      "candidate_base": "000e23054fb17d54540e23da5e7e559b5989c20f",
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-owner-reconcile-core-acceptance.md",
+        "docs/validation/automation/tasks/tester-care-saved-watering-ui-jwt-acceptance.md",
+        "docs/validation/automation/runs/q-263299ec81468f2d26b8d175/summary.json",
+        "docs/validation/automation/runs/q-263299ec81468f2d26b8d175/care-ui.stdout.log"
+      ]
+    }
+  ]
+}

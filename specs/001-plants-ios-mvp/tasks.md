@@ -157,6 +157,8 @@
 
   - `000e230`: принят общий bounded owner-care reconcile, 322 Swift/MCP/Review/QA PASS; disk replay, typed edit ordering, owner/ABA/cancel и busy проверены fixtures. Подключение к Root foreground/reconnect и живой offline/iPhone ещё открыты.
 
+  - `b7845a8`: Root foreground/reconnect + ordered care pass и durable terminal record error приняты: 327 Swift,13 EN UI, read-only ledger exact4POST/1commit, MCP/Review/QA PASS. Empty delta/source withdrawal и expiry проверены fixtures. Новый ordinary signed live cycle выполняется отдельно; физический offline/iPhone и полный T065 остаются открытыми.
+
 - [ ] T066 Обновить `TodayView.swift`: текущие/просроченные активные задачи и условный полив. Неприменимые/остановленные после expiry задания не остаются активным уходом. Доступ к карточке, истории и ручной записи сохраняется; никаких нейтральных reminders по старому плану. Покрытие: FR-022, FR-023, FR-024, FR-025, FR-028.
 
 - [ ] T067 Создать `CareHistoryView.swift` для фактов/прошедшей даты/отмены. Текущую следующую дату с коротким основанием показывать в карточке; отдельный NextCheckReasonView и история всех пересчётов не требуются. Покрытие: FR-026, FR-027, FR-028, FR-029, FR-030.

@@ -1,6 +1,7 @@
 import SwiftUI
 import Supabase
 import Observation
+import Network
 import UIKit
 
 @main
@@ -22,6 +23,70 @@ struct PlantsApp: App {
     }
 }
 
+
+/// Serializes real lifecycle requests; idle only resumes a request that got busy.
+/// It never treats a completed pass as confirmation of an individual care action.
+@MainActor
+final class CareLifecycleCoordinator {
+    typealias Action = @MainActor () async -> CareReconciliationOutcome?
+    private var pending: (generation: UInt64, action: Action)?
+    private var lifecycleGeneration: UInt64 = 0
+    private var worker: Task<Void, Never>?
+    private var current: Task<CareReconciliationOutcome?, Never>?
+    private var waitingForIdle = false
+    private var idleGeneration: UInt64 = 0
+
+    func request(replacingCurrent: Bool = false, _ action: @escaping Action) {
+        lifecycleGeneration &+= 1
+        pending = (lifecycleGeneration, action)
+        waitingForIdle = false
+        if replacingCurrent { current?.cancel() }
+        startIfNeeded()
+    }
+
+    @discardableResult
+    func suspend() -> Task<Void, Never>? {
+        lifecycleGeneration &+= 1
+        pending = nil
+        waitingForIdle = false
+        current?.cancel()
+        return worker
+    }
+
+    func didBecomeIdle() {
+        idleGeneration &+= 1
+        guard waitingForIdle else { return }
+        waitingForIdle = false
+        startIfNeeded()
+    }
+
+    private func startIfNeeded() {
+        guard worker == nil, !waitingForIdle, pending != nil else { return }
+        worker = Task { await drainRequests() }
+    }
+
+    private func drainRequests() async {
+        while let request = pending {
+            pending = nil
+            let before = idleGeneration
+            let pass = Task { await request.action() }
+            current = pass
+            let outcome = await pass.value
+            current = nil
+            if outcome == .busy, pending == nil, !pass.isCancelled,
+               request.generation == lifecycleGeneration {
+                pending = request
+                // A foreign drain can finish before its busy result reaches this actor.
+                if before == idleGeneration {
+                    waitingForIdle = true
+                    break
+                }
+            }
+        }
+        worker = nil
+    }
+}
+
 struct RootContainerView: View {
     private struct TrialReminderRead: Equatable {
         let snapshot: CatalogueSDKSnapshot?
@@ -36,6 +101,13 @@ struct RootContainerView: View {
 
     @State private var catalogue: CatalogueConnection?
     @State private var trialReminder = TrialReminderScheduler()
+    @State private var careLifecycle = CareLifecycleCoordinator()
+    @State private var careReconnectRevision: UInt64 = 0
+    private struct CareLifecycleRead: Equatable {
+        let snapshot: CatalogueSDKSnapshot?
+        let active: Bool
+        let reconnectRevision: UInt64
+    }
     private enum AccountDestination: String, Identifiable {
         case diagnosis, identification, collection, guestTransfer
         var id: Self { self }
@@ -100,6 +172,10 @@ struct RootContainerView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
                     .accessibilityIdentifier("welcome.language.picker")
+                    if fixtureContext?.supportsCareReconnect == true {
+                        Button("Reconnect fixture network") { try? fixtureContext?.reconnectCare() }
+                            .accessibilityIdentifier("care.fixture.reconnect")
+                    }
                 }
 #endif
                 if startupFailed && usesLegacyWelcome {
@@ -227,6 +303,17 @@ struct RootContainerView: View {
         }
         .task { await prepareCatalogue() }
         .task(id: reminderRead) { await observeTrialReminder(reminderRead) }
+        .task { await observeCareConnectivity() }
+        .task(id: CareLifecycleRead(snapshot: catalogue?.snapshot, active: scenePhase == .active,
+                                    reconnectRevision: careReconnectRevision)) {
+            await observeCareLifecycle(snapshot: catalogue?.snapshot, active: scenePhase == .active)
+        }
+        .onDisappear {
+            careLifecycle.suspend()
+            #if DEBUG
+            catalogue?.reconcileFixtureReconnect = nil
+            #endif
+        }
         .sheet(isPresented: $showingCollection) {
             if let catalogue {
                 CatalogueCollectionView(
@@ -300,6 +387,59 @@ struct RootContainerView: View {
            !showingGuestTransfer {
             Button("Finish saving your plant") { showingGuestTransfer = true }
                 .accessibilityIdentifier("staging.guest.claim.resume")
+        }
+    }
+
+    private func observeCareConnectivity() async {
+        let monitor = NWPathMonitor()
+        let updates = AsyncStream<Bool>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            monitor.pathUpdateHandler = { continuation.yield($0.status == .satisfied) }
+            continuation.onTermination = { _ in monitor.cancel() }
+        }
+        monitor.start(queue: DispatchQueue(label: "narat.care.connectivity"))
+        defer { monitor.cancel() }
+        var previous: Bool?
+        for await connected in updates {
+            guard !Task.isCancelled else { return }
+            if previous == false, connected { careReconnectRevision &+= 1 }
+            previous = connected
+        }
+    }
+
+    private func observeCareLifecycle(snapshot: CatalogueSDKSnapshot?, active: Bool) async {
+        guard !Task.isCancelled else { return }
+        guard active, let connection = catalogue, let expected = snapshot, !expected.isAnonymous,
+              connection.snapshot == expected, let repository = connection.repository,
+              let sync = connection.syncEngine else {
+            careLifecycle.suspend()
+            #if DEBUG
+            catalogue?.reconcileFixtureReconnect = nil
+            #endif
+            return
+        }
+        // Subscribe before attempting work; this is an outbox-lock event, not canonical sync.
+        let idle = await sync.outboxIdleUpdates(for: expected.session.userId)
+        guard !Task.isCancelled, connection.snapshot == expected else { return }
+        #if DEBUG
+        connection.reconcileFixtureReconnect = {
+            guard connection.snapshot == expected else { return }
+            careReconnectRevision &+= 1
+        }
+        #endif
+        careLifecycle.request(replacingCurrent: true) {
+            do {
+                try Task.checkCancellation()
+                guard connection.snapshot == expected else { return nil }
+                let lease = try await connection.collectionLease(expected: expected)
+                return try await repository.reconcilePendingCare(context: lease)
+            } catch {
+                // Queue/action state remains authoritative; next real lifecycle event may retry.
+                return nil
+            }
+        }
+        for await _ in idle {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            careLifecycle.didBecomeIdle()
         }
     }
 

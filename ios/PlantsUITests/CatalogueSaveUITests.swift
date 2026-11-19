@@ -487,11 +487,13 @@ final class CatalogueSaveUITests: XCTestCase {
         restart(run)
         tap(run, "collection.open", "My plants")
         tap(run, "Fixture 1")
-        require(pending)
-        tap(run, "collection.care.enable.retry", "Retry enabling basic care")
+        // Foreground Root reconciliation completes the exact persisted enable, without card Retry.
         enabled(run.app.buttons["collection.care.refresh"])
         XCTAssertFalse(pending.exists)
         XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 0)
     }
 
     @MainActor func testCareRecommendationRefreshReplaysAfterRestart() {
@@ -508,13 +510,22 @@ final class CatalogueSaveUITests: XCTestCase {
         restart(run)
         tap(run, "collection.open", "My plants")
         tap(run, "Fixture 1")
-        require(run.app.staticTexts["collection.care.refresh.pending"])
-        XCTAssertFalse(nextCheck.exists)
-        tap(run, "collection.care.refresh.retry", "Retry recommendation update")
+        // The fixture accepts only the original frozen command; Root replays it while closed.
         require(nextCheck)
         XCTAssertEqual(nextCheck.label, "Next soil check · 2026-10-28")
         XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
         XCTAssertFalse(run.app.staticTexts["collection.care.refresh.pending"].exists)
+        // Remain on this card: the source changes remotely with an empty owner delta
+        // and identical watermark, as asserted by the fixture server before returning nil advice.
+        wateringTap(run, "collection.care.fixture.withdraw")
+        let source = run.app.links["catalogue.saved.care.source"]
+        let text = run.app.staticTexts["catalogue.saved.care.text"]
+        let gone = [nextCheck, source, text].map {
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: $0)
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: gone, timeout: 15), .completed)
+        XCTAssertFalse(run.app.buttons["collection.routine.complete"].exists)
+        XCTAssertFalse(run.app.buttons["Retry care details"].exists)
     }
 
     @MainActor func testRoutineSoilCheckUndoAfterRestart() {
@@ -561,13 +572,9 @@ final class CatalogueSaveUITests: XCTestCase {
         restart(run)
         tap(run, "collection.open", "My plants")
         tap(run, "Fixture 1")
-        require(pending)
         XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
-        XCTAssertFalse(next.exists)
-        XCTAssertFalse(run.app.staticTexts["collection.routine.undo.confirmed"].exists)
-        // The fixture rejects a changed operation, envelope or HTTP body.
-        tap(run, "collection.routine.undo.retry", "Retry soil check undo")
-        require(run.app.staticTexts["collection.routine.undo.confirmed"])
+        require(row)
+        // Root foreground replay must satisfy the exact body guard and publish canonical voided state.
         let voided = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", localDate + " · Undone"), object: row
         )
@@ -713,14 +720,14 @@ final class CatalogueSaveUITests: XCTestCase {
         restart(run)
         tap(run, "collection.open", "My plants")
         tap(run, "Fixture 1")
-        require(pending)
         XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
-        XCTAssertFalse(action.exists)
-        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
-        XCTAssertFalse(run.app.staticTexts["collection.routine.confirmed"].exists)
-        // The fixture accepts only the identical persisted envelope and HTTP body.
-        tap(run, "collection.routine.retry", "Retry soil check")
-        require(run.app.staticTexts["collection.routine.confirmed"])
+        // No card Retry: exact persisted completion is replayed by the foreground Root pass.
+        let row = run.app.staticTexts["collection.routine.history.19190000-0000-4000-8000-000000000003"]
+        require(row)
+        XCTAssertTrue(row.label.hasSuffix(" · Active"))
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "collection.routine.history.")
+        ).count, 1)
         let next = run.app.staticTexts["catalogue.saved.care.next.date"]
         require(next)
         var calendar = Calendar(identifier: .gregorian)
@@ -781,12 +788,19 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
         XCTAssertFalse(run.app.buttons["collection.watering.record"].isEnabled)
         XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
-        // The fixture requires the same operation, original date, envelope and byte-identical body.
-        wateringTap(run, "collection.watering.record.retry")
-        require(run.app.staticTexts["collection.watering.record.confirmed"])
-        XCTAssertFalse(pending.exists)
+        // Keep the actual Root lifecycle active with the card/collection closed.
+        // The fixture stays offline until this explicit reconnect, never a launch count.
+        tap(run, "collection.back", "Back")
+        tap(run, "collection.back", "Close")
+        wateringTap(run, "care.fixture.reconnect")
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
         let journal = run.app.staticTexts["catalogue.saved.history." + operation]
-        require(journal)
+        require(journal) // Canonical linkage, not pass.completed or queue disappearance.
+        let acknowledged = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: pending
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 15), .completed)
         XCTAssertTrue(journal.label.hasSuffix(" · Active"))
         XCTAssertEqual(run.app.staticTexts.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
@@ -814,6 +828,99 @@ final class CatalogueSaveUITests: XCTestCase {
         require(journal)
         XCTAssertTrue(journal.label.hasSuffix(" · Undone"))
         XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+    }
+
+    @MainActor func testManualWateringWithMissingCachedConditionStillRecords() {
+        let run = Run("collectionWateringMissingConditions", .en)
+        defer { screenshot(run, "final"); run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        require(run.app.staticTexts["collection.cached"])
+        tap(run, "Fixture 1")
+        require(run.app.buttons["Retry care details"])
+        require(run.app.staticTexts["collection.details.unavailable"])
+        XCTAssertFalse(run.app.staticTexts["Couldn’t save the plant edit."].exists)
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering")
+        let pending = run.app.staticTexts["collection.watering.record.pending"]
+        require(pending)
+        let operation = pending.value as? String ?? ""
+        XCTAssertNotNil(UUID(uuidString: operation))
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        tap(run, "collection.back", "Back")
+        tap(run, "collection.back", "Close")
+        wateringTap(run, "care.fixture.reconnect")
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(run.app.staticTexts["catalogue.saved.history." + operation])
+        let acknowledged = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: pending
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 15), .completed)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 1)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+    }
+
+    @MainActor func testBackgroundWateringFailureSurvivesColdLaunchUntilExplicitRetry() {
+        let run = Run("collectionWateringBackgroundFailure", .en)
+        defer { screenshot(run, "final"); run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        require(run.app.staticTexts["collection.cached"])
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering")
+        let pending = run.app.staticTexts["collection.watering.record.pending"]
+        require(pending)
+        let original = pending.value as? String ?? ""
+        XCTAssertNotNil(UUID(uuidString: original))
+        // Keep this card alive while Root handles a real foreground lifecycle request.
+        XCUIDevice.shared.press(.home)
+        run.app.activate()
+        let failed = run.app.staticTexts["collection.watering.record.failed"]
+        require(failed)
+        XCTAssertEqual(failed.value as? String, original)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons["collection.watering.record"].isEnabled)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(failed)
+        XCTAssertEqual(failed.value as? String, original)
+        XCTAssertFalse(pending.exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCUIDevice.shared.press(.home)
+        run.app.activate()
+        require(failed)
+        XCTAssertEqual(failed.value as? String, original)
+        wateringTap(run, "collection.watering.record.retry")
+        let rejected = run.app.staticTexts["collection.watering.record.rejected"]
+        require(rejected)
+        XCTAssertEqual(rejected.value as? String, original)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 0)
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering")
+        require(run.app.staticTexts["collection.watering.record.confirmed"])
+        let journalId = identity(run, "catalogue.saved.history.")
+        let newOperation = String(journalId.dropFirst("catalogue.saved.history.".count))
+        XCTAssertNotEqual(newOperation, original)
+        XCTAssertNotNil(UUID(uuidString: newOperation))
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 1)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.history." + original].exists)
+        XCTAssertFalse(pending.exists)
     }
 
     @MainActor func testCollectionWateringRejectionDoesNotShowSuccess() {
@@ -994,9 +1101,12 @@ final class CatalogueSaveUITests: XCTestCase {
         restart(run)
         tap(run, "collection.open", "My plants")
         tap(run, "Fixture 1")
-        require(run.app.staticTexts["collection.rename.pending"])
-        tap(run, "collection.rename.retry", "Retry watering frequency")
-        require(frequency)
+        // The typed edit precedes any later care command in Root's ordered retry pass.
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "Once a week"), object: frequency
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 15), .completed)
+        XCTAssertFalse(run.app.staticTexts["collection.rename.pending"].exists)
         XCTAssertEqual(frequency.label, "Once a week")
         XCTAssertEqual(run.app.staticTexts["collection.light.current"].label, "Medium light")
         XCTAssertEqual(run.app.staticTexts["collection.drainage.current"].label, "Drainage holes")
