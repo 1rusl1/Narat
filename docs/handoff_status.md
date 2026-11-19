@@ -1,5 +1,26 @@
 # Narat — текущий статус и передача работы
 
+## Core timeout: пакет разделён перед повтором — 19 ноября 2026
+
+Run `tester-care-record-core-20261119-01` остановился в WAITING/developer:
+один вызов Sol medium исчерпал штатные 900 секунд без `answer.json`.
+Patch не применён, продуктовый код и дерево остались без изменений.
+В stdout сохранён непринятый черновик 49 179 bytes (git apply --numstat
+разобрал 5 файлов), но он не проходил build/Review/QA и не считается готовым.
+Контроллер сохранил его только в ignored runs как reference.
+
+Вместо повтора большого контракта подготовлен меньший
+`tools/automation/tasks.tester-care-record-ack.json`: typed care.record
+receipt → canonical owner journal linkage → ACK. Saved-card enqueue/API,
+UI и care reconcile остаются следующими отдельными пакетами.
+Новый run `tester-care-record-ack-20261119-01`. Routing, 900s timeout и
+budgets не менялись. Ранее принятый baseline `ecd5ab0` и подготовка
+`9d8bc7b` отправлены в origin. Продуктовые checkbox не закрыты.
+
+Ограничения: новый функционал ещё не реализован; live baseline был только
+read-only. Следующий шаг — принять узкий ACK-пакет, затем owner-bound
+saved-card enqueue/retry и экранная кнопка записи полива.
+
 ## Baseline принят; начат saved-plant manual watering — 19 ноября 2026
 
 Принят и отправлен `ecd5ab0`: gate repair + текущий baseline. В run
