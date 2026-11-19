@@ -1,5 +1,30 @@
 # Narat — текущий статус и передача работы
 
+## Принято подтверждение полива; цикл ухода продолжается — 19 ноября 2026
+
+Интегрирован опубликованный `992c26a` из очереди тестовой версии:
+`PlantsAPIClient.swift` сохраняет typed care.record receipt с entry ID и
+watermark; `LocalStore.swift` проверяет каноническую принадлежность записи
+операции; `SyncEngine.swift` снимает outbox только после подтверждения.
+`CollectionWireTests.swift` проверяет disk/replay, неверные связи и
+сохранение последующих исправлений/отмен. Это не реализация кнопки полива.
+
+Run `tester-care-record-ack-20261119-01`: 313 Swift (310 XCTest + 3 Swift
+Testing), ordinary welcome 1 и MCP smoke — PASS, Developer/Reviewer/QA — PASS.
+Проверки локальные/fixture; новой живой записи ухода этим пакетом не было.
+Root: diff-check и сравнение четырёх Swift-файлов с принятым SHA — PASS;
+полные suites в root не повторялись. Секретных полей в опубликованном live
+baseline JSON не обнаружено. Исходные локальные pbxproj/xcstrings сохранены.
+Конфликт handoff разрешён сохранением обеих историй и текущей записи.
+
+Полный этап ухода, Today, notifications и B01–B11 ещё открыты. Большой
+первый core run завершился timeout без применения; он не принят. После
+узкого ACK контроллер сразу выполняет saved-card enqueue/retry с честными
+outcomes, затем UI и общий reconnect/foreground reconcile. Точный следующий
+шаг — завершить следующий saved-API run в
+`/private/tmp/narat-tester-care-20261119`; затем подключить запись полива
+в повторно открытой карточке и принять сценарий перед переходом к Today.
+
 ## Baseline принят, следующий пакет — запись полива — 19 ноября 2026
 
 В рабочую ветку интегрирован опубликованный `ecd5ab0` из
@@ -70,6 +95,50 @@ Routing/checks взяты из последнего согласованного
 Точный следующий шаг: дождаться baseline gate в указанном worktree,
 устранить выявленные ошибки, затем через следующие узкие пакеты завершить
 цикл ухода и перейти к canonical списку/«Сегодня», затем reminders.
+## Core timeout: пакет разделён перед повтором — 19 ноября 2026
+
+Run `tester-care-record-core-20261119-01` остановился в WAITING/developer:
+один вызов Sol medium исчерпал штатные 900 секунд без `answer.json`.
+Patch не применён, продуктовый код и дерево остались без изменений.
+В stdout сохранён непринятый черновик 49 179 bytes (git apply --numstat
+разобрал 5 файлов), но он не проходил build/Review/QA и не считается готовым.
+Контроллер сохранил его только в ignored runs как reference.
+
+Вместо повтора большого контракта подготовлен меньший
+`tools/automation/tasks.tester-care-record-ack.json`: typed care.record
+receipt → canonical owner journal linkage → ACK. Saved-card enqueue/API,
+UI и care reconcile остаются следующими отдельными пакетами.
+Новый run `tester-care-record-ack-20261119-01`. Routing, 900s timeout и
+budgets не менялись. Ранее принятый baseline `ecd5ab0` и подготовка
+`9d8bc7b` отправлены в origin. Продуктовые checkbox не закрыты.
+
+Ограничения: новый функционал ещё не реализован; live baseline был только
+read-only. Следующий шаг — принять узкий ACK-пакет, затем owner-bound
+saved-card enqueue/retry и экранная кнопка записи полива.
+
+## Baseline принят; начат saved-plant manual watering — 19 ноября 2026
+
+Принят и отправлен `ecd5ab0`: gate repair + текущий baseline. В run
+`tester-care-baseline-20261119-02` прошли 149 automation, 436 Deno,
+312 Swift (309 XCTest+3 Swift Testing), один ordinary welcome, MCP smoke
+и 7 EN care XCUITest. Reviewer/QA PASS. Изменений app в baseline нет.
+
+Отдельно read-only HTTP на живом staging: постоянная dedicated Free-учётка,
+Auth user/GET me/GET sync 200; entitlement=null, коллекция пуста, hour=9.
+Серверные данные/миграции не менялись, AI/покупки не вызывались. Обезличенный
+отчёт `docs/validation/tester-care-live-baseline-2026-11-19.json`.
+Это не проверка B01–B11 или физического iPhone.
+
+Выявлены два разрыва этапа 1: новая запись полива недоступна из повторно
+открытой collection card (только post-save); auto retry остальных care
+pending не подключён к reconnect/foreground. Обновлён baseline report.
+Подготовлен `tools/automation/tasks.tester-care-record-core.json`: owner-bound
+record существующего растения, durable exact replay, canonical confirmation
+и честные rejection outcomes без create receipt/профиля/paid gating.
+Следующий шаг — run `tester-care-record-core-20261119-01`, затем отдельные
+пакеты UI и общего care reconcile. Today/reminders идут после них.
+Все продуктовые checkbox остаются открытыми; handoff фиксирует только срез.
+
 ## Baseline: найден устаревший welcome gate — 19 ноября 2026
 
 Run `tester-care-baseline-20261119-01` остановлен корректным FAIL:
@@ -3458,8 +3527,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-baseline-repaired-20261119: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 337.15 с, проверки — 421.46 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-baseline-repaired-20261119](validation/automation/tasks/tester-care-baseline-repaired-20261119.md).
+tester-care-record-canonical-ack: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 540.71 с, проверки — 145.49 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-record-canonical-ack](validation/automation/tasks/tester-care-record-canonical-ack.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->

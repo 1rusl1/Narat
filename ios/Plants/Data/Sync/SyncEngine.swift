@@ -284,6 +284,17 @@ public actor SyncEngine {
                 }
                 receivedReceipt = true
                 switch result {
+                case let .wateringRecorded(entryId, watermark):
+                    if try await store.confirmedWateringRecord(
+                        envelope, entryId: entryId, watermark: watermark,
+                        context: context, authority: apiClient.syncAuthority
+                    ) == false {
+                        try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
+                        guard try await store.confirmedWateringRecord(
+                            envelope, entryId: entryId, watermark: watermark,
+                            context: context, authority: apiClient.syncAuthority
+                        ) else { throw SyncWireValidationError.invalidPage }
+                    }
                 case let .wateringDateCorrection(watermark), let .careRecommendationRefreshed(watermark):
                     try await refreshCanonicalJournal(ownerId: ownerId, watermark: watermark, context: context)
                 case let .firstAidRecorded(receipt):
@@ -456,7 +467,7 @@ public actor SyncEngine {
                 try await store.acknowledgePlantDeletion(
                     envelope, receipt: receipt, context: context, authority: apiClient.syncAuthority
                 )
-            case .generic, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantEdited,
+            case .generic, .wateringRecorded, .wateringDateCorrection, .firstAidRecorded, .careUndone, .firstAidObserved, .plantEdited,
                  .careRecommendationRefreshed, .basicCareEnabled:
                 try await store.finishOutboxEntry(
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority

@@ -1,0 +1,54 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-saved-watering-core",
+      "description": "Allow a permanent owner to durably record manual watering for an already saved collection plant, independently of create receipts and care access. Reuse existing care.record and outbox, with canonical confirmation and exact replay.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "This is the first actual care implementation slice after the accepted baseline. Do not build Today, reminders, new recommendations, billing, migration, UI, a second outbox, or alter server endpoints. Return an exact unified Git patch. Existing record/correct/undo/routine/first-aid behavior and source data are retained.",
+        "Concrete gap: CollectionRepository.enqueueWateringEdit rejects .record; retryWateringEdit accepts correction/undo only; submitManualWatering requires create-confirmation. Add a small owner-bound saved-plant manual record path using ManualWateringAction.record and existing durable LocalOutboxRecord. It must work for active existing owner plant with no care profile/rule, disabled care, paused or expired entitlement. Never gate manual journal on routineAccessAvailable/dueRoutine/basicCareEnabled or a create confirmation. A now/past occurrence may be recorded; future/invalid timestamp/timezone must be rejected before enqueue. Freeze operation UUID/payload/timestamp before network and preserve exact bytes across disk restart and renewed same-owner session.",
+        "Require permanent bound valid owner/session (including A-B-A generation), canonical nondeleted owner plant, no pending plant deletion, and no other pending manual edit for the same plant. Enforce enqueue guard atomically on LocalStore actor inside authority scope; no network or new privilege is needed to save offline. Reuse current pendingManualWatering and generic command builders.",
+        "Expose explicit confirmed/pending/rejected/unconfirmed outcome for this new path; a queue item disappearing after permanent server error must not be called success. Existing generic record currently maps a validated receipt to .generic and dequeues before canonical confirmation. For the new existing-card path require typed receipt entry ID/watermark and canonical owner sync linkage to the same care.record operation/plant/occurrence before final ACK; retain exact pending on response loss or absent/malformed canonical linkage. Extend existing outbox/API result machinery minimally rather than create another transport. Any required change to old post-save tests is limited to making their canonical fixtures faithful to actual wire, never weakening assertions or skipping tests.",
+        "Handle permanent nonretryable 400/403/404/409 without endless false pending and without falsely showing success; subsequent corrected action gets a fresh operation. Interrupted/inflight owner switch never writes to another owner or sends old queue under new owner. Lost successful reply must still replay exactly once. A server-known deletion may resolve the command without inventing a watering fact; keep that outcome distinct from confirmed watering.",
+        "Add focused meaningful disk-backed Swift tests in existing CollectionWireTests: saved plant has no create confirmation; first request succeeds with lost response, reopen disk and exact retry, only one canonical journal entry; no-rule/paused/expired manual record allowed; missing/deleted/pending-deletion/anonymous/stale-owner enqueue rejected; invalid/future date rejected; permanent rejection distinct from success; canonical sync missing/wrong operation/plant does not ACK. Keep all existing tests. No test-only production bypass."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "RECORD1",
+          "description": "Swift build and full actual app tests pass, including disk-backed exact retry and canonical confirmation for saved-plant manual watering, with no create-confirmation or routine access prerequisite.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "RECORD2",
+          "description": "Ordinary app smoke still passes with unchanged backend isolation and current home/catalogue navigation. Reviewer and QA inspect failure/owner/deletion semantics against new test evidence.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ]
+    }
+  ]
+}

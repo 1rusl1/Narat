@@ -4569,7 +4569,7 @@ extension CollectionWireTests {
             return model
         }
         let entryId = UUID()
-        func page(_ state: String? = nil, newEntry: UUID? = nil) throws -> String {
+        func page(_ state: String? = nil, newEntry: UUID? = nil, recordOperation: UUID? = nil) throws -> String {
             let plant: [String: Any] = [
                 "entity_type": "plants", "id": serverPlantId.uuidString,
                 "updated_at": syncUntil, "deleted_at": NSNull(),
@@ -4582,6 +4582,8 @@ extension CollectionWireTests {
                     "updated_at": syncUntil, "deleted_at": NSNull(),
                     "data": ["id": id.uuidString, "plant_id": serverPlantId.uuidString,
                              "task_id": NSNull(), "action_code": "water", "state": state,
+                             "operation_id": id == newEntry ? "NEXT_RECORD_OPERATION"
+                                 : (recordOperation?.uuidString ?? UUID().uuidString),
                              "occurred_at": "2026-11-03T07:00:00Z", "occurred_local_date": "2026-11-03"]
                 ]
             }
@@ -4645,7 +4647,7 @@ extension CollectionWireTests {
 
         let validRecord = try syncJSON(manualWateringReceipt(entryId: entryId, state: "active"))
         let reversalId = UUID()
-        let voidedPage = try page("voided")
+        let voidedPage = try page("voided", recordOperation: recordId)
         let previousSync = syncUntil
         let reversalSync = "2026-11-03T09:05:00.000001+00:00"
         let postUndoPage = voidedPage.replacingOccurrences(of: previousSync, with: reversalSync)
@@ -4675,8 +4677,8 @@ extension CollectionWireTests {
         let dated = try syncJSON(careProjection(anchor: "2026-11-03", due: "2026-11-10"))
         let nextEntryId = UUID()
         let nextRecord = try syncJSON(manualWateringReceipt(entryId: nextEntryId, state: "active"))
-        let activePage = try page("voided", newEntry: nextEntryId)
-            .replacingOccurrences(of: previousSync, with: reversalSync)
+        let activePage = try page("voided", newEntry: nextEntryId, recordOperation: recordId)
+            .replacingOccurrences(of: previousSync, with: "2026-11-03T09:06:00.000001+00:00")
         let correctedAt = "2026-11-02T07:00:00Z"
         let correctedUntil = "2026-11-03T09:10:00.000001+00:00"
         var correctedPage = try XCTUnwrap(
@@ -4698,13 +4700,23 @@ extension CollectionWireTests {
         var correctionReceipt = manualWateringReceipt(entryId: nextEntryId, state: "active")
         correctionReceipt["watermark"] = correctedUntil
         let correctedAdvice = try syncJSON(careProjection(anchor: "2026-11-02", due: "2026-11-09"))
+        func withRecordOperation(_ page: String) -> CatalogueTransport.Reply {
+            .inspect { requests in
+                let records = try requests.filter { $0.httpMethod == "POST" }.map {
+                    try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap($0.httpBody))
+                }
+                let command = try XCTUnwrap(records.last { $0.commandName == "care.record" })
+                return page.replacingOccurrences(of: "NEXT_RECORD_OPERATION", with: command.operationId.uuidString)
+            }
+        }
         let transport = CatalogueTransport([
-            .http(200, try page("active")), .http(200, noDate), .http(200, validRecord), .network,
-            .http(200, try page("active")), .http(200, dated),
+            .http(200, try page("active", recordOperation: recordId)), .http(200, noDate), .http(200, validRecord), .network,
+            .http(200, try page("active", recordOperation: recordId)), .http(200, dated),
             .http(200, canonicalUndo), syncUndo, .http(200, postUndoPage), .http(200, noDate),
-            .http(200, nextRecord), .http(200, activePage), .http(200, dated),
-            .http(200, activePage), .http(200, try syncJSON(correctionReceipt)),
-            .http(200, try syncJSON(correctedDelta)), .http(200, try syncJSON(correctedPage)), .http(200, correctedAdvice)
+            .http(200, nextRecord), withRecordOperation(activePage), withRecordOperation(activePage), .http(200, dated),
+            withRecordOperation(activePage), .http(200, try syncJSON(correctionReceipt)),
+            withRecordOperation(try syncJSON(correctedDelta)), withRecordOperation(try syncJSON(correctedPage)),
+            .http(200, correctedAdvice)
         ])
         let api = client(transport)
         await api.bindSyncSession(syncSession)
@@ -4951,6 +4963,114 @@ extension CollectionWireTests {
         let requests = await transport.capturedRequests()
         XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET", "GET", "POST", "GET"])
         XCTAssertTrue(requests.filter { $0.httpMethod == "POST" }.allSatisfy { $0.httpBody == original })
+    }
+
+    @MainActor
+    func testWateringRecordReopensExactRetryAndRequiresCanonicalLinkBeforeAck() async throws {
+        let variants = ["missing", "owner", "entry", "operation", "plant", "task", "action", "date", "day", "state", "sync-loss"]
+        for (index, variant) in variants.enumerated() {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let command = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+            let entryId = UUID()
+            let original: URLRequest
+            do {
+                let transport = CatalogueTransport([.network])
+                let api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                try await store.enqueueManualWatering(command, context: lease, authority: api.syncAuthority)
+                let committed = try await SyncEngine(store: store, apiClient: api).flushOutbox(context: lease)
+                XCTAssertEqual(committed, 0)
+                let requests = await transport.capturedRequests()
+                original = try XCTUnwrap(requests.first)
+            }
+            let receipt = try syncJSON(manualWateringReceipt(entryId: entryId, state: "active"))
+            // Accepted creation can replay after a date correction and undo.
+            let state = index.isMultiple(of: 2) ? "voided" : "active"
+            let correctedAt = "2026-11-02T07:00:00Z"
+            let data: [String: Any] = [
+                "id": entryId.uuidString, "plant_id": serverPlantId.uuidString,
+                "operation_id": command.operationId.uuidString, "task_id": NSNull(),
+                "action_code": "water", "state": state, "timezone": "Europe/Moscow",
+                "occurred_at": correctedAt, "occurred_local_date": "2026-11-02"
+            ]
+            var fact = syncChange(id: entryId.uuidString, entity: "care_entries")
+            var badData = data
+            switch variant {
+            case "entry":
+                let otherId = UUID().uuidString
+                fact["id"] = otherId
+                badData["id"] = otherId
+            case "operation": badData["operation_id"] = UUID().uuidString
+            case "plant": badData["plant_id"] = UUID().uuidString
+            case "task": badData["task_id"] = UUID().uuidString
+            case "action": badData["action_code"] = "check_soil"
+            case "date": badData["occurred_at"] = "invalid"
+            case "day": badData["occurred_local_date"] = "2026-02-30"
+            case "state": badData["state"] = "unknown"
+            default: break
+            }
+            fact["data"] = badData
+            var badPage = syncObject()
+            badPage["changes"] = ["missing", "owner"].contains(variant) ? [] : [fact]
+            do {
+                let transport = CatalogueTransport([
+                    .http(200, receipt), variant == "sync-loss" ? .network : .http(200, try syncJSON(badPage))
+                ])
+                let api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                if variant == "owner" {
+                    try await store.applySyncedItems([
+                        SyncItemDTO(entityType: "care_entries", id: entryId,
+                                    updatedAt: SQLTimestamp.date(from: syncUntil)!, payloadJSON: try syncJSON(data))
+                    ], ownerId: otherSyncOwner)
+                }
+                let restored = try await store.pendingOutboxEntries(for: syncOwner)
+                XCTAssertEqual(restored.map(\.envelope), [command])
+                let committed = try await SyncEngine(store: store, apiClient: api).flushOutbox(context: lease)
+                XCTAssertEqual(committed, 0, variant)
+                let requests = await transport.capturedRequests()
+                XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET"])
+                XCTAssertEqual(requests.first?.httpBody, original.httpBody)
+            }
+            let newer = "2026-11-03T09:10:00.000001+00:00"
+            var canonical = syncObject()
+            canonical["until"] = newer
+            canonical["next_since"] = newer
+            var linked = syncChange(newer, id: entryId.uuidString, entity: "care_entries")
+            linked["data"] = data
+            canonical["changes"] = [linked]
+            do {
+                let transport = CatalogueTransport([.http(200, receipt), .http(200, try syncJSON(canonical))])
+                let api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                let retained = try await store.pendingOutboxEntries(for: syncOwner)
+                XCTAssertEqual(retained.map(\.envelope), [command], variant)
+                XCTAssertEqual(retained.first?.retryCount, 2, variant)
+                let committed = try await SyncEngine(store: store, apiClient: api).flushOutbox(context: lease)
+                XCTAssertEqual(committed, 1, variant)
+                let requests = await transport.capturedRequests()
+                XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET"])
+                XCTAssertEqual(requests.first?.httpBody, original.httpBody)
+                XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "X-Operation-Id"),
+                               original.value(forHTTPHeaderField: "X-Operation-Id"))
+            }
+            let reopened = LocalStore(modelContainer: try diskContainer(url))
+            let pending = try await reopened.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(pending.isEmpty)
+            let rows = try await reopened.activeSyncedEntities(ownerId: syncOwner, entityType: "care_entries")
+            let saved = try XCTUnwrap(rows.first { $0.id == entryId })
+            let factOnDisk = try JSONDecoder().decode(CatalogueCareJournalEntry.self, from: Data(saved.payloadJSON.utf8))
+            XCTAssertEqual(factOnDisk.operationId, command.operationId)
+            XCTAssertEqual(factOnDisk.occurredAt, correctedAt)
+            XCTAssertEqual(factOnDisk.state, state)
+        }
     }
 
     @MainActor

@@ -1,0 +1,56 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-record-canonical-ack",
+      "description": "Retain typed manual care.record receipt and require its canonical owner journal linkage before ACK, reusing existing sync/outbox. This is a narrow prerequisite for saved-card manual watering.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "docs/validation/automation/runs/unaccepted-core-20261119.patch"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Implement only the typed receipt/ACK prerequisite. No new repository saved-card API, UI, Today, notifications, new schema, source import, billing, second transport or outbox. Existing ManualWateringAction, API receipt validator, generic outbox drain and canonical sync remain the mechanism. Return exact unified Git diff.",
+        "A previous larger Developer call timed out after emitting an unaccepted 49KB draft patch. It is reference only at docs/validation/automation/runs/unaccepted-core-20261119.patch; inspect only Remote/Sync confirmed-record hunks and the necessary LocalStore confirmation helper. Reuse relevant work but do not apply the whole draft or implement its saved-card enqueue/repository/UI scope. Return the small ACK-only patch plus focused tests promptly; no need to re-research care scheduling or recommendations.",
+        "Current authenticated care.record path validates ManualWateringReceipt but returns .generic, dropping entryId/watermark. Add a typed OutboxCommandResult for this receipt. SyncEngine must refresh canonical journal to that watermark and validate the same owner plant, receipt entry ID and original operation ID in canonical care_entries before final outbox ACK. CatalogueCareJournalEntry.operationId and owner sync operation_id already exist, no SQL change required.",
+        "Canonical linked row must be a valid water/manual fact (task_id nil, actionCode water, valid dates/state) with exact operation/entry/plant identities. Preserve later correction/undo history: replay of accepted record must not rewrite current canonical state, and linked active or voided entry can still prove creation. Missing/wrong canonical linkage, malformed receipt, transport loss or sync failure retain the original operation/payload for exact retry; never ACK from count or generic success.",
+        "Preserve existing create, correction/undo, routine/firstaid and raw no-session fixture behaviors. Minimize test changes: update old post-save record fixtures to contain the actual canonical operation_id and account for required canonical refresh, without weakening assertions. Add focused disk-backed lost-response reopen/exact retry and missing/mismatched canonical linkage regressions to existing CollectionWireTests.",
+        "No changes to confirmation creation or subscription policies; user requested no purchases. Full product T065/T160/T171 remain open. Later saved-card enqueue/rejection/UI is explicitly outside this narrow slice."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ACK1",
+          "description": "Build and full Swift tests pass, with typed record receipt and canonical-linkage proof before ACK and meaningful disk restart/replay negative tests.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "ACK2",
+          "description": "Ordinary Simulator smoke passes without exposing real service config; independent Review/QA confirm this is only the ACK prerequisite.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/runs/unaccepted-core-20261119.patch"
+      ]
+    }
+  ]
+}
