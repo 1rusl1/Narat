@@ -211,6 +211,11 @@ enum SavedWateringOutcome: Sendable, Equatable {
     case pending, confirmed, rejected, unconfirmed
 }
 
+/// Completion describes this bounded reconciliation pass, never an action receipt.
+enum CareReconciliationOutcome: Sendable, Equatable {
+    case completed, pending, busy
+}
+
 enum PlantDeletionOutcome {
     case pending, confirmed, rejected
 }
@@ -331,6 +336,13 @@ public struct CollectionRepository: Sendable {
     private let apiClient: PlantsAPIClient
     private let syncEngine: SyncEngine
     private let clock: @Sendable () -> Date
+
+    /// The caller captures one permanent owner's lease for the whole lifecycle trigger.
+    /// A retained command or unavailable refresh is never presented as action success.
+    func reconcilePendingCare(context: SyncSessionLease) async throws -> CareReconciliationOutcome {
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        return try await syncEngine.reconcilePendingCare(context: context)
+    }
 
     public init(
         store: LocalStore, apiClient: PlantsAPIClient, syncEngine: SyncEngine,

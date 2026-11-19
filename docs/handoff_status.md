@@ -1,5 +1,37 @@
 # Narat — текущий статус и передача работы
 
+## Принят UI ручного полива; candidate общего care reconcile — 19 ноября 2026
+
+UI full candidate-base run `tester-care-record-ui-jwt-acceptance-20261119-01`
+принят/отправлен коммитом `cd51702885bed0479517cf24d80ee0983bc5559b`.
+Реальные проверки:149automation,316Swift (313XCTest+3SwiftTesting),
+ordinary welcome1, MCP,9ENcareUI, fresh Review1/QA1 PASS. Два новых UI
+подтвердили cache/offline fault injection, restart/exact operation,
+один canonical fact/undo и terminal rejection без ложного success.
+Production UI совпадает с ordinary signed2fb parent live evidence;
+исправление JWT ограничено DEBUG fixture. Не physical iPhone/offline proof,
+не полное завершение stage1/B01–B11.
+
+После приёмки применён отдельный явно НЕпринятый controller-authored core
+candidate. Родитель подготовил два production files и six compact tests
+в /tmp вне active checkout; child проверил scope/hunks/git apply --check,
+применил их к принятому UI, удалил только DRAFT notes из test snippet.
+Это не успешный Developer call, предыдущие CLI transport timeouts сохранены.
+Изменены CollectionRepository,SyncEngine,CollectionWireTests: один
+permanent-owner ordered care+typededit+profile+existing photo-draft pass,
+busy guard всего pass, retained unsupported/deletion ordering и финальный
+canonical pull. Outcome описывает pass, не подтверждение отдельного действия.
+Шесть новых tests покрывают disk/lost reply,typedroutine/profile,
+unsupported/delete/foreign owner,edit→care,concurrent busy finalpull и
+owner/ABA/cancel. Сборка/тесты candidate пока не запускались.
+
+Следующий actual read-only run:
+`tester-care-reconcile-core-acceptance-20261119-01`, manifest
+`tools/automation/tasks.tester-care-reconcile-core-acceptance.json`,
+shared resource config. После gates/Review/QA — lifecycle wiring на
+foreground/reconnect и cache-condition edge; затем живая stage1 приёмка,
+Today и reminders. Parent checkbox остаются открыты.
+
 ## Выявлен fixture JWT guard; новый непринятый candidate — 19 ноября 2026
 
 Узкий Developer repair остановлен после900s transport timeout (catalog,

@@ -1,0 +1,55 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-owner-reconcile-core-acceptance",
+      "description": "Provide one bounded permanent-owner reconciliation of pending care through existing outbox/sync, independent of an open card or manual Retry button.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "docs/handoff_status.md",
+        "tools/automation/tasks.tester-care-reconcile-core-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only acceptance of controller-authored candidate after repeated provider transport timeouts. Parent controller prepared production patch (SyncEngine/Repository) and compact6tests outside active checkout at09774b8, child inspected every hunk, git apply --check PASS and applied only3Swift paths after UIcd517028 acceptance. This is explicitly NOT a successful Developer call: verify full actual candidate delta from cd517028, actual new gates and independent Review/QA. Terminal generic post-save behavior stays unchanged. No full stage1/T* closure from this core-only seam.",
+        "Implement only a lifecycle-independent owner-bound care reconciliation seam for later Root wiring. Do not add UI, new queue/schema, Today, notifications, source data, billing, new server endpoint or timer loop. Reuse current LocalOutboxRecord, SyncEngine ordered drain, typed receipts/canonical ACK and owner delta/full refresh. No new sync protocol.",
+        "Concrete gap: current reconnect/card reopen retries only manual date/undo, while routine completion/undo, firstaid record/observe/photo, basic enable/refresh remain pending until explicit Retry. The new seam can be called on foreground/reconnect with one captured permanent bound lease and must deliver eligible current-owner care pending and refresh canonical data without a create receipt, rule/profile or paid precondition for manual record.",
+        "Preserve existing per-plant sequence, deletion blocking, GlobalChainBlocked and drainingOwners guard. Do not loop over exact flushPlantCommand calls in a way that bypasses an earlier still-pending operation for the same plant. Prefer a small wrapper/filter/mode on the existing drain if needed. Profile reminder-hour pending can reuse its existing typed handler. Do not activate retired slots/report/season/AI commands, resend another owner, or trigger new analyses. Include the existing typed PlantEditCommand handler for owner changes/rename so a restored offline condition edit can clear before its later care operation; do not introduce a new edit format or bypass its canonical verification.",
+        "Care-only filtering must not silently skip a preceding unsupported pending write and then send a later same-plant care command: mark that plant blocked for this pass. Existing pending deletion blocks its other commands even if deletion is outside the care-only subset. Keep unrelated owner/global work untouched; recognized profile-hour may use its existing handler. Return explicit busy/incomplete rather than implying full drain if another owner pass holds drainingOwners.",
+        "All successful visible state comes from existing canonical receipt/linkage checks. Pending response loss, offline and failed sync retain exact commands; permanent manual record rejection must not become false success or endless immediate retries. If adapting its terminal behavior, scope it to the new explicit care reconciliation path and preserve post-save no-false-success semantics. Do not treat committed count or disappearance as an action confirmation.",
+        "Use one bounded attempt per trigger, coalescing/reentrancy handled without duplicate sends. No periodic polling or retry-forever task. Stale lease/auth ABA/cancellation abort safely and preserve original owner queue; a fresh same-owner lease can later finish. An expired/paused account may still deliver valid manual watering/correct/undo; it must not invent resumed automated checks. No network or applicability loader is needed to persist care offline.",
+        "Add compact meaningful tests using existing helpers/transports. Prove a disk-restored care queue automatically drains without calling action-specific UI retry; reuse accepted manual/routine/firstaid fixture structures rather than hundreds of repeated JSON lines. Exercise representative manual + routine/firstaid + profile-hour, response loss/exact retry and owner-switch/cancellation. Preserve all previous tests and never weaken canonical proof or claim live/iPhone acceptance. Include ordering regression: pending typed condition edit then care makes forward progress on reconnect; an unsupported earlier same-plant command still blocks later care."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "RECONCORE1",
+          "description": "Build and full Swift tests pass; restored owner care pending can be reconciled by one common method without manual UI Retry, with exact identity and preserved ordering.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "RECONCORE2",
+          "description": "Ordinary Simulator smoke passes; independent Review/QA verify bounded retry, isolation, expiry/manual access and preserved receipts.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "candidate_base": "cd51702885bed0479517cf24d80ee0983bc5559b",
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-saved-watering-ui-jwt-acceptance.md"
+      ]
+    }
+  ]
+}

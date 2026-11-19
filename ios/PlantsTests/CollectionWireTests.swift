@@ -49,6 +49,16 @@ private actor SavedWateringReplayTransport: PlantsAPITransport {
                              "occurred_at": "2026-11-02T07:00:00Z", "occurred_local_date": "2026-11-02"]
                 ])
                 object["changes"] = rows
+                // A canonical final pull at the accepted watermark is an empty delta.
+                // Compare parsed instants, not equivalent timestamp spellings.
+                let since = request.url.flatMap {
+                    URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?
+                        .first(where: { $0.name == "since" })?.value
+                }
+                if let since, let start = SQLTimestamp.microseconds(from: since),
+                   let acceptedAt = SQLTimestamp.microseconds(from: watermark), start >= acceptedAt {
+                    object["changes"] = []
+                }
             }
         }
         return (try JSONSerialization.data(withJSONObject: object),
@@ -7812,3 +7822,271 @@ extension CollectionWireTests {
     }
 }
 #endif
+
+extension CollectionWireTests {
+    private func careReconcilePage(
+        _ at: String, changes: [[String: Any]] = [], hour: Int = 9
+    ) throws -> String {
+        var page = syncObject()
+        page["until"] = at
+        page["next_since"] = at
+        page["profile"] = ["preferred_locale": "en", "reminder_hour_local": hour,
+                           "trial_reminder_enabled": false] as [String: Any]
+        page["changes"] = changes
+        return try syncJSON(page)
+    }
+
+    @MainActor
+    func testCareReconcileRestoresLostWateringWithoutActionSpecificRetry() async throws {
+        for access in ["none", "expired"] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = SavedWateringReplayTransport(
+                baseline: try savedWateringBaseline(access), plantId: serverPlantId
+            )
+            let frozen: CommandEnvelopeDTO
+            do {
+                let api = client(transport)
+                await api.bindSyncSession(try profileSession())
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                let engine = SyncEngine(store: store, apiClient: api)
+                _ = try await engine.pullDelta(for: syncOwner)
+                let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+                try await repo.enqueueWateringEdit(.record, plantId: serverPlantId, context: lease)
+                let queued = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+                frozen = try XCTUnwrap(queued)
+                let outcome = try await repo.reconcilePendingCare(context: lease)
+                XCTAssertEqual(outcome, .pending)
+                let pending = try await store.pendingOutboxEntries(for: syncOwner)
+                XCTAssertEqual(pending.map(\.envelope), [frozen])
+            }
+            // Reopen a new disk container and API/session; no model or create proof retained.
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api,
+                                            syncEngine: SyncEngine(store: store, apiClient: api))
+            let outcome = try await repo.reconcilePendingCare(context: lease)
+            XCTAssertEqual(outcome, .completed)
+            let posts = await transport.capturedRequests().filter { $0.httpMethod == "POST" }
+            XCTAssertEqual(posts.count, 2)
+            XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+            XCTAssertEqual(posts.first?.value(forHTTPHeaderField: "X-Operation-Id"),
+                           posts.last?.value(forHTTPHeaderField: "X-Operation-Id"))
+            let count = await transport.journalCount()
+            XCTAssertEqual(count, 1)
+            let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(remaining.isEmpty)
+            let rows = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(rows.map(\.operationId), [frozen.operationId])
+        }
+    }
+
+    @MainActor
+    func testCareReconcileRoutineAndProfileUseTypedCanonicalAcknowledgements() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let command = try routineCompletionCommand()
+        let routinePage = try syncJSON(routineCompletionPage(operation: command.envelope.operationId))
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(routineCompletionBaseline())),
+            .http(200, try syncJSON(routineCompletionReceipt())), .http(200, routinePage),
+            .http(200, try profileResponse(hour: 17, receipt: true)),
+            .http(200, try careReconcilePage("2026-11-03T09:11:00Z", hour: 17)),
+            .http(200, try careReconcilePage("2026-11-03T09:12:00Z", hour: 17))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        _ = try await engine.pullDelta(for: syncOwner)
+        // Seed the exact accepted routine fixture through the existing typed store helper.
+        _ = try await store.enqueueRoutineCompletion(command, context: lease, authority: api.syncAuthority)
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+        let hour = try await repo.enqueueProfileReminderHour(reminderHourLocal: 17, context: lease)
+        let outcome = try await repo.reconcilePendingCare(context: lease)
+        XCTAssertEqual(outcome, .completed)
+        let rows = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(rows.isEmpty)
+        let profile = try await store.syncedProfile(ownerId: syncOwner)
+        XCTAssertEqual(profile?.reminderHourLocal, 17)
+        let receipt = try JSONDecoder().decode(RoutineSoilCheckCompletionReceipt.self,
+                                               from: Data(try syncJSON(routineCompletionReceipt()).utf8))
+        try await store.validateRoutineCompletion(receipt, command: command,
+                                                 context: lease, authority: api.syncAuthority)
+        let requests = await transport.capturedRequests()
+        let posts = requests.filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(posts.map { $0.value(forHTTPHeaderField: "X-Operation-Id") },
+                       [command.envelope.operationId.uuidString.lowercased(),
+                        hour.envelope.operationId.uuidString.lowercased()])
+        XCTAssertEqual(requests.last?.httpMethod, "GET") // Final canonical pull, not send count alone.
+    }
+
+    @MainActor
+    func testCareReconcileCannotBypassUnsupportedOrPendingDeletion() async throws {
+        for blocker in ["fixture.unsupported", PlantDeleteReceipt.commandName] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = CatalogueTransport([.http(200, try savedWateringBaseline())])
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            _ = try await store.enqueueCommand(ownerId: syncOwner, plantId: serverPlantId,
+                                                commandName: blocker, payloadJSON: "{}")
+            let command = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+            _ = try await store.enqueueCommand(operationId: command.operationId, ownerId: syncOwner,
+                plantId: serverPlantId, commandName: command.commandName, payloadJSON: command.payloadJSON)
+            let foreign = try ManualWateringAction.record.envelope(plantId: UUID())
+            _ = try await store.enqueueCommand(operationId: foreign.operationId, ownerId: otherSyncOwner,
+                plantId: foreign.plantId, commandName: foreign.commandName, payloadJSON: foreign.payloadJSON)
+            let before = try await store.pendingOutboxEntries(for: syncOwner)
+            let repo = CollectionRepository(store: store, apiClient: api,
+                                            syncEngine: SyncEngine(store: store, apiClient: api))
+            let outcome = try await repo.reconcilePendingCare(context: lease)
+            XCTAssertEqual(outcome, .pending)
+            let after = try await store.pendingOutboxEntries(for: syncOwner)
+            let other = try await store.pendingOutboxEntries(for: otherSyncOwner)
+            XCTAssertEqual(after, before)
+            XCTAssertEqual(other.map(\.envelope), [foreign])
+            let requests = await transport.capturedRequests()
+            XCTAssertFalse(requests.contains { $0.httpMethod == "POST" })
+        }
+    }
+
+    @MainActor
+    func testCareReconcileTypedConditionEditUnblocksFollowingWateringInSequence() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let snapshot = UUID(), fact = UUID()
+        let editedAt = "2026-11-03T09:10:00Z", wateredAt = "2026-11-03T09:11:00Z"
+        var condition = syncChange(editedAt, id: snapshot.uuidString, entity: "condition_snapshots")
+        condition["data"] = ["id": snapshot.uuidString, "plant_id": serverPlantId.uuidString,
+                             "watering_code": "weekly"]
+        var card = syncChange(editedAt, id: serverPlantId.uuidString)
+        card["data"] = ["id": serverPlantId.uuidString, "revision": 2, "care_revision": 2,
+                        "current_condition_snapshot_id": snapshot.uuidString] as [String: Any]
+        let editReceipt = try syncJSON(["plant_id": serverPlantId.uuidString, "revision": 2,
+            "care_revision": 2, "condition_snapshot_id": snapshot.uuidString, "watermark": editedAt])
+        let edit = try PlantEditCommand.make(plantId: serverPlantId, change: .watering(.weekly))
+        let water = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+        var entry = syncChange(wateredAt, id: fact.uuidString, entity: "care_entries")
+        entry["data"] = ["id": fact.uuidString, "plant_id": serverPlantId.uuidString,
+            "operation_id": water.operationId.uuidString, "task_id": NSNull(), "action_code": "water",
+            "state": "active", "timezone": "UTC", "occurred_at": "2026-11-02T07:00:00Z",
+            "occurred_local_date": "2026-11-02"] as [String: Any]
+        var waterReceipt = manualWateringReceipt(entryId: fact, state: "active")
+        waterReceipt["watermark"] = wateredAt
+        let transport = CatalogueTransport([
+            .http(200, try savedWateringBaseline()),
+            .http(200, editReceipt), .http(200, try careReconcilePage(editedAt, changes: [condition, card])),
+            .http(200, try syncJSON(waterReceipt)),
+            .http(200, try careReconcilePage(wateredAt, changes: [entry])),
+            .http(200, try careReconcilePage("2026-11-03T09:12:00Z"))
+        ])
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        _ = try await engine.pullDelta(for: syncOwner)
+        // Fixture persistence preserves edit-before-care ordering across one drain snapshot.
+        for command in [edit, water] {
+            _ = try await store.enqueueCommand(operationId: command.operationId, ownerId: syncOwner,
+                plantId: serverPlantId, commandName: command.commandName, payloadJSON: command.payloadJSON)
+        }
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+        let outcome = try await repo.reconcilePendingCare(context: lease)
+        XCTAssertEqual(outcome, .completed)
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertTrue(pending.isEmpty)
+        let posts = await transport.capturedRequests().filter { $0.httpMethod == "POST" }
+        let commands = try posts.map { try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap($0.httpBody)) }
+        XCTAssertEqual(commands, [edit, water])
+        let updated = try await store.syncedCollectionCard(plantId: serverPlantId,
+                                                         context: lease, authority: api.syncAuthority)
+        let savedCard = try XCTUnwrap(updated)
+        XCTAssertEqual(savedCard.careRevision, 2)
+        let saved = try await repo.syncedPlantConditions(for: savedCard, context: lease)
+        XCTAssertEqual(saved?.watering, .weekly)
+        let history = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(history.map(\.operationId), [water.operationId])
+    }
+
+    @MainActor
+    func testCareReconcileBusyGuardIncludesFinalCanonicalPull() async throws {
+        for cancel in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = SuspendedCollectionTransport(try syncJSON(syncObject()))
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api,
+                                            syncEngine: SyncEngine(store: store, apiClient: api))
+            let running = Task { try await repo.reconcilePendingCare(context: lease) }
+            await transport.waitForRequest() // No queue: this is the final GET, not a send.
+            let busy = try await repo.reconcilePendingCare(context: lease)
+            XCTAssertEqual(busy, .busy)
+            if cancel { running.cancel() }
+            await transport.resume()
+            do {
+                let outcome = try await running.value
+                XCTAssertFalse(cancel, "Cancelled final pull must not publish a successful pass")
+                XCTAssertEqual(outcome, .completed)
+            } catch is CancellationError {
+                XCTAssertTrue(cancel)
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET"])
+        }
+    }
+
+    @MainActor
+    func testCareReconcileBusyOwnerABAAndCancellationPreserveExactDiskQueue() async throws {
+        for mode in ["owner", "aba", "cancel"] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = SuspendedCollectionTransport(try syncJSON(routineCompletionReceipt()))
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let command = try routineCompletionCommand().envelope
+            _ = try await store.enqueueCommand(operationId: command.operationId, ownerId: syncOwner,
+                plantId: serverPlantId, commandName: command.commandName, payloadJSON: command.payloadJSON)
+            let before = try await store.pendingOutboxEntries(for: syncOwner)
+            let repo = CollectionRepository(store: store, apiClient: api,
+                                            syncEngine: SyncEngine(store: store, apiClient: api))
+            let running = Task { try await repo.reconcilePendingCare(context: lease) }
+            await transport.waitForRequest()
+            let busy = try await repo.reconcilePendingCare(context: lease)
+            XCTAssertEqual(busy, .busy)
+            if mode == "cancel" { running.cancel() }
+            else {
+                await api.bindSyncSession(try profileSession(ownerId: otherSyncOwner))
+                if mode == "aba" { await api.bindSyncSession(try profileSession()) }
+            }
+            await transport.resume()
+            do {
+                _ = try await running.value
+                XCTFail("Stale or cancelled care reconciliation reported success: \(mode)")
+            } catch is CancellationError {
+                XCTAssertEqual(mode, "cancel")
+            } catch SyncWireValidationError.invalidSession {
+                XCTAssertNotEqual(mode, "cancel")
+            }
+            let reopened = LocalStore(modelContainer: try diskContainer(url))
+            let after = try await reopened.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(after, before)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"),
+                           "Bearer \(lease.session!.accessToken)")
+        }
+    }
+}
