@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Выявлен fixture JWT guard; новый непринятый candidate — 19 ноября 2026
+
+Узкий Developer repair остановлен после900s transport timeout (catalog,
+websocket/HTTP; answer/patch отсутствует). Approved medium Sol config не
+имеет fallback. Родитель разрешил controller diagnostic и read-only
+candidate acceptance. Один DEBUG-only target UI с неизменёнными guards
+реально подтвердил `Plants.SyncWireValidationError: invalidSession`.
+Снимок SQLite показал active owner plant с правильными UUID/revision,
+outbox0 и HTTP attempts0. Причина доказана: fixture `token(_:)` выдавал
+JWT только profileReminderHour, новые watering cases получали plain token;
+production permanent-owner gate закономерно отвергал его до enqueue.
+
+Обе временные instrumentation правки View/LocalStore удалены побайтно.
+Кандидат меняет одну fixture-only строку: existing JWT branch включает
+`testsSavedWatering`. Production authority/owner/date/canonical guards и
+UI assertions не изменены. Диагностика — artificial fixture, её ожидаемый
+FAIL не выдаётся за acceptance. Evidence:
+`docs/validation/automation/runs/tester-care-cache-enqueue-diagnostic-20261119-01/`.
+Новый full candidate-base run:
+`tester-care-record-ui-jwt-acceptance-20261119-01`, shared config,
+316Swift/welcome/MCP/9ENUI и fresh Review/QA обязательны. Статус UI и этапа1
+до этих проверок остаётся частичным. Затем owner care reconcile/wiring.
+
 ## Saved watering UI: текущая точка после реальной проверки — 19 ноября 2026
 
 Candidate `2fbf99de` пока не принят. Read-only acceptance01 остановился

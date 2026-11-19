@@ -350,7 +350,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         ledger = next
     }
     private func token(_ owner: UUID) -> String {
-        guard ledger.scenario == .profileReminderHour else {
+        guard ledger.scenario == .profileReminderHour || ledger.scenario.testsSavedWatering else {
             return "fixture-only-" + namespace + "-" + owner.uuidString.lowercased()
         }
         // Exercise the production permanent-owner claim gate through the SDK bearer.
