@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-saved-watering-api",
+      "description": "Add narrow existing-plant manual watering enqueue/retry on the accepted canonical ACK machinery, without a create confirmation or care entitlement requirement.",
+      "risk": "medium",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "docs/validation/automation/runs/unaccepted-core-20261119.patch"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "evidence_files": [
+        "docs/validation/automation/runs/unaccepted-core-20261119.patch"
+      ],
+      "constraints": [
+        "Accepted ACK prerequisite is 992c26a. Read the current helper signature; the reference draft predates it and its old active/original-date UUID helper is incorrect. Reuse the accepted canonical identity semantics.",
+        "Prerequisite: independently accepted tester-care-record-canonical-ack. Implement only saved-plant repository/store/retry seam. No UI, Today, notifications, SQL, new profile/source import, billing or second outbox. Reference draft is NOT accepted and must NOT be applied wholesale; reuse only correct saved-record guards/API from it, minimizing new code/test duplication.",
+        "Concrete missing API: enqueueWateringEdit(.record) throws, and submitManualWatering requires create confirmation. Allow .record for an existing canonical active owner plant through owner-leased durable LocalOutboxRecord before network. Require permanent current bound owner, canonical nondeleted same-owner plant, no pending deletion and no competing manual operation for the plant. Persist operation UUID, exact payload and occurrence timestamp once; future/invalid date rejected. A repeated tap with the same pending operation must not allocate a new record.",
+        "Manual record works with no profile/rule, disabled/paused care, and expired entitlement: do not require routineAccessAvailable, dueRoutine, basicCareEnabled, paid access, or any create confirmation. Reuse ManualWateringAction and existing command/receipt/sync paths.",
+        "Expose confirmed/pending/rejected/unconfirmed result for retry. Reuse flushPlantCommand exact operation and existing canonical ACK helper. Add ONE shared canonical record identity probe returning UUID/nil by original operation/plant/manual-water identity and valid active-or-voided dates; current Bool(entryId,watermark) ACK method reuses the same identity core plus watermark. Never copy the old draft active-state/original-date comparisons. Accepted creation can be replayed after subsequent correction/undo without reverting canonical history.",
+        "New retry distinguishes permanent nonretryable server errors from confirmed success. Simplest safe scope: terminal record dequeue/typed rejection only when onlyOperation matches this record; preserve existing generic post-save error behavior. Never turn disappearance alone into confirmed. Existing submitManualWatering(.record) returns true only when original operation is canonically linked and queue is acknowledged; preserve correction/undo behavior. If terminal dequeue is made global instead, post-save rejection semantics and a regression test are mandatory and may require a separate follow-up; do not ship false success.",
+        "Reuse existing disk/test helpers. Add compact meaningful tests: existing saved plant without create proof; first accepted response loss, disk reopen and exact operation replay, one canonical journal entry; no-rule/paused/expired manual allowed; future date, anonymous/stale A-B-A, missing/deleted/pending-deletion and competing manual enqueue rejected; terminal rejection not success and subsequent new attempt has new op; preserve accepted ACK regression for corrected/voided entry. Prefer a small table-driven guard test and a couple of disk/transport tests, not hundreds of repeated fixture lines. No weakened/skip assertions."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "SAVED1",
+          "description": "Actual full Swift tests and build pass with durable saved-plant record API, strict owner/deletion guards, exact replay and honest confirmed/rejected outcomes.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "SAVED2",
+          "description": "Ordinary Simulator smoke passes; independent Review/QA verify no create/profile/entitlement prerequisite and preserved post-save semantics.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ]
+    }
+  ]
+}

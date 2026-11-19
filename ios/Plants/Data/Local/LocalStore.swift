@@ -496,6 +496,31 @@ public actor LocalStore {
         )
     }
 
+    func enqueueSavedPlantWatering(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws {
+        try authority.withPermanentBoundValid(context) {
+            let disk = makeSyncContext()
+            guard let plantId = command.plantId, ManualWateringAction(envelope: command) == .record,
+                  let payload = try? JSONDecoder().decode([String: String].self, from: Data(command.payloadJSON.utf8)),
+                  let raw = payload["occurred_at"], let date = SQLTimestamp.date(from: raw), date <= Date(),
+                  let row = try activeSyncRow("plants", id: plantId, ownerId: context.ownerId, in: disk),
+                  let card = try? JSONDecoder().decode(CatalogueCardSummary.self, from: Data(row.payloadJSON.utf8)),
+                  card.id == plantId, card.revision > 0, card.careRevision > 0 else {
+                throw SyncWireValidationError.invalidRequest
+            }
+            let pending = try pendingOutboxEntries(for: context.ownerId)
+            guard !pending.contains(where: {
+                $0.plantId == plantId && ($0.commandName == PlantDeleteReceipt.commandName
+                    || ($0.operationId != command.operationId && ManualWateringAction.accepts(command: $0.commandName)))
+            }) else { throw OutboxEnqueueError.operationIdentityMismatch }
+            _ = try enqueueCommand(
+                operationId: command.operationId, ownerId: context.ownerId, plantId: plantId,
+                commandName: command.commandName, payloadJSON: command.payloadJSON
+            )
+        }
+    }
+
     func enqueueManualWatering(
         _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws {
@@ -578,19 +603,36 @@ public actor LocalStore {
         context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> Bool {
         try authority.withBoundValid(context) {
-            guard let plantId = command.plantId, ManualWateringAction(envelope: command) == .record,
-                  let raw = try currentWatermarkRaw(ownerId: context.ownerId),
+            guard let raw = try currentWatermarkRaw(ownerId: context.ownerId),
                   let current = SQLTimestamp.microseconds(from: raw), current >= watermark else { return false }
-            return try activeSyncedEntities(ownerId: context.ownerId, entityType: "care_entries").contains { row in
-                guard row.id == entryId,
-                      let entry = try? JSONDecoder().decode(
-                        CatalogueCareJournalEntry.self, from: Data(row.payloadJSON.utf8)
-                      ) else { return false }
-                return entry.id == entryId && entry.operationId == command.operationId
-                    && entry.plantId == plantId && entry.taskId == nil && entry.actionCode == "water"
-                    && entry.hasCanonicalDatesAndState
-            }
+            return try canonicalWateringRecord(command, ownerId: context.ownerId, entryId: entryId) == entryId
         }
+    }
+
+    /// Operation identity survives subsequent canonical date corrections and undo.
+    func confirmedWateringRecord(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> UUID? {
+        try authority.withBoundValid(context) {
+            try canonicalWateringRecord(command, ownerId: context.ownerId)
+        }
+    }
+
+    private func canonicalWateringRecord(
+        _ command: CommandEnvelopeDTO, ownerId: UUID, entryId: UUID? = nil
+    ) throws -> UUID? {
+        guard let plantId = command.plantId, ManualWateringAction(envelope: command) == .record
+        else { return nil }
+        for row in try activeSyncedEntities(ownerId: ownerId, entityType: "care_entries") {
+            if let entryId, row.id != entryId { continue }
+            guard let entry = try? JSONDecoder().decode(
+                CatalogueCareJournalEntry.self, from: Data(row.payloadJSON.utf8)
+            ), entry.id == row.id, entry.operationId == command.operationId,
+               entry.plantId == plantId, entry.taskId == nil, entry.actionCode == "water",
+               entry.hasCanonicalDatesAndState else { continue }
+            return entry.id
+        }
+        return nil
     }
 
     func confirmedFirstAidEntry(

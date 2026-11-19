@@ -207,6 +207,10 @@ enum FirstAidWriteOutcome {
     case pending, confirmed, rejected
 }
 
+enum SavedWateringOutcome: Sendable, Equatable {
+    case pending, confirmed, rejected, unconfirmed
+}
+
 enum PlantDeletionOutcome {
     case pending, confirmed, rejected
 }
@@ -654,6 +658,45 @@ public struct CollectionRepository: Sendable {
         )
     }
 
+    /// Freeze the manual fact on disk before attempting transport.
+    func enqueueSavedPlantWatering(
+        plantId: UUID, date: Date, timezone: TimeZone, context: SyncSessionLease
+    ) async throws -> CommandEnvelopeDTO {
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        guard date.timeIntervalSince1970.isFinite, date <= Date()
+        else { throw SyncWireValidationError.invalidRequest }
+        let command: CommandEnvelopeDTO
+        if let pending = try await pendingManualWatering(plantId: plantId, context: context) {
+            guard ManualWateringAction(envelope: pending) == .record
+            else { throw OutboxEnqueueError.operationIdentityMismatch }
+            command = pending
+        } else {
+            command = try ManualWateringAction.record.envelope(plantId: plantId, now: date, timezone: timezone)
+        }
+        try await store.enqueueSavedPlantWatering(command, context: context, authority: apiClient.syncAuthority)
+        return command
+    }
+
+    func retrySavedPlantWatering(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> SavedWateringOutcome {
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        guard let plantId = command.plantId, ManualWateringAction(envelope: command) == .record
+        else { throw SyncWireValidationError.invalidRequest }
+        if try await pendingManualWatering(plantId: plantId, context: context) == command {
+            do {
+                _ = try await syncEngine.flushPlantCommand(command, context: context)
+            } catch SyncEngine.WateringRecordFailure.rejected {
+                return .rejected
+            }
+        }
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        if try await pendingManualWatering(plantId: plantId, context: context) == command { return .pending }
+        return try await store.confirmedWateringRecord(
+            command, context: context, authority: apiClient.syncAuthority
+        ) == nil ? .unconfirmed : .confirmed
+    }
+
     func enqueueWateringDateCorrection(
         plantId: UUID, entryId: UUID, date: Date, timezone: TimeZone, context: SyncSessionLease
     ) async throws {
@@ -677,7 +720,9 @@ public struct CollectionRepository: Sendable {
             else { throw SyncWireValidationError.invalidRequest }
             try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
         case .record:
-            throw SyncWireValidationError.invalidRequest
+            _ = try await enqueueSavedPlantWatering(
+                plantId: plantId, date: Date(), timezone: .current, context: context
+            )
         }
     }
 
@@ -688,6 +733,10 @@ public struct CollectionRepository: Sendable {
     }
 
     func retryWateringEdit(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+        if ManualWateringAction(envelope: command) == .record {
+            _ = try await retrySavedPlantWatering(command, context: context)
+            return
+        }
         guard let plantId = command.plantId,
               command.commandName == ManualWateringAction.correctionCommand
                 || command.commandName == ManualWateringAction.undoCommand,
@@ -712,6 +761,12 @@ public struct CollectionRepository: Sendable {
         try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
         _ = try await syncEngine.flushOutbox(context: context)
         let pending = try await store.pendingOutboxEntries(for: context.ownerId)
+        if ManualWateringAction(envelope: command) == .record {
+            guard !pending.contains(where: { $0.operationId == command.operationId }) else { return false }
+            return try await store.confirmedWateringRecord(
+                command, context: context, authority: apiClient.syncAuthority
+            ) != nil
+        }
         return try apiClient.syncAuthority.withBoundValid(context) {
             !pending.contains { $0.operationId == command.operationId }
         }

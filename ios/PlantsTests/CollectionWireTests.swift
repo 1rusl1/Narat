@@ -2,6 +2,229 @@ import XCTest
 import SwiftData
 @testable import Plants
 
+private actor SavedWateringReplayTransport: PlantsAPITransport {
+    private let baseline: String
+    private let plantId: UUID
+    private let entryId = UUID()
+    private var accepted: CommandEnvelopeDTO?
+    private var lostResponse = false
+    private var requests: [URLRequest] = []
+
+    init(baseline: String, plantId: UUID) {
+        self.baseline = baseline
+        self.plantId = plantId
+    }
+
+    func capturedRequests() -> [URLRequest] { requests }
+    func journalCount() -> Int { accepted == nil ? 0 : 1 }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        let watermark = "2026-11-03T09:10:00.000001+00:00"
+        var object: [String: Any]
+        if request.httpMethod == "POST" {
+            let command = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(request.httpBody))
+            XCTAssertEqual(command.plantId, plantId)
+            XCTAssertEqual(ManualWateringAction(envelope: command), .record)
+            if let accepted { XCTAssertEqual(command, accepted) } else { accepted = command }
+            if !lostResponse {
+                lostResponse = true
+                throw URLError(.networkConnectionLost) // Committed before losing the response.
+            }
+            object = ["plant_id": plantId.uuidString, "entry_id": entryId.uuidString,
+                      "reversal_id": NSNull(), "state": "active", "watermark": watermark]
+        } else {
+            object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(baseline.utf8)) as? [String: Any])
+            if let accepted {
+                object["until"] = watermark
+                object["next_since"] = watermark
+                // The saved plant is already at the requested since watermark.
+                var rows: [[String: Any]] = []
+                rows.append([
+                    "entity_type": "care_entries", "id": entryId.uuidString,
+                    "updated_at": watermark, "deleted_at": NSNull(),
+                    "data": ["id": entryId.uuidString, "plant_id": plantId.uuidString,
+                             "operation_id": accepted.operationId.uuidString, "task_id": NSNull(),
+                             "action_code": "water", "state": "active", "timezone": "UTC",
+                             "occurred_at": "2026-11-02T07:00:00Z", "occurred_local_date": "2026-11-02"]
+                ])
+                object["changes"] = rows
+            }
+        }
+        return (try JSONSerialization.data(withJSONObject: object),
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+extension CollectionWireTests {
+    private func savedWateringBaseline(_ state: String = "none") throws -> String {
+        var page = syncObject()
+        var plant = syncChange(id: serverPlantId.uuidString)
+        plant["data"] = ["id": serverPlantId.uuidString, "revision": 1, "care_revision": 1]
+        page["changes"] = [plant] // No plant profile, rule, membership, or create receipt.
+        if state != "none" {
+            var entitlement = paidSyncEntitlement()
+            entitlement["state"] = state
+            page["entitlement"] = entitlement
+        }
+        return try syncJSON(page)
+    }
+
+    @MainActor
+    func testSavedWateringLostAcceptedResponseReplaysFromDiskWithoutCareOrCreateProof() async throws {
+        for state in ["none", "paused", "expired"] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = SavedWateringReplayTransport(baseline: try savedWateringBaseline(state), plantId: serverPlantId)
+            let frozen: CommandEnvelopeDTO
+            do {
+                let api = client(transport)
+                await api.bindSyncSession(try profileSession())
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                let engine = SyncEngine(store: store, apiClient: api)
+                _ = try await engine.pullDelta(for: syncOwner)
+                let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+                let proof = try await store.catalogueCreateConfirmation(ownerId: syncOwner, operationId: operationId)
+                XCTAssertNil(proof)
+                try await repo.enqueueWateringEdit(.record, plantId: serverPlantId, context: lease)
+                let pending = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+                frozen = try XCTUnwrap(pending)
+                let repeated = try await repo.enqueueSavedPlantWatering(
+                    plantId: serverPlantId, date: Date(), timezone: TimeZone(secondsFromGMT: 0)!, context: lease
+                )
+                XCTAssertEqual(repeated, frozen)
+                let outcome = try await repo.retrySavedPlantWatering(frozen, context: lease)
+                XCTAssertEqual(outcome, .pending)
+                let count = await transport.journalCount()
+                XCTAssertEqual(count, 1)
+            }
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            let restored = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(restored, frozen)
+            let outcome = try await repo.retrySavedPlantWatering(frozen, context: lease)
+            let repeated = try await repo.retrySavedPlantWatering(frozen, context: lease)
+            XCTAssertEqual(outcome, .confirmed)
+            XCTAssertEqual(repeated, .confirmed)
+            let posts = await transport.capturedRequests().filter { $0.httpMethod == "POST" }
+            XCTAssertEqual(posts.count, 2)
+            XCTAssertEqual(posts.first?.httpBody, posts.last?.httpBody)
+            XCTAssertEqual(posts.first?.value(forHTTPHeaderField: "X-Operation-Id"),
+                           posts.last?.value(forHTTPHeaderField: "X-Operation-Id"))
+            let count = await transport.journalCount()
+            XCTAssertEqual(count, 1)
+            let rows = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "care_entries")
+            let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(rows.count, 1)
+            XCTAssertTrue(remaining.isEmpty)
+            let fact = try JSONDecoder().decode(CatalogueCareJournalEntry.self, from: Data(XCTUnwrap(rows.first).payloadJSON.utf8))
+            XCTAssertEqual(fact.operationId, frozen.operationId)
+            XCTAssertEqual(fact.occurredAt, "2026-11-02T07:00:00Z")
+        }
+    }
+
+    @MainActor
+    func testSavedWateringGuardsLeaveDiskAndTransportUntouched() async throws {
+        for mode in ["missing", "deleted", "foreign", "malformed", "deleting", "competing",
+                     "other-record", "future", "invalid-date", "invalid-payload", "anonymous", "stale", "aba"] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = CatalogueTransport([])
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession(claims: [
+                "sub": syncOwner.uuidString, "is_anonymous": mode == "anonymous"
+            ]))
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            if mode != "missing" {
+                let payload = try syncJSON(["id": serverPlantId.uuidString, "revision": 1, "care_revision": 1])
+                try await store.applySyncedItems([
+                    SyncItemDTO(entityType: "plants", id: serverPlantId, updatedAt: Date(),
+                                deletedAt: mode == "deleted" ? Date() : nil,
+                                payloadJSON: mode == "deleted" ? "null" : mode == "malformed" ? "{}" : payload)
+                ], ownerId: mode == "foreign" ? otherSyncOwner : syncOwner)
+            }
+            if mode == "deleting" { _ = try await repo.enqueuePlantDeletion(plantId: serverPlantId, context: lease) }
+            if mode == "competing" {
+                let command = try ManualWateringAction.undo(UUID()).envelope(plantId: serverPlantId)
+                _ = try await store.enqueueCommand(operationId: command.operationId, ownerId: syncOwner,
+                    plantId: serverPlantId, commandName: command.commandName, payloadJSON: command.payloadJSON)
+            }
+            if mode == "other-record" {
+                let command = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+                try await store.enqueueSavedPlantWatering(command, context: lease, authority: api.syncAuthority)
+            }
+            if mode == "stale" || mode == "aba" {
+                await api.bindSyncSession(try profileSession(ownerId: otherSyncOwner))
+                if mode == "aba" { await api.bindSyncSession(try profileSession()) }
+            }
+            let before = try await store.pendingOutboxEntries(for: syncOwner)
+            do {
+                if mode == "other-record" || mode == "invalid-payload" {
+                    let command = mode == "other-record"
+                        ? try ManualWateringAction.record.envelope(plantId: serverPlantId)
+                        : CommandEnvelopeDTO(operationId: UUID(), commandName: "care.record",
+                                             plantId: serverPlantId, payloadJSON: "{}")
+                    try await store.enqueueSavedPlantWatering(command, context: lease, authority: api.syncAuthority)
+                } else {
+                    let date = mode == "future" ? Date().addingTimeInterval(3600)
+                        : mode == "invalid-date" ? Date(timeIntervalSince1970: .nan) : Date()
+                    _ = try await repo.enqueueSavedPlantWatering(
+                        plantId: serverPlantId, date: date, timezone: TimeZone(secondsFromGMT: 0)!, context: lease
+                    )
+                }
+                XCTFail("Unexpected enqueue: \(mode)")
+            } catch is SyncWireValidationError {
+            } catch is OutboxEnqueueError {}
+            let reopened = LocalStore(modelContainer: try diskContainer(url))
+            let after = try await reopened.pendingOutboxEntries(for: syncOwner)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(after, before, mode)
+            XCTAssertTrue(requests.isEmpty, mode)
+        }
+    }
+
+    @MainActor
+    func testSavedWateringTerminalRetryRejectsWithoutChangingGenericDrainSemantics() async throws {
+        for (status, code) in [(400, "VALIDATION_ERROR"), (403, "FORBIDDEN"), (404, "NOT_FOUND"), (409, "CONFLICT")] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let error = try syncJSON(["error": ["code": code, "message": "Fixture rejection", "retryable": false]])
+            let transport = CatalogueTransport([
+                .http(200, try savedWateringBaseline()), .http(status, error), .http(status, error)
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let engine = SyncEngine(store: store, apiClient: api)
+            _ = try await engine.pullDelta(for: syncOwner)
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+            try await repo.enqueueWateringEdit(.record, plantId: serverPlantId, context: lease)
+            let first = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+            let command = try XCTUnwrap(first)
+            let committed = try await engine.flushOutbox(context: lease)
+            let retained = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(committed, 0)
+            XCTAssertEqual(retained, command)
+            let rejected = try await repo.retrySavedPlantWatering(command, context: lease)
+            let absent = try await repo.retrySavedPlantWatering(command, context: lease)
+            XCTAssertEqual(rejected, .rejected)
+            XCTAssertEqual(absent, .unconfirmed)
+            let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(remaining.isEmpty)
+            try await repo.enqueueWateringEdit(.record, plantId: serverPlantId, context: lease)
+            let next = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+            XCTAssertNotEqual(try XCTUnwrap(next).operationId, command.operationId)
+        }
+    }
+}
+
 extension CollectionWireTests {
     @MainActor
     func testProfileOutboxRejectsBoundGuestOrUnprovenAccountBeforeDiskAndHTTP() async throws {

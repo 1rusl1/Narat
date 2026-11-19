@@ -1,5 +1,34 @@
 # Narat — текущий статус и передача работы
 
+## Принят API записи полива существующего растения — 19 ноября 2026
+
+Интегрирован опубликованный `fd7186b` из очереди тестовой версии.
+Изменены `CollectionRepository.swift`, `LocalStore.swift`, `SyncEngine.swift`
+и `CollectionWireTests.swift`: owner-bound enqueue/retry существующей
+карточки, сохранение операции на диск, общий canonical identity probe,
+честные confirmed/pending/rejected/unconfirmed/deleted outcomes. Вызов не
+требует create-confirmation, профиля, включённой автоматики или подписки.
+Старый post-save record также проверяет canonical identity и ACK.
+Точечный permanent rejection не превращает dequeue в ложный успех.
+
+Run `tester-care-record-api-20261119-01`: 316 Swift (313 XCTest + 3 Swift
+Testing), ordinary welcome 1 и MCP smoke — PASS; Reviewer/QA — PASS.
+Сохранены реальные промежуточные отказы: stale patch context и неверная
+fixture delta со старой plant row; исправлены до приёмки. Это локальные
+тестовые данные/transport, не новая запись на живом staging или iPhone.
+Root: diff-check и совпадение четырёх Swift-файлов с accepted SHA — PASS;
+полные suites повторно здесь не запускались. Исходный локальный патч
+pbxproj/двух xcstrings не затронут. Handoff объединён с обеими историями.
+В tasks добавлена лишь доказанная частичная строка T065; checkbox открыт.
+
+Цикл ухода ещё не закончен: кнопка новой записи в collection card и общий
+reconnect/foreground care reconcile остаются открытыми. Контроллер сразу
+переходит к подготовленному UI-пакету, затем reconcile; Today и reminders
+идут после этого. Точный следующий шаг — UI run в
+`/private/tmp/narat-tester-care-20261119`: запись из cached existing card,
+потеря ответа, disk restart, точный повтор, canonical журнал и дата;
+затем новая техническая/живая приёмка всего этапа ухода.
+
 ## Принято подтверждение полива; цикл ухода продолжается — 19 ноября 2026
 
 Интегрирован опубликованный `992c26a` из очереди тестовой версии:
@@ -95,6 +124,28 @@ Routing/checks взяты из последнего согласованного
 Точный следующий шаг: дождаться baseline gate в указанном worktree,
 устранить выявленные ошибки, затем через следующие узкие пакеты завершить
 цикл ухода и перейти к canonical списку/«Сегодня», затем reminders.
+## Принят canonical ACK ручного полива — 19 ноября 2026
+
+Оркестратор `tester-care-record-ack-20261119-01` принял и отправил `992c26a`.
+Изменены LocalStore, PlantsAPIClient, SyncEngine и CollectionWireTests:
+care.record сохраняет typed entry UUID/watermark; удаление outbox требует
+канонического owner journal linkage к той же операции. Поздние законные
+исправление даты и undo не блокируют ACK и не переписываются исходным retry.
+
+Проверки: build/ordinary welcome 1 PASS, 313 Swift tests
+(310 XCTest+3 Swift Testing) PASS, MCP smoke PASS, Review/QA PASS.
+Новый disk-backed regression содержит 11 вариантов отсутствующего/чужого/
+неправильного linkage, sync failure и exact retry по corrected/voided факту.
+Это local/fixtures; новых живых записей, deploy и iPhone-прогона не было.
+Новый UI/полный этап ухода этим срезом не приняты.
+
+Следующий пакет `tools/automation/tasks.tester-care-record-api.json` —
+owner-bound enqueue/retry уже сохранённого растения без create receipt,
+профиля или paid gate. Использует единый identity probe с новым ACK;
+permanent rejection не считается успехом. Run
+`tester-care-record-api-20261119-01`, затем UI и общий care reconcile.
+Прежний большой core run остаётся WAITING/timeout, его draft не принят.
+
 ## Core timeout: пакет разделён перед повтором — 19 ноября 2026
 
 Run `tester-care-record-core-20261119-01` остановился в WAITING/developer:
@@ -3527,8 +3578,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-record-canonical-ack: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 540.71 с, проверки — 145.49 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-record-canonical-ack](validation/automation/tasks/tester-care-record-canonical-ack.md).
+tester-care-saved-watering-api: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 3, reviewer 1, qa 1. Модели — 941.38 с, проверки — 259.77 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-saved-watering-api](validation/automation/tasks/tester-care-saved-watering-api.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
