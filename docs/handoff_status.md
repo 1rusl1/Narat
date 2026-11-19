@@ -1,5 +1,23 @@
 # Narat — текущий статус и передача работы
 
+## Baseline: найден устаревший welcome gate — 19 ноября 2026
+
+Run `tester-care-baseline-20261119-01` остановлен корректным FAIL:
+удалённый `testWelcomeScreenDisplaysBothEqualIntents` дал ноль tests при
+exit 0 Xcode. Deno: 436 PASS. Unit/care UI/Review/QA не завершены.
+Контроллер подготовил минимальный кандидат в `tools/automation/doctor.py`
+и `simulator_smoke.py` под существующие ordinary home/catalogue selectors.
+Strict count/skips, изоляция и PNG/native-ref evidence сохранены.
+Automation paths защищены от Developer patch самим engine, поэтому их
+меняет контроллер с последующей независимой candidate-base Review/QA.
+Локальный `unittest discover tools/automation/tests -q`: 149 PASS.
+
+Обновлены baseline report и manifest. Новый run
+`tester-care-baseline-20261119-02` повторяет полный baseline и принимает
+точный diff от `cdd38bb`. Это только local/fixtures. Приложение не менялось,
+живой staging/iPhone не проверены. Следующий шаг — завершить этот run,
+затем узкий implementation пакет канонического списка задач ухода.
+
 ## Запуск очереди версии ухода — 19 ноября 2026
 
 Пользователь поручил проходить этапы tester-care-plan последовательно через

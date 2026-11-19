@@ -47,3 +47,17 @@ seasonal watering interval в check interval без принятого прав�
 В baseline входят полный PlantsTests, обычный Simulator smoke, Deno suite
 и выбранные EN XCUITest текущего ухода. Это fixtures/local, не live.
 Все B01–B11 и родительские T160/T171/T098 остаются открытыми.
+
+## Найденный и исправляемый блокер инфраструктуры
+
+Первый baseline run `tester-care-baseline-20261119-01` получил 436 Deno PASS,
+но остановился на `ios-tests`: doctor выбирал удалённый welcome-test.
+`xcodebuild` завершился с 0, а xcresult содержал 0 tests; строгий gate
+корректно вернул FAIL. Unit и следующий UI ещё не запускались.
+
+Контроллер исправил только защищённые automation paths: doctor теперь
+выбирает существующий `testOrdinaryLaunchShowsPhotoAndCollectionRoutes`;
+MCP smoke открывает доступный каталог с обычного homepage без backend и
+проверяет штатное error/back состояние. Проверки количества/skips и
+изоляция backend сохранены. До независимой приёмки это кандидат, не PASS.
+Локальные 149 automation tests прошли; новый baseline повторит все gates.
