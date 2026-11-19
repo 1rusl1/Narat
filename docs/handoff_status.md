@@ -1,5 +1,35 @@
 # Narat — текущий статус и передача работы
 
+## Saved watering UI: текущая точка после реальной проверки — 19 ноября 2026
+
+Candidate `2fbf99de` пока не принят. Read-only acceptance01 остановился
+на host simctl timeout до Xcode; acceptance02 реально прошёл 149 automation,
+316 Swift (313 XCTest+3 Swift Testing), ordinary welcome1, MCP и fresh Review.
+Target EN UI: семь прежних care scenarios PASS; два новых FAIL уже после
+правильного Confirm watering: outer `recordWatering` catch показывает
+`collection.watering.record.failed` вместо pending/rejected. Старые отказы
+и фактический XCResult сохранены. Это не PASS/не полная приёмка этапа1.
+
+Отдельное живое доказательство родителя: ordinary signed Release того же
+`2fbf99de`, без fixture launch args, permanent Free Monstera с HTTP setup,
+UI record→enable/refresh→next check+source→cold→date correction→cold→undo→cold
+прошёл. Ровно один canonical water fact сохранил operation/entry identity;
+после undo state voided и next/routine null. Это живой staging/Simulator,
+не physical iPhone и не offline proof. Private parent evidence:
+`/private/tmp/narat-tester-care-live-evidence-20261119/summary.json`.
+Root сохраняет sanitized report отдельно, секреты в Git не включались.
+
+Следующий узкий run `tester-care-record-ui-cache-repair-20261119-01` сначала
+доказывает точный thrown error/guard offline fixture, затем исправляет
+причину с прежними9UI assertions. Fixture Auth expiry уже Date()+3600;
+контрольный Foundation probe показал truncation ISO8601 до секунды (не
+округление в будущее), это не подтверждённые причины. Core ACK/date/owner
+защиты не ослаблять. Manifest:
+`tools/automation/tasks.tester-care-record-ui-cache-repair.json`.
+После принятой UI — общий owner ordered care reconcile и lifecycle wiring,
+включая existing photo draft и typed plant.edit, затем живой stage1,
+Today/reminders. Parent T*/B01–B11 остаются открыты.
+
 ## UI candidate: scoped alert selectors после transport/CLI отказов — 19 ноября 2026
 
 `tester-care-record-ui-20261119-01` остаётся WAITING/developer, не PASS.
