@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "scope": "read-only staging HTTP, existing dedicated tester Free account; no plant mutations, no AI, no purchase",
+  "auth": "existing email sign-in 200",
+  "permanent_owner": true,
+  "entitlement": null,
+  "me": "200",
+  "me_fields": [
+    "profile"
+  ],
+  "sync": "200",
+  "sync_fields": [
+    "changes",
+    "entitlement",
+    "has_more",
+    "last_cursor",
+    "next_since",
+    "profile",
+    "until"
+  ],
+  "entity_counts": {},
+  "reminder_hour_local": 9,
+  "has_more": false
+}

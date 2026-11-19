@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Baseline принят; начат saved-plant manual watering — 19 ноября 2026
+
+Принят и отправлен `ecd5ab0`: gate repair + текущий baseline. В run
+`tester-care-baseline-20261119-02` прошли 149 automation, 436 Deno,
+312 Swift (309 XCTest+3 Swift Testing), один ordinary welcome, MCP smoke
+и 7 EN care XCUITest. Reviewer/QA PASS. Изменений app в baseline нет.
+
+Отдельно read-only HTTP на живом staging: постоянная dedicated Free-учётка,
+Auth user/GET me/GET sync 200; entitlement=null, коллекция пуста, hour=9.
+Серверные данные/миграции не менялись, AI/покупки не вызывались. Обезличенный
+отчёт `docs/validation/tester-care-live-baseline-2026-11-19.json`.
+Это не проверка B01–B11 или физического iPhone.
+
+Выявлены два разрыва этапа 1: новая запись полива недоступна из повторно
+открытой collection card (только post-save); auto retry остальных care
+pending не подключён к reconnect/foreground. Обновлён baseline report.
+Подготовлен `tools/automation/tasks.tester-care-record-core.json`: owner-bound
+record существующего растения, durable exact replay, canonical confirmation
+и честные rejection outcomes без create receipt/профиля/paid gating.
+Следующий шаг — run `tester-care-record-core-20261119-01`, затем отдельные
+пакеты UI и общего care reconcile. Today/reminders идут после них.
+Все продуктовые checkbox остаются открытыми; handoff фиксирует только срез.
+
 ## Baseline: найден устаревший welcome gate — 19 ноября 2026
 
 Run `tester-care-baseline-20261119-01` остановлен корректным FAIL:

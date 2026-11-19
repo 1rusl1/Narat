@@ -5,7 +5,7 @@
 
 ## Что переиспользуем
 
-- CatalogueCollectionCardView содержит полив, журнал, правку даты, отмену,
+- CatalogueCollectionCardView содержит журнал полива, правку даты, отмену,
   enable/refresh базового ухода, обычную проверку грунта и её отмену.
 - CollectionRepository/LocalStore сохраняют точный outbox и receipts на диске;
   CollectionWireTests покрывают loss/restart/replay, owner boundaries и
@@ -61,3 +61,26 @@ MCP smoke открывает доступный каталог с обычног
 проверяет штатное error/back состояние. Проверки количества/skips и
 изоляция backend сохранены. До независимой приёмки это кандидат, не PASS.
 Локальные 149 automation tests прошли; новый baseline повторит все gates.
+
+## Принятый baseline и конкретный продуктовый gap
+
+`tester-care-baseline-20261119-02` принят независимыми Review/QA и опубликован
+в `ecd5ab0`: 149 automation, 436 Deno, 312 Swift (309 XCTest + 3 Swift Testing),
+один ordinary welcome, MCP navigation/screenshots и семь EN care UI PASS.
+
+Отдельный read-only HTTP на staging: вход постоянной dedicated Free-учётки,
+Auth user, /me и /sync вернули 200; entitlement=null, коллекция пуста, час 9.
+Без создания растений, AI, покупок или deploy. Обезличенный отчёт рядом:
+`tester-care-live-baseline-2026-11-19.json`. Это не B01 и не iPhone-сценарий.
+
+Проверка фактических действий выявила пропуск: после повторного открытия
+карточки коллекции нельзя записать новый полив. Record watering есть только
+в post-save CatalogueSaveView. Repository.enqueueWateringEdit(.record)
+возвращает invalidRequest; submitManualWatering требует create-confirmation.
+Первый implementation пакет добавляет existing-card manual record на
+существующем outbox, затем UI и явное canonical подтверждение.
+
+Второй пропуск: reconnect/foreground в карточке сейчас автоматически
+повторяет лишь manual correction/undo. Для прочего pending care нужен общий
+owner-bound drain/reconcile с обновлением журнала и дат, без второго outbox.
+Агрегат Today следует после закрытия этих разрывов этапа 1.
