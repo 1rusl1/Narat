@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-baseline-20261119",
+      "description": "Independently verify current care baseline and identify actual remaining work before Today and reminders; local fixtures only, never accept live B01-B11 by code presence.",
+      "risk": "low",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/validation/tester-care-baseline-2026-11-19.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "specs/001-plants-ios-mvp/contracts/plant-care-recommendation-http.md",
+        "specs/001-plants-ios-mvp/contracts/manual-care-journal-http.md",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "supabase/functions/plants-api/care-recommendation.ts"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only baseline. Verify report against actual current sources. Earlier handoff live results are historical evidence, not a new staging or iPhone run. Confirm existing care/outbox implementation is reused, Today and care notifications absent, and canonical aggregate read-model must be settled before dependent UI. No full product tasks may be closed."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "BASE1",
+          "description": "Actual app unit/build gate and ordinary Simulator smoke pass on this snapshot; report accurately distinguishes existing code and unbuilt scope.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "BASE2",
+          "description": "Complete current Deno suite and targeted care EN UI fixtures pass; results remain labelled local fixtures, not live.",
+          "mode": "fixture",
+          "checks": [
+            "deno-tests",
+            "tester-care-ui"
+          ]
+        }
+      ]
+    }
+  ]
+}

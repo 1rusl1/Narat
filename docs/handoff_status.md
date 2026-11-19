@@ -1,5 +1,30 @@
 # Narat — текущий статус и передача работы
 
+## Запуск очереди версии ухода — 19 ноября 2026
+
+Пользователь поручил проходить этапы tester-care-plan последовательно через
+оркестраторы без повторных подтверждений. Созданы отдельные worktree
+`/private/tmp/narat-tester-care-20261119` и ветка `codex/tester-care-20261119`
+от `3444be7`. Сторонние изменения основного checkout не переносились.
+Сохранён последний принятый routing/budgets/checks iOS Sol lane из
+`/private/tmp/narat-orchestrated.aZQ6ZH/parallel-ios-codex-sol.config.json`;
+в игнорируемом `docs/validation/automation/runs/tester-care.config.json`
+заменена только ветка публикации и добавлен целевой care UI gate.
+
+Подготовлены baseline report и read-only manifest
+`tools/automation/tasks.tester-care-baseline.json`. `prepare` — PASS,
+проверки baseline ещё не завершены. Новый run
+`tester-care-baseline-20261119-01`: Deno, PlantsTests, обычный Simulator
+smoke, семь выбранных EN XCUITest, независимые Review/QA. Это local/fixtures,
+не новая приёмка staging/iPhone. Копии игнорируемых Node/SPM caches
+переиспользованы для запуска, секреты и local configs не коммитятся.
+
+Открыто: B01–B11, весь этап 1 и последующие Today/reminders. Следующий
+шаг — завершить baseline, исправить реальные отказы и по его результатам
+выполнить узкий пакет единой канонической проекции задач; новые источники
+или справочные seasonal intervals не превращать в календарные care rules.
+Сохранение подготовки и публикация принятого baseline выполняются отдельно.
+
 ## План версии для тестировщика: уход, «Сегодня», напоминания — 19 ноября 2026
 
 По поручению владельца составлен `specs/001-plants-ios-mvp/tester-care-plan.md`:
