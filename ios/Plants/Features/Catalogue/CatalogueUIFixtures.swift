@@ -12,6 +12,9 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
 
     case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry, routineLateEntitlement
     case profileReminderHour, accountSignOut
+    case collectionWateringRecord, collectionWateringRecordRejected
+
+    var testsSavedWatering: Bool { self == .collectionWateringRecord || self == .collectionWateringRecordRejected }
 
     var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry || self == .routineLateEntitlement }
 
@@ -61,6 +64,7 @@ enum CatalogueUIFixtures {
         ])
         let database = directory.appendingPathComponent("catalogue.sqlite")
         let prepareACK = scenario == .ackFailure && !FileManager.default.fileExists(atPath: database.path)
+        let prepareWateringCache = scenario.testsSavedWatering && !FileManager.default.fileExists(atPath: database.path)
         func container(allowsSave: Bool) throws -> ModelContainer {
             try ModelContainer(for: schema, configurations: [
                 ModelConfiguration(schema: schema, url: database, allowsSave: allowsSave)
@@ -133,6 +137,11 @@ enum CatalogueUIFixtures {
             }
             if scenario != .accountSignOut || client.auth.currentSession != nil {
                 _ = try await connection.sessionOwner()
+            }
+            if prepareWateringCache {
+                let expected = try await connection.sessionSnapshot()
+                guard let sync = connection.syncEngine else { throw CatalogueUIFixtureError.invalidStorage }
+                _ = try await sync.pullDelta(for: expected.session.userId)
             }
             if prepareACK {
                 // Prepare exactly once through accepted APIs, with no command HTTP or
@@ -286,6 +295,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var revoked: Set<UUID> = []
         var routineEntitlementDeadline: Date?
         var routineEntitlementState: String?
+        var wateringCachePrimed: Bool?
     }
     struct Reply {
         let status: Int
@@ -544,6 +554,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 var next = ledger; next.revoked.insert(caller); try persist(next)
                 return Reply(status: 204, data: Data())
             }
+            // UI fault injection: cached collection remains usable while advice/first-aid GETs fail.
+            if ledger.scenario.testsSavedWatering, method == "GET",
+               let plant = ledger.plants.first,
+               url.path.hasPrefix("/functions/v1/plants-api/plants/" + plant.id.uuidString.lowercased() + "/") {
+                return try error(503, "SERVICE_UNAVAILABLE", retryable: true)
+            }
             if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected
                 || ledger.scenario == .basicCareEnable || ledger.scenario.testsRoutine),
                method == "GET", query.isEmpty,
@@ -788,6 +804,27 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         ] as [String: Any]
                     ])
                 }
+                if ledger.scenario.testsSavedWatering {
+                    let record = ledger.commits.values.first { ManualWateringAction(envelope: $0.envelope) == .record }
+                    let delivered = record.map { record in
+                        ledger.attempts.filter { $0.body == record.body }.count >= 2
+                    } ?? false
+                    // Prime the real SQLite cache once; fail subsequent reads until exact command replay.
+                    if ledger.wateringCachePrimed == true && !delivered {
+                        // collectionCards falls back to disk on transport loss, not HTTP errors.
+                        // This remains isolated UI fault injection; advice GET still returns 503.
+                        throw URLError(.networkConnectionLost)
+                    }
+                    if ledger.wateringCachePrimed != true {
+                        var next = ledger
+                        next.wateringCachePrimed = true
+                        try persist(next)
+                    }
+                    if let record, record.owner == caller,
+                       since.map({ $0 < Self.time(ledger.tick) }) ?? true {
+                        changes += try savedWateringChanges(record)
+                    }
+                }
                 let orderedChanges = (firstAid + changes).sorted {
                     ($0["updated_at"] as! String, $0["entity_type"] as! String, $0["id"] as! String)
                         < ($1["updated_at"] as! String, $1["entity_type"] as! String, $1["id"] as! String)
@@ -835,6 +872,10 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                                            receipt: receipt, plantID: caller)
                 try persist(next)
                 throw URLError(.networkConnectionLost)
+            }
+            if ledger.scenario.testsSavedWatering, let action = ManualWateringAction(envelope: envelope) {
+                return try savedWatering(action, envelope: envelope, body: body, caller: caller,
+                                        header: request.value(forHTTPHeaderField: "X-Operation-Id"))
             }
             if ledger.scenario == .plantDeletion, envelope.commandName == "plant.delete" {
                 return try deletePlant(envelope, body: body, caller: caller, header: request.value(forHTTPHeaderField: "X-Operation-Id"))
@@ -969,6 +1010,85 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             try persist(next)
             if lose { throw URLError(.networkConnectionLost) }
             return Reply(status: 200, data: receipt)
+        }
+    }
+
+    private func savedWatering(
+        _ action: ManualWateringAction, envelope: CommandEnvelopeDTO, body: Data, caller: UUID, header: String?
+    ) throws -> Reply {
+        guard let plant = ledger.plants.first, plant.owner == caller, envelope.plantId == plant.id,
+              header == envelope.operationId.uuidString.lowercased()
+        else { throw CatalogueUIFixtureError.invalidRequest }
+        let key = caller.uuidString + ":" + envelope.operationId.uuidString
+        var next = ledger
+        next.attempts.append(Attempt(owner: caller, body: body))
+        if let commit = ledger.commits[key] {
+            guard commit.owner == caller, commit.body == body, commit.envelope == envelope
+            else { throw CatalogueUIFixtureError.invalidRequest }
+            try persist(next)
+            return Reply(status: 200, data: commit.receipt)
+        }
+        if ledger.scenario == .collectionWateringRecordRejected {
+            guard action == .record, !ledger.attempts.contains(where: {
+                (try? JSONDecoder().decode(CommandEnvelopeDTO.self, from: $0.body))?.operationId == envelope.operationId
+            }) else { throw CatalogueUIFixtureError.invalidRequest }
+            try persist(next)
+            return try error(409, "CONFLICT")
+        }
+        let record = ledger.commits.values.first { ManualWateringAction(envelope: $0.envelope) == .record }
+        let entryId: UUID
+        let state: String
+        switch action {
+        case .record:
+            // Any duplicate new operation fails the fixture instead of creating a second fact.
+            guard record == nil, ledger.attempts.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }
+            entryId = envelope.operationId
+            state = "active"
+        case let .correctDate(id, _, _), let .undo(id):
+            guard let record, id == record.envelope.operationId,
+                  !ledger.commits.values.contains(where: { $0.envelope.commandName == envelope.commandName })
+            else { throw CatalogueUIFixtureError.invalidRequest }
+            entryId = id
+            state = envelope.commandName == ManualWateringAction.undoCommand ? "voided" : "active"
+        }
+        next.tick += 1
+        var value: [String: Any] = [
+            "plant_id": plant.id.uuidString, "entry_id": entryId.uuidString,
+            "state": state, "watermark": Self.time(next.tick)
+        ]
+        if state == "voided" { value["reversal_id"] = envelope.operationId.uuidString }
+        let receipt = try json(value)
+        next.commits[key] = Commit(owner: caller, envelope: envelope, body: body, receipt: receipt, plantID: plant.id)
+        try persist(next)
+        if action == .record { throw URLError(.networkConnectionLost) }
+        return Reply(status: 200, data: receipt)
+    }
+
+    private func savedWateringChanges(_ record: Commit) throws -> [[String: Any]] {
+        let correction = ledger.commits.values.first {
+            $0.envelope.commandName == ManualWateringAction.correctionCommand
+        }
+        let undo = ledger.commits.values.first { $0.envelope.commandName == ManualWateringAction.undoCommand }
+        let current = correction ?? record
+        let payload = try JSONDecoder().decode([String: String].self, from: Data(current.envelope.payloadJSON.utf8))
+        let id = record.envelope.operationId.uuidString
+        let entry: [String: Any] = [
+            "id": id, "plant_id": record.plantID.uuidString,
+            "operation_id": record.envelope.operationId.uuidString,
+            "action_code": "water", "state": undo == nil ? "active" : "voided",
+            "occurred_at": payload["occurred_at"]!, "timezone": payload["timezone"]!,
+            "occurred_local_date": try routineLocalDate(current)
+        ]
+        var rows = [("care_entries", id, entry)]
+        if let undo {
+            rows.append(("care_reversals", undo.envelope.operationId.uuidString, [
+                "id": undo.envelope.operationId.uuidString, "plant_id": record.plantID.uuidString,
+                "entry_id": id, "operation_id": undo.envelope.operationId.uuidString
+            ]))
+        }
+        return rows.map { entity, id, data in
+            ["entity_type": entity, "id": id, "updated_at": Self.time(ledger.tick),
+             "deleted_at": NSNull(), "data": data]
         }
     }
 

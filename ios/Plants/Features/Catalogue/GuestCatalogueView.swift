@@ -1139,6 +1139,7 @@ private struct CatalogueCollectionCardView: View {
 
     private enum CorrectionPhase: Equatable {
         case loading, ready, saving, pending(CommandEnvelopeDTO), blocked, failed
+        case recordSaving, recordPending(CommandEnvelopeDTO)
     }
 
     private enum FirstAidWrite {
@@ -1234,6 +1235,10 @@ private struct CatalogueCollectionCardView: View {
     @State private var dateEdit: WateringDateEdit?
     @State private var wateringUndoEntry: UUID?
     @State private var showingWateringUndo = false
+    @State private var showingWateringRecord = false
+    @State private var wateringRecordOutcome: SavedWateringOutcome?
+    @State private var wateringRecordFailed = false
+    @State private var wateringRecordOperation: UUID?
 
     private var locale: SupportedLocale { polish ? .pl : .en }
     private var speciesRead: SpeciesRead { SpeciesRead(slug: card.speciesSlug, taxonId: card.taxonId, locale: locale) }
@@ -1263,17 +1268,18 @@ private struct CatalogueCollectionCardView: View {
                     }
                     if !polish {
                         renameControls
-                            .disabled(routineBusy)
+                            .disabled(routineBusy || manualRecordBusy)
                     }
                     if deletionFailed {
                         Text(polish ? "Nie udało się usunąć rośliny." : "Couldn’t delete this plant.")
                             .accessibilityIdentifier("collection.delete.failed")
                     }
                     firstAidJournal
-                        .disabled(routineBusy)
+                        .disabled(routineBusy || manualRecordBusy)
                     if let startRepeatDiagnosis {
                         Button("Check plant again", action: startRepeatDiagnosis)
                             .buttonStyle(.bordered)
+                            .disabled(manualRecordBusy)
                             .accessibilityIdentifier("collection.diagnosis.repeat")
                     }
                     if let photo = card.mainPhotoId {
@@ -1284,7 +1290,7 @@ private struct CatalogueCollectionCardView: View {
                         if let advice {
                             PlantCareRecommendationContent(
                                 recommendation: advice,
-                                showNextCheck: routineAccessAvailable && adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy
+                                showNextCheck: routineAccessAvailable && adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy && !manualRecordBusy
                             )
                         }
                         routineCompletionControls
@@ -1296,9 +1302,9 @@ private struct CatalogueCollectionCardView: View {
                         #endif
                         routineJournal
                         basicCareEnableControls
-                            .disabled(routineBusy)
+                            .disabled(routineBusy || manualRecordBusy)
                         adviceRefreshControls
-                            .disabled(routineBusy)
+                            .disabled(routineBusy || manualRecordBusy)
                         if let firstAid, firstAid.accessUntil.map({ $0 > Date() }) ?? true {
                             ForEach(firstAid.controls) { control in
                                 VStack(alignment: .leading, spacing: 8) {
@@ -1313,13 +1319,14 @@ private struct CatalogueCollectionCardView: View {
                                             firstAidSelection = .observe(control.id, jpeg)
                                             showingFirstAidDialog = true
                                         }
-                                        .disabled(routineBusy)
+                                        .disabled(routineBusy || manualRecordBusy)
                                     }
                                 }
                                 .accessibilityElement(children: .contain)
                                 .accessibilityIdentifier("catalogue.saved.firstAid." + control.id.uuidString.lowercased())
                             }
                         }
+                        wateringRecordControls
                         Text("Manual watering history").font(.headline)
                         correctionStatus
                         if let history {
@@ -1351,7 +1358,7 @@ private struct CatalogueCollectionCardView: View {
                     Button(polish ? "Usuń roślinę" : "Delete plant", role: .destructive) {
                         deleteConfirmation = true
                     }
-                    .disabled(routineBusy)
+                    .disabled(routineBusy || manualRecordBusy)
                     .accessibilityIdentifier("collection.delete")
                 }
                 .accessibilityElement(children: .contain)
@@ -1493,6 +1500,17 @@ private struct CatalogueCollectionCardView: View {
                     dateEdit = nil
                     Task { await correctDate(edit, to: date) }
                 }
+            }
+            .alert("Record watering now?", isPresented: $showingWateringRecord) {
+                Button("Confirm watering") {
+                    let date = Date()
+                    let timezone = TimeZone.current
+                    Task { await recordWatering(date: date, timezone: timezone) }
+                }
+                .accessibilityIdentifier("collection.watering.record.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Record that you watered this plant. This does not complete a soil check.")
             }
             .alert("Undo this watering?", isPresented: $showingWateringUndo, presenting: wateringUndoEntry) { entryId in
                 Button("Undo watering", role: .destructive) {
@@ -1904,6 +1922,122 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
+    private var manualRecordBusy: Bool {
+        switch correction {
+        case .recordSaving, .recordPending: true
+        default: false
+        }
+    }
+
+    private var canRecordWatering: Bool {
+        connection.snapshot == expected && !polish && correction == .ready
+            && !checkingDeletion && !deleting && pendingDeletion == nil
+            && !loadingRename && !savingRename && pendingRename == nil
+            && !editingName && !editingSpecies && !editingLight && !editingDrainage
+            && !editingWatering && !editingPotType && dateEdit == nil && !showingWateringUndo
+            && !savingRoutine && !savingFirstAid && !refreshingAdvice && !enablingBasicCare
+    }
+
+    @ViewBuilder
+    private var wateringRecordControls: some View {
+        Button("Record watering") { showingWateringRecord = true }
+            .disabled(!canRecordWatering)
+            .accessibilityIdentifier("collection.watering.record")
+        switch correction {
+        case .recordSaving:
+            ProgressView("Saving watering record…")
+                .accessibilityIdentifier("collection.watering.record.saving")
+        case let .recordPending(command):
+            Text("Watering record pending sync.")
+                .accessibilityIdentifier("collection.watering.record.pending")
+                .accessibilityValue(command.operationId.uuidString.lowercased())
+            Button("Retry watering record") { Task { await retryWateringRecord(command) } }
+                .accessibilityIdentifier("collection.watering.record.retry")
+        default:
+            EmptyView()
+        }
+        if let wateringRecordOutcome {
+            switch wateringRecordOutcome {
+            case .confirmed:
+                Text("Watering recorded.")
+                    .accessibilityIdentifier("collection.watering.record.confirmed")
+            case .rejected:
+                Text("Watering record rejected. No watering was recorded. You can try a new record.")
+                    .accessibilityIdentifier("collection.watering.record.rejected")
+                    .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+            case .unconfirmed:
+                Text("Watering could not be confirmed. Reload care details before trying a new record.")
+                    .accessibilityIdentifier("collection.watering.record.unconfirmed")
+            case .pending:
+                EmptyView()
+            }
+        }
+        if wateringRecordFailed {
+            Text("Couldn’t save or confirm the watering record.")
+                .accessibilityIdentifier("collection.watering.record.failed")
+        }
+    }
+
+    @MainActor
+    private func recordWatering(date: Date, timezone: TimeZone) async {
+        guard canRecordWatering, let repository = connection.repository else { return }
+        correction = .recordSaving
+        wateringRecordOutcome = nil
+        wateringRecordFailed = false
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            let command = try await repository.enqueueSavedPlantWatering(
+                plantId: card.id, date: date, timezone: timezone, context: lease
+            )
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            wateringRecordOperation = command.operationId
+            correction = .recordPending(command)
+            await retryWateringRecord(command)
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            correction = .failed
+            wateringRecordFailed = true
+        }
+    }
+
+    @MainActor
+    private func retryWateringRecord(_ command: CommandEnvelopeDTO) async {
+        guard connection.snapshot == expected, correction == .recordPending(command),
+              let repository = connection.repository else { return }
+        correction = .recordSaving
+        wateringRecordOperation = command.operationId
+        wateringRecordFailed = false
+        wateringRecordOutcome = nil
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            let outcome = try await repository.retrySavedPlantWatering(command, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            switch outcome {
+            case .pending:
+                correction = .recordPending(command)
+            case .confirmed:
+                try await loadHistory(repository, lease: lease)
+                guard !Task.isCancelled, connection.snapshot == expected else { return }
+                wateringRecordOutcome = .confirmed
+                adviceRequest += 1
+            case .rejected:
+                correction = .ready
+                wateringRecordOutcome = .rejected
+            case .unconfirmed:
+                correction = .blocked
+                wateringRecordOutcome = .unconfirmed
+                attempt += 1
+                adviceRequest += 1
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            correction = .recordPending(command)
+            wateringRecordFailed = true
+        }
+    }
+
     @ViewBuilder
     private var correctionStatus: some View {
         switch correction {
@@ -1918,7 +2052,7 @@ private struct CatalogueCollectionCardView: View {
         case .blocked:
             Text("Another watering change is pending.")
         case .failed:
-            Text("Couldn’t load or save the watering date.")
+            if !wateringRecordFailed { Text("Couldn’t load or save the watering date.") }
         default:
             EmptyView()
         }
@@ -1928,7 +2062,8 @@ private struct CatalogueCollectionCardView: View {
     private func loadCare() async {
         guard !polish, let repository = connection.repository,
               let lease = try? await connection.collectionLease(expected: expected) else { return }
-        if correction != .saving {
+        guard !Task.isCancelled, connection.snapshot == expected else { return }
+        if correction != .saving && correction != .recordSaving {
             correction = .loading
             do {
                 try await loadHistory(repository, lease: lease)
@@ -2318,8 +2453,12 @@ private struct CatalogueCollectionCardView: View {
         history = result
         historyFailed = false
         if let queued {
-            correction = queued.commandName == ManualWateringAction.correctionCommand
-                || queued.commandName == ManualWateringAction.undoCommand ? .pending(queued) : .blocked
+            if ManualWateringAction(envelope: queued) == .record {
+                correction = .recordPending(queued)
+            } else {
+                correction = queued.commandName == ManualWateringAction.correctionCommand
+                    || queued.commandName == ManualWateringAction.undoCommand ? .pending(queued) : .blocked
+            }
         } else {
             correction = .ready
         }
@@ -2332,6 +2471,8 @@ private struct CatalogueCollectionCardView: View {
     private func enqueueWateringEdit(_ action: ManualWateringAction) async {
         guard correction == .ready, let repository = connection.repository else { return }
         correction = .saving
+        wateringRecordOutcome = nil
+        wateringRecordFailed = false
         do {
             let lease = try await connection.collectionLease(expected: expected)
             try await repository.enqueueWateringEdit(action, plantId: card.id, context: lease)

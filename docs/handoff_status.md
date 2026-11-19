@@ -1,5 +1,40 @@
 # Narat — текущий статус и передача работы
 
+## UI candidate: scoped alert selectors после transport/CLI отказов — 19 ноября 2026
+
+`tester-care-record-ui-20261119-01` остаётся WAITING/developer, не PASS.
+Применённые три UI/fixture/test файла прошли 316 Swift, ordinary welcome,
+MCP smoke и два Review. Первый target UI прогон выявил неверную offline
+fixture: HTTP503 не переводил collection read в transport cache fallback;
+Developer заменил его на URLError.connectionLost, advice GET остаётся503.
+Следующий target UI: семь прежних care tests прошли, два новых упали на
+неоднозначном глобальном запросе SwiftUI alert buttons.
+
+Третий Developer выдал небольшой selector patch, но CLI/provider завершился
+с timeout/stream errors, поэтому engine его не применил. Контроллер проверил
+source-only/test-only scope и git apply --check, обратимо применил ровно
+этот draft: нужный alert, firstMatch и сохранённая проверка label. Ответ
+старого run не объявляется успешным. Новый candidate-base read-only run
+`tester-care-record-ui-acceptance-20261119-01` принимает итоговый diff от
+`fd7186b`: actual unit/MCP/9 EN UI и независимые Review/QA.
+
+Для следующей очереди подготовлен прозрачный global resource adapter
+`/private/tmp/narat-tester-care-resource.py` с lock
+`/private/tmp/narat-tester-care-resource.lock`; исходные check argv,
+run-id, summary validation и exit codes сохранены. Проверены реальная
+сериализация, передача checkout lock FD, SIGTERM waiting/active, отсутствие
+orphan child и exit0/7. Это проверка адаптера, не приложения.
+Shared config: ignored `docs/validation/automation/runs/tester-care-shared.config.json`.
+
+Продуктовый UI пока кандидат. Все parent checkbox/B01–B11 открыты;
+живые запись/перезапуск/дата/undo ещё не приняты. Root подготовил отдельный
+ordinary live harness и одну staging Monstera без care facts; вторую
+setup карточку не создавать. Следующий шаг — принять этот candidate,
+передать shared ресурс для frozen live UI, затем общий owner care reconcile.
+Известный отдельный cache-edge follow-up: pending edit metadata следует
+отделить от загрузки condition snapshot, чтобы missing cached conditions
+не удерживали loadingRename и не блокировали ручной журнал.
+
 ## Принят saved-plant manual watering API — 19 ноября 2026
 
 Run `tester-care-record-api-20261119-01` принял и отправил `fd7186b`.
