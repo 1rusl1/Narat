@@ -160,9 +160,13 @@ public actor SyncEngine {
     }
 
     /// Repository composition keeps one bound lease through refresh, drain and disk read.
-    func flushOutbox(context: SyncSessionLease) async throws -> Int {
+    func flushOutbox(
+        context: SyncSessionLease, reviewingWateringOperation: UUID? = nil
+    ) async throws -> Int {
         try apiClient.syncAuthority.withBoundValid(context) {}
-        return try await flushOutbox(for: context.ownerId, context: context)
+        return try await flushOutbox(
+            for: context.ownerId, context: context, reviewingWateringOperation: reviewingWateringOperation
+        )
     }
 
     func flushPlantDeletions(context: SyncSessionLease) async throws {
@@ -260,7 +264,7 @@ public actor SyncEngine {
 
     private func flushOutbox(
         for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil,
-        careOnly: Bool = false
+        careOnly: Bool = false, reviewingWateringOperation: UUID? = nil
     ) async throws -> Int {
         guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
@@ -297,6 +301,14 @@ public actor SyncEngine {
                     continue
                 }
             } else if GlobalChainBlocked {
+                continue
+            }
+
+            if onlyOperation != entry.operationId, reviewingWateringOperation != entry.operationId,
+               PersistedWateringRejection.requiresReview(entry) {
+                // An automatic retry must not erase a durable rejection or bypass it.
+                // Existing deletion/exact-operation filters have already retained their priority.
+                if let plantId = entry.plantId { blockedPlantIds.insert(plantId) }
                 continue
             }
 
@@ -476,16 +488,26 @@ public actor SyncEngine {
                 try await apiClient.validateSyncContext(context)
                 let failure: String
                 if let apiError = error as? APIErrorResponse {
-                    // Explicit care retries discard terminal rejection without claiming success.
-                    // Generic post-save drains retain their existing retry behavior.
-                    if !receivedReceipt, (onlyOperation == entry.operationId || careOnly),
+                    // Only the explicit exact-operation retry can dismiss this rejection.
+                    // Automatic delivery preserves the command/error across app restarts.
+                    if !receivedReceipt, (onlyOperation == entry.operationId || careOnly
+                                          || reviewingWateringOperation == entry.operationId),
                        ManualWateringAction(envelope: envelope) == .record,
                        !apiError.error.retryable,
                        ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(apiError.error.code) {
+                        if onlyOperation == entry.operationId {
+                            try await store.finishOutboxEntry(
+                                operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                            )
+                            throw WateringRecordFailure.rejected
+                        }
+                        let rejected = String(decoding: try JSONEncoder().encode(PersistedWateringRejection(apiError)),
+                                              as: UTF8.self)
                         try await store.finishOutboxEntry(
-                            operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
+                            operationId: entry.operationId, context: context, authority: apiClient.syncAuthority,
+                            failure: rejected
                         )
-                        if onlyOperation == entry.operationId { throw WateringRecordFailure.rejected }
+                        if let plantId = entry.plantId { blockedPlantIds.insert(plantId) }
                         continue
                     }
                     let observation = envelope.commandName == FirstAidObservationCommand.name

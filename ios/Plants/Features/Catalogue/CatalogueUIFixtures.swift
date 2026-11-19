@@ -12,9 +12,9 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
 
     case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry, routineLateEntitlement
     case profileReminderHour, accountSignOut
-    case collectionWateringRecord, collectionWateringRecordRejected, collectionWateringMissingConditions
+    case collectionWateringRecord, collectionWateringRecordRejected, collectionWateringMissingConditions, collectionWateringBackgroundFailure
 
-    var testsSavedWatering: Bool { self == .collectionWateringRecord || self == .collectionWateringRecordRejected || self == .collectionWateringMissingConditions }
+    var testsSavedWatering: Bool { self == .collectionWateringRecord || self == .collectionWateringRecordRejected || self == .collectionWateringMissingConditions || self == .collectionWateringBackgroundFailure }
 
     var testsCareLifecycle: Bool {
         testsSavedWatering || self == .profileReminderHour || self == .basicCareEnable
@@ -325,6 +325,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var wateringNetworkResumed: Bool?
         var careSourceWithdrawn: Bool?
         var careSourceEmptyWindowProved: Bool?
+        var backgroundWateringRejected: Bool?
     }
     struct Reply {
         let status: Int
@@ -873,7 +874,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     let record = ledger.commits.values.first { ManualWateringAction(envelope: $0.envelope) == .record }
                     // Foreground retries must not implicitly restore the fixture network.
                     // Persist offline across every process launch until explicit Root reconnect.
-                    if ledger.wateringCachePrimed == true && ledger.wateringNetworkResumed != true {
+                    if ledger.wateringCachePrimed == true && ledger.wateringNetworkResumed != true
+                        && !(ledger.scenario == .collectionWateringBackgroundFailure && ledger.backgroundWateringRejected == true) {
                         // collectionCards falls back to disk on transport loss, not HTTP errors.
                         // This remains isolated UI fault injection; advice GET still returns 503.
                         throw URLError(.networkConnectionLost)
@@ -1101,6 +1103,34 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 throw URLError(.networkConnectionLost)
             }
             return Reply(status: 200, data: commit.receipt)
+        }
+        if ledger.scenario == .collectionWateringBackgroundFailure {
+            guard action == .record else { throw CatalogueUIFixtureError.invalidRequest }
+            guard let first = ledger.attempts.first else {
+                // Fault injection before server commit: the original fact does not yet exist.
+                try persist(next)
+                throw URLError(.networkConnectionLost)
+            }
+            let original = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: first.body)
+            if envelope.operationId == original.operationId {
+                guard envelope == original, body == first.body else { throw CatalogueUIFixtureError.invalidRequest }
+                next.backgroundWateringRejected = true
+                try persist(next)
+                return try error(409, "CONFLICT")
+            }
+            // Exactly original loss, one automatic rejection, one explicit retry.
+            // Any automatic resend on cold/foreground makes a later new record fail.
+            guard ledger.backgroundWateringRejected == true, ledger.attempts.count == 3,
+                  ledger.commits.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }
+            next.tick += 1
+            let receipt = try json([
+                "plant_id": plant.id.uuidString, "entry_id": envelope.operationId.uuidString,
+                "state": "active", "watermark": Self.time(next.tick)
+            ])
+            next.commits[key] = Commit(owner: caller, envelope: envelope, body: body,
+                                       receipt: receipt, plantID: plant.id)
+            try persist(next)
+            return Reply(status: 200, data: receipt)
         }
         if ledger.scenario == .collectionWateringRecordRejected {
             guard action == .record, !ledger.attempts.contains(where: {

@@ -1,5 +1,53 @@
 # Narat — текущий статус и передача работы
 
+## Wiring01: реальный FAIL и расширенный recovery candidate — 19 ноября 2026
+
+Wiring01 на `7ec6db2` завершился BLOCKED: 323 Swift, welcome 1,
+149 automation, MCP и Review 1 PASS; 10 из 12 UI PASS. Два FAIL сохранены:
+второй collection.back имеет label Close; missing condition row возвращает
+nil. Исправлены label и detailsReadFailed при nil с заданным snapshot ID.
+Source withdrawal с пустым окном, typed edit и оба expiry tests прошли;
+старый run не объявляется PASS. Artifact: q-263299ec81468f2d26b8d175.
+
+Собран controller candidate: родитель и care_sources подготовили terminal
+marker, три disk/receipt/post-save tests, Guest recovery, Repo frozen retry
+и ещё один disk test вне checkout. Child проверил и применил hunks,
+добавил fixture/UI13 и обновление истории после положительного original
+retry. Успешный Developer call не подставлялся.
+
+Terminal rejection до receipt сохраняет versioned marker в существующем
+outbox.lastError. Operation и ошибка переживают cold launch; automatic
+drains пропускают marker и блокируют цепочку этого растения. Plain JSON
+и ошибка canonical GET после accepted receipt остаются обычным pending.
+Explicit saved-card Retry отправляет тот же op. Post-save Retry допускает
+только точный reviewingWateringOperation внутри прежних ordering и
+confirmation guards; при ошибке сохраняет marker и возвращает false,
+при успехе требует canonical proof.
+
+Исчезновение queue не означает success: UI сохраняет frozen original и
+блокирует новый UUID. Reload подтверждает только положительный факт;
+отрицательное окно block не снимает. Explicit Retry original сохраняет
+и повторяет тот же UUID/body через существующий outbox. Новое намерение
+разрешается после positive proof либо explicit terminal outcome. Passive
+reread не включает новый Record до проверки. Restored terminal показывает
+needs-review с original UUID и обычным Retry.
+
+Trusted gate: 13 named UI, без skips/missing. Новый сценарий проверяет
+pre-commit loss → Root 409 → cold с тем же op/error → foreground без resend
+→ explicit Retry 409 → новое намерение и один факт. Fixture отклоняет
+новый intent при лишнем automatic request. Read-only ledger gate требует
+4 POST: первые три идентичны, четвёртый новый, commit ровно один. SDK-файл
+не читается. Pure validator: valid + 7 negative variants PASS; py_compile
+PASS. Это проверка gate, а не приёмка приложения.
+
+Следующий run: `tester-care-reconcile-recovery-acceptance-20261119-01`.
+Manifest: `tools/automation/tasks.tester-care-reconcile-recovery-acceptance.json`.
+Config: ignored `docs/validation/automation/runs/tester-care-expanded-shared.config.json`.
+Обязательны свежие build/unit/welcome/MCP/13 UI/Review/QA. Затем родитель
+проверяет ordinary signed V2 на принятом SHA. Физический offline/iPhone
+ещё отдельно не приняты; stage 1, B01–B11 и родительские checkbox остаются
+частичными. Today не начат.
+
 ## Принят care core; candidate lifecycle/closed-card reconcile — 19 ноября 2026
 
 Core run02 принят и отправлен `000e23054fb17d54540e23da5e7e559b5989c20f`:

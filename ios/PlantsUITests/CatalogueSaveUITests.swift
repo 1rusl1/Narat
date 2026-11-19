@@ -791,7 +791,7 @@ final class CatalogueSaveUITests: XCTestCase {
         // Keep the actual Root lifecycle active with the card/collection closed.
         // The fixture stays offline until this explicit reconnect, never a launch count.
         tap(run, "collection.back", "Back")
-        tap(run, "collection.back", "Back")
+        tap(run, "collection.back", "Close")
         wateringTap(run, "care.fixture.reconnect")
         tap(run, "collection.open", "My plants")
         tap(run, "Fixture 1")
@@ -849,7 +849,7 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertNotNil(UUID(uuidString: operation))
         XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
         tap(run, "collection.back", "Back")
-        tap(run, "collection.back", "Back")
+        tap(run, "collection.back", "Close")
         wateringTap(run, "care.fixture.reconnect")
         tap(run, "collection.open", "My plants")
         tap(run, "Fixture 1")
@@ -862,6 +862,65 @@ final class CatalogueSaveUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
         ).count, 1)
         XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.date"].exists)
+    }
+
+    @MainActor func testBackgroundWateringFailureSurvivesColdLaunchUntilExplicitRetry() {
+        let run = Run("collectionWateringBackgroundFailure", .en)
+        defer { screenshot(run, "final"); run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        require(run.app.staticTexts["collection.cached"])
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering")
+        let pending = run.app.staticTexts["collection.watering.record.pending"]
+        require(pending)
+        let original = pending.value as? String ?? ""
+        XCTAssertNotNil(UUID(uuidString: original))
+        // Keep this card alive while Root handles a real foreground lifecycle request.
+        XCUIDevice.shared.press(.home)
+        run.app.activate()
+        let failed = run.app.staticTexts["collection.watering.record.failed"]
+        require(failed)
+        XCTAssertEqual(failed.value as? String, original)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.buttons["collection.watering.record"].isEnabled)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        restart(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        require(failed)
+        XCTAssertEqual(failed.value as? String, original)
+        XCTAssertFalse(pending.exists)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        XCUIDevice.shared.press(.home)
+        run.app.activate()
+        require(failed)
+        XCTAssertEqual(failed.value as? String, original)
+        wateringTap(run, "collection.watering.record.retry")
+        let rejected = run.app.staticTexts["collection.watering.record.rejected"]
+        require(rejected)
+        XCTAssertEqual(rejected.value as? String, original)
+        XCTAssertFalse(pending.exists)
+        XCTAssertFalse(run.app.staticTexts["collection.watering.record.confirmed"].exists)
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 0)
+        wateringTap(run, "collection.watering.record")
+        wateringAlertTap(run, title: "Record watering now?", identifier: "collection.watering.record.confirm",
+                         label: "Confirm watering")
+        require(run.app.staticTexts["collection.watering.record.confirmed"])
+        let journalId = identity(run, "catalogue.saved.history.")
+        let newOperation = String(journalId.dropFirst("catalogue.saved.history.".count))
+        XCTAssertNotEqual(newOperation, original)
+        XCTAssertNotNil(UUID(uuidString: newOperation))
+        XCTAssertEqual(run.app.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.history.")
+        ).count, 1)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.history." + original].exists)
+        XCTAssertFalse(pending.exists)
     }
 
     @MainActor func testCollectionWateringRejectionDoesNotShowSuccess() {

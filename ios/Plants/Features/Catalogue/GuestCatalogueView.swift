@@ -1247,6 +1247,10 @@ private struct CatalogueCollectionCardView: View {
     @State private var wateringRecordOutcome: SavedWateringOutcome?
     @State private var wateringRecordFailed = false
     @State private var wateringRecordOperation: UUID?
+    @State private var wateringRecordNeedsReview = false
+    // Retain the frozen intent until positive canonical proof or an explicit terminal retry.
+    @State private var uncertainWateringCommand: CommandEnvelopeDTO?
+    @State private var recoveringWateringRecord = false
 
     private var locale: SupportedLocale { polish ? .pl : .en }
     private var speciesRead: SpeciesRead { SpeciesRead(slug: card.speciesSlug, taxonId: card.taxonId, locale: locale) }
@@ -1378,6 +1382,7 @@ private struct CatalogueCollectionCardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
+            .disabled(recoveringWateringRecord)
             .task(id: requestedSpecies) { await loadCardSpecies(requestedSpecies) }
             .task(id: attempt) { await loadCare() }
             .task(id: [attempt, card.careRevision]) { await loadFirstAidJournal() }
@@ -1695,7 +1700,7 @@ private struct CatalogueCollectionCardView: View {
                 let conditions = try await repository.syncedPlantConditions(for: card, context: lease)
                 guard !Task.isCancelled, connection.snapshot == expected else { return }
                 currentConditions = conditions
-                detailsReadFailed = false
+                detailsReadFailed = card.currentConditionSnapshotId != nil && conditions == nil
             } catch {
                 guard !Task.isCancelled, connection.snapshot == expected else { return }
                 currentConditions = nil
@@ -1965,12 +1970,71 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private var canRecordWatering: Bool {
-        connection.snapshot == expected && !polish && correction == .ready
+        connection.snapshot == expected && !polish && !recoveringWateringRecord && correction == .ready
             && !checkingDeletion && !deleting && pendingDeletion == nil
             && !loadingRename && !savingRename && pendingRename == nil
             && !editingName && !editingSpecies && !editingLight && !editingDrainage
             && !editingWatering && !editingPotType && dateEdit == nil && !showingWateringUndo
             && !savingRoutine && !savingFirstAid && !refreshingAdvice && !enablingBasicCare
+    }
+
+    private var canRecoverUnconfirmedWatering: Bool {
+        connection.snapshot == expected && !polish && uncertainWateringCommand != nil
+            && wateringRecordOutcome == .unconfirmed && !recoveringWateringRecord && !manualRecordBusy
+            && !routineBusy && firstAidWriteAvailable
+            && !checkingDeletion && !deleting && pendingDeletion == nil
+            && !loadingRename && !savingRename && pendingRename == nil
+            && !editingName && !editingSpecies && !editingLight && !editingDrainage
+            && !editingWatering && !editingPotType && dateEdit == nil && !showingWateringUndo
+            && !savingRoutine && !savingFirstAid && !refreshingAdvice && !enablingBasicCare
+    }
+
+    @MainActor
+    private func recoverUnconfirmedWatering(retryOriginal: Bool) async {
+        guard canRecoverUnconfirmedWatering, let original = uncertainWateringCommand,
+              original.plantId == card.id, ManualWateringAction(envelope: original) == .record,
+              let repository = connection.repository, let sync = connection.syncEngine,
+              let api = connection.apiClient else { return }
+        recoveringWateringRecord = true
+        wateringRecordFailed = false
+        defer { recoveringWateringRecord = false }
+        do {
+            let lease = try await connection.collectionLease(expected: expected)
+            guard try await repository.pendingManualWatering(plantId: card.id, context: lease) == nil,
+                  try await repository.pendingPlantEdit(plantId: card.id, context: lease) == nil else {
+                throw SyncWireValidationError.invalidRequest
+            }
+            if retryOriginal {
+                // Explicit user intent only. This reuses the original UUID/body, never a new record.
+                let outcome = try await repository.retryUncertainSavedPlantWatering(original, context: lease)
+                try Task.checkCancellation()
+                try api.syncAuthority.withPermanentBoundValid(lease) {}
+                guard connection.snapshot == expected, uncertainWateringCommand == original else { return }
+                if outcome == .confirmed || outcome == .rejected {
+                    uncertainWateringCommand = nil
+                    wateringRecordNeedsReview = false
+                    try await loadHistory(repository, lease: lease)
+                    guard !Task.isCancelled, connection.snapshot == expected else { return }
+                    wateringRecordOutcome = outcome
+                    adviceRequest += 1
+                } else {
+                    try await loadHistory(repository, lease: lease)
+                }
+            } else {
+                _ = try await sync.performFullRefresh(context: lease)
+                try Task.checkCancellation()
+                try api.syncAuthority.withPermanentBoundValid(lease) {}
+                guard connection.snapshot == expected, uncertainWateringCommand == original else { return }
+                // Positive typed proof can confirm; even a complete negative window retains the original intent.
+                try await loadHistory(repository, lease: lease)
+                if wateringRecordOutcome == .confirmed { adviceRequest += 1 }
+            }
+        } catch {
+            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            correction = .blocked
+            wateringRecordOutcome = .unconfirmed
+            wateringRecordFailed = true
+        }
     }
 
     @ViewBuilder
@@ -1983,9 +2047,15 @@ private struct CatalogueCollectionCardView: View {
             ProgressView("Saving watering record…")
                 .accessibilityIdentifier("collection.watering.record.saving")
         case let .recordPending(command):
-            Text("Watering record pending sync.")
-                .accessibilityIdentifier("collection.watering.record.pending")
-                .accessibilityValue(command.operationId.uuidString.lowercased())
+            if wateringRecordNeedsReview {
+                Text("Watering record needs review. Retry this record to resolve it.")
+                    .accessibilityIdentifier("collection.watering.record.failed")
+                    .accessibilityValue(command.operationId.uuidString.lowercased())
+            } else {
+                Text("Watering record pending sync.")
+                    .accessibilityIdentifier("collection.watering.record.pending")
+                    .accessibilityValue(command.operationId.uuidString.lowercased())
+            }
             Button("Retry watering record") { Task { await retryWateringRecord(command) } }
                 .accessibilityIdentifier("collection.watering.record.retry")
         default:
@@ -2001,13 +2071,25 @@ private struct CatalogueCollectionCardView: View {
                     .accessibilityIdentifier("collection.watering.record.rejected")
                     .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
             case .unconfirmed:
-                Text("Watering could not be confirmed. Reload care details before trying a new record.")
+                Text("Watering could not be confirmed. Reload history or retry the original record.")
                     .accessibilityIdentifier("collection.watering.record.unconfirmed")
+                    .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+                Button("Reload care history") { Task { await recoverUnconfirmedWatering(retryOriginal: false) } }
+                    .disabled(!canRecoverUnconfirmedWatering)
+                    .accessibilityIdentifier("collection.watering.record.reload")
+                Button("Retry original watering") { Task { await recoverUnconfirmedWatering(retryOriginal: true) } }
+                    .disabled(!canRecoverUnconfirmedWatering)
+                    .accessibilityIdentifier("collection.watering.record.retryOriginal")
+                    .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
             case .pending:
                 EmptyView()
             }
         }
-        if wateringRecordFailed {
+        if recoveringWateringRecord {
+            ProgressView("Checking original watering…")
+                .accessibilityIdentifier("collection.watering.record.reloading")
+        }
+        if wateringRecordFailed && !wateringRecordNeedsReview {
             Text("Couldn’t save or confirm the watering record.")
                 .accessibilityIdentifier("collection.watering.record.failed")
         }
@@ -2019,6 +2101,8 @@ private struct CatalogueCollectionCardView: View {
         correction = .recordSaving
         wateringRecordOutcome = nil
         wateringRecordFailed = false
+        wateringRecordNeedsReview = false
+        uncertainWateringCommand = nil
         do {
             let lease = try await connection.collectionLease(expected: expected)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
@@ -2053,14 +2137,19 @@ private struct CatalogueCollectionCardView: View {
             case .pending:
                 correction = .recordPending(command)
             case .confirmed:
+                uncertainWateringCommand = nil
+                wateringRecordNeedsReview = false
                 try await loadHistory(repository, lease: lease)
                 guard !Task.isCancelled, connection.snapshot == expected else { return }
                 wateringRecordOutcome = .confirmed
                 adviceRequest += 1
             case .rejected:
+                uncertainWateringCommand = nil
+                wateringRecordNeedsReview = false
                 correction = .ready
                 wateringRecordOutcome = .rejected
             case .unconfirmed:
+                uncertainWateringCommand = command
                 correction = .blocked
                 wateringRecordOutcome = .unconfirmed
                 attempt += 1
@@ -2098,10 +2187,11 @@ private struct CatalogueCollectionCardView: View {
         guard !polish, let repository = connection.repository,
               let lease = try? await connection.collectionLease(expected: expected) else { return }
         guard !Task.isCancelled, connection.snapshot == expected else { return }
-        if correction != .saving && correction != .recordSaving {
-            correction = .loading
+        if !recoveringWateringRecord, correction != .saving && correction != .recordSaving {
+            // Keep the frozen record visible to loadHistory until its pending/proof reads finish.
+            if case .recordPending = correction {} else { correction = .loading }
             do {
-                try await loadHistory(repository, lease: lease)
+                try await loadHistory(repository, lease: lease, passive: true)
             } catch {
                 guard !Task.isCancelled, connection.snapshot == expected else { return }
                 historyFailed = true
@@ -2129,7 +2219,8 @@ private struct CatalogueCollectionCardView: View {
         await loadRoutineAccess()
         guard !Task.isCancelled, connection.snapshot == expected else { return }
         if !routineAccessAvailable { firstAid?.controls.removeAll() }
-        guard !savingRename, !savingFirstAid, !savingRoutine, !enablingBasicCare, !refreshingAdvice,
+        guard !recoveringWateringRecord, !savingRename, !savingFirstAid, !savingRoutine,
+              !enablingBasicCare, !refreshingAdvice,
               correction != .saving, correction != .recordSaving else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
@@ -2168,17 +2259,9 @@ private struct CatalogueCollectionCardView: View {
             }
             let fingerprint = parts.sorted().joined(separator: "\n")
             let previous = canonicalCareFingerprint
-            let record: CommandEnvelopeDTO?
-            if case let .recordPending(command) = correction { record = command } else { record = nil }
-            try await loadHistory(repository, lease: lease)
-            // Drained/disappeared does not mean the watering fact was confirmed.
-            if let record, try await repository.pendingManualWatering(plantId: card.id, context: lease) == nil {
-                let entry = try await store.confirmedWateringRecord(record, context: lease, authority: api.syncAuthority)
-                guard !Task.isCancelled, connection.snapshot == expected else { return }
-                wateringRecordOperation = record.operationId
-                wateringRecordOutcome = entry == nil ? .unconfirmed : .confirmed
-                if entry == nil { correction = .blocked }
-            }
+            guard !Task.isCancelled, connection.snapshot == expected, !recoveringWateringRecord,
+                  correction != .saving, correction != .recordSaving else { return }
+            try await loadHistory(repository, lease: lease, passive: true)
             await loadPendingRoutine()
             await loadPendingAdviceRefresh()
             await loadBasicCareState()
@@ -2554,20 +2637,65 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
-    private func loadHistory(_ repository: CollectionRepository, lease: SyncSessionLease) async throws {
+    private func loadHistory(
+        _ repository: CollectionRepository, lease: SyncSessionLease, passive: Bool = false
+    ) async throws {
+        let initialPhase = correction
+        if passive, recoveringWateringRecord || correction == .saving || correction == .recordSaving { return }
+        let original: CommandEnvelopeDTO?
+        if case let .recordPending(command) = correction { original = command }
+        else { original = uncertainWateringCommand }
         let result = try await repository.collectionWateringHistory(plantId: card.id, context: lease)
         let queued = try await repository.pendingManualWatering(plantId: card.id, context: lease)
+        let review: Bool
+        if let queued, ManualWateringAction(envelope: queued) == .record {
+            review = try await repository.pendingWateringRecordRequiresReview(queued, context: lease)
+        } else { review = false }
         guard !Task.isCancelled, connection.snapshot == expected else { throw CancellationError() }
+        if passive, recoveringWateringRecord || correction != initialPhase { return }
         history = result
         historyFailed = false
         if let queued {
+            if let uncertainWateringCommand, uncertainWateringCommand != queued {
+                correction = .blocked
+                wateringRecordOutcome = .unconfirmed
+                return
+            }
+            wateringRecordNeedsReview = review
             if ManualWateringAction(envelope: queued) == .record {
+                wateringRecordOperation = queued.operationId
+                wateringRecordOutcome = .pending
                 correction = .recordPending(queued)
             } else {
                 correction = queued.commandName == ManualWateringAction.correctionCommand
                     || queued.commandName == ManualWateringAction.undoCommand ? .pending(queued) : .blocked
             }
+        } else if let original {
+            // Empty queue is not a receipt. Block BEFORE awaiting the canonical probe.
+            uncertainWateringCommand = original
+            wateringRecordOperation = original.operationId
+            wateringRecordOutcome = .unconfirmed
+            correction = .blocked
+            guard let store = connection.store, let api = connection.apiClient else {
+                throw SyncWireValidationError.invalidSession
+            }
+            let entry = try await store.confirmedWateringRecord(original, context: lease, authority: api.syncAuthority)
+            let pending = try await repository.pendingManualWatering(plantId: card.id, context: lease)
+            let edit = try await repository.pendingPlantEdit(plantId: card.id, context: lease)
+            try Task.checkCancellation()
+            try api.syncAuthority.withPermanentBoundValid(lease) {}
+            guard connection.snapshot == expected, uncertainWateringCommand == original else {
+                throw CancellationError()
+            }
+            if passive, recoveringWateringRecord || correction != .blocked { return }
+            if entry != nil, pending == nil, edit == nil {
+                uncertainWateringCommand = nil
+                wateringRecordNeedsReview = false
+                wateringRecordOutcome = .confirmed
+                correction = .ready
+            }
         } else {
+            wateringRecordNeedsReview = false
             correction = .ready
         }
     }

@@ -211,6 +211,30 @@ enum SavedWateringOutcome: Sendable, Equatable {
     case pending, confirmed, rejected, unconfirmed
 }
 
+/// Local outbox metadata, never an HTTP payload or an action confirmation.
+/// Keeping the original error object preserves existing lastAPIError diagnostics.
+struct PersistedWateringRejection: Codable {
+    let error: APIErrorResponse.ErrorBody
+    let requiresExplicitWateringRetry: Bool
+    let wateringRejectionVersion: Int
+
+    init(_ response: APIErrorResponse) {
+        error = response.error
+        requiresExplicitWateringRetry = true
+        wateringRejectionVersion = 1
+    }
+
+    static func requiresReview(_ entry: OutboxEntrySnapshot) -> Bool {
+        guard ManualWateringAction(envelope: entry.envelope) == .record,
+              let raw = entry.lastError,
+              let stored = try? JSONDecoder().decode(Self.self, from: Data(raw.utf8)),
+              stored.wateringRejectionVersion == 1, stored.requiresExplicitWateringRetry, !stored.error.retryable,
+              ["NOT_FOUND", "CONFLICT", "FORBIDDEN", "VALIDATION_ERROR"].contains(stored.error.code)
+        else { return false }
+        return true
+    }
+}
+
 /// Completion describes this bounded reconciliation pass, never an action receipt.
 enum CareReconciliationOutcome: Sendable, Equatable {
     case completed, pending, busy
@@ -670,6 +694,16 @@ public struct CollectionRepository: Sendable {
         )
     }
 
+    func pendingWateringRecordRequiresReview(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> Bool {
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        let entries = try await store.pendingOutboxEntries(for: context.ownerId)
+        return try apiClient.syncAuthority.withPermanentBoundValid(context) {
+            entries.contains { $0.envelope == command && PersistedWateringRejection.requiresReview($0) }
+        }
+    }
+
     /// Freeze the manual fact on disk before attempting transport.
     func enqueueSavedPlantWatering(
         plantId: UUID, date: Date, timezone: TimeZone, context: SyncSessionLease
@@ -687,6 +721,16 @@ public struct CollectionRepository: Sendable {
         }
         try await store.enqueueSavedPlantWatering(command, context: context, authority: apiClient.syncAuthority)
         return command
+    }
+
+    /// Explicit recovery of a frozen intent whose local queue identity was lost.
+    /// Store guards retain the same UUID/body and reject competing manual changes/deletion.
+    func retryUncertainSavedPlantWatering(
+        _ original: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> SavedWateringOutcome {
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        try await store.enqueueSavedPlantWatering(original, context: context, authority: apiClient.syncAuthority)
+        return try await retrySavedPlantWatering(original, context: context)
     }
 
     func retrySavedPlantWatering(
@@ -771,7 +815,10 @@ public struct CollectionRepository: Sendable {
             throw SyncWireValidationError.invalidSession
         }
         try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
-        _ = try await syncEngine.flushOutbox(context: context)
+        // This is a user retry of one confirmed post-save intent, not a background drain.
+        // Preserve generic ordering; only this exact rejected record may be reviewed again.
+        let review = ManualWateringAction(envelope: command) == .record ? command.operationId : nil
+        _ = try await syncEngine.flushOutbox(context: context, reviewingWateringOperation: review)
         let pending = try await store.pendingOutboxEntries(for: context.ownerId)
         if ManualWateringAction(envelope: command) == .record {
             guard !pending.contains(where: { $0.operationId == command.operationId }) else { return false }
