@@ -52,6 +52,8 @@ function control(value: unknown, revision: number, seen: Set<string>) {
   if (seen.has(id)) fail();
   seen.add(id);
   if (!positive(raw.context_revision) || raw.context_revision !== revision || raw.action_code !== "check_soil") fail();
+  const actionId = text(raw.action_id);
+  if (!/^[a-z][a-z0-9_]*$/.test(actionId)) fail();
   const policy = object(raw.policy);
   if (!day(policy.due_on) || !positive(policy.interval_days) || policy.interval_days > 90) fail();
   const source = object(policy.source);
@@ -62,7 +64,7 @@ function control(value: unknown, revision: number, seen: Set<string>) {
   return {
     ...ids,
     context_revision: raw.context_revision,
-    action_id: text(raw.action_id),
+    action_id: actionId,
     action_code: "check_soil",
     policy: {
       due_on: policy.due_on,
@@ -97,6 +99,8 @@ function page(value: unknown, owner: string, after: string | null, limit: number
     if (!Array.isArray(row.first_aid_controls)) fail();
     const controls = row.first_aid_controls.map((item: unknown) => control(item, row.care_revision as number, seen));
     const card = projectCareRecommendation(row.plant_id as string, profile, locale);
+    if ("routine_check" in card && card.routine_check != null &&
+        object(card.routine_check).care_revision !== row.care_revision) fail();
     if (!raw.automation_allowed) {
       card.next_check = null;
       if ("routine_check" in card) delete card.routine_check;

@@ -146,9 +146,14 @@ Deno.test("overview rejects missing malformed expired and anonymous auth; token 
   const anonymous = fixture({ authBody: { id: owner, is_anonymous: true } });
   await checked(anonymous, 403);
   assertEquals(anonymous.requests.length, 1);
-  const forged = "eyJhbGciOiJub25lIn0." + btoa(JSON.stringify({ sub: foreign })) + ".forged";
+  const base64url = (value: unknown) => btoa(JSON.stringify(value))
+    .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const forged = base64url({ alg: "none" }) + "." + base64url({ sub: foreign }) + ".forged";
+  assert(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(forged));
   const f = fixture();
-  await checked(f, 200, "", { headers: { authorization: "Bearer " + forged } });
+  const verified = await checked(f, 200, "", { headers: { authorization: "Bearer " + forged } });
+  assertEquals(verified.owner_id, owner);
+  assertEquals(f.requests.length, 2);
   assertEquals(f.requests[0].headers.get("authorization"), "Bearer " + forged);
   assertEquals(f.bodies, [{ p_owner_id: owner, p_after: null, p_limit: 100 }]);
   // Absent anonymous metadata must still reach the atomic SQL permanent-owner guard.
@@ -335,6 +340,34 @@ Deno.test("overview fixed EN/PL leap-day/routine projection retains overdue days
   }
 });
 
+Deno.test("overview rejects projected routine revision mismatches before either access clamp without leaking a page", async () => {
+  const routine = {
+    rule_id: "17100000-0000-4000-8000-000000000031", care_revision: 2,
+    anchor_kind: "check_soil", anchor_local_date: "2024-02-29", due_local_date: "2024-03-07",
+  };
+  for (const enabled of [true, false]) {
+    const item = row(foreign);
+    item.care_profile = { ...dated(), plant_id: foreign, routine_check: { ...routine }, private_snapshot: privateError };
+    const data = envelope([row(), item]);
+    data.automation_allowed = enabled;
+    const valid = (await checked(fixture({ data }))).plants[1].care_recommendation;
+    assertEquals(valid.status, "available");
+    if (enabled) {
+      assertEquals(valid.routine_check, routine);
+      assertEquals(valid.next_check.due_on, "2024-03-07");
+      assertEquals(valid.next_check.anchor_on, "2024-02-29");
+    } else {
+      assertEquals(Object.hasOwn(valid, "routine_check"), false);
+      assertEquals(valid.next_check, null);
+    }
+    item.care_profile.routine_check.care_revision = 3;
+    const error = await checked(fixture({ data }), 503);
+    for (const secret of [owner, plant, foreign, routine.rule_id, routine.anchor_local_date, routine.due_local_date, privateError]) {
+      assert(!JSON.stringify(error).includes(secret));
+    }
+  }
+});
+
 Deno.test("overview source withdrawal and null profile preserve unavailable card semantics", async () => {
   for (const edit of [
     (r: Json) => { r.profile = null; },
@@ -363,7 +396,9 @@ Deno.test("overview validates compact firstaid controls even under disabled auto
     ...["control_id", "action_entry_id", "job_id", "origin_analysis_id", "kb_release_id", "protocol_id"]
       .map((key) => (c: Json) => { c[key] = "invalid"; }),
     (c) => { c.context_revision = 1; }, (c) => { c.context_revision = 2.5; },
-    (c) => { c.action_id = ""; }, (c) => { c.action_code = "water"; },
+    ...["", "check soil", "Check_soil", "1check_soil", "_check_soil"]
+      .map((value) => (c: Json) => { c.action_id = value; }),
+    (c) => { c.action_code = "water"; },
     (c) => { c.policy = null; },
     ...["2023-02-29", "2024-02-30", "2024-2-29", "0000-01-01", "infinity"]
       .map((value) => (c: Json) => { c.policy.due_on = value; }),

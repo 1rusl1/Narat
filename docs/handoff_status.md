@@ -4152,8 +4152,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-owner-overview-sql-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 208.04 с, проверки — 162.79 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-owner-overview-sql-acceptance](validation/automation/tasks/tester-care-owner-overview-sql-acceptance.md).
+tester-care-overview-http-boundary-repair: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 577.33 с, проверки — 16.48 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-overview-http-boundary-repair](validation/automation/tasks/tester-care-overview-http-boundary-repair.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
