@@ -114,7 +114,8 @@ trial, расширенный платный уход, новые способы
 `df71eb5` с теми же исходниками ([живой цикл](../../docs/validation/tester-care-stage1-live-2026-11-19.md)).
 В этапе2 принят SQL read RPC `25a5e92`:149automation/436Deno,140overview
 assertions × clean/upgrade двух баз (fullcurrent и exact92care), Review/QA PASS.
-Это только localfixtures, не deployment. Далее отдельный additive GET-only Edge
-`care-overview`, чтобы не перевыкладывать plants-api33/worker, затем coherent
-owner cache и «Сегодня». Физические B01–B11 остаются открыты; расширение рекомендаций и покупки
+HTTP `0aff69f` также принят локально:446Deno/149automation,3actualentrypoints
+compile и полный candidate-base Review/QA PASS. Deployed/live parity отдельно.
+Далее nativeA DTO/transport/coherent reader, nativeB durable owner cache и nativeC
+«Сегодня». Отдельный additive care-overview сохраняет plants-api33/worker безredeploy. Физические B01–B11 остаются открыты; расширение рекомендаций и покупки
 по-прежнему отложены.

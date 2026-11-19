@@ -1,5 +1,50 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: полный HTTP принят; следующий native read packet — 19 ноября 2026
+
+Accepted/pushed HTTP `0aff69f7f50a5c0fff235285548cd29b9fca586c`.
+Run `tester-care-overview-http-repair-acceptance-20261119-01` завершил обе
+зависимые задачи: узкий Developer repair и полную candidate_base приёмку
+ВСЕГО HTTP от9d4146e. Full Review1/QA1 PASS без findings. Реальные checks:
+446 Deno (436 прежних+10 новых),149 automation, diff-check и deno-check
+трёх фактических entrypoints plants-api/analysis-worker/care-overview PASS.
+Это local/fixture scope, НЕ deployed/live parity или готовый Today.
+Отчёт `docs/validation/automation/tasks/tester-care-overview-http-full-acceptance.md`.
+
+Приняты семь source/config файлов: pure shared projection и old card delegation,
+новые care-overview/index.ts+handler.ts, real Supabase/mockfetch HTTP tests,
+deno.json и additive config.toml. getUser verified owner → один read RPC/page,
+no-store, strict metadata/cursor/control, same-card EN/PL projection, fail-closed
+access clamp. Revision routine сравнивается с outerrow ДО clamp, action_id
+соответствует existing029 regex. SQLblob принят25a и не менялся. Старый API33/
+worker9 НЕ redeploy. Parent готовит isolated target SQL+newslug и live parity
+отдельно, только после accepted SHA; generic db push запрещён.
+
+Сохранены actual failures: initial5-entrypoint check ссылался на два никогда
+не существовавших billing/maintenance index; исправлено на реальные3, безfake
+modules. Старый forged JWT fixture был некорректным base64url; productionBearer
+не ослаблен. Narrow first patch имел неверныеhunk counts, Developer пересоздал.
+Review пережил длительную паузу host/WebSocket reconnect, затем дал настоящий
+PASS; отсутствующий ответ не подменялся приёмкой. Intermediatee0b598c принимал
+толькоrepair, окончательный0aff69f принимает весь actualcandidate.
+
+Следующий точный packet A: `tools/automation/tasks.tester-care-overview-native-read.json`,
+actualrun `tester-care-overview-native-read-20261119-01`. Только три existing
+Swift файла: APIModels.swift,PlantsAPIClient.swift,CollectionWireTests.swift.
+Typed FULLcardwire DTO + fixed same-origin sibling transport/onepermanentSDKlease
++ coherent ALLpages reader. Reuse existing card validator. Codable сохраняет
+outer next_check/routine_check; encode→file→decode→validated test должен доказать,
+что дата/правило/источник переживают сохранение. Pending cache и UI сюда не входят.
+Ignored config `docs/validation/automation/runs/tester-care-overview-native.config.json`
+сохраняет approved routing/budgets/900s и shared resource wrapper для всех iOS gates.
+
+Далее packet B: reserved owner cache, atomic canonical generation/request token,
+full-refresh stale retention, ABA/disk/pending overlay и ahead-of-sync alignment.
+Repository фактически Sendable STRUCT, не переделывать вactor. Затем packet C:
+permanent Today home/collection navigation/UI с точечным newfile membership.
+Физические B01–B11, full T066/T068/T075/T077/T098, offline/iPhone и ordinary
+positive firstaid остаются открытыми. Рекомендации/покупки/AI не расширяются.
+
 ## Этап 2: HTTP candidate — узкий repair перед полной приёмкой
 
 SQL accepted25a5e92 и root merge4492190 сохранены. HTTP initial realrun

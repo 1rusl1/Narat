@@ -165,6 +165,8 @@
 
   - Stage2 SQL `25a5e92`: owner read RPC принят локально —149automation/436Deno,4×140overview TAP (fullcurrent/exact92 clean+upgrade), Review/QA PASS. HTTP/native Today/live ещё не реализованы; полный T066 остаётся открытым.
 
+  - Stage2 HTTP `0aff69f`: additive GET-only/authenticated owner overview + unchanged shared card projection приняты —446Deno/149automation/3entrypoint compile/полный ReviewQA PASS. Только fixtures/local; live deploy/parity, native cache/Today UI остаются открытыми.
+
 - [ ] T067 Создать `CareHistoryView.swift` для фактов/прошедшей даты/отмены. Текущую следующую дату с коротким основанием показывать в карточке; отдельный NextCheckReasonView и история всех пересчётов не требуются. Покрытие: FR-026, FR-027, FR-028, FR-029, FR-030.
   - V11: EN-журнал карточки отменил ранее исправленную запись после офлайн-очереди, холодного запуска и потери ответа. SQL подтвердил одну отмену и сохранение даты. Положительная дата следующей проверки на стенде открыта. [Отчёт](../../docs/validation/mvp-acceptance.md#v11--отмена-полива-после-исправления-даты).
 
