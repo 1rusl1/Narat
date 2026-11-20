@@ -10573,3 +10573,202 @@ extension CollectionWireTests {
         XCTAssertTrue(state.plants.first?.manualJournalAvailable == true)
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+extension CollectionWireTests {
+    @MainActor
+    func testTodayFixtureCompletePagesMatchCardsWithoutCareWrites() async throws {
+        for scenario in [CatalogueUIFixtureScenario.todayMixed, .todayFuture] {
+            let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: scenario)
+            defer { try? h.cleanup() }
+            let expected = try await h.connection.sessionSnapshot()
+            let api = try XCTUnwrap(h.connection.apiClient)
+            let sync = try XCTUnwrap(h.connection.syncEngine)
+            let store = try XCTUnwrap(h.connection.store)
+            let repo = try XCTUnwrap(h.connection.repository)
+            _ = try await sync.pullDelta(for: expected.session.userId)
+            let lease = try await h.connection.collectionLease(expected: expected)
+            let token = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: api.syncAuthority)
+            let before = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            let requestStart = h.server.requests.count
+            let snapshot = try await api.fetchCareOverview(context: lease, limit: 2, locale: .en)
+            XCTAssertEqual(snapshot.pages.count, 2)
+            XCTAssertEqual(snapshot.pages.map { $0.plants.count }, [2, 1])
+            XCTAssertEqual(snapshot.pages.first?.nextAfter, snapshot.pages.first?.plants.last?.plantId)
+            XCTAssertNil(snapshot.pages.last?.nextAfter)
+            XCTAssertEqual(snapshot.plants.map(\.plantId),
+                           h.server.snapshot.plants.map(\.id).sorted { $0.uuidString < $1.uuidString })
+            for page in snapshot.pages {
+                XCTAssertEqual(page.ownerId, expected.session.userId)
+                XCTAssertEqual(page.serverNow, h.server.snapshot.todayClockSeed)
+                XCTAssertEqual(page.ownerWatermark, snapshot.pages[0].ownerWatermark)
+                XCTAssertEqual(page.publicationFingerprint, String(repeating: "a", count: 64))
+                XCTAssertEqual(page.reminderHourLocal, 9)
+                XCTAssertTrue(page.automationAllowed)
+                XCTAssertNil(page.verifiedAccessUntil)
+            }
+            for row in snapshot.plants {
+                XCTAssertEqual(row.careRevision, 1)
+                XCTAssertTrue(row.firstAidControls.isEmpty)
+                let card = try await api.fetchCareRecommendation(plantId: row.plantId, context: lease)
+                XCTAssertEqual(card, try row.careRecommendation.validated(for: row.plantId))
+                if let routine = row.careRecommendation.routineCheck {
+                    XCTAssertEqual(routine.ruleId, row.plantId)
+                    XCTAssertEqual(routine.careRevision, row.careRevision)
+                    XCTAssertEqual(row.careRecommendation.nextCheck?.source.locator, "Fixture interval")
+                }
+                let membership = try await store.syncedBasicCareEnabledAt(
+                    plantId: row.plantId, context: lease, authority: api.syncAuthority
+                )
+                XCTAssertNotNil(membership)
+            }
+            try await store.finishCareOverviewRead(token, snapshot: snapshot, authority: api.syncAuthority)
+            let count = h.server.requests.count
+            let state = try await repo.cachedCareOverview(context: lease)
+            let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            XCTAssertEqual(h.server.requests.count, count, "Local readers must not send HTTP")
+            XCTAssertEqual(local.canonicalGeneration, before.canonicalGeneration)
+            XCTAssertEqual(local.careRows.map(\.payloadJSON), before.careRows.map(\.payloadJSON))
+            XCTAssertTrue(local.pending.isEmpty)
+            XCTAssertEqual(state.access, .free)
+            XCTAssertEqual(state.plants.filter { $0.routine == nil }.count, 1)
+            let now = try XCTUnwrap(h.server.snapshot.todayClockSeed.flatMap(SQLTimestamp.date(from:)))
+            let calendar = TodayCalendar(state: state, now: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+            XCTAssertEqual(calendar.status, .scheduled)
+            XCTAssertEqual(calendar.sections.flatMap(\.checks).count, 2)
+            XCTAssertEqual(calendar.sections.count, scenario == .todayFuture ? 1 : 2)
+            XCTAssertEqual(h.server.snapshot.overviewRequests, 2)
+            XCTAssertTrue(h.server.snapshot.attempts.isEmpty)
+            XCTAssertTrue(h.server.snapshot.commits.isEmpty)
+            XCTAssertTrue(h.server.requests.dropFirst(requestStart).allSatisfy { $0.httpMethod == "GET" })
+
+            // Invalid queries/authority are transport errors, never successful empty pages.
+            let valid = try XCTUnwrap(h.server.requests.first { $0.url?.lastPathComponent == "care-overview" })
+            for query in ["limit=0", "limit=2&limit=2", "limit=2&owner_id=\(expected.session.userId)",
+                          "limit=2&after=invalid"] {
+                var request = valid
+                var url = try XCTUnwrap(URLComponents(url: try XCTUnwrap(valid.url), resolvingAgainstBaseURL: false))
+                url.percentEncodedQuery = query
+                request.url = url.url
+                do { _ = try await h.http.data(for: request); XCTFail("Invalid query accepted") } catch {}
+            }
+            for header in ["Authorization", "X-Client-Locale", "X-Installation-Credential"] {
+                var request = valid
+                request.setValue("invalid", forHTTPHeaderField: header)
+                do { _ = try await h.http.data(for: request); XCTFail("Invalid header accepted") } catch {}
+            }
+            XCTAssertEqual(h.server.snapshot.overviewRequests, 2)
+        }
+    }
+
+    @MainActor
+    func testTodayFixtureEmptyUnscheduledAndInitialFailureRemainDistinct() async throws {
+        for scenario in [CatalogueUIFixtureScenario.todayEmpty, .todayNoSchedule, .todayFirstFailure] {
+            let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: scenario)
+            defer { try? h.cleanup() }
+            let expected = try await h.connection.sessionSnapshot()
+            let sync = try XCTUnwrap(h.connection.syncEngine)
+            let api = try XCTUnwrap(h.connection.apiClient)
+            let repo = try XCTUnwrap(h.connection.repository)
+            let store = try XCTUnwrap(h.connection.store)
+            _ = try await sync.pullDelta(for: expected.session.userId)
+            let lease = try await h.connection.collectionLease(expected: expected)
+            let state = try await repo.refreshCareOverview(locale: .en, context: lease)
+            let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            let calendar = TodayCalendar(state: state, now: Date())
+            XCTAssertEqual(calendar.status, scenario == .todayEmpty ? .empty :
+                            scenario == .todayNoSchedule ? .noSchedule : .unavailable)
+            XCTAssertEqual(state.plants.count, scenario.initialCount)
+            XCTAssertTrue(state.plants.allSatisfy { $0.routine == nil && $0.controls.isEmpty })
+            XCTAssertEqual(state.failure, scenario == .todayFirstFailure ? .transport : nil)
+            XCTAssertEqual(local.cached == nil, scenario == .todayFirstFailure)
+            XCTAssertTrue(local.pending.isEmpty)
+            XCTAssertEqual(h.server.snapshot.overviewRequests, 1)
+            XCTAssertTrue(h.server.snapshot.attempts.isEmpty)
+            XCTAssertTrue(h.server.snapshot.commits.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testTodayFixtureSavedFailureAndOfflineSurviveColdContextWithoutFreshness() async throws {
+        let namespace = UUID().uuidString
+        var h = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .todaySaved)
+        defer { try? h.cleanup() }
+        let expected = try await h.connection.sessionSnapshot()
+        let sync = try XCTUnwrap(h.connection.syncEngine)
+        _ = try await sync.pullDelta(for: expected.session.userId)
+        var lease = try await h.connection.collectionLease(expected: expected)
+        var repo = try XCTUnwrap(h.connection.repository)
+        let accepted = try await repo.refreshCareOverview(locale: .en, context: lease)
+        XCTAssertNil(accepted.failure)
+        let api = try XCTUnwrap(h.connection.apiClient)
+        let store = try XCTUnwrap(h.connection.store)
+        let saved = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let cache = try XCTUnwrap(saved.cached)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let bytes = try encoder.encode(cache.snapshot)
+        let dates = accepted.plants.compactMap { $0.routine?.dueLocalDate }
+        let seed = h.server.snapshot.todayClockSeed
+        let day = h.server.snapshot.todayAnchorDay
+        var reads = 1
+        for phase in [CatalogueFixtureServer.TodayPhase.failOverview, .offline] {
+            try h.changeTodayPhase(phase)
+            let failed = try await repo.refreshCareOverview(locale: .en, context: lease)
+            reads += 1
+            XCTAssertEqual(failed.failure, .transport)
+            XCTAssertEqual(failed.origin, .cache)
+            XCTAssertEqual(failed.plants.compactMap { $0.routine?.dueLocalDate }, dates)
+            h.shutdown()
+            h = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .todaySaved)
+            XCTAssertEqual(h.server.snapshot.todayTransport, phase)
+            XCTAssertEqual(h.server.snapshot.todayClockSeed, seed)
+            XCTAssertEqual(h.server.snapshot.todayAnchorDay, day)
+            let reopened = try await h.connection.sessionSnapshot()
+            lease = try await h.connection.collectionLease(expected: reopened)
+            repo = try XCTUnwrap(h.connection.repository)
+            let coldAPI = try XCTUnwrap(h.connection.apiClient)
+            let coldStore = try XCTUnwrap(h.connection.store)
+            let count = h.server.requests.count
+            let cold = try await repo.cachedCareOverview(context: lease)
+            let local = try await coldStore.readCareOverviewPresentation(context: lease, authority: coldAPI.syncAuthority)
+            XCTAssertEqual(h.server.requests.count, count)
+            XCTAssertEqual(cold.origin, .cache)
+            XCTAssertEqual(cold.plants.compactMap { $0.routine?.dueLocalDate }, dates)
+            let retained = try XCTUnwrap(local.cached)
+            XCTAssertEqual(retained.fetchedAt, cache.fetchedAt)
+            XCTAssertEqual(try encoder.encode(retained.snapshot), bytes)
+            XCTAssertEqual(local.canonicalGeneration, saved.canonicalGeneration)
+            XCTAssertTrue(local.pending.isEmpty)
+            let retry = try await repo.refreshCareOverview(locale: .en, context: lease)
+            reads += 1
+            XCTAssertEqual(retry.failure, .transport)
+            XCTAssertEqual(h.server.snapshot.overviewRequests, reads)
+            XCTAssertTrue(h.server.snapshot.attempts.isEmpty)
+            XCTAssertTrue(h.server.snapshot.commits.isEmpty)
+        }
+        // Resume only emits Root's event. Withdrawal itself must not perform HTTP.
+        let count = h.server.requests.count
+        var reconnects = 0
+        h.connection.reconcileFixtureReconnect = { reconnects += 1 }
+        try h.resumeToday()
+        XCTAssertEqual(reconnects, 1)
+        XCTAssertEqual(h.server.requests.count, count)
+        try h.changeTodayPhase(.withdrawn)
+        XCTAssertEqual(h.server.requests.count, count)
+        let withdrawn = try await repo.refreshCareOverview(locale: .en, context: lease)
+        XCTAssertNil(withdrawn.failure)
+        XCTAssertTrue(withdrawn.plants.allSatisfy { $0.routine == nil && $0.advice == nil })
+        XCTAssertEqual(withdrawn.canonicalGeneration, saved.canonicalGeneration)
+        let withdrawalReadCount = h.server.requests.count
+        try h.resumeToday()
+        XCTAssertEqual(reconnects, 2)
+        XCTAssertEqual(h.server.requests.count, withdrawalReadCount)
+        XCTAssertEqual(h.server.snapshot.todayTransport, .normal)
+        let resumed = try await repo.refreshCareOverview(locale: .en, context: lease)
+        XCTAssertNil(resumed.failure)
+        XCTAssertEqual(resumed.plants.compactMap { $0.routine?.dueLocalDate }, dates)
+        XCTAssertEqual(h.server.snapshot.overviewRequests, reads + 2)
+    }
+}
+#endif

@@ -15,10 +15,19 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case profileReminderHour, accountSignOut
     case collectionWateringRecord, collectionWateringRecordRejected, collectionWateringMissingConditions, collectionWateringBackgroundFailure
 
+    case todayMixed, todayFuture, todayNoSchedule, todayEmpty, todayFirstFailure, todaySaved
+
+    var testsToday: Bool {
+        switch self {
+        case .todayMixed, .todayFuture, .todayNoSchedule, .todayEmpty, .todayFirstFailure, .todaySaved: true
+        default: false
+        }
+    }
+
     var testsSavedWatering: Bool { self == .collectionWateringRecord || self == .collectionWateringRecordRejected || self == .collectionWateringMissingConditions || self == .collectionWateringBackgroundFailure }
 
     var testsCareLifecycle: Bool {
-        testsSavedWatering || self == .profileReminderHour || self == .basicCareEnable
+        testsToday || testsSavedWatering || self == .profileReminderHour || self == .basicCareEnable
             || self == .careRecommendationRefresh || self == .careRecommendationRefreshRejected
             || testsRoutine || self == .firstAidControl || self == .plantWateringEdit
     }
@@ -32,7 +41,11 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
     }
-    var initialCount: Int { self == .paid4 ? 4 : (self == .cap3 ? 3 : 2) }
+    var initialCount: Int {
+        if self == .todayEmpty { return 0 }
+        if self == .todayMixed || self == .todayFuture { return 3 }
+        return self == .paid4 ? 4 : (self == .cap3 ? 3 : 2)
+    }
 }
 
 enum CatalogueUIFixtureError: Error {
@@ -217,6 +230,20 @@ final class CatalogueUIFixtureContext {
         reconnect()
     }
 
+    var testsToday: Bool { server.snapshot.scenario.testsToday }
+
+    func changeTodayPhase(_ phase: CatalogueFixtureServer.TodayPhase) throws {
+        guard phase != .normal else { throw CatalogueUIFixtureError.invalidRequest }
+        try server.setTodayPhase(phase)
+    }
+
+    func resumeToday() throws {
+        guard testsToday, let reconnect = connection.reconcileFixtureReconnect
+        else { throw CatalogueUIFixtureError.invalidRequest }
+        try server.setTodayPhase(.normal)
+        reconnect()
+    }
+
     /// Releases the connection without erasing SDK state, SQLite, receipts or scenario flags.
     func shutdown() {
         connection = nil
@@ -309,6 +336,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         let owner: UUID
         let body: Data
     }
+    enum TodayPhase: String, Codable, Sendable { case normal, failOverview, offline, withdrawn }
+
     struct Ledger: Codable, Sendable {
         let scenario: CatalogueUIFixtureScenario
         let guest: UUID
@@ -327,6 +356,11 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var careSourceWithdrawn: Bool?
         var careSourceEmptyWindowProved: Bool?
         var backgroundWateringRejected: Bool?
+        var todayAnchorDay: String?
+        var todayClockSeed: String?
+        var todayTransport: TodayPhase?
+        var todayWithdrawn: Bool?
+        var overviewRequests: Int?
     }
     struct Reply {
         let status: Int
@@ -338,6 +372,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     let namespace: String
     private var ledger: Ledger
     var snapshot: Ledger { lock.withLock { ledger } }
+    private var capturedRequests: [URLRequest] = []
+    var requests: [URLRequest] { lock.withLock { capturedRequests } }
 
     fileprivate init(directory: URL, namespace: String, scenario: CatalogueUIFixtureScenario) throws {
         self.namespace = namespace
@@ -348,6 +384,17 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         } else {
             let owner = UUID()
             ledger = Ledger(scenario: scenario, guest: UUID(), permanent: owner, plants: [])
+            if scenario.testsToday {
+                let now = Date()
+                ledger.todayClockSeed = ISO8601DateFormatter().string(from: now)
+                let day = ISO8601DateFormatter()
+                day.formatOptions = [.withFullDate]
+                day.timeZone = TimeZone(secondsFromGMT: 0)
+                ledger.todayAnchorDay = day.string(from: now)
+                ledger.todayTransport = scenario == .todayFirstFailure ? .failOverview : .normal
+                ledger.todayWithdrawn = false
+                ledger.overviewRequests = 0
+            }
             ledger.plants = (0..<scenario.initialCount).map { index in
                 Plant(owner: owner, id: UUID(), species: "fixture_fern", name: "Fixture \(index + 1)",
                       timestamp: Self.time(0))
@@ -355,6 +402,21 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             try JSONEncoder().encode(ledger).write(to: file, options: .atomic)
         }
     }
+    /// Explicit DEBUG actions only. Withdrawal itself never requests HTTP.
+    func setTodayPhase(_ phase: TodayPhase) throws {
+        try lock.withLock {
+            guard ledger.scenario.testsToday else { throw CatalogueUIFixtureError.invalidRequest }
+            var next = ledger
+            if phase == .withdrawn {
+                next.todayWithdrawn = true
+            } else {
+                next.todayTransport = phase
+                if phase == .normal { next.todayWithdrawn = false }
+            }
+            try persist(next)
+        }
+    }
+
     /// Change server authority only; clients must receive this via SDK sync.
     func setRoutineEntitlement(deadline: Date, state: String = "active") throws {
         try lock.withLock {
@@ -483,6 +545,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                   url.port == nil, url.user == nil, url.password == nil, url.fragment == nil else {
                 throw URLError(.unsupportedURL)
             }
+            capturedRequests.append(request)
             let body = request.httpBody ?? Data()
             let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
             let method = request.httpMethod ?? "GET"
@@ -567,6 +630,52 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 ]))
             }
             let caller = try owner(request)
+            if method == "GET", url.path == "/functions/v1/care-overview" {
+                guard ledger.scenario.testsToday, caller == ledger.permanent, body.isEmpty,
+                      request.value(forHTTPHeaderField: "X-Catalogue-Fixture-Namespace") == namespace,
+                      request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
+                      ["en", "pl"].contains(request.value(forHTTPHeaderField: "X-Client-Locale") ?? ""),
+                      Set(query.map(\.name)).count == query.count,
+                      Set(query.map(\.name)).isSubset(of: ["limit", "after"]),
+                      let raw = query.first(where: { $0.name == "limit" })?.value,
+                      let limit = Int(raw), (1...200).contains(limit), raw == String(limit)
+                else { throw CatalogueUIFixtureError.invalidRequest }
+                let cursor = query.first(where: { $0.name == "after" })
+                let after = cursor?.value.flatMap(UUID.init(uuidString:))
+                if let cursor {
+                    guard let after, cursor.value == after.uuidString.lowercased()
+                    else { throw CatalogueUIFixtureError.invalidRequest }
+                }
+                var next = ledger
+                next.overviewRequests = (next.overviewRequests ?? 0) + 1
+                try persist(next)
+                if ledger.todayTransport == .offline { throw URLError(.notConnectedToInternet) }
+                if ledger.todayTransport == .failOverview {
+                    return try error(503, "SERVICE_UNAVAILABLE", retryable: true)
+                }
+                guard let clock = ledger.todayClockSeed else { throw CatalogueUIFixtureError.invalidStorage }
+                let ordered = ledger.plants.filter { plant in
+                    plant.owner == caller && (after.map {
+                        plant.id.uuidString.lowercased() > $0.uuidString.lowercased()
+                    } ?? true)
+                }.sorted { $0.id.uuidString.lowercased() < $1.id.uuidString.lowercased() }
+                let page = Array(ordered.prefix(limit))
+                let rows: [[String: Any]] = try page.map { plant in
+                    ["plant_id": plant.id.uuidString, "care_revision": 1,
+                     "care_recommendation": try cardProjection(plant),
+                     "first_aid_controls": []] as [String: Any]
+                }
+                return Reply(status: 200, data: try json([
+                    "owner_id": caller.uuidString, "server_now": clock,
+                    "owner_watermark": Self.time(ledger.tick),
+                    "publication_fingerprint": String(repeating: ledger.todayWithdrawn == true ? "b" : "a", count: 64),
+                    "reminder_hour_local": 9, "automation_allowed": true,
+                    "verified_access_until": NSNull(), "plants": rows,
+                    "next_after": ordered.count > limit ? page.last!.id.uuidString.lowercased() as Any : NSNull()
+                ]))
+            }
+            if ledger.scenario.testsToday, ledger.todayTransport == .offline,
+               url.path.hasPrefix("/functions/v1/") { throw URLError(.notConnectedToInternet) }
             if method == "GET", url.path == "/functions/v1/plants-api/me" {
                 guard caller == ledger.permanent, query.isEmpty else {
                     throw CatalogueUIFixtureError.invalidRequest
@@ -612,66 +721,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 return try error(503, "SERVICE_UNAVAILABLE", retryable: true)
             }
             if (ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected
-                || ledger.scenario == .basicCareEnable || ledger.scenario.testsRoutine),
+                || ledger.scenario == .basicCareEnable || ledger.scenario.testsRoutine || ledger.scenario.testsToday),
                method == "GET", query.isEmpty,
-               let plant = ledger.plants.first, caller == plant.owner,
-               url.path == "/functions/v1/plants-api/plants/\(plant.id.uuidString.lowercased())/care/recommendation" {
-                if ledger.careSourceWithdrawn == true {
-                    guard ledger.careSourceEmptyWindowProved == true else { throw CatalogueUIFixtureError.invalidRequest }
-                    return Reply(status: 200, data: try json([
-                        "plant_id": plant.id.uuidString, "status": "unavailable",
-                        "recommendation": NSNull(), "next_check": NSNull(), "routine_check": NSNull()
-                    ]))
-                }
-                if ledger.scenario.testsRoutine {
-                    if ledger.scenario == .routinePendingPolish,
-                       request.value(forHTTPHeaderField: "X-Client-Locale") == "pl" {
-                        // Opening the same card after Root locale revalidation must prove
-                        // one intent/commit and bounded, byte-identical durable replays.
-                        guard (2...4).contains(ledger.attempts.count), ledger.commits.count == 1,
-                              let commit = ledger.commits.values.first,
-                              commit.owner == caller, commit.plantID == plant.id,
-                              commit.envelope.commandName == RoutineSoilCheckCompletionCommand.name,
-                              ledger.attempts.allSatisfy({ $0.owner == caller && $0.body == commit.body })
-                        else { throw CatalogueUIFixtureError.invalidRequest }
-                    }
-                    let completion = ledger.commits.values.first {
-                        $0.envelope.commandName == RoutineSoilCheckCompletionCommand.name
-                    }
-                    let undone = ledger.commits.values.contains { $0.envelope.commandName == RoutineSoilCheckUndoCommand.name }
-                    let anchor = try (!undone ? completion : nil).map { try routineLocalDate($0) } ?? "1999-12-25"
-                    let due = completion == nil || undone ? "2000-01-01" : routineNextDate(anchor)
-                    let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
-                    var response: [String: Any] = [
-                        "plant_id": plant.id.uuidString, "status": "available",
-                        "next_check": ["due_on": due, "anchor_on": anchor, "interval_days": 7,
-                                       "basis": "Based on the last soil check.", "source": source] as [String: Any],
-                        "routine_check": ["rule_id": Self.routineRule, "care_revision": 1,
-                                          "due_local_date": due, "anchor_local_date": anchor,
-                                          "anchor_kind": "check_soil"] as [String: Any],
-                        "recommendation": ["action_id": "fixture_soil_check", "action_code": "check_soil",
-                                           "text": "Check the soil before watering.",
-                                           "next_check_interval_days": 7, "source": source] as [String: Any]
-                    ]
-                    if ledger.scenario == .routineLateEntitlement, ledger.routineEntitlementDeadline == nil {
-                        // Refresh is offered only while there is no scheduled next check.
-                        response["next_check"] = NSNull()
-                        response["routine_check"] = NSNull()
-                    }
-                    return Reply(status: 200, data: try json(response))
-                }
-                let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
-                let check: Any = ledger.scenario != .careRecommendationRefresh || ledger.commits.isEmpty ? NSNull() : [
-                    "due_on": "2026-10-28", "anchor_on": "2026-10-21", "interval_days": 7,
-                    "basis": "Based on your last watering.", "source": source
-                ] as [String: Any]
-                return Reply(status: 200, data: try json([
-                    "plant_id": plant.id.uuidString, "status": "available", "next_check": check,
-                    "recommendation": [
-                        "action_id": "fixture_soil_check", "action_code": "check_soil",
-                        "text": "Check the soil before watering.", "next_check_interval_days": 7, "source": source
-                    ] as [String: Any]
-                ]))
+               let plant = ledger.plants.first(where: {
+                   $0.owner == caller && (ledger.scenario.testsToday || $0.id == ledger.plants.first?.id)
+                       && url.path == "/functions/v1/plants-api/plants/\($0.id.uuidString.lowercased())/care/recommendation"
+               }) {
+                return Reply(status: 200, data: try json(cardProjection(
+                    plant, locale: request.value(forHTTPHeaderField: "X-Client-Locale")
+                )))
             }
             if method == "GET", url.path == "/functions/v1/plants-api/sync" {
                 guard Set(query.map(\.name)).count == query.count,
@@ -800,9 +858,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         ] as [String: Any]
                     ]
                 } : []
-                if let plant = ledger.plants.first, plant.owner == caller,
-                   let enabledAt = basicCareEnabledAt(for: plant),
-                   since.map({ $0 < enabledAt }) ?? true {
+                for plant in ledger.scenario.testsToday ? ledger.plants : Array(ledger.plants.prefix(1)) {
+                    guard plant.owner == caller, let enabledAt = basicCareEnabledAt(for: plant),
+                          since.map({ $0 < enabledAt }) ?? true else { continue }
                     changes.append([
                         "entity_type": "basic_care_memberships", "id": plant.id.uuidString,
                         "updated_at": enabledAt, "deleted_at": NSNull(),
@@ -1255,6 +1313,99 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         throw URLError(.networkConnectionLost)
     }
 
+    /// One ledger-backed card wire projection, shared by card and overview GETs.
+    private func cardProjection(_ plant: Plant, locale: String? = nil) throws -> [String: Any] {
+        if ledger.scenario.testsToday {
+            guard let day = ledger.todayAnchorDay,
+                  let index = ledger.plants.firstIndex(where: { $0.id == plant.id })
+            else { throw CatalogueUIFixtureError.invalidStorage }
+            if ledger.todayWithdrawn == true {
+                return ["plant_id": plant.id.uuidString, "status": "unavailable",
+                        "recommendation": NSNull(), "next_check": NSNull(), "routine_check": NSNull()]
+            }
+            // Explicit fixture policies; no catalogue/source interval derivation.
+            let scheduled = ledger.scenario != .todayNoSchedule && index < 2
+            let due = routineNextDate(day, days: ledger.scenario == .todayFuture ? 2 : -index)
+            let anchor = routineNextDate(due, days: -7)
+            let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
+            var response: [String: Any] = [
+                "plant_id": plant.id.uuidString, "status": "available",
+                "recommendation": [
+                    "action_id": "fixture_soil_check", "action_code": "check_soil",
+                    "text": "Check the soil before watering.", "next_check_interval_days": 7, "source": source
+                ] as [String: Any],
+                "next_check": NSNull(), "routine_check": NSNull()
+            ]
+            if scheduled {
+                response["next_check"] = [
+                    "due_on": due, "anchor_on": anchor, "interval_days": 7,
+                    "basis": "Based on the last soil check.", "source": source
+                ] as [String: Any]
+                response["routine_check"] = [
+                    "rule_id": plant.id.uuidString, "care_revision": 1,
+                    "due_local_date": due, "anchor_local_date": anchor, "anchor_kind": "check_soil"
+                ] as [String: Any]
+            }
+            return response
+        }
+        if ledger.careSourceWithdrawn == true {
+            guard ledger.careSourceEmptyWindowProved == true else { throw CatalogueUIFixtureError.invalidRequest }
+            return [
+                "plant_id": plant.id.uuidString, "status": "unavailable",
+                "recommendation": NSNull(), "next_check": NSNull(), "routine_check": NSNull()
+            ]
+        }
+        if ledger.scenario.testsRoutine {
+            if ledger.scenario == .routinePendingPolish,
+               locale == "pl" {
+                // Opening the same card after Root locale revalidation must prove
+                // one intent/commit and bounded, byte-identical durable replays.
+                guard (2...4).contains(ledger.attempts.count), ledger.commits.count == 1,
+                      let commit = ledger.commits.values.first,
+                      commit.owner == plant.owner, commit.plantID == plant.id,
+                      commit.envelope.commandName == RoutineSoilCheckCompletionCommand.name,
+                      ledger.attempts.allSatisfy({ $0.owner == plant.owner && $0.body == commit.body })
+                else { throw CatalogueUIFixtureError.invalidRequest }
+            }
+            let completion = ledger.commits.values.first {
+                $0.plantID == plant.id && $0.envelope.commandName == RoutineSoilCheckCompletionCommand.name
+            }
+            let undone = ledger.commits.values.contains { $0.plantID == plant.id && $0.envelope.commandName == RoutineSoilCheckUndoCommand.name }
+            let anchor = try (!undone ? completion : nil).map { try routineLocalDate($0) } ?? "1999-12-25"
+            let due = completion == nil || undone ? "2000-01-01" : routineNextDate(anchor)
+            let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
+            var response: [String: Any] = [
+                "plant_id": plant.id.uuidString, "status": "available",
+                "next_check": ["due_on": due, "anchor_on": anchor, "interval_days": 7,
+                               "basis": "Based on the last soil check.", "source": source] as [String: Any],
+                "routine_check": ["rule_id": Self.routineRule, "care_revision": 1,
+                                  "due_local_date": due, "anchor_local_date": anchor,
+                                  "anchor_kind": "check_soil"] as [String: Any],
+                "recommendation": ["action_id": "fixture_soil_check", "action_code": "check_soil",
+                                   "text": "Check the soil before watering.",
+                                   "next_check_interval_days": 7, "source": source] as [String: Any]
+            ]
+            if ledger.scenario == .routineLateEntitlement, ledger.routineEntitlementDeadline == nil {
+                // Refresh is offered only while there is no scheduled next check.
+                response["next_check"] = NSNull()
+                response["routine_check"] = NSNull()
+            }
+            return response
+        }
+        let source = ["url": "https://example.invalid/soil", "locator": "Fixture interval"]
+        let check: Any = ledger.scenario != .careRecommendationRefresh || ledger.commits.isEmpty ? NSNull() : [
+            "due_on": "2026-10-28", "anchor_on": "2026-10-21", "interval_days": 7,
+            "basis": "Based on your last watering.", "source": source
+        ] as [String: Any]
+        return [
+            "plant_id": plant.id.uuidString, "status": "available", "next_check": check,
+            "recommendation": [
+                "action_id": "fixture_soil_check", "action_code": "check_soil",
+                "text": "Check the soil before watering.", "next_check_interval_days": 7, "source": source
+            ] as [String: Any]
+        ]
+    }
+
     private func routineLocalDate(_ commit: Commit) throws -> String {
         let payload = try JSONSerialization.jsonObject(with: Data(commit.envelope.payloadJSON.utf8)) as? [String: Any]
         guard let timestamp = payload?["occurred_at"] as? String,
@@ -1267,8 +1418,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         return formatter.string(from: date)
     }
 
-    private func routineNextDate(_ anchor: String) -> String {
-        let date = SQLCalendarDay.calendar.date(byAdding: .day, value: 7, to: SQLCalendarDay.date(from: anchor)!)!
+    private func routineNextDate(_ anchor: String, days: Int = 7) -> String {
+        let date = SQLCalendarDay.calendar.date(byAdding: .day, value: days, to: SQLCalendarDay.date(from: anchor)!)!
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -1303,7 +1454,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     }
 
     private func basicCareEnabledAt(for plant: Plant) -> String? {
-        if ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected || ledger.scenario.testsRoutine {
+        if ledger.scenario.testsToday || ledger.scenario == .careRecommendationRefresh || ledger.scenario == .careRecommendationRefreshRejected || ledger.scenario.testsRoutine {
             return plant.timestamp
         }
         guard ledger.scenario == .basicCareEnable,

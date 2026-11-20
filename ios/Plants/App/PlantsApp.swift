@@ -163,7 +163,7 @@ struct RootContainerView: View {
 
     private var usesLegacyWelcome: Bool {
 #if DEBUG
-        isStagingAnalysis || fixtureContext != nil
+        isStagingAnalysis || (fixtureContext != nil && fixtureContext?.testsToday != true)
 #else
         false
 #endif
@@ -185,6 +185,18 @@ struct RootContainerView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
                     .accessibilityIdentifier("welcome.language.picker")
+                    if let fixtureContext, fixtureContext.testsToday {
+                        HStack {
+                            Button("Offline") { try? fixtureContext.changeTodayPhase(.offline) }
+                                .accessibilityIdentifier("today.fixture.offline")
+                            Button("Fail overview") { try? fixtureContext.changeTodayPhase(.failOverview) }
+                                .accessibilityIdentifier("today.fixture.fail")
+                            Button("Withdraw") { try? fixtureContext.changeTodayPhase(.withdrawn) }
+                                .accessibilityIdentifier("today.fixture.withdraw")
+                            Button("Resume") { try? fixtureContext.resumeToday() }
+                                .accessibilityIdentifier("today.fixture.resume")
+                        }
+                    }
                     if fixtureContext?.supportsCareReconnect == true {
                         Button("Reconnect fixture network") { try? fixtureContext?.reconnectCare() }
                             .accessibilityIdentifier("care.fixture.reconnect")
@@ -330,6 +342,12 @@ struct RootContainerView: View {
             analysisCredential = nil
             analysisModel.installAnalysisService(nil)
             analysisModel.router.flowState = AddFlowState()
+        }
+        .onChange(of: analysisModel.router.flowState.currentStep) { previous, current in
+            guard previous != .selectIntent, current == .selectIntent,
+                  scenePhase == .active, !usesLegacyWelcome,
+                  catalogue?.snapshot?.isAnonymous == false else { return }
+            careReconnectRevision &+= 1
         }
         .task { await prepareCatalogue() }
         .task(id: reminderRead) { await observeTrialReminder(reminderRead) }
@@ -786,6 +804,8 @@ struct RootContainerView: View {
         starting = true
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
+            guard !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--today-fixture") })
+            else { startupFailed = true; return }
             await prepareStagingAnalysis()
             return
         }
@@ -794,6 +814,7 @@ struct RootContainerView: View {
         let arguments = ProcessInfo.processInfo.arguments
         let fixtureFlags = arguments.filter {
             $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
+                || $0.hasPrefix("--today-fixture")
         }
         if !fixtureFlags.isEmpty {
             func value(_ flag: String) -> String? {
@@ -802,10 +823,13 @@ struct RootContainerView: View {
                       arguments.indices.contains(index + 1) else { return nil }
                 return arguments[index + 1]
             }
+            let today = arguments.contains("--today-fixture")
+            let scenarioFlag = today ? "--today-fixture" : "--catalogue-fixture"
             guard fixtureFlags.count == 2,
-                  Set(fixtureFlags) == Set(["--catalogue-fixture", "--catalogue-namespace"]),
-                  let name = value("--catalogue-fixture"),
+                  Set(fixtureFlags) == Set([scenarioFlag, "--catalogue-namespace"]),
+                  let name = value(scenarioFlag),
                   let scenario = CatalogueUIFixtureScenario(rawValue: name),
+                  scenario.testsToday == today,
                   let namespace = value("--catalogue-namespace"),
                   let id = UUID(uuidString: namespace),
                   id.uuidString.lowercased() == namespace.lowercased() else {
