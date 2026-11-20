@@ -2,6 +2,200 @@ import XCTest
 import SwiftData
 @testable import Plants
 
+extension CollectionWireTests {
+    private func reminderRow(_ id: UUID, due: String = "2026-11-26",
+                             controls: [[String: Any]] = []) -> [String: Any] {
+        var row = overviewRow(id, dated: true, controls: controls)
+        let anchor = due == "2026-11-27" ? "2026-11-20" : "2026-11-19"
+        var care = careProjection(anchor: anchor, due: due)
+        care["plant_id"] = id.uuidString
+        care["routine_check"] = [
+            "rule_id": operationId.uuidString, "care_revision": 2, "due_local_date": due,
+            "anchor_local_date": anchor, "anchor_kind": "water"
+        ]
+        row["care_recommendation"] = care
+        return row
+    }
+
+    private func reminderControl(_ index: Int, due: String = "2026-11-25") -> [String: Any] {
+        var control = overviewControl()
+        control["control_id"] = String(format: "00000000-0000-4000-8000-%012d", index)
+        var policy = control["policy"] as! [String: Any]
+        policy["due_on"] = due
+        control["policy"] = policy
+        return control
+    }
+
+    private func reminderState(
+        _ local: LocalCareOverviewPresentation, rows: [[String: Any]], mode: String = "",
+        hour: Int = 9, deadline: String? = nil
+    ) throws -> CareOverviewViewState {
+        let now = SQLTimestamp.date(from: "2026-11-20T00:00:00Z")!
+        var page = overviewPage(rows.sorted { ($0["plant_id"] as! String).lowercased() < ($1["plant_id"] as! String).lowercased() })
+        page["reminder_hour_local"] = hour
+        page["verified_access_until"] = deadline.map { $0 as Any } ?? NSNull()
+        let profile = try JSONDecoder().decode(SyncWireProfileDTO.self, from: Data(syncJSON([
+            "preferred_locale": "pl", "reminder_hour_local": hour, "trial_reminder_enabled": false
+        ]).utf8))
+        let entitlement = try deadline.map {
+            try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data(syncJSON([
+                "product_id": "paid", "state": "active", "offer_kind": "paid", "valid_until": $0,
+                "grace_until": NSNull(), "trial_end_at": NSNull(), "auto_renew_enabled": true
+            ]).utf8))
+        }
+        let pending = ["plant.edit", "plant.delete", "care.record", "care.routine.undo",
+                       "plant.photo", "profile.update", "global"].contains(mode)
+            ? [OutboxEntrySnapshot(operationId: UUID(), ownerId: syncOwner,
+                plantId: mode == "profile.update" || mode == "global" ? nil : serverPlantId,
+                commandName: mode == "global" ? "care.record" : mode, payloadJSON: "{}", sequenceNumber: 1)] : []
+        let cards = rows.map {
+            CatalogueCardSummary(id: UUID(uuidString: $0["plant_id"] as! String)!,
+                speciesSlug: nil, taxonId: nil, mainPhotoId: nil, personalName: nil,
+                currentConditionSnapshotId: nil, revision: 2, careRevision: 2)
+        }
+        var modified = LocalCareOverviewPresentation(
+            ownerId: local.ownerId, canonicalGeneration: mode == "nilGeneration" ? nil : local.canonicalGeneration,
+            snapshotGeneration: mode == "generation" ? UUID() : local.snapshotGeneration,
+            cached: mode == "absent" ? nil : CachedCareOverview(
+                snapshot: try overviewSnapshot([page]), fetchedAt: now,
+                snapshotLocale: mode == "english" ? "en" : "pl", state: .cached,
+                canonicalGenerationMatches: mode != "readOnly"),
+            cards: mode == "deleted" ? [] : cards, pending: pending,
+            profile: mode == "nilHour" ? nil : profile, entitlement: entitlement,
+            canonicalAccessKnown: mode != "unknown", careRows: []
+        )
+        if mode == "invalidated" { modified.knownInvalidation = .canonicalRevalidation }
+        let failure: CareOverviewViewState.Failure? = mode == "offline" ? .transport
+            : mode == "denied" ? .authorizationDenied : mode == "revalidate" ? .revalidationRequired : nil
+        return CareOverviewViewState(local: modified, now: now, origin: .cache, failure: failure)
+    }
+
+    private func reminderPlan(
+        _ state: CareOverviewViewState?, owner: UUID? = nil, optedIn: Bool = true,
+        authorization: CareReminderPlan.Authorization = .authorized, locale: String = "pl",
+        now: String = "2026-11-20T00:00:00Z", zone: TimeZone? = nil
+    ) -> CareReminderPlan {
+        CareReminderPlan(expectedOwnerId: owner ?? syncOwner, state: state, optedIn: optedIn,
+            authorization: authorization, now: SQLTimestamp.date(from: now)!,
+            timeZone: zone ?? TimeZone(secondsFromGMT: 0)!, locale: locale)
+    }
+
+    @MainActor
+    func testCareReminderAllOccurrencesIdentityOrderingAndCapacity() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let controls = (1...40).map { reminderControl($0, due: $0 % 2 == 0 ? "2026-11-27" : "2026-11-25") }
+        let row = reminderRow(serverPlantId, controls: controls)
+        let state = try reminderState(local, rows: [row])
+        let plan = reminderPlan(state)
+        XCTAssertEqual(plan.eligibleCandidateCount, 41)
+        XCTAssertEqual(plan.requests.count, 32)
+        XCTAssertEqual(plan.omittedCount, 9)
+        XCTAssertEqual(Set(plan.candidates.map(\.id)).count, 41)
+        XCTAssertEqual(CareReminderPlan.orderedUnique(plan.candidates + Array(plan.candidates.reversed())),
+                       plan.candidates)
+        let shifted = reminderPlan(state, zone: try XCTUnwrap(TimeZone(identifier: "America/New_York")))
+        XCTAssertEqual(shifted.candidates.map(\.id), plan.candidates.map(\.id))
+        XCTAssertNotEqual(shifted.candidates.first?.absoluteFireDate, plan.candidates.first?.absoluteFireDate)
+        XCTAssertTrue(plan.candidates.contains { $0.sourceDueYMD == "2026-11-27" })
+        XCTAssertEqual(TodayCalendar(state: state, now: SQLTimestamp.date(from: "2026-11-20T00:00:00Z")!).sections.count, 1)
+        XCTAssertEqual(plan, reminderPlan(try reminderState(local, rows: [
+            reminderRow(serverPlantId, controls: Array(controls.reversed()))
+        ])))
+        let moved = reminderPlan(try reminderState(local, rows: [
+            reminderRow(serverPlantId, due: "2026-11-27", controls: [reminderControl(1, due: "2026-11-28")])
+        ], mode: "english", hour: 10), locale: "en")
+        let first = try XCTUnwrap(plan.candidates.first { $0.occurrence == .firstAid(controlId:
+            UUID(uuidString: "00000000-0000-4000-8000-000000000001")!) })
+        let changed = try XCTUnwrap(moved.candidates.first { $0.id == first.id })
+        XCTAssertNotEqual(changed.sourceDueYMD, first.sourceDueYMD)
+        XCTAssertNotEqual(changed.absoluteFireDate, first.absoluteFireDate)
+        XCTAssertEqual(changed.locale, "en")
+        let routine = try XCTUnwrap(plan.candidates.first { $0.occurrence == .routine(ruleId: operationId) })
+        XCTAssertTrue(routine.id.hasSuffix("/routine/\(operationId.uuidString.lowercased())/2026-11-26"))
+        XCTAssertFalse(moved.candidates.contains { $0.id == routine.id })
+        // The accepted shared DTO also rejects repeated identities before projection.
+        XCTAssertThrowsError(try reminderState(local, rows: [
+            reminderRow(serverPlantId, controls: [controls[0], controls[0]])
+        ]))
+    }
+
+    @MainActor
+    func testCareReminderOwnerPermissionAndSharedEligibilityGates() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let rows = [reminderRow(serverPlantId), reminderRow(otherSyncOwner)]
+        let state = try reminderState(local, rows: rows)
+        XCTAssertEqual(reminderPlan(state).eligibleCandidateCount, 2)
+        for authorization in [CareReminderPlan.Authorization.notDetermined, .denied, .authorized] {
+            for optedIn in [true, false] {
+                let plan = reminderPlan(state, optedIn: optedIn, authorization: authorization)
+                XCTAssertEqual(plan.eligibleCandidateCount, 2)
+                XCTAssertEqual(plan.requests.count, optedIn && authorization == .authorized ? 2 : 0)
+            }
+        }
+        XCTAssertTrue(reminderPlan(state, owner: otherSyncOwner).candidates.isEmpty)
+        for locale in ["en", "de", "pl-PL", ""] {
+            XCTAssertTrue(reminderPlan(state, locale: locale).candidates.isEmpty)
+        }
+        XCTAssertTrue(reminderPlan(nil).candidates.isEmpty)
+        for mode in ["unknown", "readOnly", "generation", "nilGeneration", "absent", "nilHour",
+                     "profile.update", "global", "deleted", "invalidated", "denied", "revalidate"] {
+            XCTAssertTrue(reminderPlan(try reminderState(local, rows: rows, mode: mode)).candidates.isEmpty, mode)
+        }
+        for mode in ["plant.edit", "plant.delete", "care.record", "care.routine.undo", "plant.photo"] {
+            let plan = reminderPlan(try reminderState(local, rows: rows, mode: mode))
+            XCTAssertEqual(plan.candidates.map(\.plantId), [otherSyncOwner], mode)
+        }
+        XCTAssertEqual(reminderPlan(state), reminderPlan(try reminderState(local, rows: rows, mode: "offline")))
+        XCTAssertTrue(reminderPlan(try reminderState(local, rows: [overviewRow(serverPlantId)])).candidates.isEmpty)
+    }
+
+    @MainActor
+    func testCareReminderExpiryAndNoCatchUp() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let rows = [reminderRow(serverPlantId, controls: [reminderControl(1)])]
+        let free = try reminderState(local, rows: rows)
+        XCTAssertEqual(free.access, .free)
+        XCTAssertEqual(reminderPlan(free).requests.count, 2)
+        for (deadline, count) in [("2026-11-20T00:00:00Z", 0), ("2026-11-25T09:00:00Z", 0),
+                                  ("2026-11-26T09:00:00Z", 1), ("2026-11-26T09:00:01Z", 2)] {
+            let state = try reminderState(local, rows: rows, deadline: deadline)
+            XCTAssertEqual(reminderPlan(state).requests.count, count, deadline)
+        }
+        XCTAssertEqual(reminderPlan(free, now: "2026-11-25T09:00:00Z").requests.count, 1)
+        for now in ["2026-11-26T09:00:00Z", "2026-11-27T00:00:00Z"] {
+            XCTAssertTrue(reminderPlan(free, now: now).candidates.isEmpty)
+        }
+    }
+
+    func testCareReminderGregorianSourceDayDSTAndInvalidDates() throws {
+        let cases: [(String, Int, String, String?)] = [
+            ("2026-03-08", 2, "America/New_York", "2026-03-08T07:00:00Z"),
+            ("2026-11-01", 1, "America/New_York", "2026-11-01T05:00:00Z"),
+            ("2011-12-30", 9, "Pacific/Apia", nil),
+            ("2026-11-26", 9, "America/Los_Angeles", "2026-11-26T17:00:00Z"),
+            ("2026-11-26", 0, "America/Los_Angeles", "2026-11-26T08:00:00Z"),
+            ("2026-11-26", 23, "Etc/UTC", "2026-11-26T23:00:00Z"),
+            ("2026-02-30", 9, "Etc/UTC", nil), ("2026-2-03", 9, "Etc/UTC", nil),
+            ("2026-11-26", -1, "Etc/UTC", nil), ("2026-11-26", 24, "Etc/UTC", nil)
+        ]
+        for (day, hour, zone, expected) in cases {
+            let actual = CareReminderPlan.resolve(sourceYMD: day, hour: hour,
+                                                  timeZone: try XCTUnwrap(TimeZone(identifier: zone)))
+            XCTAssertEqual(actual, expected.flatMap(SQLTimestamp.date(from:)), "\(day) \(hour) \(zone)")
+        }
+        let ny = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        XCTAssertNotEqual(CareReminderPlan.resolve(sourceYMD: "2026-11-26", hour: 9, timeZone: ny),
+                          CareReminderPlan.resolve(sourceYMD: "2026-11-26", hour: 9, timeZone: utc))
+    }
+}
+
 @MainActor
 private final class TodayReadBarrier {
     private var entered = false
