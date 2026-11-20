@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Root: сохранены локальные правки при target merge — 20 ноября 2026
+
+Integration `c2648e7` отправлена в origin. Три исходные пользовательские правки
+pbxproj/InfoPlist.xcstrings/Localizable.xcstrings сохранены отдельно и возвращены
+unstaged: исходные добавленные/удалённые строки совпали, два xcstrings побайтно
+совпали с backup. Единственный PBX конфликт InfoPlist order разрешён с сохранением
+нового TodayModel target reference. plutil PASS, индекс пуст; owned stash удалён
+только после проверки. Backup/manifest:
+`/private/tmp/narat-root-user-ios-preserve-20261120-c2648e7/`.
+
+Отдельное наблюдение окружения: tracked Package.resolved в root многократно
+исчезает примерно через секунду после restore. В commits его не меняли и deletion
+не staged. Read-only audit подтвердил одинаковые package refs/requirements/product
+dependencies в a3→c264→working, duplicate IDs0, workspace и Git lock blob неизменны
+(JSONv3,15 pins). Процесс, удаляющий файл, без trace не установлен; работающий Xcode
+сам по себе не доказывает причину. Не менять зависимости, не запускать restore-loop
+и не включать D в commit. Frozen lane/build не затронуты. Аудит:
+`/private/tmp/narat-root-swiftpm-lock-volatility-audit.md`.
+
+Следующий шаг — закончить C1 model Review/QA (locale-cache deadlock исправляется
+после finding), затем C2 Root/view и C3 полноценная UI-приёмка. Root PBX и переводы
+продолжать сохранять по именам при следующих target merges; volatile lock отдельно.
+
 ## Этап 2: local signal принят; C1 Today model — 20 ноября 2026
 
 Accepted/pushed `4be75d4b34ba5904c1cf82f44a8294eb35f15ab5`.
