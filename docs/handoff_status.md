@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## Проверка задержанного статуса разрешения подготовлена — 20 ноября 2026
+
+Добавлены ровно два controller-authored теста в CollectionWireTests.swift, без
+изменения продукта, PBX, helpers и прежних423 assertions. Они фиксируют текущие
+сценарии post-prompt ND→authorized и ND→ND: поздний статус, один prompt/arm,
+отсутствие автоматического reread и точный retry без дубля. Это fake OS, не
+реальная доставка. Manifest/context сохранены; кандидат ещё не принят.
+Следующий шаг: fresh read-only diff+425Swift/build/welcome и highReviewQA,
+Developer0. Usage93/7, hard95, reset запрещён. Новая разработка не запускается.
+
 ## Root напоминаний подключён и принят; техническая приёмка не завершена — 20 ноября 2026
 
 Принят и отправлен `fe0b99e4b965cc5d31045139a9789fbf79acac2e`, run

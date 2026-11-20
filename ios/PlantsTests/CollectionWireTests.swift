@@ -13074,3 +13074,99 @@ extension CollectionWireTests {
         }
     }
 }
+
+extension CollectionWireTests {
+    @MainActor
+    func testReminderWorkerPermissionReadbackLagArmsBeforePublishedAuthorizationCatchesUp() async throws {
+        let (url, store, authority, lease, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let fake = FakeCareReminderNotifications()
+        fake.authorizationValue = .notDetermined
+        var authorizationReads = 0
+        var prompted = false
+        var postPromptReads = 0
+        fake.onPermission = { prompted = true }
+        fake.onAuthorization = {
+            authorizationReads += 1
+            if prompted {
+                postPromptReads += 1
+                fake.authorizationValue = postPromptReads == 1 ? .notDetermined : .authorized
+            }
+        }
+        let worker = CareReminderScheduler(notifications: fake)
+        let input = workerInput(store, authority, lease, try passState(local), fake)
+        let occurrence = try XCTUnwrap(CareReminderScheduler.plan(input).candidates.first?.id)
+        worker.update(input)
+        await worker.waitUntilIdle()
+        XCTAssertEqual(authorizationReads, 2)
+        XCTAssertTrue(fake.adds.isEmpty)
+        worker.requestPermission()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(postPromptReads, 2)
+        XCTAssertEqual(authorizationReads, 5)
+        XCTAssertEqual(fake.permissionRequests, 1)
+        XCTAssertEqual(fake.adds.map { $0.candidate.id }, [occurrence])
+        XCTAssertEqual(worker.result?.confirmedPendingCount, 1)
+        XCTAssertEqual(worker.authorization, .notDetermined) // Drain published its earlier OS read.
+        XCTAssertFalse(worker.requestingPermission)
+        XCTAssertEqual(worker.result?.failed, false)
+        XCTAssertEqual(worker.result?.deferred, false)
+        worker.retry()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(authorizationReads, 7)
+        XCTAssertEqual(worker.authorization, .authorized)
+        XCTAssertEqual(fake.permissionRequests, 1)
+        XCTAssertEqual(fake.adds.map { $0.candidate.id }, [occurrence])
+        XCTAssertEqual(fake.pending.count, 1)
+    }
+
+    @MainActor
+    func testReminderWorkerPermissionReadbackLagNeedsExplicitTriggerWhenBothReadsRemainUndetermined() async throws {
+        let (url, store, authority, lease, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let fake = FakeCareReminderNotifications()
+        fake.authorizationValue = .notDetermined
+        var authorizationReads = 0
+        var prompted = false
+        var postPromptReads = 0
+        fake.onPermission = { prompted = true }
+        fake.onAuthorization = {
+            authorizationReads += 1
+            if prompted { postPromptReads += 1 }
+        }
+        let worker = CareReminderScheduler(notifications: fake)
+        let input = workerInput(store, authority, lease, try passState(local), fake)
+        let occurrence = try XCTUnwrap(CareReminderScheduler.plan(input).candidates.first?.id)
+        worker.update(input)
+        await worker.waitUntilIdle()
+        worker.requestPermission()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(authorizationReads, 5)
+        XCTAssertEqual(postPromptReads, 2)
+        XCTAssertEqual(fake.permissionRequests, 1)
+        XCTAssertEqual(worker.authorization, .notDetermined)
+        XCTAssertFalse(worker.requestingPermission)
+        XCTAssertEqual(worker.result?.failed, false)
+        XCTAssertEqual(worker.result?.deferred, false)
+        XCTAssertEqual(worker.result?.confirmedPendingCount, 0)
+        XCTAssertTrue(fake.adds.isEmpty)
+        fake.authorizationValue = .authorized // OS changes independently; this is not a worker trigger.
+        await Task.yield()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(authorizationReads, 5)
+        XCTAssertTrue(fake.adds.isEmpty)
+        XCTAssertEqual(worker.authorization, .notDetermined)
+        worker.retry()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(authorizationReads, 7)
+        XCTAssertEqual(worker.authorization, .authorized)
+        XCTAssertEqual(worker.result?.confirmedPendingCount, 1)
+        XCTAssertEqual(fake.adds.map { $0.candidate.id }, [occurrence])
+        worker.retry()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(authorizationReads, 9)
+        XCTAssertEqual(fake.permissionRequests, 1)
+        XCTAssertEqual(fake.adds.map { $0.candidate.id }, [occurrence])
+        XCTAssertEqual(fake.pending.count, 1)
+    }
+}

@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-permission-readback",
+      "description": "Verify existing permission-readback lag with exactly two controller-authored tests; no production changes.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "docs/handoff_status.md",
+        "docs/validation/automation/tasks/tester-care-permission-readback-context.md",
+        "tools/automation/tasks.tester-care-permission-readback.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only candidate_base acceptance. Controller authored exactly two tests; Developer0, no fake Developer PASS. No production/PBX/helper modifications, preserve all423 prior assertions. Read context.",
+        "Validate both deterministic ND sequences, exact same occurrence identity, prompt/add/read counts and no spontaneous callback. These are fake OS regressions, not real OS delivery. No repair/newUX/newnetwork/backend.",
+        "Only diff/fullSwift425 build welcome, highReviewQA; no MCP/UI/backend rerun because product unchanged. Same fixed models/budgets900. Hard95/noreset; tests may reveal an honest limitation and must not silently change production."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "PERMISSION1",
+          "description": "Both new deterministic regressions and previous423 tests pass, with full build/welcome.",
+          "mode": "fixture",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "PERMISSION2",
+          "description": "Diff confirms tests-only candidate, old assertions and production unchanged.",
+          "mode": "local",
+          "checks": [
+            "diff-check"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-permission-readback-context.md"
+      ],
+      "candidate_base": "8e392388e71b5713dd0d81562a94142f9e508a90"
+    }
+  ]
+}
