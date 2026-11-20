@@ -4,6 +4,26 @@ import Observation
 /// Presentation only. The caller validates its original permanent lease before every call.
 @MainActor @Observable
 final class TodayModel {
+    /// Follow replacements without creating work or transferring the caller's lease.
+    static func waitLatestLocalRead(
+        current: @MainActor () -> (revision: UInt64, task: Task<Void, Never>?),
+        validate: @MainActor () throws -> Void
+    ) async throws {
+        while true {
+            try Task.checkCancellation()
+            try validate()
+            let captured = current()
+            await captured.task?.value
+            try Task.checkCancellation()
+            try validate()
+            guard current().revision == captured.revision else { continue }
+            if captured.task?.isCancelled == true {
+                throw CancellationError()
+            }
+            return
+        }
+    }
+
     struct Scope: Equatable, Sendable {
         let ownerId: UUID
         let generation: UInt64

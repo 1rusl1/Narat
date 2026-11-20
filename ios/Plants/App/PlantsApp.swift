@@ -491,8 +491,8 @@ struct RootContainerView: View {
                     scopedToday = context
                     requestTodayLocal(context)
                 }
-                await todayLocalRead?.value
-                guard !Task.isCancelled, let context = scopedToday, isTodayCurrent(context) else { return }
+                guard let context = scopedToday else { return }
+                try await waitTodayLocal(context)
             } catch {
                 guard !Task.isCancelled, connection.snapshot == expected, scenePhase == .active else { return }
                 todayUnavailable = true
@@ -542,6 +542,15 @@ struct RootContainerView: View {
         guard isTodayCurrent(context) else { throw CancellationError() }
     }
 
+    private func waitTodayLocal(_ context: TodayContext) async throws {
+        try requireToday(context)
+        try await TodayModel.waitLatestLocalRead(
+            current: { (todayRevision, todayLocalRead) },
+            validate: { try requireToday(context) }
+        )
+        try requireToday(context)
+    }
+
     /// All durable signals fence presentation synchronously, then coalesce local reads only.
     private func requestTodayLocal(_ context: TodayContext) {
         guard isTodayCurrent(context), let repository = catalogue?.repository else { return }
@@ -583,8 +592,7 @@ struct RootContainerView: View {
         try requireToday(context)
         guard outcome != .busy else { return outcome }
         if todayModel.needsLocalRead { requestTodayLocal(context) }
-        await todayLocalRead?.value
-        try requireToday(context)
+        try await waitTodayLocal(context)
         guard !todayFenced, !todayModel.needsLocalRead else { return outcome }
         let revision = todayRevision
         var publicationRevision: UInt64?
@@ -598,14 +606,12 @@ struct RootContainerView: View {
         try requireToday(context)
         // C1 can discard a successful publication after a local revision. Never repeat HTTP.
         if let publicationRevision, publicationRevision != revision {
-            await todayLocalRead?.value
-            try requireToday(context)
+            try await waitTodayLocal(context)
             // A newer signal already owns the latest read, including any failure.
             guard todayRevision == publicationRevision else { return outcome }
             // Read current durable state even if the displaced read saw revalidation.
             requestTodayLocal(context)
-            await todayLocalRead?.value
-            try requireToday(context)
+            try await waitTodayLocal(context)
         }
         return outcome
     }

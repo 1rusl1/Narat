@@ -30,6 +30,116 @@ private final class TodayReadBarrier {
 
 extension CollectionWireTests {
     @MainActor
+    func testTodayLatestLocalWaitPreservesAuthorizedPassAndFencesInvalidation() async throws {
+        for mode in ["ready", "cancel", "owner", "locale", "generation", "failure", "localCancel"] {
+            var page = overviewPage([overviewRow(serverPlantId, dated: true)])
+            page["verified_access_until"] = NSNull()
+            let transport = CatalogueTransport([.http(200, try syncJSON(page))])
+            let (url, _, api, lease, repo) = try await overviewRepositoryFixture(transport)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let model = TodayModel()
+            let scope = model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .pl)
+            let cached = try await repo.cachedCareOverview(context: lease)
+            let coordinator = CareLifecycleCoordinator()
+            let first = TodayReadBarrier(), second = TodayReadBarrier()
+            var revision: UInt64 = 0
+            var local: Task<Void, Never>?
+            func requestLocal(_ gate: TodayReadBarrier?, fail: Bool = false) {
+                revision &+= 1
+                local?.cancel()
+                local = Task { @MainActor in
+                    await model.rereadLocal(scope: scope) {
+                        if let gate { await gate.wait() }
+                        if fail { throw URLError(.notConnectedToInternet) }
+                        return cached
+                    }
+                }
+            }
+            requestLocal(first)
+            await first.waitUntilEntered()
+            let l1 = try XCTUnwrap(local)
+            let capturedFirst = expectation(description: "external pass awaits L1: \(mode)")
+            let capturedSecond = expectation(description: "external pass follows L2: \(mode)")
+            let finished = expectation(description: "external pass finished: \(mode)")
+            var sawFirst = false, sawSecond = false, didFinish = false
+            var passes = 0
+            coordinator.request {
+                passes += 1
+                defer { didFinish = true; finished.fulfill() }
+                do {
+                    try await TodayModel.waitLatestLocalRead(current: {
+                        if revision == 1 && !sawFirst {
+                            sawFirst = true
+                            capturedFirst.fulfill()
+                        }
+                        if revision == 2 && !sawSecond {
+                            sawSecond = true
+                            capturedSecond.fulfill()
+                        }
+                        return (revision, local)
+                    }, validate: {
+                        guard model.scope == scope else { throw CancellationError() }
+                        try api.syncAuthority.withPermanentBoundValid(lease) {}
+                    })
+                    guard !model.needsLocalRead else { return .completed }
+                    await model.refresh(scope: scope) {
+                        try Task.checkCancellation()
+                        return try await repo.refreshCareOverview(locale: scope.locale, context: lease)
+                    }
+                    return .completed
+                } catch {
+                    return nil
+                }
+            }
+            await fulfillment(of: [capturedFirst], timeout: 1)
+            requestLocal(second, fail: mode == "failure")
+            let l2 = try XCTUnwrap(local)
+            await second.waitUntilEntered()
+            first.open()
+            await l1.value
+            await fulfillment(of: [capturedSecond], timeout: 1)
+            XCTAssertFalse(didFinish, mode)
+            XCTAssertTrue(model.needsLocalRead, mode)
+            let before = await transport.capturedRequests()
+            XCTAssertTrue(before.isEmpty, mode)
+            switch mode {
+            case "cancel": coordinator.suspend()
+            case "owner":
+                await api.bindSyncSession(try profileSession(ownerId: otherSyncOwner))
+                model.activate(ownerId: otherSyncOwner, generation: lease.generation, locale: .pl)
+            case "locale":
+                model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .en)
+            case "generation":
+                model.activate(ownerId: lease.ownerId, generation: lease.generation + 1, locale: .pl)
+            case "localCancel": l2.cancel()
+            default: break
+            }
+            second.open()
+            await l2.value
+            await fulfillment(of: [finished], timeout: 1)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, mode == "ready" ? 1 : 0, mode)
+            XCTAssertEqual(passes, 1, mode)
+            if ["owner", "locale", "generation", "localCancel", "failure"].contains(mode) {
+                XCTAssertNil(model.state, mode)
+            }
+            if mode == "ready" {
+                XCTAssertEqual(requests.first?.httpMethod, "GET")
+                XCTAssertEqual(model.state?.origin, .network)
+                // A subsequent canonical/local notification owns only a cache read.
+                requestLocal(nil)
+                await local?.value
+                coordinator.didBecomeIdle()
+                let afterLocal = await transport.capturedRequests()
+                XCTAssertEqual(afterLocal.count, 1)
+                XCTAssertEqual(passes, 1)
+            }
+            let worker = coordinator.suspend()
+            await worker?.value
+        }
+    }
+
+    @MainActor
     func testTodayRefreshCannotRestoreDatesOverDurableLocalOverlay() async throws {
         let (url, store, api, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
