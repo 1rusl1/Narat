@@ -23,7 +23,7 @@
         {
           "id": "PERMISSION1",
           "description": "Both new deterministic regressions and previous423 tests pass, with full build/welcome.",
-          "mode": "fixture",
+          "mode": "local",
           "checks": [
             "ios-tests"
           ]
