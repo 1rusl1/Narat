@@ -1,5 +1,63 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: перед FULL C2 нужен узкий Root wait-latest repair — 20 ноября 2026
+
+C2 и PL subset по-прежнему BLOCKED/не приняты. Последний PL источник:
+368Swift139.644s/build/welcome/diff, MCP35.648s, Reviewer3 PASS; QA не было,
+PLUI62.13s FAIL из-за AX Link/Button query ДО care intent. Controller только
+исправил два queries на прежние exactIDs через descendants(.any); проверки
+не ослаблены. Исходные FAIL/403 logs сохранены; quota/reset не причина.
+
+Независимый static Root аудит нашёл reachable lost external trigger:
+refreshToday ждёт taskL1; local signal заменяет его L2; завершение L1 приводит
+к early return по fenced/needsLocalRead, а L2 выполняет только localread.
+Авторизованный foreground/reconnect/Retry overviewGET потерян. Нужен
+маленький semantic repair до FULL acceptance: await существующий latest
+localtask/revision, original SDK/locale/cancellation guard, без новогоHTTP
+изlocalstream, повторного reconcile или busy без future idle.
+
+Новый manifest `tools/automation/tasks.tester-care-today-local-barrier.json`:
+App + небольшой testable helper в existing TodayModel + existing Unit.
+Deterministic L1hold→replaceL2→L1cancel→L2done→ровно1 external refresh;
+local-only signal послеpass не создаётHTTP. Unknown/error/scopechange exits
+safe. Home-return event и dedicated TodayUI остаются C3, не расширяем repair.
+После subset actual checks/ReviewQA — fresh FULL candidate_baseae74b52 всех
+C2/PL/Root source с old13+newPL, Swift/MCP/149automation/highReviewQA.
+Full manifest пока ignored draft, не запускался. Root не merge/live до FULL SHA.
+
+T066/T068/T075/T077/T098/B01–B11 open; reminders следующий этап послеToday.
+Same approved routing/budgets900/shared lock/AC caffeinate; lastusage73/27,
+ordinaryAllowed, reset0. Никаких production/controller-only изменений Root.
+
+
+## Этап 2: C2/PL candidates, свежая полная приёмка — 20 ноября 2026
+
+C2 `tester-care-today-home-20261120-01` и subset
+`tester-care-today-pl-invalidation-20261120-01` честно BLOCKED; NOT accepted.
+Последний source subset:368Swift/build/welcome/diff PASS139.644s,
+MCP35.648s и Reviewer3 PASS после transient CLI routing403 (неquota).
+Reviewer1 выявил fingerprint/cancel→foreground source revalidation gap;
+Developer3 исправил обязательный GET при previousnil/foreground и invalidation
+advice до publishfingerprint. Но named PLUI FAIL62.13s до первого care intent:
+Source AX node Button, тест искал Link. QA не выполнен. Старые FAIL/logs сохранены.
+
+Контроллерский mechanical selector fix только в новом UITest: два exactID
+source/negative.source queries через descendants(.any), без ослабления date/
+source/body/op/commit assertions и без production изменений. Все7 Swift
+изменений C2+PL остаются непринятым candidate. Новый run
+`tester-care-today-home-acceptance-20261120-01`: read-only candidate_baseae74b52,
+полный diff/source scope → actual368Swift/149automation/MCP + old13careUI +
+newPLUI/ledger → high Review/QA. Никакого fakeDeveloper/subsetPASS.
+
+Отчёты tester-care-today-home-blocked.md и
+ tester-care-today-pl-subset-blocked.md в docs/validation/automation/tasks/.
+Root не merge/live-build до accepted FULL SHA. После него C3a TodayDEBUGfixture
+и one external home-return event, C3b dedicated Today UI/lastchecked/ordinary
+live, затем reminders. T066/T068/T075/T077/T098/B01–B11 open.
+Last actualusage73/27 ordinaryAllowed, reset0; same routing/budgets900/shared
+Simulator lock/temporary AC caffeinate. Не считать этот checkpoint готовым UI.
+
+
 ## Этап 2: C2 candidate не принят; узкий PL read repair — 20 ноября 2026
 
 Run `tester-care-today-home-20261120-01` фактически BLOCKED: Developer3 budget

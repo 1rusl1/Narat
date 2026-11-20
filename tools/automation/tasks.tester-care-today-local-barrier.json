@@ -1,0 +1,54 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-today-local-barrier",
+      "description": "Preserve an authorized Today external refresh while local presentation tasks are replaced, using event-driven latest-task waiting and deterministic regression.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "docs/validation/automation/tasks/tester-care-today-local-barrier-static.md",
+        "docs/validation/automation/tasks/tester-care-today-pl-subset-blocked.md"
+      ],
+      "write_files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "SMALL semantic Root repair only, around20-40productionlines +compactbarrier tests. C2 andPLsource union stillUNACCEPTED candidate; FULLcandidate_baseae74 acceptance follows. No View/Guest/Fixture/API/Store/engine/schema/queue/OS/server changes; no fullC2 rewrite. Existing368Swift and C1 race assertions preserve. Home-returnevent/dedicatedTodayUI laterC3, do not add here.",
+        "Actual lost-trigger: App.refreshToday awaits a particular todayLocalReadL1 after nonbusy core reconcile. Canonical/outbox signal via requestTodayLocal cancelsL1/createsL2/fenced=true. AwaitL1 ends then guard returns outcome beforeoverviewGET; L2 finishes local-only, so authorized foreground/reconnect/Retry islost. Same initialization await pattern inspect. Postpublication recovery alone notfix. Keep external refresh intent inside existing CareLifecycleCoordinator pass until latest localtask settles or actualsafeerror/cancel.",
+        "Implement tiny testable @MainActor wait-latest-existing-local-read helper in existing TodayModel.swift (static function/internal function, notframework/newservice). Capture readrevision/currentTask, await that task, validate ORIGINAL SDKscope/locale/cancellation; if revisionchanged awaitlatesttask again. Event-driven await only, no polling/timers/sleeps/newqueue, no HTTP/reconcile insidehelper. Once latest stable, existing ready/error flags decide whether ONE bounded overview may run. Localfailure/cancel/auth/localechange exits withoutHTTP. Never returnbusy unless existing futureidle event willwake; do NOT replaywholecare reconcile or scheduleHTTPfromcanonical stream.",
+        "Use helper from Root relevant preHTTP/initiallocalwait points, retain oneoriginalTodayContext lease, isTodayCurrent/requireToday checks beforeafterawait. Existing postpublication branch may reuse waiting ifappropriate but preserve revision/newererror fencing. requestTodayLocal streams remain LOCALONLY. Existing local/canonical signal byitself after completedpass cannot create remote request. SameScope outerlatestrequests staycoalesced; no owner rebind.",
+        "Deterministic @MainActor tests reuse TodayReadBarrier/CareLifecycleCoordinator helpers in existingCollectionWireTests. HoldL1, beginexternallyauthorizedpass, replacewithL2+cancelL1, allowL1tofinishwhileL2notready, prove externalpassdoesnotfinish/drop, then L2ready ->exactly1remote call. Then canonical-only localsignal ->0additionalremote. Add cancel/owner orlocalegenerationchange while waiting ->no remote/no oldscope publish. Use meaningful barriers/bounded XCTest awaiting, not arbitrarysleep or source assertions/mirroringbooleanhelper. Keep testsizecompact; no UI fakepass.",
+        "FullSwift/build/welcome/MCP and independent highReviewQA for this narrow subset. This is NOT acceptance entire C2/Today/live/physical. Earlier403transport failure and PLAXqueryfailure preserved separately; controller exactIDtestqueryfix is already in basecandidate, do not touch it. No modelrouting/budget changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "LOCALWAIT1",
+          "description": "Deterministic actual helper/coordination tests prove L1 replacement cannot lose one authorized external refresh, with no local-signal HTTP and no scope/cancel leakage.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "LOCALWAIT2",
+          "description": "Small scoped Root/helper changes independently reviewed; build/welcome/MCP preserve current paths and no fullC2 ready claim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-local-barrier-static.md",
+        "docs/validation/automation/tasks/tester-care-today-pl-subset-blocked.md"
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
     case careRecommendationRefreshRejected, routineSoilCheck, routineSoilCheckUndo, routineKnownExpiry, routineLateEntitlement
+    case routinePendingPolish
     case profileReminderHour, accountSignOut
     case collectionWateringRecord, collectionWateringRecordRejected, collectionWateringMissingConditions, collectionWateringBackgroundFailure
 
@@ -22,7 +23,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
             || testsRoutine || self == .firstAidControl || self == .plantWateringEdit
     }
 
-    var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry || self == .routineLateEntitlement }
+    var testsRoutine: Bool { self == .routineSoilCheck || self == .routineSoilCheckUndo || self == .routineKnownExpiry || self == .routineLateEntitlement || self == .routinePendingPolish }
 
     var testsConditionEdit: Bool { self == .plantLightEdit || self == .plantDrainageEdit || self == .plantWateringEdit || self == .plantPotTypeEdit }
     var changesCareContext: Bool { testsConditionEdit || self == .plantTaxonEdit }
@@ -623,6 +624,17 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     ]))
                 }
                 if ledger.scenario.testsRoutine {
+                    if ledger.scenario == .routinePendingPolish,
+                       request.value(forHTTPHeaderField: "X-Client-Locale") == "pl" {
+                        // Opening the same card after Root locale revalidation must prove
+                        // one intent/commit and bounded, byte-identical durable replays.
+                        guard (2...4).contains(ledger.attempts.count), ledger.commits.count == 1,
+                              let commit = ledger.commits.values.first,
+                              commit.owner == caller, commit.plantID == plant.id,
+                              commit.envelope.commandName == RoutineSoilCheckCompletionCommand.name,
+                              ledger.attempts.allSatisfy({ $0.owner == caller && $0.body == commit.body })
+                        else { throw CatalogueUIFixtureError.invalidRequest }
+                    }
                     let completion = ledger.commits.values.first {
                         $0.envelope.commandName == RoutineSoilCheckCompletionCommand.name
                     }
@@ -966,10 +978,21 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                       command.careRevision == 1, command.dueLocalDate == "2000-01-01",
                       request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
                 else { throw CatalogueUIFixtureError.invalidRequest }
+                if ledger.scenario == .routinePendingPolish {
+                    var next = ledger
+                    next.attempts.append(Attempt(owner: caller, body: body))
+                    try persist(next)
+                }
                 let key = caller.uuidString + ":" + envelope.operationId.uuidString
                 if let commit = ledger.commits[key] {
                     guard commit.owner == caller, commit.envelope == envelope, commit.body == body
                     else { throw CatalogueUIFixtureError.invalidRequest }
+                    if ledger.scenario == .routinePendingPolish {
+                        guard ledger.attempts.count <= 4 else { throw CatalogueUIFixtureError.invalidRequest }
+                        // Keep the original operation pending: never deliver the receipt
+                        // and never create a second canonical commit on a Root replay.
+                        return try error(503, "SERVICE_UNAVAILABLE", retryable: true)
+                    }
                     return Reply(status: 200, data: commit.receipt)
                 }
                 guard ledger.commits.isEmpty else { throw CatalogueUIFixtureError.invalidRequest }

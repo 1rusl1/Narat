@@ -518,6 +518,11 @@ final class CatalogueSaveUITests: XCTestCase {
         // Remain on this card: the source changes remotely with an empty owner delta
         // and identical watermark, as asserted by the fixture server before returning nil advice.
         wateringTap(run, "collection.care.fixture.withdraw")
+        // Background cancels the card's active read tasks. Foreground must still
+        // revalidate the withdrawn source without a careRevision change.
+        XCUIDevice.shared.press(.home)
+        run.app.activate()
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
         let source = run.app.links["catalogue.saved.care.source"]
         let text = run.app.staticTexts["catalogue.saved.care.text"]
         let gone = [nextCheck, source, text].map {
@@ -700,6 +705,50 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.staticTexts["collection.routine.pending"].exists)
         require(run.app.buttons["collection.watering.correct." + entry])
         require(run.app.buttons["collection.watering.undo." + entry])
+    }
+
+    @MainActor func testPolishRecommendationHidesExistingPendingSoilCheck() {
+        let run = Run("routinePendingPolish", .en)
+        defer { screenshot(run, "polish-existing-pending"); run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        tap(run, "Fixture 1")
+        let cardId = identity(run, "catalogue.saved.card.")
+        let date = run.app.staticTexts["catalogue.saved.care.next.date"]
+        let text = run.app.staticTexts["catalogue.saved.care.text"]
+        let source = run.app.descendants(matching: .any).matching(identifier: "catalogue.saved.care.source").firstMatch
+        require(text)
+        require(source)
+        require(date)
+        XCTAssertEqual(date.label, "Next soil check · 2000-01-01")
+        XCTAssertEqual(text.label, "Check the soil before watering.")
+
+        tap(run, "collection.routine.complete", "Mark soil checked")
+        require(run.app.staticTexts["collection.routine.pending"])
+        XCTAssertFalse(run.app.staticTexts["collection.routine.confirmed"].exists)
+        XCTAssertFalse(date.exists)
+        tap(run, "collection.back", "Back")
+        tap(run, "collection.back", "Close")
+
+        // Keep the real Root locale lifecycle: only its bounded pass may replay.
+        // The fixture gates the PL recommendation on 2...4 identical attempts,
+        // one operation and one completed canonical commit, without a receipt.
+        selectLanguage(run, .pl)
+        tap(run, "collection.open", "Moje rośliny")
+        tap(run, "Fixture 1")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), cardId)
+        require(text)
+        require(source)
+        XCTAssertEqual(text.label, "Check the soil before watering.")
+        XCTAssertFalse(date.exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.care.next.basis"].exists)
+        XCTAssertFalse(run.app.descendants(matching: .any).matching(identifier: "catalogue.saved.care.next.source").firstMatch.exists)
+        for prefix in ["collection.routine.", "collection.watering.", "collection.firstAid.",
+                       "collection.care.enable", "collection.care.refresh"] {
+            XCTAssertEqual(run.app.buttons.matching(
+                NSPredicate(format: "identifier BEGINSWITH %@", prefix)
+            ).count, 0, prefix)
+        }
     }
 
     @MainActor func testRoutineSoilCheckCompletesAfterRestart() {

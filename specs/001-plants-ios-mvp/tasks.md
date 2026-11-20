@@ -177,6 +177,7 @@
   - Local signal `4be75d4`:359Swift/build/welcome/MCP/ReviewQA PASS; durable outbox changes публикуют owner-scoped local reread без сети. Далее C1 Today model → C2 Root/UI → dedicated UI acceptance; T066 открыт.
   - C1 `05e3e2d`: scoped TodayModel + exact readonly access deadline,364Swift/build/welcome/MCP/ReviewQA PASS; 5 fixture tests incllocale repair. Далее C2 Root/view и C3 targeted Today UI/live; T066 открыт.
   - C2 candidate BLOCKED после Review2 (368Swift/build/welcome PASS); PL pending/canonical stale-date read guards требуют отдельного semantic repair и полной candidate_base приёмки. Today/live ещё не готовы; T066 открыт.
+  - PL subset: passive read guards/fingerprint fix,368Swift/MCP/Reviewer PASS; rendered UI остановился на AX selector type mismatch до care intent, QA нет. Controller exactID selector candidate требует FULL C2 acceptance отae74 с old13+PL, не отдельного фиктивного PASS.
 
 - [ ] T067 Создать `CareHistoryView.swift` для фактов/прошедшей даты/отмены. Текущую следующую дату с коротким основанием показывать в карточке; отдельный NextCheckReasonView и история всех пересчётов не требуются. Покрытие: FR-026, FR-027, FR-028, FR-029, FR-030.
   - V11: EN-журнал карточки отменил ранее исправленную запись после офлайн-очереди, холодного запуска и потери ответа. SQL подтвердил одну отмену и сохранение даты. Положительная дата следующей проверки на стенде открыта. [Отчёт](../../docs/validation/mvp-acceptance.md#v11--отмена-полива-после-исправления-даты).
@@ -495,3 +496,5 @@
 | SC-022 | T058, T098, T102, T127, T132, T134, T135, T136, T137, T146 |
 | SC-023 | T098, T127, T139, T146, T156, T160 |
 | SC-025 | T098, T103, T104, T105, T106, T146, T159 |
+
+- Уточнение Today C2 (20 ноября): FULL acceptance ещё не стартовала. Static Root lost external-refresh trigger при superseded local task требует узкого App/TodayModel/Unit wait-latest repair; после него полный ae74diff с old13+PL. T066 остаётся открыт.

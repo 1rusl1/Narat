@@ -1322,7 +1322,7 @@ private struct CatalogueCollectionCardView: View {
                     if let advice {
                         PlantCareRecommendationContent(
                             recommendation: advice,
-                            showNextCheck: routineAccessAvailable && adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy && !manualRecordBusy
+                            showNextCheck: canShowAdviceDate
                         )
                     }
                     if !polish {
@@ -2215,8 +2215,13 @@ private struct CatalogueCollectionCardView: View {
 
     @MainActor
     private func loadCare() async {
-        guard !polish, let repository = connection.repository,
-              let lease = try? await connection.collectionLease(expected: expected) else { return }
+        guard let repository = connection.repository,
+              let lease = try? await connection.collectionLease(expected: expected) else {
+            guard !Task.isCancelled, connection.snapshot == expected,
+                  !recoveringWateringRecord, correction != .saving, correction != .recordSaving else { return }
+            historyFailed = true
+            return
+        }
         guard !Task.isCancelled, connection.snapshot == expected else { return }
         if !recoveringWateringRecord, correction != .saving && correction != .recordSaving {
             // Keep the frozen record visible to loadHistory until its pending/proof reads finish.
@@ -2249,11 +2254,14 @@ private struct CatalogueCollectionCardView: View {
         await loadRoutineAccess()
         guard !Task.isCancelled, connection.snapshot == expected else { return }
         if !routineAccessAvailable { firstAid?.controls.removeAll() }
-        guard !polish, let repository = connection.repository,
+        guard let repository = connection.repository,
               let store = connection.store, let api = connection.apiClient else { return }
         guard !recoveringWateringRecord, !savingRename, !savingFirstAid, !savingRoutine,
               !enablingBasicCare, !refreshingAdvice,
               correction != .saving, correction != .recordSaving else { return }
+        let previous = canonicalCareFingerprint
+        // Unresolved, failed and deleted canonical reads cannot authorize an old date.
+        canonicalCareFingerprint = nil
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let current = try await store.syncedCollectionCard(plantId: card.id, context: lease,
@@ -2290,7 +2298,6 @@ private struct CatalogueCollectionCardView: View {
                 }
             }
             let fingerprint = parts.sorted().joined(separator: "\n")
-            let previous = canonicalCareFingerprint
             guard !Task.isCancelled, connection.snapshot == expected, !recoveringWateringRecord,
                   correction != .saving, correction != .recordSaving else { return }
             try await loadHistory(repository, lease: lease, passive: true)
@@ -2301,17 +2308,25 @@ private struct CatalogueCollectionCardView: View {
             await loadAnalysisHistory()
             await loadRename()
             guard !Task.isCancelled, connection.snapshot == expected else { return }
-            canonicalCareFingerprint = fingerprint
             // GET does not publish sync. Do not re-fetch merely because another sync
             // was published with the same care facts (including this GET's own callers).
-            if previous != nil && (previous != fingerprint || refreshOnForeground) { adviceRequest += 1 }
+            // A nil baseline also means a prior read may have been cancelled. Require
+            // a fresh response before restoring date eligibility, even at the same revision.
+            if previous != fingerprint || refreshOnForeground {
+                adviceResponse = nil
+                adviceRequest += 1
+            }
+            canonicalCareFingerprint = fingerprint
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             historyFailed = true
+            adviceResponse = nil
+            adviceRequest += 1
         }
     }
 
     private func loadRoutineAccess() async {
+        routineAccessLoaded = false
         do {
             let entitlement = try await connection.syncedTrialEntitlement(expected: expected)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
@@ -2322,8 +2337,17 @@ private struct CatalogueCollectionCardView: View {
         }
     }
 
+    private var canShowAdviceDate: Bool {
+        routineAccessAvailable && canonicalCareFingerprint != nil
+            && adviceResponse == adviceRequest && !adviceFailed
+            && correction == .ready && !historyFailed && !routineFailed && !routineBusy
+            && !checkingAdviceRefresh && pendingAdviceRefresh == nil
+            && !refreshingAdvice && !adviceRefreshFailed
+            && basicCareEnabled != nil && !basicCarePending && !enablingBasicCare && !basicCareEnableFailed
+    }
+
     private var routineBusy: Bool {
-        !polish && (checkingRoutine || savingRoutine || pendingRoutine != nil || pendingRoutineUndo != nil)
+        checkingRoutine || savingRoutine || pendingRoutine != nil || pendingRoutineUndo != nil
     }
 
     private var routineWriteAvailable: Bool {
@@ -2455,14 +2479,15 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func loadPendingRoutine() async {
-        guard !polish, let repository = connection.repository else { return }
+        guard !savingRoutine, let repository = connection.repository else { return }
+        checkingRoutine = true
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let pending = try await repository.pendingRoutineCompletion(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             let undo = try await repository.pendingRoutineUndo(plantId: card.id, context: lease)
             try await loadRoutineHistory(repository, lease: lease)
-            guard !Task.isCancelled, connection.snapshot == expected else { return }
+            guard !Task.isCancelled, connection.snapshot == expected, !savingRoutine else { return }
             pendingRoutine = pending
             pendingRoutineUndo = undo
             routineFailed = false
@@ -2546,13 +2571,15 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func loadBasicCareState() async {
-        guard !polish, let repository = connection.repository else { return }
+        guard !enablingBasicCare, let repository = connection.repository else { return }
+        basicCareEnabled = nil
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let state = try await repository.basicCareEnableState(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected, !enablingBasicCare else { return }
             basicCareEnabled = state.enabled
             basicCarePending = state.pending
+            basicCareEnableFailed = false
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             basicCareEnableFailed = true
@@ -2611,13 +2638,15 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func loadPendingAdviceRefresh() async {
+        guard !refreshingAdvice, let repository = connection.repository else { return }
+        checkingAdviceRefresh = true
         defer { checkingAdviceRefresh = false }
-        guard let repository = connection.repository else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let pending = try await repository.pendingCareRecommendationRefresh(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected, !refreshingAdvice else { return }
             pendingAdviceRefresh = pending
+            adviceRefreshFailed = false
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected, !refreshingAdvice else { return }
             adviceRefreshFailed = true

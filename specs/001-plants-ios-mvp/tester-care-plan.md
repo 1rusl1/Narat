@@ -155,3 +155,13 @@ PL read-side pending/canonical invalidation не согласован с пок�
 Следующий узкий repair + rendered EN-pending→PL regression, затем полная
 candidate_base приёмка от ae74b52. Home-return event и dedicated Today UI/live
 обязательны до готовности; никаких полных checkbox по сборке не закрыто.
+
+PL semantic subset тоже не принят: Review source PASS после fix отменённого
+canonical read→foreground,368Swift/MCP PASS; UI selector Link/Button mismatch
+дал FAIL до intent. Controller exactID-only fix → свежая FULLC2 candidate_base
+ae74 приёмка с old13+PL/Swift/MCP/149automation/highReviewQA.
+
+До FULL C2 добавлен небольшой Root wait-latest repair: локальное замещение
+чтения не должно терять уже авторизованный external refresh. Только existing
+local task/revision ожидание, без canonical→HTTP/reconcile loop; deterministic
+barrier tests. Full old13+PL acceptance после него, не вместо него.
