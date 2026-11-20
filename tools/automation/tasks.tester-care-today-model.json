@@ -1,0 +1,51 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-today-model",
+      "description": "Implement small owner/locale scoped Today state model with local-overlay race fencing and precise access deadline metadata; no UI or networking integration yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "docs/validation/automation/tasks/tester-care-local-change-signal.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "SMALL C1 only. Accepted359Swift a2c85c1/B2b +4be75d4/local signal. Controller prepared empty Features/Today/TodayModel.swift with exact PBX membership. Fill THIS file with compact internal @MainActor @Observable TodayModel using accepted safe CareOverviewViewState. No Root/App/Guest/UI view, calendar grouping, transport/Store/engine/server/OS/queue changes. Keep around100-150 production model lines; no framework or second service. C2 renders/wires it later.",
+        "Model scope captures ownerId + original SyncSessionLease.generation + SupportedLocale without storing credentials/session/token. Root later validates actual original permanent lease before each call; model additionally scopes callbacks. Activation/suspend/owner replacement/ABA/locale change invalidates ALL old results and clears previous-owner/locale presentation. Scope identity must distinguish reactivation generations, not owner UUID alone. Expose state, refreshing, local-read/revalidation/error flags needed by simple future Today view; no technicalUUID product text.",
+        "Expose small async methods taking caller supplied @MainActor async throwing closures for cached local reread or bounded refresh. Model itself never invokes sync/HTTP; Root external coalescer will call repository. Do not auto loop/retry. Always capture own revision/request before await, check cancellation/scope/latest afterward. Local change increments local revision BEFORE await and suppresses current automation while local reread unresolved. A refresh response captured BEFORE local enqueue must never overwrite newer pending overlay: discard old refresh result if local revision advanced (or ONE caller-supplied coherent reread, no HTTP). Latest request guards needed for local reads too; late failure cannot clear newer state, busy flags, or restore previous-date eligibility. Suspend cancels visibility immediately; no long-lived task from init.",
+        "Add readonly optional Date verifiedAccessUntil to CareOverviewViewState for C expiry timer and later OS fire<deadline. It is the minimum exact known canonical entitlement.verifiedAccessUntil and snapshot verified_access_until when present; trueFree has nil, access enum still distinguishes unknown/expired. No new grace_until/TTL policy. Existing eligibility checks unchanged and Source/YMD values unmodified. Return deadline even expired for safe diagnostics/timer; missing/corrupt access remains unknown notFree. Do not persist new data/schema.",
+        "Add 4-5 compact meaningful @MainActor tests in existing CollectionWireTests, reuse real accepted DTO/Store helpers and barrier transports where useful. Cover fake refresh captures old datedstate -> barrier -> local durable care enqueue/signal+cached reread shows pending -> releaseoldcallback cannot restore date/pending; two overlapping local reads latestwins; A->B->A/suspend/locale invalidates late refresh/error and loading flags; cancellation cannot publish; deadline mincanonical/server plus trueFree/unknown/expired retain contract. No arbitrary sleeps or mirrored line-by-line tests. Existing359Swift/asserts preserve, fullbuild/welcome/MCP. C1 alone does not mean Today route/UI/physical/notificationready."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "TODAYMODEL1",
+          "description": "Scoped Today model never revives stale date/owner/locale or loses pending overlay after delayed callbacks; deadline exact; fixture unit tests pass.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "TODAYMODEL2",
+          "description": "New feature source has real Plants target membership; full build/welcome/MCP preserve current paths, no Root/UI readiness claim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-local-change-signal.md"
+      ]
+    }
+  ]
+}

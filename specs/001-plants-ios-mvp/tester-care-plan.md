@@ -140,3 +140,7 @@ fixture tests. Bounded Repo refresh/explicit locale/durable known-invalid
 cache и safe pending/access projection готовы как data layer. Далее короткий
 local outbox mutation signal без сети, затем permanent Today UI/navigation.
 Родительская готовность Today/reminders и физическая приёмка ещё открыты.
+
+Local signal `4be75d4` принят:359Swift/build/welcome/MCP/ReviewQA (4 новых
+fixtures, один узкий repair после Review). Далее proper Features/Today
+model со stale callback guard, затем view/Root/navigation/UI fixtures.

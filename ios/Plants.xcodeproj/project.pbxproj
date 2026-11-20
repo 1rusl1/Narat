@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A68BFAA4888CF13B957BEE11 /* TodayModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB33A8BB94507115F84229F /* TodayModel.swift */; };
 		C906258959DC1E93C2C1FFF9 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C906258959DC1E93C2C1FFF8 /* InfoPlist.xcstrings */; };
 		02869759E3A3F5AF56567480 /* TrialReminderSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962B7F7A53100DB1D52A0DAE /* TrialReminderSchedulerTests.swift */; };
 		06EE7B0AED33A731CB3B27F4 /* NativeIdentityProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB624C883B6C42E0806796E7 /* NativeIdentityProvider.swift */; };
@@ -70,6 +71,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1DB33A8BB94507115F84229F /* TodayModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayModel.swift; sourceTree = "<group>"; };
 		13847C00539C65BA46023852 /* Personal.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Personal.xcconfig; sourceTree = "<group>"; };
 		C906258959DC1E93C2C1FFF8 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		04236BC9DAE108A2BDCAC0D2 /* LanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageStore.swift; sourceTree = "<group>"; };
@@ -131,6 +133,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		A5FEEE9008444215FAC019F1 /* Today */ = {
+			isa = PBXGroup;
+			children = (
+				1DB33A8BB94507115F84229F /* TodayModel.swift */,
+			);
+			path = Today;
+			sourceTree = "<group>";
+		};
 		095828F63890E79668676DDB /* Paywall */ = {
 			isa = PBXGroup;
 			children = (
@@ -406,6 +416,7 @@
 		C8CA54F2824CF3ADC726B4A0 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				A5FEEE9008444215FAC019F1 /* Today */,
 				E697D6230CBC677E87C8AA61 /* Analysis */,
 				91B9587291B020B05F140945 /* CareTasks */,
 				9A5C5C88898CCC0E9424394C /* Catalogue */,
@@ -599,6 +610,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				20AFEADD5CA53F9CE99A45B1 /* APIModels.swift in Sources */,
+				A68BFAA4888CF13B957BEE11 /* TodayModel.swift in Sources */,
 				8EB0187BC9575C464C2D486A /* AddPlantRouter.swift in Sources */,
 				171D869E89A0B159AEA3F960 /* AnalysisAccessRepository.swift in Sources */,
 				8BD367FD1A1CD5FE1F59104B /* AnalysisFlowModel.swift in Sources */,

@@ -1,5 +1,32 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: local signal принят; C1 Today model — 20 ноября 2026
+
+Accepted/pushed `4be75d4b34ba5904c1cf82f44a8294eb35f15ab5`.
+Run `tester-care-local-change-signal-20261120-01` COMPLETED: Developer2,
+Reviewer2/QA1 PASS;359Swift (356XCTest+3), build/welcome, diff/MCP21.90s.
+LocalStore и CollectionWireTests: bounded owner-scoped AsyncStream без
+payload после successful durable outbox saves; duplicate/read/failed-save
+не публикуют event. Четыре новых fixtures проверяют pending на диске,
+coalescing/owner isolation/cleanup/routine/photo/cancellation paths.
+Review1 нашёл пропуск специального catalogueCreateJournal enqueue; узкий
+Developer repair добавил post-save event и regression fixture. Это local
+pending invalidation, без HTTP/sync/generation/schema/newqueue.
+Отчёт `docs/validation/automation/tasks/tester-care-local-change-signal.md`.
+
+Далее C1: небольшой TodayModel в Features/Today, readonly точная граница
+access deadline в safe DTO и race/locale/expiry unit tests. Контроллер
+подготовил только пустой Swift scaffold и адресные PBX refs/Sources; модель
+пока не реализована, Root/home/Today UI ещё не подключены. Потом C2 view/
+permanent Root lifecycle/navigation и C3 dedicated fixture UI acceptance.
+Manifest `tools/automation/tasks.tester-care-today-model.json`.
+
+B2b a2c85c1 и backend live19023 приняты отдельно. Текущий frontend Today,
+OS reminders/iPhone/real offline/ordinary positive first-aid не приняты;
+T066/T068/T075/T077/T098/B01–B11 open. Usage69/31 ordinaryAllowed, reset0;
+модели/900s/shared Simulator lock/AC caffeinate без изменений.
+
+
 ## Этап 2: B2b принят; далее локальный сигнал и Today UI — 20 ноября 2026
 
 Accepted/pushed `a2c85c12d4326037d1a8d47b1cb5cc2c3f15e12e`.
