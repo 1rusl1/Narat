@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: FULL C2 получил реальную UI регрессию; action/read errors — 20 ноября 2026
+
+FULL `tester-care-today-home-acceptance-20261120-01` BLOCKED qa_checks,
+НЕ accepted: old13careUI12PASS/1FAIL/0skips526.755s. Sole failure
+`testCareRecommendationRefreshRejectionShowsFailure`: ошибка отклонённого
+refresh исчезает при passive read. Остальные fullReview1,369Swift/build/welcome,
+149automation,diff,MCP24.606,newPLUI+ledger39.327 PASS; QA не запускалась.
+Никаких rootmerge/live до actual FULL SHA. Отчёт
+`docs/validation/automation/tasks/tester-care-today-home-acceptance01-blocked.md`.
+
+Причина source-подтверждена: новый passive loadPendingAdviceRefresh success
+очищает adviceRefreshFailed; loadBasicCareState аналогично basicCareEnableFailed.
+Успешное чтение pendingnil не подтверждает user action и не снимает reject.
+Следующий маленький Guest-only semantic repair разделяет readfailure и
+mutationfailure: successfulread восстанавливает readavailability, но сохраняет
+explicitrejection до retry/newcontext/actualproof. Unknown/pending остаются
+failclosed. Тесты и сообщения rejectedaction не ослабляются.
+
+Manifest `tools/automation/tasks.tester-care-action-error-state.json`.
+Actual targeted existing rejection+basicreplayUI и newPLUI обязательны,
+Swift/MCP/highReviewQA; затем новый FULLbaseae74whole8Swift с old13+PL/149.
+Новыйgate пока лишь py_compile/help PASS, не runtime proof.
+Все частичные BLOCKED/403/selector failures сохраняются. Rootbarrier725
+принят толькокакnarrow subset; весьToday/physical/OS всё ещё open.
+C3aHomeReturn/Todayfixtures→C3bTodayUI/lastchecked/live→reminders далее.
+Same models/900/sharedlock/ACcaffeinate, lastusage74/26/reset0.
+
+
 ## Этап 2: Root wait-latest subset принят; FULL C2 — 20 ноября 2026
 
 Accepted/pushed Root-only subset `72588e3dfee9e5a2f7d008431f52f229fa44525d`.

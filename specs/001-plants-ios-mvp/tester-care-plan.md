@@ -169,3 +169,7 @@ barrier tests. Full old13+PL acceptance после него, не вместо �
 Root wait-latest subset `72588e3` принят:369Swift/build/welcome/MCP/ReviewQA,
 семь deterministic mocktransport режимов. Следующий FULLcandidate_baseae74
 всех8Swift + old13careUI/newPLUI/149automation; не считатьsubsetготовымToday.
+
+FULLC2 actualold13 gate выявил1регрессию: passive success очистил explicit
+refresh reject.12другихPASS;369Swift/149automation/MCP/PLUI/ReviewPASS, QAнет.
+Узкий Guest-only error-state repair с unchanged assertions → freshFULLold13.

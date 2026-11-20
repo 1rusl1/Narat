@@ -1,0 +1,64 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-action-error-state",
+      "description": "Preserve explicit care refresh/basic-enable mutation rejection across passive reads while allowing passive read errors to recover; unchanged rendered regressions.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "docs/validation/automation/tasks/tester-care-today-home-acceptance01-blocked.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift"
+      ],
+      "constraints": [
+        "SMALL Guest-only semanticrepair, about10-30productionlines. FullC2 source8 stillUNACCEPTED. Prior fullrun readonly BLOCKED old13=12PASS1FAIL;369Swift/149automation/MCP/newPLUI/ReviewPASS,noQA. Do not rewrite C2 or change tests/fixtures/assertions/Root/model/API/Store/engine/schema/queue/server/OS/AI. Keep same routing/budgets.",
+        "Actualnewregression: loadPendingAdviceRefresh success setsadviceRefreshFailed=false although pendingnil isnotreceipt for rejected user refresh; canonical/idle read hides Couldn’t update the care recommendation. loadBasicCareState success similarlyclearsbasicCareEnableFailed. Existing testCareRecommendationRefreshRejectionShowsFailure mustPASSunchanged. Preserve explicitmutationfailure until explicitretry/newcontext or actualmatchingproof; a passive successfulread alone NEVERconfirms/resolves user action.",
+        "Separate passive-read failure/status from explicit mutation-error flags (small separate @State flags or equivalent). Successfulread clears ONLYreadfailure and restores readavailability. Failed/cancelled/unknownpending read mustfailclosed dateeligibility, not showfalseNoSchedule/free/success. Do not leave foreverreadError after successfulsame-scope reread, especiallyPLreadonly. Dateshelper mustaccountforbothreadfailure andmutationfailure appropriately, preserve pending/basic/routine/manual/canonicalrevision/source/expiry guards and EN-onlywrite UI.",
+        "Keep existing error text for rejectedrefresh/basicenable visible through canonical/foreground/idle refresh; do not weaken UITest/AX selector/fixture503 behavior to pass. If small readfailure text needed use clear EN/PL readonlymessage distinctfromfaileduseraction, no new flow/framework/UUID producttext. No blindpendingdequeue confirmation or newwrite from read. Actualaction paths alreadyclearownerror on explicitretry, retain existing receipt outcomes.",
+        "Actualverification: full369Swift/build/welcome/MCP, existing targetedtestCareRecommendationRefreshRejectionShowsFailure and testBasicCareEnableReplaysWithoutRecordingWatering, plus newPLnamedtest/oneintentledger. All source/test assertions unchanged, no skipped/missing. After this subset sourceacceptance, freshFULLcandidate_baseae74 with allold13+PL/149/ReviewQA stillrequired; no Today/live/physical100claim."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ACTIONERROR1",
+          "description": "Read/mutation error separation preserves failclosed date guards and existing fullSwift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "ACTIONERROR2",
+          "description": "Existing refresh-rejection and basic-enable replay UI tests pass unchanged, preserving error and successful care cycle.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-action-error-ui"
+          ]
+        },
+        {
+          "id": "ACTIONERROR3",
+          "description": "NewPLpending/no-date regression+identityledger remainspassing unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-pl-ui"
+          ]
+        },
+        {
+          "id": "ACTIONERROR4",
+          "description": "MCP and highReviewQA validate small source scope; wholeC2 acceptance remainsseparate.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-home-acceptance01-blocked.md"
+      ]
+    }
+  ]
+}

@@ -500,3 +500,5 @@
 - Уточнение Today C2 (20 ноября): FULL acceptance ещё не стартовала. Static Root lost external-refresh trigger при superseded local task требует узкого App/TodayModel/Unit wait-latest repair; после него полный ae74diff с old13+PL. T066 остаётся открыт.
 
 - Root wait-latest subset `72588e3`:369Swift/build/welcome/MCP/highReviewQA PASS; deterministic mock-transport barrier включает7режимов. Полная C2/PL union приёмка отae74 с old13+PL ещё отдельный шаг, T066 не закрыт.
+
+- FULLC2 acceptance01: old13UI12/13 (refresh rejection error исчезает послеpassiveclear), остальные369Swift/149automation/MCP/newPLUI/Review PASS; QA нет. Новый Guest-only action/read-error split и повтор FULL, T066 открыт.
