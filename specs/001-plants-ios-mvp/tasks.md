@@ -506,3 +506,4 @@
 - Guest action/read error subset `95014f1` принят:369Swift/MCP/ReviewQA, existing rejection+basicreplay2/2 и PLUI/ledger PASS; tests unchanged. Whole C2 требуетfreshFULL02 old13+PL отae74, T066 открыт.
 
 - WHOLE C2 `dcef6c2` принят freshFULL02baseae74:369Swift/149automation/MCP/fullReviewQA, old13UI13/13+4POSTledger, PLUI1/1+exactreplayledger PASS. DedicatedTodayUI/ordinarylive/physical/reminders ещё C3+, T066 не закрыт.
+- C2 ordinary signed Release `dcef6c2`: live real SDK/Supabase на собственном Simulator подтвердили NoSchedule → own existing card/journal → Today, canonical digest неизменен. [Отчёт](../../docs/validation/tester-today-live-2026-11-20.md). Это один Free-аккаунт без дат; dated/offline/physical/OS и C3 UI остаются открыты, T066 не закрыт.
