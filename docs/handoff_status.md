@@ -1,24 +1,44 @@
 # Narat — текущий статус и передача работы
 
-## Root-кандидат сохранён; нужна полная read-only приёмка — 20 ноября 2026
+## Root напоминаний подключён и принят; техническая приёмка не завершена — 20 ноября 2026
 
-Developer1 исходного Root run завершился за249.827с; патч применён только к
-`PlantsApp.swift`.149 automation/diff прошли. Controller был приостановлен
-для внешнего бюджетного допуска повторов; активный Xcode child не прерывался
-и завершил423/423 теста PASS. Лишь затем controller завершён штатным INT/CONT,
-exit130/WAITING. Исходный run не имеет Review/QA и не принят.
+Принят и отправлен `fe0b99e4b965cc5d31045139a9789fbf79acac2e`, run
+`tester-care-reminder-root-acceptance-20261120-01`. Runtime Root теперь вызывает
+принятый `CareReminderLifecycle`: текущая Auth-классификация, независимый от
+Today/scene исходный SDK-контекст, scene/locale и локальный cache-publication
+hook. Clock/timezone события принимаются независимо от наличия Today.
+Согласие по умолчанию выключено; все прежние DEBUG fixtures ограждены от
+System runtime. Новых HTTP, sync, Auth observer или backend-операций нет.
+Из продукта изменён только `ios/Plants/App/PlantsApp.swift`; PBX не менялся.
 
-Добавлены ровно две разрешённые controller-поправки в том же файле: независимые
-Root clock/timezone receivers с clockRevision; удаление только locale-условия
-из owner/SDK cache hook. Все прочие guards и старые assertions сохранены.
-Происхождение и hashes — в `tester-care-reminder-root-controller-candidate.md`.
-Положительная System-проверка locale-transition пока не выполнена.
+Весь кандидат от `30d5118` прошёл свежие проверки: 423 Swift-теста
+(420 XCTest + 3 SwiftTesting), build/welcome — PASS 129.751 с; 149 automation —
+PASS 46.292 с; MCP — PASS 23.347 с; PL replay — PASS 40.715 с; care 13/13
+и exact-operation ledger — PASS 504.341 с; Today 6/6 и 8 read-only namespaces —
+PASS 203.317 с; diff — PASS 0.023 с. High Review 129.703 с и QA 128.723 с — PASS.
+Это локальные проверки и fixtures, не actual System UN/delivery или живой SDK
+нового Root. [Полный отчёт](validation/automation/tasks/tester-care-reminder-root-acceptance.md).
 
-Следующий шаг — целиком read-only candidate_base30d5118, те же423Swift/149/MCP/
-care13/Today6/PL и highReviewQA. В этом проходе нет Developer, провал проверки
-не запустит автоматический Dev2. Любой repair требует свежего usage<93;
-hard95%, сброс запрещён. Root/settings/delivery до полной приёмки не объявлять
-готовыми. PBX и другие файлы продукта не менялись; нужна техническая приёмка.
+Происхождение сохранено отдельно: реальный Dev1 исходного run 249.827 с,
+затем ровно две разрешённые controller-поправки clock/timezone и locale-условия
+cache hook. Исходный run завершён exit130/WAITING после PASS активного Xcode
+child, без Review/QA; его статус не переписан. В принятом read-only проходе
+Developer0, Review1, QA1. [Provenance и hashes](validation/automation/tasks/tester-care-reminder-root-controller-candidate.md).
+Положительный System locale-transition отдельно не проверен.
+
+Settings/opt-in и permission UI, notification delegate/routes, actual System
+roundtrip/доставка при закрытом приложении, physical B01–B11 остаются открытыми.
+Прежний ordinary live source `56d7455` не является проверкой нового Root.
+Полные T075/T077/T098 и родительские задачи не закрыты; внешняя передача
+отложена, сейчас только техническая приёмка.
+
+Фактический usage после QA: 93% использовано / 7% осталось. Сброс не использован
+и запрещён; новые длинные Developer/пакеты не допускаются, hard95%/5% резерва.
+Следующий точный шаг без новой разработки: родитель интегрирует этот статус и
+собирает обычный подписанный Personal iphoneos archive/dSYM из чистого frozen
+принятого source. Это проверка сборки/подписи, без install/UI/delivery.
+После неё фиксируем технический checkpoint и оставшийся объём. Документальная
+сверка tasks и diff выполнена; runtime-тесты ради этого уточнения не повторялись.
 
 ## Подготовлен узкий Root-only этап — 20 ноября 2026
 
