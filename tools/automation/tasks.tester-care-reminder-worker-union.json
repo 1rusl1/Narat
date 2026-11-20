@@ -42,8 +42,7 @@
           "description": "Whole worker and both cold cleanup repairs pass fullSwift/build/welcome/automation suite; all existing safety tests preserved.",
           "mode": "local",
           "checks": [
-            "ios-tests",
-            "automation-tests"
+            "ios-tests"
           ]
         },
         {
@@ -52,6 +51,14 @@
           "mode": "local",
           "checks": [
             "simulator-smoke"
+          ]
+        },
+        {
+          "id": "UNION3",
+          "description": "Existing149 automation fixture tests pass unchanged alongside whole worker acceptance.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
           ]
         }
       ],
