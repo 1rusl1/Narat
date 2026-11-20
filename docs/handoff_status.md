@@ -1,5 +1,19 @@
 # Narat — текущий статус и передача работы
 
+## C3b acceptance01 BLOCKED: known-stale indication — 20 ноября2026
+
+Current generated5file candidate affff6b/HEAD69155c1 notaccepted. Actual
+run tester-today-ui-acceptance-20261120-01: diff/149automation/374Swift
+(371XCTest+3),build/welcome PASS; Reviewer1 FAIL known readOnly+
+revalidationRequired+hasError hides explicit stale schedule message.
+No MCP/old13/PL/new6/QA ran, no retroPASS. Report
+`docs/validation/automation/tasks/tester-today-ui-acceptance01-blocked.md`.
+
+Next tiny View+Unit Developer repair tester-today-stale-status, same900/models/
+sharedlease. Then fresh WHOLE5file base4f4a acceptance with all7checks, old13/
+PL/new6+8namespaces and highReviewQA. Root mustnotmerge currentcandidate.
+No live/physical/reminder claims; parenttasks open, reset0, actual77/23.
+
 ## Этап 2: C3b mechanical candidate, fresh complete acceptance — 20 ноября 2026
 
 Run `tester-today-ui-20261120-01` BLOCKED после2apply failures наunchangedsource;

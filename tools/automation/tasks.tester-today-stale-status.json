@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    {
+      "id": "tester-today-stale-status",
+      "description": "Keep explicit known-stale schedule status visible alongside refresh failure; narrow C3b reviewer repair.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "docs/validation/automation/tasks/tester-today-ui-acceptance01-blocked.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "TINY semantic repair, ~5-20 productionlines plus compact meaningful test. Current5file C3b candidate remains UNACCEPTED. Do not regenerate previous376line patch or rewrite Root/Repo/model/fixtures/UITests/store/schema/queue/API/server/OS. Read actual reviewer report. Preserve374existing Swift tests/assertions and all source/calendar/access/source/expiry/pending fences. No new scope/new framework/new network.",
+        "Actual Reviewer finding TodayHomeView135: availability.readOnly +failure.revalidationRequired makes TodayCalendar.status.unavailable for verified access/no pending after failed canonical alignment. Condition projection.status !=unavailable hides today.stale; model.hasError then suppresses status(...). User only sees generic refresherror+savedcache, not known schedule invalidation. Show known-stale/revalidation explanation independently of general refresherror; do not present as noSchedule/empty or restore suppressed dates. Firstfail no snapshot remainsfailed/unavailable, no fabricated stale/empty.",
+        "Add ONE compact meaningful regression using actual existing cache/presentation/model test helpers: known invalidated cached snapshot + failed alignment/read under valid owner/access yields readOnly/revalidationRequired +generalerror; revalidation indication mustremaintrue while calendarunavailable and sections empty. Ordinary firstfailure/no-cache mustnot become known-stale or empty. Prefer tiny shared presentation predicate actually used by SwiftUI and test it through real DTO/state. Avoid snapshot or implementation-mirror tests. Existing original6UI/old13/PL assertions untouched.",
+        "Run fullSwift/build/welcome/MCP with highReviewQA for this narrow repair. This is subset ONLY; after acceptance freshwholecandidate_base4f4a old13+PL+new6/8readonlyledgers/149automation/ReviewQA required. No physical/dated/live/notification100 claim. Same models/budgets/900/sharedresource/caffeinate."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "STALE1",
+          "description": "Known revalidation required remains visible with failed refresh, firstfail distinct; fullSwift/build/welcome preserve guards.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "STALE2",
+          "description": "MCP and highReviewQA accept narrow source repair; wholeC3b remains separately pending.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-today-ui-acceptance01-blocked.md"
+      ]
+    }
+  ]
+}
