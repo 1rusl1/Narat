@@ -1,5 +1,24 @@
 # Narat — текущий статус и передача работы
 
+## R2b2 narrow cleanup accepted; WHOLE worker acceptance next — 20 ноября 2026
+
+Narrow accepted/pushed b57f904b757a0d67899dc86c9f7ab118761e442d,
+run tester-care-reminder-worker-cleanup-20261120-01 COMPLETED Dev1/Review1/QA1.
+Actual fullSwift/build/welcome154.809s (407XCTest+3SwiftTesting=410, no skips/fails),
+MCP23.514s/diff0.045s PASS; Dev353.238s/Review85.313s/QA59.267s.
+Strict cold foreign canonical raw IDs are removed/readback before unknown-state
+defer; same-owner/Trial/opaque unknown preserved. Owner-bound monotonic blocked
+raw identities persist BEFORE cleanup without fabricated due/fire metadata;
+codec/oldv1/foreign/drop/storagefail/diskrestart/optout/fullrefresh tests pass.
+No Root/settings/runtime/actualOS yet. Original worker run01 semantic FAIL remains
+historical BLOCKED; narrow acceptance DOES NOT accept whole worker.
+
+Fresh read-only full candidate_base=dfe5a7adf360c15ea675829e036b340baad3d3b0 union
+includes all original Planner/Scheduler/Unit +Receipts cleanup diffs and controller
+history. Mandatory fullSwift/build/welcome+149automation+MCP/highReviewQA beforeRoot.
+No fake Developer call. Parent B01positive/reversal report waits final union SHA.
+All parent tasks open; original allowance actual87/13 ordinaryAllowed, reset0.
+
 ## R2b2 Review FAIL; narrow cleanup repair next — 20 ноября 2026
 
 Run tester-care-reminder-worker-20261120-01 BLOCKED (Developer3 budget exhausted). Current three-file draft is NOT accepted: Planner current identities, Scheduler serialized worker and Unit regressions. Real Swift/build/welcome PASS140.212s (404XCTest+3SwiftTesting=407, no failures/skips), diff PASS; Reviewer1 semantic FAIL91.906s. No QA/MCP. Initial malformed patch and failed Apia test expectations preserved; later exact-control fixture repair did not change production.

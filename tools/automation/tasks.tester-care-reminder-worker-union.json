@@ -1,0 +1,65 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-worker-union",
+      "description": "Whole R2b2 serialized reminder worker union acceptance including both Review-confirmed cold cleanup repairs; no Root/UI/runtime wiring.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/TrialReminderScheduler.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-reconcile.md",
+        "docs/handoff_status.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup.md",
+        "tools/automation/tasks.tester-care-reminder-worker-cleanup.json",
+        "tools/automation/tasks.tester-care-reminder-worker-union.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "R2b2 SMALL extension/refinements in SAME Scheduler file +tinyPlannerhelper +compact5-7fake-adapter race tests. b1 3cd0bd3 accepted401Swift/MCP/ReviewQA but onepassNOTconcurrent-safe. ConvertenumCareReminderScheduler to @MainActor Observable finalclass ifneeded, retainingstatic reconcile/Input/Result API foroldtests. No newfile/PBX/Root/settings/prefs/delegate/Store/receipts/factory/trial/network/schema/careoutbox/realOS calls. Oneworker lifecycle, notnewframework/secondcarequeue. Keepold401assertions except explicitcapacitypolicy expectation below. Same models/900.",
+        "Add one serialized latest-intent worker over accepted boundedpass, previousOSoperationfullyawaited before nextcleanup/add. Update coalesceslatest request/revision; NEVERTask.cancel andabandon in-flightOSadd onnewinput. ValidateoriginalSDKlease/callerisCurrent andworkerrevision before/afterawaits, oldcallbacks MUSTNOTpublishstatus/newownerfailure orACKwrongattempt. Latest logout/optout cleanup MUSTfollow oldadd evenif oldresultbecomesstale. Latch cleanup-required intent so cancelled/logout→newowner→sameownercoalescing cannotdrop cleanup. SDKowner/authority/generation epoch guarded; actualaccountchange differssameowner authrefresh, no old-data rearm.",
+        "Explicit public modes: updateknownowner Input; HOLD/suspendpresentation doesNOTmeanlogout/desiredempty andpreservesalreadyvalidfuturepending withno newadds; CANCELALL for actuallogout/knownownerchange removespending+delivered ONLYowncareprefix withoutreadingforeignledgers. Constructor/unresolvedstartup noAutoCleanup. Hold whileoldadd completes keepsauthorizedfuture request, while localqueue signal can update knownstate withallowNewRequests=false tocancelaffected andkeepothereligiblepending. Input.isCurrent isSDK/activation, NOTsceneactive; Rootindependentobservation comesR3. Withnewknownowner butstate nil cleanupoldforeigncare happensbeforedeferring, neverreadforeignreceipt/token. Trial/othernamespace untouched; validatependingreadback so stale remove cannotwipe newerowner request.",
+        "Worker publishes scope-guarded status/result/authorization/requestingPermission asneededforfutureUI; no success fromqueue/save/add alone. Provide explicit eligible permission-intent method: requirescurrentpermanentowner scope,optedin/currentfutureeligiblecandidate, thenqueryauthorization. RequestONLYnotDetermined after explicitcall, revalidateaftereachawait; NoSchedule call doesNOTprompt andsubsequentautomatictaskarrival/reconcile MUSTNOTautoprompt. Denied/optout no journal effects, oldpermissioncallback afterlogout/ownerchange cannotadd orrestoreflags. NoUserDefaults here, ownerprefs/R3UI separate. Explicit retry coalescesonce, no polling/selfsignals.",
+        "REQUIRED policy refinement beforeRoot: replace unexplained64 totalbudget inPass.slots with explicit conservative32TOTALpending budget accountingotherPendingCount andexistingcarepending (max0, neverassumeOSlimit64). Keepcarecap32 but reserveother/trial slots, truthfulomissions. ExistingtestReminderPassFiltersSpentBeforeCapacityAndAccountsOtherRequests other40 expected24 MUSTbe updatedto0 becauseintentionalstrongerpolicy; expandothercases0/1/31/32/40 ratherthanweaken. Allotheroldassertions unchanged. FilterALL candidates afterspent/uncertain beforecap stillrequired.",
+        "REQUIRED cleanup refinement: malformedown-prefix inventory with noledger currentlythrowsbeforecleanup, so optout canleaveitforever. Failclosedbut removeuntrustedownraw IDs/readback. IfrawIDmatchescurrentcanonicalcandidate butmetadatauntrusted, persistuncertain blocker viaexistingrecordUnknown conservativeidentity beforecleanup topreventremove→freshadd; no fakeaddauthority. Otherwiseunknownmalformedgrammar cannotmatchfuturecanonicalIDs andcanbecleaned withoutforeignledgerread. ConflictingcancelledBeforeFire fixfromb1 preserved. Unknown OSresult remainsvisible/blocked, neverretryblind.",
+        "TinyPlanner current-occurrence identity helper/output forfuturepost-firetap andcurrentblockerstatus: sameinitialowner/locale/source/access/perplanteligibility, stableIDs fromsourceYMD BEFOREfuture-fire/timezone/expiry-fire filter. Currenttaskafterfire/overdue remainscurrentidentity butnotanewfuturearm; no newdateengine. Use it toavoidcounting retained historicaluncertainentries aftertheir taskremoved/completed/changed, andfutureR3tapmustnotusefuturePlan.requests. Currentknownexpiry/access/pending/sourcewithdrawal stillsuppressesidentities. SourceYMDvalid globally, skippedlocalday suppressesarm butnotrewritescurrentidentity. Existingfuturecandidates/calendar/cap semantics preserved.",
+        "5-7deterministic race groups with FAKE notifications and REAL Store helpers: heldadd→optout andlogout→latestcleanup pending0/trialpreserved/statuscurrent; A→B→A/latecallback noforeign/staleflags; hold/background afterarmed preservespending/zeroextraadds, cancellation-onlylocalpendingupdate removesaffected only; unknownstartup noautocancel/add. ExplicitnotDeterminedpermission:NoSchedule→taskarrival auto0requests; eligiblebutton→1request; permissionawait+scope/owner/localmutationchange no staleadds. LostACKpreparedrecovery remains0extraadd; cap spent-first+otherpending budget, malformedowncleanupwithoutfreshadd; postfirecurrentID retainedwhilefuturearms0 andstale historicalblockers excluded. Usecontrolled continuations/barriers/injectedclock, no sleeps/Systemcenter calls. Keephelperscompact andawaitvaluesbeforeXCTautoclosures.",
+        "FullSwift/build/welcome+MCP/highReviewQA mandatory. NoAppRootuse untilaccepted; thenR3Root/settings/route+independentbackgroundlocalmutation observation, thenR4actualSystemadd/pendingtrustedroundtrip/phone. Purefactory/fakeOS evidenceNOTphysicaldelivery; signingpreflightnotfinalR3. Allparentcheckboxopen.",
+        "FULL UNION acceptance from pinned preworker dfe5a7a, not repair-only. Original run01 BLOCKED Reviewer1 semanticFAIL and developerbudgetexhausted preserved. Narrow cleanup accepted separately does not accept originalworker. Read whole candidate_base patch incl Planner currentIDs, Scheduler worker/capacity/cleanup, Receipts monotonicblockedIDs and allUnit tests. Full Swift/build/welcome +automation149 +MCP then highReviewQA. No Developer implementation call for read-only candidate, nofakePASS. No Root/actualOS/delivery/settings/physicalclaims.",
+        "Review both actual P1 repairs: coldfirstknownownerB/state=nil cleansonlyforeigncare pending/delivered leavingB/Trial; unknown owncanonicalID route=nil beforetemporarysuppression cleanup persists strictownerboundmonotonic rawidentityblocker, cold restoredeligibility noadd/noinventeddate/fire. Existing exactreceipts/phase/CAS/hold/logout/ABA/permission/cap32TOTAL regressions intact. Conservative incompleteOSstate visible, notsuccess. Whole union must pass before R3 application use."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "UNION1",
+          "description": "Whole worker and both cold cleanup repairs pass fullSwift/build/welcome/automation suite; all existing safety tests preserved.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "automation-tests"
+          ]
+        },
+        {
+          "id": "UNION2",
+          "description": "MCP and high Review/QA accept full candidate_base union; runtime/physical remain explicitly pending.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md"
+      ],
+      "candidate_base": "dfe5a7adf360c15ea675829e036b340baad3d3b0"
+    }
+  ]
+}
