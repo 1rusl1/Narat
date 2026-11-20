@@ -1,14 +1,37 @@
 # Narat — текущий статус и передача работы
 
-## Проверка задержанного статуса разрешения подготовлена — 20 ноября 2026
+## Задержанный статус разрешения зафиксирован тестами — 20 ноября 2026
 
-Добавлены ровно два controller-authored теста в CollectionWireTests.swift, без
-изменения продукта, PBX, helpers и прежних423 assertions. Они фиксируют текущие
-сценарии post-prompt ND→authorized и ND→ND: поздний статус, один prompt/arm,
-отсутствие автоматического reread и точный retry без дубля. Это fake OS, не
-реальная доставка. Manifest/context сохранены; кандидат ещё не принят.
-Следующий шаг: fresh read-only diff+425Swift/build/welcome и highReviewQA,
-Developer0. Usage93/7, hard95, reset запрещён. Новая разработка не запускается.
+Принят и отправлен tests-only `8086558453d17a2c488660053cecfb180b9a4866`, run
+`tester-care-permission-readback-20261120-02`. Controller добавил ровно два
+теста в `ios/PlantsTests/CollectionWireTests.swift`; production, PBX, helpers
+и побайтный префикс всех прежних423 тестов не менялись. Developer0.
+
+Свежий full Swift:425 тестов (422 XCTest +3 SwiftTesting), без missing,
+сборка/welcome — PASS144.565с; diff — PASS0.024с. Review51.589с и QA79.868с —
+PASS. Оба новых теста — PASS0.051/0.047с. MCP/UI/backend не повторялись:
+продукт не менялся. [Отчёт](validation/automation/tasks/tester-care-permission-readback.md).
+Это fake OS и real Store; actual OS delivery эти тесты не доказывают.
+
+Зафиксировано текущее ограничение: если после prompt первое чтение ещё
+notDetermined, а Pass уже видит authorized, occurrence вооружается один раз,
+но опубликованный worker.authorization остаётся прежним до retry. Если оба
+post-prompt чтения notDetermined, вооружения нет, requestingPermission=false,
+result.failed=false/deferred=false. Последующая смена OS-настройки сама не
+вызывает чтение или add; один явный retry вооружает исходную occurrence,
+повторный retry не создаёт дубль/новый prompt. Это документированное поведение,
+без исправления permission UI и без заявления о готовности напоминаний.
+
+Initial preflight exit2 из-за criterion evidence-mode исправлен до проверок.
+Run01 BLOCKED с compile FAIL19.080с сохранён: два новых обращения к private
+методу заменены существующим test helper; лишние зеркальные счётчики внутренних
+чтений убраны только из новых тестов. Прежние assertions не ослаблялись.
+
+Фактический usage после QA93/7, сброс0 и запрещён. Новую разработку не запускать.
+Следующий точный шаг: родитель интегрирует этот tests-only статус с реальными
+Personal build/signature и OS adapter-readback evidence, отдельно отмечая
+незакрытые settings/delegate/routes/closed-app delivery. Затем технический
+checkpoint; полные T075/T077/T098 и physical B01–B11 остаются открытыми.
 
 ## Root напоминаний подключён и принят; техническая приёмка не завершена — 20 ноября 2026
 
