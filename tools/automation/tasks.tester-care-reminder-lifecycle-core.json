@@ -1,0 +1,63 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-lifecycle-core",
+      "description": "Add a small independent owner-scoped care reminder lifecycle core with cache-only signals, background hold and per-owner consent; no App/Root wiring or settings UI yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/TrialReminderScheduler.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-auth-proof.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-union.md",
+        "docs/validation/automation/tasks/tester-care-reminder-lifecycle-core-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Small core ONLY, preferably <=250 production lines and 4-5 compact test groups. New feature scaffold/4 target refs are controller preparation, not implementation. Do not modify App/Root, Guest, Scheduler, Planner, Receipts, Store, Trial, schema, transports, UI, delegate, fixture flags or source dates. This remains an unused module until the next Root slice. Preserve all existing Swift assertions. Same models/900/budgets. User wants technical acceptance only, max95% usage/no reset; do not expand this packet.",
+        "Use the accepted CareReminderScheduler serialized worker. Provide a small observable lifecycle object (Combine worker needs explicit observation/forwarding, not a plain State copy). Constructor has zero OS/network effects; notifications adapter/defaults/clock/timezone/cache-reader or equivalent seams are injected. One current permanent context holds original lease/store/authority/locale and caller SDK/activation predicate. Validate original scope before/after every await; never acquire a new owner lease in a callback. No SDK observer or signup/refresh here; future Root maps accepted authClassification to known context / auth-hold / definite logout.",
+        "On accepting a known owner, submit a nil-projection worker input before cache reads, so foreign cleanup and conservative unknown-identity journaling happen before a possible logout. Unresolved SDK startup/auth refresh suspends new work without cancelling valid OS requests; actual logout/owner switch uses the accepted sticky cleanup. Scene inactive/background is different from logout: retain context and independent local/canonical observations, hold new adds and allow cancellation-only updates for known changes. isCurrent must not depend on scene active. Owner A-B-A, locale and late read callbacks cannot publish/add for a stale context.",
+        "Observe existing LocalStore.localOutboxUpdates(ownerId:) and SyncEngine.canonicalSyncUpdates (or injected versions using those real streams). Coalesce cache-only reads under original context; synchronously hold stale add authority before awaiting a new local read. Fence delayed old reads by local revision. Expose one explicit cache-publication/timezone/clock hook for future Root because derived overview publication does not emit canonical sync. Never call collectionCards, reconcilePendingCare, fetch overview/HTTP, polling, or publish canonical rows from this core.",
+        "Distinguish missing startup projection from known invalidity: unavailable/no cached snapshot with no denial/invalidation/pending/known expiry is HOLD, not desired empty. Valid aligned cached tasks with transport failure remain applicable. Known pending mutation, profile-hour pending, denial, revalidation/generation mismatch, expired access, paused/withdrawn current source suppress adds and cancel affected requests using shared state. On cache read failure after a known durable mutation, do not restore old add authority; keep failure visible and conservatively cancel known requests where safe using accepted worker inputs. Never bypass unknown-own/cancelledBeforeFire durable barriers or invent cancellation proof. No new persistence/queue/date/access policy.",
+        "Per-owner care opt-in in a separate UserDefaults key, default false; never share Trial keys or renew consent on identity changes. Store only the preference, no token/state snapshot/plant data. Expose explicit set-opt-in/retry/eligible permission intent for later UI. Automatic activation/signals/time changes never request OS permission. NoSchedule opt-in cannot carry a prompt intent to later task arrival. Effective policy suppression must not change the stored user preference. Shared plan already uses confirmed hour and exact access deadline; do not recalculate dates. One cancellation-aware deadline/day-boundary task or explicit timer hook is enough, not Store polling.",
+        "4-5 meaningful groups with FAKE OS adapter and REAL existing Store helpers/streams: active armed -> background keeps pending/no adds; background local pending suppresses affected only while other valid future remains; held stale cache read displaced by real durable signal cannot restore old adds/date; unresolved startup zero OS versus actual logout/owner switch/ABA cleanup; owner preference isolation/default false/cold retention and explicit eligible authorization, NoSchedule -> later tasks no automatic prompt. Keep tests compact, injected barriers/clocks, no sleeps/System UN calls. Source signals/derived cache hook are local and must produce zero HTTP/care commands. Full Swift/build/welcome/MCP/high Review/QA. Root/settings/routes/System roundtrip and delivery remain later; parent tasks stay open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "CORE1",
+          "description": "Real Store signal/cache/owner/background/consent regressions pass with all Swift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "CORE2",
+          "description": "MCP/high Review/QA confirm unused cache-only lifecycle core, no Root/System/network effects or delivery claims.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-auth-proof.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-union.md",
+        "docs/validation/automation/tasks/tester-care-reminder-lifecycle-core-context.md"
+      ]
+    }
+  ]
+}

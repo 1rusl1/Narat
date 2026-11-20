@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D71A99EF722D60282DD12D73 /* CareReminderLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */; };
 		5E12CED5D11E2B29A1965AA8 /* CareReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */; };
 		6464DA2E0C5E1A80723E8F61 /* CareReminderNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */; };
 		DAA5E3F3850411A6F8017DB2 /* CareReminderReceipts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2A76093DD91DC7AE775EE7A /* CareReminderReceipts.swift */; };
@@ -76,6 +77,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderLifecycle.swift; sourceTree = "<group>"; };
 		FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderScheduler.swift; sourceTree = "<group>"; };
 		D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderNotifications.swift; sourceTree = "<group>"; };
 		B2A76093DD91DC7AE775EE7A /* CareReminderReceipts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderReceipts.swift; sourceTree = "<group>"; };
@@ -311,6 +313,7 @@
 			isa = PBXGroup;
 			children = (
 				1AD8F1CE0CABB743050D3E96 /* TrialReminderScheduler.swift */,
+				CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */,
 				FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */,
 				D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */,
 				B2A76093DD91DC7AE775EE7A /* CareReminderReceipts.swift */,
@@ -649,6 +652,7 @@
 				D1CC6AF8FD85D05222631564 /* SupabaseAuthExchange.swift in Sources */,
 				181666AC1EEBCB049C05BECB /* SyncEngine.swift in Sources */,
 				FCB997FC95AE69BF974928EA /* TrialReminderScheduler.swift in Sources */,
+				D71A99EF722D60282DD12D73 /* CareReminderLifecycle.swift in Sources */,
 				5E12CED5D11E2B29A1965AA8 /* CareReminderScheduler.swift in Sources */,
 				6464DA2E0C5E1A80723E8F61 /* CareReminderNotifications.swift in Sources */,
 				DAA5E3F3850411A6F8017DB2 /* CareReminderReceipts.swift in Sources */,
