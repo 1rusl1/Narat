@@ -125,16 +125,18 @@ final class CareReminderScheduler: ObservableObject {
     }
 
     private func cleanup(_ expected: UInt64) async throws {
-        if let input = latest, input.state != nil {
+        if let input = latest {
             // Reuse the accepted pass to journal conservative blockers and cancellation proof
             // before cleanup. Never open the previous owner's ledger.
             let cancellation = Input(lease: input.lease, store: input.store, authority: input.authority,
                 isCurrent: { self.revision == expected && input.isCurrent() }, state: input.state,
                 optedIn: false, allowNewRequests: false, locale: input.locale,
                 timeZone: input.timeZone, clock: input.clock)
-            let value = await Self.reconcile(cancellation, notifications: notifications)
+            let value = await Pass(cancellation, notifications).run(privacyCleanup: true)
             try check(expected)
             guard !value.failed else { throw Failure.inventory }
+            cleanupRequired = false
+            return
         }
         let inventory = try await checked(expected) { try await notifications.inventory() }
         let pending = CareReminderNotificationFactory.ownIdentifiers(inventory.pending.map { $0.rawIdentifier })
@@ -278,7 +280,7 @@ final class CareReminderScheduler: ObservableObject {
             }
         }
 
-        func normalize(_ plan: CareReminderPlan) async throws {
+        func normalize(_ plan: CareReminderPlan, observeExisting: Bool = true) async throws {
             guard var ledger = token?.receipts else { throw Failure.scope }
             // Unknown verified identities become terminal BEFORE cleanup; never import add authority.
             for item in inventory.pending + inventory.delivered
@@ -302,6 +304,11 @@ final class CareReminderScheduler: ObservableObject {
                         }
                     }
                 }
+            }
+            // Without a projection, preserve existing phases; only persist unknown blockers.
+            if !observeExisting {
+                try await save(ledger)
+                return
             }
             for id in ledger.entries.keys.sorted() {
                 guard let e = ledger.entries[id] else { continue }
@@ -385,12 +392,23 @@ final class CareReminderScheduler: ObservableObject {
                 unconfirmedBlockers: max(blockers, failed ? 1 : 0), failed: failed, deferred: deferred)
         }
 
-        func run() async -> Result {
+        // OS routes alone never prove existing receipts. On metadata failure, retain unknown
+        // own canonical requests until a terminal entry or identity blocker actually commits.
+        func privacyFallback() async throws {
+            try await readInventory()
+            let raws = Set((inventory.pending + inventory.delivered).map { $0.rawIdentifier })
+            for raw in raws.sorted() where raw.hasPrefix(CareReminderNotificationFactory.prefix) {
+                let id = String(raw.dropFirst(CareReminderNotificationFactory.prefix.count))
+                if CareReminderReceipts.canonicalOwner(of: id) == input.lease.ownerId,
+                   token?.receipts.entries[id] == nil,
+                   token?.receipts.blockedIdentifiers.contains(id) != true { continue }
+                // Raw OS absence grants no cancellation proof or scheduling authority.
+                try await remove(raw, entry: nil)
+            }
+        }
+
+        func run(privacyCleanup: Bool = false) async -> Result {
             do {
-                token = try await checked {
-                    try await input.store.beginCareReminderReceipts(context: input.lease, authority: input.authority)
-                }
-                let authorization = try await checked { try await notifications.authorization() }
                 try await readInventory()
                 // A cold known owner may inherit another owner's OS remnants. Only strict raw
                 // identities establish foreign ownership; never consult a foreign ledger/payload.
@@ -403,6 +421,21 @@ final class CareReminderScheduler: ObservableObject {
                     return raw
                 })
                 for raw in foreignRaw.sorted() { try await remove(raw, entry: nil) }
+                token = try await checked {
+                    try await input.store.beginCareReminderReceipts(context: input.lease, authority: input.authority)
+                }
+                if privacyCleanup {
+                    if let state = input.state, state.ownerId != input.lease.ownerId { throw Failure.scope }
+                    try await normalize(CareReminderScheduler.plan(input), observeExisting: input.state != nil)
+                    let raws = Set((inventory.pending + inventory.delivered).map { $0.rawIdentifier })
+                    for raw in raws.sorted() where raw.hasPrefix(CareReminderNotificationFactory.prefix) {
+                        let id = String(raw.dropFirst(CareReminderNotificationFactory.prefix.count))
+                        try await remove(raw, entry: input.state == nil ? nil : token?.receipts.entries[id])
+                    }
+                    return result(failed: untrustedInventory)
+                }
+                let authorization = try await checked { try await notifications.authorization() }
+                try await readInventory()
                 // Presentation unknown is NOT logout or permission to cancel same-owner requests.
                 guard let state = input.state else { return result(failed: false, deferred: true) }
                 guard state.ownerId == input.lease.ownerId else { throw Failure.scope }
@@ -470,6 +503,11 @@ final class CareReminderScheduler: ObservableObject {
                 try await readInventory()
                 return result(failed: false)
             } catch {
+                if privacyCleanup {
+                    // Keep failure visible and the worker latch set after best-effort cleanup.
+                    // checked() enforces the original lease/revision on every fallback await.
+                    do { try await privacyFallback() } catch {}
+                }
                 return result(failed: true)
             }
         }
