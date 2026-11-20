@@ -6,7 +6,7 @@ struct CareReminderPlan: Sendable, Equatable {
         case notDetermined, authorized, denied
     }
 
-    enum Occurrence: Sendable, Equatable {
+    enum Occurrence: Codable, Sendable, Equatable {
         case routine(ruleId: UUID)
         case firstAid(controlId: UUID)
     }
@@ -63,15 +63,8 @@ struct CareReminderPlan: Sendable, Equatable {
         func append(plantId: UUID, occurrence: Occurrence, due: String) {
             guard let fire = Self.resolve(sourceYMD: due, hour: hour, timeZone: timeZone),
                   fire > now, state.verifiedAccessUntil.map({ fire < $0 }) ?? true else { return }
-            let prefix = "care/\(expectedOwnerId.uuidString.lowercased())/\(plantId.uuidString.lowercased())"
-            let id: String
-            switch occurrence {
-            case .routine(let ruleId):
-                id = "\(prefix)/routine/\(ruleId.uuidString.lowercased())/\(due)"
-            case .firstAid(let controlId):
-                // A moved control remains the same occurrence, unlike the Today UI check identity.
-                id = "\(prefix)/first-aid/\(controlId.uuidString.lowercased())"
-            }
+            let id = Self.identity(ownerId: expectedOwnerId, plantId: plantId,
+                                   occurrence: occurrence, sourceDueYMD: due)
             proposals.append(Candidate(
                 id: id, ownerId: expectedOwnerId, plantId: plantId, occurrence: occurrence,
                 sourceDueYMD: due, absoluteFireDate: fire, locale: locale
@@ -90,6 +83,17 @@ struct CareReminderPlan: Sendable, Equatable {
         let unique = Self.orderedUnique(proposals)
         candidates = unique
         requests = optedIn && authorization == .authorized ? Array(unique.prefix(Self.capacity)) : []
+    }
+
+    /// Shared exact identity format; a moved first-aid control remains the same opportunity.
+    static func identity(ownerId: UUID, plantId: UUID, occurrence: Occurrence, sourceDueYMD: String) -> String {
+        let prefix = "care/\(ownerId.uuidString.lowercased())/\(plantId.uuidString.lowercased())"
+        switch occurrence {
+        case .routine(let ruleId):
+            return "\(prefix)/routine/\(ruleId.uuidString.lowercased())/\(sourceDueYMD)"
+        case .firstAid(let controlId):
+            return "\(prefix)/first-aid/\(controlId.uuidString.lowercased())"
+        }
     }
 
     /// Duplicate identities, including moved controls, choose the earliest proposal deterministically.

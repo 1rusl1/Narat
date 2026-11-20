@@ -3,6 +3,153 @@ import SwiftData
 @testable import Plants
 
 extension CollectionWireTests {
+    private var receiptNow: Date { SQLTimestamp.date(from: "2026-11-20T00:00:00Z")! }
+
+    private func receiptCandidate(
+        due: String = "2026-11-25", hour: Int = 9, zone: TimeZone? = nil, locale: String = "pl",
+        owner: UUID? = nil, occurrence: CareReminderPlan.Occurrence? = nil, id: String? = nil
+    ) throws -> CareReminderPlan.Candidate {
+        let owner = owner ?? syncOwner
+        let occurrence = occurrence ?? .firstAid(controlId: operationId)
+        return CareReminderPlan.Candidate(
+            id: id ?? CareReminderPlan.identity(ownerId: owner, plantId: serverPlantId,
+                occurrence: occurrence, sourceDueYMD: due),
+            ownerId: owner, plantId: serverPlantId, occurrence: occurrence, sourceDueYMD: due,
+            absoluteFireDate: try XCTUnwrap(CareReminderPlan.resolve(
+                sourceYMD: due, hour: hour, timeZone: zone ?? TimeZone(secondsFromGMT: 0)!)), locale: locale)
+    }
+
+    private func coldReceipts(_ ledger: CareReminderReceipts) throws -> CareReminderReceipts {
+        try JSONDecoder().decode(CareReminderReceipts.self, from: JSONEncoder().encode(ledger))
+    }
+
+    func testReminderReceiptsCodecRejectsCorruptAndForeignMetadata() throws {
+        let candidate = try receiptCandidate()
+        var ledger = CareReminderReceipts(ownerId: syncOwner)
+        XCTAssertEqual(try ledger.prepare(candidate, now: receiptNow), .newlyPrepared)
+        XCTAssertEqual(try coldReceipts(ledger), ledger)
+        XCTAssertNoThrow(try ledger.validate(expectedOwner: syncOwner))
+        XCTAssertThrowsError(try ledger.validate(expectedOwner: otherSyncOwner))
+        let data = try JSONEncoder().encode(ledger)
+        let original = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        for mutation in 0..<11 {
+            var wire = original
+            var records = wire["entries"] as! [[String: Any]]
+            var entry = records[0]["entry"] as! [String: Any]
+            switch mutation {
+            case 0: wire["version"] = 2
+            case 1: wire.removeValue(forKey: "version")
+            case 2: entry["ownerId"] = otherSyncOwner.uuidString
+            case 3: entry["id"] = "care/malformed"
+            case 4: entry["phase"] = "delivered"
+            case 5: entry["sourceDueYMD"] = "2026-02-30"
+            case 6: records[0]["key"] = "wrong-key"
+            case 7: break // Duplicate record below.
+            case 8: entry["phase"] = "cancelledBeforeFire" // Missing proof.
+            case 9: entry["currentFireDate"] = "NaN"
+            default: entry["originalFireDate"] = (entry["originalFireDate"] as! Double) + 1
+            }
+            records[0]["entry"] = entry
+            if mutation == 7 { records.append(records[0]) }
+            wire["entries"] = records
+            XCTAssertThrowsError(try JSONDecoder().decode(CareReminderReceipts.self,
+                from: JSONSerialization.data(withJSONObject: wire)), "mutation \(mutation)")
+        }
+    }
+
+    func testReminderReceiptsRepeatedPrepareACKAndElapsedStayConsumedAfterCodec() throws {
+        let candidate = try receiptCandidate()
+        for armed in [false, true] {
+            var ledger = CareReminderReceipts(ownerId: syncOwner)
+            XCTAssertEqual(try ledger.prepare(candidate, now: receiptNow), .newlyPrepared)
+            let attempt = try XCTUnwrap(ledger.entries[candidate.id]?.attemptId)
+            XCTAssertEqual(try ledger.prepare(candidate, now: receiptNow), .existing)
+            XCTAssertFalse(try ledger.acknowledge(id: candidate.id, attemptId: UUID(), now: receiptNow))
+            if armed {
+                XCTAssertTrue(try ledger.acknowledge(id: candidate.id, attemptId: attempt, now: receiptNow))
+            }
+            ledger = try coldReceipts(ledger)
+            let changed = try receiptCandidate(due: "2026-11-28", hour: 11,
+                zone: TimeZone(identifier: "America/New_York"), locale: "en")
+            XCTAssertEqual(changed.id, candidate.id)
+            XCTAssertEqual(try ledger.prepare(changed, now: receiptNow), .blocked)
+            XCTAssertEqual(try ledger.prepare(changed, now: candidate.absoluteFireDate), .blocked)
+            XCTAssertEqual(ledger.entries[candidate.id]?.phase, .spent)
+            ledger = try coldReceipts(ledger)
+            XCTAssertEqual(try ledger.prepare(changed,
+                now: candidate.absoluteFireDate.addingTimeInterval(3600)), .blocked)
+            XCTAssertFalse(try ledger.acknowledge(id: candidate.id, attemptId: attempt, now: receiptNow))
+        }
+    }
+
+    func testReminderReceiptsVerifiedCancellationPreservesOriginalAndFencesOldACK() throws {
+        let candidate = try receiptCandidate()
+        var ledger = CareReminderReceipts(ownerId: syncOwner)
+        _ = try ledger.prepare(candidate, now: receiptNow)
+        let oldAttempt = try XCTUnwrap(ledger.entries[candidate.id]?.attemptId)
+        XCTAssertTrue(try ledger.cancel(id: candidate.id, attemptId: oldAttempt,
+            proof: .removedAndReadBackAbsent(confirmedAt: receiptNow), now: receiptNow))
+        let cancelled = try coldReceipts(ledger)
+        XCTAssertEqual(cancelled.entries[candidate.id]?.phase, .cancelledBeforeFire)
+        ledger = cancelled
+        let changed = try receiptCandidate(due: "2026-11-28", hour: 10)
+        XCTAssertEqual(try ledger.prepare(changed, now: receiptNow), .newlyPrepared)
+        XCTAssertFalse(try ledger.acknowledge(id: candidate.id, attemptId: oldAttempt, now: receiptNow))
+        let entry = try XCTUnwrap(ledger.entries[candidate.id])
+        XCTAssertEqual(entry.originalFireDate, candidate.absoluteFireDate)
+        XCTAssertEqual(entry.currentFireDate, changed.absoluteFireDate)
+        XCTAssertEqual(entry.cancellation, cancelled.entries[candidate.id]?.cancellation)
+        XCTAssertTrue(try ledger.acknowledge(id: candidate.id, attemptId: entry.attemptId, now: receiptNow))
+        XCTAssertEqual(try coldReceipts(ledger), ledger)
+        XCTAssertNoThrow(try ledger.validateReplacement(of: cancelled))
+        XCTAssertThrowsError(try CareReminderReceipts(ownerId: syncOwner).validateReplacement(of: ledger))
+    }
+
+    func testReminderReceiptsMissingFailedLateProofAndUnknownNeverRearm() throws {
+        let candidate = try receiptCandidate()
+        let changed = try receiptCandidate(due: "2026-11-28")
+        let proofs: [CareReminderReceipts.RemovalProof] = [
+            .missing, .readbackFailed,
+            .removedAndReadBackAbsent(confirmedAt: candidate.absoluteFireDate),
+            .removedAndReadBackAbsent(confirmedAt: candidate.absoluteFireDate.addingTimeInterval(1))
+        ]
+        for (index, proof) in proofs.enumerated() {
+            var ledger = CareReminderReceipts(ownerId: syncOwner)
+            _ = try ledger.prepare(candidate, now: receiptNow)
+            let attempt = try XCTUnwrap(ledger.entries[candidate.id]?.attemptId)
+            let now = index < 2 ? receiptNow : candidate.absoluteFireDate.addingTimeInterval(Double(index - 2))
+            XCTAssertFalse(try ledger.cancel(id: candidate.id, attemptId: attempt, proof: proof, now: now))
+            ledger = try coldReceipts(ledger)
+            XCTAssertEqual(try ledger.prepare(changed, now: receiptNow), .blocked)
+        }
+        for delivered in [false, true] {
+            var ledger = CareReminderReceipts(ownerId: syncOwner)
+            _ = try ledger.prepare(candidate, now: receiptNow)
+            try ledger.observe(id: candidate.id, now: receiptNow, delivered: delivered, unknown: !delivered)
+            ledger = try coldReceipts(ledger)
+            XCTAssertEqual(try ledger.prepare(changed, now: receiptNow), .blocked)
+            XCTAssertEqual(ledger.entries[candidate.id]?.phase, delivered ? .spent : .uncertain)
+        }
+    }
+
+    func testReminderReceiptsRejectDeadForeignMismatchAndRetainOldRoutine() throws {
+        let candidate = try receiptCandidate(occurrence: .routine(ruleId: operationId))
+        var ledger = CareReminderReceipts(ownerId: syncOwner)
+        XCTAssertThrowsError(try ledger.prepare(candidate, now: candidate.absoluteFireDate))
+        XCTAssertThrowsError(try ledger.prepare(receiptCandidate(owner: otherSyncOwner), now: receiptNow))
+        XCTAssertThrowsError(try ledger.prepare(receiptCandidate(id: "care/invalid"), now: receiptNow))
+        XCTAssertThrowsError(try ledger.prepare(candidate, now: Date(timeIntervalSinceReferenceDate: .infinity)))
+        _ = try ledger.prepare(candidate, now: receiptNow)
+        try ledger.observe(id: candidate.id, now: candidate.absoluteFireDate)
+        let spent = try coldReceipts(ledger)
+        let next = try receiptCandidate(due: "2026-11-26", occurrence: .routine(ruleId: operationId))
+        XCTAssertNotEqual(next.id, candidate.id)
+        XCTAssertEqual(try ledger.prepare(next, now: receiptNow), .newlyPrepared)
+        XCTAssertEqual(ledger.entries.count, 2)
+        XCTAssertEqual(ledger.entries[candidate.id], spent.entries[candidate.id])
+        XCTAssertNoThrow(try ledger.validateReplacement(of: spent))
+    }
+
     private func reminderRow(_ id: UUID, due: String = "2026-11-26",
                              controls: [[String: Any]] = []) -> [String: Any] {
         var row = overviewRow(id, dated: true, controls: controls)
@@ -112,6 +259,11 @@ extension CollectionWireTests {
         XCTAssertNotEqual(changed.sourceDueYMD, first.sourceDueYMD)
         XCTAssertNotEqual(changed.absoluteFireDate, first.absoluteFireDate)
         XCTAssertEqual(changed.locale, "en")
+        var receipts = CareReminderReceipts(ownerId: syncOwner)
+        let beforeFire = SQLTimestamp.date(from: "2026-11-20T00:00:00Z")!
+        XCTAssertEqual(try receipts.prepare(first, now: beforeFire), .newlyPrepared)
+        receipts = try coldReceipts(receipts)
+        XCTAssertEqual(try receipts.prepare(changed, now: beforeFire), .blocked)
         let routine = try XCTUnwrap(plan.candidates.first { $0.occurrence == .routine(ruleId: operationId) })
         XCTAssertTrue(routine.id.hasSuffix("/routine/\(operationId.uuidString.lowercased())/2026-11-26"))
         XCTAssertFalse(moved.candidates.contains { $0.id == routine.id })
