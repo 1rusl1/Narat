@@ -100,6 +100,22 @@ struct RootContainerView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var catalogue: CatalogueConnection?
+    @StateObject private var careReminder = CareReminderLifecycle(
+        notifications: SystemCareReminderNotifications(), defaults: .standard,
+        clock: { Date() }, timeZone: { TimeZone.current }
+    )
+    @State private var careReminderContext: CareReminderLifecycle.Context?
+    @State private var careReminderClockRevision: UInt64 = 0
+    private struct CareReminderRead: Equatable {
+        let connection: ObjectIdentifier?
+        let auth: CatalogueAuthClassification
+        let locale: SupportedLocale
+    }
+    private struct CareReminderClockRead: Equatable {
+        let auth: CareReminderRead
+        let deadline: Date?
+        let revision: UInt64
+    }
     @State private var trialReminder = TrialReminderScheduler()
     @State private var careLifecycle = CareLifecycleCoordinator()
     @State private var careReconnectRevision: UInt64 = 0
@@ -164,6 +180,23 @@ struct RootContainerView: View {
 #else
         false
 #endif
+    }
+
+    private var isolatesCareReminders: Bool {
+#if DEBUG
+        fixtureContext != nil || ProcessInfo.processInfo.arguments.contains {
+            $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
+                || $0.hasPrefix("--today-fixture") || $0 == "--narat-staging-analysis"
+        }
+#else
+        false
+#endif
+    }
+
+    private var careReminderRead: CareReminderRead {
+        CareReminderRead(connection: catalogue.map { ObjectIdentifier($0) },
+                         auth: catalogue?.authClassification ?? .unresolved,
+                         locale: languageStore.currentLocale)
     }
 
     private var usesLegacyWelcome: Bool {
@@ -232,7 +265,10 @@ struct RootContainerView: View {
                             visible: todayContext.map { isTodayCurrent($0) && !todayFenced } ?? false,
                             unavailable: todayUnavailable, polish: isPolish, busy: opening != nil,
                             retry: { careReconnectRevision &+= 1 },
-                            localBoundary: { if let context = todayContext { requestTodayLocal(context) } },
+                            localBoundary: {
+                                careReminderCachePublished()
+                                if let context = todayContext { requestTodayLocal(context) }
+                            },
                             openPlant: openTodayPlant,
                             collection: { open(.collection) },
                             browse: {
@@ -355,6 +391,11 @@ struct RootContainerView: View {
         }
         .task { await prepareCatalogue() }
         .task(id: reminderRead) { await observeTrialReminder(reminderRead) }
+        .task(id: careReminderRead) { await observeCareReminder(careReminderRead) }
+        .task(id: CareReminderClockRead(auth: careReminderRead, deadline: careReminder.state?.verifiedAccessUntil,
+                                       revision: careReminderClockRevision)) {
+            await observeCareReminderClock()
+        }
         .task { await observeCareConnectivity() }
         .task(id: CareLifecycleRead(snapshot: catalogue?.snapshot, active: scenePhase == .active,
                                     reconnectRevision: careReconnectRevision, locale: languageStore.currentLocale)) {
@@ -362,7 +403,14 @@ struct RootContainerView: View {
         }
         .task(id: todayModel.scope) { await observeTodaySignals(canonical: false) }
         .task(id: todayModel.scope) { await observeTodaySignals(canonical: true) }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+            careReminderClockChanged()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            careReminderClockChanged()
+        }
         .onChange(of: scenePhase) { _, phase in
+            if !isolatesCareReminders { careReminder.setSceneActive(phase == .active) }
             if phase != .active { clearToday(); careLifecycle.suspend() }
         }
         .onChange(of: languageStore.currentLocale) { _, locale in
@@ -371,6 +419,7 @@ struct RootContainerView: View {
             }
         }
         .onDisappear {
+            if !isolatesCareReminders { careReminder.setSceneActive(false) }
             clearToday()
             careLifecycle.suspend()
             #if DEBUG
@@ -469,6 +518,83 @@ struct RootContainerView: View {
             guard !Task.isCancelled else { return }
             if previous == false, connected { careReconnectRevision &+= 1 }
             previous = connected
+        }
+    }
+
+    private func observeCareReminder(_ read: CareReminderRead) async {
+        guard !Task.isCancelled, careReminderRead == read else { return }
+        careReminderContext = nil
+        // Launch flags protect bootstrap, before fixtureContext has been assigned.
+        guard !isolatesCareReminders else { careReminder.suspendAuth(); return }
+        careReminder.setSceneActive(scenePhase == .active)
+        switch read.auth {
+        case .unresolved:
+            careReminder.suspendAuth()
+        case .anonymous, .signedOut:
+            guard careReminderRead == read else { return }
+            careReminder.logout()
+        case .permanent(let expected):
+            careReminder.suspendAuth()
+            guard let connection = catalogue, let store = connection.store,
+                  let authority = connection.apiClient?.syncAuthority,
+                  let engine = connection.syncEngine else { return }
+            let language = languageStore
+            do {
+                guard careReminderRead == read else { return }
+                let lease = try await connection.collectionLease(expected: expected)
+                guard !Task.isCancelled, !isolatesCareReminders, careReminderRead == read else { return }
+                try authority.withPermanentBoundValid(lease) {}
+                let context = CareReminderLifecycle.Context(
+                    lease: lease, store: store, authority: authority, engine: engine,
+                    locale: read.locale.rawValue,
+                    isCurrent: {
+                        connection.authClassification == .permanent(expected)
+                            && language.currentLocale == read.locale
+                            && (try? authority.withPermanentBoundValid(lease) {}) != nil
+                    }
+                )
+                careReminderContext = context
+                careReminder.accept(context)
+            } catch {
+                guard !Task.isCancelled, careReminderRead == read else { return }
+                careReminder.suspendAuth()
+            }
+        }
+    }
+
+    private func careReminderCachePublished(_ source: TodayContext? = nil) {
+        guard !isolatesCareReminders, let context = careReminderContext,
+              let connection = catalogue, connection.apiClient?.syncAuthority === context.authority,
+              context.isCurrent() else { return }
+        if let source {
+            guard connection.authClassification == .permanent(source.snapshot),
+                  source.lease.ownerId == context.lease.ownerId,
+                  source.lease.generation == context.lease.generation,
+                  source.lease.session == context.lease.session else { return }
+        }
+        careReminder.cachePublicationOrTimeChanged()
+    }
+
+    private func careReminderClockChanged() {
+        guard !isolatesCareReminders, let connection = catalogue,
+              case .permanent = connection.authClassification else { return }
+        careReminderClockRevision &+= 1
+        careReminderCachePublished()
+    }
+
+    private func observeCareReminderClock() async {
+        guard !isolatesCareReminders, let connection = catalogue,
+              case .permanent(let expected) = connection.authClassification else { return }
+        let locale = languageStore.currentLocale
+        while !Task.isCancelled {
+            let boundary = TodayCalendar.boundary(now: Date(), deadline: careReminder.state?.verifiedAccessUntil,
+                                                  timeZone: .current)
+            do { try await Task.sleep(for: .seconds(max(0, boundary.timeIntervalSinceNow))) }
+            catch { return }
+            guard !Task.isCancelled, !isolatesCareReminders,
+                  connection.authClassification == .permanent(expected),
+                  languageStore.currentLocale == locale else { return }
+            careReminderCachePublished()
         }
     }
 
@@ -632,7 +758,15 @@ struct RootContainerView: View {
         var publicationRevision: UInt64?
         await todayModel.refresh(scope: context.scope) {
             try requireToday(context)
-            let result = try await repository.refreshCareOverview(locale: context.scope.locale, context: context.lease)
+            let result: CareOverviewViewState
+            do {
+                result = try await repository.refreshCareOverview(locale: context.scope.locale, context: context.lease)
+            } catch {
+                await Task { @MainActor in careReminderCachePublished(context) }.value
+                throw error
+            }
+            // Fresh task: SDK proof must survive cancellation of the Today caller.
+            await Task { @MainActor in careReminderCachePublished(context) }.value
             try requireToday(context)
             if result.failure == nil { publicationRevision = todayRevision }
             return result

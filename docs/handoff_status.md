@@ -1,5 +1,25 @@
 # Narat — текущий статус и передача работы
 
+## Root-кандидат сохранён; нужна полная read-only приёмка — 20 ноября 2026
+
+Developer1 исходного Root run завершился за249.827с; патч применён только к
+`PlantsApp.swift`.149 automation/diff прошли. Controller был приостановлен
+для внешнего бюджетного допуска повторов; активный Xcode child не прерывался
+и завершил423/423 теста PASS. Лишь затем controller завершён штатным INT/CONT,
+exit130/WAITING. Исходный run не имеет Review/QA и не принят.
+
+Добавлены ровно две разрешённые controller-поправки в том же файле: независимые
+Root clock/timezone receivers с clockRevision; удаление только locale-условия
+из owner/SDK cache hook. Все прочие guards и старые assertions сохранены.
+Происхождение и hashes — в `tester-care-reminder-root-controller-candidate.md`.
+Положительная System-проверка locale-transition пока не выполнена.
+
+Следующий шаг — целиком read-only candidate_base30d5118, те же423Swift/149/MCP/
+care13/Today6/PL и highReviewQA. В этом проходе нет Developer, провал проверки
+не запустит автоматический Dev2. Любой repair требует свежего usage<93;
+hard95%, сброс запрещён. Root/settings/delivery до полной приёмки не объявлять
+готовыми. PBX и другие файлы продукта не менялись; нужна техническая приёмка.
+
 ## Подготовлен узкий Root-only этап — 20 ноября 2026
 
 Документальный коммит родителя `f63da6a` интегрирован после принятого Core
