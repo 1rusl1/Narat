@@ -8826,14 +8826,20 @@ extension CollectionWireTests {
     @MainActor
     private func overviewCanonical(
         _ store: LocalStore, authority: SyncSessionAuthority, lease: SyncSessionLease,
-        ids: [UUID], fullRefresh: Bool = false
+        ids: [UUID], fullRefresh: Bool = false, personalName: String? = nil,
+        revision: Int = 2, reminderHour: Int = 9
     ) async throws {
         var object = syncObject()
+        var profile = try XCTUnwrap(object["profile"] as? [String: Any])
+        profile["reminder_hour_local"] = reminderHour
+        object["profile"] = profile
         object["until"] = overviewSyncTime
         object["next_since"] = overviewSyncTime
         object["changes"] = ids.sorted { $0.uuidString < $1.uuidString }.map { id in
             var row = syncChange(overviewSyncTime, id: id.uuidString)
-            row["data"] = ["id": id.uuidString, "revision": 2, "care_revision": 2] as [String: Any]
+            var data: [String: Any] = ["id": id.uuidString, "revision": revision, "care_revision": 2]
+            if let personalName { data["personal_name"] = personalName }
+            row["data"] = data
             return row
         }
         let page = try JSONDecoder().decode(SyncWirePageDTO.self, from: Data(syncJSON(object).utf8))
@@ -8871,6 +8877,209 @@ extension CollectionWireTests {
         XCTAssertEqual(rows.count, 1)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(XCTUnwrap(rows.first).payloadJSON.utf8))
             as? [String: Any])
+    }
+
+
+    @MainActor
+    func testOverviewLocalPresentationSharesCanonicalEpochAndPendingEvidence() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let container = try diskContainer(url)
+        let store = LocalStore(modelContainer: container)
+        let (authority, lease) = try overviewBinding()
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId])
+        let snapshot = try overviewSnapshot([overviewPage([overviewRow(serverPlantId, dated: true)])])
+        let token = try await store.beginCareOverviewRead(locale: "pl", context: lease, authority: authority)
+        let committed = try await store.finishCareOverviewRead(token, snapshot: snapshot, authority: authority)
+        XCTAssertEqual(committed.ownerId, syncOwner)
+        XCTAssertEqual(committed.canonicalGeneration, committed.snapshotGeneration)
+        XCTAssertNotNil(committed.canonicalGeneration)
+        XCTAssertEqual(committed.cached?.state, .cached)
+        XCTAssertTrue(committed.canonicalAccessKnown)
+        XCTAssertNil(committed.entitlement) // Known canonical absence.
+        let savedJSON = try XCTUnwrap(overviewWrapper(url)["snapshotJSON"] as? String)
+        var expected: [OutboxEntrySnapshot] = []
+        for (command, payload) in [
+            ("plant.delete", "{}"), ("plant.edit", "{\"personal_name\":\"Pending\"}"),
+            ("care.record", "{\"action_code\":\"water\"}"),
+            ("profile.update", "{\"reminder_hour_local\":17}")
+        ] {
+            expected.append(try await store.enqueueCommand(
+                ownerId: syncOwner, plantId: command == "profile.update" ? nil : serverPlantId,
+                commandName: command, payloadJSON: payload
+            ))
+        }
+        _ = try await store.enqueueCommand(
+            ownerId: otherSyncOwner, plantId: serverPlantId, commandName: "plant.delete", payloadJSON: "{}"
+        )
+        let disk = ModelContext(container)
+        for (index, type) in ["care_entries", "care_tasks", "care_observations", "first_aid_followups"].enumerated() {
+            let row = SyncedEntityRecord(
+                ownerId: syncOwner, entityType: type, entityId: UUID(),
+                updatedAt: try XCTUnwrap(SQLTimestamp.date(from: overviewSyncTime)),
+                deletedAt: index == 0 ? Date(timeIntervalSince1970: 1) : nil,
+                payloadJSON: try syncJSON(["plant_id": serverPlantId.uuidString, "state": "completed"])
+            )
+            row.updatedAtRaw = overviewSyncTime
+            disk.insert(row)
+        }
+        disk.insert(SyncedEntityRecord(
+            ownerId: otherSyncOwner, entityType: "care_entries", entityId: UUID(),
+            updatedAt: Date(), payloadJSON: "{}"
+        ))
+        disk.insert(SyncedEntityRecord(
+            ownerId: otherSyncOwner, entityType: "plants", entityId: otherSyncOwner,
+            updatedAt: Date(), payloadJSON: try syncJSON([
+                "id": otherSyncOwner.uuidString, "revision": 9, "care_revision": 9
+            ])
+        ))
+        try disk.save()
+        // Same care_revision, different canonical name/revision/profile, same raw watermark.
+        try await overviewCanonical(
+            store, authority: authority, lease: lease, ids: [serverPlantId],
+            personalName: "Canonical", revision: 3, reminderHour: 11
+        )
+        let before = try overviewDiskState(url)
+        let presentation = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertEqual(presentation.ownerId, syncOwner)
+        XCTAssertNotEqual(presentation.canonicalGeneration, committed.canonicalGeneration)
+        XCTAssertEqual(presentation.snapshotGeneration, committed.snapshotGeneration)
+        XCTAssertEqual(presentation.canonicalGeneration?.uuidString.lowercased(),
+                       (try overviewWrapper(url)["canonicalGeneration"] as? String)?.lowercased())
+        XCTAssertEqual(presentation.cards.map(\.id), [serverPlantId])
+        XCTAssertEqual(presentation.cards.first?.personalName, "Canonical")
+        XCTAssertEqual(presentation.cards.first?.revision, 3)
+        XCTAssertEqual(presentation.cards.first?.careRevision, 2)
+        XCTAssertEqual(presentation.profile?.reminderHourLocal, 11)
+        XCTAssertTrue(presentation.canonicalAccessKnown)
+        XCTAssertEqual(presentation.pending, expected)
+        XCTAssertEqual(presentation.pending.last?.payloadJSON, "{\"reminder_hour_local\":17}")
+        XCTAssertEqual(presentation.cached?.state, .stale)
+        XCTAssertEqual(presentation.cached?.fetchedAt, committed.cached?.fetchedAt)
+        XCTAssertEqual(presentation.cached?.snapshotLocale, "pl")
+        XCTAssertEqual(presentation.cached?.snapshot.plants.count, 1)
+        let oldDue = try XCTUnwrap(committed.cached?.snapshot.plants.first?.careRecommendation.validated(for: serverPlantId))
+        let newDue = try XCTUnwrap(presentation.cached?.snapshot.plants.first?.careRecommendation.validated(for: serverPlantId))
+        XCTAssertEqual(newDue.nextCheck?.dueOn, oldDue.nextCheck?.dueOn)
+        XCTAssertEqual(newDue.routineContext?.check.ruleId, oldDue.routineContext?.check.ruleId)
+        let evidence = presentation.careRows.filter { $0.entityType != "plants" }
+        XCTAssertEqual(evidence.count, 4)
+        XCTAssertTrue(evidence.allSatisfy { $0.updatedAtRaw == overviewSyncTime && $0.payloadJSON.contains(serverPlantId.uuidString) })
+        XCTAssertNotNil(evidence.first { $0.entityType == "care_entries" }?.deletedAt)
+        XCTAssertEqual(try overviewWrapper(url)["snapshotJSON"] as? String, savedJSON)
+        XCTAssertEqual(try overviewDiskState(url), before)
+        let pendingAfter = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(pendingAfter, expected)
+    }
+
+    @MainActor
+    func testOverviewLocalPublicationRequiresWholeCanonicalSetIncludingEmptyOwner() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let (authority, lease) = try overviewBinding()
+        let ids = [serverPlantId, otherSyncOwner].sorted { $0.uuidString < $1.uuidString }
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: ids)
+        let full = try overviewSnapshot([overviewPage(ids.map { overviewRow($0) })])
+        let token = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: authority)
+        try await store.finishCareOverviewRead(token, snapshot: full, authority: authority)
+        let extra = UUID(uuidString: "ffffffff-ffff-4fff-8fff-ffffffffffff")!
+        for responseIDs in [[], [ids[0]], (ids + [extra]).sorted { $0.uuidString < $1.uuidString }] {
+            let response = try overviewSnapshot([overviewPage(responseIDs.map { overviewRow($0) })])
+            let request = try await store.beginCareOverviewRead(locale: "pl", context: lease, authority: authority)
+            let before = try overviewDiskState(url)
+            do {
+                try await store.finishCareOverviewRead(request, snapshot: response, authority: authority)
+                XCTFail("Incomplete or extra plant set must require canonical sync")
+            } catch CareOverviewStoreError.needsCanonicalSync {}
+            XCTAssertEqual(try overviewDiskState(url), before)
+        }
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: [], fullRefresh: true)
+        let empty = try overviewSnapshot([overviewPage([])])
+        let request = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: authority)
+        let result = try await store.finishCareOverviewRead(request, snapshot: empty, authority: authority)
+        XCTAssertTrue(result.cards.isEmpty)
+        XCTAssertEqual(result.cached?.snapshot.plants.count, 0)
+        XCTAssertEqual(result.cached?.state, .cached)
+        XCTAssertEqual(result.canonicalGeneration, result.snapshotGeneration)
+    }
+
+    @MainActor
+    func testOverviewLocalUnknownAccessRetainsCacheWithoutAssumingFree() async throws {
+        for mode in 0..<6 {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let container = try diskContainer(url)
+            let store = LocalStore(modelContainer: container)
+            let (authority, lease) = try overviewBinding()
+            try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId])
+            let snapshot = try overviewSnapshot([overviewPage([overviewRow(serverPlantId)])])
+            let token = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: authority)
+            try await store.finishCareOverviewRead(token, snapshot: snapshot, authority: authority)
+            let saved = try XCTUnwrap(overviewWrapper(url)["snapshotJSON"] as? String)
+            let disk = ModelContext(container)
+            let checkpoint = try XCTUnwrap(disk.fetch(FetchDescriptor<SyncCheckpointRecord>()).first)
+            switch mode {
+            case 0: checkpoint.watermarkRaw = nil
+            case 1: checkpoint.syncProfileJSON = nil
+            case 2: checkpoint.syncProfileJSON = "{}"
+            case 3: checkpoint.syncEntitlementJSON = "{}"
+            case 4: checkpoint.syncEntitlementJSON = "null"
+            default: disk.delete(checkpoint)
+            }
+            try disk.save()
+            let before = try overviewDiskState(url)
+            let result = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+            XCTAssertFalse(result.canonicalAccessKnown, "mode \(mode)")
+            XCTAssertNotNil(result.cached)
+            XCTAssertEqual(result.cards.map(\.id), [serverPlantId])
+            if mode == 3 || mode == 4 {
+                XCTAssertEqual(result.profile?.reminderHourLocal, 9)
+                XCTAssertNil(result.entitlement)
+            }
+            XCTAssertEqual(try overviewWrapper(url)["snapshotJSON"] as? String, saved)
+            XCTAssertEqual(try overviewDiskState(url), before)
+        }
+    }
+
+    @MainActor
+    func testOverviewLocalReadIsLazyAndRejectsOriginalLeaseABAAndCancellation() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let (authority, lease) = try overviewBinding()
+        for canonical in [false, true] {
+            if canonical {
+                try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId])
+            }
+            let before = try overviewDiskState(url)
+            let result = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+            XCTAssertNil(result.cached)
+            XCTAssertNil(result.canonicalGeneration)
+            XCTAssertNil(result.snapshotGeneration)
+            XCTAssertEqual(result.canonicalAccessKnown, canonical)
+            XCTAssertEqual(result.cards.count, canonical ? 1 : 0)
+            XCTAssertTrue(result.pending.isEmpty)
+            XCTAssertEqual(try overviewDiskState(url), before)
+            let rows = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "local_care_overview")
+            XCTAssertTrue(rows.isEmpty)
+        }
+        let before = try overviewDiskState(url)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            _ = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+        }
+        do {
+            try await task.value
+            XCTFail("Cancelled local read must fail")
+        } catch is CancellationError {}
+        authority.bind(nil)
+        authority.bind(try profileSession())
+        do {
+            _ = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+            XCTFail("Original lease must fail after owner ABA")
+        } catch SyncWireValidationError.invalidSession {}
+        XCTAssertEqual(try overviewDiskState(url), before)
     }
 
     @MainActor

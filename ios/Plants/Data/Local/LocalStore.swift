@@ -347,6 +347,29 @@ struct CachedCareOverview: Sendable {
     let canonicalGenerationMatches: Bool
 }
 
+/// One local epoch; nil generation means no valid reserved wrapper exists yet.
+struct LocalCareOverviewPresentation: Sendable {
+    let ownerId: UUID
+    let canonicalGeneration: UUID?
+    let snapshotGeneration: UUID?
+    let cached: CachedCareOverview?
+    let cards: [CatalogueCardSummary]
+    let pending: [OutboxEntrySnapshot]
+    let profile: SyncWireProfileDTO?
+    let entitlement: SyncWireEntitlementDTO?
+    let canonicalAccessKnown: Bool
+    let careRows: [LocalCareOverviewRow]
+}
+
+/// Raw canonical evidence, including tombstones; never interpreted as future tasks.
+struct LocalCareOverviewRow: Sendable {
+    let entityType: String
+    let entityId: UUID
+    let payloadJSON: String
+    let updatedAtRaw: String?
+    let deletedAt: Date?
+}
+
 private struct CareOverviewCachePayload: Codable {
     var version = 1
     var canonicalGeneration = UUID()
@@ -1812,25 +1835,15 @@ public actor LocalStore {
     }
 
     public func pendingOutboxEntries(for ownerId: UUID) throws -> [OutboxEntrySnapshot] {
-        let modelContext = makeSyncContext()
+        try pendingOutboxEntries(for: ownerId, in: makeSyncContext())
+    }
+
+    private func pendingOutboxEntries(for ownerId: UUID, in disk: ModelContext) throws -> [OutboxEntrySnapshot] {
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.ownerId == ownerId },
             sortBy: [SortDescriptor(\.sequenceNumber, order: .forward)]
         )
-        let records = try modelContext.fetch(descriptor)
-        return records.map {
-            OutboxEntrySnapshot(
-                operationId: $0.operationId,
-                ownerId: $0.ownerId,
-                plantId: $0.plantId,
-                commandName: $0.commandName,
-                payloadJSON: $0.payloadJSON,
-                sequenceNumber: $0.sequenceNumber,
-                retryCount: $0.retryCount,
-                lastError: $0.lastError,
-                createdAt: $0.createdAt
-            )
-        }
+        return try disk.fetch(descriptor).map { journalSnapshot($0) }
     }
 
     /// Reads committed storage, including immediately after an isolated acknowledgement.
@@ -2214,16 +2227,83 @@ public actor LocalStore {
         context: SyncSessionLease, authority: SyncSessionAuthority
     ) throws -> CachedCareOverview? {
         try authority.withPermanentBoundValid(context) {
-            let disk = makeSyncContext()
-            let row = try careOverviewRow(ownerId: context.ownerId, in: disk)
-            guard let payload = careOverviewPayload(row, ownerId: context.ownerId),
-                  let snapshot = try payload.validatedSnapshot(ownerId: context.ownerId),
-                  let fetchedAt = payload.fetchedAt, let locale = payload.snapshotLocale else { return nil }
-            let aligned = payload.snapshotGeneration == payload.canonicalGeneration
-            return CachedCareOverview(
-                snapshot: snapshot, fetchedAt: fetchedAt, snapshotLocale: locale,
-                state: aligned ? .cached : .stale, canonicalGenerationMatches: aligned
-            )
+            try cachedCareOverview(ownerId: context.ownerId, in: makeSyncContext())
+        }
+    }
+
+    private func cachedCareOverview(ownerId: UUID, in disk: ModelContext) throws -> CachedCareOverview? {
+        let row = try careOverviewRow(ownerId: ownerId, in: disk)
+        guard let payload = careOverviewPayload(row, ownerId: ownerId),
+              let snapshot = try payload.validatedSnapshot(ownerId: ownerId),
+              let fetchedAt = payload.fetchedAt, let locale = payload.snapshotLocale else { return nil }
+        let aligned = payload.snapshotGeneration == payload.canonicalGeneration
+        return CachedCareOverview(
+            snapshot: snapshot, fetchedAt: fetchedAt, snapshotLocale: locale,
+            state: aligned ? .cached : .stale, canonicalGenerationMatches: aligned
+        )
+    }
+
+    private func careOverviewCards(ownerId: UUID, in disk: ModelContext) throws -> [CatalogueCardSummary] {
+        let rows = try disk.fetch(FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+            $0.ownerId == ownerId && $0.entityType == "plants" && $0.deletedAt == nil
+        }))
+        return try rows.map { row in
+            let card = try JSONDecoder().decode(CatalogueCardSummary.self, from: Data(row.payloadJSON.utf8))
+            guard card.id == row.entityId, card.revision > 0, card.careRevision > 0 else {
+                throw SyncWireValidationError.invalidPage
+            }
+            return card
+        }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    private func careOverviewPresentation(
+        ownerId: UUID, in disk: ModelContext
+    ) throws -> LocalCareOverviewPresentation {
+        let row = try careOverviewRow(ownerId: ownerId, in: disk)
+        let payload = careOverviewPayload(row, ownerId: ownerId)
+        let checkpoints = FetchDescriptor<SyncCheckpointRecord>(predicate: #Predicate { $0.ownerId == ownerId })
+        let checkpoint = try disk.fetch(checkpoints).first
+        let profile = checkpoint?.syncProfileJSON.flatMap {
+            try? JSONDecoder().decode(SyncWireProfileDTO.self, from: Data($0.utf8))
+        }
+        let entitlement = checkpoint?.syncEntitlementJSON.flatMap {
+            try? JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data($0.utf8))
+        }
+        let accessKnown = checkpoint?.watermarkRaw.flatMap(SQLTimestamp.microseconds(from:)) != nil
+            && profile != nil && (checkpoint?.syncEntitlementJSON == nil || entitlement != nil)
+        // Include current care evidence and tombstones without deriving or scheduling dates.
+        let types: Set<String> = [
+            "plants", "condition_snapshots", "analysis_summaries", "care_plan_summaries",
+            "care_tasks", "care_entries", "care_reversals", "schedule_changes",
+            "basic_care_memberships", "first_aid_followups", "care_observations", "recovery_transitions"
+        ]
+        let rows = try disk.fetch(FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+            $0.ownerId == ownerId
+        })).filter { types.contains($0.entityType) }.sorted {
+            ($0.entityType, $0.entityId.uuidString) < ($1.entityType, $1.entityId.uuidString)
+        }
+        return LocalCareOverviewPresentation(
+            ownerId: ownerId, canonicalGeneration: payload?.canonicalGeneration,
+            snapshotGeneration: payload?.snapshotGeneration,
+            cached: try cachedCareOverview(ownerId: ownerId, in: disk),
+            cards: try careOverviewCards(ownerId: ownerId, in: disk),
+            pending: try pendingOutboxEntries(for: ownerId, in: disk),
+            profile: profile, entitlement: entitlement, canonicalAccessKnown: accessKnown,
+            careRows: rows.map {
+                LocalCareOverviewRow(
+                    entityType: $0.entityType, entityId: $0.entityId, payloadJSON: $0.payloadJSON,
+                    updatedAtRaw: $0.updatedAtRaw, deletedAt: $0.deletedAt
+                )
+            }
+        )
+    }
+
+    /// No save, wrapper materialization, network freshness or authorization claim.
+    func readCareOverviewPresentation(
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> LocalCareOverviewPresentation {
+        try authority.withPermanentBoundValid(context) {
+            try careOverviewPresentation(ownerId: context.ownerId, in: makeSyncContext())
         }
     }
 
@@ -2243,18 +2323,27 @@ public actor LocalStore {
               let first = snapshot.pages.first,
               let overview = SQLTimestamp.microseconds(from: first.ownerWatermark), overview <= end
         else { throw CareOverviewStoreError.needsCanonicalSync }
-        for plant in snapshot.plants {
-            guard let row = try activeSyncRow("plants", id: plant.plantId, ownerId: ownerId, in: disk),
-                  let card = try? JSONDecoder().decode(CatalogueCardSummary.self, from: Data(row.payloadJSON.utf8)),
-                  card.id == plant.plantId, card.revision > 0, card.careRevision == plant.careRevision
-            else { throw CareOverviewStoreError.needsCanonicalSync }
+        let cards: [CatalogueCardSummary]
+        do {
+            cards = try careOverviewCards(ownerId: ownerId, in: disk)
+        } catch {
+            throw CareOverviewStoreError.needsCanonicalSync
+        }
+        guard Set(cards.map(\.id)).count == cards.count,
+              Set(cards.map(\.id)) == Set(snapshot.plants.map(\.plantId)) else {
+            throw CareOverviewStoreError.needsCanonicalSync
+        }
+        let revisions = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0.careRevision) })
+        guard snapshot.plants.allSatisfy({ revisions[$0.plantId] == $0.careRevision }) else {
+            throw CareOverviewStoreError.needsCanonicalSync
         }
     }
 
+    @discardableResult
     func finishCareOverviewRead(
         _ token: CareOverviewReadToken, snapshot: CareOverviewSnapshot,
         authority: SyncSessionAuthority
-    ) throws {
+    ) throws -> LocalCareOverviewPresentation {
         try authority.withPermanentBoundValid(token.lease) {
             let ownerId = token.lease.ownerId
             let disk = makeSyncContext()
@@ -2272,8 +2361,10 @@ public actor LocalStore {
                 payload.pendingRequestId = nil
                 payload.pendingRequestLocale = nil
                 try stageCareOverview(payload, row: row, ownerId: ownerId, in: disk)
+                let presentation = try careOverviewPresentation(ownerId: ownerId, in: disk)
                 try Task.checkCancellation()
                 try disk.save()
+                return presentation
             } catch {
                 disk.rollback()
                 throw error
