@@ -2,6 +2,273 @@ import XCTest
 import SwiftData
 @testable import Plants
 
+@MainActor
+private final class TodayReadBarrier {
+    private var entered = false
+    private var arrival: CheckedContinuation<Void, Never>?
+    private var release: CheckedContinuation<Void, Never>?
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { arrival = $0 }
+    }
+
+    func wait() async {
+        await withCheckedContinuation {
+            release = $0
+            entered = true
+            arrival?.resume()
+            arrival = nil
+        }
+    }
+
+    func open() {
+        release?.resume()
+        release = nil
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testTodayRefreshCannotRestoreDatesOverDurableLocalOverlay() async throws {
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let model = TodayModel()
+        let scope = model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .pl)
+        let old = try await repo.cachedCareOverview(context: lease)
+        await model.rereadLocal(scope: scope) { old }
+        XCTAssertEqual(model.state?.plants.first?.routine?.dueLocalDate, "2026-11-05")
+        let gate = TodayReadBarrier()
+        let refresh = Task { await model.refresh(scope: scope) { await gate.wait(); return old } }
+        await gate.waitUntilEntered()
+        let events = await store.localOutboxUpdates(ownerId: lease.ownerId)
+        var iterator = events.makeAsyncIterator()
+        let care = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+        try await store.enqueueSavedPlantWatering(care, context: lease, authority: api.syncAuthority)
+        let signal = await iterator.next()
+        XCTAssertNotNil(signal)
+        let localGate = TodayReadBarrier()
+        let local = Task {
+            await model.rereadLocal(scope: scope) {
+                await localGate.wait()
+                return try await repo.cachedCareOverview(context: lease)
+            }
+        }
+        await localGate.waitUntilEntered()
+        XCTAssertNil(model.state)
+        XCTAssertTrue(model.needsLocalRead)
+        XCTAssertFalse(model.refreshing)
+        localGate.open()
+        await local.value
+        XCTAssertEqual(model.state?.pending.map(\.operationId), [care.operationId])
+        XCTAssertNil(model.state?.plants.first?.routine)
+        gate.open()
+        await refresh.value
+        XCTAssertEqual(model.state?.pending.map(\.operationId), [care.operationId])
+        XCTAssertNil(model.state?.plants.first?.routine)
+        XCTAssertFalse(model.state?.plants.first?.automatedActionsAllowed ?? true)
+        XCTAssertFalse(model.readingLocal)
+        XCTAssertFalse(model.refreshing)
+        XCTAssertFalse(model.hasError)
+    }
+
+    @MainActor
+    func testTodayOverlappingLocalReadsFenceOldSuccessAndFailure() async throws {
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let old = try await repo.cachedCareOverview(context: lease)
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let latest = CareOverviewViewState(local: local, now: Date(), origin: .network)
+        for fail in [false, true] {
+            let model = TodayModel()
+            let scope = model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .pl)
+            let first = TodayReadBarrier(), second = TodayReadBarrier()
+            let a = Task {
+                await model.rereadLocal(scope: scope) {
+                    await first.wait()
+                    if fail { throw URLError(.notConnectedToInternet) }
+                    return old
+                }
+            }
+            await first.waitUntilEntered()
+            let b = Task {
+                await model.rereadLocal(scope: scope) { await second.wait(); return latest }
+            }
+            await second.waitUntilEntered()
+            first.open()
+            await a.value
+            XCTAssertNil(model.state)
+            XCTAssertTrue(model.readingLocal)
+            XCTAssertTrue(model.needsLocalRead)
+            XCTAssertFalse(model.hasError)
+            second.open()
+            await b.value
+            XCTAssertEqual(model.state?.origin, .network)
+            XCTAssertFalse(model.readingLocal)
+            XCTAssertFalse(model.needsLocalRead)
+            XCTAssertFalse(model.hasError)
+        }
+    }
+
+    @MainActor
+    func testTodayScopeABAReactivationLocaleAndSuspendFenceLateCallbacks() async throws {
+        var page = overviewPage([overviewRow(serverPlantId, dated: true)])
+        page["verified_access_until"] = NSNull()
+        let transport = CatalogueTransport([.http(200, try syncJSON(page))])
+        let (url, _, _, lease, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let old = try await repo.cachedCareOverview(context: lease)
+        for mode in 0..<5 {
+            let model = TodayModel()
+            let scope = model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .pl)
+            await model.rereadLocal(scope: scope) { old }
+            let gate = TodayReadBarrier()
+            let task = Task {
+                await model.refresh(scope: scope) {
+                    await gate.wait()
+                    if mode.isMultiple(of: 2) { throw URLError(.notConnectedToInternet) }
+                    return old
+                }
+            }
+            await gate.waitUntilEntered()
+            switch mode {
+            case 0: model.suspend()
+            case 1:
+                model.activate(ownerId: otherSyncOwner, generation: lease.generation, locale: .pl)
+                model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .pl)
+            case 2: model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .en)
+            case 3: model.activate(ownerId: lease.ownerId, generation: lease.generation + 1, locale: .pl)
+            default: model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .pl)
+            }
+            XCTAssertNotEqual(model.scope, scope)
+            XCTAssertNil(model.state)
+            XCTAssertFalse(model.refreshing)
+            gate.open()
+            await task.value
+            var staleCalls = 0
+            await model.rereadLocal(scope: scope) { staleCalls += 1; return old }
+            XCTAssertEqual(staleCalls, 0)
+            XCTAssertNil(model.state)
+            XCTAssertTrue(model.needsLocalRead)
+            XCTAssertFalse(model.readingLocal)
+            XCTAssertFalse(model.refreshing)
+            XCTAssertFalse(model.hasError)
+        }
+
+        // The durable cache still contains PL after EN activation. A completed local
+        // read must hide it without blocking the explicit EN network refresh.
+        let model = TodayModel()
+        let scope = model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .en)
+        await model.rereadLocal(scope: scope) { try await repo.cachedCareOverview(context: lease) }
+        XCTAssertNil(model.state)
+        XCTAssertFalse(model.needsLocalRead)
+        XCTAssertTrue(model.needsRevalidation)
+        XCTAssertFalse(model.readingLocal)
+        let gate = TodayReadBarrier()
+        let refresh = Task {
+            await model.refresh(scope: scope) {
+                await gate.wait()
+                return try await repo.refreshCareOverview(locale: .en, context: lease)
+            }
+        }
+        await gate.waitUntilEntered()
+        XCTAssertTrue(model.refreshing)
+        XCTAssertNil(model.state)
+        gate.open()
+        await refresh.value
+        XCTAssertEqual(model.state?.snapshotLocale, "en")
+        XCTAssertEqual(model.state?.origin, .network)
+        XCTAssertFalse(model.refreshing)
+        XCTAssertFalse(model.needsLocalRead)
+        XCTAssertFalse(model.needsRevalidation)
+        XCTAssertFalse(model.hasError)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "X-Client-Locale"), "en")
+    }
+
+    @MainActor
+    func testTodayCancellationCannotPublishSuccessOrError() async throws {
+        let (url, _, _, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let old = try await repo.cachedCareOverview(context: lease)
+        for local in [false, true] {
+            for fail in [false, true] {
+                let model = TodayModel()
+                let scope = model.activate(ownerId: lease.ownerId, generation: lease.generation, locale: .pl)
+                await model.rereadLocal(scope: scope) { old }
+                let gate = TodayReadBarrier()
+                let task = Task {
+                    let read: @MainActor () async throws -> CareOverviewViewState = {
+                        await gate.wait()
+                        if fail { throw URLError(.cancelled) }
+                        return old
+                    }
+                    if local { await model.rereadLocal(scope: scope, read: read) }
+                    else { await model.refresh(scope: scope, read: read) }
+                }
+                await gate.waitUntilEntered()
+                task.cancel()
+                gate.open()
+                await task.value
+                XCTAssertFalse(model.refreshing)
+                XCTAssertFalse(model.readingLocal)
+                XCTAssertFalse(model.hasError)
+                XCTAssertEqual(model.needsLocalRead, local)
+                if local { XCTAssertNil(model.state) }
+                else { XCTAssertEqual(model.state?.origin, .cache) }
+            }
+        }
+    }
+
+    @MainActor
+    func testTodayVerifiedDeadlineUsesExactMinimumAndRetainsAccessContract() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let canonicalRaw = "2026-12-01T00:00:00.123456Z"
+        let canonical = try XCTUnwrap(SQLTimestamp.date(from: canonicalRaw))
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+        let entitlement = try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data(syncJSON([
+            "product_id": "paid", "state": "grace", "offer_kind": "paid",
+            "valid_until": canonicalRaw, "grace_until": "2027-01-01T00:00:00Z",
+            "trial_end_at": NSNull(), "auto_renew_enabled": true
+        ]).utf8))
+        func project(_ server: String?, paid: Bool = true, known: Bool = true, at: Date) throws -> CareOverviewViewState {
+            var page = overviewPage([overviewRow(serverPlantId, dated: true)])
+            page["verified_access_until"] = server.map { $0 as Any } ?? NSNull()
+            let modified = LocalCareOverviewPresentation(
+                ownerId: local.ownerId, canonicalGeneration: local.canonicalGeneration,
+                snapshotGeneration: local.snapshotGeneration,
+                cached: CachedCareOverview(
+                    snapshot: try overviewSnapshot([page]), fetchedAt: now, snapshotLocale: "pl",
+                    state: .cached, canonicalGenerationMatches: true
+                ),
+                cards: local.cards, pending: [], profile: local.profile,
+                entitlement: paid ? entitlement : nil, canonicalAccessKnown: known, careRows: []
+            )
+            return CareOverviewViewState(local: modified, now: at, origin: .cache)
+        }
+        let earlyRaw = "2026-11-25T00:00:00.654321Z"
+        let early = try XCTUnwrap(SQLTimestamp.date(from: earlyRaw))
+        XCTAssertEqual(try project(earlyRaw, at: now).verifiedAccessUntil, early)
+        XCTAssertEqual(try project("2026-12-10T00:00:00Z", at: now).verifiedAccessUntil, canonical)
+        XCTAssertEqual(try project(nil, at: now).verifiedAccessUntil, canonical)
+        let expired = try project(earlyRaw, at: canonical)
+        XCTAssertEqual(expired.access, .expired)
+        XCTAssertEqual(expired.verifiedAccessUntil, early)
+        XCTAssertNil(expired.plants.first?.routine)
+        XCTAssertTrue(expired.plants.first?.manualJournalAvailable == true)
+        let free = try project(nil, paid: false, at: now)
+        XCTAssertEqual(free.access, .free)
+        XCTAssertNil(free.verifiedAccessUntil)
+        let unknown = try project(nil, paid: false, known: false, at: now)
+        XCTAssertEqual(unknown.access, .unknown)
+        XCTAssertNil(unknown.verifiedAccessUntil)
+        XCTAssertNil(unknown.plants.first?.routine)
+    }
+}
+
 private actor SavedWateringReplayTransport: PlantsAPITransport {
     private let baseline: String
     private let plantId: UUID

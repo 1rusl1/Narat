@@ -399,6 +399,7 @@ struct CareOverviewViewState: Sendable {
     let availability: Availability
     let failure: Failure?
     let access: Access
+    let verifiedAccessUntil: Date?
     let knownInvalidation: CareOverviewInvalidation?
     let pending: [Pending]
     let profileHourPending: Bool
@@ -437,6 +438,11 @@ struct CareOverviewViewState: Sendable {
         }
         self.access = access
         let page = local.cached?.snapshot.pages.first
+        // Metadata only; eligibility below is unchanged, including expired/unknown access.
+        let canonicalDeadline = local.canonicalAccessKnown ? local.entitlement?.verifiedAccessUntil : nil
+        let serverDeadline = page?.verifiedAccessUntil.flatMap(SQLTimestamp.date(from:))
+        verifiedAccessUntil = access == .free ? nil
+            : [canonicalDeadline, serverDeadline].compactMap { $0 }.min()
         let rows = local.cached?.snapshot.plants ?? []
         let wire = Dictionary(rows.map { ($0.plantId, $0) }, uniquingKeysWith: { first, _ in first })
         let ids = Set(local.cards.map(\.id))
