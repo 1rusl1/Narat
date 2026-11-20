@@ -9876,3 +9876,218 @@ extension CollectionWireTests {
         }
     }
 }
+
+extension CollectionWireTests {
+    @MainActor
+    private func assertLocalOutboxSignals(
+        _ stream: AsyncStream<Void>, count: Int = 1,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        let event = XCTestExpectation(description: "owner local outbox change")
+        event.isInverted = count == 0
+        event.expectedFulfillmentCount = max(1, count)
+        event.assertForOverFulfill = true
+        let excess = XCTestExpectation(description: "no extra buffered change")
+        excess.isInverted = true
+        var received = 0
+        let reader = Task { @MainActor in
+            for await _ in stream {
+                received += 1
+                if count > 0 && received > count {
+                    excess.fulfill()
+                } else {
+                    event.fulfill()
+                }
+            }
+        }
+        let result = await XCTWaiter.fulfillment(of: [event], timeout: count == 0 ? 0.05 : 1)
+        if count > 0 && result == .completed {
+            let bounded = await XCTWaiter.fulfillment(of: [excess], timeout: 0.05)
+            XCTAssertEqual(bounded, .completed, file: file, line: line)
+        }
+        reader.cancel()
+        await reader.value
+        XCTAssertEqual(result, .completed, file: file, line: line)
+        XCTAssertEqual(received, count, file: file, line: line)
+    }
+
+    @MainActor
+    func testLocalOutboxSignalsCoalesceWithoutReplayAndIsolateOwnersAndSubscribers() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        _ = try await store.enqueueCommand(ownerId: syncOwner, plantId: nil, commandName: "fixture", payloadJSON: "{}")
+        await assertLocalOutboxSignals(await store.localOutboxUpdates(ownerId: syncOwner), count: 0)
+        let first = await store.localOutboxUpdates(ownerId: syncOwner)
+        let second = await store.localOutboxUpdates(ownerId: syncOwner)
+        let foreign = await store.localOutboxUpdates(ownerId: otherSyncOwner)
+        for _ in 0..<4 {
+            let row = try await store.enqueueCommand(
+                ownerId: syncOwner, plantId: nil, commandName: "fixture", payloadJSON: "{}"
+            )
+            try await store.recordOutboxFailure(operationId: row.operationId, errorMessage: "offline")
+        }
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let rows = try await reopened.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(rows.count, 5)
+        XCTAssertEqual(rows.filter { $0.retryCount == 1 }.count, 4)
+        await assertLocalOutboxSignals(first)
+        await assertLocalOutboxSignals(second)
+        await assertLocalOutboxSignals(foreign, count: 0)
+        let own = await store.localOutboxUpdates(ownerId: syncOwner)
+        let other = await store.localOutboxUpdates(ownerId: otherSyncOwner)
+        _ = try await store.enqueueCommand(ownerId: otherSyncOwner, plantId: nil, commandName: "fixture", payloadJSON: "{}")
+        await assertLocalOutboxSignals(other)
+        await assertLocalOutboxSignals(own, count: 0)
+    }
+
+    @MainActor
+    func testLocalOutboxSignalsExposeDurableCoherentCareProfileDeleteAndFailureReads() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let (authority, lease) = try overviewBinding()
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId])
+        let before = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+        let care = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+        let hour = try ProfileReminderHourCommand.make(reminderHourLocal: 10)
+        var events = await store.localOutboxUpdates(ownerId: syncOwner)
+        try await store.enqueueSavedPlantWatering(care, context: lease, authority: authority)
+        _ = try await store.enqueueProfileReminderHour(hour, context: lease, authority: authority)
+        let deletion = try await store.enqueuePlantDeletion(plantId: serverPlantId, context: lease, authority: authority)
+        await assertLocalOutboxSignals(events)
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        var read = try await reopened.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertEqual(read.pending.map(\.operationId), [care.operationId, hour.envelope.operationId, deletion.operationId])
+        XCTAssertEqual(read.canonicalGeneration, before.canonicalGeneration)
+
+        events = await store.localOutboxUpdates(ownerId: syncOwner)
+        try await store.finishOutboxEntry(operationId: care.operationId, context: lease, authority: authority, failure: "offline")
+        await assertLocalOutboxSignals(events)
+        read = try await reopened.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertEqual(read.pending.first?.retryCount, 1)
+        XCTAssertEqual(read.pending.first?.lastError, "offline")
+
+        events = await store.localOutboxUpdates(ownerId: syncOwner)
+        try await store.recordOutboxFailure(operationId: deletion.operationId, errorMessage: "retry")
+        await assertLocalOutboxSignals(events)
+        read = try await reopened.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertEqual(read.pending.last?.lastError, "retry")
+
+        events = await store.localOutboxUpdates(ownerId: syncOwner)
+        _ = try await store.finishProfileReminderHour(hour, receipt: nil, context: lease, authority: authority)
+        await assertLocalOutboxSignals(events)
+        read = try await reopened.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertEqual(read.pending.map(\.operationId), [care.operationId, deletion.operationId])
+        events = await store.localOutboxUpdates(ownerId: syncOwner)
+        try await store.finishOutboxEntry(operationId: care.operationId, context: lease, authority: authority)
+        await assertLocalOutboxSignals(events)
+        read = try await reopened.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertEqual(read.pending.map(\.operationId), [deletion.operationId])
+        events = await store.localOutboxUpdates(ownerId: syncOwner)
+        try await store.markOutboxCommitted(operationId: deletion.operationId)
+        await assertLocalOutboxSignals(events)
+        read = try await reopened.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertTrue(read.pending.isEmpty)
+        XCTAssertEqual(read.canonicalGeneration, before.canonicalGeneration)
+
+        let creation = createCommand()
+        events = await store.localOutboxUpdates(ownerId: syncOwner)
+        let journal = try await store.catalogueCreateJournal(
+            creation, mode: .enqueue(canCreate: true), context: lease, authority: authority
+        )
+        read = try await reopened.readCareOverviewPresentation(context: lease, authority: authority)
+        guard case let .pending(created) = journal else {
+            return XCTFail("Catalogue create was not enqueued")
+        }
+        XCTAssertEqual(created.envelope, creation)
+        XCTAssertEqual(read.pending, [created])
+        XCTAssertEqual(read.canonicalGeneration, before.canonicalGeneration)
+        await assertLocalOutboxSignals(events)
+        events = await store.localOutboxUpdates(ownerId: syncOwner)
+        for mode in [CatalogueCreateJournalMode.checkOnly, .enqueue(canCreate: true)] {
+            let replay = try await store.catalogueCreateJournal(
+                creation, mode: mode, context: lease, authority: authority
+            )
+            XCTAssertEqual(replay, journal)
+        }
+        await assertLocalOutboxSignals(events, count: 0)
+    }
+
+    @MainActor
+    func testLocalOutboxSignalsIgnoreDuplicateRejectedLeaseIdentityAndFailedSave() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let row = try await store.enqueueCommand(
+            ownerId: syncOwner, plantId: nil, commandName: "fixture", payloadJSON: "{}"
+        )
+        let events = await store.localOutboxUpdates(ownerId: syncOwner)
+        _ = try await store.enqueueCommand(
+            operationId: row.operationId, ownerId: syncOwner, plantId: nil, commandName: "fixture", payloadJSON: "{}"
+        )
+        do {
+            _ = try await store.enqueueCommand(
+                operationId: row.operationId, ownerId: otherSyncOwner, plantId: nil, commandName: "fixture", payloadJSON: "{}"
+            )
+            XCTFail("Mismatched identity accepted")
+        } catch OutboxEnqueueError.operationIdentityMismatch {}
+        let (authority, lease) = try overviewBinding()
+        authority.bind(try profileSession(ownerId: otherSyncOwner))
+        do {
+            _ = try await store.enqueueProfileReminderHour(
+                ProfileReminderHourCommand.make(reminderHourLocal: 10), context: lease, authority: authority
+            )
+            XCTFail("Invalid lease accepted")
+        } catch is SyncWireValidationError {}
+        try await store.markOutboxCommitted(operationId: UUID())
+        try await store.recordOutboxFailure(operationId: UUID(), errorMessage: "missing")
+        await assertLocalOutboxSignals(events, count: 0)
+
+        let readOnly = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+        let failed = await readOnly.localOutboxUpdates(ownerId: syncOwner)
+        do {
+            try await readOnly.recordOutboxFailure(operationId: row.operationId, errorMessage: "not saved")
+            XCTFail("Read-only save accepted")
+        } catch {}
+        await assertLocalOutboxSignals(failed, count: 0)
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let rows = try await reopened.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(rows, [row])
+    }
+
+    @MainActor
+    func testLocalOutboxSignalsIncludeRoutineUndoAndCancellationDoesNotReplay() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let container = try diskContainer(url)
+        let fixture = try await routineHistoryFixture(routineUndoBaseline(), container: container)
+        let store = LocalStore(modelContainer: container)
+        let identity = routineCompletionReceipt()
+        let command = try RoutineSoilCheckUndoCommand.make(
+            plantId: serverPlantId,
+            taskId: XCTUnwrap(UUID(uuidString: identity["task_id"] as! String)),
+            entryId: XCTUnwrap(UUID(uuidString: identity["entry_id"] as! String))
+        )
+        let cancelledStream = await store.localOutboxUpdates(ownerId: syncOwner)
+        let reader = Task {
+            var iterator = cancelledStream.makeAsyncIterator()
+            return await iterator.next() != nil
+        }
+        reader.cancel()
+        let received = await reader.value
+        XCTAssertFalse(received)
+        let events = await store.localOutboxUpdates(ownerId: syncOwner)
+        _ = try await store.enqueueRoutineUndo(command, context: fixture.lease, authority: fixture.api.syncAuthority)
+        await assertLocalOutboxSignals(events)
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let saved = try await reopened.pendingRoutineUndo(
+            plantId: serverPlantId, context: fixture.lease, authority: fixture.api.syncAuthority
+        )
+        XCTAssertEqual(saved?.envelope, command.envelope)
+        let duplicate = await store.localOutboxUpdates(ownerId: syncOwner)
+        _ = try await store.enqueueRoutineUndo(command, context: fixture.lease, authority: fixture.api.syncAuthority)
+        await assertLocalOutboxSignals(duplicate, count: 0)
+        await assertLocalOutboxSignals(await store.localOutboxUpdates(ownerId: syncOwner), count: 0)
+    }
+}

@@ -447,6 +447,29 @@ public actor LocalStore {
         return try ModelContainer(for: schema, configurations: [configuration])
     }
 
+    // Presentation invalidation only: reread current owner state with the original lease.
+    private var localOutboxObservers: [UUID: (owner: UUID, continuation: AsyncStream<Void>.Continuation)] = [:]
+
+    func localOutboxUpdates(ownerId: UUID) -> AsyncStream<Void> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        localOutboxObservers[id] = (ownerId, continuation)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeLocalOutboxObserver(id) }
+        }
+        return stream
+    }
+
+    private func removeLocalOutboxObserver(_ id: UUID) {
+        localOutboxObservers[id] = nil
+    }
+
+    private func publishLocalOutboxChange(ownerId: UUID) {
+        for observer in localOutboxObservers.values where observer.owner == ownerId {
+            observer.continuation.yield(())
+        }
+    }
+
     // MARK: Outbox Operations
 
     func pendingProfileReminderHour(
@@ -514,6 +537,7 @@ public actor LocalStore {
             disk.delete(row)
             try Task.checkCancellation()
             try disk.save()
+            publishLocalOutboxChange(ownerId: ownerId)
             return hour
         }
     }
@@ -574,6 +598,7 @@ public actor LocalStore {
         record.observationJPEG = observationJPEG
         modelContext.insert(record)
         try modelContext.save()
+        publishLocalOutboxChange(ownerId: record.ownerId)
 
         return OutboxEntrySnapshot(
             operationId: record.operationId,
@@ -1118,6 +1143,7 @@ public actor LocalStore {
             disk.insert(row)
             try Task.checkCancellation()
             try disk.save()
+            publishLocalOutboxChange(ownerId: row.ownerId)
             return command
         }
     }
@@ -1317,6 +1343,7 @@ public actor LocalStore {
             }
             try Task.checkCancellation()
             try disk.save()
+            publishLocalOutboxChange(ownerId: ownerId)
         }
     }
 
@@ -1516,6 +1543,7 @@ public actor LocalStore {
             record.observationPhotoAssetId = nil
             record.lastError = nil
             try disk.save()
+            publishLocalOutboxChange(ownerId: record.ownerId)
             return command
         }
     }
@@ -1525,8 +1553,11 @@ public actor LocalStore {
     ) throws {
         try authority.withBoundValid(context) {
             let disk = makeSyncContext()
-            disk.delete(try firstAidPhotoOutboxRecord(draft.envelope, ownerId: context.ownerId, in: disk))
+            let record = try firstAidPhotoOutboxRecord(draft.envelope, ownerId: context.ownerId, in: disk)
+            let ownerId = record.ownerId
+            disk.delete(record)
             try disk.save()
+            publishLocalOutboxChange(ownerId: ownerId)
         }
     }
 
@@ -1582,6 +1613,10 @@ public actor LocalStore {
             try requireActiveFirstAidTarget(
                 plantId: draft.plantId, controlId: draft.controlId, ownerId: context.ownerId, now: Date()
             )
+            let pendingChanged = record.operationId != draft.envelope.operationId
+                || record.commandName != draft.envelope.commandName
+                || record.payloadJSON != draft.envelope.payloadJSON
+                || record.retryCount != 0 || record.lastError != nil
             record.operationId = draft.envelope.operationId
             record.commandName = draft.envelope.commandName
             record.payloadJSON = draft.envelope.payloadJSON
@@ -1590,6 +1625,7 @@ public actor LocalStore {
             record.lastError = nil
             try Task.checkCancellation()
             try disk.save()
+            if pendingChanged { publishLocalOutboxChange(ownerId: record.ownerId) }
         }
     }
 
@@ -1709,6 +1745,7 @@ public actor LocalStore {
                         disk.insert(record)
                         try Task.checkCancellation()
                         try disk.save()
+                        publishLocalOutboxChange(ownerId: record.ownerId)
                         return .pending(journalSnapshot(record))
                     }
                 }
@@ -1931,6 +1968,7 @@ public actor LocalStore {
                 modelContext.delete(queued)
                 try Task.checkCancellation()
                 try modelContext.save()
+                publishLocalOutboxChange(ownerId: ownerId)
             } catch {
                 modelContext.rollback()
                 throw error
@@ -1943,10 +1981,14 @@ public actor LocalStore {
         let descriptor = FetchDescriptor<LocalOutboxRecord>(
             predicate: #Predicate { $0.operationId == operationId }
         )
-        for record in try modelContext.fetch(descriptor) {
+        let records = try modelContext.fetch(descriptor)
+        guard !records.isEmpty else { return }
+        let owners = Set(records.map(\.ownerId))
+        for record in records {
             modelContext.delete(record)
         }
         try modelContext.save()
+        for ownerId in owners { publishLocalOutboxChange(ownerId: ownerId) }
     }
 
     public func recordOutboxFailure(operationId: UUID, errorMessage: String) throws {
@@ -1958,6 +2000,7 @@ public actor LocalStore {
             record.retryCount += 1
             record.lastError = errorMessage
             try modelContext.save()
+            publishLocalOutboxChange(ownerId: record.ownerId)
         }
     }
 
@@ -2535,6 +2578,7 @@ public actor LocalStore {
                       record.ownerId == context.ownerId else {
                     throw SyncWireValidationError.invalidSession
                 }
+                let ownerId = record.ownerId
                 if let failure {
                     record.retryCount += 1
                     record.lastError = failure
@@ -2547,6 +2591,7 @@ public actor LocalStore {
                 }
                 try Task.checkCancellation()
                 try modelContext.save()
+                publishLocalOutboxChange(ownerId: ownerId)
             } catch {
                 modelContext.rollback()
                 throw error

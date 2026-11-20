@@ -4423,8 +4423,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-overview-repository: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 1119.09 с, проверки — 144.14 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-overview-repository](validation/automation/tasks/tester-care-overview-repository.md).
+tester-care-local-change-signal: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 2, qa 1. Модели — 640.63 с, проверки — 254.24 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-local-change-signal](validation/automation/tasks/tester-care-local-change-signal.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
