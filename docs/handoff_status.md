@@ -1,5 +1,21 @@
 # Narat — текущий статус и передача работы
 
+## WHOLE C3b02 BLOCKED: task opens list, not requested card — 20 ноября2026
+
+Actual376Swift/149automation/MCP/old13+4POSTledger/PL+replayledger/Reviewer1
+PASS. New6TodayUI5PASS1FAIL navcase: tapnonfirstFixture2 task presentscanonical
+collectionLIST(all3cards inclcorrectUUID), not requestedcard. AX+video/24
+attachments exported; no new6ledgerPASS/finalQA/fullacceptance.
+Report `docs/validation/automation/tasks/tester-today-ui-acceptance02-blocked.md`.
+
+Nexttiny App/GuestDeveloper tester-today-navigation, unchanged exactnavtest
++one readonlyboundednamespaceledger/fullSwift/MCP/highReviewQA. Diagnose
+firstpresentation @State target+boolsheet/consumehandoff; neverworkaroundtap
+listrow/relaxfreshness/scope/one-shotguards. Thenfreshwholebase4f4a7gates/QA.
+Other5Todaytests inclofflinecold/resume/homeReturn/locale/signoutpassed,
+ноfullTodayнеaccepted; rootнеmerge/live, R1a ещёнеstarted. Allparentsopen,
+reset0, lastactualusage79/21 ordinaryallowed.
+
 ## C3b обе stale-проверки приняты; fresh whole acceptance02 — 20 ноября2026
 
 Accepted/pushed narrow rotationrepair f5ca526c2d426cfeb14fb6e476e436c8265c2c24,

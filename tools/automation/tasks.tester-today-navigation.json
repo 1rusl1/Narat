@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "tester-today-navigation",
+      "description": "Fix first-presentation one-shot Today task target handoff to current canonical collection card; preserve scope/freshness and Back/Close behavior.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "docs/validation/automation/tasks/tester-today-ui-acceptance02-blocked.md"
+      ],
+      "write_files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift"
+      ],
+      "constraints": [
+        "NARROW productionnav repair only App/Guest existingfiles. WholeC3bcandidate unaccepted. Actual whole02 all376Swift/MCP/149/old13/PL/highReviewpassed but newToday5PASS1FAIL nav, noQA. Preserveall existingUI assertions/fixtures, never manuallytapFixture2 fromlist to workaround. No UITest changes, no server/API/cache/Store/engine/model/calendar/schema/queue/AI/OS. Keep approvedmodels900.",
+        "Read exactblockedreport and currentRoot.openTodayPlant, .sheet(isPresented:showingCollection), collectionTarget and CatalogueCollectionView.requestedTarget/load/consumeTarget. ActualUI tappednonfirstFixture2task, openedcollectionLIST (Fixture2 canonicalUUIDpresent) but no selectedcard. Diagnose robustfirst-presentationtarget ownership, including lazySwiftUI sheetcapture and parentalconsume rerender race. Prefer a single stable item-owned presentation withtarget orlivebinding/capturedrequest thatcannot be lost beforecanonical load; choose smallest honest solution. Do not add arbitrarysleep/poll/retryfirsttap, secondSDKclient orautoOpenfirstplant.",
+        "Must preserveoriginalpermanentCatalogueSDKSnapshot targetscope+currentSDKscope equality, repositoryfreshcanonical result !cached, plantactive/notdeleted/currentUUID. A targetisONE-SHOT withinpresentation; Backcard\u2192list andClose\u2192Today mustnotauto-reopen. Subsequentnewintent onanothertaskmustwork; plainMyplants andpostsigninautocollection paths remainnormal. Network/readfailure/stale/foreigntarget neverselectswrongcard; canonicalcards authority not snapshotDTO. Consume request onlywithcorrectpresentationlocalownership; no stateclear dismiss/rerender losingselection. Keep check/photo/guest/legacyold13/PLflows unchanged.",
+        "Use existingunchanged testTodayMixedChecksOpenRequestedCardOnce as actualrequiredUI regression: sourceToday/overdue verify \u2192tapNONFIRSTtask \u2192 exactcatalogue.saved.card UUID andFixture2name \u2192 Backlist\u2192CloseToday noautomaticreopen. Gateonefresh todayMixed namespace, nocarePOST/commits, bounded overviewreads1..12. ExistingHomeReturn/offline/locale/new6alltestedagainwholeafterrepair. FullSwift/build/welcome+MCP/highReviewQA forsubset, then WHOLEbase4f4a all7checks/new6+8ledgers/old13/PL actualacceptance. Sourcefilestouchedoutsideapproved2forbidden."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "NAV1",
+          "description": "Originalscope/freshcanonical one-shot selection and plaincollection flows preserve fullSwift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "NAV2",
+          "description": "UNCHANGED exactnonfirsttask\u2192card\u2192Backlist\u2192CloseToday UI passes withreadonlyboundednamespaceledger.",
+          "mode": "fixture",
+          "checks": [
+            "tester-today-navigation-ui"
+          ]
+        },
+        {
+          "id": "NAV3",
+          "description": "MCP and highReviewQA accept narrow repair; fullToday remainsseparate.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-today-ui-acceptance02-blocked.md"
+      ]
+    }
+  ]
+}
