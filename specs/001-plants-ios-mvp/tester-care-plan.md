@@ -165,3 +165,7 @@ ae74 приёмка с old13+PL/Swift/MCP/149automation/highReviewQA.
 чтения не должно терять уже авторизованный external refresh. Только existing
 local task/revision ожидание, без canonical→HTTP/reconcile loop; deterministic
 barrier tests. Full old13+PL acceptance после него, не вместо него.
+
+Root wait-latest subset `72588e3` принят:369Swift/build/welcome/MCP/ReviewQA,
+семь deterministic mocktransport режимов. Следующий FULLcandidate_baseae74
+всех8Swift + old13careUI/newPLUI/149automation; не считатьsubsetготовымToday.

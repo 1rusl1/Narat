@@ -1,0 +1,81 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-today-home-acceptance",
+      "description": "Independently accept entire unaccepted C2+PL+Root union and mechanical exactID test query repair against original ae74 baseline with all legacy/new regression gates.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "candidate_base": "ae74b52d90187232578b2b5f697d84e6a1822042",
+      "files": [
+        "docs/handoff_status.md",
+        "docs/validation/automation/tasks/tester-care-today-home-blocked.md",
+        "docs/validation/automation/tasks/tester-care-today-local-barrier-static.md",
+        "docs/validation/automation/tasks/tester-care-today-local-barrier.md",
+        "docs/validation/automation/tasks/tester-care-today-model.md",
+        "docs/validation/automation/tasks/tester-care-today-pl-subset-blocked.md",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "tools/automation/tasks.tester-care-today-home-acceptance.json",
+        "tools/automation/tasks.tester-care-today-local-barrier.json",
+        "tools/automation/tasks.tester-care-today-pl-invalidation.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read-only FULL candidate_diff from ae74b52, NOT a snapshot audit or acceptance of only tiny selector. Entire8Swift C2+PL union plus controllerspec/handoff/report manifests included. Previous C2BLOCKED and subsetBLOCKED remain evidence, no fakeDeveloper/QA. No source changes permitted; report any defect honestly. Approved models/budgets/routing unchanged.",
+        "Current source latest passed368Swift/build/welcome/diff139.644, MCP35.648 and highReviewer after cancelledread fingerprint fix, but no QA because firstPLUI failedAXtype BEFOREcareintent. Controller changed exactly2newUITest queries Link→descendants(.any) preserving identical source/negative.source IDs and all date/body/op/commit assertions. This mechanical fix itself needs fresh actual gates and full ReviewQA; do not retroactively PASS oldruns.",
+        "FULL C2 Root: permanent Today home via scoped TodayModel, guest/legacy fixtures unchanged, originalSDKlease throughout, existing CareLifecycleCoordinator sole external network pass. Localoutbox/canonical/clock signals local-read only; late publication bridge ONE latest coherent localread, no repeatHTTP. One-shot planttarget resolved from currentcanonical collectioncards; no writes onrowtap. No data/schema/newclient/queue/server/OSreminder/AI content expansion.",
+        "Calendar/source metadata: localGregorianYMD today+overdue/nearestfutureties, originalsource due dates, no UTC-midnight shift/newdates. Exactdeadline<=now suppresses immediately; clockcallback localonly separate task. Pending/unknown/failed/stale/paused/empty/noSchedule distinct. Preserve manual journal/card links. PLcardloads matchedlocale andpassivepending/canonicalreadability; all EN-only write/firstAid/analysis guards retained.",
+        "Critically inspect canonicalCareFingerprint transientnil/cancel/interleaving: if previous!=fingerprint OR refreshOnForeground forces freshGET; adviceResponse invalidated/requestincrement BEFORE fingerprintpublish, GET neverpublishesSync so nofeedbackloop. Pendingmanual/routine/refresh/basic/membership errors hide source dates forbothlanguages. No more old prevnil&&guard that loses external revalidation. No scope/revision/owner/busy/typedreceipt weakening.",
+        "Accepted narrow Root helper72588e3 follows existing latest localtask/revision under originalscope untilstable; no dropped authorizedexternal refresh whenL1replacedL2. Deterministic sevenmode test uses realmodel/coordinator/repository with MOCKtransportcounter, notliveHTTP. Stablecancelledtaskthrows; localerror/scopechange noHTTP. EntireC2union stillneeds THISfullcandidateacceptance, RootsubsetPASS alone notenough.",
+        "Actual fixture gates mandatory: existing tester-care-ui old13named tests +4POSTdurablewaterledger AND new tester-care-pl-ui one named ENintentpending→PL no-date test +2..4exactPOST/oneintent/onecommit ledger. Each explicit count no skips/missing. Full369Swift/realbuild/welcome/MCP and149automation required. Existing charts/files/build alone do not prove fullToday. All tests synthetic/local, no liveprovider/physical/newcarefacts claim.",
+        "Known remaining nextC3: dedicated Today frontendcases/flags/IDs/lastchecked; one external browse/add→BackHome revalidation (no initialonAppearduplicate), ordinarysigned liveproof. Do not close parent T066/T068/T075/T077/T098/B01B11 or claim Today100/iPhone/reminders ready from this C2slice. Rootlive only after acceptedSHA."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "C2FULL1",
+          "description": "Whole eightSwift candidate and exactID-only test fix preserve actual fullSwift/build/welcome/automation; no fake subset acceptance.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "automation-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "C2FULL2",
+          "description": "All old13care UI and newPL UI with their exact-operation/onecommit ledgers pass with exact counts/no skips.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui",
+            "tester-care-pl-ui"
+          ]
+        },
+        {
+          "id": "C2FULL3",
+          "description": "Full source_diff independently reviewed and MCP proof passed; TodayC3/live/physical/OS claims remain open.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-home-blocked.md",
+        "docs/validation/automation/tasks/tester-care-today-pl-subset-blocked.md",
+        "docs/validation/automation/tasks/tester-care-today-model.md",
+        "docs/validation/automation/tasks/tester-care-today-local-barrier.md"
+      ]
+    }
+  ]
+}

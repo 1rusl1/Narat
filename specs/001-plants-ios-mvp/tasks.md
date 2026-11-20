@@ -498,3 +498,5 @@
 | SC-025 | T098, T103, T104, T105, T106, T146, T159 |
 
 - Уточнение Today C2 (20 ноября): FULL acceptance ещё не стартовала. Static Root lost external-refresh trigger при superseded local task требует узкого App/TodayModel/Unit wait-latest repair; после него полный ae74diff с old13+PL. T066 остаётся открыт.
+
+- Root wait-latest subset `72588e3`:369Swift/build/welcome/MCP/highReviewQA PASS; deterministic mock-transport barrier включает7режимов. Полная C2/PL union приёмка отae74 с old13+PL ещё отдельный шаг, T066 не закрыт.

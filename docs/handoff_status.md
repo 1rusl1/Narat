@@ -1,5 +1,34 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: Root wait-latest subset принят; FULL C2 — 20 ноября 2026
+
+Accepted/pushed Root-only subset `72588e3dfee9e5a2f7d008431f52f229fa44525d`.
+Run `tester-care-today-local-barrier-20261120-01` COMPLETED: Developer2,
+high-risk Reviewer1/QA1 PASS;369Swift (366XCTest+3), build/welcome/diff,
+MCP23.735s. App+TodayModel+Unit:20line event-driven waitLatestLocalRead follows
+currenttask/revision under original scope and cancellation validation. Root
+initial/preHTTP/postpublication wait points use it; no localstream HTTP or
+reconcile replay. Один deterministic Unit method включает7режимов с реальными
+model/coordinator/repository и MOCK transport counter, не liveHTTP: heldL1→L2
+→один authorizedGET; canonical-only послеpass не добавляетGET; cancel/owner/
+locale/generation/localfailure/localcancel дают0. Old first hunkFAIL сохранён.
+Отчёт `docs/validation/automation/tasks/tester-care-today-local-barrier.md`.
+
+Это НЕ acceptance всего C2/PL union. Старые C2/PL subset BLOCKED сохранены,
+включая403transport и AXLink/Button доintent. Controller только2 exactID
+UITestqueries исправил без weakening. Новый actual FULL run
+`tester-care-today-home-acceptance-20261120-01`: candidate_baseae74b52 всех8
+Swift +полныйcontrollerdiff, write_files[]. Actual369Swift/149automation/
+MCP + old13careUI(4POSTledger) +newPLUI(2..4exactreplay/onecommit) → highReviewQA.
+Source не пересоздаётся, DeveloperPASS дляFULL не выдумывается.
+
+Root не merge/live-build до FULLaccepted SHA. Далее C3a dedicated Todayfixture
+и external home-return event; C3b namedTodayUI/lastchecked/ordinarysignedlive;
+затем reminders. Нормальный Today frontend/physical/notification delivery
+пока не приняты, T066/T068/T075/T077/T098/B01–B11 open. Same approvedmodels/
+900/sharedSimlock/ACcaffeinate. Last actualusage74/26 ordinaryAllowed/reset0.
+
+
 ## Этап 2: перед FULL C2 нужен узкий Root wait-latest repair — 20 ноября 2026
 
 C2 и PL subset по-прежнему BLOCKED/не приняты. Последний PL источник:
