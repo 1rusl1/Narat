@@ -452,7 +452,7 @@ final class CareReminderScheduler: ObservableObject {
                     // A later logout can remove these OS identities after the SDK lease ends.
                     // Journal unknown own opportunities now, retaining requests and known phases.
                     try await normalize(CareReminderScheduler.plan(input), observeExisting: false)
-                    return result(failed: untrustedInventory, deferred: true)
+                    return result(failed: false, deferred: true)
                 }
                 guard state.ownerId == input.lease.ownerId else { throw Failure.scope }
                 let plan = CareReminderPlan(expectedOwnerId: input.lease.ownerId, state: state,

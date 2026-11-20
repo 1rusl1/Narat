@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## Controller nil-defer status restored; union05 next — 20 ноября 2026
+
+Union04 actualBLOCKED onUnit154.319s:415tests ran, one existing coldknownB
+opaqueunknown assertion failed becausecontroller hadchanged nildeferfailedflag.
+Restored original failed=false/deferred status; normalize/Storefailures still
+throw/fail andnewterminal barriersunchanged. No testassertion changed, noReview/QA
+in04. Exactoneproductionline controllerrepair withinalready-authorizedtinyguard.
+FreshFULLunion05 fromdfe all415/149/MCP/highReviewQA next; no fakeDeveloperPASS.
+AllpriorFAILs/provenance saved, noRoot/OSsourcewiring, parenttasksopen/reset0.
+
 ## Whole R2b2 union03 FAIL; exact controller safety candidate next — 20 ноября 2026
 
 Union03 BLOCKED Reviewer1 semantic FAIL127.546s after actual413Swift/build/

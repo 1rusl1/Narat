@@ -11,3 +11,8 @@ Unit only: one deterministic realStore/fakeOS test loops unknownvalidroute/noent
 Previous actual outcomes retained: originalworker01 BLOCKED Developerbudget/Reviewer1 FAIL; cleanup b57 accepted; union01 infrastructureDeadbundleFAIL beforetests; union02 semanticFAIL after410/149; cleanupfailure01 readstageSIGINT/exit130/noappliedpatch; cleanupfailure02 accepted163df43 with413Swift/MCP; union03 semanticFAIL127.546 after413Swift119.139/149automation50.910, noQA. No retroactive PASS.
 
 Next: fresh fullunion candidate_base=dfe5a7adf360c15ea675829e036b340baad3d3b0 includesALL4Swift andcontrollerhistorypaths. ActualSwift/build/welcome+149automation+MCP then highReviewQA. Runtime/Root/settings/routes/OSdelivery/phone remainpending; parentcheckboxopen.
+
+
+Union04 actual FAIL beforeReview: Swift415 tests ran, one OLD assertion failed (coldknownB unknownprojection opaqueimpossibleID expected failed=false/deferred). Controller initialnilguard unnecessarily changed failed to untrustedInventory. Restored ORIGINAL nildefer failed=false; normalization/storageexceptions stillthrow→failed=true and allterminalbarriers remain. Old413/new2 tests untouched. Full freshunion05 required; noQA/ReviewPASS claimed for04.
+
+Final2source diff from fefba9b: 11869bytes SHA256 `6f501b99e34455a81ce6f2fe5388245febfcabda31e3dc9b6a2bb051c728ccf9`; retained ignored run artifact R2b2-controller-final-source.patch, sourceonly(no docs).
