@@ -1,0 +1,98 @@
+{
+  "status": "PASS",
+  "completed_at_utc": "2026-11-20T15:33:49Z",
+  "source_commit": "56d7455451bf93e573ae1660665bd18360955bf7",
+  "binary_sha256": "f3b2184acd5b58575c3c60ae60886f57d9c8741d9e5a4cc1f6c0201d2490a271",
+  "configuration": "ordinary signed EN Release, no fixture flags",
+  "environment": {
+    "sdk": "production app SDK path",
+    "backend": "live Supabase",
+    "device": "owned iOS Simulator",
+    "accounts": 1,
+    "plants": 1,
+    "plan": "Free",
+    "local_day": "2026-11-20"
+  },
+  "steps": [
+    {
+      "action": "cold Today entry opens the selected existing card directly",
+      "result": "PASS",
+      "tap_attempts": 1,
+      "stable_read_only_observations": 4
+    },
+    {
+      "action": "record one watering via UI",
+      "local_date": "2026-11-20",
+      "result": "PASS"
+    },
+    {
+      "action": "read published interval then correct only that watering",
+      "interval_days": 7,
+      "corrected_local_date": "2026-11-13",
+      "result": "PASS"
+    },
+    {
+      "action": "Today displays exact due date and published source; opens same canonical card",
+      "due_local_date": "2026-11-20",
+      "result": "PASS"
+    },
+    {
+      "action": "record one soil check via UI; Today advances",
+      "due_local_date": "2026-11-27",
+      "result": "PASS"
+    },
+    {
+      "action": "undo only the new soil check; Today restores prior due date",
+      "due_local_date": "2026-11-20",
+      "result": "PASS"
+    },
+    {
+      "action": "undo only the new watering; Today returns to NoSchedule",
+      "result": "PASS"
+    }
+  ],
+  "preservation": {
+    "new_water_facts": 1,
+    "new_routine_facts": 1,
+    "all_new_facts_voided": true,
+    "journal_entries_before": 4,
+    "journal_entries_after": 6,
+    "prior_history_preserved": true,
+    "prior_analyses_preserved": true,
+    "plant_identity_preserved": true,
+    "conditions_and_snapshot_preserved": true,
+    "care_revision_before": 3,
+    "care_revision_after": 3,
+    "memberships_preserved": true,
+    "semantic_active_care_restored": true,
+    "full_canonical_digest_equal": false,
+    "audit_history_retained": true,
+    "synced_reversals_array_before": 0,
+    "synced_reversals_array_after": 0
+  },
+  "operator": {
+    "explicit_refresh_button_taps": 4,
+    "wire_get_count_asserted": false,
+    "source_locator_rendered": true,
+    "external_source_url_opened": false,
+    "clock_or_timezone_changed": false
+  },
+  "previous_attempt": {
+    "status": "FAIL",
+    "stopped_before_any_care_intent": true,
+    "new_facts": 0,
+    "canonical_digest_unchanged_verified": true,
+    "same_signed_binary": true,
+    "failure_artifacts_preserved": true,
+    "cause": "Initial cold tap did not open card; cause unproven. Separate attempt waits for settled Today before one tap."
+  },
+  "limitations": [
+    "One online Free account, one plant and one local day.",
+    "No physical iPhone, real network disconnection or OS notification delivery proof.",
+    "No ordinary live positive first-aid control, multi-owner or pagination proof.",
+    "Correction operator supports November 2026 only; no device clock manipulation.",
+    "No AI, purchases, SQL changes, new plants or erasure of prior history."
+  ],
+  "private_evidence_location": "/private/tmp/narat-today-dated-live-evidence-20261120-56d7455-a2",
+  "publication": "Sanitized report only; raw API, checkpoints, screenshots and signed archive stay private."
+}

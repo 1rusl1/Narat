@@ -1,5 +1,32 @@
 # Narat — текущий статус и передача работы
 
+## Root: датированный Today live PASS; R1b1 принят — 20 ноября 2026
+
+Обычная подписанная EN Release source56d7455, без fixtures: реальный SDK/Supabase,
+собственный Simulator, одно Free-растение. Холодный Today → нужная карточка → один
+полив → исправление даты на13ноября по опубликованному7-дневному интервалу → Today
+20ноября/источник → одна проверка →27ноября → undo проверки →20ноября → undo полива
+→NoSchedule PASS. Source/binaryhash/даты/границы: [отчёт](validation/tester-today-dated-live-2026-11-20.md).
+Прежние journal/analyses/identity/conditions/snapshot/memberships сохранены,careRev3→3;
+две новые записи VOID,entries4→6. Семантическое восстановление, НЕ полный digest equality.
+Первый cold-tap FAIL до записей сохранён; read-only digest equality доказана именно для него.
+Отдельная attempt2 того же binary дождалась готового Today, один tap PASS. Причина первого
+сбоя не доказана. Live не равен physical/offline/OSdelivery/firstaidpositive/multiowner.
+
+R1b1 принят1652ec6 fast-forward без PBXdelta; исходные три пользовательских файла
+проверены по SHA и оставлены unstaged. Typed opportunity phases/attemptId/codec и5 Unit:
+385Swift/build/welcome129.956s,MCP24.459s,diff,Review1/QA1 PASS; первый invalidpatch
+сохранён,Dev2 применил исправленный patch. Это pure metadata, ещё НЕ disk/OS.
+
+Изменения текущего документального этапа: этот handoff, tasks.md и два sanitized dated
+live отчёта. Реально выполнены live UI/API проверки выше, visualToday, проверка JSON и
+сохранности пользовательских файлов, git diff --check. Повтор Swift ради docs не запускался.
+Следующий точный шаг: R1b2 exact-owner LocalStore CAS/disk/fullrefresh/reset retention,
+privacy purge и ABA/forged-sync tests; затем R2 UN adapter/coordinator → R3 wiring/settings/route
+→ R4 signed iPhone/tester guide. Родительские checkbox остаются открыты. Reset0;
+последний actual counter83%used/17%left ordinaryallowed. Commit/push фиксируются Git.
+
+
 ## R1a planner accepted; R1b1 typed metadata prep — 20 ноября2026
 
 Accepted/pushed99e395243a06f6a78ed0a25442b8ce87b28051c2, run
