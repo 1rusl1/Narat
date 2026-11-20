@@ -1,5 +1,26 @@
 # Narat — текущий статус и передача работы
 
+## R2b2 cleanup-failure repair accepted; fresh WHOLE union next — 20 ноября 2026
+
+Accepted/pushed163df43a1faafea5b35bf6e26baa5ba8268d89dd, run
+ tester-care-reminder-cleanup-failure-20261120-02 COMPLETED Dev1/Review1/QA1.
+FullSwift/build/welcome163.945s (410XCTest+3SwiftTesting=413, nofail/skips),
+MCP24.376s/diff0.049 PASS; Dev258.369s/Review78.107s/QA84.725s.
+Scheduler54diff/Unit143: strictforeign cleanup precedesmetadataread/begin,
+unknownown validroute/noentry androuteNil both requireterminaldurablemetadata
+before nilprojectionoptout removal; read/savefail protectsambiguousown.
+Knownexistingreceipt explicitprivacyfallback removesOS withoutfalseproof;
+failedstatus/latch/corruptbytes retained. NoRoot/actualOS. Old410 assertions
+unchanged,3new realStore/fakeOS groups pass. Interrupted01 andall oldsemantic/
+infra FAILs preserved. Narrowacceptance doesNOTaccept entireworker.
+
+Fresh wholeunion03 from dfe5a7adf360c15ea675829e036b340baad3d3b0 next:
+all4Swift+allcontrollerhistory paths, actualSwift/149automation/MCP/highReviewQA.
+Onlyafter wholeaccepted->parentB01positive/reversalcorrection docFF->R3tiny
+authproof(sliceGuest+ConnectionTests), then independentLifecycle/Root/settings/
+route/fixtures/actualOS/phone. No premature parentcheckboxclose. Reset0,
+lastactual88/12 ordinaryAllowed; same900/models/sharedresource.
+
 ## Whole R2b2 BLOCKED; remaining cleanup failure repair — 20 ноября 2026
 
 Whole union02 on unchanged9d1ba68 BLOCKED Reviewer1 semantic FAIL84.327s:
