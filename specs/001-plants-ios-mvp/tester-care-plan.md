@@ -227,3 +227,8 @@ newsource+membership prep, thenR2bcoordinator/R3UIroute/R4device, noOSclaimyet.
 R2a `0d0aebc` accepted395Swift/149/MCP/ReviewQA, noactualSystemroundtrip/delivery.
 R2b1 newScheduler source+membership prep only, onepassreceipt/OS fake tests;
 b2seriallatestworker beforeRoot. R3/R4 remain, parentcheckboxopen, reset0.
+
+R2b1 `3cd0bd3` onepass accepted401Swift/MCP/highReviewQA; originalconflictfinding
+fixed. b2 sameScheduler serializedworker+hold/logout/permission andexplicit
+conservative32totalbudget/currentIDs/unknowncleanup beforeRoot, noPBXdelta.
+B01ordinarySave stillNOTPASS (parentdoc616), datedTodayPASS separately.

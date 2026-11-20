@@ -1,5 +1,31 @@
 # Narat — текущий статус и передача работы
 
+## R2b1 accepted; R2b2 serialized worker подготовлен — 20 ноября2026
+
+Accepted/pushed `3cd0bd328d72bbe3d302407b9f347ac32059c96a`, run
+tester-care-reminder-reconcile-20261120-01 COMPLETED Dev2/Review2/QA1.
+Final401Swift(398XCTest+3)/build/welcome140.861s,MCP125.194s,diff PASS.
+Initial401158.592s и semanticReview1finding сохранены: cancelledBeforeFire
+с противоречащим inventory мог rearm; Dev2 исправил терминальныйblocker,
+Review2 PASS25.166s. Singlepass only, NOTserialized/Root-ready. Known64
+budget assumption и malformedunknowncleanup доRoot остаются b2refinements.
+Report automation/tasks/tester-care-reminder-reconcile.md.
+
+Parentdoc616fbbb FF интегрирован, ios byte-identical3cd. B01ordinary56d
+обаFAIL остановлены бездолговременногоcreate/delete: afterterminate full
+canonicaldigestoriginal, newplants0,3localtables0; keyboard/harnesscause
+уточняется, ProductSavebug НЕутверждён. DatedTodaylivePASS иphysicalbuild
+preflight отдельно. Новый distribution/devicechoice вопрос не блокируеткод.
+
+R2b2 manifest tasks.tester-care-reminder-worker.json: SAME Schedulerfile
+latest-intent worker/hold/logout/expliciteligiblepermission races, capacity
+консервативно32TOTALpending budget, unknownrawcleanup и current-occurrence
+identity helper дляpost-firetap/status. Existing401 сохраняются кромеявного
+усиленияcapacityother40:24→0 +expandedcases. NoRoot/UI/Store/newfiles/PBX/
+actualOS. Послеaccepted R3settings/routes/independentbackgroundlocalsignal
+→R4actualSystemroundtrip/finalphone/tester. PBXdelta0, user3 untouched.
+Allparentcheckboxopen, reset0,lastactual85/15ordinaryallowed; same900/models.
+
 ## Root: R2b1 принят; B01 harness остановлен без доменных записей — 20 ноября2026
 
 Accepted3cd0bd328d72bbe3d302407b9f347ac32059c96a: one-pass Store/OS reconciler,
