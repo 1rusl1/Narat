@@ -321,6 +321,21 @@ public struct GuestDraftCacheSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+// Metadata only; this token grants no OS scheduling or delivery authority.
+struct CareReminderReceiptSnapshot: Sendable {
+    let lease: SyncSessionLease
+    let revision: UUID
+    let receipts: CareReminderReceipts
+}
+
+enum CareReminderReceiptStoreError: Error, Equatable { case invalidMetadata, superseded }
+
+private struct CareReminderReceiptPayload: Codable {
+    let version: Int
+    let revision: UUID
+    let receipts: CareReminderReceipts
+}
+
 // MARK: - Local care overview (no sync schema or credential persistence)
 
 enum CareOverviewAuthorizationError: Error { case denied }
@@ -2158,7 +2173,9 @@ public actor LocalStore {
         in modelContext: ModelContext
     ) throws {
         for item in items {
-            guard item.entityType != Self.careOverviewEntityType else { throw SyncWireValidationError.invalidPage }
+            guard item.entityType != Self.careOverviewEntityType,
+                  item.entityType != Self.careReminderReceiptEntityType
+            else { throw SyncWireValidationError.invalidPage }
             let key = "\(ownerId.uuidString.lowercased()):\(item.entityType):\(item.id.uuidString.lowercased())"
             let descriptor = FetchDescriptor<SyncedEntityRecord>(
                 predicate: #Predicate { $0.compositeKey == key }
@@ -2191,6 +2208,143 @@ public actor LocalStore {
                 record.updatedAtRaw = rawTimes[key]
                 modelContext.insert(record)
             }
+        }
+    }
+
+    // Exact local-only identity. Corrupt bytes at this identity survive cache eviction.
+    private static let careReminderReceiptEntityType = "local_care_reminder_receipts"
+
+    private func careReminderReceiptKey(_ ownerId: UUID) -> String {
+        "\(ownerId.uuidString.lowercased()):\(Self.careReminderReceiptEntityType):\(ownerId.uuidString.lowercased())"
+    }
+
+    private func isCareReminderReceiptRow(_ row: SyncedEntityRecord, ownerId: UUID) -> Bool {
+        row.ownerId == ownerId && row.entityId == ownerId
+            && row.entityType == Self.careReminderReceiptEntityType
+            && row.compositeKey == careReminderReceiptKey(ownerId)
+    }
+
+    private func careReminderReceiptRow(ownerId: UUID, in disk: ModelContext) throws -> SyncedEntityRecord? {
+        let key = careReminderReceiptKey(ownerId)
+        let rows = try disk.fetch(FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+            $0.compositeKey == key
+        }))
+        guard rows.count <= 1 else { throw CareReminderReceiptStoreError.invalidMetadata }
+        return rows.first
+    }
+
+    private func careReminderReceiptPayload(
+        _ row: SyncedEntityRecord, ownerId: UUID
+    ) throws -> CareReminderReceiptPayload {
+        guard isCareReminderReceiptRow(row, ownerId: ownerId), row.deletedAt == nil else {
+            throw CareReminderReceiptStoreError.invalidMetadata
+        }
+        do {
+            let payload = try JSONDecoder().decode(CareReminderReceiptPayload.self, from: Data(row.payloadJSON.utf8))
+            guard payload.version == 1 else { throw CareReminderReceiptStoreError.invalidMetadata }
+            try payload.receipts.validate(expectedOwner: ownerId)
+            return payload
+        } catch {
+            throw CareReminderReceiptStoreError.invalidMetadata
+        }
+    }
+
+    private func encodeCareReminderReceipts(
+        _ receipts: CareReminderReceipts, revision: UUID, ownerId: UUID
+    ) throws -> String {
+        try receipts.validate(expectedOwner: ownerId)
+        return String(decoding: try JSONEncoder().encode(CareReminderReceiptPayload(
+            version: 1, revision: revision, receipts: receipts)), as: UTF8.self)
+    }
+
+    func readCareReminderReceipts(
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CareReminderReceiptSnapshot? {
+        try authority.withPermanentBoundValid(context) {
+            let disk = makeSyncContext()
+            guard let row = try careReminderReceiptRow(ownerId: context.ownerId, in: disk) else { return nil }
+            let payload = try careReminderReceiptPayload(row, ownerId: context.ownerId)
+            return CareReminderReceiptSnapshot(lease: context, revision: payload.revision, receipts: payload.receipts)
+        }
+    }
+
+    /// Reserve the empty ledger before any future awaited adapter work. Never infer empty from corruption.
+    func beginCareReminderReceipts(
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CareReminderReceiptSnapshot {
+        try authority.withPermanentBoundValid(context) {
+            let disk = makeSyncContext()
+            do {
+                if let row = try careReminderReceiptRow(ownerId: context.ownerId, in: disk) {
+                    let payload = try careReminderReceiptPayload(row, ownerId: context.ownerId)
+                    return CareReminderReceiptSnapshot(lease: context, revision: payload.revision, receipts: payload.receipts)
+                }
+                let receipts = CareReminderReceipts(ownerId: context.ownerId)
+                let revision = UUID()
+                disk.insert(SyncedEntityRecord(
+                    ownerId: context.ownerId, entityType: Self.careReminderReceiptEntityType,
+                    entityId: context.ownerId, updatedAt: Date(),
+                    payloadJSON: try encodeCareReminderReceipts(receipts, revision: revision, ownerId: context.ownerId)))
+                try Task.checkCancellation()
+                try disk.save()
+                return CareReminderReceiptSnapshot(lease: context, revision: revision, receipts: receipts)
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    /// CAS and replacement validation share one fresh disk context and the original permanent lease.
+    /// A save acknowledges metadata only; PREPARED must precede a future adapter add, ACK follows it.
+    func commitCareReminderReceipts(
+        _ receipts: CareReminderReceipts, replacing original: CareReminderReceiptSnapshot,
+        authority: SyncSessionAuthority
+    ) throws -> CareReminderReceiptSnapshot {
+        try authority.withPermanentBoundValid(original.lease) {
+            let ownerId = original.lease.ownerId
+            let disk = makeSyncContext()
+            do {
+                guard let row = try careReminderReceiptRow(ownerId: ownerId, in: disk) else {
+                    throw CareReminderReceiptStoreError.superseded
+                }
+                let current = try careReminderReceiptPayload(row, ownerId: ownerId)
+                guard current.revision == original.revision else { throw CareReminderReceiptStoreError.superseded }
+                try receipts.validate(expectedOwner: ownerId)
+                try receipts.validateReplacement(of: current.receipts)
+                guard receipts != current.receipts else {
+                    return CareReminderReceiptSnapshot(lease: original.lease, revision: current.revision,
+                                                       receipts: current.receipts)
+                }
+                let revision = UUID()
+                row.payloadJSON = try encodeCareReminderReceipts(receipts, revision: revision, ownerId: ownerId)
+                row.updatedAt = Date()
+                try Task.checkCancellation()
+                try disk.save()
+                return CareReminderReceiptSnapshot(lease: original.lease, revision: revision, receipts: receipts)
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    /// Trusted erase-only account-removal primitive; no read/write/arm authority is granted.
+    /// R3 owns cleanup integration. Logout, opt-out and cache reset must retain these receipts.
+    func purgeCareReminderReceiptMetadata(ownerId: UUID) throws {
+        let disk = makeSyncContext()
+        do {
+            let key = careReminderReceiptKey(ownerId)
+            let type = Self.careReminderReceiptEntityType
+            let rows = try disk.fetch(FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+                $0.ownerId == ownerId && ($0.entityType == type || $0.compositeKey == key)
+            }))
+            for row in rows { disk.delete(row) }
+            try Task.checkCancellation()
+            try disk.save()
+        } catch {
+            disk.rollback()
+            throw error
         }
     }
 
@@ -2527,8 +2681,9 @@ public actor LocalStore {
                         predicate: #Predicate { $0.ownerId == ownerId }
                     )
                     for entity in try modelContext.fetch(entities) {
-                        if entity.compositeKey != careOverviewKey(ownerId)
-                            || entity.entityType != Self.careOverviewEntityType || entity.entityId != ownerId {
+                        let isOverview = entity.compositeKey == careOverviewKey(ownerId)
+                            && entity.entityType == Self.careOverviewEntityType && entity.entityId == ownerId
+                        if !isOverview && !isCareReminderReceiptRow(entity, ownerId: ownerId) {
                             modelContext.delete(entity)
                         }
                     }
@@ -2749,24 +2904,29 @@ public actor LocalStore {
         return try modelContext.fetch(descriptor).first?.watermark
     }
 
-    /// Resets cached synced entities and cursor while strictly preserving LocalOutbox and GuestDraftCache.
+    /// Resets canonical/overview cache and cursor, retaining receipts, outbox and guest drafts.
     public func resetSyncCachePreservingOutbox(ownerId: UUID) throws {
         let modelContext = makeSyncContext()
-        let entityDescriptor = FetchDescriptor<SyncedEntityRecord>(
-            predicate: #Predicate { $0.ownerId == ownerId }
-        )
-        for entity in try modelContext.fetch(entityDescriptor) {
-            modelContext.delete(entity)
-        }
+        do {
+            let entityDescriptor = FetchDescriptor<SyncedEntityRecord>(
+                predicate: #Predicate { $0.ownerId == ownerId }
+            )
+            for entity in try modelContext.fetch(entityDescriptor) {
+                if !isCareReminderReceiptRow(entity, ownerId: ownerId) { modelContext.delete(entity) }
+            }
 
-        let checkpointDescriptor = FetchDescriptor<SyncCheckpointRecord>(
-            predicate: #Predicate { $0.ownerId == ownerId }
-        )
-        for cp in try modelContext.fetch(checkpointDescriptor) {
-            cp.watermark = nil
-            cp.watermarkRaw = nil
-            cp.updatedAt = Date()
+            let checkpointDescriptor = FetchDescriptor<SyncCheckpointRecord>(
+                predicate: #Predicate { $0.ownerId == ownerId }
+            )
+            for cp in try modelContext.fetch(checkpointDescriptor) {
+                cp.watermark = nil
+                cp.watermarkRaw = nil
+                cp.updatedAt = Date()
+            }
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
         }
-        try modelContext.save()
     }
 }

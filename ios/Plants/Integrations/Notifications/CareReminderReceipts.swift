@@ -86,18 +86,43 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
         }
     }
 
-    /// Future Store callers can reject history-dropping replacement snapshots before writing.
+    /// Replacements are checked against the committed ledger, never a caller's expected copy.
     func validateReplacement(of previous: Self) throws {
         try previous.validate(expectedOwner: ownerId)
         try validate(expectedOwner: previous.ownerId)
+        for (id, new) in entries where previous.entries[id] == nil {
+            guard [.prepared, .spent, .uncertain].contains(new.phase),
+                  new.phase != .prepared || (new.cancellation == nil
+                      && new.originalFireDate == new.currentFireDate)
+            else { throw Invalid.metadata }
+        }
         for (id, old) in previous.entries {
-            guard let new = entries[id], new.originalFireDate == old.originalFireDate,
-                  old.phase != .spent || new.phase == .spent,
-                  old.phase != .uncertain || [.uncertain, .spent].contains(new.phase),
-                  old.cancellation == nil || new.cancellation != nil else { throw Invalid.metadata }
-            if [.spent, .uncertain].contains(old.phase) {
-                guard new.currentFireDate == old.currentFireDate, new.attemptId == old.attemptId,
-                      new.sourceDueYMD == old.sourceDueYMD else { throw Invalid.metadata }
+            guard let new = entries[id], new.ownerId == old.ownerId,
+                  new.plantId == old.plantId, new.occurrence == old.occurrence,
+                  new.originalFireDate == old.originalFireDate else { throw Invalid.metadata }
+            let changedAttempt = new.attemptId != old.attemptId
+                || new.currentFireDate != old.currentFireDate || new.sourceDueYMD != old.sourceDueYMD
+            if changedAttempt {
+                guard old.phase == .cancelledBeforeFire, new.phase == .prepared,
+                      new.attemptId != old.attemptId, let proof = old.cancellation,
+                      proof.attemptId == old.attemptId, proof.fireDate == old.currentFireDate,
+                      new.cancellation == proof else { throw Invalid.metadata }
+                continue
+            }
+            let allowed: [Phase]
+            switch old.phase {
+            case .prepared: allowed = [.prepared, .armed, .cancelledBeforeFire, .spent, .uncertain]
+            case .armed: allowed = [.armed, .cancelledBeforeFire, .spent, .uncertain]
+            case .cancelledBeforeFire: allowed = [.cancelledBeforeFire, .spent, .uncertain]
+            case .spent: allowed = [.spent]
+            case .uncertain: allowed = [.uncertain, .spent]
+            }
+            guard allowed.contains(new.phase) else { throw Invalid.metadata }
+            if [.prepared, .armed].contains(old.phase), new.phase == .cancelledBeforeFire {
+                guard let proof = new.cancellation, proof.attemptId == old.attemptId,
+                      proof.fireDate == old.currentFireDate else { throw Invalid.metadata }
+            } else {
+                guard new.cancellation == old.cancellation else { throw Invalid.metadata }
             }
         }
     }

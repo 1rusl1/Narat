@@ -99,9 +99,9 @@ extension CollectionWireTests {
         XCTAssertEqual(entry.originalFireDate, candidate.absoluteFireDate)
         XCTAssertEqual(entry.currentFireDate, changed.absoluteFireDate)
         XCTAssertEqual(entry.cancellation, cancelled.entries[candidate.id]?.cancellation)
+        XCTAssertNoThrow(try ledger.validateReplacement(of: cancelled))
         XCTAssertTrue(try ledger.acknowledge(id: candidate.id, attemptId: entry.attemptId, now: receiptNow))
         XCTAssertEqual(try coldReceipts(ledger), ledger)
-        XCTAssertNoThrow(try ledger.validateReplacement(of: cancelled))
         XCTAssertThrowsError(try CareReminderReceipts(ownerId: syncOwner).validateReplacement(of: ledger))
     }
 
@@ -11286,3 +11286,382 @@ extension CollectionWireTests {
     }
 }
 #endif
+
+extension CollectionWireTests {
+    @MainActor
+    private func receiptReject(_ action: () async throws -> Void) async {
+        do { try await action(); XCTFail("Receipt operation must fail closed") } catch {}
+    }
+
+    @MainActor
+    private func receiptEdit(_ url: URL, _ action: (ModelContext) throws -> Void) throws {
+        let disk = ModelContext(try diskContainer(url))
+        disk.autosaveEnabled = false
+        try action(disk)
+        try disk.save()
+    }
+
+    private func forgedReceipt(
+        _ ledger: CareReminderReceipts, _ edit: (inout [String: Any]) -> Void
+    ) throws -> CareReminderReceipts {
+        var wire = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(ledger)) as? [String: Any])
+        var records = try XCTUnwrap(wire["entries"] as? [[String: Any]])
+        var entry = try XCTUnwrap(records[0]["entry"] as? [String: Any])
+        edit(&entry)
+        records[0]["entry"] = entry
+        wire["entries"] = records
+        return try JSONDecoder().decode(CareReminderReceipts.self, from: JSONSerialization.data(withJSONObject: wire))
+    }
+
+    @MainActor
+    func testReminderStoreDiskPhasesOwnerIsolationAndConsumedOpportunity() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (authority, lease) = try overviewBinding()
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId])
+        _ = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: authority)
+        let unrelated = try overviewDiskState(url)
+        let missing = try await store.readCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertNil(missing)
+        var token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+        let emptyState = try overviewDiskState(url)
+        let same = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertEqual(same.revision, token.revision)
+        let noop = try await store.commitCareReminderReceipts(token.receipts, replacing: token, authority: authority)
+        XCTAssertEqual(noop.revision, token.revision)
+        XCTAssertEqual(try overviewDiskState(url), emptyState)
+        let candidate = try receiptCandidate()
+        let changed = try receiptCandidate(due: "2026-11-28", hour: 11,
+            zone: TimeZone(identifier: "America/New_York"))
+        let phases: [CareReminderReceipts.Phase] = [.prepared, .armed, .cancelledBeforeFire, .prepared, .uncertain, .spent]
+        for (index, phase) in phases.enumerated() {
+            var ledger = token.receipts
+            switch index {
+            case 0: _ = try ledger.prepare(candidate, now: receiptNow)
+            case 1:
+                _ = try ledger.acknowledge(id: candidate.id, attemptId: XCTUnwrap(ledger.entries[candidate.id]).attemptId, now: receiptNow)
+            case 2:
+                _ = try ledger.cancel(id: candidate.id, attemptId: XCTUnwrap(ledger.entries[candidate.id]).attemptId,
+                    proof: .removedAndReadBackAbsent(confirmedAt: receiptNow), now: receiptNow)
+            case 3: _ = try ledger.prepare(changed, now: receiptNow)
+            case 4: try ledger.observe(id: candidate.id, now: receiptNow, unknown: true)
+            default: try ledger.observe(id: candidate.id, now: changed.absoluteFireDate, delivered: true)
+            }
+            let saved = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+            XCTAssertNotEqual(saved.revision, token.revision)
+            let cold = LocalStore(modelContainer: try diskContainer(url))
+            let read = try await cold.readCareReminderReceipts(context: lease, authority: authority)
+            token = try XCTUnwrap(read)
+            XCTAssertEqual(token.revision, saved.revision)
+            XCTAssertEqual(token.receipts, ledger)
+            XCTAssertEqual(token.receipts.entries[candidate.id]?.phase, phase)
+            XCTAssertEqual(token.receipts.entries[candidate.id]?.originalFireDate, candidate.absoluteFireDate)
+            XCTAssertEqual(token.receipts.entries[candidate.id]?.currentFireDate,
+                           index < 3 ? candidate.absoluteFireDate : changed.absoluteFireDate)
+        }
+        var spent = token.receipts
+        XCTAssertEqual(try spent.prepare(receiptCandidate(due: "2026-11-29", hour: 16),
+            now: changed.absoluteFireDate.addingTimeInterval(3600)), .blocked)
+        let blocked = try await store.commitCareReminderReceipts(spent, replacing: token, authority: authority)
+        XCTAssertEqual(blocked.revision, token.revision)
+        let b = SyncSessionAuthority()
+        b.bind(try profileSession(ownerId: otherSyncOwner))
+        let leaseB = try b.capture(ownerId: otherSyncOwner)
+        let emptyB = try await store.beginCareReminderReceipts(context: leaseB, authority: b)
+        XCTAssertTrue(emptyB.receipts.entries.isEmpty)
+        await receiptReject {
+            _ = try await store.commitCareReminderReceipts(token.receipts, replacing: emptyB, authority: b)
+        }
+        XCTAssertEqual(try overviewDiskState(url).filter { !$0.contains("local_care_reminder_receipts") }, unrelated)
+    }
+
+    @MainActor
+    func testReminderStoreTwoWritersLeaseFencesAndPurgeABA() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (authority, lease) = try overviewBinding()
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let second = LocalStore(modelContainer: try diskContainer(url))
+        let first = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+        let other = try await second.beginCareReminderReceipts(context: lease, authority: authority)
+        var ledger = first.receipts
+        _ = try ledger.prepare(receiptCandidate(), now: receiptNow)
+        let replacement = ledger
+        let a = Task { try await store.commitCareReminderReceipts(replacement, replacing: first, authority: authority) }
+        let b = Task { try await second.commitCareReminderReceipts(replacement, replacing: other, authority: authority) }
+        var winners = 0
+        for task in [a, b] {
+            do { _ = try await task.value; winners += 1 }
+            catch CareReminderReceiptStoreError.superseded {}
+        }
+        XCTAssertEqual(winners, 1)
+        let currentRead = try await store.readCareReminderReceipts(context: lease, authority: authority)
+        let current = try XCTUnwrap(currentRead)
+        let before = try overviewDiskState(url)
+        let (foreign, _) = try overviewBinding()
+        await receiptReject { _ = try await store.commitCareReminderReceipts(replacement, replacing: current, authority: foreign) }
+        for session in [nil, try profileSession(ownerId: otherSyncOwner), try profileSession()] {
+            authority.bind(session)
+            await receiptReject { _ = try await store.beginCareReminderReceipts(context: lease, authority: authority) }
+            await receiptReject { _ = try await store.readCareReminderReceipts(context: lease, authority: authority) }
+            await receiptReject { _ = try await store.commitCareReminderReceipts(replacement, replacing: current, authority: authority) }
+        }
+        authority.bind(try profileSession(claims: ["sub": syncOwner.uuidString, "is_anonymous": true]))
+        let anonymous = try authority.capture(ownerId: syncOwner)
+        await receiptReject { _ = try await store.beginCareReminderReceipts(context: anonymous, authority: authority) }
+        await receiptReject { _ = try await store.readCareReminderReceipts(context: anonymous, authority: authority) }
+        XCTAssertEqual(try overviewDiskState(url), before)
+        authority.bind(try profileSession())
+        let fresh = try authority.capture(ownerId: syncOwner)
+        let old = try await store.beginCareReminderReceipts(context: fresh, authority: authority)
+        try await store.purgeCareReminderReceiptMetadata(ownerId: syncOwner)
+        await receiptReject { _ = try await store.commitCareReminderReceipts(replacement, replacing: old, authority: authority) }
+        let next = try await store.beginCareReminderReceipts(context: fresh, authority: authority)
+        XCTAssertNotEqual(next.revision, old.revision)
+        await receiptReject { _ = try await store.commitCareReminderReceipts(replacement, replacing: old, authority: authority) }
+        let after = try await store.readCareReminderReceipts(context: fresh, authority: authority)
+        XCTAssertEqual(after?.revision, next.revision)
+        XCTAssertTrue(try XCTUnwrap(after).receipts.entries.isEmpty)
+    }
+
+    @MainActor
+    func testReminderStoreRefreshResetAndForgedSyncAreAtomic() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let (authority, lease) = try overviewBinding()
+        var token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+        var ledger = token.receipts
+        _ = try ledger.prepare(receiptCandidate(), now: receiptNow)
+        token = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+        _ = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: authority)
+        let generation = try overviewWrapper(url)["canonicalGeneration"] as? String
+        for full in [false, true] {
+            try receiptEdit(url) { disk in
+                for kind in 0..<3 {
+                    let row = SyncedEntityRecord(ownerId: syncOwner,
+                        entityType: kind == 2 ? "local_other" : "local_care_reminder_receipts",
+                        entityId: kind == 0 ? otherSyncOwner : syncOwner, updatedAt: Date(), payloadJSON: "{}")
+                    if kind == 1 { row.compositeKey += ":wrong" }
+                    disk.insert(row)
+                }
+            }
+            try await overviewCanonical(store, authority: authority, lease: lease, ids: [], fullRefresh: full)
+            let read = try await store.readCareReminderReceipts(context: lease, authority: authority)
+            XCTAssertEqual(read?.revision, token.revision)
+            XCTAssertEqual(read?.receipts, ledger)
+        }
+        XCTAssertNotEqual(try overviewWrapper(url)["canonicalGeneration"] as? String, generation)
+        let rows = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "local_care_reminder_receipts")
+        XCTAssertEqual(rows.map(\.id), [syncOwner])
+        let before = try overviewDiskState(url)
+        let forged = SyncItemDTO(entityType: "local_care_reminder_receipts", id: syncOwner,
+            updatedAt: Date(), payloadJSON: "{}")
+        let ordinary = SyncItemDTO(entityType: "plants", id: otherSyncOwner, updatedAt: Date(), payloadJSON: "{}")
+        await receiptReject { try await store.applySyncedItems([ordinary, forged], ownerId: syncOwner) }
+        await receiptReject {
+            try await store.publishSyncWindow(items: [ordinary, forged], ownerId: syncOwner, watermark: Date(),
+                fullRefresh: true, context: lease, authority: authority)
+        }
+        XCTAssertEqual(try overviewDiskState(url), before)
+        try await store.resetSyncCachePreservingOutbox(ownerId: syncOwner)
+        let read = try await store.readCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertEqual(read?.revision, token.revision)
+        XCTAssertEqual(read?.receipts, ledger)
+        let overview = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertNil(overview.canonicalGeneration)
+        let plants = try await store.activeSyncedEntities(ownerId: syncOwner, entityType: "plants")
+        let cursor = try await store.currentWatermarkRaw(ownerId: syncOwner)
+        XCTAssertTrue(plants.isEmpty)
+        XCTAssertNil(cursor)
+        for (index, owner) in [syncOwner, otherSyncOwner].enumerated() {
+            let queue = try await store.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(queue, [outbox[index]])
+        }
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testReminderStoreCorruptionCollisionRetentionAndOwnerOnlyPurge() async throws {
+        for mutation in 0..<9 {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let (authority, lease) = try overviewBinding()
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+            try receiptEdit(url) { disk in
+                let row = try XCTUnwrap(disk.fetch(FetchDescriptor<SyncedEntityRecord>()).first)
+                var wire = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(row.payloadJSON.utf8)) as? [String: Any])
+                switch mutation {
+                case 0: row.payloadJSON = "corrupt"; return
+                case 1: wire["version"] = 2
+                case 2: wire.removeValue(forKey: "revision")
+                case 3:
+                    var receipts = wire["receipts"] as! [String: Any]
+                    receipts["ownerId"] = otherSyncOwner.uuidString
+                    wire["receipts"] = receipts
+                case 4:
+                    var receipts = wire["receipts"] as! [String: Any]
+                    receipts["version"] = 2
+                    wire["receipts"] = receipts
+                case 5: row.deletedAt = receiptNow
+                case 6: row.ownerId = otherSyncOwner
+                case 7: row.entityId = otherSyncOwner
+                default: row.entityType = "plants"
+                }
+                row.payloadJSON = String(decoding: try JSONSerialization.data(withJSONObject: wire), as: UTF8.self)
+            }
+            let before = try overviewDiskState(url)
+            await receiptReject { _ = try await store.beginCareReminderReceipts(context: lease, authority: authority) }
+            await receiptReject { _ = try await store.readCareReminderReceipts(context: lease, authority: authority) }
+            await receiptReject { _ = try await store.commitCareReminderReceipts(token.receipts, replacing: token, authority: authority) }
+            XCTAssertEqual(try overviewDiskState(url), before)
+            if mutation < 6 {
+                try await overviewCanonical(store, authority: authority, lease: lease, ids: [], fullRefresh: true)
+                try await store.resetSyncCachePreservingOutbox(ownerId: syncOwner)
+                await receiptReject { _ = try await store.beginCareReminderReceipts(context: lease, authority: authority) }
+                let retained = try overviewDiskState(url).filter { $0.contains("local_care_reminder_receipts") }
+                XCTAssertEqual(retained, before)
+            }
+        }
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let outbox = try await seedSyncDisk(url)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let (authority, lease) = try overviewBinding()
+        _ = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+        let b = SyncSessionAuthority()
+        b.bind(try profileSession(ownerId: otherSyncOwner))
+        let leaseB = try b.capture(ownerId: otherSyncOwner)
+        let tokenB = try await store.beginCareReminderReceipts(context: leaseB, authority: b)
+        try receiptEdit(url) { disk in
+            let own = try XCTUnwrap(disk.fetch(FetchDescriptor<SyncedEntityRecord>()).first {
+                $0.ownerId == syncOwner && $0.entityType == "local_care_reminder_receipts"
+            })
+            own.entityType = "broken" // Own reserved key still belongs to erase-only cleanup.
+            own.payloadJSON = "corrupt"
+            disk.insert(SyncedEntityRecord(ownerId: syncOwner, entityType: "local_care_reminder_receipts",
+                entityId: serverPlantId, updatedAt: Date(), payloadJSON: "malformed"))
+        }
+        let before = try overviewDiskState(url).filter {
+            !$0.hasPrefix(syncOwner.uuidString.lowercased() + ":local_care_reminder_receipts:")
+        }
+        try await store.purgeCareReminderReceiptMetadata(ownerId: syncOwner)
+        XCTAssertEqual(try overviewDiskState(url), before)
+        let a = try await store.readCareReminderReceipts(context: lease, authority: authority)
+        let readB = try await store.readCareReminderReceipts(context: leaseB, authority: b)
+        XCTAssertNil(a)
+        XCTAssertEqual(readB?.revision, tokenB.revision)
+        for (index, owner) in [syncOwner, otherSyncOwner].enumerated() {
+            let queue = try await store.pendingOutboxEntries(for: owner)
+            XCTAssertEqual(queue, [outbox[index]])
+        }
+    }
+
+    @MainActor
+    func testReminderStoreFailedSavesDiscardEntryAndNonce() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (authority, lease) = try overviewBinding()
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId])
+        let readOnly = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+        let beforeBegin = try overviewDiskState(url)
+        await receiptReject { _ = try await readOnly.beginCareReminderReceipts(context: lease, authority: authority) }
+        let absent = try await readOnly.readCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertNil(absent)
+        XCTAssertEqual(try overviewDiskState(url), beforeBegin)
+        let token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+        var ledger = token.receipts
+        _ = try ledger.prepare(receiptCandidate(), now: receiptNow)
+        let before = try overviewDiskState(url)
+        await receiptReject { _ = try await readOnly.commitCareReminderReceipts(ledger, replacing: token, authority: authority) }
+        let unchanged = try await readOnly.readCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertEqual(unchanged?.revision, token.revision)
+        XCTAssertTrue(try XCTUnwrap(unchanged).receipts.entries.isEmpty)
+        await receiptReject { try await readOnly.purgeCareReminderReceiptMetadata(ownerId: syncOwner) }
+        XCTAssertEqual(try overviewDiskState(url), before)
+        let saved = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+        XCTAssertEqual(saved.receipts, ledger)
+        XCTAssertNotEqual(saved.revision, token.revision)
+    }
+
+    @MainActor
+    func testReminderStoreForgedCodecCannotBypassDurableTransitions() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (authority, lease) = try overviewBinding()
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        var token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+        let candidate = try receiptCandidate()
+        var ledger = token.receipts
+        _ = try ledger.prepare(candidate, now: receiptNow)
+        let prepared = ledger
+        let newArmed = try forgedReceipt(prepared) { $0["phase"] = "armed" }
+        await receiptReject { _ = try await store.commitCareReminderReceipts(newArmed, replacing: token, authority: authority) }
+        token = try await store.commitCareReminderReceipts(prepared, replacing: token, authority: authority)
+        // A caller-modified expected copy must not become the baseline for validation.
+        let fabricated = CareReminderReceiptSnapshot(lease: lease, revision: token.revision,
+            receipts: CareReminderReceipts(ownerId: syncOwner))
+        await receiptReject {
+            _ = try await store.commitCareReminderReceipts(fabricated.receipts, replacing: fabricated, authority: authority)
+        }
+        let attempt = try XCTUnwrap(prepared.entries[candidate.id]).attemptId
+        _ = try ledger.acknowledge(id: candidate.id, attemptId: attempt, now: receiptNow)
+        token = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+        let armed = ledger
+        for mutation in 0..<4 {
+            let forged = try forgedReceipt(armed) { entry in
+                switch mutation {
+                case 0: entry["phase"] = "prepared"
+                case 1: entry["attemptId"] = UUID().uuidString
+                case 2: entry["sourceDueYMD"] = "2026-11-28" // First-aid identity stays the same.
+                default:
+                    entry["phase"] = "prepared"
+                    entry["attemptId"] = UUID().uuidString
+                    entry["currentFireDate"] = candidate.absoluteFireDate.addingTimeInterval(3600).timeIntervalSinceReferenceDate
+                    entry["cancellation"] = ["attemptId": attempt.uuidString,
+                        "fireDate": candidate.absoluteFireDate.timeIntervalSinceReferenceDate,
+                        "confirmedAt": receiptNow.timeIntervalSinceReferenceDate]
+                }
+            }
+            await receiptReject { _ = try await store.commitCareReminderReceipts(forged, replacing: token, authority: authority) }
+        }
+        _ = try ledger.cancel(id: candidate.id, attemptId: attempt,
+            proof: .removedAndReadBackAbsent(confirmedAt: receiptNow), now: receiptNow)
+        token = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+        _ = try ledger.prepare(receiptCandidate(due: "2026-11-28", hour: 10), now: receiptNow)
+        let wrongProof = try forgedReceipt(ledger) { entry in
+            var proof = entry["cancellation"] as! [String: Any]
+            proof["confirmedAt"] = receiptNow.addingTimeInterval(1).timeIntervalSinceReferenceDate
+            entry["cancellation"] = proof
+        }
+        await receiptReject { _ = try await store.commitCareReminderReceipts(wrongProof, replacing: token, authority: authority) }
+        token = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+        try ledger.observe(id: candidate.id, now: receiptNow, unknown: true)
+        token = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+        let uncertainRearm = try forgedReceipt(ledger) { $0["phase"] = "prepared" }
+        await receiptReject { _ = try await store.commitCareReminderReceipts(uncertainRearm, replacing: token, authority: authority) }
+        try ledger.observe(id: candidate.id, now: receiptNow, delivered: true)
+        token = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+        let before = try overviewDiskState(url)
+        for mutation in 0..<7 {
+            let forged = try forgedReceipt(ledger) { entry in
+                switch mutation {
+                case 0: entry["phase"] = "prepared"
+                case 1: entry["phase"] = "armed"
+                case 2: entry["phase"] = "uncertain"
+                case 3: entry["attemptId"] = UUID().uuidString
+                case 4: entry["sourceDueYMD"] = "2026-11-29"
+                case 5: entry["originalFireDate"] = receiptNow.timeIntervalSinceReferenceDate
+                default: entry["currentFireDate"] = receiptNow.timeIntervalSinceReferenceDate
+                }
+            }
+            await receiptReject { _ = try await store.commitCareReminderReceipts(forged, replacing: token, authority: authority) }
+        }
+        XCTAssertEqual(try overviewDiskState(url), before)
+    }
+}
