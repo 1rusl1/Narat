@@ -527,3 +527,5 @@
 - R2a run01 BLOCKED after2 identical mechanical diffseparator failures; controller exactnormalized2filecandidate requires freshfullread-only candidate_base876f8fc Swift/MCP/149/ReviewQA. No R2a/OS/delivery readiness claim, T075/T077 stayopen.
 
 - R2a `0d0aebc` freshcandidate acceptance395Swift/149/MCP/highReviewQA PASS; mechanicalBLOCKED preserved. PureUNobjects/systemadaptercompile only, actualOSroundtrippending. R2b1 onepass→b2 latestworker/races (samefile)→R3UI/route→R4device; T075/T077 stayopen.
+
+- R2b1 `3cd0bd3` one-pass reconciler accepted401Swift/MCP/Review2QA (cancelled+conflictinginventory finding repaired). Latest-worker/races,32totalbudget и unknowncleanup ещё R2b2 передRoot; OSproof не получен. Ordinary B01 UI-save дваharnessFAIL, domaincanonicalunchanged/newplants0/localqueue0; [точкаостановки](../../docs/validation/tester-catalogue-live-stop-2026-11-20.md). B01/T075/T077/T098 остаютсяopen.

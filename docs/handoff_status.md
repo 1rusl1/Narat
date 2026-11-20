@@ -1,5 +1,38 @@
 # Narat — текущий статус и передача работы
 
+## Root: R2b1 принят; B01 harness остановлен без доменных записей — 20 ноября2026
+
+Accepted3cd0bd328d72bbe3d302407b9f347ac32059c96a: one-pass Store/OS reconciler,
+noRoot/не race-safe worker. Final401Swift/build/welcome140.861s,MCP125.194s,diff,
+Dev2/Review2/QA1 PASS. Initial401Swift158.592s и Reviewer1 semantic finding сохранены:
+cancelledBeforeFire с конфликтующим/невалидным inventory мог rearm после cleanup;
+Dev2 исправил терминальное блокирование, Reviewer2 PASS25.166s. ДоRoot ещё R2b2:
+latest-intent serialization/hold/logout/permission races, explicit conservative32TOTAL
+pendingbudget (убрать assumption64), unknown malformed cleanup. System add/readback
+roundtrip и actualOS delivery не доказаны fakeadapter/realStore fixtures.
+RootFFсохранил user3 по718manifestSHA,PBXdelta0,indexempty.
+
+Независимый ordinary live B01 source56d/f3binary: два FAIL, не PASS. Первый0Save —
+ошибка helper viewport поиска. Во втором1tap не дал typed Saved; screenshot показывает
+оставшуюся клавиатуру, AXKeyboardguard её пропустил. После terminate только ownapp
+серверный full canonical digest исходный, новыхplants0; localcreate receipt/checkpoint/
+outbox все0. Нет оставшегося inflight; failed checkpoints/AX/PNG/readbacks сохранены.
+Новыйcreate не повторяли. [Точка остановки](validation/tester-catalogue-live-stop-2026-11-20.md).
+Следующий B01 шаг — explicitEnter/visualready и отдельная guardedattempt, olddata неизменны.
+
+Physical capability дополнительно read-only: mobilecli видит2Sim/0real iOS, XcodeCUA
+getApp→noWindowsAvailable. Это НЕ доказательство отсутствия агента/текущего Maclock.
+Подключение devicectl и signingbuild ранее PASS, UI/install/delivery покаpending.
+Пользователю задан async missinginfo о testerdevice/channel; ответа пока нет,
+разработка не блокируется. Private matrix/quickstart подготовлены, не финальнаяпередача.
+
+Текущий docэтап: этот handoff/tasks и sanitized failedB01 MD/JSON. Реально выполнены
+его readonly safety/SQLite/visual checks, gitdiff/JSON; Swiftдляdocsнеповторяли.
+Следующий criticalpath: R2b2→R3 owner lifecycle/settings/permission/tap→R4 final unique
+build/install/OSroundtrip/physical scope/guide. Parentcheckboxвсеopen; reset0,
+последнийactual85%used15%leftordinaryallowed. Commit/pushфиксируютсяGit.
+
+
 ## R2a accepted; R2b1 one-pass reconciliation prep — 20 ноября2026
 
 Accepted/pushed `0d0aebc13708f373b369263d3c1bfcaf6c878fa2`, freshread-only
