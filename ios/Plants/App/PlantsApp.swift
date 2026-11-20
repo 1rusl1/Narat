@@ -606,9 +606,23 @@ struct RootContainerView: View {
         _ context: TodayContext, repository: CollectionRepository
     ) async throws -> CareReconciliationOutcome {
         try requireToday(context)
-        let outcome = try await repository.reconcilePendingCare(context: context.lease)
+        let outcome: CareReconciliationOutcome
+        do {
+            outcome = try await repository.reconcilePendingCare(context: context.lease)
+        } catch {
+            try requireToday(context)
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            guard CareReconciliationOutcome.permitsOverviewRead(after: error) else {
+                // Integrity/authorization errors must not leave a warm projection looking fresh.
+                todayUnavailable = true
+                throw error
+            }
+            // Same external pass and lease; never retry reconciliation or drain commands here.
+            outcome = .pending
+        }
         try requireToday(context)
         guard outcome != .busy else { return outcome }
+        todayUnavailable = false
         if todayModel.needsLocalRead { requestTodayLocal(context) }
         try await waitTodayLocal(context)
         guard !todayFenced, !todayModel.needsLocalRead else { return outcome }

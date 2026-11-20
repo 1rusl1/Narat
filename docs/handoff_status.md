@@ -1,5 +1,27 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: C3b mechanical candidate, fresh complete acceptance — 20 ноября 2026
+
+Run `tester-today-ui-20261120-01` BLOCKED после2apply failures наunchangedsource;
+Developer1/2 дали только patchgeneration, ни проверок/Review/QA. Sourceдоэтого
+оставался4f4a348. Контроллер прочитал всеhunks/scope, exactbase/hash/applycheck,
+применил ТОТЖЕ generated5filediff как НЕпринятыйcandidate (376+/6-), без
+семантическойправки/ослабления assertions. Это не Developer implementationPASS.
+Provenance `docs/validation/automation/tasks/tester-today-ui-controller-candidate.md`.
+
+Далее NEW `tester-today-ui-acceptance-20261120-01`, read-only candidate_base
+4f4a348всего5source+controllerdiff: actualSwift/MCP/old13+PL/new6TodayUI и
+8readonlynamespaceledgers → highReviewQA. OldBLOCKED preserved. Source/candidate
+пока не собран/непринят; Rootнеmerge. Scopedfallback разрешён толькоordinary
+URLErrorconnectivity, cancel/integrity/invalidscope не становится pending.
+lastCheckedAt точный savedfetchedAt, неDate-cacheAge; новыеUIstates/IDs/tests.
+
+Последние accepted C3ab30 и wholeC2dcef остаются отдельно. OrdinaryC2live только
+NoSchedule/navigation безcarewrites; dedicatedTodayUI/offline/date/iPhone/
+OSнеclaim. T066/T068/T075/T077/T098/B01–B11 open. Same routing/900/sharedlock/
+ACcaffeinate, actual77/23/reset0. ПослеTodayприёмки+ordinarydatedсценария R1..R4.
+
+
 ## Этап 2: C3a accepted, ordinary C2 live; C3b Today UI — 20 ноября 2026
 
 C3a accepted/pushed `b30bf8af69bf66a9d52ca04fec83313277be4044`,

@@ -186,3 +186,7 @@ old13careUI13/13+waterledger иPLUI+replayledger PASS. СтарыйFULL01FAILс�
 C3a `b30bf8a` accepted:372Swift/build/welcome/MCP/ReviewQA. Ordinarysigned
 C2NoSchedule/cardnavigation livePASS безcarewrites, reportdc2merged. Следующий
 C3b6namedTodayUI/lastchecked/honestofflineerror + old13/PL, не100%экранапоbuild.
+
+C3b source покаunaccepted:2механическихapplyfailure, сохранёнexactgenerated
+controllercandidate, нефиктивныйDeveloperPASS. Следующийfreshcandidate_base4f4a
+с полнымnew6TodayUI/old13/PL/Swift/MCP/highReviewQA.

@@ -95,7 +95,7 @@ struct TodayHomeView: View {
     }
     @State private var clock = Date()
 
-    private var state: CareOverviewViewState? { visible ? model.state : nil }
+    private var state: CareOverviewViewState? { visible && !unavailable ? model.state : nil }
     private var now: Date { max(clock, Date()) }
     private var boundary: Date {
         TodayCalendar.boundary(now: clock, deadline: state?.verifiedAccessUntil, timeZone: .current)
@@ -106,6 +106,7 @@ struct TodayHomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text(polish ? "Dzisiaj" : "Today").font(.largeTitle).accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("today.title")
                 Button(polish ? "Moje rośliny" : "My plants", action: collection)
                     .accessibilityIdentifier("collection.open")
                 Button(polish ? "Sprawdź roślinę" : "Check a plant", action: check)
@@ -116,24 +117,40 @@ struct TodayHomeView: View {
                     .accessibilityIdentifier("welcome.identify")
                 if unavailable {
                     Text(polish ? "Opieka jest niedostępna." : "Care is unavailable.")
+                        .accessibilityIdentifier("today.failed")
                 } else if model.hasError {
                     Text(polish ? "Nie udało się odświeżyć opieki." : "Couldn’t refresh care.")
+                        .accessibilityIdentifier("today.failed")
                 } else if state == nil {
                     ProgressView(polish ? "Wczytywanie opieki…" : "Loading care…")
                 }
                 if model.refreshing { ProgressView(polish ? "Odświeżanie…" : "Refreshing…") }
-                if state?.origin == .cache {
+                if state?.origin == .cache, state?.lastCheckedAt != nil {
                     Text(polish ? "Zapisana opieka." : "Saved care.").foregroundStyle(.secondary)
+                        .accessibilityIdentifier("today.cached")
+                }
+                if let checked = state?.lastCheckedAt {
+                    lastChecked(checked)
+                }
+                if let state, state.availability == .readOnly, projection.status != .unavailable {
+                    Text(polish ? "Harmonogram wymaga odświeżenia." : "Schedule needs revalidation.")
+                        .accessibilityIdentifier("today.stale")
                 }
                 if let state, !state.pending.isEmpty {
                     Text(state.pending.contains { $0.status == .retryRequired }
                          ? (polish ? "Zmiany wymagają ponowienia." : "Saved changes need a retry.")
                          : (polish ? "Zmiany oczekują na synchronizację." : "Changes pending sync."))
+                        .accessibilityIdentifier("today.pending")
                 }
                 if state != nil, !model.hasError { status(projection.status) }
                 ForEach(projection.sections) { section in
-                    Text(section.day == projection.today ? (polish ? "Dzisiaj" : "Today") : section.day)
+                    let kind = section.day == projection.today ? "today"
+                        : (section.day < projection.today ? "overdue" : "future")
+                    Text(section.day == projection.today ? (polish ? "Dzisiaj" : "Today")
+                         : ((section.day < projection.today ? (polish ? "Zaległe" : "Overdue")
+                             : (polish ? "Następna kontrola" : "Next check")) + " — " + section.day))
                         .font(.headline).accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("today.section." + kind + "." + section.day)
                     ForEach(section.checks) { item in
                         VStack(alignment: .leading, spacing: 6) {
                             Button { openPlant(item.plantId) } label: {
@@ -144,6 +161,7 @@ struct TodayHomeView: View {
                                     Text(item.due)
                                 }
                             }
+                            .accessibilityIdentifier("today.task." + item.id)
                             if item.source.isVerifiedLink {
                                 Link(item.source.locator, destination: item.source.url)
                             }
@@ -156,6 +174,7 @@ struct TodayHomeView: View {
                             Text((plant.card.personalName ?? plant.card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
                                  + (polish ? " — karta i dziennik" : " — card and journal"))
                         }
+                        .accessibilityIdentifier("today.plant." + plant.card.id.uuidString.lowercased())
                     }
                 }
                 Button(polish ? "Spróbuj ponownie" : "Refresh care", action: retry)
@@ -166,6 +185,7 @@ struct TodayHomeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
         }
+        .accessibilityIdentifier("today.root")
         .task(id: ClockRead(scope: model.scope, deadline: boundary)) {
             let scope = model.scope
             let deadline = boundary
@@ -183,13 +203,38 @@ struct TodayHomeView: View {
         }
     }
 
+    private func checkedText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: polish ? "pl_PL" : "en_US")
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return (polish ? "Ostatnio sprawdzono: " : "Last checked: ") + formatter.string(from: date)
+    }
+
+    private func lastChecked(_ date: Date) -> some View {
+        let text = Text(checkedText(date)).foregroundStyle(.secondary)
+            .accessibilityIdentifier("today.lastChecked")
+        #if DEBUG
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return text.accessibilityValue(formatter.string(from: date))
+        #else
+        return text
+        #endif
+    }
+
     @ViewBuilder private func status(_ status: TodayCalendar.Status) -> some View {
         switch status {
         case .empty: Text(polish ? "Nie masz jeszcze roślin." : "You haven’t saved any plants yet.")
+            .accessibilityIdentifier("today.empty")
         case .noSchedule: Text(polish ? "Brak zaplanowanych kontroli." : "No scheduled checks.")
+            .accessibilityIdentifier("today.noSchedule")
         case .paused: Text(polish ? "Automatyczna opieka jest wstrzymana." : "Automatic care is paused.")
+            .accessibilityIdentifier("today.paused")
         case .unknown: Text(polish ? "Dostęp do opieki nie jest potwierdzony." : "Care access is not confirmed.")
+            .accessibilityIdentifier("today.unknown")
         case .unavailable: Text(polish ? "Harmonogram wymaga odświeżenia." : "Schedule needs revalidation.")
+            .accessibilityIdentifier("today.stale")
         case .pending, .scheduled: EmptyView()
         }
     }

@@ -509,3 +509,5 @@
 - C2 ordinary signed Release `dcef6c2`: live real SDK/Supabase на собственном Simulator подтвердили NoSchedule → own existing card/journal → Today, canonical digest неизменен. [Отчёт](../../docs/validation/tester-today-live-2026-11-20.md). Это один Free-аккаунт без дат; dated/offline/physical/OS и C3 UI остаются открыты, T066 не закрыт.
 
 - C3a `b30bf8a`:372Swift/MCP/highReviewQA PASS, dedicated TodayDEBUGtransport/sharedprojection/persistedanchor/phases/home-return accepted; ordinaryC2 NoSchedule live отдельно dc2report. DedicatedTodayUI/offline/date/device ещёC3b, T066 открыт.
+
+- C3b run01 BLOCKED на repeatedapply(2patchgenerationcalls), sourceнепроверен. Exactgenerateddraft controllercandidateSHA 3d9bc150ff67 требуетfreshread-onlyfullcandidate_base4f4a с new6/old13/PL/Swift/MCP/ReviewQA; T066 открыт.

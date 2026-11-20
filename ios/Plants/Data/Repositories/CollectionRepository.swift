@@ -238,6 +238,18 @@ struct PersistedWateringRejection: Codable {
 /// Completion describes this bounded reconciliation pass, never an action receipt.
 enum CareReconciliationOutcome: Sendable, Equatable {
     case completed, pending, busy
+
+    /// Only unambiguous connectivity failures permit the existing read-only overview pass.
+    static func permitsOverviewRead(after error: Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        switch error.code {
+        case .notConnectedToInternet, .networkConnectionLost, .timedOut,
+             .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 enum PlantDeletionOutcome {
@@ -395,6 +407,7 @@ struct CareOverviewViewState: Sendable {
     let canonicalGeneration: UUID?
     let snapshotGeneration: UUID?
     let cacheAge: TimeInterval?
+    let lastCheckedAt: Date?
     let origin: Origin
     let availability: Availability
     let failure: Failure?
@@ -414,6 +427,7 @@ struct CareOverviewViewState: Sendable {
         snapshotLocale = local.cached?.snapshotLocale
         canonicalGeneration = local.canonicalGeneration
         snapshotGeneration = local.snapshotGeneration
+        lastCheckedAt = local.cached?.fetchedAt
         cacheAge = local.cached.map { max(0, now.timeIntervalSince($0.fetchedAt)) }
         self.origin = origin
         knownInvalidation = local.knownInvalidation

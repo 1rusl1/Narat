@@ -1244,6 +1244,247 @@ final class CatalogueSaveUITests: XCTestCase {
         require(previous)
     }
 
+    @MainActor func testTodayMixedChecksOpenRequestedCardOnce() {
+        let run = Run("todayMixed", .en, today: true)
+        defer { run.app.terminate() }
+        launch(run)
+        let tasks = todayTasks(run)
+        XCTAssertEqual(tasks.count, 2)
+        let target = tasks.first { todayElement(run, $0).label.contains("Fixture 2") }
+        guard let target else { return XCTFail("Missing the nonfirst plant task") }
+        let parts = target.dropFirst("today.task.".count).split(separator: "/").map(String.init)
+        XCTAssertEqual(parts.count, 4)
+        guard parts.count == 4 else { return }
+        require(todayElement(run, "today.section.overdue." + parts[3]))
+        XCTAssertTrue(todayElement(run, target).label.contains(parts[3]))
+        guard let other = tasks.first(where: { $0 != target }) else { return XCTFail("Missing today task") }
+        let currentDay = String(other.split(separator: "/").last!)
+        require(todayElement(run, "today.section.today." + currentDay))
+        assertTodayEntrypoints(run)
+        todayTap(run, target)
+        XCTAssertEqual(identity(run, "catalogue.saved.card."),
+                       "catalogue.saved.card." + parts[1].lowercased())
+        XCTAssertEqual(todayElement(run, "catalogue.saved.name").label, "Fixture 2")
+        todayTap(run, "collection.back")
+        require(todayElement(run, "collection.settings.open"))
+        XCTAssertFalse(todayElement(run, "catalogue.saved.card." + parts[1].lowercased()).exists)
+        todayTap(run, "collection.back")
+        require(todayElement(run, "today.root"))
+        XCTAssertEqual(Set(todayTasks(run)), Set(tasks))
+        XCTAssertFalse(todayElement(run, "collection.back").exists)
+    }
+
+    @MainActor func testTodayFutureNoScheduleAndEmptyAreDistinct() {
+        for scenario in ["todayFuture", "todayNoSchedule", "todayEmpty"] {
+            let run = Run(scenario, .en, today: true)
+            defer { run.app.terminate() }
+            launch(run)
+            require(todayElement(run, "today.lastChecked"))
+            if scenario == "todayFuture" {
+                let tasks = todayTasks(run)
+                XCTAssertEqual(tasks.count, 2)
+                let days = Set(tasks.map { String($0.split(separator: "/").last!) })
+                XCTAssertEqual(days.count, 1)
+                guard let day = days.first else { return XCTFail("Missing future source date") }
+                require(todayElement(run, "today.section.future." + day))
+                XCTAssertFalse(todayElement(run, "today.noSchedule").exists)
+                XCTAssertFalse(todayElement(run, "today.empty").exists)
+            } else {
+                let expected = scenario == "todayEmpty" ? "today.empty" : "today.noSchedule"
+                require(todayElement(run, expected))
+                XCTAssertEqual(todayTaskQuery(run).count, 0)
+                XCTAssertFalse(todayElement(run, scenario == "todayEmpty" ? "today.noSchedule" : "today.empty").exists)
+                let shortcuts = run.app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier BEGINSWITH %@", "today.plant."))
+                XCTAssertEqual(shortcuts.count, scenario == "todayEmpty" ? 0 : 2)
+            }
+            XCTAssertFalse(todayElement(run, "today.failed").exists)
+            XCTAssertFalse(todayElement(run, "today.stale").exists)
+            assertTodayEntrypoints(run)
+        }
+    }
+
+    @MainActor func testTodayFirstFailureIsNotEmptySchedule() {
+        let run = Run("todayFirstFailure", .en, today: true)
+        defer { run.app.terminate() }
+        launch(run)
+        require(todayElement(run, "today.failed"))
+        XCTAssertFalse(todayElement(run, "today.empty").exists)
+        XCTAssertFalse(todayElement(run, "today.noSchedule").exists)
+        XCTAssertFalse(todayElement(run, "today.lastChecked").exists)
+        XCTAssertEqual(todayTaskQuery(run).count, 0)
+        assertTodayEntrypoints(run)
+        todayTap(run, "today.fixture.resume")
+        XCTAssertEqual(todayTasks(run).count, 2)
+        require(todayElement(run, "today.lastChecked"))
+        todayAbsent(run, "today.failed")
+    }
+
+    @MainActor func testTodaySavedChecksSurviveOfflineColdLaunch() {
+        let run = Run("todaySaved", .en, today: true)
+        defer { run.app.terminate() }
+        launch(run)
+        let tasks = todayTasks(run)
+        let checked = todayElement(run, "today.lastChecked")
+        require(checked)
+        let timestamp = checked.value as? String
+        XCTAssertNotNil(timestamp)
+        XCTAssertNotNil(timestamp.flatMap { value in
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.date(from: value)
+        })
+        todayTap(run, "today.fixture.offline")
+        todayTap(run, "today.retry")
+        require(todayElement(run, "today.failed"))
+        require(todayElement(run, "today.cached"))
+        XCTAssertEqual(checked.value as? String, timestamp)
+        XCTAssertEqual(Set(todayTasks(run)), Set(tasks))
+
+        // Same ledger, owner, persisted clock anchor and SQLite; offline is not reset on launch.
+        run.app.terminate()
+        run.app.launch()
+        require(todayElement(run, "today.failed"))
+        require(todayElement(run, "today.cached"))
+        require(checked)
+        XCTAssertEqual(checked.value as? String, timestamp)
+        XCTAssertEqual(Set(todayTasks(run)), Set(tasks))
+        XCTAssertFalse(todayElement(run, "today.empty").exists)
+        XCTAssertFalse(todayElement(run, "today.noSchedule").exists)
+        todayTap(run, "today.fixture.resume")
+        let fetchedAgain = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND value != %@", timestamp ?? ""), object: checked
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [fetchedAgain], timeout: 15), .completed)
+        todayAbsent(run, "today.failed")
+        todayAbsent(run, "today.cached")
+        XCTAssertEqual(Set(todayTasks(run)), Set(tasks))
+        require(checked)
+    }
+
+    @MainActor func testTodayHomeReturnRevalidatesChangedSource() {
+        let run = Run("todayMixed", .en, today: true)
+        defer { run.app.terminate() }
+        launch(run)
+        XCTAssertEqual(todayTasks(run).count, 2)
+        todayTap(run, "welcome.catalogue")
+        require(todayElement(run, "catalogue.species.fixture_fern"))
+        todayTap(run, "today.fixture.withdraw")
+        // Withdrawal alone does no read. The production return-home event owns this refresh.
+        todayTap(run, "catalogue.back")
+        require(todayElement(run, "today.noSchedule"))
+        XCTAssertEqual(todayTaskQuery(run).count, 0)
+        XCTAssertFalse(todayElement(run, "today.failed").exists)
+        XCTAssertFalse(todayElement(run, "today.empty").exists)
+        XCTAssertFalse(run.app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Fixture interval")).firstMatch.exists)
+        assertTodayEntrypoints(run)
+    }
+
+    @MainActor func testTodayLocaleAndSignOutClearOldProjection() {
+        let run = Run("todayMixed", .en, today: true)
+        defer { run.app.terminate() }
+        launch(run)
+        let tasks = todayTasks(run)
+        guard let first = tasks.first else { return XCTFail("Missing Today tasks") }
+        XCTAssertTrue(todayElement(run, first).label.contains("Check soil"))
+        selectLanguage(run, .pl)
+        let title = todayElement(run, "today.title")
+        let translated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND label == %@", "Dzisiaj"), object: title
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [translated], timeout: 15), .completed)
+        XCTAssertEqual(Set(todayTasks(run)), Set(tasks))
+        let checked = todayElement(run, "today.lastChecked")
+        require(checked)
+        XCTAssertTrue(checked.label.hasPrefix("Ostatnio sprawdzono:"))
+        for task in tasks {
+            XCTAssertTrue(todayElement(run, task).label.contains("Sprawdź podłoże"))
+        }
+        todayAbsent(run, "today.failed")
+        todayTap(run, "collection.open")
+        todayTap(run, "collection.settings.open")
+        todayTap(run, "account.signOut.open")
+        let confirm = run.app.alerts.buttons["account.signOut.confirm"].firstMatch
+        enabled(confirm)
+        confirm.tap()
+        require(todayElement(run, "account.signedOut"))
+        todayAbsent(run, "today.root")
+        XCTAssertEqual(todayTaskQuery(run).count, 0)
+        XCTAssertFalse(checked.exists)
+        XCTAssertFalse(run.app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.card.")).firstMatch.exists)
+        XCUIDevice.shared.press(.home)
+        run.app.activate()
+        require(todayElement(run, "account.signedOut"))
+        todayAbsent(run, "today.root")
+        XCTAssertEqual(todayTaskQuery(run).count, 0)
+    }
+
+    @MainActor
+    private func todayElement(_ run: Run, _ identifier: String) -> XCUIElement {
+        run.app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    @MainActor
+    private func todayTaskQuery(_ run: Run) -> XCUIElementQuery {
+        run.app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "today.task."))
+    }
+
+    @MainActor
+    private func todayTasks(_ run: Run) -> [String] {
+        let query = todayTaskQuery(run)
+        let complete = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: query)
+        XCTAssertEqual(XCTWaiter.wait(for: [complete], timeout: 15), .completed)
+        let tasks = query.allElementsBoundByIndex.map(\.identifier).sorted()
+        XCTAssertEqual(Set(tasks).count, 2)
+        for task in tasks {
+            let day = String(task.split(separator: "/").last!)
+            XCTAssertNotNil(day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression))
+            XCTAssertTrue(todayElement(run, task).label.contains(day))
+        }
+        require(run.app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Fixture interval")).firstMatch)
+        return tasks
+    }
+
+    @MainActor
+    private func assertTodayEntrypoints(_ run: Run) {
+        for identifier in ["collection.open", "welcome.catalogue", "welcome.check", "welcome.identify"] {
+            require(todayElement(run, identifier))
+        }
+    }
+
+    @MainActor
+    private func todayAbsent(_ run: Run, _ identifier: String) {
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: todayElement(run, identifier)
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 15), .completed, identifier)
+    }
+
+    @MainActor
+    private func todayTap(_ run: Run, _ identifier: String) {
+        let element = todayElement(run, identifier)
+        require(element)
+        // Scroll only inside Today; DEBUG controls and sheet toolbars remain outside it.
+        if !element.isHittable, todayElement(run, "today.root").exists {
+            for _ in 0..<5 {
+                run.app.swipeDown()
+                if element.isHittable { break }
+            }
+            if !element.isHittable {
+                for _ in 0..<8 {
+                    run.app.swipeUp()
+                    if element.isHittable { break }
+                }
+            }
+        }
+        enabled(element)
+        element.tap()
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }
@@ -1262,11 +1503,11 @@ final class CatalogueSaveUITests: XCTestCase {
         // One namespace for this test, including every subsequent process launch.
         let namespace = UUID().uuidString
 
-        init(_ scenario: String, _ language: Language) {
+        init(_ scenario: String, _ language: Language, today: Bool = false) {
             self.scenario = scenario
             self.language = language
             app.launchArguments = [
-                "--catalogue-fixture", scenario, "--catalogue-namespace", namespace,
+                today ? "--today-fixture" : "--catalogue-fixture", scenario, "--catalogue-namespace", namespace,
                 "-AppleLanguages", "(" + language.rawValue + ")",
                 "-AppleLocale", language == .pl ? "pl_PL" : "en_US"
             ]

@@ -10496,6 +10496,62 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testTodayLastCheckedUsesPersistedFetchThroughLocalAndFailedReads() async throws {
+        for seed in [false, true] {
+            let transport = CatalogueTransport([.network])
+            let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport, seed: seed)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            let savedAt = local.cached?.fetchedAt
+            XCTAssertEqual(savedAt == nil, !seed)
+            let baseline = try await repo.cachedCareOverview(context: lease)
+            XCTAssertEqual(baseline.lastCheckedAt, savedAt)
+            let pending = OutboxEntrySnapshot(
+                operationId: UUID(), ownerId: syncOwner, plantId: serverPlantId,
+                commandName: "care.record", payloadJSON: "{}", sequenceNumber: 1
+            )
+            let overlay = LocalCareOverviewPresentation(
+                ownerId: local.ownerId, canonicalGeneration: local.canonicalGeneration,
+                snapshotGeneration: local.snapshotGeneration, cached: local.cached, cards: local.cards,
+                pending: [pending], profile: local.profile, entitlement: local.entitlement,
+                canonicalAccessKnown: local.canonicalAccessKnown, careRows: local.careRows
+            )
+            for offset in [0.0, 3600.0, 86400.0] {
+                let view = CareOverviewViewState(
+                    local: overlay, now: Date(timeIntervalSince1970: 2_000_000_000 + offset), origin: .cache
+                )
+                XCTAssertEqual(view.lastCheckedAt, savedAt)
+                XCTAssertNil(view.plants.first?.routine)
+            }
+            let failed = try await repo.refreshCareOverview(locale: .pl, context: lease)
+            XCTAssertEqual(failed.failure, .transport)
+            XCTAssertEqual(failed.lastCheckedAt, savedAt)
+            let reopened = LocalStore(modelContainer: try diskContainer(url))
+            let canonicalRead = try await reopened.readCareOverviewPresentation(
+                context: lease, authority: api.syncAuthority
+            )
+            XCTAssertEqual(CareOverviewViewState(
+                local: canonicalRead, now: Date(timeIntervalSince1970: 2_100_000_000), origin: .cache
+            ).lastCheckedAt, savedAt)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map { $0.url?.lastPathComponent }, ["care-overview"])
+        }
+    }
+
+    func testTodayCoreFailureAllowsOnlyConnectivityFallback() {
+        for code: URLError.Code in [.notConnectedToInternet, .networkConnectionLost, .timedOut,
+                                    .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed] {
+            XCTAssertTrue(CareReconciliationOutcome.permitsOverviewRead(after: URLError(code)))
+        }
+        for error: Error in [CancellationError(), URLError(.cancelled), URLError(.badServerResponse),
+                             URLError(.cannotParseResponse), SyncWireValidationError.invalidSession,
+                             SyncWireValidationError.invalidPage, CareOverviewAuthorizationError.denied,
+                             CareOverviewStoreError.superseded] {
+            XCTAssertFalse(CareReconciliationOutcome.permitsOverviewRead(after: error))
+        }
+    }
+
+    @MainActor
     func testTodayCalendarKeepsTodayAndOverdueSourceDates() async throws {
         let (url, _, _, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
