@@ -20,6 +20,7 @@ struct TodayCalendar {
     let today: String
     let status: Status
     let sections: [Section]
+    let needsRevalidation: Bool
 
     static func calendar(timeZone: TimeZone) -> Calendar {
         var result = Calendar(identifier: .gregorian)
@@ -41,7 +42,10 @@ struct TodayCalendar {
     init(state: CareOverviewViewState?, now: Date, timeZone: TimeZone = .current, polish: Bool = false) {
         let today = Self.day(now, timeZone: timeZone)
         self.today = today
-        guard let state else { status = .unavailable; sections = []; return }
+        guard let state else {
+            status = .unavailable; sections = []; needsRevalidation = false
+            return
+        }
         let expired = state.verifiedAccessUntil.map { $0 <= now } == true || state.access == .expired
         var checks: [Check] = []
         if !expired {
@@ -73,6 +77,8 @@ struct TodayCalendar {
         else if state.access == .unknown { status = .unknown }
         else if state.availability != .available || state.failure != nil { status = .unavailable }
         else { status = state.plants.isEmpty ? .empty : .noSchedule }
+        needsRevalidation = state.availability == .readOnly
+            && (state.failure == .revalidationRequired || status != .unavailable)
     }
 }
 
@@ -132,7 +138,7 @@ struct TodayHomeView: View {
                 if let checked = state?.lastCheckedAt {
                     lastChecked(checked)
                 }
-                if let state, state.availability == .readOnly, projection.status != .unavailable {
+                if projection.needsRevalidation {
                     Text(polish ? "Harmonogram wymaga odświeżenia." : "Schedule needs revalidation.")
                         .accessibilityIdentifier("today.stale")
                 }

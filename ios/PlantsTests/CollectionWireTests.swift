@@ -10496,6 +10496,45 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testTodayKnownStaleSurvivesFailedAlignmentWithoutInventingFirstFailureSchedule() async throws {
+        for seed in [true, false] {
+            var ahead = overviewPage([overviewRow(serverPlantId)])
+            ahead["owner_watermark"] = "2026-11-19T09:00:00.000003+00:00"
+            let transport = CatalogueTransport(seed ? [.http(200, try syncJSON(ahead)), .network] : [.network])
+            let (url, _, _, lease, repo) = try await overviewRepositoryFixture(transport, seed: seed)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let model = TodayModel()
+            let scope = model.activate(ownerId: syncOwner, generation: 1, locale: .pl)
+            await model.rereadLocal(scope: scope) {
+                try await repo.cachedCareOverview(context: lease)
+            }
+            let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+            XCTAssertEqual(TodayCalendar(state: model.state, now: now).sections.isEmpty, !seed)
+            await model.refresh(scope: scope) {
+                try await repo.refreshCareOverview(locale: .pl, context: lease)
+            }
+            let state = try XCTUnwrap(model.state)
+            XCTAssertEqual(state.ownerId, syncOwner)
+            XCTAssertEqual(state.access, .free)
+            XCTAssertTrue(state.pending.isEmpty)
+            XCTAssertTrue(model.hasError)
+            XCTAssertEqual(state.origin, .cache)
+            XCTAssertEqual(state.lastCheckedAt == nil, !seed)
+            XCTAssertEqual(state.availability, seed ? .readOnly : .unavailable)
+            XCTAssertEqual(state.failure, seed ? .revalidationRequired : .transport)
+            XCTAssertEqual(state.knownInvalidation, seed ? .canonicalRevalidation : nil)
+            let calendar = TodayCalendar(state: state, now: now)
+            XCTAssertEqual(calendar.status, .unavailable)
+            XCTAssertTrue(calendar.sections.isEmpty)
+            XCTAssertEqual(calendar.needsRevalidation, seed)
+            XCTAssertTrue(state.plants.allSatisfy { $0.routine == nil && $0.controls.isEmpty })
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map { $0.url?.lastPathComponent },
+                           seed ? ["care-overview", "sync"] : ["care-overview"])
+        }
+    }
+
+    @MainActor
     func testTodayLastCheckedUsesPersistedFetchThroughLocalAndFailedReads() async throws {
         for seed in [false, true] {
             let transport = CatalogueTransport([.network])
