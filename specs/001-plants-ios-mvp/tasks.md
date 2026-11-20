@@ -199,7 +199,11 @@
 
 - [ ] T075 Пересмотреть `ReminderSchedulingTests.swift`: 09:00/час пользователя/timezone/DST, выполнение/перенос/logout, отмена всех care reminders после expiry и неприменимых задач. Никаких report reminders, Free-мест и нейтральных шаблонов при паузе. Покрытие: FR-023, FR-028, FR-030, FR-033, FR-035, FR-036, FR-041, FR-048, FR-050.
 
+  - 20 ноября: Auth `fd7c72b` принят (418 Swift); lifecycle core `06739f3` принят (423 Swift/build/welcome/MCP/Review/QA). Real Store/fake OS подтвердили фон, локальные сигналы, stale read, owner/ABA и согласие; actual System UN/Root/settings/delegate ещё не подключены. T075 остаётся открытой. [Приёмка core](../../docs/validation/automation/tasks/tester-care-reminder-lifecycle-core.md).
+
 - [ ] T077 Обновить `ReminderScheduler.swift`: ближайшие активные применимые задачи в выбранный час, исключить completed/deleted/paused/expired; отменить прежние заявки при expiry/неприменимости, включая offline проверку известного срока доступа. Нет report/нейтральных reminders и выбора мест. Покрытие: FR-020, FR-028, FR-033, FR-035, FR-036, FR-039, FR-041, SC-020.
+
+  - Принятый core пока не используется приложением. Следующий пакет — Root @StateObject/auth/scene/locale/cache hook; потом UI согласия и маршрутизация. Доставка и физическая приёмка отдельно; T077 остаётся открытой.
 
 - [ ] T080 [US6] Создать экран запроса разрешения на уведомления после появления первых задач в `ios/Plants/Features/CareTasks/ReminderConsentView.swift`. Покрытие: FR-033, FR-035, FR-036.
 

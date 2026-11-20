@@ -1,5 +1,31 @@
 # Narat — текущий статус и передача работы
 
+## Root: Auth и lifecycle core приняты; далее подключение к приложению — 20 ноября 2026
+
+Приняты `fd7c72b` (Auth) и `06739f3` (lifecycle core). Core: 423 Swift-теста
+(420 XCTest + 3 SwiftTesting, без failures/skips), сборка и welcome — PASS
+за 138.856 с; MCP — PASS за 24.191 с, diff — PASS. Review 94.767 с и
+QA 74.043 с — PASS. Первый FAIL новой expiry-фикстуры сохранён: Developer2
+исправил только её deadline; production после Developer1 не менялся.
+[Приёмка core](validation/automation/tasks/tester-care-reminder-lifecycle-core.md).
+
+Изменены `CareReminderLifecycle.swift` и `CollectionWireTests.swift`; ранее
+Auth менял `GuestCatalogueView.swift` и `CatalogueConnectionTests.swift`.
+Проверены real Store / fake OS: background, локальная отмена, устаревшее
+чтение, Auth/owner/ABA, отдельное согласие владельца и явный permission intent.
+Это тестовые данные, не actual System UN или доставка. Core пока не вызывается
+из Root. Настройки, delegate, route и physical B01–B11 остаются открытыми.
+
+Root FF выполнен с проверкой manifest27dfdf4: три пользовательских файла
+сохранены, index пуст. Счётчик после core: 92% использовано / 8% осталось;
+сброс не расходован и запрещён. При 93% новый длинный Developer не допускается,
+95% — предел; внешняя передача отложена, сейчас только техническая приёмка.
+Следующий точный шаг: небольшой Root-only пакет — @StateObject, текущая Auth,
+scene/locale и cache-publication hook без новых HTTP; затем настройки/permission,
+delegate и actual System UN roundtrip. Полные задачи не отмечены выполненными.
+Документальный этап: ссылки/границы задач/план и git diff проверены; Swift ради
+документов повторно не запускали. Commit/push фиксируются Git.
+
 ## Auth принят; подготовлен небольшой lifecycle core без Root — 20 ноября 2026
 
 Принято и отправлено `fd7c72b83f5fde09374fbf466b0208863d036865`, run

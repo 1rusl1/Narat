@@ -20,3 +20,12 @@ Review и QA подтвердили критерии manifest; это не ав�
 
 Ограничения: подтверждены только явно указанные режимы и критерии. State/metrics: `/private/tmp/narat-tester-care-20261119/docs/validation/automation/runs/orchestrator-tester-care-reminder-lifecycle-core-20261120-01`.
 Следующий шаг: следующая независимая задача manifest; ошибки публикации смотреть в state.json.
+
+## Фактическая итоговая граница
+
+Принято `06739f3f6764a021fce94201d3b434e081bd5644`. Финальный прогон: 423 Swift
+(420 XCTest + 3 SwiftTesting), без failures/skips; build/welcome 138.856 с,
+MCP 24.191 с, diff PASS. Review 94.767 с / QA 74.043 с — PASS. Прежний
+Unit FAIL 149.676 с сохранён; новая expiry-фикстура исправлена, production
+не менялся после Developer1. Это real Store/fake OS, без Root/settings/delegate,
+живой System UN и доказанной доставки.
