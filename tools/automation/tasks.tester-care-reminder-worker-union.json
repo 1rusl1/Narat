@@ -21,6 +21,7 @@
         "docs/validation/automation/tasks/tester-care-reminder-cleanup-failure.md",
         "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md",
         "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-controller-candidate.md",
         "tools/automation/tasks.tester-care-reminder-cleanup-failure.json",
         "tools/automation/tasks.tester-care-reminder-worker-cleanup.json",
         "tools/automation/tasks.tester-care-reminder-worker-union.json"
@@ -38,7 +39,8 @@
         "FullSwift/build/welcome+MCP/highReviewQA mandatory. NoAppRootuse untilaccepted; thenR3Root/settings/route+independentbackgroundlocalmutation observation, thenR4actualSystemadd/pendingtrustedroundtrip/phone. Purefactory/fakeOS evidenceNOTphysicaldelivery; signingpreflightnotfinalR3. Allparentcheckboxopen.",
         "FULL UNION acceptance from pinned preworker dfe5a7a, not repair-only. Original run01 BLOCKED Reviewer1 semanticFAIL and developerbudgetexhausted preserved. Narrow cleanup accepted separately does not accept originalworker. Read whole candidate_base patch incl Planner currentIDs, Scheduler worker/capacity/cleanup, Receipts monotonicblockedIDs and allUnit tests. Full Swift/build/welcome +automation149 +MCP then highReviewQA. No Developer implementation call for read-only candidate, nofakePASS. No Root/actualOS/delivery/settings/physicalclaims.",
         "Review both actual P1 repairs: coldfirstknownownerB/state=nil cleansonlyforeigncare pending/delivered leavingB/Trial; unknown owncanonicalID route=nil beforetemporarysuppression cleanup persists strictownerboundmonotonic rawidentityblocker, cold restoredeligibility noadd/noinventeddate/fire. Existing exactreceipts/phase/CAS/hold/logout/ABA/permission/cap32TOTAL regressions intact. Conservative incompleteOSstate visible, notsuccess. Whole union must pass before R3 application use.",
-        "Include finalmetadatafailure repair: actual union02 semanticFAIL nilprojectionoptout unknowndedup and independentparent foreigncleanup-beforemetadata audit. BOTH ownunknown validroute/noentry androuteNil/noentry requireterminaldurablemetadata BEFOREremove evennilprojection; savefailure leavesambiguousownrequest+failed. Strictforeign removals happenbeforeledgerread/begin; knownexistingreceipt explicitprivacycleanup best-effortindependentmetadata failure, no falsecancelproof/newarms. Corruptbytes preserved, noforeignledgerread. Originalrun01BLOCKED, union01infraDeadbundleFAIL, union02semanticFAIL andcleanupfailure01 readstageinterruption retained; noRetroPASS. Full413+Swift actualcounttoverify,149automation/MCP/highReviewQA required beforeRoot."
+        "Include finalmetadatafailure repair: actual union02 semanticFAIL nilprojectionoptout unknowndedup and independentparent foreigncleanup-beforemetadata audit. BOTH ownunknown validroute/noentry androuteNil/noentry requireterminaldurablemetadata BEFOREremove evennilprojection; savefailure leavesambiguousownrequest+failed. Strictforeign removals happenbeforeledgerread/begin; knownexistingreceipt explicitprivacycleanup best-effortindependentmetadata failure, no falsecancelproof/newarms. Corruptbytes preserved, noforeignledgerread. Originalrun01BLOCKED, union01infraDeadbundleFAIL, union02semanticFAIL andcleanupfailure01 readstageinterruption retained; noRetroPASS. Full413+Swift actualcounttoverify,149automation/MCP/highReviewQA required beforeRoot.",
+        "Final exact Controller/Root-authored candidate afteractualunion03ReviewerP1: seeprovenance docs/validation/automation/tasks/tester-care-reminder-worker-controller-candidate.md. Developer0/nofakeimplementationPASS for tinyScheduler+2regressiongroups. Knownowner nilprojection nowjournalsunknown BEFOREdefer; cancelledBeforeFire+OSpresence mustterminalpersist BEFOREnilprojectioncleanup andfailedsave fallback cannoterase itsconflictingevidence withoutpersistedblock. Normal prepared/armed phases preservedwithoutprojection, knownphasecleanup notwidened. Review entirefullsource/candidatebase, collectallreachable state-transition defects inonepass, notonlylastrepair. PreviousallunionFAILs preserved. All413old assertions +newtests mustactuallyexecute; dynamiccoverage gate countverified, no physical/Root-readyclaim untilrealacceptance."
       ],
       "acceptance_criteria": [
         {
@@ -70,7 +72,8 @@
         "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup.md",
         "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md",
         "docs/validation/automation/tasks/tester-care-reminder-cleanup-failure.md",
-        "docs/validation/automation/tasks/tester-care-reminder-cleanup-failure-context.md"
+        "docs/validation/automation/tasks/tester-care-reminder-cleanup-failure-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-controller-candidate.md"
       ],
       "candidate_base": "dfe5a7adf360c15ea675829e036b340baad3d3b0"
     }
