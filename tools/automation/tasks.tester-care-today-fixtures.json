@@ -1,0 +1,59 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-today-fixtures",
+      "description": "Add isolated SDK/HTTP/SQLite Today fixture coverage and one production home-return revalidation event, preserving existing care regressions.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "docs/validation/automation/runs/care-today-c3a-contract.md",
+        "docs/validation/automation/runs/care-today-fixture-map.md",
+        "docs/validation/automation/tasks/tester-care-today-home-acceptance02.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "After WHOLEC2 accepted dcef6c2:369Swift/149automation/MCP/highReviewQA +old13UI13/13/newPLUI+ledgersPASS. SMALL C3a only existing3files; no TodayView/Repo/API/Store/engine/schema/server/OS/AI/content imports. C3b adds realTodayselectors/UI/lastchecked later. No rewriting acceptedRoot/model/sourcepipeline. Keep productiondelta tiny, DEBUGfixture code compact (about300-400lines) +3meaningfulHTTP/Store tests.",
+        "Add dedicated DEBUG --today-fixture + NEW scenarios todayMixed,todayFuture,todayNoSchedule,todayEmpty,todayFirstFailure,todaySaved. Add testsToday predicate joined existing permanentJWT testsCareLifecycle branch, no weakenedproductionauthority/sessionbypass. Explicit Todayflag/scenariomatchonly; invalidcombinationfailsclosed. Old13+PLfixtureargs/legacywelcome unchanged, no newoverviewGET forlegacycases. ProductionRelease permanenthome alreadyToday, guesthome unchanged.",
+        "New isolated server GET sibling /functions/v1/care-overview uses same namespace, real fixture SDKsession/URLProtocol, all requests stillcaptured/no externalnetwork. Strictafter/limit/locale/header/owner auth, NO ownerquery. Coherent pages with ALLactiveownerplants inclunscheduled/empty, UUIDkeyset/nextafter, exactAPIModels fields owner_id/server_now/owner_watermark/publication_fingerprint/reminder_hour_local/automation_allowed/verified_access_until/plants. Plantcare_recommendation FULLexistingcardwire +care_revision/first_aid_controls. CurrentFree, noentrow; no newbillingrules. Nevermalformed/failedHTTP=>emptySuccess.",
+        "Extract one shared fixture card projection from SAMEledger and existingroutine date helpers, used by cardGET and overview, not a secondcalendar or networkN+1. Preserve oldvectors/typedcompletion/undo/replay behavior. Advertisedplant/revision/rule/source/basicmembership mustmatchowncanonicalfixture, no firstplant-onlyprojection ontootherplants. Mixedtoday/overdue, nearestfutureties, validnoschedule, trueempty0plants, initialfailure. Keepfirstaid_controls[]/no datedevidence; existingpositivecalendarunit alreadycoversfirstaid source, no new diagnosis/AI or clinicalpolicy.",
+        "Persist anchorDay/clockseed ONCE atnamespacecreation in ledger optionalfields, shared bycard+overview acrosscold/midnight. Do notfreshDate() perGET/launch to shift occurrence. Explicitfixturevectors/policies only; do notcopy sourceperiods/cataloguewatering intoapplicationdatecalendar. Newcasecanonical ruleidentity/due stablethroughcold; newtypedfixture actions ifneeded reuseexistingreceipt/outbox, no newwritepath.",
+        "Persist explicit Today transport/publication phases and overview requestcounter in existingledger optionalfields/backcompat. Support normal/fail-overview/offline/withdrawn forscopedTodaycases; changes by explicitDEBUGfixtureactions only, never launchcount=>success. Helpers/context exposephase operations; RootDEBUGcontrols with IDs today.fixture.offline/today.fixture.fail/today.fixture.withdraw/today.fixture.resume may changeONLYservertransport/sourcephase. Resume goes throughsameRootreconcileFixtureReconnect hook; no directmodel/cachephase mutation, no directRepositoryrefresh. Withdrawalone noHTTP: later userRetry/home-return doesrealpipeline. Oldscenarios unaffected, no provider/Storage/Photos/AI.",
+        "ONLY productionfix thispacket: onChange currentStep when old!=.selectIntent &&new==.selectIntent onactivepermanent normalhome, request existing carecoalescer viaexistingrevision. Initialhome mustnot duplicate viaonAppear; no canonical/cache→HTTPfeedbackloop. This fixes return Browse/Add→Back withchangedsource withoutcollectiondismiss/manualRetry. DedicatedUIregression followsC3b; no newAI needed.",
+        "Add 3 compact @MainActor existingCollectionWireTests using realCatalogueUIFixtures.make SDK/URLProtocol/SQLite/Repository APIs andnamespacecleanup: complete2page read inclnoschedule/cardprojectionparity +owner/revision/source/paging metadata; trueempty/noschedule versusinitialfailure notfalseempty; acceptedcache thenexplicitfailure/offline phase survivescontextshutdown/reopen retaininglastsnapshot andsourceYMD withoutfakefreshness. Verify readonlyoverview createsno commands/canonicalcommits andboundedGETcounter, no localreaderHTTP. Reuse existinghelpers; no giantfixturemirrorJSON, fakeUIstate or no-op tests. Preserve369assertions/fullSwift/build/welcome/MCP/highReviewQA. C3a alone doesNOTclaimTodayfrontend/live/iPhone/notificationready."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "TODAYFIX1",
+          "description": "Real isolated SDK/HTTP/Store fixtures prove complete coherent owner projection, card parity and persisted error/offline cold states with no care writes; fullSwift remainspassing.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "TODAYFIX2",
+          "description": "Tiny external home-return event and DEBUG-only opt-in preserve guest/legacy routes, source scope and MCP; dedicated Today UI remains C3b.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-home-acceptance02.md"
+      ]
+    }
+  ]
+}

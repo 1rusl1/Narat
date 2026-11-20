@@ -1,5 +1,36 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: полный C2 принят; C3a Today fixtures/home return — 20 ноября 2026
+
+Accepted/pushed WHOLE C2 `dcef6c25df91300ba734e462353642f328962621`.
+Fresh `tester-care-today-home-acceptance-20261120-02` COMPLETED, read-only
+candidate_baseae74b52 всего8Swift/полногоdiff. HighReviewer1/QA1 PASS,
+369Swift (366XCTest+3)/build/welcome95.123s,149automation45.773s,diff,
+MCP27.279s; old13careUI13/13 безskips502.904s +durable4POSTledger,
+newPLUI1/1 безskips41.024s +2..4exactreplay/oneintent/onecommitledger PASS.
+Предыдущий FULL01 12/13FAIL, PLAXfailure и CLI403 сохраняются без retroPASS.
+Отчёт `docs/validation/automation/tasks/tester-care-today-home-acceptance02.md`.
+
+Приняты Root permanent Today/model/clock/pending/source/date projection и
+one-shot currentcanonical card navigation, language-independent passive card
+reads с EN-onlywriteguards, separate read/actionerrors и original-scope
+wait-latestlocal task. Сеть только existing external CareLifecycleCoordinator;
+local/canonical signals local-only. Никакого нового API/schema/data/AI/OS.
+Это локальные fixtures/legacy care UI; dedicated Today UI/ordinary signed/
+iPhone/notifications ещё НЕ приняты. Root готовит отдельный read-only ordinary
+signed NoSchedule bootstrap на accepted frozen source, без новых carefacts.
+
+Следующий C3a `tools/automation/tasks.tester-care-today-fixtures.json`:
+3existingfiles App/CatalogueUIFixtures/Unit; dedicated DEBUG Todayflag/scenarios,
+shared same-ledger card/overview projection, coherent paging/explicit persisted
+transport phases/counters/anchorDay, normalSDK/SQLite source, tiny external
+home-return event. Никаких UI phase fakes/newAI/интервалов/secondAPIclient.
+Потом C3b actualTodayselectors/lastchecked/targetedUI+old13/PL и ordinarylive;
+затем R1..R4 reminders по /private/tmp/narat-care-reminders-implementation-map.md.
+T066/T068/T075/T077/T098/B01–B11 остаются open до своих реальных сценариев.
+Approvedrouting/900/sharedSimlock/ACcaffeinate, reset0; usage75/25 lastchecked.
+
+
 ## Этап 2: action/read errors subset принят; FULL C2 attempt02 — 20 ноября 2026
 
 Accepted/pushed Guest-only subset `95014f167ec1a9e02863a907aefdde11cf8d2063`.

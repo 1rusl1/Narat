@@ -177,3 +177,8 @@ refresh reject.12другихPASS;369Swift/149automation/MCP/PLUI/ReviewPASS, QA
 Guest action/read error subset `95014f1` принят:369Swift/MCP/ReviewQA и
 неизменённые targetedrejection/basic/PL UI PASS. Далее FULL02 whole8Swift
 candidate_baseae74, повтор old13+PL/149automation; ещё не готовность Today.
+
+WHOLEC2 `dcef6c2` принят FULL02:369Swift/149automation/MCP/highReviewQA,
+old13careUI13/13+waterledger иPLUI+replayledger PASS. СтарыйFULL01FAILсохранён.
+Далее C3a dedicatedToday DEBUG transport/home-return; C3b actualTodayUI/live.
+Фикстуры не заменяют обычный signed/iPhone/OS delivery, задачи остаются open.
