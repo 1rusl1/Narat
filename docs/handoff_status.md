@@ -1,5 +1,30 @@
 # Narat — текущий статус и передача работы
 
+## R1b2 disk принят; R2a UN adapter подготовлен — 20 ноября 2026
+
+Accepted/pushed `7a7a8efc60bff2fb767e7f7af693186d4b46dbb5`, run
+tester-care-reminder-store-20261120-01 COMPLETED Developer1/Reviewer1/QA1:
+391Swift(388XCTest+3)/build/welcome151.828s,MCP24.399s,diff0.041s PASS;
+Developer537.757s/Review68.246s/QA63.813s. Store196diff/Receipts41/Unit381:
+exact reservedowner ledger, permanentlease+nonceCAS/rollback/retention/erase/
+forged-sync guards, replacementphase hardening; no new model/OS/Root.
+Первый rawgenerateddraft сохранён readonly, finalDeveloperpatch применился
+сам с первойпопытки. Report automation/tasks/tester-care-reminder-store.md.
+
+Doc-onlyparent6096edd FF интегрирован; ios source byte-identical7a7a8ef.
+Ordinary frozen efa9 Personal device-build/archive/codesign/ownUDID/profile/
+backend/noFixtures preflight PASS; НЕinstall/phoneUI/permission/delivery/finalR3.
+Это отдельно от signed56d ordinarydatedTodaylive PASS. Newhand/tasksreports
+не переаттестовывают suites. Physical signing profile expires24Nov16:19:31UTC.
+
+R2a prep ONLY: newCareReminderNotifications.swift scaffold+4explicitPBXrefs,
+manifest tasks.tester-care-reminder-notifications.json. Care-only protocol/
+SystemUNadapter +pure absoluteUTCrequest/strict post-fire route metadata/
+inventoryfilter tests. No actualSystemcallsinUnit/no currentappwiring.
+ThenR2b serializedcoordinator+fake race/receipt/OS tests→R3Root/settings/route
+→R4finalsignedphone/testerguide. Allparentcheckboxopen. PBXdeltaYES4refs,
+parentpreservesuser3. Lastactual83/17 ordinaryallowed/reset0; models900same.
+
 ## Root: R1b2 принят; ранний iPhone build/signature PASS — 20 ноября 2026
 
 Принят/интегрирован7a7a8efc60bff2fb767e7f7af693186d4b46dbb5,

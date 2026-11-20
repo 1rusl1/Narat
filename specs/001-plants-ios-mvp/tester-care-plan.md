@@ -219,3 +219,7 @@ No dedup/deliveryclaim fromplanner; ordinaryTodaydatedlivecurrentlynotPASS, no f
 R1b1 `1652ec6` puremetadata accepted385Swift/MCP/ReviewQA; dated ordinary56d live PASS
 (отдельныйparentreport f25f727,2VOID facts, semanticrestoration). R1b2 Store/CAS/disk
 manifest подготовлен, noPBX/schema/OS yet; затемR2/R3/R4, всеparentcheckboxopen.
+
+R1b2 `7a7a8ef` disk/CAS accepted391Swift/MCP/ReviewQA. Parent doc6096edd physical
+preflight compiled frozenefa9 only (noinstall/delivery/finalR3). R2a adapter/factory
+newsource+membership prep, thenR2bcoordinator/R3UIroute/R4device, noOSclaimyet.
