@@ -11,3 +11,8 @@ Independent parent source audit (not yet tested): Pass.run beginCareReminderRece
 Boundary: normal untrustedowncanonical identity (including nilprojectionoptout currentvalidlease) needsdurableblockedIdentifier BEFOREremove; storagefail retainsambiguousownrequest+failure. Foreign strictIDs and trusted/known explicitprivacycleanup canremoveowncareprefix independentlyofmetadatafailure; diagnosticsremainfailed andoldpersistedarmed/prepared are notrewrittenas cancelled. LatermissingOS normalizesuncertain. Corruptbytes untouched. No newpersistence/framework orOS+SQLatomicity claim.
 
 Both findings must be evaluated together. Exact source changes through Developer only, then realgates/ReviewQA andfresh wholeunion fromdfe beforeRoot. Runtime/UI/phone/actualOS remainpending, parentsopen.
+
+
+Clarification before fresh run02: valid OS route + NO persisted Entry is also UNKNOWN. It must recordUnknown(terminal) before nilprojectionoptout removal; routeNil canonical records blockedIdentifier. Savefailure protects both ambiguous own variants. Only actually known persisted receipt or strict foreign-owner identity grants metadata-independent privacycleanup. Explicit true logout can remove ownnamespace without invalid SDK ledger reads, but no falseproof/addauthority.
+
+cleanup-failure run01 interrupted deliberately at read stage when this clarification arrived after prepare/start. Owned controller SIGINT triggered normal child-group cleanup; process exit130/WAITING, noappliedsource/QA/PASS. Saved raw/process evidence retained; fresh run02 has corrected contract, same models900/budgets. No source rewrite was requested by unfinished call.

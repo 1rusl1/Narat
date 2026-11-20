@@ -8,6 +8,11 @@ Unknown-state optout cleanup can delete untrusted own canonical ID without
 persistedblock ->coldrestore duplicateadd. Parent independent audit also found
 foreign/known explicitprivacy cleanup wrongly requires metadataavailability.
 Narrow Scheduler+Unit repair next; source is NOT Root-ready/wholeaccepted.
+Fresh cleanup-failure01 interrupted/read-only with exit130 when validroute/noentry
+clarification arrived afterstart; no appliedpatch/acceptance. Fresh02 contract
+protects BOTH validroute/noentry and routeNil unknownown from removal before
+durableterminal metadata; only knownexistingreceipt/strictforeign permits
+metadata-independentprivacycleanup. Same models900/budgets; raw interruption kept.
 Normal untrustedown durable-before-remove stays enforced; no fabricatedproofs.
 
 Union01 infraFAIL53.215s was XCTest bundle Dead/temp load BEFOREtests, not
