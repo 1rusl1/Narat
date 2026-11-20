@@ -134,3 +134,9 @@ B2b Repo/explicitlocale/pendingoverlay+signal, затем CToday UI.
 B2a принят `b98f706` (343Swift/welcome/MCP/ReviewQA): coherent Store
 presentation/full-set guard. Далее B2b bounded Repo refresh/explicitlocale/
 knowninvalid cold guard, затем localintent signal и CToday UI.
+
+B2b `a2c85c1` принят: 355Swift/build/welcome/MCP/highReviewQA, 12 новых
+fixture tests. Bounded Repo refresh/explicit locale/durable known-invalid
+cache и safe pending/access projection готовы как data layer. Далее короткий
+local outbox mutation signal без сети, затем permanent Today UI/navigation.
+Родительская готовность Today/reminders и физическая приёмка ещё открыты.

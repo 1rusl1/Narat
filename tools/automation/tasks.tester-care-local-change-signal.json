@@ -1,0 +1,49 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-local-change-signal",
+      "description": "Emit bounded owner-scoped local presentation change signals after durable outbox changes; no network or new state schema.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "docs/validation/automation/tasks/tester-care-overview-repository.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Accepted data layer a2c85c1 (355 Swift/build/welcome/MCP/ReviewQA). SMALL Store-only packet: no Repository/API/Root/UI/OS/server/schema/queue edits. Add local invalidation signal only; do not rewrite accepted cache or care engine.",
+        "Add an internal LocalStore AsyncStream<Void> per owner, bounded bufferingNewest(1), no initial event, subscriber cleanup on termination/cancellation (weak self/actor safe). Capture no auth token/lease/raw payload in events. Streams only indicate reread needed; never command confirmation. Subscribers in future C keep original permanent lease and reread cachedCareOverview only. No HTTP, sync, drain, timers/polling or canonical generation rotation from this stream; no subscription to its own output.",
+        "Emit ONLY AFTER successful durable save for relevant outbox changes: generic private enqueueCommand (includes care/edit/delete/profile and photo draft), typed routine undo own insert, successful removal/ACK profile hour, plant deletion, catalogue create, generic finishOutboxEntry and markOutboxCommitted, persisted failure status via recordOutboxFailure, photo draft discard/replace/finalize/checkpoint metadata if mutation changes pending read. Owner taken from committed record/context before delete, never caller-guessed broadcast. No event for rejected/no-op duplicate enqueue or failed validation/save. Preserve operation identity, authorization, ordering and receipt proofs, do not dequeue any extra item.",
+        "Keep implementation compact using one private publish helper; inspect exact special save paths rather than touching every unrelated LocalStore save. No guestdraft/checkpoint/cache read/save/publication events (existing canonicalSyncUpdates covers sync; accepted refresh result supplies new data). This is a local pending overlay signal, not a sync or action receipt. Events coalesce; consumer reads full current owner state, not event counts.",
+        "Add 3-4 compact meaningful existing-helper tests: buffered coalescing and independent owner streams; successful care/profile/delete enqueue and removal/failure produce fresh coherent pending read after event; duplicate/identity mismatch or invalid lease has no event; cancellation cleanup/no replay and special routine/photo pending path if practical. Test actual durable rows then event; no indefinite await, no arbitrary sleeps/production test-only accessor. Preserve all355 old Swift assertions and full gate. No UI/live/reminder ready claim."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "LOCALSIGNAL1",
+          "description": "Bounded owner-only streams follow committed outbox state changes without network/generation/schema changes; fixture tests preserve existing355Swift.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "LOCALSIGNAL2",
+          "description": "Build/welcome/MCP remainpassing and full narrow diff independently reviewed.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-overview-repository.md"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,36 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: B2b принят; далее локальный сигнал и Today UI — 20 ноября 2026
+
+Accepted/pushed `a2c85c12d4326037d1a8d47b1cb5cc2c3f15e12e`.
+Run `tester-care-overview-repository-20261120-01` COMPLETED: Developer1,
+high-risk Reviewer1/QA1 PASS; 355 Swift (352 XCTest+3), build/welcome,
+diff и MCP25.34s PASS. Двенадцать новых fixture tests; четыре Swift файла:
+LocalStore, PlantsAPIClient, CollectionRepository, CollectionWireTests.
+Ограниченный refresh использует исходный permanent lease и одну locale:
+не более двух полных overview reads и одного canonical full refresh без
+отправки команд. Known remote mismatch и401/403 сохраняют stale/denied
+состояние на диске, не теряя прежний snapshot. Safe projection содержит
+только необходимые pending IDs/status и актуальные canonical cards;
+неизвестный/истёкший доступ, неподтверждённый час, pending и локальные care
+изменения подавляют автоматические действия. Это data-only fixtures,
+не готовность Today frontend/live UI или OS reminders.
+Отчёт `docs/validation/automation/tasks/tester-care-overview-repository.md`.
+
+Следующий короткий пакет: owner-scoped bounded local change stream в
+существующем LocalStore после успешной durable outbox mutation. Только
+LocalStore и existing Unit; без сети, UI, новых очередей/схемы и вращения
+canonical generation. Потребитель C перечитает локальную safe projection,
+не запускает HTTP/sync. Затем C permanent Today home/navigation/UI.
+Manifest `tools/automation/tasks.tester-care-local-change-signal.json`.
+
+Actual usage69% used/31% remaining, ordinary allowed; reset не использован.
+Те же модели/900s, shared Simulator lock, временный AC caffeinate.
+T066/T068/T075/T077/T098/B01–B11 остаются open; iPhone/реальное offline,
+положительный ordinary first-aid и notifications ещё не приняты.
+Backend live19023, NativeAf612, B1d291 и B2ab98 остаются принятыми.
+
+
 ## Этап 2: B2a принят; следующий B2b Repo/network — 20 ноября 2026
 
 Accepted/pushed B2a `b98f7068021e0ae0ca261be98880748d7bd071b4`.
