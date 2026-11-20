@@ -1,5 +1,37 @@
 # Narat — текущий статус и передача работы
 
+## Root: R1b2 принят; ранний iPhone build/signature PASS — 20 ноября 2026
+
+Принят/интегрирован7a7a8efc60bff2fb767e7f7af693186d4b46dbb5,
+run tester-care-reminder-store-20261120-01 COMPLETED Dev1/Review1/QA1:
+391Swift(388XCTest+3)/build/welcome151.828s,MCP24.399s,diff PASS,
+Review68.246s/QA63.813s. Store exact-owner ledger/original permanent lease/revision
+CAS, actual disk reload/failed-save rollback, fullrefresh/reset retention,
+explicit erase-only purge, forged server/codec rejection и owner/ABA tests приняты.
+Файлы: LocalStore.swift, CareReminderReceipts.swift, CollectionWireTests.swift.
+Это disk/fixture proof, НЕ системная постановка/доставка. Новых PBX refs нет;
+исходные три пользовательских файла проверены по прежним SHA, indexempty.
+
+Независимо Root построил ordinary Personal iphoneos из frozen clean efa9ddc
+(ранний source1652ec6, БЕЗ R1b2/R2/R3): actual BUILD SUCCEEDED; codesign strict/deep
+до/после архива, embeddedprofile для назначенного iPhone/team/expiry, exactbackend,
+AppleSigninNO и отсутствие fixtures PASS. Profile expires24ноября19:19:31MSK.
+Логи/подписанный архив private, собственные DD intermediates удалены после сверки;
+sharedcache/чужие файлы сохранены. Portal/provisioning updates не выполнялись.
+[Полный scope и hash](validation/tester-iphone-signing-preflight-2026-11-20.md).
+Установка/запуск/UI/OS delivery и финальная testerсборка этим НЕ подтверждены.
+
+В этом документальном этапе изменены handoff/tasks и два sanitized preflightотчёта.
+Реально выполнены перечисленные build/signature/profile checks, JSON/secret guards,
+git diff --check и SHA-сохранность userfiles. Для docs повтор Swift не запускался.
+Следующий точный шаг: R2a UN protocol/System adapter +request/route codec fixtures,
+затем R2b serialized coordinator со stale-add cleanup/receipts/capacity → R3 owner
+lifecycle/settings/permission/tap routing → R4 новая signed finalbuild/install/physical
+scope/guide. Private matrix/quickstart подготовлены, reminderslabels ещё pending.
+Parent T066/T068/T075/T077/T098/B01–B11 остаются open; reset0,actual83/17allowed.
+Commit/push этого документационного этапа фиксируются Git.
+
+
 ## R1b2 подготовлен: owner ledger/CAS/disk — 20 ноября 2026
 
 R1b1 accepted/pushed `1652ec6974ec63a8e2d2331626b6e34202886828`: Developer2,

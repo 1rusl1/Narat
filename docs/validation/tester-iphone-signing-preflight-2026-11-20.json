@@ -1,0 +1,23 @@
+{
+  "bundle": "app.narat.plants.personal",
+  "version": "0.1.0",
+  "build": "1",
+  "binary_sha256": "e811fb8bd5fb1b2ace75f45536116644922c31c1f84462d456a1b2c81e60da36",
+  "signed": true,
+  "fixture_exclusion": true,
+  "expected_backend": true,
+  "embedded_profile_device_allowed": true,
+  "embedded_profile_expires_at": "2026-11-24T16:19:31+00:00",
+  "apple_sign_in_enabled": false,
+  "physical_ui_tested": false,
+  "notification_delivery_tested": false,
+  "commit": "efa9ddcab22987baccf8a62a15fcbaa0a24f51a6",
+  "configuration": "ordinary Personal (release)",
+  "physical_install_tested": false,
+  "owned_intermediates_removed": true,
+  "status": "PASS",
+  "scope": "early ordinary Personal build/signature only; final reminders and device run pending",
+  "portal_provisioning_updates": false,
+  "source_clean_before_and_after_build": true,
+  "evidence_location": "/private/tmp/narat-physical-preflight-20261120-efa9ddc"
+}
