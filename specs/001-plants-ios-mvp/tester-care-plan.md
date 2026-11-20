@@ -204,3 +204,10 @@ C3b navsubset e0bfa2e accepted376Swift/MCP/unchangedtargetUI+readonlyledger/
 highReviewQA. WHOLE02 5TodayPASS1navFAIL preserved. Freshwhole03base4f4a
 SIXsourceunion (newGuesthandoff included) all7checks→ReviewQA required.
 No dated/device/reminders claim, T066/T068/T075/T077/T098 open.
+
+
+WHOLE C3b `56d7455` accepted/pushed actualall7checks/highReviewQA;6Today/8readonlyledgers
+plusold13/PL/376Swift/149/MCP. Parentordinarydatedcoldfirstsheetlive next fromfrozenSHA.
+R1a pureplanner manifest/scaffold+PBXmembership prepared (notimplementation):
+allsharedoccurrences/calendar/access/cap/identity, thenR1b receipts/R2UN/R3UI/R4physical.
+No parentcheckbox closed fromfixtures, reset0/actual81used19left ordinaryallowed.

@@ -511,3 +511,5 @@
 - C3a `b30bf8a`:372Swift/MCP/highReviewQA PASS, dedicated TodayDEBUGtransport/sharedprojection/persistedanchor/phases/home-return accepted; ordinaryC2 NoSchedule live отдельно dc2report. DedicatedTodayUI/offline/date/device ещёC3b, T066 открыт.
 
 - C3b run01 BLOCKED на repeatedapply(2patchgenerationcalls), sourceнепроверен. Exactgenerateddraft controllercandidateSHA 3d9bc150ff67 требуетfreshread-onlyfullcandidate_base4f4a с new6/old13/PL/Swift/MCP/ReviewQA; T066 открыт.
+
+- WHOLE Today C3b `56d7455` accepted fullbase4f4a SIXsourceunion:376Swift/149automation/MCP/highReviewQA,old13+4POST/PL+replay/new6+8readonlyledgers PASS. PriorFULL01/02failures preserved. Ordinarydated/device/notifications stillseparate; T066/T068/T075/T077/T098 remainopen. R1a pureplanner prep(scaffold+membershiponly) starts next, NOTOS/dedupimplementation.

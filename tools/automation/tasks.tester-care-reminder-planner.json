@@ -1,0 +1,55 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-planner",
+      "description": "Pure owner-care reminder planning from accepted shared overview: stable occurrence identity, source date/local hour calendar resolution, eligibility/expiry/cap; no OS scheduling yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/Integrations/Notifications/TrialReminderScheduler.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-today-ui-acceptance03.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "R1a ONLY pureplanner inpropernewNotificationsfile pluscompactmeaningfultests appendedtoexistingCollectionWireTests(privaterealoverviewhelpersavailable). Scaffold+4PBXmembershiplinescontroller-prepared, NOTimplementationPASS. Aim~150-220productionlines/3-5compacttable-drivenUnitmethods, budget900. No Root/Today/Guest/Store/engine/API/schema/backend/UI/settings/permissions/UNframework writes/newqueue/workers/network/Trial changes. Existing376assertions preserved. Later R1b durable occurrence receipts andR2serializedOSadapter mandatory; stableIDalone NEVERdedupsdeliverednotification, thispacket NOTOS/physicalproof.",
+        "Input exactexpectedpermanentowner UUID +CareOverviewViewState?, opt-in, explicitauthorizationstatus(notDetermined/authorized/denied orsmallpureequivalent), injectednow/explicitGregorianTimeZone/locale. RootlaterprovidesactualSDKlease; purefunctiondoesnotdecodeJWT/lookupprefs/requestpermissions. Coherentavailableownerstate +access Free(nilceiling) ORverified(non-nilfutureverifiedAccessUntil) only; unknown/expired/readOnly/absent/knowninvalidation/authdenial/wrongowner/locale failclosed. Snapshotandcanonicalgenerations mustmatch coherentstate. Confirmedhour0..23 fromstate.reminderHourLocal, pendinghour/nilinvalidnone (servercanonicalalreadydefault9, NEVERinvent9fromunconfirmednil).",
+        "Use ALLstate.plants eligible automatedActionsAllowed &&cardLinkAvailable/current source, NOTTodayCalendar.sections (nearestUIonly). Pending/edit/delete/routine/manual/photo/global suppressionalreadysharedDTO; keepper-plant eligibility (onependingplantmustnotsuppressothersunlesssharedglobalguard). Plainalignedavailablecachedstate failure.transport REMAINSeligible(reference dates), knownrevalidation/authorization/unknown/expiry failclosed. No newTTL/billingpolicy/interval/cataloguewatering/rawcare_tasks. Source routine.dueLocalDate/ruleId andcurrentfirstaidcontrol.dueOn/id only.",
+        "Output immutableSendable/Equatable plan/candidates withstablecare namespace id+owner/plant/typedoccurrence/sourceDueYMD/absoluteFireDate/locale; no diagnostics/secrets/clinicalpayload. ID routine=owner+plant+rule+dueYMD, firstaid=owner+plant+controlUUID WITHOUTdue/hour/timezone/locale (donotcopyfirstaidUICheck.id). Dedup identicaloccurrences, stableordering independentinput/locale/hour/TZ. Includeeligiblecandidatecount independentoptin/authorizationforexplicitpermissiondecision, butactualrequestsEMPTYunlessoptedin+authorized. No sideeffects. R1b/R2willfilterdurablereceipts BEFOREanyactualadd.",
+        "StrictsourceYMD +confirmedhour interpretedincurrentexplicitGregorianTZ; NEVERconvertUTCmidnighttoanotherlocalday, neveraddcareinterval. DSTgap\u2192nextvalidtimeSAMEday, overlap\u2192FIRSToccurrence, skippedentireday/malformedday drop. Past/todayat-or-afterhour fires<=now drop, no catch-up/tomorrow. FireSTRICTLYbeforeknownverifiedAccessUntil (equalexcluded), do notextendgrace. DeterministicsortfireDate+stableID; conservativecarecap32, reportomittedcounttruthfully (notalllegacyplantsfit/arbitraryOScapacity). Do nottouchtrial/othernamespaces.",
+        "Useactualexistingoverview/DTOhelpersforcompactfixtures; preserveall376oldassertions. Tests: all eligiblefutureoccurrences inclbeyondTodaynearest, routine/firstaididentityandfirstaidduechange, duplicates/order/cap>32; owner/optin/authorization/locale/profilepending/perplantpending/delete/sourcewithdrawal/Freevsunknown/expired/deadlineequal +alignedofflinevsreadOnly. CalendarNY2026-03-08hour2 next03:00,NY2026-11-01hour1 FIRST05Z, PacificApia2011-12-30 wholedayskip, west-of-UTCstrictsourceYMD, overdue/now nofabricatedday. Injectclock andtimezones, no wallclock/OSpermissions/network. Ifhelperslarge usecompactbuilders nothundredsofmirrorlines.",
+        "ActualfullSwift/build/welcome+MCP/highReviewQA mandatory. ParentT075/T077/openB*NOTclosed: no durableattempt/delivered/dismissed dedup yet, no OSauthorization/add/remove/deeplink/backgrounddelivery. ParentordinaryfrozenTodaylive canrunconcurrentlyDeveloper; allXcode/MCPgates serializedsameglobalresourcewrapper. Same models/900/budgets, resetrootonlyafteractualexhaustion."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "PLAN1",
+          "description": "Pure eligible all-occurrence plan, stableidentity/calendar/access/cap meaningfulfixtures pass with existingfullSwift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "PLAN2",
+          "description": "MCP and highReviewQA confirm additivepure scope, oldTrial unchanged and noOS/liveclaim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-today-ui-acceptance03.md"
+      ]
+    }
+  ]
+}

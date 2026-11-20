@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## WHOLE Today accepted; R1a pure reminder planner prep — 20 ноября2026
+
+Accepted/pushed 56d7455451bf93e573ae1660665bd18360955bf7, run
+tester-today-ui-acceptance-20261120-03 COMPLETED highReviewer1/QA1. ENTIRE6
+Swift union base4f4a: App/Guest/Repo/TodayView/Unit/UITest. ALL7actualgatesPASS:
+376Swift(373XCTest+3)/build/welcome99.821s,149automation45.425s,MCP21.319s,
+old13careUI13/13+4POSTledger503.195s,PLUI+exactreplayledger40.632s,
+new6Today6/6+8readonlynamespaces203.479s,diff0.022s. Review104.144s,
+QA142.296s. PriorFULL01/02semantic/UI failures andwrongfingerprint/testfailure
+retained withoutretroPASS. DedicatedTodayfixturestates/coldoffline/source/
+nav/locale proven; nocarePOST/commits innew6. Report automation/tasks/
+tester-today-ui-acceptance03.md.
+
+OrdinaryC2NoScheduleSDK/Supabase live remainsseparate. Parentwillrunfrozen
+acceptedC3b ordinarydatedexistingMonstera cycle inclcoldfirstsheet/sourcedue/
+cardcomplete+undo afteractualpublishedinterval read; no inventedinterval/AI.
+No claimdated/device/OSdeliveryyet, allparentcheckboxremainopen.
+
+R1a prep ONLY: propernew Notifications/CareReminderPlanner.swift scaffold
++4explicitPBXmembershiplines; controllerdidNOTimplementplanner. Manifest
+tasks.tester-care-reminder-planner.json newfile+existingUnit only. Pureall
+sharedeligibleoccurrences, strictsourceYMD+confirmedhour/DST/expiry/cap32/
+stableID/optin+authorization inputs. NoOSwrites/prefs/Storechangesyet; R1b
+durableattemptmetadata→R2serializedUN→R3Root/settings/route→R4physical next.
+Sourceinput /private/tmp/narat-care-r1a-planner-packet.md. Same models/900/
+sharedresource/ACcaffeinate. Actual81%used19%left ordinaryallowed; reset0.
+PBXdeltaYES: parentmustpreserveoriginal3userfiles beforemerge; noxcodegen.
+
 ## Nav subset accepted; fresh WHOLE C3b03 six-source union — 20 ноября2026
 
 Accepted/pushed e0bfa2eb22bfb925a8435be03d842a1fe6f9049b, run
