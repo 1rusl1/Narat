@@ -1,0 +1,59 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-store",
+      "description": "Persist owner-isolated reminder opportunity receipts in one exact reserved LocalStore record with nonce CAS, reset/fullrefresh retention and explicit metadata purge; no OS or Root writes.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-receipts.md",
+        "docs/validation/tester-today-dated-live-2026-11-20.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "R1b2 bounded storage slice only (~120-200 Store lines +small replacement validation hardening +compact 4-6 disk tests). R1a99e3952 and R1b1 1652ec6 accepted385Swift/MCP/highReviewQA. No new SwiftData model/schema/files/PBX, Root/Today/Guest/UI/UN/permissions/OS/network/engine/outbox/trial changes. Existing385 assertions untouched. Metadata is NOT a care command/outbox and no sync trigger. No phase/delivery success claim from disk save. Same approved models/900/budgets.",
+        "Use existing SyncedEntityRecord exactly ONE reserved owner ledger row: entityType local_care_reminder_receipts, entityId=owner UUID, compositeKey owner:type:owner, versioned existing CareReminderReceipts payload plus opaque UUID revision for CAS. Minimal typed local snapshot includes revision+receipts; no raw view/outbox/JPEG/title/token. Encode/decode calls receipts.validate(expectedOwner: original context owner). All read/begin/commit operations require original permanent SyncSessionLease with authority.withPermanentBoundValid just like overview, not reacquired owner. Wrong owner, anonymous/stale ABA rejected before mutation; corrupt/unknown version/identity never default to empty or delete evidence.",
+        "Begin/read-for-write materializes an EMPTY wrapper with fresh UUID revision under original lease BEFORE any future awaited OS work; existing valid row returns same revision with no unnecessary save. This prevents absent-row ABA after purge: old revision must fail after deletion/new begin. Commit takes expected revision, compares actual disk row in SAME ModelContext/lease, validates replacement against CURRENT disk ledger (not caller-modified expected copy), and saves new UUID only for actual change. Same-data no-op may retain nonce. Stale/missing/replaced row fails superseded, never recreates from old token. Each save uses new no-autosave context +rollback/discard on failure; no partial state or cursor/outbox changes. Future OS adapter will persist PREPARED before add and ACK after, not implemented here.",
+        "At storage boundary harden CareReminderReceipts.validateReplacement if needed: keep ALL prior IDs/originalFireDate/owner/plant/occurrence; spent stays spent, uncertain stays uncertain/spent with immutable opportunity. Existing prepared/armed may NOT silently change currentFireDate/attempt/sourceDue or regress armed\u2192prepared through decoded replacement. Fresh attempt/current-fire change allowed ONLY from previous cancelledBeforeFire to new prepared with fresh attempt and SAME confirmed old-attempt cancellation proof. Same attempt phase transitions must follow existing pure API. Reject forged codec replacements that bypass pre-fire proof. Do not add another calendar/access policy or signed journal framework.",
+        "Preserve ONLY this EXACT reserved identity through canonical fullRefresh and resetSyncCachePreservingOutbox (currently reset deletes all sync rows). Overview cache behavior unchanged: fullrefresh preserves its own exact wrapper; reset still deletes overview/canonical cache and resets checkpoint, preserving existing outbox/guestdraft behavior. No broad local_* prefix or all-owner-row exception. Corrupt receipt bytes at exact identity are retained failclosed, not reset into a new alert. Wrong-key/type/entityId lookalikes are not preserved. Add local receipt type to stageSyncedItems reserved rejection for BOTH applySyncedItems and publishSyncWindow; do not whitelist server wire type. Ledger writes must NOT rotate overview generation, update canonical checkpoint/cursor or emit canonical/outbox signals.",
+        "Provide explicit owner-scoped receipt-metadata purge helper that removes owner receipt rows only, including malformed own reserved rows, leaving other owners/domain/outbox untouched. Trusted erase-only helper may take ownerId without active SDK for account-removal cleanup; it grants NO read/arm/write authority. Ordinary logout/opt-out/cache-reset must NOT call purge; retention is needed against cold/dismissed re-alert. No existing account-delete UI found, so do not claim full account purge/OS cleanup wired: R3 will provide explicit cleanup integration; T098 stays open. Real destructive Auth delete NEVER run.",
+        "Meaningful disk tests with existing valid permanent overview SDK helpers: begin/prepare commit\u2192new ModelContainer reload exact receipt phases/original/current/nonce, owner A/B isolation; stale session/anonymous/A\u2192B\u2192A and two writer CAS races, purge\u2192new begin oldtoken rejection; actual fullRefresh/delta/reset retain exact ledger but clear canonical/overview as appropriate, wrong-key lookalikes removed, no cursor/overview generation change from ledger writes; failed save rolls back no visible entry/nonce change; corrupted/version/foreign/missing data fails closed; forged server local type rejected atomically; explicit purge removes only owner receipts. Test spent codec/disk persists and cannot rearm after hour/TZ/firstaid due change, not actual delivery. Existing385 assertions preserved. Keep helpers compact, no huge mirrored fixtures.",
+        "Run fullSwift/build/welcome+MCP/highReviewQA; fixture/disk evidence separate from real ordinary Today dated report and future OS/device. No UI/delivery/dedup100 claim: R2 serialized UN+OS evidence, R3 settings/root/route, R4 physical still open. Parent publication protected user PBX/strings never touched.",
+        "Store CAS must use actual persisted ledger as previous, preserve immutable identity/original date and monotone phases. Strengthen existing validateReplacement defensively: same-attempt armed cannot regress prepared; changed attempt/current fire/sourceDue requires old cancelledBeforeFire\u2192new prepared with a fresh attempt and unchanged valid old cancellation proof. Terminal opportunities cannot mutate/rearm. New armed entries must not bypass durable PREPARED; conservative new spent/uncertain history may block but never authorize add. Test forged decoded snapshots, not just direct pure API calls. Key lookup must not overwrite a colliding foreign/corrupt reserved row. Await async values before XCTest autoclosures."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "STORE1",
+          "description": "Real disk owner/CAS/rollback/retention/purge/forged sync and opportunity invariants pass alongside allSwift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "STORE2",
+          "description": "MCP/highReviewQA confirm exact reserved storage scope, unchanged ordinary care and honest no OS/device claim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-receipts.md",
+        "docs/validation/tester-today-dated-live-2026-11-20.md"
+      ]
+    }
+  ]
+}

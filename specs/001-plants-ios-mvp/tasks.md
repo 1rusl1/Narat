@@ -517,3 +517,5 @@
 - R1a `99e3952` accepted380Swift/MCP/highReviewQA: pure all-occurrence reminder plan/identity/DST/access/cap only. No persisted opportunity/OS UI/delivery yet; R1b1 typedmetadata→b2 ownerdisk→R2/R3/R4 next, T075/T077 stayopen.
 
 - 20 ноября: ordinary signed Release56d7455 dated live PASS на реальном SDK/Supabase и Simulator: полив/correction→Today due/source/card→soilcheck→future→undo обоих новых фактов→NoSchedule. Прежние данные сохранены; entries4→6,новые VOID,careRev3→3; НЕ полный digest equality. [Отчёт](../../docs/validation/tester-today-dated-live-2026-11-20.md). Physical/offline/OS delivery/ordinary firstaid-positive отдельно; T066/T068/T075/T077/T098 и B01–B11 остаются открыты. R1b1 pure metadata1652ec6 принят385Swift/MCP/ReviewQA; R1b2 durability следующий.
+
+- R1b1 `1652ec6` accepted385Swift/MCP/highReviewQA: typed opportunity phases/attempt/codec only. Parent dated Today live f25f727/56d PASS отдельно. R1b2 exact-owner Store/CAS/disk/retention/purge/forged-sync следующий; OS/settings/device ещё не реализованы, T075/T077/T098 open.

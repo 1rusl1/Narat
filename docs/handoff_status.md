@@ -1,5 +1,31 @@
 # Narat — текущий статус и передача работы
 
+## R1b2 подготовлен: owner ledger/CAS/disk — 20 ноября 2026
+
+R1b1 accepted/pushed `1652ec6974ec63a8e2d2331626b6e34202886828`: Developer2,
+Reviewer1/QA1;385Swift(382XCTest+3)/build/welcome129.956s,MCP24.459s,diff.
+Первый invalid diff сохранён, Dev2 исправил формат и сам применил patch;
+controller source не переносил. Typed phases/attemptId/codec и5Unit — pure
+metadata, не disk/OS. Report automation/tasks/tester-care-reminder-receipts.md.
+
+Doc-only parent f25f727 fast-forward интегрирован, ios byte-identical1652ec6.
+Ordinary signed56d Today dated live PASS сохранён отдельно: cold-firstsheet,
+1water+1routine UI, publishedinterval7/date source, complete/undo/NoSchedule;
+2новыхVOID auditfacts, prior history/conditions/revision/snapshot/membership
+сохранены, полный digest НЕравен. Первыйcoldattempt0intent/unchangeddigest
+сохранён. Это не физический iPhone/радиоoffline/OSdelivery/B07positive.
+
+Новый bounded run manifest `tasks.tester-care-reminder-store.json`: Store/
+Receipts/Unit only; exact local_care_reminder_receipts owner:type:owner row,
+permanent original lease + UUID CAS token materialized before future await,
+corrupt/foreign data failclosed, exact fullrefresh/reset retention, explicit
+erase-only metadata purge, forged-sync rejection and disk/ABA/rollback tests.
+Replacement validation усиливается на disk boundary против decoded unsafe
+rearm; no new model/schema/PBX/Root/OS/network/queue. PBXdelta0.
+Все385 старые assertions сохраняются. После b2 R2serializedUN→R3Root/
+settings/route→R4physical/tester guide. Parentcheckbox open, actual83/17
+ordinary allowed/reset0; same models/900/sharedlease/ACcaffeinate.
+
 ## Root: датированный Today live PASS; R1b1 принят — 20 ноября 2026
 
 Обычная подписанная EN Release source56d7455, без fixtures: реальный SDK/Supabase,

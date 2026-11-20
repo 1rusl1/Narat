@@ -215,3 +215,7 @@ No parentcheckbox closed fromfixtures, reset0/actual81used19left ordinaryallowed
 R1a99e3952 accepted380Swift/MCP/ReviewQA (pureplanner). R1b1 metadata+codec/transitions,
 b2ownerLocalStore/CAS/retention/purge/disk splitunder900, thenR2OS/R3UI/R4device.
 No dedup/deliveryclaim fromplanner; ordinaryTodaydatedlivecurrentlynotPASS, no factscreated.
+
+R1b1 `1652ec6` puremetadata accepted385Swift/MCP/ReviewQA; dated ordinary56d live PASS
+(отдельныйparentreport f25f727,2VOID facts, semanticrestoration). R1b2 Store/CAS/disk
+manifest подготовлен, noPBX/schema/OS yet; затемR2/R3/R4, всеparentcheckboxopen.
