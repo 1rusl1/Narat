@@ -1,0 +1,23 @@
+{
+  "result": "PASS",
+  "commit": "dcef6c25df91300ba734e462353642f328962621",
+  "scope": "ordinary signed Release; real SDK/Supabase; owned simulator",
+  "binary_sha256": "ba2dae2c910e57e39d31fcb05c68b88da3c287d791961bc1dae50e354717c131",
+  "fixture_flags": false,
+  "today_no_schedule": true,
+  "today_existing_card_route": true,
+  "return_to_today": true,
+  "canonical_unchanged": true,
+  "canonical_sha256": "81b35333bdb14ef66d8e05ff95eb7a55dfe336c2a76556f82cacf8a9aa9ce4c5",
+  "limitations": [
+    "One existing Free plant with no dated checks",
+    "No physical notification or radio/offline proof"
+  ],
+  "checked_on": "2026-11-20",
+  "plant_count": 1,
+  "initial_harness_failure": "Successful first compile; missing old temporary project-ref in post-build guard. Same project pinned in owned output; guarded incremental repeat passed.",
+  "build_signature_verified": true,
+  "archive_signature_verified": true,
+  "visual_today_reviewed": true,
+  "physical_device_verified": false
+}

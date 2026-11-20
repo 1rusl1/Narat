@@ -16,9 +16,11 @@ one-shot currentcanonical card navigation, language-independent passive card
 reads с EN-onlywriteguards, separate read/actionerrors и original-scope
 wait-latestlocal task. Сеть только existing external CareLifecycleCoordinator;
 local/canonical signals local-only. Никакого нового API/schema/data/AI/OS.
-Это локальные fixtures/legacy care UI; dedicated Today UI/ordinary signed/
-iPhone/notifications ещё НЕ приняты. Root готовит отдельный read-only ordinary
-signed NoSchedule bootstrap на accepted frozen source, без новых carefacts.
+К локальным fixtures добавлен отдельный ordinary signed EN Release live smoke
+на frozen dcef6c2: Today NoSchedule → существующая карточка → возврат PASS;
+реальные SDK/Supabase, canonical digest не изменился, новых carefacts нет.
+Отчёт `docs/validation/tester-today-live-2026-11-20.md`. Dedicated Today UI,
+dated/offline/live multi-owner, физический iPhone и notifications ещё не приняты.
 
 Следующий C3a `tools/automation/tasks.tester-care-today-fixtures.json`:
 3existingfiles App/CatalogueUIFixtures/Unit; dedicated DEBUG Todayflag/scenarios,
@@ -4710,3 +4712,33 @@ tester-care-today-fixtures: проверки и Review/QA пройдены; пу
 Отчёт: [tester-care-today-fixtures](validation/automation/tasks/tester-care-today-fixtures.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
+
+## Root: обычный Today Release live принят в ограниченном объёме — 20 ноября 2026
+
+Source dcef6c2 перенесён fast-forward и отправлен в origin root-ветки; затем
+интегрирован doc-only C3a prep039af22, product source не менялся. Исходные три
+пользовательских файла PBX/InfoPlist.xcstrings/Localizable.xcstrings побайтно
+сохранены unstaged, индекс был пуст; stash не использовался. Backup/manifest:
+`/private/tmp/narat-root-user-ios-preserve-20261120-dcef6c2/`.
+
+Реально выполнены ordinary Release build, codesign verify до/после архива,
+точный Supabase host/staging/fixture exclusion, установка на собственный
+Simulator и обычный запуск без fixture flags. На реальных SDK/Supabase:
+NoSchedule → own existing card/journal → collection → Today PASS. Полный
+canonical digest до/после идентичен; новый уход/AI/покупки/SQL не создавались.
+Снимок Today визуально просмотрен. Binary SHA и точные ограничения в
+`docs/validation/tester-today-live-2026-11-20.{md,json}`. Приватные логи, три PNG
+и подписанный архив сохранены; удалены только собственные build intermediates.
+
+Первый compile был успешен, post-build harness упал на старом очищенном
+temporary project-ref. Исходные failure/log сохранены; тот же project pin
+перенесён в owned output без ослабления host guard. Incremental повтор,
+проверки подписи/конфигурации и live UI завершились PASS. Продукт не менялся.
+
+Это live online proof одного Free-растения без назначенных дат, отдельно от
+369Swift/149automation/old13+PL fixture acceptance. Dated/пагинация/другой owner,
+физический iPhone, радио-offline и OS delivery этим не подтверждены.
+Следующий точный шаг: C3a run tester-care-today-fixtures-20261120-01 в отдельном
+worktree, затем C3b Today UI/lastchecked и старые regression gates; далее R1–R4
+напоминаний и signed iPhone build. Родительские checkbox остаются open.
+Usage reset не использован; последний actual counter76/24 ordinary allowed.
