@@ -149,3 +149,9 @@ C1 `05e3e2d` принят:364Swift/build/welcome/MCP/ReviewQA, scoped model +
 readonly exact access deadline. Locale deadlock найден Review и исправлен.
 Далее C2 permanent Today view/Root/navigation, затем C3 dedicated fixtures/
 targeted UI + ordinary signed live. Модель сама по себе не готовый Today.
+
+C2 candidate пока BLOCKED после Review2:368Swift/build/welcome PASS, но
+PL read-side pending/canonical invalidation не согласован с показом дат.
+Следующий узкий repair + rendered EN-pending→PL regression, затем полная
+candidate_base приёмка от ae74b52. Home-return event и dedicated Today UI/live
+обязательны до готовности; никаких полных checkbox по сборке не закрыто.

@@ -107,7 +107,20 @@ struct RootContainerView: View {
         let snapshot: CatalogueSDKSnapshot?
         let active: Bool
         let reconnectRevision: UInt64
+        let locale: SupportedLocale
     }
+    private struct TodayContext {
+        let snapshot: CatalogueSDKSnapshot
+        let lease: SyncSessionLease
+        let scope: TodayModel.Scope
+    }
+    @State private var todayModel = TodayModel()
+    @State private var todayContext: TodayContext?
+    @State private var todayLocalRead: Task<Void, Never>?
+    @State private var todayRevision: UInt64 = 0
+    @State private var todayFenced = true
+    @State private var todayUnavailable = false
+    @State private var collectionTarget: CataloguePlantTarget?
     private enum AccountDestination: String, Identifiable {
         case diagnosis, identification, collection, guestTransfer
         var id: Self { self }
@@ -196,6 +209,21 @@ struct RootContainerView: View {
                 case .selectIntent:
                     if usesLegacyWelcome {
                         welcomeIntentSection
+                    } else if catalogue?.snapshot?.isAnonymous == false {
+                        TodayHomeView(
+                            model: todayModel,
+                            visible: todayContext.map { isTodayCurrent($0) && !todayFenced } ?? false,
+                            unavailable: todayUnavailable, polish: isPolish, busy: opening != nil,
+                            retry: { careReconnectRevision &+= 1 },
+                            localBoundary: { if let context = todayContext { requestTodayLocal(context) } },
+                            openPlant: openTodayPlant,
+                            collection: { open(.collection) },
+                            browse: {
+                                analysisModel.router.selectIntent(.care)
+                                analysisModel.router.selectCareMethod(.catalogue)
+                            },
+                            check: { open(.diagnosis) }, identify: { open(.identification) }
+                        )
                     } else {
                         PlantHomeView(
                             polish: isPolish,
@@ -286,6 +314,8 @@ struct RootContainerView: View {
             }
         }
         .onChange(of: catalogue?.snapshot) { previous, current in
+            collectionTarget = nil
+            if let context = todayContext, context.snapshot != current { clearToday() }
             guard let previous, !previous.isAnonymous,
                   previous.session.userId != current?.session.userId else { return }
             showingCollection = false
@@ -305,20 +335,35 @@ struct RootContainerView: View {
         .task(id: reminderRead) { await observeTrialReminder(reminderRead) }
         .task { await observeCareConnectivity() }
         .task(id: CareLifecycleRead(snapshot: catalogue?.snapshot, active: scenePhase == .active,
-                                    reconnectRevision: careReconnectRevision)) {
+                                    reconnectRevision: careReconnectRevision, locale: languageStore.currentLocale)) {
             await observeCareLifecycle(snapshot: catalogue?.snapshot, active: scenePhase == .active)
         }
+        .task(id: todayModel.scope) { await observeTodaySignals(canonical: false) }
+        .task(id: todayModel.scope) { await observeTodaySignals(canonical: true) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { clearToday(); careLifecycle.suspend() }
+        }
+        .onChange(of: languageStore.currentLocale) { _, locale in
+            if let context = todayContext, context.scope.locale != locale {
+                clearToday(); careLifecycle.suspend()
+            }
+        }
         .onDisappear {
+            clearToday()
             careLifecycle.suspend()
             #if DEBUG
             catalogue?.reconcileFixtureReconnect = nil
             #endif
         }
-        .sheet(isPresented: $showingCollection) {
+        .sheet(isPresented: $showingCollection, onDismiss: {
+            collectionTarget = nil
+            if !usesLegacyWelcome { careReconnectRevision &+= 1 }
+        }) {
             if let catalogue {
                 CatalogueCollectionView(
                     connection: catalogue, polish: isPolish, repeatDiagnosis: repeatDiagnosisEntry(for: catalogue),
-                    trialReminder: trialReminder
+                    trialReminder: trialReminder, requestedTarget: collectionTarget,
+                    consumeTarget: { collectionTarget = nil }
                 )
             }
         }
@@ -411,6 +456,7 @@ struct RootContainerView: View {
         guard active, let connection = catalogue, let expected = snapshot, !expected.isAnonymous,
               connection.snapshot == expected, let repository = connection.repository,
               let sync = connection.syncEngine else {
+            clearToday()
             careLifecycle.suspend()
             #if DEBUG
             catalogue?.reconcileFixtureReconnect = nil
@@ -426,10 +472,39 @@ struct RootContainerView: View {
             careReconnectRevision &+= 1
         }
         #endif
+        var scopedToday: TodayContext?
+        if !usesLegacyWelcome {
+            do {
+                if let context = todayContext, isTodayCurrent(context) {
+                    scopedToday = context
+                } else {
+                    clearToday()
+                    let locale = languageStore.currentLocale
+                    let lease = try await connection.collectionLease(expected: expected)
+                    guard !Task.isCancelled, scenePhase == .active, connection.snapshot == expected,
+                          languageStore.currentLocale == locale else { return }
+                    guard let authority = connection.apiClient?.syncAuthority else { throw SyncWireValidationError.invalidSession }
+                    try authority.withPermanentBoundValid(lease) {}
+                    let scope = todayModel.activate(ownerId: lease.ownerId, generation: lease.generation, locale: locale)
+                    let context = TodayContext(snapshot: expected, lease: lease, scope: scope)
+                    todayContext = context
+                    scopedToday = context
+                    requestTodayLocal(context)
+                }
+                await todayLocalRead?.value
+                guard !Task.isCancelled, let context = scopedToday, isTodayCurrent(context) else { return }
+            } catch {
+                guard !Task.isCancelled, connection.snapshot == expected, scenePhase == .active else { return }
+                todayUnavailable = true
+                return
+            }
+        }
+        let context = scopedToday
         careLifecycle.request(replacingCurrent: true) {
             do {
                 try Task.checkCancellation()
                 guard connection.snapshot == expected else { return nil }
+                if let context { return try await refreshToday(context, repository: repository) }
                 let lease = try await connection.collectionLease(expected: expected)
                 return try await repository.reconcilePendingCare(context: lease)
             } catch {
@@ -441,6 +516,104 @@ struct RootContainerView: View {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             careLifecycle.didBecomeIdle()
         }
+    }
+
+    private func clearToday() {
+        todayLocalRead?.cancel()
+        todayLocalRead = nil
+        todayContext = nil
+        todayModel.suspend()
+        todayFenced = true
+        todayUnavailable = false
+        collectionTarget = nil
+    }
+
+    private func isTodayCurrent(_ context: TodayContext) -> Bool {
+        guard !usesLegacyWelcome, scenePhase == .active,
+              todayContext?.scope == context.scope, todayModel.scope == context.scope,
+              languageStore.currentLocale == context.scope.locale,
+              let connection = catalogue, connection.snapshot == context.snapshot,
+              let authority = connection.apiClient?.syncAuthority else { return false }
+        return (try? authority.withPermanentBoundValid(context.lease) { true }) == true
+    }
+
+    private func requireToday(_ context: TodayContext) throws {
+        try Task.checkCancellation()
+        guard isTodayCurrent(context) else { throw CancellationError() }
+    }
+
+    /// All durable signals fence presentation synchronously, then coalesce local reads only.
+    private func requestTodayLocal(_ context: TodayContext) {
+        guard isTodayCurrent(context), let repository = catalogue?.repository else { return }
+        todayFenced = true
+        todayRevision &+= 1
+        let revision = todayRevision
+        todayLocalRead?.cancel()
+        todayLocalRead = Task { @MainActor in
+            guard !Task.isCancelled, isTodayCurrent(context) else { return }
+            await todayModel.rereadLocal(scope: context.scope) {
+                try requireToday(context)
+                let result = try await repository.cachedCareOverview(context: context.lease)
+                try requireToday(context)
+                return result
+            }
+            guard !Task.isCancelled, isTodayCurrent(context), todayRevision == revision else { return }
+            todayFenced = false
+        }
+    }
+
+    private func observeTodaySignals(canonical: Bool) async {
+        guard let context = todayContext, isTodayCurrent(context), !Task.isCancelled,
+              let store = catalogue?.store, let sync = catalogue?.syncEngine else { return }
+        let updates: AsyncStream<Void>
+        if canonical { updates = await sync.canonicalSyncUpdates() }
+        else { updates = await store.localOutboxUpdates(ownerId: context.lease.ownerId) }
+        guard !Task.isCancelled, isTodayCurrent(context) else { return }
+        for await _ in updates {
+            guard !Task.isCancelled, isTodayCurrent(context) else { return }
+            requestTodayLocal(context)
+        }
+    }
+
+    private func refreshToday(
+        _ context: TodayContext, repository: CollectionRepository
+    ) async throws -> CareReconciliationOutcome {
+        try requireToday(context)
+        let outcome = try await repository.reconcilePendingCare(context: context.lease)
+        try requireToday(context)
+        guard outcome != .busy else { return outcome }
+        if todayModel.needsLocalRead { requestTodayLocal(context) }
+        await todayLocalRead?.value
+        try requireToday(context)
+        guard !todayFenced, !todayModel.needsLocalRead else { return outcome }
+        let revision = todayRevision
+        var publicationRevision: UInt64?
+        await todayModel.refresh(scope: context.scope) {
+            try requireToday(context)
+            let result = try await repository.refreshCareOverview(locale: context.scope.locale, context: context.lease)
+            try requireToday(context)
+            if result.failure == nil { publicationRevision = todayRevision }
+            return result
+        }
+        try requireToday(context)
+        // C1 can discard a successful publication after a local revision. Never repeat HTTP.
+        if let publicationRevision, publicationRevision != revision {
+            await todayLocalRead?.value
+            try requireToday(context)
+            // A newer signal already owns the latest read, including any failure.
+            guard todayRevision == publicationRevision else { return outcome }
+            // Read current durable state even if the displaced read saw revalidation.
+            requestTodayLocal(context)
+            await todayLocalRead?.value
+            try requireToday(context)
+        }
+        return outcome
+    }
+
+    private func openTodayPlant(_ plantId: UUID) {
+        guard let context = todayContext, isTodayCurrent(context), !todayFenced else { return }
+        collectionTarget = CataloguePlantTarget(plantId: plantId, snapshot: context.snapshot)
+        showingCollection = true
     }
 
     private func observeTrialReminder(_ read: TrialReminderRead) async {

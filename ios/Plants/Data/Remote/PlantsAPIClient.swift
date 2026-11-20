@@ -2158,13 +2158,13 @@ extension PlantsAPIClient {
     }
 
     func fetchCareRecommendation(
-        plantId: UUID, context: SyncSessionLease
+        plantId: UUID, context: SyncSessionLease, locale: SupportedLocale = .en
     ) async throws -> PlantCareRecommendation? {
         let request = try buildRequest(
             path: "plants/\(plantId.uuidString.lowercased())/care/recommendation", method: "GET"
         )
         let response: PlantCareRecommendationResponse = try await analysisRequest(
-            request, locale: .en, context: context, status: [200], forbidRedirects: true
+            request, locale: locale, context: context, status: [200], forbidRedirects: true
         )
         return try syncAuthority.withBoundValid(context) { try response.validated(for: plantId) }
     }

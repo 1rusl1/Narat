@@ -722,6 +722,12 @@ struct RepeatDiagnosisEntry {
     let makeModel: @MainActor (CatalogueCardSummary, CatalogueSDKSnapshot) -> AnalysisFlowModel?
 }
 
+/// A one-shot request; selection always comes from the collection's canonical cards.
+struct CataloguePlantTarget {
+    let plantId: UUID
+    let snapshot: CatalogueSDKSnapshot
+}
+
 struct CatalogueCollectionView: View {
     private struct Read: Equatable {
         let session: CatalogueSDKSnapshot?
@@ -737,6 +743,9 @@ struct CatalogueCollectionView: View {
     let polish: Bool
     var repeatDiagnosis: RepeatDiagnosisEntry? = nil
     var trialReminder: TrialReminderScheduler? = nil
+    var requestedTarget: CataloguePlantTarget? = nil
+    var consumeTarget: () -> Void = {}
+    @State private var targetConsumed = false
     @Environment(\.dismiss) private var dismiss
     @State private var loadedScope: CatalogueSDKSnapshot?
     @State private var cards: [CatalogueCardSummary] = []
@@ -855,7 +864,11 @@ struct CatalogueCollectionView: View {
                 }
             }
         }
-        .onChange(of: connection.snapshot) { _, _ in accountSettingsScope = nil }
+        .onChange(of: connection.snapshot) { _, _ in
+            accountSettingsScope = nil
+            targetConsumed = true
+            consumeTarget()
+        }
         .task(id: read) { await load(read) }
         .onDisappear(perform: endRepeatDiagnosis)
     }
@@ -935,6 +948,14 @@ struct CatalogueCollectionView: View {
             guard !Task.isCancelled, read == requested else { return }
             cards = result.cards
             usingCachedCards = result.isCached
+            if !targetConsumed, let target = requestedTarget {
+                targetConsumed = true
+                consumeTarget()
+                if target.snapshot == expected, !result.isCached,
+                   let card = cards.first(where: { $0.id == target.plantId }) {
+                    selected = Selected(card: card, scope: expected)
+                }
+            }
         } catch {
             guard !Task.isCancelled, read == requested else { return }
             failed = true
@@ -1298,13 +1319,13 @@ private struct CatalogueCollectionCardView: View {
                         CataloguePrivatePhotoView(connection: connection, expected: expected, subject: .plant(card.id), polish: polish)
                             .id(photo)
                     }
+                    if let advice {
+                        PlantCareRecommendationContent(
+                            recommendation: advice,
+                            showNextCheck: routineAccessAvailable && adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy && !manualRecordBusy
+                        )
+                    }
                     if !polish {
-                        if let advice {
-                            PlantCareRecommendationContent(
-                                recommendation: advice,
-                                showNextCheck: routineAccessAvailable && adviceResponse == requestedAdvice && !checkingAdviceRefresh && pendingAdviceRefresh == nil && !routineBusy && !manualRecordBusy
-                            )
-                        }
                         routineCompletionControls
                         #if DEBUG
                         if connection.withdrawCareSourceFixture != nil {
@@ -2050,11 +2071,15 @@ private struct CatalogueCollectionCardView: View {
             if wateringRecordNeedsReview {
                 Text("Watering record needs review. Retry this record to resolve it.")
                     .accessibilityIdentifier("collection.watering.record.failed")
+                    #if DEBUG
                     .accessibilityValue(command.operationId.uuidString.lowercased())
+                    #endif
             } else {
                 Text("Watering record pending sync.")
                     .accessibilityIdentifier("collection.watering.record.pending")
+                    #if DEBUG
                     .accessibilityValue(command.operationId.uuidString.lowercased())
+                    #endif
             }
             Button("Retry watering record") { Task { await retryWateringRecord(command) } }
                 .accessibilityIdentifier("collection.watering.record.retry")
@@ -2069,18 +2094,24 @@ private struct CatalogueCollectionCardView: View {
             case .rejected:
                 Text("Watering record rejected. No watering was recorded. You can try a new record.")
                     .accessibilityIdentifier("collection.watering.record.rejected")
+                    #if DEBUG
                     .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+                    #endif
             case .unconfirmed:
                 Text("Watering could not be confirmed. Reload history or retry the original record.")
                     .accessibilityIdentifier("collection.watering.record.unconfirmed")
+                    #if DEBUG
                     .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+                    #endif
                 Button("Reload care history") { Task { await recoverUnconfirmedWatering(retryOriginal: false) } }
                     .disabled(!canRecoverUnconfirmedWatering)
                     .accessibilityIdentifier("collection.watering.record.reload")
                 Button("Retry original watering") { Task { await recoverUnconfirmedWatering(retryOriginal: true) } }
                     .disabled(!canRecoverUnconfirmedWatering)
                     .accessibilityIdentifier("collection.watering.record.retryOriginal")
+                    #if DEBUG
                     .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+                    #endif
             case .pending:
                 EmptyView()
             }
@@ -2213,12 +2244,13 @@ private struct CatalogueCollectionCardView: View {
 
     @MainActor
     private func rereadCanonicalCare(refreshOnForeground: Bool = false) async {
-        guard !polish, connection.snapshot == expected, let repository = connection.repository,
-              let store = connection.store, let api = connection.apiClient else { return }
-        // Access publication is safety-critical even while an action owns mutable journal state.
+        guard !Task.isCancelled, connection.snapshot == expected else { return }
+        // Access publication also fences dates on read-only Polish recommendations.
         await loadRoutineAccess()
         guard !Task.isCancelled, connection.snapshot == expected else { return }
         if !routineAccessAvailable { firstAid?.controls.removeAll() }
+        guard !polish, let repository = connection.repository,
+              let store = connection.store, let api = connection.apiClient else { return }
         guard !recoveringWateringRecord, !savingRename, !savingFirstAid, !savingRoutine,
               !enablingBasicCare, !refreshingAdvice,
               correction != .saving, correction != .recordSaving else { return }
@@ -2580,7 +2612,7 @@ private struct CatalogueCollectionCardView: View {
 
     private func loadPendingAdviceRefresh() async {
         defer { checkingAdviceRefresh = false }
-        guard !polish, let repository = connection.repository else { return }
+        guard let repository = connection.repository else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let pending = try await repository.pendingCareRecommendationRefresh(plantId: card.id, context: lease)
@@ -2623,10 +2655,12 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func loadAdvice(_ requested: Int) async {
-        guard !polish, let api = connection.apiClient else { return }
+        guard !Task.isCancelled, connection.snapshot == expected,
+              let api = connection.apiClient else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
-            let result = try await api.fetchCareRecommendation(plantId: card.id, context: lease)
+            guard !Task.isCancelled, connection.snapshot == expected, adviceRequest == requested else { return }
+            let result = try await api.fetchCareRecommendation(plantId: card.id, context: lease, locale: polish ? .pl : .en)
             guard !Task.isCancelled, connection.snapshot == expected, adviceRequest == requested else { return }
             advice = result
             adviceResponse = requested

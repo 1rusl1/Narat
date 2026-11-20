@@ -1,0 +1,63 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-today-pl-invalidation",
+      "description": "Repair Polish recommendation read-side pending/canonical invalidation and prove rendered existing-EN-pending to PL date suppression without adding write paths.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "docs/validation/automation/tasks/tester-care-today-home-blocked.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "New SMALL semantic repair after previous C2 run BLOCKED developerbudget3/Review2, not a rerun of giant C2. Full C2 source remains unaccepted, fresh full candidate_base acceptance follows this narrow slice. Fix ONLY Guest read-side language safety and ONE DEBUG fixture + rendered regression. No App/Todayview/model/Repo/API/Store/engine/schema/OS/server/content changes; do not rewrite full500line C2 patch. Existing368Swift preserved.",
+        "Actual Review2 defect: PL now displays advice dates but excludes loadCare, rereadCanonicalCare, routineBusy, loadPendingRoutine, loadBasicCareState via !polish. Read these pending/manual/routine/refresh/basic state and invalidate current careRevision/deletion/adviceResponse/request forPL too. Passive loadHistory never retries. Initial and canonical/foreground/idle reads use sameoriginalpermanentlease/SDK guards and busyguard. Unknown/error/pending must suppress obsolete date, not become free/ready. Keep existing read-order and successproofs, no datafromcatalogue/newdatecalc.",
+        "IMPORTANT preserve !polish write gating: canRecordWatering/canRecoverWateringRecord, firstAid/UI operation guards and existing EN-only action UI unchanged. loadAnalysisHistory/firstAidJournal localization is outside repair. Make routineBusy language-agnostic READ busy status. Do not relax owner/delete/operation identity/recovery guards or auto resubmit from a read method.",
+        "Date display must honor the read states, not just fetch them: pending routine/manual correction/refresh/basic care and failed or unresolved canonical reads must not let obsolete EN dates reappear in PL. Use existing fields and minimal display guard if needed; no new persisted status/queue. Preserve accepted server eligibility and all write guards, do not invent a new calendar policy.",
+        "Add DEBUG isolated scenario EXACT name routinePendingPolish to testsRoutine/testsCareLifecycle so permanent-shaped JWT is existing branch, not weakproductionguard. Reuse all existing routine ledger/profile/sync/recommendation helpers. First intentional care.check_soil.complete follows existing lost-response canonical commit, exact replay requests thereafter return retryable503 BEFORE receipt without additionalcommit, leaving durable pending across Root externallocale revalidation. Persist attempt bodies/owners in existing ledger.attempts for THISnewscenario only; every replay must byte-match original envelope and use sameop. Existing old13scenario behavior unchanged. No processlaunchcount success, fake UI confirmation, additional queue or realnetwork.",
+        "Add exactlynamed UITest testPolishRecommendationHidesExistingPendingSoilCheck using existing Run/tap/language helpers: EN open ownedFixture1 old sourceddate; marksoilchecked -> realpending; Backcard/Closecollection; changeRootpicker toPL; reopen SAMEcard; recommendation/source visible but catalogue.saved.care.next.date absent despite server having canonical completed nextdate, and PL write controls remain absent. No cardRetry/secondintent. Read functions must notPOST; bounded Root lifecycle replay may occur afterlocale event but ledger staysonecommit/allbodiesexact. Newgate asserts2..4attempts oneintent/onecommit, no missing/skippedUI. Rootlocale mayrunexistingcarecoalescer, do not disable realRoot to make test pass.",
+        "Preserve canonical/foreground revalidation forPL including pendingmanual/routine/refresh/basicCare and careRevision/delete. Meaningful runtime UI case plus fullcodeReview; no new firstaid programs/translationsframework/AI, purchases/admin/deleteaccount. Full ios-tests, MCP and new tester-care-pl-ui mandatory; actual fixture-only result is not Today/live/physical readiness."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "PLREAD1",
+          "description": "Language-independent passive pending/canonical reads suppress stale advice dates without opening PL care write paths; fullSwift/build/welcome pass.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "PLREAD2",
+          "description": "Rendered EN pending→PL samecard preserves one operation/one canonical commit and hides next date; named UI test passes with no skips.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-pl-ui"
+          ]
+        },
+        {
+          "id": "PLREAD3",
+          "description": "Existing MCP and independently reviewed narrow source preserve previous paths; whole C2 acceptance remains separate.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-home-blocked.md"
+      ]
+    }
+  ]
+}

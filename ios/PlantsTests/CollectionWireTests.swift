@@ -10358,3 +10358,108 @@ extension CollectionWireTests {
         await assertLocalOutboxSignals(await store.localOutboxUpdates(ownerId: syncOwner), count: 0)
     }
 }
+
+extension CollectionWireTests {
+    private func todayCalendarState(
+        _ local: LocalCareOverviewPresentation, rows: [[String: Any]],
+        known: Bool = true, aligned: Bool = true, pending: [OutboxEntrySnapshot] = [],
+        cards: [CatalogueCardSummary]? = nil, deadline: String? = nil
+    ) throws -> CareOverviewViewState {
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+        var page = overviewPage(rows)
+        page["verified_access_until"] = deadline.map { $0 as Any } ?? NSNull()
+        let entitlement = try deadline.map { until in
+            try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data(syncJSON([
+                "product_id": "paid", "state": "active", "offer_kind": "paid",
+                "valid_until": until, "grace_until": NSNull(), "trial_end_at": NSNull(),
+                "auto_renew_enabled": true
+            ]).utf8))
+        }
+        return CareOverviewViewState(local: LocalCareOverviewPresentation(
+            ownerId: local.ownerId, canonicalGeneration: local.canonicalGeneration,
+            snapshotGeneration: local.snapshotGeneration,
+            cached: CachedCareOverview(snapshot: try overviewSnapshot([page]), fetchedAt: now,
+                                       snapshotLocale: "pl", state: .cached, canonicalGenerationMatches: aligned),
+            cards: cards ?? local.cards, pending: pending, profile: local.profile,
+            entitlement: entitlement, canonicalAccessKnown: known, careRows: []
+        ), now: now, origin: .cache)
+    }
+
+    @MainActor
+    func testTodayCalendarKeepsTodayAndOverdueSourceDates() async throws {
+        let (url, _, _, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try await repo.cachedCareOverview(context: lease)
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-05T12:00:00Z"))
+        let projection = TodayCalendar(state: state, now: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+        XCTAssertEqual(projection.status, .scheduled)
+        XCTAssertEqual(projection.sections.map(\.day), ["2026-11-01", "2026-11-05"])
+        XCTAssertEqual(projection.sections.flatMap(\.checks).map(\.due), ["2026-11-01", "2026-11-05"])
+        XCTAssertTrue(projection.sections[0].checks[0].followUp)
+        XCTAssertEqual(projection.sections[0].checks[0].source.locator, "Published check")
+        XCTAssertFalse(projection.sections[1].checks[0].followUp)
+    }
+
+    @MainActor
+    func testTodayCalendarNearestTiesAndHonestEmptyStates() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        var control = overviewControl()
+        var policy = try XCTUnwrap(control["policy"] as? [String: Any])
+        policy["due_on"] = "2026-11-05"; control["policy"] = policy
+        var later = control
+        later["control_id"] = UUID().uuidString
+        policy["due_on"] = "2026-11-06"; later["policy"] = policy
+        let rows = [overviewRow(serverPlantId, dated: true, controls: [control, later])]
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-04T12:00:00Z"))
+        let tied = TodayCalendar(state: try todayCalendarState(local, rows: rows), now: now)
+        XCTAssertEqual(tied.sections.map(\.day), ["2026-11-05"])
+        XCTAssertEqual(tied.sections.first?.checks.count, 2)
+        XCTAssertEqual(Set(tied.sections.flatMap(\.checks).map(\.id)).count, 2)
+        let undated = [overviewRow(serverPlantId)]
+        func status(known: Bool = true, aligned: Bool = true, pending: [OutboxEntrySnapshot] = []) throws -> TodayCalendar.Status {
+            TodayCalendar(state: try todayCalendarState(local, rows: undated, known: known,
+                                                       aligned: aligned, pending: pending), now: now).status
+        }
+        XCTAssertEqual(try status(), .noSchedule)
+        XCTAssertEqual(try status(known: false), .unknown)
+        XCTAssertEqual(try status(aligned: false), .unavailable)
+        let pending = OutboxEntrySnapshot(operationId: UUID(), ownerId: lease.ownerId, plantId: serverPlantId,
+                                         commandName: "care.record", payloadJSON: "{}", sequenceNumber: 1)
+        XCTAssertEqual(try status(pending: [pending]), .pending)
+        XCTAssertEqual(TodayCalendar(state: try todayCalendarState(local, rows: [], cards: []), now: now).status, .empty)
+        XCTAssertEqual(TodayCalendar(state: nil, now: now).status, .unavailable)
+    }
+
+    func testTodayCalendarUsesLocalGregorianDayAndDSTMidnight() throws {
+        let zone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let before = try XCTUnwrap(SQLTimestamp.date(from: "2026-03-08T07:30:00Z"))
+        XCTAssertEqual(TodayCalendar.day(before, timeZone: zone), "2026-03-07")
+        let start = try XCTUnwrap(SQLTimestamp.date(from: "2026-03-08T08:00:00Z"))
+        let next = TodayCalendar.boundary(now: start, deadline: nil, timeZone: zone)
+        XCTAssertEqual(TodayCalendar.day(start, timeZone: zone), "2026-03-08")
+        XCTAssertEqual(TodayCalendar.day(next, timeZone: zone), "2026-03-09")
+        XCTAssertEqual(next.timeIntervalSince(start), 23 * 3600)
+        XCTAssertEqual(TodayCalendar.calendar(timeZone: zone).identifier, .gregorian)
+    }
+
+    @MainActor
+    func testTodayCalendarSuppressesExactExpiryWithoutWaitingForStore() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let raw = "2026-11-21T00:00:00.123456Z"
+        let deadline = try XCTUnwrap(SQLTimestamp.date(from: raw))
+        let state = try todayCalendarState(local, rows: [overviewRow(serverPlantId, dated: true)], deadline: raw)
+        let before = deadline.addingTimeInterval(-0.001)
+        let zone = TimeZone(secondsFromGMT: 0)!
+        XCTAssertEqual(TodayCalendar.boundary(now: before, deadline: state.verifiedAccessUntil, timeZone: zone), deadline)
+        XCTAssertFalse(TodayCalendar(state: state, now: before).sections.isEmpty)
+        let expired = TodayCalendar(state: state, now: deadline)
+        XCTAssertEqual(expired.status, .paused)
+        XCTAssertTrue(expired.sections.isEmpty)
+        XCTAssertNotNil(state.plants.first?.routine)
+        XCTAssertTrue(state.plants.first?.manualJournalAvailable == true)
+    }
+}

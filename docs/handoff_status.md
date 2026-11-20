@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: C2 candidate не принят; узкий PL read repair — 20 ноября 2026
+
+Run `tester-care-today-home-20261120-01` фактически BLOCKED: Developer3 budget
+исчерпан после mechanical hunk repair и двух последовательных Review.
+Полный candidate5Swift (+525/-19) сохранён, НЕ принят и НЕ готов для live build.
+Реально: повторные368Swift (365XCTest+3), build/welcome/diff PASS98.70s;
+MCP/QA последней версии не выполнены. Review1 исправлены: актуальный local
+reread после displaced successful publication и PL advice display/load.
+Review2 нашёл оставшуюся проблему: PL reader пропускает pending care/routine/
+refresh/basic membership и canonical careRevision invalidation; прежняя EN
+pending дата может ожить на PL. Live Today пока не запускался.
+Блокирующий отчёт `docs/validation/automation/tasks/tester-care-today-home-blocked.md`.
+
+Следующий новый узкий semantic repair: Guest read-side five guards + isolated
+routinePendingPolish fixture + один реальный named UI regression EN pending→
+PL recommendation/no date. Существующие write guards остаются; никаких
+новых команд/queue/production bypass. После accepted узкого repair отдельная
+FULL candidate_base приёмка ВСЕГО C2 от ae74b52, затем C3 Today fixtures/UI/live.
+Не подменяем старый BLOCKED новым PASS и не закрываем T066/полные задачи.
+Home-return revalidation (browse/add→Back) остаётся обязательным следующим C3.
+
+Manifest `tools/automation/tasks.tester-care-today-pl-invalidation.json`.
+Gate `/private/tmp/narat-tester-care-polish-read-ui-gate.py` пока только
+py_compile/--help PASS, настоящая UI приёмка не запускалась. Same approved
+routing/900s/shared Simulator lock/temporary ACcaffeinate. Root подтверждает
+usage72/28 ordinaryAllowed/reset0; source/static старых slices приняты отдельно.
+
+
 ## Этап 2: C1 Today model принят; C2 Root/view — 20 ноября 2026
 
 Accepted/pushed `05e3e2d5b1b4452ffafb5ecd45d027c11aa514a7`.
