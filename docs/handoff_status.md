@@ -1,5 +1,59 @@
 # Narat — текущий статус и передача работы
 
+## Технический checkpoint: Root, подписанная сборка и реальный OS roundtrip — 20 ноября 2026
+
+Root принят в `fe0b99e`, tests-only уточнение — `8086558`, документы
+интегрированы до `53bdf0e`. Runtime-код и проект после Root не менялись;
+три исходных пользовательских файла сохранены по manifest27dfdf4, index пуст.
+
+Реально выполнено и разделено по режимам:
+
+- Fixtures/local: 425 Swift (422 XCTest + 3 SwiftTesting), build/welcome
+  PASS 144.565 с; diff PASS; Review 51.589 с / QA 79.868 с PASS. Два новых
+  readback-теста проверяют stale authorization и один retry без дубля/prompt.
+  Прежние 423 assertions сохранены; runtime/PBX/helpers не менялись.
+- Root ранее прошёл 149 automation, MCP, PL replay, care 13/13 с ledger и
+  Today 6/6 с 8 read-only namespaces. Эти UI не повторялись ради tests-only.
+- Обычная Personal iphoneos `0.1.0 (2)` из frozen `fe0b99e`: build,
+  strict/deep codesign до/после архива, профиль и dSYM UUID match — PASS.
+  Проверены backend/public client key и DEBUG-маркеры; portal updates не было.
+  Установки/UI на iPhone нет; профиль действителен до 24 ноября 16:19:31 UTC.
+  [Архив и подпись](validation/tester-iphone-signing-root-2026-11-20.md).
+- Реальный OS, synthetic: отдельный Simulator bundle / iOS 26.3 — Allow1,
+  add → pending → trusted route и равные DateComponents → точное удаление,
+  pending0→0. Production Factory/adapter неизменны; Root/Core/SDK не запускались.
+  Тестовое приложение удалено. Это не delivery или tap routing.
+  [OS roundtrip](validation/tester-reminder-system-roundtrip-2026-11-20.md).
+
+Первый OS harness FAIL (локализованный диалог, Allow0, без add) сохранён;
+повтор тем же бинарником исправил только обработчик. Unit compile FAIL
+новых тестов также сохранён; исправлены только новые test references.
+Реальный status-readback показал один transient notDetermined. Fake OS тесты
+подтвердили: pending может быть уже подтверждён, пока published status старый;
+при двух notDetermined result.failed=false/deferred=false ещё не означает
+запланированные заявки. Нужен следующий lifecycle/явный retry.
+
+Ограничения: settings/opt-in и permission UI, delegate/маршрут, полный путь
+Scheduler+Store с реальным OS и доставка при закрытом приложении остаются
+открытыми. Ordinary live `56d7455` не подменяет проверку нового Root;
+physical B01–B11 и полные T075/T077/T080/T098 не закрыты. Передача внешнему
+тестировщику отложена. Сборка2 — промежуточный технический артефакт.
+
+Точная точка остановки: принятый Root + 425 тестов + подписанный архив +
+узкий реальный adapter roundtrip. Следующий шаг —
+`ios/Plants/Features/CareTasks/ReminderConsentView.swift` и подключение к
+текущему владельцу: явный eligible opt-in/permission, достоверные pending/error/
+permission states с учётом lag; существующий profile hour переиспользовать.
+Затем delegate/current-occurrence route и полный реальный OS runtime test.
+
+Фактический счётчик: 93% использовано / 7% осталось. Сброс0, использовать
+его запрещено. Новый длинный этап не допускается, чтобы сохранить минимум5%.
+В этом doc-этапе обновлены handoff/tasks/tester-care-plan; добавлены два MD/JSON
+отчёта и точный diagnostic fixture в docs/validation/fixtures, вне App target.
+JSON/ссылки/secret guards/diff/сохранность user files проверены; runtime-тесты
+ради документов повторно не запускались. Бинарники, profile и local configs
+вне Git. Commit/push этого checkpoint фиксируются Git.
+
 ## Задержанный статус разрешения зафиксирован тестами — 20 ноября 2026
 
 Принят и отправлен tests-only `8086558453d17a2c488660053cecfb180b9a4866`, run
