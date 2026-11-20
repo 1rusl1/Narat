@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import SwiftData
 import UserNotifications
 @testable import Plants
@@ -12792,6 +12793,284 @@ extension CollectionWireTests {
                 XCTAssertEqual(final?.receipts.entries[candidate.id]?.attemptId, entry.attemptId)
                 XCTAssertEqual(fake.permissionRequests, 0)
             }
+        }
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    private func lifecycleContext(_ store: LocalStore, _ api: PlantsAPIClient,
+                                  _ lease: SyncSessionLease, locale: String = "pl",
+                                  reader: (() async throws -> CareOverviewViewState)? = nil)
+        -> CareReminderLifecycle.Context {
+        .init(lease: lease, store: store, authority: api.syncAuthority,
+              engine: SyncEngine(store: store, apiClient: api), locale: locale,
+              isCurrent: { true }, readCache: reader)
+    }
+
+    @MainActor
+    private func lifecycleCache(_ store: LocalStore, _ api: PlantsAPIClient,
+                                _ lease: SyncSessionLease, rows: [[String: Any]]) async throws {
+        let ordered = rows.sorted { ($0["plant_id"] as! String).lowercased() < ($1["plant_id"] as! String).lowercased() }
+        var page = overviewPage(ordered)
+        page["verified_access_until"] = NSNull()
+        let token = try await store.beginCareOverviewRead(
+            locale: "pl", context: lease, authority: api.syncAuthority)
+        try await store.finishCareOverviewRead(
+            token, snapshot: overviewSnapshot([page]), authority: api.syncAuthority)
+    }
+
+    @MainActor
+    func testReminderLifecycleBackgroundDurableCancellationAndReadFailure() async throws {
+        let transport = CatalogueTransport([])
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try await overviewCanonical(store, authority: api.syncAuthority, lease: lease,
+                                    ids: [serverPlantId, otherSyncOwner])
+        try await lifecycleCache(store, api, lease,
+                                 rows: [reminderRow(serverPlantId), reminderRow(otherSyncOwner)])
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner))
+        let fake = FakeCareReminderNotifications()
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        var failRead = false
+        var arrival: XCTestExpectation?
+        let context = lifecycleContext(store, api, lease, reader: {
+            arrival?.fulfill()
+            arrival = nil
+            if failRead { throw FakeCareReminderNotifications.Fault.injected }
+            return try await repo.cachedCareOverview(context: lease)
+        })
+        core.setSceneActive(true)
+        core.accept(context)
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.pending.count, 2)
+        let added = fake.adds.count
+        core.setSceneActive(false)
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.pending.count, 2)
+        XCTAssertEqual(fake.adds.count, added)
+        let wateringRead = expectation(description: "real durable watering signal")
+        arrival = wateringRead
+        let watering = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+        try await store.enqueueSavedPlantWatering(watering, context: lease, authority: api.syncAuthority)
+        await fulfillment(of: [wateringRead], timeout: 3)
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.pending.compactMap { $0.route?.candidate.plantId }, [otherSyncOwner])
+        XCTAssertEqual(fake.adds.count, added)
+        failRead = true
+        let failedRead = expectation(description: "real durable profile signal")
+        arrival = failedRead
+        let hour = try ProfileReminderHourCommand.make(reminderHourLocal: 10)
+        _ = try await store.enqueueProfileReminderHour(hour, context: lease, authority: api.syncAuthority)
+        await fulfillment(of: [failedRead], timeout: 3)
+        await core.waitUntilIdle()
+        XCTAssertTrue(core.readFailed)
+        XCTAssertTrue(core.optedIn)
+        XCTAssertTrue(fake.pending.isEmpty)
+        core.setSceneActive(true)
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.adds.count, added)
+        failRead = false
+        core.retry()
+        await core.waitUntilIdle()
+        XCTAssertFalse(core.readFailed)
+        XCTAssertEqual(fake.adds.count, added)
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(local.pending.count, 2)
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+        core.logout()
+        await core.waitUntilIdle()
+    }
+
+    @MainActor
+    func testReminderLifecycleDurableRevisionDisplacesHeldOldCache() async throws {
+        let transport = CatalogueTransport([])
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try await lifecycleCache(store, api, lease, rows: [reminderRow(serverPlantId)])
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner))
+        let fake = FakeCareReminderNotifications()
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        let gate = TodayReadBarrier()
+        var block = false
+        core.accept(lifecycleContext(store, api, lease, reader: {
+            let captured = try await repo.cachedCareOverview(context: lease)
+            if block { block = false; await gate.wait() }
+            return captured
+        }))
+        await core.waitUntilIdle()
+        XCTAssertTrue(fake.adds.isEmpty)
+        block = true
+        core.setSceneActive(true)
+        await gate.waitUntilEntered()
+        let displaced = expectation(description: "local stream fences suspended read")
+        let expected = core.revision + 1
+        let observation = core.$revision.sink { if $0 == expected { displaced.fulfill() } }
+        let hour = try ProfileReminderHourCommand.make(reminderHourLocal: 10)
+        _ = try await store.enqueueProfileReminderHour(hour, context: lease, authority: api.syncAuthority)
+        await fulfillment(of: [displaced], timeout: 3)
+        gate.open()
+        await core.waitUntilIdle()
+        observation.cancel()
+        XCTAssertTrue(core.state?.profileHourPending == true)
+        XCTAssertTrue(fake.adds.isEmpty)
+        XCTAssertTrue(fake.pending.isEmpty)
+        XCTAssertEqual(fake.permissionRequests, 0)
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+        core.logout()
+        await core.waitUntilIdle()
+    }
+
+    @MainActor
+    func testReminderLifecycleUnresolvedStartupLogoutABAAndLateLocaleRead() async throws {
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner))
+        let fake = FakeCareReminderNotifications()
+        let own = try receiptCandidate()
+        let foreign = try receiptCandidate(owner: otherSyncOwner)
+        fake.pending = [own, foreign].map {
+            .init(rawIdentifier: CareReminderNotificationFactory.prefix + $0.id,
+                  route: .init(candidate: $0, attemptId: UUID()), deliveredAt: nil)
+        }
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        core.suspendAuth()
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.inventoryReads, 0)
+        let gate = TodayReadBarrier()
+        let oldDone = expectation(description: "late original lease callback")
+        core.accept(lifecycleContext(store, api, lease, reader: {
+            _ = try await repo.cachedCareOverview(context: lease)
+            await gate.wait()
+            oldDone.fulfill()
+            throw FakeCareReminderNotifications.Fault.injected
+        }))
+        await gate.waitUntilEntered()
+        XCTAssertEqual(fake.pending.map { $0.rawIdentifier }, [CareReminderNotificationFactory.prefix + own.id])
+        let journal = try await store.readCareReminderReceipts(context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(journal?.receipts.entries[own.id]?.phase, .uncertain)
+        core.suspendAuth()
+        await core.worker.waitUntilIdle()
+        XCTAssertEqual(fake.pending.count, 1)
+        core.logout()
+        api.syncAuthority.bind(try profileSession(ownerId: otherSyncOwner))
+        let b = try api.syncAuthority.capture(ownerId: otherSyncOwner)
+        core.accept(lifecycleContext(store, api, b))
+        XCTAssertFalse(core.optedIn)
+        api.syncAuthority.bind(try profileSession())
+        let a = try api.syncAuthority.capture(ownerId: syncOwner)
+        core.accept(lifecycleContext(store, api, a, locale: "en"))
+        core.setSceneActive(true)
+        await core.waitUntilIdle()
+        XCTAssertTrue(core.optedIn)
+        XCTAssertTrue(fake.pending.isEmpty)
+        let revision = core.revision
+        gate.open()
+        await fulfillment(of: [oldDone], timeout: 3)
+        await core.waitUntilIdle()
+        XCTAssertEqual(core.revision, revision)
+        XCTAssertFalse(core.readFailed)
+        XCTAssertTrue(fake.adds.isEmpty)
+        XCTAssertEqual(fake.permissionRequests, 0)
+        core.logout()
+        await core.waitUntilIdle()
+    }
+
+    @MainActor
+    func testReminderLifecycleOwnerConsentColdRetentionAndExplicitEligiblePermission() async throws {
+        let transport = CatalogueTransport([])
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fake = FakeCareReminderNotifications()
+        fake.authorizationValue = .notDetermined
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        core.setSceneActive(true)
+        core.accept(lifecycleContext(store, api, lease))
+        await core.waitUntilIdle()
+        XCTAssertFalse(core.optedIn)
+        core.setOptedIn(true, requestPermission: true) // Only overdue rows: NoSchedule.
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 0)
+        try await lifecycleCache(store, api, lease, rows: [reminderRow(serverPlantId)])
+        core.cachePublicationOrTimeChanged()
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 0)
+        core.requestEligiblePermission()
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 1)
+        core.logout()
+        await core.waitUntilIdle()
+        let cold = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        cold.setSceneActive(true)
+        cold.accept(lifecycleContext(store, api, lease))
+        await cold.waitUntilIdle()
+        XCTAssertTrue(cold.optedIn)
+        XCTAssertEqual(fake.permissionRequests, 1)
+        api.syncAuthority.bind(try profileSession(ownerId: otherSyncOwner))
+        let b = try api.syncAuthority.capture(ownerId: otherSyncOwner)
+        cold.accept(lifecycleContext(store, api, b))
+        await cold.waitUntilIdle()
+        XCTAssertFalse(cold.optedIn)
+        XCTAssertTrue(defaults.bool(forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner)))
+        XCTAssertFalse(defaults.bool(forKey: CareReminderLifecycle.preferenceKey(ownerId: otherSyncOwner)))
+        XCTAssertEqual(fake.permissionRequests, 1)
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+        cold.logout()
+        await cold.waitUntilIdle()
+    }
+
+    @MainActor
+    func testReminderLifecycleUnknownCacheHoldVersusKnownPolicySuppression() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        for (index, mode) in ["absent", "offline", "profile.update", "denied", "revalidate", "generation", "expired", "withdrawn"].enumerated() {
+            let suite = UUID().uuidString
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(true, forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner))
+            let fake = FakeCareReminderNotifications()
+            let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+                clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+            let row = overviewRow(serverPlantId, dated: true, controls: [reminderControl(index + 1)])
+            var current = try reminderState(local, rows: [row])
+            core.setSceneActive(true)
+            core.accept(lifecycleContext(store, api, lease, reader: { current }))
+            await core.waitUntilIdle()
+            // Each iteration uses a fresh opportunity, not a previously spent occurrence.
+            let armed = fake.pending.count
+            XCTAssertEqual(armed, 1, mode)
+            current = try reminderState(local,
+                rows: mode == "withdrawn" ? [overviewRow(serverPlantId)] : [row],
+                mode: mode, deadline: mode == "expired" ? "2026-11-19T12:00:00Z" : nil)
+            if mode == "expired" { XCTAssertEqual(current.access, .expired) }
+            core.cachePublicationOrTimeChanged()
+            await core.waitUntilIdle()
+            XCTAssertEqual(fake.pending.count, ["absent", "offline"].contains(mode) ? armed : 0, mode)
+            XCTAssertTrue(core.optedIn, mode)
+            XCTAssertEqual(fake.permissionRequests, 0, mode)
+            core.logout()
+            await core.waitUntilIdle()
         }
     }
 }
