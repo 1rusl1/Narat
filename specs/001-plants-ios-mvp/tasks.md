@@ -175,6 +175,7 @@
   - B2a `b98f706`: coherent one-context presentation/full canonical plant set приняты —343Swift/build/welcome/MCP/ReviewQA PASS. Repo/network/pending presentation и Today UI ещё отдельно; T066 открыт.
   - B2b `a2c85c1`: bounded Repo refresh, explicit locale, durable known-invalid cache и sanitized presentation приняты —355Swift/build/welcome/MCP/ReviewQA PASS (12 новых fixture tests). Далее local mutation signal → Today UI; T066 остаётся открыт.
   - Local signal `4be75d4`:359Swift/build/welcome/MCP/ReviewQA PASS; durable outbox changes публикуют owner-scoped local reread без сети. Далее C1 Today model → C2 Root/UI → dedicated UI acceptance; T066 открыт.
+  - C1 `05e3e2d`: scoped TodayModel + exact readonly access deadline,364Swift/build/welcome/MCP/ReviewQA PASS; 5 fixture tests incllocale repair. Далее C2 Root/view и C3 targeted Today UI/live; T066 открыт.
 
 - [ ] T067 Создать `CareHistoryView.swift` для фактов/прошедшей даты/отмены. Текущую следующую дату с коротким основанием показывать в карточке; отдельный NextCheckReasonView и история всех пересчётов не требуются. Покрытие: FR-026, FR-027, FR-028, FR-029, FR-030.
   - V11: EN-журнал карточки отменил ранее исправленную запись после офлайн-очереди, холодного запуска и потери ответа. SQL подтвердил одну отмену и сохранение даты. Положительная дата следующей проверки на стенде открыта. [Отчёт](../../docs/validation/mvp-acceptance.md#v11--отмена-полива-после-исправления-даты).

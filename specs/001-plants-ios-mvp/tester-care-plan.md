@@ -144,3 +144,8 @@ local outbox mutation signal без сети, затем permanent Today UI/navi
 Local signal `4be75d4` принят:359Swift/build/welcome/MCP/ReviewQA (4 новых
 fixtures, один узкий repair после Review). Далее proper Features/Today
 model со stale callback guard, затем view/Root/navigation/UI fixtures.
+
+C1 `05e3e2d` принят:364Swift/build/welcome/MCP/ReviewQA, scoped model +
+readonly exact access deadline. Locale deadlock найден Review и исправлен.
+Далее C2 permanent Today view/Root/navigation, затем C3 dedicated fixtures/
+targeted UI + ordinary signed live. Модель сама по себе не готовый Today.

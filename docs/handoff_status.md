@@ -1,5 +1,38 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: C1 Today model принят; C2 Root/view — 20 ноября 2026
+
+Accepted/pushed `05e3e2d5b1b4452ffafb5ecd45d027c11aa514a7`.
+Run `tester-care-today-model-20261120-01` COMPLETED: Developer3, high-risk
+Reviewer2/QA1 PASS;364Swift (361XCTest+3), build/welcome/diff, MCP20.835s.
+Features/Today/TodayModel.swift, CollectionRepository.swift и existing
+CollectionWireTests.swift: owner/lease-generation/locale/activation scope,
+latest local/remote revision guards, скрытие старой автоматизации до local
+reread, точный readonly access deadline=min(canonical,server), trueFree nil.
+Пять новых named fixture tests: durable local overlay vs late refresh,
+latest local reads, ABA/reactivation/locale/suspend, cancellation, deadline.
+Первый ответ требовал механического hunk repair; Review1 нашёл PL-cache→EN
+refresh deadlock. Узкий repair разрешил bounded refresh после coherent
+wrong-locale read и расширил regression test. Все итоговые gates повторены.
+Root/home/view/physical ещё не подключены. Отчёт
+`docs/validation/automation/tasks/tester-care-today-model.md`.
+
+Родительский doc-only e05fc26 merge clean после приёмки: protected user PBX/
+xcstrings сохранены; volatile root Package.resolved не включался. Product
+source C1 не изменён. Следующий C2: proper TodayHomeView + Gregorian local
+calendar grouping, permanent Root home/lifecycle/local-only observation и
+one-shot переход в существующую карточку. Контроллер подготовил только
+пустой View scaffold и точные PBX refs/Sources, plutil/diff PASS; реализации
+UI пока нет. Dedicated Today fixtures/targeted UI и обычная live приёмка
+следующим C3 до объявления готовности Today. Existing legacy fixtures остаются.
+
+Manifest `tools/automation/tasks.tester-care-today-home.json`; контракт
+`docs/validation/automation/runs/care-today-root-contract.md`. Без нового
+framework/API/session/queue/schema/calendar dates/content/AI/OS reminders.
+Все родительские T066/T068/T075/T077/T098/B01–B11 остаются open; exact same
+routing/900s/shared lock/ACcaffeinate. Reset не использован.
+
+
 ## Root: сохранены локальные правки при target merge — 20 ноября 2026
 
 Integration `c2648e7` отправлена в origin. Три исходные пользовательские правки

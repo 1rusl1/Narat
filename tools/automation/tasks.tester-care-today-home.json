@@ -1,0 +1,63 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-today-home",
+      "description": "Connect scoped Today state to permanent home with source-date calendar sections and one-shot existing-card navigation; full Today UI acceptance follows separately.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "docs/validation/automation/runs/care-today-root-contract.md",
+        "docs/validation/automation/tasks/tester-care-today-model.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "After accepted C1 05e3e2d (364Swift/build/welcome/MCP/ReviewQA). C2 implementation only, dedicated fixture/targetUI/live acceptance C3 follows. Controller prepared empty TodayHomeView.swift with exact Plants PBX membership. Implement compact view/calendar helpers here, leave TodayModel/Repo/Store/engine unchanged. No newframework/service/client/session/schema/outbox/OSreminder/AI/content/SQL. Do not claim Today fully ready from build/welcome; keep fullproductcheckboxesopen.",
+        "Permanent SDK normal selectIntent home must render TodayHomeView using TodayModel. Preserve guest PlantHomeView and old usesLegacyWelcome fixtures exactly (no extra overviewGET for old13). Preserve My plants collection.open, Add/Browse welcome.catalogue, Check welcome.check, Identify welcome.identify and account via existing collection. Today contains checks and statuses, no new completion API or write action. For existing permanent account initialhome isToday; startup/unavailable/guest/login flows remain usable.",
+        "Reuse existing CareLifecycleCoordinator as SOLE network coalescer. For original active permanent SDKsnapshot/locale, capture ONE original lease, activate/reuse TodayModel scope(owner,generation,locale) without resetting on every read. Cached read first; existing reconcilePendingCare pass; ONLY nonbusy result then one bounded repository.refreshCareOverview(locale,context). Busy continues existing idle protocol. Foreground/reconnect/userRetry/locale/collection dismissal are external triggers. Do not create independent HTTP task per event/row, no collectionCards forToday, no extra drain/loop. Preserve existing carefixture root behavior whenTodaydisabled.",
+        "Observe LocalStore.localOutboxUpdates(ownerId) and SyncEngine.canonicalSyncUpdates for current original scope, cancellation/SDK guard before and after everyawait. These events only coherent repo.cachedCareOverview reads, never HTTP/sync. Coalesce local rereads via a tiny Root revision/task if useful, no framework. Immediately fence/hide stale automation on local signal beforeawait. Initialactive/configuration andinactive/signout/owner/locale replacement must clear oldmodel/target. Auth ABA handled actualSDKsnapshot+permanentauthority, notownerUUIDonly. No discarded callback may reactivate oldscope.",
+        "Bridge C1 late response: after successful network publication maybe discarded because a localrevision advanced; do atmost ONE latest LOCAL reread under same scope/lease to expose accepted snapshot+pending, no secondHTTP. Do not overwrite newer model scope/error or clearpending withcapturedoldnetworkstate. Await/settle coherent local read before model.refresh guard; failures remain retryable and never fakeempty.",
+        "View consumes only safe DTO/model. Group serverdated routine_check ruleID+dueYMD and firstaidcontrolUUID+dueYMD; never rawtasks/catalogue intervals/newdates. Gregorian calendar components withcurrentlocaltimezone for now, lexical validated YYYY-MM-DD: no UTC-midnight timezone shift/Buddhist calendar bug. ShowToday+overdue with original due date/source; ifnone nearestfutureday (allties); ifno currentdates explicitNo scheduledchecks ONLY validcompleteactive state. Distinct emptycollection/loading/unavailable/failedrefresh/savedcache/knownpaused/pending/unknownaccess statuses. Keep activeownedcard/manualjournal shortcuts evenno schedule/expired, no technicalUUID text. Routine label check soil, firstaid follow-up. Source preserved/link, EN+PL texts, accessible large type/scroll/simplelayout.",
+        "Access/day rollover: exact verifiedAccessUntil and nextlocalmidnight determine one cancellation-aware clock boundary task, plus significanttime/timezone events. Atfire updateclock and trigger ONLY scopedlocalread (no periodicStorepoll). Do NOT await read inside task whose id is synchronously changed by that read/state=nil; use sync scopedrevisioncallback->independentread. Calendarprojection immediately suppresses dates/actions ifknown deadline<=now while rereadpending. No shiftingoverdue/date fromcatalogue or expirygrant. Reminderpermission/scheduling excluded.",
+        "Task tap opens existing CatalogueCollectionView/Card via one-shot plantUUID+captured SDKsnapshot; root clears target on consume/dismiss/auth. Extend existing collection optionaltarget(defaultnil) and consume ONCE after its normalauthoritativecardsload, select currentcanonical matching activecard; never fabricatecardfromDTO. Back stayslist, doesnotreopen; missing/deleted/stalescope safelist/unavailable. Preserve onRenamed/delete/repeatDiagnosis/manual/routine/firstaid guards. No completion onrowtap.",
+        "Tiny touched-Guest fixes: ALL operationUUID accessibilityValue forwatering pending/failed/blocked states mustbeDEBUG-only; Releaseempty/human, identifiersunchanged/oldDEBUG assertionspreserved. Add explicit SupportedLocale default.en to existing fetchCareRecommendation and pass .pl/.en fromcard polish, soToday/card sources/dates/text agree; preserve existing defaultcallers andleasevalidation. No newrecommendations or translationsystem.",
+        "Add 3-4 compact meaningful tests reusing existingwirehelpers for calendarprojection: today+overdue originaldates, nearestfutureties+noSchedule vsunknown/stale/pending/empty, westernoffset/DST/localGregorian midnight, exactexpiry immediate suppression. Ifnavigation consumes purehelper test one-shot/missing/foreignscope withoutUIstubs. Full364existingSwift preserves; normalbuild/welcome/MCP required. DedicatedTodayfixtures/newtargetUI/old13regressions andordinarysignedlive are explicit C3, notclaimedhere. Keep patchsmall, around400-500productionlines max, no sweepingApp/Guest rewrite."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "TODAYHOME1",
+          "description": "Calendar/source-date projection and exact expiry boundary verified with existing Swift fixtures, current fullSwift/build/welcome remainpassing.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "TODAYHOME2",
+          "description": "Scoped permanent Root/view/navigation implementation independently reviewed with actual target membership and MCP; dedicated Today UI/live remains explicitly pending C3.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-model.md"
+      ]
+    }
+  ]
+}
