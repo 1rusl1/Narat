@@ -1,5 +1,22 @@
 # Narat — текущий статус и передача работы
 
+## Whole R2b2 BLOCKED; remaining cleanup failure repair — 20 ноября 2026
+
+Whole union02 on unchanged9d1ba68 BLOCKED Reviewer1 semantic FAIL84.327s:
+410Swift/build/welcome114.913s +149automation49.153s/diff PASS; noQA/MCP.
+Unknown-state optout cleanup can delete untrusted own canonical ID without
+persistedblock ->coldrestore duplicateadd. Parent independent audit also found
+foreign/known explicitprivacy cleanup wrongly requires metadataavailability.
+Narrow Scheduler+Unit repair next; source is NOT Root-ready/wholeaccepted.
+Normal untrustedown durable-before-remove stays enforced; no fabricatedproofs.
+
+Union01 infraFAIL53.215s was XCTest bundle Dead/temp load BEFOREtests, not
+semantic testfailure. Ownedapp notrunning/reinstallPASS underlease resolved
+it; no erase/globalrestart/sourcechanges. Both failures preserved. Next exact
+step repairbothcleanup paths ->fullSwift/MCP/ReviewQA ->fresh fullcandidate_base
+union fromdfe including149automation before Root/settings/route. Reset0.
+Parent B01positive/reversalcorrection docs wait finalacceptedwholeSHA.
+
 ## R2b2 narrow cleanup accepted; WHOLE worker acceptance next — 20 ноября 2026
 
 Narrow accepted/pushed b57f904b757a0d67899dc86c9f7ab118761e442d,

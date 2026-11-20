@@ -1,0 +1,60 @@
+{
+  "tasks": [
+    {
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/TrialReminderScheduler.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-reconcile.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-cleanup-failure-context.md"
+      ],
+      "id": "tester-care-reminder-cleanup-failure",
+      "description": "Ensure foreign-owner and explicit optout/logout OS cleanup still runs when receipt metadata cannot be read/saved; preserve ordinary untrusted-identity durable-before-remove barriers.",
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "NARROW independent audit repair, no rewrite: original fullworker run01 BLOCKED(twoReviewP1), cleanup b57 accepted410Swift+MCP/highReviewQA, fullunion run01 infraDeadbundleFAIL beforetests preserved; union02 verdict actual recorded inhandoff. Known remainingmetadatafailure privacygap means NOTRootready regardlesspreviousPASS. Same models900/budgets; onlyScheduler+compact2-3Unit groups, noRoot/Planner/Receipts/Store/PBX/Trial/newqueue/prefs/factory/UI changes. Preserve all410existingassertions incl normaluntrusted storagefail noOSremoval.",
+        "Actual wholeunion02 Reviewer1FAIL84.327s: worker.cleanup skips normalize when currentowner state=nil/optedInfalse, direct removes canonicalownrawrouteNil/noentry without durableblock, diskrestart+eligibilityrestore freshadds sameID. Add this REQUIRED repair: under currentvalidowner scope protectunknownowncanonical rawidentities BEFORE removal evenwithnilprojection, usingexistingblockedIdentifiers(no inventedsourceYMD/fire). Realdisktest nilprojectionoptout->cleanup->coldrestore->0add; exactstoragefailure barrier mustkeepuntrustedownrequest+failed. Foreign/trustedexplicitprivacy cleanup distinction below mustnotbypass thisbarrier. Preserve actualunion01infraFAIL/02semanticFAIL, noQAclaim.",
+        "Concrete P1: Pass.run beginCareReminderReceipts occurs BEFOREinventory/foreigncleanup. Freshpermanent knownB state=nil +Bcorruptreceipt orbegin savefails ->throwsbefore removingstaleA pending/delivered. In worker.cleanup Self.reconcile(cancellation).failed->throw BEFORE fallback rawOSremove, so explicitoptout/latchedownerchange mayleavealerts. KnownSDKlease remainsvalid; safe deletionforeign/explicitoptout/logout ownprefix doesNOTrequire metadataavailability. Best-effort OScleanup mustrun independentofledgerfailure, readback validate, onlycareprefix, Trial/otherrequests untouched, noforeignledgerread. Preserve diagnostics failed/unconfirmed; successfulrawremove is NOT successfulmetadata/schedulingconfirmation.",
+        "Privacy cleanup boundary precise: foreign strictcanonicalrawidentity and explicitoptout/logout cleanup independentmetadata. Unknownstartup still0OS; knownB/state=nil preservesvalidsameB andopaqueunknown asacceptedcontract, removesonlyprovedforeign beforedefer. Explicitoptout/logout mayremoveowncareprefix aftermetadataerror, but NEVERnewadd or fabricatecancel-beforefireproof/ACK/receiptfromemptyinventory. Keep workercleanupRequired latched onfailure/revisionrace sooldadd eventuallycleaned, stale result cannotpublishnewownerflags. Existing originalpermanentlease/currentrevision guards before/aftereveryawait stillmandatory.",
+        "Precise ambiguous-own exception: currentknownowner +strictcanonicalownraw route=nil andnoverifiableexistingreceipt mustbe durablyblocked before removal evenexplicitoptout andnilprojection. Ifthisblock cannotpersist, retainONLYthatambiguousownrequest andfailedstatus; do notrunrawfallback overthisexception. ForeignIDs and trusted/known requests inexplicitprivacycleanup canstillremove despitemetadatafailure. ActualcancelAll/noSDKowner remainsprivacycleanup withNOforeignledgerread; do notaddinventedreceipt/authority. Do not broadly turnstoragefailure intoall-OS-cleanup skip.",
+        "NORMAL active reconcile ofuntrusted owncurrent-ID retains durableblock BEFOREremove; doNOTgeneralizebest-effort tothispath orweaken testReminderSuppressedRawIdentitiesSurviveDiskRestartWithoutRearming storagefailure assertions. Normalledger/CAScorruption failclosed; preservecorruptbytes, no overwritingempty. Existingprepared/armed diskmetadata afterfailedsave remainsunchanged; latermissinginventory normalizesuncertain, no freshadd. NoatomicOS+SQLite orphysicalclaim.",
+        "2-3compact realStore/fakeOS groups: (A) freshknownB/state=nil withreadonlyemptyB andcorruptB fixtures, seedforeignA pending+delivered +validB+Trial; cleanupA/readback happens despitemetadatafailure, validB/Trialremain, noadd/prompt/foreignledgerread, failurevisible/corruptbytesunchanged. (B) explicitoptout orlatchedownerchange whilemetadataread/savefails stillcleanscare pending+delivered afterheldadd; noforeign/trialdeletion, failedstatus remains. Seed existingarmed/prepared ledger forsavefailure; afterwritablecoldretry missingOS ->uncertain notfreshadd. Keepoldunknownrawdurable-before-remove regression passing. UseexistingFake/realStore/helpers/barriers no sleeps/realUN. FullSwift/build/welcome/MCP/highReviewQA thenFULLcandidate_base union fromdfe includingthisrepair beforeRoot. Allparentsopen. Include new Review-case nilprojectionoptout strictownrawrouteNil/noentry, durableblock/coldrestore0add +savefailnoRemoval; do not modify existing410assertions."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "CLEAN1",
+          "description": "Foreign/explicit optout/logout cleanup survives real receipt read/save failure with truthful failure; allSwift/build/welcome regressions pass.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "CLEAN2",
+          "description": "MCP/highReviewQA confirm ordinary untrusted durable-before-remove remains enforced and no new scheduling authority/Root/runtime/physical claim.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup.md",
+        "docs/validation/automation/tasks/tester-care-reminder-cleanup-failure-context.md"
+      ]
+    }
+  ]
+}
