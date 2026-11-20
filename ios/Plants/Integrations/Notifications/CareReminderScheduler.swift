@@ -1,9 +1,9 @@
 import Foundation
+import Combine
 
-/// One bounded pass only. The caller MUST serialize passes across all instances for an owner.
-/// No Root integration, latest-intent worker, logout/hold policy or concurrent-call safety yet.
+/// One worker per adapter lifecycle. Static reconcile remains a caller-serialized bounded pass.
 @MainActor
-enum CareReminderScheduler {
+final class CareReminderScheduler: ObservableObject {
     struct Input {
         let lease: SyncSessionLease
         let store: LocalStore
@@ -31,6 +31,173 @@ enum CareReminderScheduler {
         let deferred: Bool
     }
 
+    @Published private(set) var result: Result?
+    @Published private(set) var authorization: CareReminderPlan.Authorization?
+    @Published private(set) var requestingPermission = false
+
+    private let notifications: any CareReminderNotifications
+    private var latest: Input?
+    private var held = false
+    private var revision: UInt64 = 0
+    // Sticky across logout -> B -> A and opt-out -> opt-in coalescing.
+    private var cleanupRequired = false
+    private var permissionIntent = false
+    private var worker: Task<Void, Never>?
+
+    init(notifications: any CareReminderNotifications) {
+        self.notifications = notifications
+        // Unresolved startup deliberately does not inspect or clean the OS inventory.
+    }
+
+    func update(_ input: Input) {
+        if let previous = latest,
+           previous.lease.ownerId != input.lease.ownerId || previous.authority !== input.authority {
+            cleanupRequired = true
+        }
+        if !input.optedIn { cleanupRequired = true }
+        latest = input
+        held = false
+        submit()
+    }
+
+    /// Presentation suspension retains known state and already-authorized future requests.
+    /// Local mutations can still supply update(input with allowNewRequests: false).
+    func hold() {
+        held = true
+        submit()
+    }
+
+    /// Actual logout only; no old owner ledger is opened, even if its lease is dead.
+    func cancelAll() {
+        cleanupRequired = true
+        latest = nil
+        held = true
+        submit()
+    }
+
+    /// Explicit UI action only. An ineligible action never becomes a future prompt intent.
+    func requestPermission() {
+        guard !held, let input = latest, (try? input.validate()) != nil,
+              input.optedIn, input.allowNewRequests,
+              !Self.plan(input).candidates.isEmpty else { return }
+        submit(permission: true)
+    }
+
+    func retry() { submit() }
+
+    func waitUntilIdle() async { await worker?.value }
+
+    private static func plan(_ input: Input) -> CareReminderPlan {
+        CareReminderPlan(expectedOwnerId: input.lease.ownerId, state: input.state,
+            optedIn: input.optedIn, authorization: .authorized, now: input.clock(),
+            timeZone: input.timeZone, locale: input.locale)
+    }
+
+    private func submit(permission: Bool = false) {
+        revision &+= 1
+        permissionIntent = permission
+        result = nil
+        authorization = nil
+        requestingPermission = false
+        if worker == nil {
+            // Never cancel this task: an OS add must finish before the next cleanup/add.
+            worker = Task { await self.drain() }
+        }
+    }
+
+    private func check(_ expected: UInt64) throws {
+        guard revision == expected else { throw Failure.scope }
+        try latest?.validate()
+    }
+
+    private func checked<T: Sendable>(
+        _ expected: UInt64, _ operation: @MainActor () async throws -> T
+    ) async throws -> T {
+        try check(expected)
+        do {
+            let value = try await operation()
+            try check(expected)
+            return value
+        } catch {
+            try check(expected)
+            throw error
+        }
+    }
+
+    private func cleanup(_ expected: UInt64) async throws {
+        if let input = latest, input.state != nil {
+            // Reuse the accepted pass to journal conservative blockers and cancellation proof
+            // before cleanup. Never open the previous owner's ledger.
+            let cancellation = Input(lease: input.lease, store: input.store, authority: input.authority,
+                isCurrent: { self.revision == expected && input.isCurrent() }, state: input.state,
+                optedIn: false, allowNewRequests: false, locale: input.locale,
+                timeZone: input.timeZone, clock: input.clock)
+            let value = await Self.reconcile(cancellation, notifications: notifications)
+            try check(expected)
+            guard !value.failed else { throw Failure.inventory }
+        }
+        let inventory = try await checked(expected) { try await notifications.inventory() }
+        let pending = CareReminderNotificationFactory.ownIdentifiers(inventory.pending.map { $0.rawIdentifier })
+        let delivered = CareReminderNotificationFactory.ownIdentifiers(inventory.delivered.map { $0.rawIdentifier })
+        if !pending.isEmpty {
+            try await checked(expected) { try await notifications.removePending(pending) }
+        }
+        if !delivered.isEmpty {
+            try await checked(expected) { try await notifications.removeDelivered(delivered) }
+        }
+        let readback = try await checked(expected) { try await notifications.inventory() }
+        guard readback.otherPendingCount >= 0,
+              !(readback.pending + readback.delivered).contains(where: {
+                  $0.rawIdentifier.hasPrefix(CareReminderNotificationFactory.prefix)
+              }) else { throw Failure.inventory }
+        cleanupRequired = false
+    }
+
+    private func drain() async {
+        var handled: UInt64?
+        while handled != revision {
+            let expected = revision
+            handled = expected
+            let input = latest
+            let shouldPrompt = permissionIntent
+            permissionIntent = false
+            do {
+                try check(expected)
+                if cleanupRequired { try await cleanup(expected) }
+                guard let input else { continue }
+                let auth = try await checked(expected) { try await notifications.authorization() }
+                authorization = auth
+                if shouldPrompt && !held && input.optedIn && input.allowNewRequests
+                    && !Self.plan(input).candidates.isEmpty && auth == .notDetermined {
+                    requestingPermission = true
+                    try await checked(expected) { try await notifications.requestAuthorization() }
+                    requestingPermission = false
+                    authorization = try await checked(expected) { try await notifications.authorization() }
+                }
+                try check(expected)
+                let bound = Input(lease: input.lease, store: input.store, authority: input.authority,
+                    isCurrent: { self.revision == expected && input.isCurrent() }, state: input.state,
+                    optedIn: input.optedIn, allowNewRequests: input.allowNewRequests && !held,
+                    locale: input.locale, timeZone: input.timeZone, clock: input.clock)
+                let value = await Self.reconcile(bound, notifications: notifications)
+                try check(expected)
+                result = value
+            } catch {
+                if revision == expected {
+                    requestingPermission = false
+                    if (try? check(expected)) != nil {
+                        result = Result(confirmedPendingCount: 0, omittedCount: 0,
+                            unconfirmedBlockers: 1, failed: true, deferred: false)
+                    } else {
+                        result = nil
+                        authorization = nil
+                    }
+                }
+            }
+        }
+        worker = nil
+    }
+
     private enum Failure: Error { case scope, inventory }
 
     static func reconcile(_ input: Input, notifications: any CareReminderNotifications) async -> Result {
@@ -44,6 +211,8 @@ enum CareReminderScheduler {
         var token: CareReminderReceiptSnapshot?
         var inventory = CareReminderNotificationInventory(pending: [], delivered: [], otherPendingCount: 0)
         var omitted = 0
+        var currentIDs: Set<String>?
+        var untrustedInventory = false
 
         init(_ input: Input, _ notifications: any CareReminderNotifications) {
             self.input = input
@@ -109,7 +278,7 @@ enum CareReminderScheduler {
             }
         }
 
-        func normalize() async throws {
+        func normalize(_ plan: CareReminderPlan) async throws {
             guard var ledger = token?.receipts else { throw Failure.scope }
             // Unknown verified identities become terminal BEFORE cleanup; never import add authority.
             for item in inventory.pending + inventory.delivered
@@ -120,7 +289,14 @@ enum CareReminderScheduler {
                     }
                 } else {
                     let id = String(item.rawIdentifier.dropFirst(CareReminderNotificationFactory.prefix.count))
-                    guard ledger.entries[id] != nil else { throw Failure.inventory }
+                    if ledger.entries[id] == nil {
+                        untrustedInventory = true
+                        if let candidate = plan.currentOccurrences.first(where: { $0.id == id }) {
+                            // Metadata grants no add authority. Persist a conservative identity blocker
+                            // BEFORE deleting the untrusted raw request (including skipped local days).
+                            try ledger.recordUnknown(.init(candidate: candidate, attemptId: UUID()), delivered: false)
+                        }
+                    }
                 }
             }
             for id in ledger.entries.keys.sorted() {
@@ -196,8 +372,8 @@ enum CareReminderScheduler {
                     && items.count == 1 && exact(items[0], e)
             }.count
             let blockers = entries.filter { e in
-                e.phase == .uncertain || e.phase == .prepared
-                    || (e.phase == .armed && !pending(e.id).contains { exact($0, e) })
+                (currentIDs?.contains(e.id) ?? true) && (e.phase == .uncertain || e.phase == .prepared
+                    || (e.phase == .armed && !pending(e.id).contains { exact($0, e) }))
             }.count
             return Result(confirmedPendingCount: confirmed, omittedCount: omitted,
                 unconfirmedBlockers: max(blockers, failed ? 1 : 0), failed: failed, deferred: deferred)
@@ -213,10 +389,11 @@ enum CareReminderScheduler {
                 // Presentation unknown is NOT logout or permission to cancel.
                 guard let state = input.state else { return result(failed: false, deferred: true) }
                 guard state.ownerId == input.lease.ownerId else { throw Failure.scope }
-                try await normalize()
                 let plan = CareReminderPlan(expectedOwnerId: input.lease.ownerId, state: state,
                     optedIn: input.optedIn, authorization: authorization, now: input.clock(),
                     timeZone: input.timeZone, locale: input.locale)
+                currentIDs = plan.currentOccurrenceIDs
+                try await normalize(plan)
                 let enabled = input.optedIn && authorization == .authorized
                 let desired = Dictionary(grouping: plan.candidates, by: { $0.id })
                 // All removals remain within the care prefix, including foreign-owner remnants.
@@ -232,6 +409,8 @@ enum CareReminderScheduler {
                     } ?? false
                     if !keep { try await remove(raw, entry: entry) }
                 }
+                // Malformed inventory is cleaned, but this pass never converts it to add authority.
+                if untrustedInventory { throw Failure.inventory }
                 if enabled && input.allowNewRequests {
                     let fresh = plan.candidates.filter { c in
                         guard let e = token?.receipts.entries[c.id] else { return true }
@@ -242,7 +421,8 @@ enum CareReminderScheduler {
                         $0.rawIdentifier.hasPrefix(CareReminderNotificationFactory.prefix)
                     }.count
                     let slots = max(0, min(CareReminderPlan.capacity - carePending,
-                        64 - inventory.otherPendingCount - carePending))
+                        // Conservative TOTAL budget, reserving space for trial/other requests.
+                        32 - min(32, inventory.otherPendingCount) - carePending))
                     omitted = max(0, fresh.count - slots)
                     for candidate in fresh.prefix(slots) {
                         try input.validate()

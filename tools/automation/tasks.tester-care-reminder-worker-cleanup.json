@@ -1,0 +1,57 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-worker-cleanup",
+      "description": "Repair two Review-confirmed reminder cold-owner/untrusted-canonical cleanup gaps; existing serialized worker remains unaccepted until whole R2b2 union acceptance.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/TrialReminderScheduler.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-reconcile.md",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "NARROW repair ONLY of actual semantic Reviewer1FAIL in tester-care-reminder-worker-20261120-01. Original run BLOCKED developer3 budget exhausted; preserve failure and do not label accepted. Current worker draft already applied by Developer2 with six regression groups, Developer3 corrected exact skipped-Apia-control expectations; full Swift407(404XCTest+3) PASS140.212, noQA. Read review report docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md. Same models900/budgets. Do NOT rewrite477lines, change Root/Planner/factory/Store/PBX/Trial, or weaken existing407assertions. Only two small fixes +2-3 compact regressions. Final whole R2b2 candidate_base acceptance follows beforeRoot.",
+        "P1 cold first-known owner: new worker constructor unresolved startup must still do ZERO OS work. On first update known ownerB optedIn=true/state=nil, inventory may contain foreignownerA care pending+delivered from priorlaunch. Remove/readback foreign raw own-care IDs BEFORE defer, keep sameownerB requests andTrial/otherprefix, never open foreign ledger. Do not fix by cancelAll entirecare namespace on startup (would destroy valid sameowner future requests), and do not infer owner from opaque malformed payload. Existing latched ownerchange/logout cleanup and in-flightadd serialization unchanged. Regression actual freshworker seededAandB validpending+delivered, optedInB/state=nil -> onlyAremoved, noadd/prompt, Bpreserved; constructor/no update ->0inventory.",
+        "P1 unknown canonical identity: normalize route=nil/noexistingEntry while currentOccurrences excludes occurrence dueprofileHourPending/access/pending/source temporarysuppression currently removesrequest withoutdurable dedup. When eligibilityreturns oldID freshlyadds. Persist strict owner-bound conservative identity blocker BEFORE removal evenwithoutvalid sourceDue/fire metadata. Do NOT invent sourceYMD/fireDate to synthesizeEntry/addauthority. Small optional blockedIdentifiers metadata set in SAME CareReminderReceipts v1 wrapper is allowed (not newqueue/model/Store): strict canonical domain grammar/lowercaseUUIDs/expectedowner, optionaldecode absentoldv1 defaultempty, duplicate/foreign/malformedreject, deterministicencode, monotonic replacement retains allblocks. prepare and candidate freshfilter mustrespectblocks; currentstatus blocker count intersects currentIDs, historicalblocks retained not activeerrors. Equivalent compact typed representation allowed ifsameproperties. No global rawstr failclosed state that disappears onrestart; no loss ofblock onoptout/fullrefresh/cold.",
+        "Only canonical raw IDs owncurrentowner become durable rawidentityblockers; malformedimpossiblegrammar cancleanupwithoutentries; foreignownerraw onlycleanup no foreignmetadataimport. Existing validroute unknown usesrecordUnknown unchanged. Ensure block installed beforeactualremove, storagefailure=>no unrecordedcleanup/rearm. ExistingcancelledBeforeFire conflict/receiptCAS/PREPARED ordering/permission/race semantics preserved.",
+        "Meaningful realdiskStore +fakeOS regression: seed own validcanonicalrawID route=nil, noReceipt; sharedstate profileHourPending (so currentOccurrencesempty) -> cleanup; close/reopen Store anddecodeledger; restoreeligibility -> ZEROadd, visiblecurrentunconfirmed blocker; remove task -> historicalblock retained/notcurrentcount. Cover routine andfirstaid rawgrammar ifcompact. Validate oldv1decodesunchanged andforeign/duplicate blockedIDs reject; replacement cannotremoveblock. Existing 407tests assertions unchanged beyondnew tests. No Systemcenter/network/Root or actualdeviceclaims. FullSwift/build/welcome+MCP/highReviewQA mandatory; thenfresh wholeunion beforeRoot."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "FIX1",
+          "description": "Cold first known owner removes only foreign care remnants before unknown-state defer; all existing Swift/build/welcome regressions pass.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "FIX2",
+          "description": "Suppressed canonical raw identities are durably blocked before cleanup, cold eligibility recovery never readds; MCP and high Review/QA pass.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-worker-cleanup-context.md"
+      ]
+    }
+  ]
+}

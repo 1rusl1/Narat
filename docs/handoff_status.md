@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## R2b2 Review FAIL; narrow cleanup repair next — 20 ноября 2026
+
+Run tester-care-reminder-worker-20261120-01 BLOCKED (Developer3 budget exhausted). Current three-file draft is NOT accepted: Planner current identities, Scheduler serialized worker and Unit regressions. Real Swift/build/welcome PASS140.212s (404XCTest+3SwiftTesting=407, no failures/skips), diff PASS; Reviewer1 semantic FAIL91.906s. No QA/MCP. Initial malformed patch and failed Apia test expectations preserved; later exact-control fixture repair did not change production.
+
+Two P1 remain: cold first-known B with unknown projection leaves prior A notifications; route=nil canonical identity can lose durable dedup during temporary eligibility suppression. New narrow Developer packet Scheduler/Receipts/Unit fixes both, then whole R2b2 union requires fresh candidate_base fullchecks/ReviewQA before Root. No actualOS/permission/delivery/phone/UI/settings wired. Parent tasks remain open; no reset, actual87/13 ordinaryAllowed.
+
+Parent ordinary B01 positive followup received separately; final sanitized report/reversal raw-entry join correction will come from parent after this acceptance. Current public old B01 stop note is historical and not latest live outcome. No product Save bug claimed.
+
 ## R2b1 accepted; R2b2 serialized worker подготовлен — 20 ноября2026
 
 Accepted/pushed `3cd0bd328d72bbe3d302407b9f347ac32059c96a`, run

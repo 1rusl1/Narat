@@ -22,6 +22,10 @@ struct CareReminderPlan: Sendable, Equatable {
     }
 
     /// All eligible occurrences, before opt-in, authorization and the care-only capacity limit.
+    // Identity evidence only, including overdue and skipped-local-day occurrences.
+    // These MUST NOT be used as future arm proposals or OS add authority.
+    let currentOccurrences: [Candidate]
+    var currentOccurrenceIDs: Set<String> { Set(currentOccurrences.map { $0.id }) }
     let candidates: [Candidate]
     let requests: [Candidate]
     var eligibleCandidateCount: Int { candidates.count }
@@ -40,31 +44,41 @@ struct CareReminderPlan: Sendable, Equatable {
               let generation = state.canonicalGeneration, state.snapshotGeneration == generation,
               !state.profileHourPending, let hour = state.reminderHourLocal,
               (0...23).contains(hour) else {
-            candidates = []; requests = []
+            currentOccurrences = []; candidates = []; requests = []
             return
         }
         switch state.access {
         case .free:
             guard state.verifiedAccessUntil == nil else {
-                candidates = []; requests = []
+                currentOccurrences = []; candidates = []; requests = []
                 return
             }
         case .verified:
             guard let deadline = state.verifiedAccessUntil, deadline > now else {
-                candidates = []; requests = []
+                currentOccurrences = []; candidates = []; requests = []
                 return
             }
         case .unknown, .expired:
-            candidates = []; requests = []
+            currentOccurrences = []; candidates = []; requests = []
             return
         }
 
         var proposals: [Candidate] = []
+        var current: [Candidate] = []
         func append(plantId: UUID, occurrence: Occurrence, due: String) {
-            guard let fire = Self.resolve(sourceYMD: due, hour: hour, timeZone: timeZone),
-                  fire > now, state.verifiedAccessUntil.map({ fire < $0 }) ?? true else { return }
+            guard due.utf8.count == 10,
+                  due.utf8.enumerated().allSatisfy({ index, byte in
+                      index == 4 || index == 7 ? byte == 45 : (48...57).contains(byte)
+                  }), let sourceDay = SQLCalendarDay.date(from: due) else { return }
             let id = Self.identity(ownerId: expectedOwnerId, plantId: plantId,
                                    occurrence: occurrence, sourceDueYMD: due)
+            let fire = Self.resolve(sourceYMD: due, hour: hour, timeZone: timeZone)
+            current.append(Candidate(
+                id: id, ownerId: expectedOwnerId, plantId: plantId, occurrence: occurrence,
+                sourceDueYMD: due, absoluteFireDate: fire ?? sourceDay, locale: locale
+            ))
+            guard let fire, fire > now,
+                  state.verifiedAccessUntil.map({ fire < $0 }) ?? true else { return }
             proposals.append(Candidate(
                 id: id, ownerId: expectedOwnerId, plantId: plantId, occurrence: occurrence,
                 sourceDueYMD: due, absoluteFireDate: fire, locale: locale
@@ -81,6 +95,7 @@ struct CareReminderPlan: Sendable, Equatable {
             }
         }
         let unique = Self.orderedUnique(proposals)
+        currentOccurrences = Self.orderedUnique(current)
         candidates = unique
         requests = optedIn && authorization == .authorized ? Array(unique.prefix(Self.capacity)) : []
     }

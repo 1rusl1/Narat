@@ -11816,6 +11816,8 @@ private final class FakeCareReminderNotifications: CareReminderNotifications {
     var adds: [CareReminderNotificationProposal] = []
     var removed: [String] = []
     var permissionRequests = 0
+    var inventoryReads = 0
+    var onPermission: (() async -> Void)?
     var failInventory = false
     var afterRemove: (() -> Void)?
     var onAuthorization: (() -> Void)?
@@ -11825,8 +11827,12 @@ private final class FakeCareReminderNotifications: CareReminderNotifications {
         onAuthorization?()
         return authorizationValue
     }
-    func requestAuthorization() async throws { permissionRequests += 1 }
+    func requestAuthorization() async throws {
+        permissionRequests += 1
+        await onPermission?()
+    }
     func inventory() async throws -> CareReminderNotificationInventory {
+        inventoryReads += 1
         if failInventory { throw Fault.injected }
         return .init(pending: pending, delivered: delivered, otherPendingCount: otherPendingCount)
     }
@@ -11982,7 +11988,7 @@ extension CollectionWireTests {
 
     @MainActor
     func testReminderPassFiltersSpentBeforeCapacityAndAccountsOtherRequests() async throws {
-        for other in [0, 40] {
+        for other in [0, 1, 31, 32, 40] {
             let (url, store, authority, lease, local) = try await reminderFixture()
             defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
             let state = try passState(local, count: 74)
@@ -11998,7 +12004,7 @@ extension CollectionWireTests {
             let fake = FakeCareReminderNotifications()
             fake.otherPendingCount = other
             let result = await reminderPass(store, authority, lease, state, fake)
-            let count = other == 0 ? 32 : 24
+            let count = max(0, 32 - other)
             XCTAssertFalse(result.failed)
             XCTAssertEqual(result.confirmedPendingCount, count)
             XCTAssertEqual(result.omittedCount, 34 - count)
@@ -12107,5 +12113,263 @@ extension CollectionWireTests {
                 }
             }
         }
+    }
+}
+
+
+extension CollectionWireTests {
+    @MainActor
+    private func workerInput(
+        _ store: LocalStore, _ authority: SyncSessionAuthority, _ lease: SyncSessionLease,
+        _ state: CareOverviewViewState?, _ fake: FakeCareReminderNotifications,
+        optedIn: Bool = true, allowNew: Bool = true, current: @escaping () -> Bool = { true }
+    ) -> CareReminderScheduler.Input {
+        .init(lease: lease, store: store, authority: authority, isCurrent: current, state: state,
+            optedIn: optedIn, allowNewRequests: allowNew, locale: "pl",
+            timeZone: TimeZone(secondsFromGMT: 0)!, clock: { fake.now })
+    }
+
+    @MainActor
+    func testReminderWorkerHeldAddThenOptoutOrLogoutAwaitsCleanup() async throws {
+        for logout in [false, true] {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fake = FakeCareReminderNotifications()
+            let gate = TodayReadBarrier()
+            fake.onAdd = { _ in await gate.wait() }
+            let worker = CareReminderScheduler(notifications: fake)
+            worker.hold()
+            await worker.waitUntilIdle()
+            XCTAssertEqual(fake.inventoryReads, 0) // Unknown startup is not logout.
+            let state = try passState(local)
+            worker.update(workerInput(store, authority, lease, state, fake))
+            await gate.waitUntilEntered()
+            if logout {
+                authority.bind(nil)
+                worker.cancelAll()
+            } else {
+                worker.update(workerInput(store, authority, lease, state, fake, optedIn: false))
+            }
+            XCTAssertTrue(fake.removed.isEmpty) // Old add has not completed.
+            XCTAssertNil(worker.result)
+            gate.open()
+            await worker.waitUntilIdle()
+            XCTAssertTrue(fake.pending.isEmpty)
+            XCTAssertTrue(fake.delivered.isEmpty)
+            XCTAssertEqual(fake.adds.count, 1)
+            XCTAssertEqual(fake.otherPendingCount, 1)
+            XCTAssertFalse(worker.requestingPermission)
+            if logout { XCTAssertNil(worker.result) }
+            else { XCTAssertEqual(worker.result?.failed, false) }
+        }
+    }
+
+    @MainActor
+    func testReminderWorkerABACleanupLatchAndSameOwnerRefreshLostACK() async throws {
+        for aba in [false, true] {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fake = FakeCareReminderNotifications()
+            let gate = TodayReadBarrier()
+            fake.onAdd = { _ in
+                await gate.wait()
+                throw FakeCareReminderNotifications.Fault.injected
+            }
+            let state = try passState(local)
+            let worker = CareReminderScheduler(notifications: fake)
+            worker.update(workerInput(store, authority, lease, state, fake))
+            await gate.waitUntilEntered()
+            if aba {
+                worker.cancelAll()
+                authority.bind(try profileSession(ownerId: otherSyncOwner))
+                let b = try authority.capture(ownerId: otherSyncOwner)
+                worker.update(workerInput(store, authority, b, nil, fake))
+            }
+            authority.bind(try profileSession())
+            let fresh = try authority.capture(ownerId: syncOwner)
+            worker.update(workerInput(store, authority, fresh, aba ? nil : state, fake))
+            gate.open()
+            await worker.waitUntilIdle()
+            XCTAssertEqual(fake.adds.count, 1)
+            XCTAssertEqual(fake.pending.count, aba ? 0 : 1)
+            XCTAssertEqual(worker.result?.failed, false)
+            XCTAssertEqual(worker.result?.deferred, aba)
+            XCTAssertFalse(worker.requestingPermission)
+            let read = try await store.readCareReminderReceipts(context: fresh, authority: authority)
+            XCTAssertEqual(read?.receipts.entries.values.first?.phase, aba ? .prepared : .armed)
+            if aba {
+                authority.bind(try profileSession(ownerId: otherSyncOwner))
+                let b = try authority.capture(ownerId: otherSyncOwner)
+                let foreign = try await store.readCareReminderReceipts(context: b, authority: authority)
+                XCTAssertNil(foreign) // Coalesced B was never allowed to open a receipt ledger.
+            }
+        }
+    }
+
+    @MainActor
+    func testReminderWorkerHoldRecoversPreparedAndLocalCancellationKeepsOthers() async throws {
+        let (url, store, authority, lease, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let fake = FakeCareReminderNotifications()
+        let gate = TodayReadBarrier()
+        fake.onAdd = { _ in await gate.wait() }
+        let worker = CareReminderScheduler(notifications: fake)
+        let two = try passState(local, count: 2)
+        worker.update(workerInput(store, authority, lease, two, fake))
+        await gate.waitUntilEntered()
+        worker.hold()
+        gate.open()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.pending.count, 1)
+        XCTAssertEqual(fake.adds.count, 1)
+        XCTAssertEqual(worker.result?.confirmedPendingCount, 1)
+        fake.onAdd = nil
+        worker.update(workerInput(store, authority, lease, two, fake))
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.pending.count, 2)
+        worker.hold()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.adds.count, 2)
+        let one = try passState(local)
+        worker.update(workerInput(store, authority, lease, one, fake, allowNew: false))
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.pending.map { $0.route?.candidate.id }, reminderPlan(one).candidates.map { Optional($0.id) })
+        XCTAssertEqual(fake.adds.count, 2)
+        XCTAssertEqual(worker.result?.confirmedPendingCount, 1)
+
+        // Unknown readback remains visible; only an explicit retry resumes cleanup.
+        fake.afterRemove = { fake.failInventory = true }
+        worker.cancelAll()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(worker.result?.failed, true)
+        fake.failInventory = false
+        fake.afterRemove = nil
+        worker.retry()
+        await worker.waitUntilIdle()
+        XCTAssertTrue(fake.pending.isEmpty)
+        XCTAssertNil(worker.result)
+        XCTAssertEqual(fake.adds.count, 2)
+        XCTAssertEqual(fake.otherPendingCount, 1)
+    }
+
+    @MainActor
+    func testReminderWorkerNoScheduleDoesNotAuthorizeLaterAutomaticPrompt() async throws {
+        let (url, store, authority, lease, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let fake = FakeCareReminderNotifications()
+        fake.authorizationValue = .notDetermined
+        let worker = CareReminderScheduler(notifications: fake)
+        worker.update(workerInput(store, authority, lease, nil, fake))
+        worker.requestPermission()
+        await worker.waitUntilIdle()
+        let state = try passState(local)
+        worker.update(workerInput(store, authority, lease, state, fake))
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 0)
+        XCTAssertTrue(fake.adds.isEmpty)
+        fake.onPermission = { fake.authorizationValue = .authorized }
+        worker.requestPermission()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 1)
+        XCTAssertEqual(fake.adds.count, 1)
+        XCTAssertEqual(worker.authorization, .authorized)
+        XCTAssertFalse(worker.requestingPermission)
+        worker.requestPermission()
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 1)
+        XCTAssertEqual(fake.adds.count, 1)
+    }
+
+    @MainActor
+    func testReminderWorkerPermissionLateCallbacksCannotRearmOrRestoreFlags() async throws {
+        for mode in 0...3 {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fake = FakeCareReminderNotifications()
+            fake.authorizationValue = .notDetermined
+            let gate = TodayReadBarrier()
+            fake.onPermission = {
+                await gate.wait()
+                fake.authorizationValue = .authorized
+            }
+            var current = true
+            let worker = CareReminderScheduler(notifications: fake)
+            worker.update(workerInput(store, authority, lease, try passState(local), fake, current: { current }))
+            await worker.waitUntilIdle()
+            worker.requestPermission()
+            await gate.waitUntilEntered()
+            XCTAssertTrue(worker.requestingPermission)
+            switch mode {
+            case 0:
+                authority.bind(nil)
+                worker.cancelAll()
+            case 1:
+                authority.bind(try profileSession(ownerId: otherSyncOwner))
+                let b = try authority.capture(ownerId: otherSyncOwner)
+                worker.update(workerInput(store, authority, b, nil, fake))
+            case 2:
+                let suppressed = try reminderState(local, rows: [])
+                worker.update(workerInput(store, authority, lease, suppressed, fake, allowNew: false))
+            default:
+                current = false // Caller activation changes even without another worker request.
+            }
+            gate.open()
+            await worker.waitUntilIdle()
+            XCTAssertEqual(fake.permissionRequests, 1)
+            XCTAssertTrue(fake.adds.isEmpty)
+            XCTAssertTrue(fake.pending.isEmpty)
+            XCTAssertFalse(worker.requestingPermission)
+            if mode == 0 || mode == 3 {
+                XCTAssertNil(worker.result)
+                XCTAssertNil(worker.authorization)
+            } else {
+                XCTAssertEqual(worker.result?.failed, false)
+            }
+        }
+    }
+
+    @MainActor
+    func testReminderWorkerMalformedCleanupCurrentIdentityAndHistoricalBlockers() async throws {
+        let (url, store, authority, lease, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try passState(local)
+        let candidate = try XCTUnwrap(reminderPlan(state).candidates.first)
+        let fake = FakeCareReminderNotifications()
+        fake.pending = [
+            .init(rawIdentifier: CareReminderNotificationFactory.prefix + candidate.id, route: nil, deliveredAt: nil),
+            .init(rawIdentifier: CareReminderNotificationFactory.prefix + "malformed", route: nil, deliveredAt: nil)
+        ]
+        let worker = CareReminderScheduler(notifications: fake)
+        worker.update(workerInput(store, authority, lease, state, fake, optedIn: false))
+        await worker.waitUntilIdle()
+        XCTAssertEqual(worker.result?.failed, true)
+        XCTAssertTrue(fake.pending.isEmpty)
+        XCTAssertTrue(fake.adds.isEmpty)
+        let cold = LocalStore(modelContainer: try diskContainer(url))
+        let again = await reminderPass(cold, authority, lease, state, fake)
+        XCTAssertFalse(again.failed)
+        XCTAssertEqual(again.unconfirmedBlockers, 1)
+        XCTAssertTrue(fake.adds.isEmpty)
+        fake.now = candidate.absoluteFireDate
+        let afterFire = CareReminderPlan(expectedOwnerId: syncOwner, state: state, optedIn: true,
+            authorization: .authorized, now: fake.now, timeZone: TimeZone(secondsFromGMT: 0)!, locale: "pl")
+        XCTAssertTrue(afterFire.currentOccurrenceIDs.contains(candidate.id))
+        XCTAssertTrue(afterFire.candidates.isEmpty)
+        let past = await reminderPass(cold, authority, lease, state, fake)
+        XCTAssertEqual(past.unconfirmedBlockers, 1)
+        let removed = try reminderState(local, rows: [])
+        let noTask = await reminderPass(cold, authority, lease, removed, fake)
+        XCTAssertFalse(noTask.failed)
+        XCTAssertEqual(noTask.unconfirmedBlockers, 0)
+        let read = try await cold.readCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertEqual(read?.receipts.entries[candidate.id]?.phase, .uncertain)
+        let skipped = reminderPlan(try passState(local, due: "2011-12-30"),
+            now: "2011-12-01T00:00:00Z", zone: TimeZone(identifier: "Pacific/Apia")!)
+        let skippedOccurrence = try XCTUnwrap(skipped.currentOccurrences.first {
+            $0.id == candidate.id
+        })
+        XCTAssertEqual(skippedOccurrence.sourceDueYMD, "2011-12-30")
+        XCTAssertTrue(skipped.currentOccurrenceIDs.contains(candidate.id))
+        XCTAssertFalse(skipped.candidates.contains { $0.id == candidate.id })
     }
 }
