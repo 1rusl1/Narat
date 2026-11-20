@@ -1,0 +1,80 @@
+{
+  "tasks": [
+    {
+      "id": "tester-today-ui",
+      "description": "Complete Today presentation metadata and verify six real isolated frontend scenarios while preserving legacy care and Polish safety regressions.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "docs/validation/automation/tasks/tester-care-today-fixtures.md",
+        "docs/validation/tester-today-live-2026-11-20.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "After accepted WHOLEC2dcef and C3a b30bf8a372Swift/MCP/ReviewQA. SMALL C3b fiveexistingfiles only: viewIDs/status/lastchecked, tiny readonlyDTOdate, scopedcorefailurehandling,6UITests+compactUnit. No fixture/Store/engine/API/schema/server/OS/AI changes, no newframework/queue/client/scheduler. Fixtureprotocol isactual --today-fixture <todayMixed|todayFuture|todayNoSchedule|todayEmpty|todayFirstFailure|todaySaved> +--catalogue-namespace UUID; oldRunmustkeep --catalogue-fixture unless explicitnewtodayparameterdefaultfalse. Old13/PLtestassertions unchanged.",
+        "Add safe readonly CareOverviewViewState.lastCheckedAt:Date? from exact local.cached.fetchedAt. ExistingcacheAge notclock, neverrenderDate()-cacheAge (wouldmove lastcheckeveryrender). No persisted schema/wire change. Show clearEN/PL lastchecked time onlyiflastcompletecacheexists; saved/offline/failed andknownstale/pending/paused/unknown/empty/noschedule states distinct. Date/clock/access/source/grouping currentcalendarlogic unchanged; explicitOverdue/Nextcheck labels helpful withoutshiftingYMD. Retainmanualcardlinks andMyplants/Add/Check/Identify.",
+        "Add stableaccessibility IDs: today.root/title, today.failed/cached/lastChecked/pending/noSchedule/empty/paused/unknown/stale asapplicable; sectionIDs today.section.<today|overdue|future>.<day>; taskbuttonID today.task.+existingCheck.id (unique kind/plant/rule/due), cardshortcut today.plant.+plantUUID. No technicalUUIDlabels/ReleaseVoiceOvervalues. Forprecise lastChecked regression DEBUGvalue mayISOtimestamp whileReleasehumanformat. UITestsuseexactIDs via descendants(.any) forSwiftUILink/Button AX compatibility, preserve meaningfulassertions.",
+        "Fix actualofflineearlyfailure: Root.refreshToday currentlyawaits core reconcile which canthrow onpullDelta BEFOREoverview; outercatch returnsnil andwarmTodaymaystay falselynetworkfresh. Inside SAMEalready-authorizedexternalpass/originalContext, after clearordinarytransporterror maycontinue ONE read-only repository.refreshCareOverview operation (whichinternally<=2GET+1align), NOTrepeatcore/reconcile/POST. Keep wait-latestoverlaybarrier andscopevalidation. Taskcancellation/URLError.cancelled/invalidSDKscope mustabortwithoutnewread; unknownintegrityerrors mustnot beblindlymaskedaspending/success, providehonestsame-scopeunavailable/error instead. NoHTTPfromcanonical/local/cache/clocksignals. Cachedvalidaligneddatedtasks MAYremainusableonordinarytransportfailure; authDenied/revalidation/pending/expiry/unknown suppress asaccepted, no unrequestedpolicycancel.",
+        "Add exact6named UITest methods in existingCatalogueSaveUITests usingreal C3aSDK/URLProtocol/SQLite/Rootpipeline, notUIphase stubs/directStoreinjection. Eachtestonefreshnamespace exceptFutureNoScheduleEmptyloops3 =>8namespaceledgers total; allnewcases READONLY/no carecommands/commits. Case1 testTodayMixedChecksOpenRequestedCardOnce uses todayMixed, verifyToday+overdue/sourceYMD, tap NONFIRSTplanttask, currentcanonicalcardidentity correct, Backlist/CloseToday noautomaticreopen. Useactualone-shotnavigation, no fabricatedcard.",
+        "Case2 testTodayFutureNoScheduleAndEmptyAreDistinct runs todayFuture,todayNoSchedule,todayEmpty with3namespaces, checksnearestfutureties +noDatevsunavailable +trueempty, entrypointsremain. Case3 testTodayFirstFailureIsNotEmptySchedule uses todayFirstFailure: failed,notempty/noschedule, resumeDEBUGactualreconnect yieldscompleteprojection. Do notweakenerror asvalidempty.",
+        "Case4 testTodaySavedChecksSurviveOfflineColdLaunch uses todaySaved: normalacceptedcompleteprojection/lastChecked, explicit today.fixture.offline +normalRefresh trigger->saved/errorandunchangedlastChecked/sourceYMD; terminate+restartSAMEnamespace offline->savedcache(notfresh/empty), explicitresume->samecoalescerrefresh successful. Persistedfixtureanchor/phases alreadyC3a; never freshDate()/launchcountsuccess. Case5 testTodayHomeReturnRevalidatesChangedSource uses todayMixed: Browse/Add->DEBUGwithdraw whilecatalogueopen->BackHome, requiresactualnewoverview/sourcewithdraw/noDate WITHOUTcollectiondismiss/manualRetry. Existingproductionhome-returnevent mustwork; no initialonAppearduplicate ormanualSDKmutation.",
+        "Case6 testTodayLocaleAndSignOutClearOldProjection uses todayMixed: EN→PL sameowner scopedrefresh, dates/sourceidentitysame/no priorlocale snapshot; existingcollection/accountsettings actualsignout hidesToday/oldtarget/data, no foregroundoldcallbackreactivation. No newAuthflow/provider/Admin. Keepnames exactlygate; useexistingUIhelpers andextendRun optionaltodayflag, genericAXqueries, boundedawaitconditions no arbitrarysleep. No cardcarewrites in6newtests; old13+PL provesmutations, ordinarydatedlive laterparent.",
+        "Add1-2compactunit regressions lastCheckedAt remains exactpersistedfetchedAt throughlocalpending/canonicalread/transportfailure (notnow-recomputed) andnilnocache, plus scopedcoretransportclassification/boundedread ifsmalltestablehelperneeded. Existing372Swift assertions preserved. FullSwift/MCP +actual tester-today-ui6tests/8namespaces withnoPOST/commits/bounded1..12overviewreads each andpersistedanchor +old13waterledger+PLreplayledger allmandatory highReviewQA. Do notfakePASS/build-only orclaimphysical/delivery. Ifprod gapappears fixsmallhonestsource; no expandingnewfixturewriteprotocol/AI."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "TODAYUI1",
+          "description": "Exact saved timestamp and honest scoped failure behavior preserve fullSwift/build/welcome and accepted source/access invariants.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "TODAYUI2",
+          "description": "Sixnamed Today frontend tests/8realfixture namespaces pass with no care writes, bounded reads, source dates/cold/return/nav/locale states.",
+          "mode": "fixture",
+          "checks": [
+            "tester-today-ui"
+          ]
+        },
+        {
+          "id": "TODAYUI3",
+          "description": "Existing13care UI +waterledger andPLpending UI+replayledger remainpassing unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui",
+            "tester-care-pl-ui"
+          ]
+        },
+        {
+          "id": "TODAYUI4",
+          "description": "MCP and highReviewQA validatewhole5filepresentation scope; ordinarydated/physical/notification claims stayseparate.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-fixtures.md",
+        "docs/validation/tester-today-live-2026-11-20.md"
+      ]
+    }
+  ]
+}

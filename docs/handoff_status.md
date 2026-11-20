@@ -1,5 +1,39 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: C3a accepted, ordinary C2 live; C3b Today UI — 20 ноября 2026
+
+C3a accepted/pushed `b30bf8af69bf66a9d52ca04fec83313277be4044`,
+run `tester-care-today-fixtures-20261120-01` COMPLETED Developer1/Reviewer1/QA1:
+372Swift (369XCTest+3),build/welcome/diff124.221s,MCP23.617s PASS.
+App/Fixtures/Unit: strict DEBUG --today-fixture <scenario> +namespace,
+6cases/matching permanentJWT; same-ledger fullcard/overview projection,
+coherent UUID paging/allplants/noschedule/empty, persisted anchorDay/clockseed/
+networkwithdraw phases andboundedcounters. Tiny normal permanent home-return
+externalevent uses existing coalescer, no initialonAppear/feedback. Firstaid
+no datedevidence invented. DedicatedUI ещё не проверено.
+Отчёт `docs/validation/automation/tasks/tester-care-today-fixtures.md`.
+
+Parent doc-only live commit dc2f1be mergeclean послеC3a. Ordinary signedRelease
+C2dcef (real SDK/Supabase, nofixtureflags) PASS: No scheduledchecks→ownexisting
+card/journal→Backcollection→BackToday, canonicaldigest unchanged/no carewrites.
+Signedarchive/SHA/codesign иограничения в
+`docs/validation/tester-today-live-2026-11-20.{md,json}`. Это не dated/multiowner/
+offline/iPhone/notification proof. Root protected3userfiles сохранены отдельно.
+
+Следующий C3b5existingfiles App/TodayView/Repo/Unit/UITest: точный readonly
+lastCheckedAt=local.cached.fetchedAt (неDate-cacheAge), scoped error/cache UI,
+6named Todaytests/8namespaces + old13/PL. Early ordinary core-sync transport
+error не должен молча оставлять network/fresh UI: только вужеавторизованном
+externalpass возможен ONE read-only repositoryrefresh operation (внутри<=2GET+
+1align), безreconcile/POST replay; cancel/URLError.cancelled/invalidscope и
+unknownintegrity не маскировать вpending/success. Local/canonical streams noHTTP.
+
+Manifest `tools/automation/tasks.tester-today-ui.json`; source/gates remain
+same approvedmodels/900/sharedSimlock/ACcaffeinate. NewTodaygate пока лишь
+py_compile/help, не runtimePASS. Затем ordinarydated/deviceacceptance иR1..R4
+reminders. T066/T068/T075/T077/T098/B01–B11 open; reset0, lastusage76/24.
+
+
 ## Этап 2: полный C2 принят; C3a Today fixtures/home return — 20 ноября 2026
 
 Accepted/pushed WHOLE C2 `dcef6c25df91300ba734e462353642f328962621`.

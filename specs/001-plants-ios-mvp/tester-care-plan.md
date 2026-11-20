@@ -182,3 +182,7 @@ WHOLEC2 `dcef6c2` принят FULL02:369Swift/149automation/MCP/highReviewQA,
 old13careUI13/13+waterledger иPLUI+replayledger PASS. СтарыйFULL01FAILсохранён.
 Далее C3a dedicatedToday DEBUG transport/home-return; C3b actualTodayUI/live.
 Фикстуры не заменяют обычный signed/iPhone/OS delivery, задачи остаются open.
+
+C3a `b30bf8a` accepted:372Swift/build/welcome/MCP/ReviewQA. Ordinarysigned
+C2NoSchedule/cardnavigation livePASS безcarewrites, reportdc2merged. Следующий
+C3b6namedTodayUI/lastchecked/honestofflineerror + old13/PL, не100%экранапоbuild.
