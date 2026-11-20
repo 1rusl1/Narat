@@ -190,3 +190,11 @@ C3b6namedTodayUI/lastchecked/honestofflineerror + old13/PL, не100%экрана
 C3b source покаunaccepted:2механическихapplyfailure, сохранёнexactgenerated
 controllercandidate, нефиктивныйDeveloperPASS. Следующийfreshcandidate_base4f4a
 с полнымnew6TodayUI/old13/PL/Swift/MCP/highReviewQA.
+
+
+20 ноября2026 C3b: marker-case15b4402 и canonical-rotation f5ca526 subsets
+приняты через375/376Swift/MCP/highReviewQA, но FULLC3b покаpending. Следующий
+actual tester-today-ui-acceptance-20261120-02 wholebase4f4a old13+PL+new6/
+8ledgers/149automation/Swift/MCP/ReviewQA. InitialFULL01semanticBLOCKED,
+новыйunitFAIL и malformedfingerprintreply сохранены. No device/OS claim;
+checkbox не закрываются поsubset.

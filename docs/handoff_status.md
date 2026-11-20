@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## C3b обе stale-проверки приняты; fresh whole acceptance02 — 20 ноября2026
+
+Accepted/pushed narrow rotationrepair f5ca526c2d426cfeb14fb6e476e436c8265c2c24,
+run tester-today-rotated-stale-20261120-01 COMPLETED Developer2/Reviewer2/QA1.
+376Swift(373XCTest+3)/build/welcome116.216s, diff, MCP21.509s PASS.
+Initialnewtest wrongnocachegeneration FAIL125.634s сохранён; Dev2 уточнил
+толькоожиданиесоздания reservedwrapper припервомbeginRead. Старые375
+assertions unchanged. Reviewer1malformedfingerprint FAIL62.491s не принят;
+bounded same-runresume Reviewer2actualPASS62.866s+QA1. Modelroute900unchanged.
+
+TinyView predicate учитываетreadOnly+любойexistingfailure и не дублирует
+today.stale. Реальныйemptycanonicalpublish rotations/no-marker→HTTPfailure
+показанstale; alignedofflinecontrol retainsvaliddates безstale, firstfail
+не становитсяempty/noSchedule. Предыдущийmarker-case15b4402 отдельно принят.
+
+NOWfresh WHOLE tester-today-ui-acceptance-20261120-02, read-onlybase4f4a
+всего5source+controllerdiff: all7checks (376Swift/build/welcome,MCP,149automation,
+old13/PL/new6Today+8readonlyledgers,diff)→highReviewQA. ПредыдущийFULL01
+BLOCKED сохранён. Это ПОКАнеwholeTodayacceptance, rootнеmerge. Ordinarylive
+C2dcefNoSchedule/navigation отдельно, dated/offlinephone/OSdeliveryopen.
+Allparenttasksopen; actual79used/21left ordinaryallowed, reset0. После
+wholeacceptance R1a pureplanner→R1b durable receipts→R2/R3/R4 безподтверждений.
+
 ## C3b stale-marker subset accepted; rotation case remains — 20 ноября2026
 
 Accepted/pushed15b440249acf6f684cb29f64c4c8c5696b309123, run
