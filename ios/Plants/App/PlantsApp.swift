@@ -120,13 +120,18 @@ struct RootContainerView: View {
     @State private var todayRevision: UInt64 = 0
     @State private var todayFenced = true
     @State private var todayUnavailable = false
-    @State private var collectionTarget: CataloguePlantTarget?
+    private struct CollectionPresentation: Identifiable {
+        let id = UUID()
+        let target: CataloguePlantTarget?
+
+        init(target: CataloguePlantTarget? = nil) { self.target = target }
+    }
     private enum AccountDestination: String, Identifiable {
         case diagnosis, identification, collection, guestTransfer
         var id: Self { self }
     }
 
-    @State private var showingCollection = false
+    @State private var collectionPresentation: CollectionPresentation?
     @State private var accountDestination: AccountDestination?
     @State private var collectionAfterSignIn = false
     @State private var opening: AccountDestination?
@@ -319,18 +324,17 @@ struct RootContainerView: View {
                 }
                 if usesLegacyWelcome, catalogue != nil,
                    [.selectIntent, .selectCatalogueSpecies].contains(analysisModel.router.flowState.currentStep) {
-                    Button(isPolish ? "Moje rośliny" : "My plants") { showingCollection = true }
+                    Button(isPolish ? "Moje rośliny" : "My plants") { collectionPresentation = CollectionPresentation() }
                         .accessibilityIdentifier("collection.open")
                 }
                 if usesLegacyWelcome { guestSaveButtons }
             }
         }
         .onChange(of: catalogue?.snapshot) { previous, current in
-            collectionTarget = nil
             if let context = todayContext, context.snapshot != current { clearToday() }
             guard let previous, !previous.isAnonymous,
                   previous.session.userId != current?.session.userId else { return }
-            showingCollection = false
+            collectionPresentation = nil
             accountDestination = nil
             collectionAfterSignIn = false
             opening = nil
@@ -373,22 +377,21 @@ struct RootContainerView: View {
             catalogue?.reconcileFixtureReconnect = nil
             #endif
         }
-        .sheet(isPresented: $showingCollection, onDismiss: {
-            collectionTarget = nil
+        .sheet(item: $collectionPresentation, onDismiss: {
             if !usesLegacyWelcome { careReconnectRevision &+= 1 }
-        }) {
+        }) { presentation in
             if let catalogue {
                 CatalogueCollectionView(
                     connection: catalogue, polish: isPolish, repeatDiagnosis: repeatDiagnosisEntry(for: catalogue),
-                    trialReminder: trialReminder, requestedTarget: collectionTarget,
-                    consumeTarget: { collectionTarget = nil }
+                    trialReminder: trialReminder, requestedTarget: presentation.target
                 )
+                .id(presentation.id)
             }
         }
         .sheet(item: $accountDestination, onDismiss: {
             if collectionAfterSignIn {
                 collectionAfterSignIn = false
-                showingCollection = true
+                collectionPresentation = CollectionPresentation()
             } else {
                 showPendingGuestTransfer()
             }
@@ -421,7 +424,7 @@ struct RootContainerView: View {
         .sheet(isPresented: $showingGuestTransfer, onDismiss: {
             if openClaimCollection {
                 openClaimCollection = false
-                showingCollection = true
+                collectionPresentation = CollectionPresentation()
             }
         }) {
             if let claim = guestPhotoClaim {
@@ -543,7 +546,6 @@ struct RootContainerView: View {
         todayModel.suspend()
         todayFenced = true
         todayUnavailable = false
-        collectionTarget = nil
     }
 
     private func isTodayCurrent(_ context: TodayContext) -> Bool {
@@ -650,8 +652,9 @@ struct RootContainerView: View {
 
     private func openTodayPlant(_ plantId: UUID) {
         guard let context = todayContext, isTodayCurrent(context), !todayFenced else { return }
-        collectionTarget = CataloguePlantTarget(plantId: plantId, snapshot: context.snapshot)
-        showingCollection = true
+        collectionPresentation = CollectionPresentation(
+            target: CataloguePlantTarget(plantId: plantId, snapshot: context.snapshot)
+        )
     }
 
     private func observeTrialReminder(_ read: TrialReminderRead) async {
@@ -781,7 +784,7 @@ struct RootContainerView: View {
     ) {
         guard connection.snapshot == snapshot, !snapshot.isAnonymous else { return }
         if destination == .collection {
-            showingCollection = true
+            collectionPresentation = CollectionPresentation()
             return
         }
         installAnalysis(

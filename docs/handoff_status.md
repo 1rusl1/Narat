@@ -4833,9 +4833,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-today-rotated-stale: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 2, qa 1. Модели — 358.29 с, проверки — 263.45 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-today-rotated-stale](validation/automation/tasks/tester-today-rotated-stale.md).
+tester-today-navigation: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 288.43 с, проверки — 173.83 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-today-navigation](validation/automation/tasks/tester-today-navigation.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 

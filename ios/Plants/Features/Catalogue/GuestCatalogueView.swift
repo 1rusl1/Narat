@@ -744,7 +744,6 @@ struct CatalogueCollectionView: View {
     var repeatDiagnosis: RepeatDiagnosisEntry? = nil
     var trialReminder: TrialReminderScheduler? = nil
     var requestedTarget: CataloguePlantTarget? = nil
-    var consumeTarget: () -> Void = {}
     @State private var targetConsumed = false
     @Environment(\.dismiss) private var dismiss
     @State private var loadedScope: CatalogueSDKSnapshot?
@@ -867,7 +866,6 @@ struct CatalogueCollectionView: View {
         .onChange(of: connection.snapshot) { _, _ in
             accountSettingsScope = nil
             targetConsumed = true
-            consumeTarget()
         }
         .task(id: read) { await load(read) }
         .onDisappear(perform: endRepeatDiagnosis)
@@ -950,7 +948,6 @@ struct CatalogueCollectionView: View {
             usingCachedCards = result.isCached
             if !targetConsumed, let target = requestedTarget {
                 targetConsumed = true
-                consumeTarget()
                 if target.snapshot == expected, !result.isCached,
                    let card = cards.first(where: { $0.id == target.plantId }) {
                     selected = Selected(card: card, scope: expected)
