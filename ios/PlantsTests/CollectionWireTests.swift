@@ -10535,6 +10535,79 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testTodayRotatedGenerationTransportFailureKeepsStaleDistinctFromAlignedOfflineAndFirstFailure() async throws {
+        for (seed, rotate) in [(true, true), (true, false), (false, false)] {
+            let transport = CatalogueTransport([.network])
+            let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport, seed: seed)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let saved = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            let savedAt = saved.cached?.fetchedAt
+            XCTAssertEqual(savedAt == nil, !seed)
+            if seed {
+                XCTAssertEqual(saved.snapshotGeneration, saved.canonicalGeneration)
+                XCTAssertEqual(saved.cached?.canonicalGenerationMatches, true)
+            }
+            if rotate {
+                // Real ordinary empty publish at the fixture's existing watermark; no invalidation marker.
+                try await overviewCanonical(store, authority: api.syncAuthority, lease: lease, ids: [])
+            }
+            let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            XCTAssertNil(local.knownInvalidation)
+            XCTAssertEqual(local.snapshotGeneration, saved.snapshotGeneration)
+            if rotate {
+                XCTAssertNotNil(local.canonicalGeneration)
+                XCTAssertNotEqual(local.canonicalGeneration, saved.canonicalGeneration)
+                XCTAssertNotEqual(local.snapshotGeneration, local.canonicalGeneration)
+                XCTAssertEqual(local.cached?.canonicalGenerationMatches, false)
+            }
+            let model = TodayModel()
+            let scope = model.activate(ownerId: syncOwner, generation: 1, locale: .pl)
+            await model.rereadLocal(scope: scope) {
+                try await repo.cachedCareOverview(context: lease)
+            }
+            let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+            let baseline = TodayCalendar(state: model.state, now: now)
+            await model.refresh(scope: scope) {
+                try await repo.refreshCareOverview(locale: .pl, context: lease)
+            }
+            let state = try XCTUnwrap(model.state)
+            XCTAssertTrue(model.hasError)
+            XCTAssertEqual(state.failure, .transport)
+            XCTAssertNil(state.knownInvalidation)
+            XCTAssertEqual(state.origin, .cache)
+            XCTAssertEqual(state.lastCheckedAt, savedAt)
+            if seed {
+                XCTAssertEqual(state.canonicalGeneration, local.canonicalGeneration)
+            } else {
+                // The first beginCareOverviewRead reserves a wrapper even if transport fails.
+                XCTAssertNil(local.canonicalGeneration)
+                XCTAssertNotNil(state.canonicalGeneration)
+            }
+            XCTAssertEqual(state.snapshotGeneration, local.snapshotGeneration)
+            XCTAssertEqual(state.availability, seed ? (rotate ? .readOnly : .available) : .unavailable)
+            let calendar = TodayCalendar(state: state, now: now)
+            XCTAssertEqual(calendar.needsRevalidation, rotate)
+            XCTAssertNotEqual(calendar.status, .empty)
+            XCTAssertNotEqual(calendar.status, .noSchedule)
+            if seed && !rotate {
+                XCTAssertEqual(calendar.status, .scheduled)
+                XCTAssertFalse(calendar.sections.isEmpty)
+                XCTAssertEqual(calendar.sections.flatMap(\.checks).map(\.due),
+                               baseline.sections.flatMap(\.checks).map(\.due))
+                XCTAssertTrue(calendar.sections.flatMap(\.checks).allSatisfy {
+                    SQLCalendarDay.date(from: $0.due) != nil
+                })
+            } else {
+                XCTAssertEqual(calendar.status, .unavailable)
+                XCTAssertTrue(calendar.sections.isEmpty)
+                XCTAssertTrue(state.plants.allSatisfy { $0.routine == nil && $0.controls.isEmpty })
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map { $0.url?.lastPathComponent }, ["care-overview"])
+        }
+    }
+
+    @MainActor
     func testTodayLastCheckedUsesPersistedFetchThroughLocalAndFailedReads() async throws {
         for seed in [false, true] {
             let transport = CatalogueTransport([.network])

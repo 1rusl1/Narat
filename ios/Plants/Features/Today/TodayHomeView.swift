@@ -78,7 +78,7 @@ struct TodayCalendar {
         else if state.availability != .available || state.failure != nil { status = .unavailable }
         else { status = state.plants.isEmpty ? .empty : .noSchedule }
         needsRevalidation = state.availability == .readOnly
-            && (state.failure == .revalidationRequired || status != .unavailable)
+            && (state.failure != nil || status != .unavailable)
     }
 }
 
@@ -148,7 +148,10 @@ struct TodayHomeView: View {
                          : (polish ? "Zmiany oczekują na synchronizację." : "Changes pending sync."))
                         .accessibilityIdentifier("today.pending")
                 }
-                if state != nil, !model.hasError { status(projection.status) }
+                if state != nil, !model.hasError,
+                   !(projection.needsRevalidation && projection.status == .unavailable) {
+                    status(projection.status)
+                }
                 ForEach(projection.sections) { section in
                     let kind = section.day == projection.today ? "today"
                         : (section.day < projection.today ? "overdue" : "future")
