@@ -173,3 +173,7 @@ Root wait-latest subset `72588e3` принят:369Swift/build/welcome/MCP/Review
 FULLC2 actualold13 gate выявил1регрессию: passive success очистил explicit
 refresh reject.12другихPASS;369Swift/149automation/MCP/PLUI/ReviewPASS, QAнет.
 Узкий Guest-only error-state repair с unchanged assertions → freshFULLold13.
+
+Guest action/read error subset `95014f1` принят:369Swift/MCP/ReviewQA и
+неизменённые targetedrejection/basic/PL UI PASS. Далее FULL02 whole8Swift
+candidate_baseae74, повтор old13+PL/149automation; ещё не готовность Today.

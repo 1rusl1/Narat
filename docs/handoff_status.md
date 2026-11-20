@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: action/read errors subset принят; FULL C2 attempt02 — 20 ноября 2026
+
+Accepted/pushed Guest-only subset `95014f167ec1a9e02863a907aefdde11cf8d2063`.
+Run `tester-care-action-error-state-20261120-01` COMPLETED с первогоDeveloper,
+highReviewer1/QA1 PASS. Source17+/9-: раздельные basicCareReadFailed и
+adviceRefreshReadFailed; successful passive read снимает только readerror,
+explicit mutationfailure сохраняется. Dateguards/no-nextmessage failclosed
+при unknown read. Тесты/fixtures/assertions не изменены.
+Реально369Swift/build/welcome/diff106.269s, MCP30.735s; existing rejection+
+basicreplay UI2/2 PASS48.71s и newPLUI/oneintentledger PASS39.444s.
+Отчёт `docs/validation/automation/tasks/tester-care-action-error-state.md`.
+
+Это опять только narrow source subset, wholeC2 пока НЕ accepted. Предыдущий
+FULL01 old13=12PASS/1FAIL и все остальные BLOCKED/403/AX failures сохраняются.
+Следующий freshread-only FULL02 `tester-care-today-home-acceptance-20261120-02`
+от исходного candidate_baseae74b52 всех8Swift/всегоdiff; actual369Swift/
+149automation/MCP/old13+PL/fullhighReviewQA. NoDeveloper/rewrite/retroPASS.
+Root не merge/live до FULLaccepted SHA. Home-return/C3Todayfixture/UI/lastchecked/
+ordinarylive/physical/reminders всё ещё отдельные незавершённые шаги.
+T066/T068/T075/T077/T098/B01–B11 open. Same approvedrouting/900/sharedlock/
+ACcaffeinate; lastusage75/25 ordinaryAllowed/reset0.
+
+
 ## Этап 2: FULL C2 получил реальную UI регрессию; action/read errors — 20 ноября 2026
 
 FULL `tester-care-today-home-acceptance-20261120-01` BLOCKED qa_checks,
