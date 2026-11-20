@@ -1,0 +1,83 @@
+{
+  "result": "PASS",
+  "scope": "dedicated ordinary Free owner; read-only live HTTP",
+  "plant_count": 1,
+  "locales": {
+    "en": {
+      "exact_card_parity": true,
+      "card_sha256": "cf8327da4328f94abc67d46441d67fe655b6d92768cb199bce84a3726a2176bd",
+      "controls": 0,
+      "next_check": null
+    },
+    "pl": {
+      "exact_card_parity": true,
+      "card_sha256": "a9ab219c8a14556258e816888bed129cf1079a3b522250b71235ed3181f4fa0a",
+      "controls": 0,
+      "next_check": null
+    }
+  },
+  "negative_http": {
+    "owner_input": 400,
+    "duplicate_limit": 400,
+    "limit_zero": 400,
+    "unknown_subpath": 404,
+    "method_post": 405,
+    "missing_bearer": 401,
+    "invalid_bearer": 401
+  },
+  "canonical_unchanged": true,
+  "canonical_sha256": "81b35333bdb14ef66d8e05ff95eb7a55dfe336c2a76556f82cacf8a9aa9ce4c5",
+  "limitations": [
+    "One existing plant; multi-page/multi-owner cases remain fixtures",
+    "No physical UI, notification delivery, AI or StoreKit proof"
+  ],
+  "date": "2026-11-19",
+  "accepted_sql": "25a5e92e0e350bd55d2bb9552098db1520c62c23",
+  "accepted_http": "0aff69f7f50a5c0fff235285548cd29b9fca586c",
+  "root_integration": "d3ba202",
+  "applied_migration": "202611190001",
+  "history_before": 92,
+  "history_after": 93,
+  "prior_history_unchanged": true,
+  "isolated_manifest_sha256": "6de390c479841e4d83570457e037404ac884100e6f9ee745c9deccb9d4cf9cc3",
+  "local_ddl_wrapper_assertions": 14,
+  "prior_edge_metadata_unchanged": true,
+  "server_fixture_checks": {
+    "overview_pgTAP": {
+      "cases": 4,
+      "assertions_each": 140
+    },
+    "deno_passed": 446,
+    "automation_passed": 149,
+    "actual_entrypoints_compiled": 3,
+    "review": "PASS",
+    "qa": "PASS"
+  },
+  "edge_functions": [
+    {
+      "slug": "care-overview",
+      "version": 1,
+      "status": "ACTIVE",
+      "ezbr_sha256": "bb8d2a54471b33fbdfad67320e01eec429ae00a5918d04c9b0445473fb79802c",
+      "verify_jwt": false,
+      "import_map": true
+    },
+    {
+      "slug": "plants-api",
+      "version": 33,
+      "status": "ACTIVE",
+      "ezbr_sha256": "8ce745d95be02097417c5058cc87b63799765e13065fabd10f68849fd4fbc739",
+      "verify_jwt": false,
+      "import_map": true
+    },
+    {
+      "slug": "analysis-worker",
+      "version": 9,
+      "status": "ACTIVE",
+      "ezbr_sha256": "31ea088a5962017d8c053188b68cc81e033310bcffc3ce849fde032f0de006df",
+      "verify_jwt": false,
+      "import_map": true
+    }
+  ],
+  "sql_function_prosrc_sha256": "faa2356fb11ad9f4714700eadad25201af819b2fef6ff435f4b1bf93aea5eb8f"
+}

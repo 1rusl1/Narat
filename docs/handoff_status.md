@@ -1,6 +1,41 @@
 # Narat — текущий статус и передача работы
 
-## Этап 2: native A candidate — свежая приёмка после host sleep, 20 ноября 2026
+## Этап 2: native A принят; backend live объединён; следующий B1 — 20 ноября 2026
+
+Accepted/pushed native A `f6128f23119e8ff89ed1edb4c4f5f77e5c32c208`.
+Fresh run `tester-care-overview-native-read-acceptance-20261120-01` COMPLETED:
+149 automation,332Swift (329XCTest+3),welcome1,MCP23.8s,diff PASS;
+новые high-risk Reviewer1/QA1 PASS без transport errors. Native3Swift files
+байтово совпадают с candidate78cb, никаких Developer переписываний.
+Отчёт `docs/validation/automation/tasks/tester-care-overview-native-read-acceptance.md`.
+Принят только typed FULLwire/SDKlease/sibling/coherentreader, неcache/TodayUI.
+
+Root backend live `19023dd` объединён после приёмки A: guarded SQL только
+202611190001/history93/exactACL+source; новыйcare-overviewv1, oldplants33/worker9
+metadata неизменны. NormalFree1plant EN/PLcardparity+7negativeHTTP/no-store+
+canonicaldigest PASS. Dated/multiowner/frontend/physical не подтверждены.
+Оба отчёта `tester-care-overview-live-2026-11-19.{md,json}` теперь в lane.
+History обеих веток handoff сохранены ниже; originalA WAITING не переписан.
+
+Следующий actual packet B1 — толькоLocalStore.swift+CollectionWireTests.swift:
+reserved owner SyncedEntityRecord wrapper, lastFULLsnapshot+locale, atomic
+canonical generation/latestrequest token, originallease fence, disk/restart/
+fullrefresh/reset/ABA/overlap/alignment tests. Persisted payload НЕ содержит
+session/bearer/authority. SnapshotLocale отдельно отpendingrequestLocale;
+новыйPLbegin не переименуетстарыйENsnapshot. Derived writes не двигаютsynccursor.
+
+Manifest `tools/automation/tasks.tester-care-overview-cache-store.json`,
+run `tester-care-overview-cache-store-20261120-01`, config ignored
+`docs/validation/automation/runs/tester-care-overview-native.config.json`.
+Developer→actualSwift/MCP→high-riskReview→QA→commit/push. Прежниеapproved
+routing/budgets/900s, общийresourcewrapper и временныйACcaffeinate lifetime.
+B1data-primitives не объявляют готовым UX. После B1 — B2 Repo boundedalign/
+pendingoverlay/explicitlocaleAPIinput, затем C permanentToday/navigation/UI.
+
+Проектовые T066/T068/T075/T077/T098 и B01–B11 открыты, recommendations/purchases
+не расширяются. Protected root3userfiles не переносились/не редактировались.
+
+## История подготовки native A перед свежей приёмкой, 20 ноября 2026
 
 Native A реализован реальным Developer1 в трёх existing Swift файлах:
 APIModels.swift,PlantsAPIClient.swift,CollectionWireTests.swift (+653/-7).
@@ -38,6 +73,38 @@ HTTP0aff и SQL25a приняты; parent отдельно подтвердил 
 B2: Repo boundedalign/pendingoverlay + explicitlocaleAPIparam; CToday/UI. Snapshot
 хранит полный nested cardwire, не толькоview recommendation; scope locale
 тоже фиксируется readcontext. Full T066/T068/T075/T077/T098 и B01–B11 открыты.
+
+## Этап2: backend выложен и проверен live — 19 ноября 2026
+
+Root integration `d3ba202` принятого HTTP `0aff69f` отправлен в origin.
+Применена только independent migration202611190001: history92→93 с сохранением
+всех прежних version/name; exact RPC prosrc/ACL/STABLE/UTC readback PASS.
+Новый care-overview ACTIVEv1; полные metadata plants-api33/worker9 неизменны.
+Изолированный accepted source compile PASS. Операторский local PG17:14 assertions,
+включая rollback CREATE при отказе history INSERT; care RPC не вызывался.
+
+Live normal Free read-only HTTP: EN/PL exact card parity,7 negative statuses+
+no-store и неизменный canonical digest PASS. Один существующий Monstera, текущая
+дата null/controls0; dated/multiowner/paging пока fixtures. SQL fixtures4×140,
+446Deno/149automation/3actualentrypoints/ReviewQA относятся к принятому серверному
+пакету, не iPhone. [Отчёт](validation/tester-care-overview-live-2026-11-19.md),
+[sanitized JSON](validation/tester-care-overview-live-2026-11-19.json).
+Первый preflight был false mismatch только порядка function list; исправлено
+sorted exact comparison, исходные logs сохранены, DDL начались после fresh PASS.
+
+В root по-прежнему только исходные пользовательские3 unstaged ios-файла;
+ни Swift, ни локальные Auth/Personal настройки этим этапом не менялись.
+Точный следующий шаг: NativeA run tester-care-overview-native-read-20261119-01
+(Developer,3 existing Swift files: DTO/sibling transport/coherent paging), затем
+B durable cache/invalidation и C Today UI. Полный этап2 и B01–B11 ещё открыты.
+
+Ресурсное указание владельца: после exhaustion допускается ровно1 reset,
+истекающий1декабря, затем оставить>=10% нового allowance. Reset не использован;
+последний actual account counter65% used/35% remaining. Перед большим пакетом
+counter перечитывается; после reset новые LLM calls останавливаем заранее около
+85% used,90% ceiling. Другой reset/покупка credits не разрешены. Это Codex usage,
+не квоты Narat; opaque reset ID/idempotency policy сохранены только в private/tmp.
+
 
 ## Этап 2: полный HTTP принят; следующий native read packet — 19 ноября 2026
 
