@@ -22,6 +22,8 @@ Swift +полныйcontrollerdiff, write_files[]. Actual369Swift/149automation/
 MCP + old13careUI(4POSTledger) +newPLUI(2..4exactreplay/onecommit) → highReviewQA.
 Source не пересоздаётся, DeveloperPASS дляFULL не выдумывается.
 
+Controller preflight уточнил mode для automation-tests: это fixture,
+поэтому отдельный fixture criterion; сами команды/config/source не изменены.
 Root не merge/live-build до FULLaccepted SHA. Далее C3a dedicated Todayfixture
 и external home-return event; C3b namedTodayUI/lastchecked/ordinarysignedlive;
 затем reminders. Нормальный Today frontend/physical/notification delivery

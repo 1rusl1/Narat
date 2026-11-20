@@ -48,7 +48,6 @@
           "mode": "local",
           "checks": [
             "ios-tests",
-            "automation-tests",
             "diff-check"
           ]
         },
@@ -67,6 +66,14 @@
           "mode": "local",
           "checks": [
             "simulator-smoke"
+          ]
+        },
+        {
+          "id": "C2FULL4",
+          "description": "Existing149 automation fixture tests preserve orchestration and full candidate scope handling.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
           ]
         }
       ],
