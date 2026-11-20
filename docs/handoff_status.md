@@ -1,5 +1,30 @@
 # Narat — текущий статус и передача работы
 
+## R1a planner accepted; R1b1 typed metadata prep — 20 ноября2026
+
+Accepted/pushed99e395243a06f6a78ed0a25442b8ce87b28051c2, run
+tester-care-reminder-planner-20261120-01 COMPLETED Developer1/Review1/QA1.
+380Swift(377XCTest+3)/build/welcome150.03s, MCP22.024s,diff0.045s PASS;
+Developer338.913s/Review77.79s. Source137lineplanner+4Unitmethods/194lines,
+Trial unchanged. All sharedeligibleoccurrences(notTodaysections), stable
+routine/firstaididentity, optin/authorization input, calendarDST/cap32/access/
+pending/locale/generation/alignedoffline policy provenonlyfixtures.
+Report automation/tasks/tester-care-reminder-planner.md. NOTOS/durableproof.
+
+Parentordinary56d Releasebuild/archive accepted; cold-first-sheet operator
+stopped BEFOREcareintent,0newfacts/commands; actualrootprobeshowedhealthy
+Today, notcollectionlist. Operator/startup tapcauseunknown, no productfix
+imposed; parentwilldiagnose/retryreadinesswithoutblindwrites. LiveNOTPASS.
+
+R1b split tofit900s: b1 newCareReminderReceipts.swift scaffold+4PBXrefs +
+pureversionedidentity/opportunityphases/codec/transitions tests; b2 exact
+LocalStoreCAS+fullrefresh/resetreceiptretention+explicitprivacypurge+disk/ABA/
+forged-sync tests. b1 NOTdurableyet. Newmanifest tasks.tester-care-reminder-
+receipts.json, writeonlynewfile/tinyPlannerIDhelper/Unit, noStore/OS/UI.
+ThenR2serialOS→R3Root/settings/route→R4physical. Userparentcheckboxallopen,
+reset0, lastactual81used19remaining ordinaryallowed. PBXdeltaYES another4
+refs; parentpreservesoriginal3userfiles. Existinglive/physicallimitsretained.
+
 ## WHOLE Today accepted; R1a pure reminder planner prep — 20 ноября2026
 
 Accepted/pushed 56d7455451bf93e573ae1660665bd18360955bf7, run

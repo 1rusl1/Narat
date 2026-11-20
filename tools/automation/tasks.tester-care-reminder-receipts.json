@@ -1,0 +1,53 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-receipts",
+      "description": "Typed versioned reminder opportunity metadata and pure safe transitions, before LocalStore persistence and OS adapter; preserve original opportunity and prevent spent/dismissed rearming.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-planner.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "R1b1 SMALL pure typedmetadata/transition slice (~150-220productionlines, compact3-5tests). R1a99e3952 accepted380Swift/MCP/ReviewQA. NewReceipts scaffold+4PBXrefs controlleronly. NO Store/root/settings/UI/UNframework/permission/OS/network/outbox/schema/newworkers/persistence yet. R1b2 separately adds realowner-bound LocalStore persistence/CAS/fullrefresh/resetretention/purge/disktests; doNOTclaim thispurepacketdurable/deliverydedup. Existing380assertions and Trial unchanged. TinyPlannerIDhelperextraction/CodableOccurrence allowed ONLYto reuseexactstableformat, no eligibility/calendar/cap policychanges.",
+        "Create versioned Codable/Sendable/Equatable owner ledger with entries keyed exactCareReminderPlan.Candidate identity, minimal owner/plant/typedoccurrence/sourceYMD andimmutable originalFireDate/currentFireDate/phase plus pre-firecancellationtime/proofmetadata asneeded. No title/diagnosis/sourceURL/token/JPEG/wholeViewState. Version1 explicitdecodedvalidated (notletdefault silentlyignoringunknownversion). Rejectunknownversion/malformed IDs/foreignowner/duplicateidentities/key-mismatch/nonfiniteDates/invalidcalendar labels/malformedphases; do not silentlyreplace corruptdata withempty. Providevalidate(expectedOwner) forfutureStore.",
+        "Phases at leastprepared,armed,cancelledBeforeFire,spent,uncertain (or equivalenttyped states); neverclaimactualdelivery merelyfromphase. PREPAREDmustbe representable beforeOSadd, armedonlyaftermatchingcurrent opportunityACK. RepeatedprepareexistingID mustdistinguish existingvsnewlyprepared sofutureadaptercannotblindadd. Candidateforeignowner/IDmismatch fails. StablefirstaidcontrolID hasno due/hour/TZ/locale; routineID includesrule+sourceDue. Originalfire neverchanges whenknownprefirecancel permitscurrentfirereplacement. SameID withchangedfire whilearmed/prepared requires explicitverified cancellation, NOTsilent newopportunity.",
+        "Observed delivery OR now>=currentarmed/preparedfire permanentlyconsumesopportunity (spent/possiblyfired), includingpendingabsent/dismissed/clock/hour/TZ/localechanges. Spent/uncertain NEVERreturnprepared/armed; do notpruneentries inMVP (undo canrestoreoldoccurrence). AnemptyOSpendinglist alone isNOTproof forfreshadd. UnknownOSoutcome/failure canmarkuncertain, NOTautomaticreset. FutureStore mustretainoldentries/immutableoriginaldate/terminalphase; exposepure replacementvalidation ifsmall toprevent accidentalhistorydropping.",
+        "Pre-firechange allowed ONLYafterexplicitpendingremoval/readbackabsence proof AND cancellationtime strictlyBEFOREoldcurrentfire. Missingproof/readbackfailure/cancelat-or-afterdeadline mustremainblocked/spent/uncertain; no optimisticrearm. Typepureproof inputs clearly (actualOSproof belongsR2, notsimulatedaslivehere). Newproposeddate mustbefuture; no newdates/interval/access/calendarengine: consumeplannerCandidate withsameidentity. Cancelled-before-fire mayrepreparelaterfuturecandidate whilepreservingoriginalfire/proof; terminalspent cannot. API shouldmakesafeoutcomesexplicit enoughforlaterR2; no giantframework/strategy callbacks.",
+        "Compact meaningful puretests: Codable roundtrip/unknownversion/foreignowner/malformed IDs+phase; firstprepare repeatedexisting beforeACK, acceptedACK/elapsed/delivered\u2192blockedaftercold encode/decode+hourlater/TZ/movedfirstaiddue; successfulprefirecancelproof\u2192newcurrentfire/sameID/originalunchanged; missing/readbackfailed/atdeadline proofneverrearms; uncertainblocked, oldledgerentriesnotdropped, wrongowner/deadcandidate reject. UseR1a realplanhelper/candidates wherepossible; no network/permissions/clockwall. Keep380oldassertions. FullSwift/build/welcome+MCP/highReviewQA; stage3 and T077 remainopen untilb2/OS/Root/realdevice."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "RECEIPT1",
+          "description": "Typedmetadata and safeopportunity transitions survive codec roundtrip with meaningful purefixtures; allSwift/build/welcome preserved.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "RECEIPT2",
+          "description": "MCP/highReviewQA confirm scoped purestage and honest no durableStore/OSdeliveryclaim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-planner.md"
+      ]
+    }
+  ]
+}

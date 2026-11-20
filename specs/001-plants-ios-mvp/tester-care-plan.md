@@ -211,3 +211,7 @@ plusold13/PL/376Swift/149/MCP. Parentordinarydatedcoldfirstsheetlive next fromfr
 R1a pureplanner manifest/scaffold+PBXmembership prepared (notimplementation):
 allsharedoccurrences/calendar/access/cap/identity, thenR1b receipts/R2UN/R3UI/R4physical.
 No parentcheckbox closed fromfixtures, reset0/actual81used19left ordinaryallowed.
+
+R1a99e3952 accepted380Swift/MCP/ReviewQA (pureplanner). R1b1 metadata+codec/transitions,
+b2ownerLocalStore/CAS/retention/purge/disk splitunder900, thenR2OS/R3UI/R4device.
+No dedup/deliveryclaim fromplanner; ordinaryTodaydatedlivecurrentlynotPASS, no factscreated.

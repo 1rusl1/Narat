@@ -513,3 +513,5 @@
 - C3b run01 BLOCKED на repeatedapply(2patchgenerationcalls), sourceнепроверен. Exactgenerateddraft controllercandidateSHA 3d9bc150ff67 требуетfreshread-onlyfullcandidate_base4f4a с new6/old13/PL/Swift/MCP/ReviewQA; T066 открыт.
 
 - WHOLE Today C3b `56d7455` accepted fullbase4f4a SIXsourceunion:376Swift/149automation/MCP/highReviewQA,old13+4POST/PL+replay/new6+8readonlyledgers PASS. PriorFULL01/02failures preserved. Ordinarydated/device/notifications stillseparate; T066/T068/T075/T077/T098 remainopen. R1a pureplanner prep(scaffold+membershiponly) starts next, NOTOS/dedupimplementation.
+
+- R1a `99e3952` accepted380Swift/MCP/highReviewQA: pure all-occurrence reminder plan/identity/DST/access/cap only. No persisted opportunity/OS UI/delivery yet; R1b1 typedmetadata→b2 ownerdisk→R2/R3/R4 next, T075/T077 stayopen.
