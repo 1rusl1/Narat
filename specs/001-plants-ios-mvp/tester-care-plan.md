@@ -223,3 +223,7 @@ manifest подготовлен, noPBX/schema/OS yet; затемR2/R3/R4, все
 R1b2 `7a7a8ef` disk/CAS accepted391Swift/MCP/ReviewQA. Parent doc6096edd physical
 preflight compiled frozenefa9 only (noinstall/delivery/finalR3). R2a adapter/factory
 newsource+membership prep, thenR2bcoordinator/R3UIroute/R4device, noOSclaimyet.
+
+R2a `0d0aebc` accepted395Swift/149/MCP/ReviewQA, noactualSystemroundtrip/delivery.
+R2b1 newScheduler source+membership prep only, onepassreceipt/OS fake tests;
+b2seriallatestworker beforeRoot. R3/R4 remain, parentcheckboxopen, reset0.

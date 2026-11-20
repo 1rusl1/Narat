@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-reconcile",
+      "description": "One bounded owner-bound reminder reconcile pass using persisted receipt CAS and fake-tested OS adapter; latest-intent worker/Root wiring remain next slices.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-notifications-acceptance.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "R2b1 ONLY bounded single-pass core in newSchedulerfile +compactfakeadapter/realStore tests. Aim~200-300productionlines/4-6meaningfultests. R2a0d0a accepted395Swift/149/MCP/highReviewQA; oldrunBLOCKED mechanicalrecovery history retained. Newscaffold+4PBXrefs controlleronly. DoNOTimplement fullworker/Root/settings/prefs/permissionintent/delegate/network/newoutbox/Trial/OSliveprobe yet. R2b2 SAMEfile adds serializedlatestintent/hold/logout/race guards BEFORE anyRoot use. Singlepassalone NOTsafe forconcurrentcallers; documentcaller serializationrequirement, no race-safe/delivery claim. Existing395assertions preserved, same900/models.",
+        "Use exact accepted interfaces: CareReminderPlan.candidates ALLsorted, CareReminderReceipts, LocalStore.begin/read/commitCareReminderReceipts with original token.lease+authority, CareReminderNotifications protocol andFactory prefix/route inventory. @MainActor inputcontext holds original permanentSDKlease/store/authority pluscaller epoch-validation closure (NOTsceneactive; backgroundhold laterseparate). Validateoriginalscope before/after EVERYawait andbefore anynewsideeffect; neverreacquirelatestowner oradvancecanonicalcursor. Input safe CareOverviewViewState/optedIn/allowNewRequests/locale/timezone/injectedclock. Tiny receipts-only helper forconservative terminal unknown-OS history allowed ifneeded, no changesplanner/factory/Store.",
+        "One pass: read authorization andinventory; NEVERrequestAuthorization automatically. No optin/denied/notDetermined/knowninvalideligibility\u2192noadds, cleanupownobsolete asappropriate. Use independent allowNewRequests=false tocancelknownobsolete whileKEEPINGalreadyeligiblefuturepending (do nottreataslogout). Actual unknown startup/presentationnil/explicitlogout policy belongs b2/R3, doNOTturnnilintoautomaticcancel here. Scopevalidation closure guardsowner/activation, originalleaseauthorizesmetadata; cleanupforeignown-prefixrequests before currentowneradds withoutreadingforeignledger. Ownprefixonly, neverremoveTrial/other IDs.",
+        "Normalize existingledger against OS evidence BEFORE computingfresh arms: delivered(anyactualoccurrence proof) ORclock>=currentprepared/armedfire\u2192spent, usingCURRENT fire notimmutableoriginal; dismissed/missingpending alone NEVERfreshadd. Exact pending route owner/plant/domainID/attempt/fire match lets recovery ACK existingprepared WITHOUTadd. Existingprepared/armed withmissing/untrusted/conflictingOS evidence\u2192persistuncertain/blocked andcleanup, no blindreplay. UnknownownedOS evidence withoutledger mustNOTbe removedthen automaticallyfresh-added: conservativelypersist terminal blocker ifidentitycanbeverified, orfailclosed; tiny owner-checked import-spent/uncertain helper mayaccept pastobservedcandidate butNEVERcreatesprepared/addauthority. Duplicate/conflictinginventory IDs noDictionarytrap/failopen.",
+        "For desiredchangedhour/TZ/policydate SAMEoccurrence: only removeoldpending\u2192awaitinventoryreadbackABSENT\u2192clockstrictlybeforeOLDcurrentfire\u2192persistcancelproof\u2192prepare newcandidate. Crossingdeadline/readbackfailure/unknownoutcome marksconsumed/uncertain, no optimisticrearm. Originalfire retained, newattemptnonce distinct; oldACK/cancel cannotmutatefreshattempt. Observedearlierdelivery dominatescurrentfutureproposal. Removeobsoletedelivered ownrequests forsourcewithdrawal/completed/optout/knownexpiry/ownerchange; routingeligibilitypostfire handledlaterR3, neverexecute care commands.",
+        "For fresh allowedarms: filterALL sortedplan.candidates bypersistedspent/uncertain/recovery decisions BEFOREcap32 (NOTalreadytruncatedplan.requests). Preserveeligibleexistingpending in activebudget, conservativeavailablecare capacity accountsotherPendingCount anddoesnotaddpastcapacity/evictTrial. Statusresult distinguishes confirmedpending count/actualomissions/unconfirmed blockers/failure; no deliveredclaim fromadd/save. Atactualadd: checkclock/knownverifieddeadline/scope again; commitPREPARED BEFOREnotifications.add(proposal freshattempt,now), afterreturn matchingACK andcommit underoriginaltoken. Adderror/ACKsavefailure retainpreparedforinventoryrecovery; neverdequeue/forget/allocate another ID. No retryloop/extraadd thispass; CAS/storageerror abortsafe, no lostupdates.",
+        "Compact5-6tests withFAKE CareReminderNotifications (noSystemcenter calls) +REAL existing permanentSDK/diskStore helpers: basicflow prove persistedpreparedvisibleatfakeadd thenarmed; no-opreconcile0extraadds andothernamespacepreserved. Acceptedadd/lostACK\u2192newcontainer/store+inventoryexactpending recoverssameID/attempt withoutadd; elapsed/delivered/dismissed+cold+hourlater firstaidduedate cannotrearm. Prefirecancel/readbackproof successreplacescurrentfire sameID/originalimmutable; missing/readbackfail/deadline-cross noadd. >32spent-first giveslatereligibleoccurrence33+slots, truthfullimit; optout/denied/notDetermined andallowNew=false noautopermission/noadds, cancellationonlykeepsvalidpending. Wrongscope/storagefailurebeforeprepare\u2192noOSadd; fakeclock barriers notsleeps. Existing395assertions untouched. Latestlogout/ABA heldadd races explicitlyb2next, no claimtestedhere.",
+        "No actualSystem OSrequests inUnit orapp; Source notwired untilR3. FullSwift/build/welcome+MCP/highReviewQA mandatory. Afteracceptedonepass nextsmalltask wraps SAMEfile inlatest-intent serializedcoordinator+permissionexplicit method/races, thenR3wiring/settings/route, R4realOSroundtrip/phone. Physicalpreflightbuildonly remainsseparate, parentT075/T077/T098open."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "PASS1",
+          "description": "RealStore receipt ordering/recovery/prefire proof/capacity with fakeOS evidence pass alongside allSwift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "PASS2",
+          "description": "MCP/highReviewQA confirm boundedsinglepass/noRoot/no actualOS and honest serialization remainsnext.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-notifications-acceptance.md"
+      ]
+    }
+  ]
+}

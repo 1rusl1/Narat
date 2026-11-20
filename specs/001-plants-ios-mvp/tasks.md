@@ -525,3 +525,5 @@
 - R1b2 `7a7a8ef` accepted391Swift/MCP/highReviewQA: real disk/CAS/retention/purge/serverreject, noOS yet. R2a protocol/Systemadapter/requestfactory prep only; coordinator/opt-in/Root/deeplink/device pending, T075/T077/T098 remainopen.
 
 - R2a run01 BLOCKED after2 identical mechanical diffseparator failures; controller exactnormalized2filecandidate requires freshfullread-only candidate_base876f8fc Swift/MCP/149/ReviewQA. No R2a/OS/delivery readiness claim, T075/T077 stayopen.
+
+- R2a `0d0aebc` freshcandidate acceptance395Swift/149/MCP/highReviewQA PASS; mechanicalBLOCKED preserved. PureUNobjects/systemadaptercompile only, actualOSroundtrippending. R2b1 onepass→b2 latestworker/races (samefile)→R3UI/route→R4device; T075/T077 stayopen.

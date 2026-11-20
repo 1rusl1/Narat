@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## R2a accepted; R2b1 one-pass reconciliation prep — 20 ноября2026
+
+Accepted/pushed `0d0aebc13708f373b369263d3c1bfcaf6c878fa2`, freshread-only
+candidate_base876 run tester-care-reminder-notifications-acceptance-20261120-01
+COMPLETED Reviewer1/QA1:395Swift(392XCTest+3)/build/welcome146.347s,
+149automation48.95s,MCP23.614s,diff0.020s PASS; Review122.209/QA105.844s.
+Originalrun01BLOCKED after2identical rawdiff failures retained. Controller
+recovered ONLYleadinginterfilediffseparator/recount, no semanticrewrite or
+fakeDeveloperimplementationPASS. Source2files adapter185diff+4Unit139lines.
+Report automation/tasks/tester-care-reminder-notifications-acceptance.md.
+
+Thisis pure UNrequest/UTCtrigger/parser/inventory object proof +Systemadapter
+compile, NOT actualSystemadd→pendingserialization/permission/delivery.
+FullDateComponents includes calendar/locale; actualOSroundtrip laterR4
+mustverifybeforephysicalclaim. RootordinaryTodaydatedlive anddeviceSigning
+preflight remainseparate, phone UI unavailable pathstillbeinginvestigated.
+
+R2b split within SAME newCareReminderScheduler.swift file: b1 boundedonepass
+receipt/OS reconciliation+fakeadapter/realStore tests, b2 latest-intent worker/
+hold/logout/permission-explicit races BEFORE anyRootuse. Newscaffold+4PBX
+refs andmanifest tasks.tester-care-reminder-reconcile.json preparedONLY;
+notimplementation. NoRoot/UI/Storechanges/realOS/network yet. Keepall
+sharedcandidates thenledgerfilter beforecap, currentfireelapsed/dismissdedup,
+prefireproof, PREPARED-beforeadd+ACKafter, sourcelease guards. NoautoOSprompt.
+ThenR3settings/route/independentbackgroundlocalsignal→R4phone/testerguide.
+Parentcheckboxopen, reset0,lastactual84/16ordinaryallowed; same900/models.
+PBXdeltaYES4refs; parentmustpreserveoriginaluser3per876manifest.
+
 ## R2a mechanical candidate: run01 BLOCKED, acceptance required — 20 ноября2026
 
 Run tester-care-reminder-notifications-20261120-01 BLOCKED on2identical
