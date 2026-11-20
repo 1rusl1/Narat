@@ -11,7 +11,7 @@ Provenance `docs/validation/automation/tasks/tester-today-ui-controller-candidat
 
 Далее NEW `tester-today-ui-acceptance-20261120-01`, read-only candidate_base
 4f4a348всего5source+controllerdiff: actualSwift/MCP/old13+PL/new6TodayUI и
-8readonlynamespaceledgers → highReviewQA. OldBLOCKED preserved. Source/candidate
+8readonlynamespaceledgers +149automation (7 selectedchecks) → highReviewQA. OldBLOCKED preserved. Source/candidate
 пока не собран/непринят; Rootнеmerge. Scopedfallback разрешён толькоordinary
 URLErrorconnectivity, cancel/integrity/invalidscope не становится pending.
 lastCheckedAt точный savedfetchedAt, неDate-cacheAge; новыеUIstates/IDs/tests.
