@@ -198,3 +198,9 @@ actual tester-today-ui-acceptance-20261120-02 wholebase4f4a old13+PL+new6/
 8ledgers/149automation/Swift/MCP/ReviewQA. InitialFULL01semanticBLOCKED,
 новыйunitFAIL и malformedfingerprintreply сохранены. No device/OS claim;
 checkbox не закрываются поsubset.
+
+
+C3b navsubset e0bfa2e accepted376Swift/MCP/unchangedtargetUI+readonlyledger/
+highReviewQA. WHOLE02 5TodayPASS1navFAIL preserved. Freshwhole03base4f4a
+SIXsourceunion (newGuesthandoff included) all7checks→ReviewQA required.
+No dated/device/reminders claim, T066/T068/T075/T077/T098 open.

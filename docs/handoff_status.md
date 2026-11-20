@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Nav subset accepted; fresh WHOLE C3b03 six-source union — 20 ноября2026
+
+Accepted/pushed e0bfa2eb22bfb925a8435be03d842a1fe6f9049b, run
+tester-today-navigation-20261120-01 COMPLETED Developer1/Review1/QA1.
+App/Guest19+/19-: immutable CollectionPresentation item(target+UUID),
+sheet(item:) + per-presentationidentity replaces separate target/bool,
+Guestkeeps localone-shotconsumed and originalscope/freshcanonicalUUIDguards.
+Plaincollection/postsignin/claimroutes preserve behavior, actualownerswitch
+dismiss retained; background Todayclear notdismiss currentuserpresentation.
+
+Actual376Swift/build/welcome108.469s,MCP25.193s,diff, UNCHANGED navUI
+40.139s+1readonlytodayMixedledger(0carecommands/commits,boundedreads) PASS.
+Reviewer1PASS94.168s+QA1; report automation/tasks/tester-today-navigation.md.
+WHOLE02 prior5/6navFAIL preserved; no retroPASS/wholeclaim.
+
+Nextactualfresh WHOLE tester-today-ui-acceptance-20261120-03, read-only
+base4f4a ENTIRE6Swift+controllerdiff (App/Guest/Repo/TodayView/Unit/UITest),
+all7checks diff/149automation/376Swift/MCP/old13+4POST/PL+replay/new6+8ledgers
+thenhighReviewQA. Rootlive helduntilfinalacceptedSHA; ordinaryfrozen dated
+operator will firstprove coldfirstsheet thenpublishedinterval/currentrevision
+carecycle, no blindlyrepeatedwrites. R1a onlyafterwholeacceptance, canrunDev
+parallelfrozenlive. Allparentsopen; actual80/20 ordinaryallowed/reset0.
+
 ## WHOLE C3b02 BLOCKED: task opens list, not requested card — 20 ноября2026
 
 Actual376Swift/149automation/MCP/old13+4POSTledger/PL+replayledger/Reviewer1
