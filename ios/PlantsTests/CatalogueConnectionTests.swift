@@ -2526,6 +2526,145 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
+    private func waitForAuthClassification(
+        _ h: Harness, _ expected: CatalogueAuthClassification
+    ) async {
+        let deadline = Date().addingTimeInterval(5)
+        while h.connection.authClassification != expected && Date() < deadline {
+            await Task.yield()
+        }
+        XCTAssertEqual(h.connection.authClassification, expected)
+    }
+
+    func testProductionTransientInitialNilIsUnresolvedWithoutRefreshingOnProofRead() async throws {
+        let seed = try Harness()
+        defer { seed.close() }
+        await seed.ready()
+        try auth(seed, owner: owner, expired: true)
+        try await seed.signIn()
+        let persisted = try XCTUnwrap(seed.client.auth.currentSession)
+        let h = try Harness(
+            storedSession: persisted, emitLocalSessionAsInitialSession: false
+        ) { fixture in
+            fixture.append(.init(
+                method: "POST", path: "/auth/v1/token", data: Data(),
+                suspend: true, query: "grant_type=refresh_token",
+                failure: .notConnectedToInternet
+            ))
+            // Pinned Auth HTTP retries a failed POST once.
+            fixture.append(.init(
+                method: "POST", path: "/auth/v1/token", data: Data(),
+                query: "grant_type=refresh_token", failure: .notConnectedToInternet
+            ))
+        }
+        defer { h.close() }
+        try await waitForSuspension(h.fixture)
+        XCTAssertEqual(h.connection.authClassification, .unresolved)
+        h.fixture.release()
+        let deadline = Date().addingTimeInterval(5)
+        while !h.connection.hasResolvedAuth && Date() < deadline { await Task.yield() }
+        XCTAssertTrue(h.connection.hasResolvedAuth)
+        XCTAssertEqual(h.client.auth.currentSession?.user.id, owner)
+        XCTAssertTrue(try XCTUnwrap(h.client.auth.currentSession).isExpired)
+        XCTAssertNil(h.connection.snapshot)
+        for _ in 0..<3 { XCTAssertEqual(h.connection.authClassification, .unresolved) }
+        XCTAssertEqual(h.fixture.captured.count, 2)
+        assertClosed(h)
+        assertClosed(seed)
+    }
+
+    func testSignOutProofSurvivesOfflineACKButStickyFlagDoesNotAuthorizeLaterNil() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        await h.ready()
+        try auth(h, owner: owner)
+        try await h.signIn()
+        let original = try await h.connection.sessionSnapshot()
+        XCTAssertEqual(h.connection.authClassification, .permanent(original))
+        h.fixture.append(.init(
+            method: "POST", path: "/auth/v1/logout", data: Data(),
+            suspend: true, query: "scope=local", failure: .notConnectedToInternet
+        ))
+        h.fixture.append(.init(
+            method: "POST", path: "/auth/v1/logout", data: Data(),
+            query: "scope=local", failure: .notConnectedToInternet
+        ))
+        let logout = Task { try await h.connection.signOutAccount(expected: original) }
+        try await waitForSuspension(h.fixture)
+        await waitForAuthClassification(h, .signedOut)
+        h.fixture.release()
+        do { try await logout.value; XCTFail("Fixture logout ACK must fail") } catch {}
+        XCTAssertTrue(h.connection.signOutServerUnconfirmed)
+        XCTAssertEqual(h.connection.authClassification, .signedOut)
+
+        try auth(h, owner: other, token: "fixture-b")
+        try await h.signIn()
+        let replacement = try await h.connection.sessionSnapshot()
+        XCTAssertEqual(h.connection.authClassification, .permanent(replacement))
+        XCTAssertTrue(h.connection.didSignOut)
+        XCTAssertTrue(h.defaults.bool(forKey: "catalogue.explicitSignOut"))
+        try auth(h, owner: other, token: "fixture-b-expired", expired: true)
+        try await h.signIn()
+        XCTAssertEqual(h.connection.authClassification, .unresolved)
+        // Both attempts must fail with the intended transient transport error.
+        for _ in 0..<2 {
+            h.fixture.append(.init(
+                method: "POST", path: "/auth/v1/token", data: Data(),
+                query: "grant_type=refresh_token", failure: .notConnectedToInternet
+            ))
+        }
+        do { _ = try await h.client.auth.refreshSession(); XCTFail("Fixture refresh must fail") } catch {}
+        XCTAssertTrue(h.connection.didSignOut)
+        XCTAssertEqual(h.connection.authClassification, .unresolved)
+        XCTAssertEqual(h.client.auth.currentSession?.user.id, other)
+        assertClosed(h)
+    }
+
+    func testQueuedSignOutProofCannotPublishOverBOrSameTokenABA() async throws {
+        for returnToA in [false, true] {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner, anonymous: true)
+            try await h.signIn()
+            let original = try await h.connection.sessionSnapshot()
+            XCTAssertEqual(h.connection.authClassification, .anonymous(original))
+            h.fixture.append(.init(
+                method: "POST", path: "/auth/v1/logout", data: Data(), query: "scope=local"
+            ))
+            try auth(h, owner: other, token: "fixture-b")
+            if returnToA { try auth(h, owner: owner, anonymous: true) }
+            let client = h.client
+            let done = DispatchSemaphore(value: 0)
+            let change = Task.detached {
+                defer { done.signal() }
+                try await client.auth.signOut(scope: .local)
+                _ = try await client.auth.signInWithIdToken(
+                    credentials: .init(provider: .apple, idToken: "FIXTURE-ONLY-ID-TOKEN")
+                )
+                if returnToA {
+                    _ = try await client.auth.signInWithIdToken(
+                        credentials: .init(provider: .apple, idToken: "FIXTURE-ONLY-ID-TOKEN")
+                    )
+                }
+            }
+            // Keep every callback's MainActor publication queued until B/ABA is installed.
+            XCTAssertEqual(done.wait(timeout: .now() + 5), .success)
+            XCTAssertEqual(h.connection.authClassification, .unresolved)
+            try await change.value
+            let current = try await h.connection.sessionSnapshot()
+            XCTAssertEqual(current.session.userId, returnToA ? owner : other)
+            if returnToA {
+                XCTAssertEqual(current.session, original.session)
+                XCTAssertNotEqual(current, original)
+            }
+            let classification: CatalogueAuthClassification = returnToA
+                ? .anonymous(current) : .permanent(current)
+            await waitForAuthClassification(h, classification)
+            assertClosed(h)
+        }
+    }
+
     func testProductionInitialRefreshCleanupCannotCreateReplacementAnonymousOwner() async throws {
         let seed = try Harness()
         defer { seed.close() }
@@ -2583,6 +2722,10 @@ final class CatalogueConnectionTests: XCTestCase {
                         XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged)
                     }
                 }
+                // Registration completes after the SDK's following initialSession(nil).
+                // That event must retain this terminal cleanup proof.
+                await h.ready()
+                await waitForAuthClassification(h, .signedOut)
                 XCTAssertNil(h.client.auth.currentSession)
                 XCTAssertNil(h.connection.snapshot)
                 XCTAssertEqual(h.fixture.captured.map(\.url?.path), ["/auth/v1/token"])

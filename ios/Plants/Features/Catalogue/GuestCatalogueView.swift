@@ -38,6 +38,14 @@ struct CatalogueSDKSnapshot: Sendable, Equatable {
     fileprivate let epoch: UInt64
 }
 
+/// Evidence for consumers that must distinguish HOLD from definite local sign-out.
+enum CatalogueAuthClassification: Sendable, Equatable {
+    case unresolved
+    case permanent(CatalogueSDKSnapshot)
+    case anonymous(CatalogueSDKSnapshot)
+    case signedOut
+}
+
 /// Captured when the account sheet opens, including an absent SDK session.
 struct CatalogueAccountScope: Sendable {
     let snapshot: CatalogueSDKSnapshot?
@@ -50,6 +58,7 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
     private var value: UInt64 = 0
     private var hasEstablishedSession: Bool
     private var signedInEpoch: UInt64?
+    private var signedOutProof = false
 
     init(hasEstablishedSession: Bool = false) {
         self.hasEstablishedSession = hasEstablishedSession
@@ -61,20 +70,31 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
         lock.withLock { !hasEstablishedSession && value == epoch }
     }
 
+    func provesSignOut(at epoch: UInt64) -> Bool {
+        lock.withLock { value == epoch && signedOutProof }
+    }
+
     // Pinned SDK 2.55.6 _signIn updates storage then synchronously emits ONE signedIn.
     func permitsNativeSignIn(after epoch: UInt64) -> Bool {
         lock.withLock { value == epoch &+ 1 && signedInEpoch == value }
     }
 
+    @discardableResult
     func invalidate(
         _ authority: SyncSessionAuthority, session: Session? = nil, event: AuthChangeEvent? = nil
-    ) {
+    ) -> UInt64 {
         lock.withLock {
             value &+= 1
             signedInEpoch = event == .signedIn ? value : nil
+            // Initial nil may follow terminal refresh cleanup. Only that empty initial
+            // event may carry proof forward; any new identity/event retires it.
+            if event != .initialSession || session != nil {
+                signedOutProof = event == .signedOut && session == nil
+            }
             // Monotonic for this connection, including anonymous and expired sessions.
             if session != nil { hasEstablishedSession = true }
             authority.invalidate()
+            return value
         }
     }
 }
@@ -96,6 +116,7 @@ final class CatalogueConnection {
     let repository: CollectionRepository?
     let unavailable: CatalogueConnectionUnavailable?
     private var observedSnapshot: CatalogueSDKSnapshot?
+    private var observedNilEpoch: UInt64?
     private(set) var hasResolvedAuth = false
     private(set) var lastDeletedPlant: UUID?
     private(set) var didSignOut = false
@@ -182,9 +203,9 @@ final class CatalogueConnection {
         observer = Task { [weak self] in
             let registration = await client.auth.onAuthStateChange { [weak self] event, session in
                 // Record session history and invalidate before any MainActor publication/bind.
-                epoch.invalidate(authority, session: session, event: event)
+                let causeEpoch = epoch.invalidate(authority, session: session, event: event)
                 Task { @MainActor [weak self] in
-                    await self?.observeCurrentSession()
+                    await self?.observeCurrentSession(epoch: causeEpoch)
                 }
             }
             if Task.isCancelled { registration.remove() }
@@ -215,19 +236,31 @@ final class CatalogueConnection {
         return observedSnapshot
     }
 
+    /// Read-only: never refreshes the SDK or treats a sticky preference as proof.
+    var authClassification: CatalogueAuthClassification {
+        if let snapshot {
+            return snapshot.isAnonymous ? .anonymous(snapshot) : .permanent(snapshot)
+        }
+        guard !Task.isCancelled, let client, let epoch = observedNilEpoch,
+              sdkEpoch.provesSignOut(at: epoch), client.auth.currentSession == nil,
+              sdkEpoch.provesSignOut(at: epoch) else { return .unresolved }
+        return .signedOut
+    }
+
     func didDeletePlant(_ plantId: UUID, expected: CatalogueSDKSnapshot) {
         guard snapshot == expected else { return }
         lastDeletedPlant = plantId
     }
 
-    private func observeCurrentSession() async {
+    private func observeCurrentSession(epoch: UInt64) async {
         // Reading SDK state never creates an owner, sends commands or transfers data.
-        guard let client else { return }
-        let epoch = sdkEpoch.read()
+        guard let client, sdkEpoch.read() == epoch else { return }
         guard let current = client.auth.currentSession, !current.isExpired else {
-            _ = try? await bind(nil, epoch: epoch)
-            guard sdkEpoch.read() == epoch else { return }
+            do { try await bind(nil, epoch: epoch) }
+            catch { return }
+            guard (try? validateBinding(nil, epoch: epoch)) != nil else { return }
             observedSnapshot = nil
+            observedNilEpoch = epoch
             hasResolvedAuth = true
             return
         }
