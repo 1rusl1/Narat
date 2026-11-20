@@ -1,0 +1,13 @@
+# Root-only wiring — controller preparation, not implementation
+
+Accepted: worker0e8466c (415Swift/149/MCP), Authfd7c72b (418Swift/MCP), Core06739f3 (423Swift/MCP/highReviewQA). Parent doc-only f63da6a integrated. Only App/PlantsApp.swift is writable; no PBX delta. User budget max95% used/5% remaining, soft93 new long Developer stop, reset forbidden. Fresh usage admission mandatory; no next stage without parent decision.
+
+Actual Core API: CareReminderLifecycle(notifications:defaults:clock:timeZone:). Context(lease:store:authority:engine:locale:isCurrent:readCache?=nil). accept(Context), suspendAuth(), logout(), setSceneActive(Bool), cachePublicationOrTimeChanged(), setOptedIn(_:requestPermission:), requestEligiblePermission(), retry(), waitUntilIdle(). This Root packet calls only accept/suspendAuth/logout/setSceneActive/cachePublicationOrTimeChanged. Never enables consent or requests permission. @StateObject required; Core forwards Combine worker changes.
+
+Current Auth API: CatalogueConnection.authClassification: .unresolved / .permanent(CatalogueSDKSnapshot) / .anonymous(CatalogueSDKSnapshot) / .signedOut. Getter already checks live epoch/snapshot. hasResolvedAuth+nil and historical didSignOut are not logout proof. Use the existing SDK observer through this getter only, retain original lease and SDK/locale predicate independent of scene/Today.
+
+RootContainerView is App/PlantsApp.swift. Existing modifiers around333-374; observeCareLifecycle around474; refreshToday around607-650. clearToday runs on background and must not cancel local notifications. Successful derived overview publication may not reach TodayModel if scene/revision changed after await; Core hook must still run for the CURRENT matching reminder owner before requireToday throws. The hook starts only Core cache read, no HTTP/sync loop.
+
+Core already observes original-context localOutbox/canonical streams. Do not add another observer. Context.isCurrent must not depend on scenePhase. Existing DEBUG catalogue/Today/staging fixtures must be guarded before System runtime start; constructor is inert. Root prepareCatalogue assigns fixtureContext before catalogue, but explicit launch-flag guard also protects bootstrap. Avoid logout for fixtures: it would mutate ordinary app System care namespace.
+
+No new UI/selector/fixture assumptions. Existing ordinary live proof is source56d only; this new Root needs its own later technical/ordinary proof. This packet runs full423+Swift/149/MCP and existing13 care/6Today/PL UI regression suites, no live backend writes. Settings/delegate/routes/actual System scheduling and delivery remain pending. Parent checkboxes remain open.

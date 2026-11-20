@@ -1,0 +1,78 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-root",
+      "description": "Wire the accepted care reminder lifecycle into Root using existing auth/scene/locale and cache-publication events; no settings, permission UI, delegate, routes or new network work.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-root-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/App/PlantsApp.swift"
+      ],
+      "constraints": [
+        "Strict small ROOT-ONLY wiring, ideally ~100-150 added lines. Only PlantsApp.swift may change. Accepted Core06739f3 and Authfd7c72b interfaces are fixed; do not modify them. No settings/consent/permission UI, delegate, route, fixture flags, backend/deploy/live writes, new HTTP, sync loop, SDK observer, Trial or camera/AI/purchase work. No new files/PBX. Preserve old UI assertions, selectors and flows. User wants technical acceptance only. Source/modelexisting models900/budgets unchanged; usage fresh admission must be <93, hard95/no reset.",
+        "Root owns one @StateObject CareReminderLifecycle initialized with inert SystemCareReminderNotifications, UserDefaults.standard, Date clock and dynamic TimeZone.current. Constructor has no OS effects. Its worker is Combine ObservableObject; use accepted lifecycle forwarding. Default per-owner opt-in remains false, no Root enable/permission call. Initial unavailable SDK/config and .unresolved mean suspendAuth/HOLD, never logout/cancelAll based on hasResolvedAuth, snapshot nil or sticky didSignOut. Verified .anonymous or current .signedOut classification means logout cleanup. Recheck current classification before applying stale async mapping.",
+        "Use existing CatalogueConnection.authClassification, not another SDK subscription. For .permanent(snapshot), retain a notification context under the original collectionLease(expected:snapshot), store, syncAuthority and syncEngine. Guard original classification, lease and locale before/after every await. Scope must be independent of TodayModel.scope and scenePhase. Core Context.isCurrent captures original connection/snapshot/locale, NOT scenePhase or UI activation. Avoid retaining Root itself in this long-lived closure; capture connection/language objects. Owner A-B-A/token refresh/locale change must retire stale mapping without transferring an old lease. Auth unresolved preserves armed future requests while withholding new adds.",
+        "Map scene active/inactive through setSceneActive; background, clearToday and onDisappear do NOT mean logout or desired-empty. Core local/canonical subscriptions remain independent of active-only Today. Do not duplicate its streams or call care reconciliation from reminder callbacks. Keep all existing care lifecycle and collection presentation behavior intact.",
+        "After the existing repository.refreshCareOverview operation returns, notify Core via cachePublicationOrTimeChanged even if Today publication is later discarded by UI revision/scene checks. Hook must occur before a scene-bound requireToday can throw, and must guard the actual current reminder owner/SDK scope so late owner-A results do not mark owner-B dirty. No second overview GET, sync or care command. Known denial/revalidation publication also needs a current local reread. Timer/clock hooks read only the existing cache and existing dates; a tiny cancellation-aware known-deadline/day hook is allowed, no Store polling or invented due dates. Existing Home localBoundary callback can also notify Core.",
+        "CRITICAL fixture isolation: before any System runtime start, guard ALL existing DEBUG catalogue/Today fixtures and staging-analysis mode, including bootstrap before fixtureContext assignment. Do not call logout/cancelAll for a fixture owner; suspend an inert Core instead. Ordinary Release uses System, existing fixture UI uses NONE of its real inventory/permission/add/remove methods. Do not add a new fixture or bypass. Preserve exact old13 care+ledger, new6 Today+readonly-ledgers and PL replay checks. No existing ordinary live proof from56d may be attributed to this new Root.",
+        "Mandatory full Swift/build/welcome,149 automation,MCP,old13 care UI+4POST ledger,Today6+8 readonly namespaces,PL UI+replay, high Review/QA. New Root source is not evidence of user-facing reminder readiness: settings/delegate/System roundtrip/closed-app delivery remain open. Do not close parent tasks. No actual phone/user-data/backend mutation is part of these gates."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ROOT1",
+          "description": "Root wiring compiles with all Swift/build/welcome and uses current original auth/lease/context plus owner-scoped cache hook.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "ROOT2",
+          "description": "MCP and high Review/QA confirm no fixture System effects, no new network work and background HOLD semantics.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "ROOT3",
+          "description": "Existing care13/ledger,Today6/readonly namespaces and PL replay UI scenarios all pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui",
+            "tester-today-ui",
+            "tester-care-pl-ui"
+          ]
+        },
+        {
+          "id": "ROOT4",
+          "description": "Existing149 automation fixture tests pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-root-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-lifecycle-core.md",
+        "docs/validation/automation/tasks/tester-care-reminder-auth-proof.md"
+      ]
+    }
+  ]
+}

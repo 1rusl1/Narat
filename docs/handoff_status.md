@@ -1,5 +1,25 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен узкий Root-only этап — 20 ноября 2026
+
+Документальный коммит родителя `f63da6a` интегрирован после принятого Core
+`06739f3f6764a021fce94201d3b434e081bd5644`. Core прошёл423 теста, MCP,
+Review и QA; подробные результаты сохранены. Root пока не подключён.
+
+Подготовлены только manifest и контекст: один StateObject, текущая классификация
+Auth, исходный SDK lease независимо от Today/scene, foreground/background,
+locale и локальный hook после принятой overview-публикации. Все старые DEBUG
+fixtures ограждаются до System runtime. Новых HTTP, Auth observer, sync, UI
+согласия, settings, delegate, маршрутов и backend-операций не будет.
+Изменять разрешено только `App/PlantsApp.swift`; PBX не меняется.
+
+До запуска Developer отправить родителю конкретный prep SHA и повторно измерить
+usage. При93% и выше новый длинный Developer не допускается; hard95%, сброс
+запрещён. Проверки: весь Swift/build/welcome,149 automation,MCP,старые13 care+
+ledger,6 Today+readonly namespaces иPL replay, затем high Review/QA.
+Не приписывать live source56d новому Root. Настройки, System scheduling/delivery
+и внешняя передача остаются открытыми; сейчас нужна техническая приёмка.
+
 ## Root: Auth и lifecycle core приняты; далее подключение к приложению — 20 ноября 2026
 
 Приняты `fd7c72b` (Auth) и `06739f3` (lifecycle core). Core: 423 Swift-теста
