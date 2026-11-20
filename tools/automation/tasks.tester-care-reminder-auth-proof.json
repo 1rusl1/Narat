@@ -1,0 +1,53 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-auth-proof",
+      "description": "Expose current epoch-bound auth classification from existing Catalogue SDK callback so reminders distinguish transient unresolved startup/refresh from definite signout; no Root/OS wiring yet.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-worker-union.md",
+        "docs/validation/automation/tasks/tester-care-reminder-auth-proof-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift"
+      ],
+      "constraints": [
+        "Wholeworker0e8466c accepted415Swift/149automation/MCP/highReviewQA; parentdoc58360f2integrated. THISpacketONLYtiny SDKauthproof2existingfiles, noRoot/OS/lifecycle/prefs/delegate. Newusertechnical-onlyscope, noexternaldistribution required; no physicalclaim. Existing415assertions intact. Controllerfreshusage90used/10remaining admittedundernewmax95/soft93/noreset policy; doNOTexpandpacket.",
+        "TINY evidence-only authproof slice BEFORE R3 lifecycle. ExistingGuest file connection +compactexistingCatalogueConnectionTests only. No Root/notifications/Planner/Store/HTTP/commands/signup/secondobserver/newfiles/PBX/authdependency/Trial/Today/carewrite behavior changes. PreserveexistingallSwiftassertions. Same routes900/budgets. Controllercontext grounded installedSupabase2.55.6 pinned63fa5a8. DoNOTguessSDKsemantics; search relevant existingcallback/SDKonlywhenneeded.",
+        "Actual facts: Connection.snapshot returnsnil for expiredSDK/rawnil/bindingfailure, hasResolvedAuthtrue+nilNOTdefinitelogout. Productionclient usesSDK defaultemitLocalSessionAsInitialSession=false; SDKemitInitialSession doestry?awaitsession so transientrefresherror emitsinitialSession(nil). didSignOut/persistedexplicitflag STICKY afterlaterSignin andNOTstandaloneproof. ExistingCatalogueSDKEpoch atomiclockinvalidatesauthority ononeexisting onAuthStateChange callback; eventcause currentlylost. Do NOTinvoke sessionOwner/sessionSnapshot/SDKrefresh oraddobserver fromread-onlyproofclassification.",
+        "Expose small observable/read-only classification usablebyfutureRoot: unresolved, permanent(validatedsnapshot), anonymous(currentepoch), signedOut(currentepochproof), equivalentstrictinterfacefine. Token neverlog/defaults/UI. CaptureSDKeventcause+epoch ATOMICALLY insideexistingepochlock; invalidate+read separatelocks insufficient. MainActorpublish onlyifcauseepochstillcurrent andactualSDKstate matches; stalequeued signedOut cannotclearnewB/ABA. Existingleaseinvalidations/claimguardsunmodified. Proof propertymustnotreturnoldpermanentclassification onceactualSDKepoch/currenttokeninvalidatesit.",
+        "Current signedOut callback definite evenHTTPlocal logoutACKfails; terminalSDKrefreshcodes remove unchangedsession+signedOut, ordinarynetworkdoesnot. Preserve actualsignedOutproof throughfollowinginitialSession(nil) whenNOnewidentity superseded; newnonempty/signin/owner event retiresproof. Do NOTattacholdlogout tofuture transientnil afterBsignin orA-B-A. Allotherinitialnil/expired/config/binding/cancel/stalecallback =>unresolved HOLD notcancel/erase. No oldsticky didSignOut reuse. Knownanonymous/permanentrequirescurrentverifiedSDKsnapshot afterexistingbind/validate.",
+        "3-4compact meaningfulextensions inexistingrealSDK/HTTPFixture Harness (notmirror classification-unitonly): productionfalse expiredstoredowner +URLError refresh =>initialnil/hasResolvedAuthyetunresolved; actualterminalcleanup =>signedOutproofretainedafterinitialnil; suspended/queuedoldsignedOut/refresh vsB/ABA cannotpublishedestructiveproof; sticky didSignOut afterlaterBsignin/transientfailure notlogout. ReuseexistingHTTPReply.failure/suspend/release/emitLocalSessionAsInitialSessionfalse andknownauthhelpers; no bigJSONduplication/sleeps. Existing signout/offlineACK/synchronousinvalidation/refresh/ABA tests allpass. FullSwift/build/welcome+MCP/highReviewQA. Then properR3lifecycle feature/Root independentlocalstreams, settings/route/fakeUI/OSactual proof separately. No userready/deviceclaim,parenttasksopen."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AUTH1",
+          "description": "Actual SDK transient initialnil vs terminal signout/stickyflag/ABA proof regressions pass with allSwift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "AUTH2",
+          "description": "MCP/highReviewQA confirm one existing authobserver and evidence-only noRoot/OS behavior change.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-worker-union.md",
+        "docs/validation/automation/tasks/tester-care-reminder-auth-proof-context.md"
+      ]
+    }
+  ]
+}
