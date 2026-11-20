@@ -1,0 +1,60 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-overview-cache-store-acceptance",
+      "description": "Accept complete B1 data-store cache candidate and one lazy-allocation guard after actual old-test regression.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "docs/validation/automation/runs/care-overview-swift-map.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "docs/validation/automation/tasks/tester-care-overview-native-read-acceptance.md",
+        "docs/validation/tester-care-overview-live-2026-11-19.md",
+        "docs/handoff_status.md",
+        "tools/automation/tasks.tester-care-overview-cache-store-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Honest FULL candidate-base acceptance. Old realrun tester-care-overview-cache-store-20261120-01 Developer1 returned full2filepatch; Developer2 fixed stalefullRefreshhunk; Developer3 fixed only Swift6 @MainActor fixturehelper. Actualbuild+welcome and all7new CollectionWire disk tests PASS, but2 unchangedoldtests caught an extraemptyderivedrow before firstoverviewread (counts2vs1/4vs3). Run correctlyBLOCKED after3calls; oldFAIL retained. Parent explicitly authorized controller ONE-LINE production guard: rotateCareOverviewGeneration returns ifreservedrowabsent. beginRead stillcreatesfreshUUIDbeforeHTTP; no-rowhasnoacceptedoldtoken; reset/late response stayssuperseded. No other semanticchanges and no oldasserts weakened. No fakeDeveloperPASS for controllerguard; inspect entire actualdelta2files, realfreshgates and independenthigh-riskReviewQA.",
+        "B1 is persistence primitives only. Current alignment checks every incomingplant againstcanonical id/revision plusrawcheckpoint ceiling; B2 will additionally compare COMPLETE activecanonicalplantID set versus snapshotIDs duringcoherentlocalname/cardread, rejecting malformedempty/subset asboundedalign/error/stale. Do notclaim NoSchedule/completeUI ready fromB1 or expandthis tinyrepair intoRepo/API/UI; full parenttasksremainopen.",
+        "NativeA accepted/pushedf6128f2 with fresh149automation/332Swift/welcome/MCP/Review1QA1 PASS. Parentbackendlive19023 merged:normalFree1owner/no-dateENPLparity only, no dated/physicalclaim. B1 persistence primitives ONLY after accepted NativeA. Exactly2existing writable files, no APIClient/Repository/App/UI/notification/server/outbox semantics/Modelschema/whitelist/cursor changes. No new @Model/migration/queue or converting Sendable struct Repository intoactor. This alone does not prove cacheUX/Today. B2 later wires explicitlocale API read, bounded canonicalalignment and pendingoverlay; C Today follows. No new content/AI/billing/Auth Admin/deployment.",
+        "Use exactly one reserved LOCAL owner-scoped SyncedEntityRecord wrapper (e.g.entityType local_care_overview,entityId=ownerUUID,standardcompositekey). Versioned Codable payload holds canonicalGenerationUUID,lastcomplete validated CareOverviewSnapshot,snapshotGeneration,fetchedAt,snapshotLocale and optionalpending requestUUID+requestLocale. Separate snapshotLocale from pendingrequestlocale so a newPLbegin never relabels oldENsnapshot. NEVER persist session/bearer/authauthority/SyncSessionLease. Reserved entity type MUST NOT enter serverSync whitelist, next_since orcanonical rows.",
+        "Typed begin/read/finish/abandon helpers under original permanentSyncSessionLease and authority guard INSIDE diskoperation. In-memory ReadToken retains originallease (notreplacementcurrent context), requestUUID, capturedcanonicalGeneration andlocale. Begin writes latestrequest token atomically; finish checks originallease,owner,requestUUID AND canonicalGeneration in SAME fresh ModelContext/save with Task cancellationcheck. A pre-await Repo check alone is insufficient. No response from oldowner/sessionABA/fullRefresh/reset/newer request can overwrite. Oldfailure/abandon must not clear newerrequest. Persisted pendingmarker afterrestart is notautomaticwork/authproof; newbegin overrides it.",
+        "Every publishSyncWindow, including emptydelta/same exactwatermark, rotates canonicalGeneration and clears request token IN THE SAME transaction/save as canonicalrows/checkpoint. Preserve lastcomplete snapshot bytes, snapshotLocale/fetchedAt when invalidating: generationmismatch meansstale, notempty. fullRefresh bulkdelete skips ONLY this exact reservedowner row and then rotates; allcanonicalrows are stillreplaced normally. Owner resetSyncCachePreservingOutbox and purge retain their existing totalcache-removal behavior. Unknown/corrupt local wrapper cannot block canonicalsync: replace/unusable wrapper withnewgeneration/nofakeempty snapshot. Derived save/read must not publish canonicalSyncUpdates or change checkpoint watermarks/updatedAt, preventingfeedbackloop.",
+        "Finish reuses CareOverviewSnapshot.validated(for:owner) (includingfullpages/card/source/controlchecks). Snapshotowner_watermark ahead of exact persisted checkpoint.watermarkRaw, missingrawcheckpoint/legacyDateonly, missingforeign/deleted canonicalplant or care_revision mismatch is NOT offline-actionable: return/throw typed needsCanonicalSync without replacing trustedlastsnapshot. Reuse existing canonical plant payload contracts, never insertderived rows into sync oradvancecursor. Ownerwatermark needNOTequal syncwindowupperbound; <= plusgeneration/currentplantrevision match is intended. No localinterval/date derivation or quota/entitlementpolicy change. B2 owns oneboundedfullRefresh+newread, notB1.",
+        "After successfulcomplete publication retain FULLnested cardwirepages+outer dates/routine identity. Every cachedecode validates snapshot again; neverpersist only PlantCareRecommendation view fields (CodingKeys omitdates/context). Oncoldread label state cached/stale even ifsnapshotGenerationequalscanonicalGeneration: remoteKBmaychangewithoutownerrows. Internalcanonicalalignment may be reportedseparately, never claimedfreshnetwork/OSauthorization. Error/partial/mixed/invalid response cannot becomeempty or erase lastcomplete.",
+        "Meaningful compact tests reuse NativeA overviewPage/overviewRow and existing canonicalSync/disk helpers. Required: actualSwiftData disk reopen preserves datedrule/source/context/locale butcoldread cached; emptydelta+samewatermark invalidates late token and retains previous snapshot; fullrefresh replacescanonicalentities,retains exactreservedstale row and invalidates oldresponse; reset removeswrapperandlatefinishcannotresurrect; overlappingEN/PL requests onlylatestpublishes, lateoldabandon harmless; originalleaseownerA->B->A/cancellation/foreignowner reject withnodiskmutation; aheadwatermark/legacyDateonly/missingplant/revisionmismatch typedalignmentfailure leavesoldbytes/checkpoint unchanged. Corruptlocalwrapper doesnotbreak validcanonicalpublication. No mirror/existence-only/SKIP or altered oldassertions. Group cases/reuse helpers instead ofhundreds ofidenticalfixtures.",
+        "All helpers are dataonly; no network/SDKrebind/OSrequests and no sourceapplicability or newexpiry policy. Snapshot metadata accessfalse remainsfalse; stale/expiry/pending presentation/suppression belongs B2/C. Unit/MCP checks arelocalfixtures only, no claim live offline/iPhone. Preserve acceptedA3files and all prior327+5tests. Controller uses temporary ACcaffeinate lifetime and sharedlock wrappers with unchanged approvedrouting/budgets900s."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "OVSTORE1",
+          "description": "Full Swift tests and meaningful actual-disk restart/generation/reset/latesttoken/ABA/cancel/alignment/corruptwrapper cases pass without moving canonicalcursor orlosing oldsnapshot.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "OVSTORE2",
+          "description": "App build/welcome and existingMCP remainpassing with unchangedSchema/no UI orserver behavior; cachemutation fence independentlyreviewed.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-overview-native-read-acceptance.md"
+      ],
+      "candidate_base": "1b614940b28f5658ce4c659eb483701e0191f288"
+    }
+  ]
+}

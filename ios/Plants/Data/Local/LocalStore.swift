@@ -321,6 +321,65 @@ public struct GuestDraftCacheSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Local care overview (no sync schema or credential persistence)
+
+enum CareOverviewStoreError: Error, Equatable {
+    case invalidLocale
+    case superseded
+    case needsCanonicalSync
+}
+
+/// The original lease stays in memory; persisted pending IDs confer no authority.
+struct CareOverviewReadToken: Sendable {
+    fileprivate let lease: SyncSessionLease
+    fileprivate let requestId: UUID
+    fileprivate let canonicalGeneration: UUID
+    let locale: String
+}
+
+struct CachedCareOverview: Sendable {
+    enum State: Sendable, Equatable { case cached, stale }
+    let snapshot: CareOverviewSnapshot
+    let fetchedAt: Date
+    let snapshotLocale: String
+    let state: State
+    // Alignment is local evidence only, never network freshness or OS permission.
+    let canonicalGenerationMatches: Bool
+}
+
+private struct CareOverviewCachePayload: Codable {
+    var version = 1
+    var canonicalGeneration = UUID()
+    // Preserve the full encoded wire snapshot byte-for-byte on invalidation.
+    var snapshotJSON: String?
+    var snapshotGeneration: UUID?
+    var fetchedAt: Date?
+    var snapshotLocale: String?
+    var pendingRequestId: UUID?
+    var pendingRequestLocale: String?
+
+    func validatedSnapshot(ownerId: UUID) throws -> CareOverviewSnapshot? {
+        guard version == 1,
+              (pendingRequestId == nil) == (pendingRequestLocale == nil),
+              pendingRequestLocale.map({ ["en", "pl"].contains($0) }) ?? true else {
+            throw SyncWireValidationError.invalidPage
+        }
+        guard let snapshotJSON else {
+            guard snapshotGeneration == nil, fetchedAt == nil, snapshotLocale == nil else {
+                throw SyncWireValidationError.invalidPage
+            }
+            return nil
+        }
+        guard snapshotGeneration != nil, let fetchedAt,
+              fetchedAt.timeIntervalSince1970.isFinite,
+              snapshotLocale.map({ ["en", "pl"].contains($0) }) == true else {
+            throw SyncWireValidationError.invalidPage
+        }
+        return try JSONDecoder().decode(CareOverviewSnapshot.self, from: Data(snapshotJSON.utf8))
+            .validated(for: ownerId)
+    }
+}
+
 // MARK: - LocalStore ModelActor (T023)
 
 @ModelActor
@@ -2033,6 +2092,7 @@ public actor LocalStore {
         in modelContext: ModelContext
     ) throws {
         for item in items {
+            guard item.entityType != Self.careOverviewEntityType else { throw SyncWireValidationError.invalidPage }
             let key = "\(ownerId.uuidString.lowercased()):\(item.entityType):\(item.id.uuidString.lowercased())"
             let descriptor = FetchDescriptor<SyncedEntityRecord>(
                 predicate: #Predicate { $0.compositeKey == key }
@@ -2064,6 +2124,182 @@ public actor LocalStore {
                 )
                 record.updatedAtRaw = rawTimes[key]
                 modelContext.insert(record)
+            }
+        }
+    }
+
+    // This reserved row is local only and never belongs to the server sync vocabulary.
+    private static let careOverviewEntityType = "local_care_overview"
+
+    private func careOverviewKey(_ ownerId: UUID) -> String {
+        "\(ownerId.uuidString.lowercased()):\(Self.careOverviewEntityType):\(ownerId.uuidString.lowercased())"
+    }
+
+    private func careOverviewRow(ownerId: UUID, in disk: ModelContext) throws -> SyncedEntityRecord? {
+        let key = careOverviewKey(ownerId)
+        return try disk.fetch(FetchDescriptor<SyncedEntityRecord>(predicate: #Predicate {
+            $0.compositeKey == key
+        })).first
+    }
+
+    private func careOverviewPayload(_ row: SyncedEntityRecord?, ownerId: UUID) -> CareOverviewCachePayload? {
+        guard let row, row.ownerId == ownerId, row.entityId == ownerId,
+              row.entityType == Self.careOverviewEntityType, row.deletedAt == nil,
+              let payload = try? JSONDecoder().decode(CareOverviewCachePayload.self, from: Data(row.payloadJSON.utf8))
+        else { return nil }
+        do {
+            _ = try payload.validatedSnapshot(ownerId: ownerId)
+            return payload
+        } catch { return nil }
+    }
+
+    private func stageCareOverview(
+        _ payload: CareOverviewCachePayload, row: SyncedEntityRecord?,
+        ownerId: UUID, in disk: ModelContext
+    ) throws {
+        let json = String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+        if let row {
+            row.ownerId = ownerId
+            row.entityId = ownerId
+            row.entityType = Self.careOverviewEntityType
+            row.deletedAt = nil
+            row.updatedAtRaw = nil
+            row.payloadJSON = json
+        } else {
+            disk.insert(SyncedEntityRecord(
+                ownerId: ownerId, entityType: Self.careOverviewEntityType, entityId: ownerId,
+                updatedAt: Date(), payloadJSON: json
+            ))
+        }
+    }
+
+    /// Called within the canonical rows/checkpoint transaction, including empty windows.
+    private func rotateCareOverviewGeneration(ownerId: UUID, in disk: ModelContext) throws {
+        guard let row = try careOverviewRow(ownerId: ownerId, in: disk) else { return }
+        var payload = careOverviewPayload(row, ownerId: ownerId) ?? CareOverviewCachePayload()
+        payload.canonicalGeneration = UUID()
+        payload.pendingRequestId = nil
+        payload.pendingRequestLocale = nil
+        try stageCareOverview(payload, row: row, ownerId: ownerId, in: disk)
+    }
+
+    func beginCareOverviewRead(
+        locale: String, context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CareOverviewReadToken {
+        try authority.withPermanentBoundValid(context) {
+            guard ["en", "pl"].contains(locale) else { throw CareOverviewStoreError.invalidLocale }
+            let disk = makeSyncContext()
+            do {
+                let row = try careOverviewRow(ownerId: context.ownerId, in: disk)
+                var payload = careOverviewPayload(row, ownerId: context.ownerId) ?? CareOverviewCachePayload()
+                let requestId = UUID()
+                payload.pendingRequestId = requestId
+                payload.pendingRequestLocale = locale
+                try stageCareOverview(payload, row: row, ownerId: context.ownerId, in: disk)
+                try Task.checkCancellation()
+                try disk.save()
+                return CareOverviewReadToken(
+                    lease: context, requestId: requestId,
+                    canonicalGeneration: payload.canonicalGeneration, locale: locale
+                )
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    /// A disk read is always cached/stale, even when canonical generations match.
+    func readCareOverview(
+        context: SyncSessionLease, authority: SyncSessionAuthority
+    ) throws -> CachedCareOverview? {
+        try authority.withPermanentBoundValid(context) {
+            let disk = makeSyncContext()
+            let row = try careOverviewRow(ownerId: context.ownerId, in: disk)
+            guard let payload = careOverviewPayload(row, ownerId: context.ownerId),
+                  let snapshot = try payload.validatedSnapshot(ownerId: context.ownerId),
+                  let fetchedAt = payload.fetchedAt, let locale = payload.snapshotLocale else { return nil }
+            let aligned = payload.snapshotGeneration == payload.canonicalGeneration
+            return CachedCareOverview(
+                snapshot: snapshot, fetchedAt: fetchedAt, snapshotLocale: locale,
+                state: aligned ? .cached : .stale, canonicalGenerationMatches: aligned
+            )
+        }
+    }
+
+    private func matchesCareOverviewRequest(
+        _ payload: CareOverviewCachePayload, token: CareOverviewReadToken
+    ) -> Bool {
+        payload.pendingRequestId == token.requestId && payload.pendingRequestLocale == token.locale
+            && payload.canonicalGeneration == token.canonicalGeneration
+    }
+
+    private func requireCareOverviewAlignment(
+        _ snapshot: CareOverviewSnapshot, ownerId: UUID, in disk: ModelContext
+    ) throws {
+        let checkpoints = FetchDescriptor<SyncCheckpointRecord>(predicate: #Predicate { $0.ownerId == ownerId })
+        guard let checkpoint = try disk.fetch(checkpoints).first,
+              let raw = checkpoint.watermarkRaw, let end = SQLTimestamp.microseconds(from: raw),
+              let first = snapshot.pages.first,
+              let overview = SQLTimestamp.microseconds(from: first.ownerWatermark), overview <= end
+        else { throw CareOverviewStoreError.needsCanonicalSync }
+        for plant in snapshot.plants {
+            guard let row = try activeSyncRow("plants", id: plant.plantId, ownerId: ownerId, in: disk),
+                  let card = try? JSONDecoder().decode(CatalogueCardSummary.self, from: Data(row.payloadJSON.utf8)),
+                  card.id == plant.plantId, card.revision > 0, card.careRevision == plant.careRevision
+            else { throw CareOverviewStoreError.needsCanonicalSync }
+        }
+    }
+
+    func finishCareOverviewRead(
+        _ token: CareOverviewReadToken, snapshot: CareOverviewSnapshot,
+        authority: SyncSessionAuthority
+    ) throws {
+        try authority.withPermanentBoundValid(token.lease) {
+            let ownerId = token.lease.ownerId
+            let disk = makeSyncContext()
+            do {
+                let row = try careOverviewRow(ownerId: ownerId, in: disk)
+                guard var payload = careOverviewPayload(row, ownerId: ownerId),
+                      matchesCareOverviewRequest(payload, token: token)
+                else { throw CareOverviewStoreError.superseded }
+                let validated = try snapshot.validated(for: ownerId)
+                try requireCareOverviewAlignment(validated, ownerId: ownerId, in: disk)
+                payload.snapshotJSON = String(decoding: try JSONEncoder().encode(validated), as: UTF8.self)
+                payload.snapshotGeneration = payload.canonicalGeneration
+                payload.snapshotLocale = token.locale
+                payload.fetchedAt = Date()
+                payload.pendingRequestId = nil
+                payload.pendingRequestLocale = nil
+                try stageCareOverview(payload, row: row, ownerId: ownerId, in: disk)
+                try Task.checkCancellation()
+                try disk.save()
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
+    @discardableResult
+    func abandonCareOverviewRead(
+        _ token: CareOverviewReadToken, authority: SyncSessionAuthority
+    ) throws -> Bool {
+        try authority.withPermanentBoundValid(token.lease) {
+            let disk = makeSyncContext()
+            do {
+                let row = try careOverviewRow(ownerId: token.lease.ownerId, in: disk)
+                guard var payload = careOverviewPayload(row, ownerId: token.lease.ownerId),
+                      matchesCareOverviewRequest(payload, token: token) else { return false }
+                payload.pendingRequestId = nil
+                payload.pendingRequestLocale = nil
+                try stageCareOverview(payload, row: row, ownerId: token.lease.ownerId, in: disk)
+                try Task.checkCancellation()
+                try disk.save()
+                return true
+            } catch {
+                disk.rollback()
+                throw error
             }
         }
     }
@@ -2100,7 +2336,12 @@ public actor LocalStore {
                     let entities = FetchDescriptor<SyncedEntityRecord>(
                         predicate: #Predicate { $0.ownerId == ownerId }
                     )
-                    for entity in try modelContext.fetch(entities) { modelContext.delete(entity) }
+                    for entity in try modelContext.fetch(entities) {
+                        if entity.compositeKey != careOverviewKey(ownerId)
+                            || entity.entityType != Self.careOverviewEntityType || entity.entityId != ownerId {
+                            modelContext.delete(entity)
+                        }
+                    }
                 }
                 var rawTimes: [String: String] = [:]
                 for change in changes {
@@ -2122,6 +2363,7 @@ public actor LocalStore {
                     checkpoint.entitlementOfferKind = wirePage.entitlement?.offerKind
                     checkpoint.entitlementState = wirePage.entitlement?.state
                 }
+                try rotateCareOverviewGeneration(ownerId: ownerId, in: modelContext)
                 checkpoint.updatedAt = Date()
                 try Task.checkCancellation()
                 try modelContext.save()

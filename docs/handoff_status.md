@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: B1 candidate, tiny lazy-cache guard и свежая приёмка — 20 ноября 2026
+
+B1 run `tester-care-overview-cache-store-20261120-01` сохранил фактический
+BLOCKED после трёх Developer calls: полный Store+disk tests patch; исправление
+stale hunk; затем узкая @MainActor изоляция fixture helper для Swift6.
+Реально build+welcome PASS; все семь новых CollectionWire дисковых сценариев
+PASS. Но два прежних теста верно поймали лишнюю пустую reservedcache row:
+NativeSuccess count2 вместо1 и historical5table upgrade4 вместо3.
+Evidence FAIL `docs/validation/automation/runs/q-d662ba03ab63b7662a428016`.
+
+Root явно разрешил controller tiny guard: rotateCareOverviewGeneration при
+отсутствующей reserved row возвращается; beginRead создаёт новыйUUID wrapper
+передHTTP, старого принятого token безrow бытьне может. Поэтому cache создаётся
+только по требованию, сохраняются прежние canonical counts без ослабления
+старых assertions. Других semantic изменений нет; Store+Tests пока НЕ приняты.
+
+Следующий actual run `tester-care-overview-cache-store-acceptance-20261120-01`,
+manifest `tools/automation/tasks.tester-care-overview-cache-store-acceptance.json`:
+полный candidate_base от1b61494, actualSwift/MCP/automation→highReview→QA→push.
+Read-only, без новогоDeveloper или фиктивногоPASS дляcontrollerguard.
+Тот же config/approvedmodels/budgets900 и boundedACcaffeinate/sharedSIMlock.
+
+B1 остаётся data primitives. B2 дополнительно сверит ПОЛНЫЙ activecanonical
+plantID set сsnapshotIDs вcoherentlocalread: malformedempty/subset не станет
+NoSchedule. B2 также explicitlocaleAPIinput/boundedalignment/pendingoverlay;
+C permanentToday/navigation/UI позже. App/sourceAPI/server не расширяются.
+Прежние NativeAf612 и backend19023 приняты, T066/T068/T075/T077/T098/B01–B11 open.
+
 ## Этап 2: native A принят; backend live объединён; следующий B1 — 20 ноября 2026
 
 Accepted/pushed native A `f6128f23119e8ff89ed1edb4c4f5f77e5c32c208`.
