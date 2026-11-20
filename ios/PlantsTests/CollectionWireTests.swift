@@ -12671,3 +12671,127 @@ extension CollectionWireTests {
         }
     }
 }
+
+extension CollectionWireTests {
+    @MainActor
+    func testReminderKnownOwnerDeferJournalsUnknownBeforeLogoutAndColdRestore() async throws {
+        for validRoute in [false, true] {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let state = try passState(local, count: 2)
+            let candidates = reminderPlan(state).candidates
+            let unknown = try XCTUnwrap(candidates.first)
+            let known = try XCTUnwrap(candidates.dropFirst().first)
+            let fake = FakeCareReminderNotifications()
+            let token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+            var seeded = token.receipts
+            _ = try seeded.prepare(known, now: fake.now)
+            let knownEntry = try XCTUnwrap(seeded.entries[known.id])
+            _ = try await store.commitCareReminderReceipts(seeded, replacing: token, authority: authority)
+            let unknownItem = CareReminderNotificationInventory.Item(
+                rawIdentifier: CareReminderNotificationFactory.prefix + unknown.id,
+                route: validRoute ? .init(candidate: unknown, attemptId: UUID()) : nil,
+                deliveredAt: nil)
+            let knownItem = CareReminderNotificationInventory.Item(
+                rawIdentifier: CareReminderNotificationFactory.prefix + known.id,
+                route: .init(candidate: known, attemptId: knownEntry.attemptId), deliveredAt: nil)
+            let trial = CareReminderNotificationInventory.Item(
+                rawIdentifier: "narat.trial-reminder.v1.test", route: nil, deliveredAt: nil)
+            fake.pending = [unknownItem, knownItem, trial]
+            let worker = CareReminderScheduler(notifications: fake)
+            worker.update(workerInput(store, authority, lease, nil, fake))
+            await worker.waitUntilIdle()
+            XCTAssertEqual(worker.result?.deferred, true)
+            XCTAssertEqual(fake.pending, [unknownItem, knownItem, trial])
+            XCTAssertTrue(fake.removed.isEmpty)
+            XCTAssertTrue(fake.adds.isEmpty)
+            let journal = try await store.readCareReminderReceipts(context: lease, authority: authority)
+            let persisted = try XCTUnwrap(journal).receipts
+            XCTAssertEqual(persisted.entries[known.id], knownEntry) // No ACK/phase observation without projection.
+            if validRoute {
+                XCTAssertEqual(persisted.entries[unknown.id]?.phase, .uncertain)
+            } else {
+                XCTAssertTrue(persisted.blockedIdentifiers.contains(unknown.id))
+                XCTAssertNil(persisted.entries[unknown.id]) // No invented scheduling dates.
+            }
+            authority.bind(nil)
+            worker.cancelAll()
+            await worker.waitUntilIdle()
+            XCTAssertEqual(fake.pending, [trial])
+            authority.bind(try profileSession(ownerId: syncOwner))
+            let freshLease = try authority.capture(ownerId: syncOwner)
+            let cold = LocalStore(modelContainer: try diskContainer(url))
+            let restored = CareReminderScheduler(notifications: fake)
+            restored.update(workerInput(cold, authority, freshLease, state, fake))
+            await restored.waitUntilIdle()
+            XCTAssertEqual(restored.result?.failed, false)
+            XCTAssertTrue(fake.adds.isEmpty)
+            XCTAssertEqual(fake.pending, [trial])
+            XCTAssertEqual(fake.permissionRequests, 0)
+            let final = try await cold.readCareReminderReceipts(context: freshLease, authority: authority)
+            XCTAssertEqual(final?.receipts.entries[known.id]?.phase, .uncertain)
+        }
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testReminderCancelledConflictNeedsDurableBarrierBeforeNilOrFailedCleanup() async throws {
+        for saveFails in [false, true] {
+            for delivered in [false, true] {
+                let (url, store, authority, lease, local) = try await reminderFixture()
+                defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+                let state = try passState(local)
+                let candidate = try XCTUnwrap(reminderPlan(state).candidates.first)
+                let fake = FakeCareReminderNotifications()
+                let token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+                var prepared = token.receipts
+                _ = try prepared.prepare(candidate, now: fake.now)
+                let preparing = try await store.commitCareReminderReceipts(prepared, replacing: token, authority: authority)
+                var cancelled = preparing.receipts
+                let entry = try XCTUnwrap(cancelled.entries[candidate.id])
+                XCTAssertTrue(try cancelled.cancel(id: candidate.id, attemptId: entry.attemptId,
+                    proof: .removedAndReadBackAbsent(confirmedAt: fake.now), now: fake.now))
+                _ = try await store.commitCareReminderReceipts(cancelled, replacing: preparing, authority: authority)
+                let before = try overviewDiskState(url)
+                let item = CareReminderNotificationInventory.Item(
+                    rawIdentifier: CareReminderNotificationFactory.prefix + candidate.id,
+                    route: .init(candidate: candidate, attemptId: entry.attemptId),
+                    deliveredAt: delivered ? fake.now : nil)
+                let trial = CareReminderNotificationInventory.Item(
+                    rawIdentifier: "narat.trial-reminder.v1.test", route: nil, deliveredAt: nil)
+                fake.pending = delivered ? [trial] : [item, trial]
+                fake.delivered = delivered ? [item] : []
+                let target = saveFails
+                    ? LocalStore(modelContainer: try diskContainer(url, allowsSave: false)) : store
+                let worker = CareReminderScheduler(notifications: fake)
+                worker.update(workerInput(target, authority, lease, saveFails ? state : nil, fake, optedIn: false))
+                await worker.waitUntilIdle()
+                XCTAssertEqual(worker.result?.failed, saveFails)
+                XCTAssertTrue(fake.adds.isEmpty)
+                if saveFails {
+                    XCTAssertEqual(try overviewDiskState(url), before)
+                    XCTAssertEqual(fake.pending, delivered ? [trial] : [item, trial])
+                    XCTAssertEqual(fake.delivered, delivered ? [item] : [])
+                    XCTAssertTrue(fake.removed.isEmpty) // Keep conflicting evidence until terminal save succeeds.
+                } else {
+                    XCTAssertEqual(fake.pending, [trial])
+                    XCTAssertTrue(fake.delivered.isEmpty)
+                    let read = try await store.readCareReminderReceipts(context: lease, authority: authority)
+                    XCTAssertEqual(read?.receipts.entries[candidate.id]?.phase, delivered ? .spent : .uncertain)
+                }
+                // Cold eligibility recovery still sees the contradiction when the terminal save failed.
+                let cold = LocalStore(modelContainer: try diskContainer(url))
+                let recovered = await reminderPass(cold, authority, lease, state, fake)
+                XCTAssertFalse(recovered.failed)
+                XCTAssertTrue(fake.adds.isEmpty)
+                XCTAssertEqual(fake.pending, [trial])
+                XCTAssertTrue(fake.delivered.isEmpty)
+                let final = try await cold.readCareReminderReceipts(context: lease, authority: authority)
+                XCTAssertEqual(final?.receipts.entries[candidate.id]?.phase, delivered ? .spent : .uncertain)
+                XCTAssertEqual(final?.receipts.entries[candidate.id]?.attemptId, entry.attemptId)
+                XCTAssertEqual(fake.permissionRequests, 0)
+            }
+        }
+    }
+}

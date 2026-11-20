@@ -1,5 +1,22 @@
 # Narat — текущий статус и передача работы
 
+## Whole R2b2 union03 FAIL; exact controller safety candidate next — 20 ноября 2026
+
+Union03 BLOCKED Reviewer1 semantic FAIL127.546s after actual413Swift/build/
+welcome119.139s,149automation50.910s,diffPASS; noQA/MCP. ExistingcancelledBeforeFire
+withcontradictingOS evidence could remainrearmable after nilprojectioncleanup
+or failedterminalsave fallback. Independent coldknown-defer->logout transition
+also could loseunknownmetadata beforecancelAll.
+
+Explicitly authorized Controller/Root-authored2file candidate nowapplied:
+Scheduler tinyunknown/defer +cancelled-conflict phase/fallback guards andtwo
+compactrealStore/fakeOS testgroups. Developer0, nofakeimplementationPASS.
+Provenance/hash/scope in automation/tasks/tester-care-reminder-worker-controller-candidate.md.
+CandidateNOTaccepted; freshFULLunion04 fromdfe mustpassallSwift/149/MCP/highReviewQA.
+Allprevioussemantic/infra/interruption outcomeskept. NoRoot/actualOS/datepolicy/
+newqueue/Store/Receipts/PBX changes; nextauthproof/lifecycle/UI/device stillpending.
+Reset0; same900/models; parentB01positive/reversalcorrection docFF afterwholeaccepted.
+
 ## R2b2 cleanup-failure repair accepted; fresh WHOLE union next — 20 ноября 2026
 
 Accepted/pushed163df43a1faafea5b35bf6e26baa5ba8268d89dd, run

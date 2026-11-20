@@ -305,7 +305,14 @@ final class CareReminderScheduler: ObservableObject {
                     }
                 }
             }
-            // Without a projection, preserve existing phases; only persist unknown blockers.
+            // OS presence contradicts a saved cancellation proof even without a projection.
+            // Persist the terminal barrier before any cleanup can erase that evidence.
+            for id in ledger.entries.keys.sorted() {
+                guard let entry = ledger.entries[id], entry.phase == .cancelledBeforeFire,
+                      !pending(id).isEmpty || !delivered(id).isEmpty else { continue }
+                try ledger.observe(id: id, now: input.clock(), delivered: deliveryProof(entry), unknown: true)
+            }
+            // Without a projection, preserve other known phases; only persist safety barriers.
             if !observeExisting {
                 try await save(ledger)
                 return
@@ -400,8 +407,12 @@ final class CareReminderScheduler: ObservableObject {
             for raw in raws.sorted() where raw.hasPrefix(CareReminderNotificationFactory.prefix) {
                 let id = String(raw.dropFirst(CareReminderNotificationFactory.prefix.count))
                 if CareReminderReceipts.canonicalOwner(of: id) == input.lease.ownerId,
-                   token?.receipts.entries[id] == nil,
-                   token?.receipts.blockedIdentifiers.contains(id) != true { continue }
+                   token?.receipts.blockedIdentifiers.contains(id) != true {
+                    let phase = token?.receipts.entries[id]?.phase
+                    // Missing metadata and a still-rearmable cancellation both require a
+                    // committed terminal barrier before their OS evidence can be removed.
+                    if phase == nil || phase == .cancelledBeforeFire { continue }
+                }
                 // Raw OS absence grants no cancellation proof or scheduling authority.
                 try await remove(raw, entry: nil)
             }
@@ -437,7 +448,12 @@ final class CareReminderScheduler: ObservableObject {
                 let authorization = try await checked { try await notifications.authorization() }
                 try await readInventory()
                 // Presentation unknown is NOT logout or permission to cancel same-owner requests.
-                guard let state = input.state else { return result(failed: false, deferred: true) }
+                guard let state = input.state else {
+                    // A later logout can remove these OS identities after the SDK lease ends.
+                    // Journal unknown own opportunities now, retaining requests and known phases.
+                    try await normalize(CareReminderScheduler.plan(input), observeExisting: false)
+                    return result(failed: untrustedInventory, deferred: true)
+                }
                 guard state.ownerId == input.lease.ownerId else { throw Failure.scope }
                 let plan = CareReminderPlan(expectedOwnerId: input.lease.ownerId, state: state,
                     optedIn: input.optedIn, authorization: authorization, now: input.clock(),
