@@ -1,0 +1,60 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-notifications-acceptance",
+      "description": "Independently accept exact mechanically recovered R2a two-source-file candidate after identical malformed diff separators; no Developer rewrite or fake PASS.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "docs/validation/automation/tasks/tester-care-reminder-notifications-controller-candidate.md",
+        "docs/validation/automation/tasks/tester-care-reminder-store.md",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderReceipts.swift",
+        "ios/Plants/Integrations/Notifications/TrialReminderScheduler.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "tools/automation/tasks.tester-care-reminder-notifications-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "READONLY candidate_base876f8fc audit ENTIRE2source+controllerdiff. OriginalrunBLOCKED2identicalrawpatches fromDeveloper withleadinginterfilediffseparator space, sourceunchanged/no tests. Controller normalized ONLYone delimiter andgitapply--recount afterallhunks/scope/base/no secrets/applycheck; nosemanticline/assertionchange. No DeveloperimplementationPASS/no retroPASSoldBLOCKED. ActualSwift/MCP/149automation/diff/highReviewQA mandatory; reportactualdefects withoutsourceedits. Evidenceprovenance containsfullhashes.",
+        "R2a bounded adapter/factory only (~150-230production lines +compact 3-5 tests). Proper newfile scaffold+4PBXrefs controller-only, NOTimplementation. Accepted R1a99/R1b1 1652/R1b2 7a7a:391Swift/MCP/ReviewQA. No coordinator/Root/settings/UI/delegate/Store/receipts/planner/trial/backend/schema/outbox changes, no actual OS calls in tests, no delivery claim. R2b serialized generation-safe coordinator +fake adapter tests later, R3 wiring/explicit opt-in/deeplink thenR4 realphone. Keep391oldassertions. Same models/900/budgets.",
+        "Provide small @MainActor care notification protocol for querying authorization, explicit requestAuthorization, inventory(pending+delivered+otherPendingCount), add a typed candidate+attempt proposal, removePending/removeDelivered own identifiers. System implementation uses UNUserNotificationCenter.current existing async APIs; init/query do NOT request permissions or add. Explicit requestAuthorization method only alert/sound, callerR3 controls eligible opt-in. Map authorized/provisional/ephemeral allowed, notDetermined distinct, denied otherwise likeexistingTrial. Protocol allows fake errors/barriers later; no System method invoked by currenttests or app startup yet.",
+        "Use exact own OS namespace e.g. narat.care-reminder.v1. +domainCandidate.id (current care/owner/plant/routine/rule/due or first-aid/control). Stable despite locale/hour/TZ. Trial narat.trial-reminder. andallother namespaces untouched. Delete methods filter own prefix even caller passes mixed IDs; include pure identifier-filter helper actuallyused byadapter for Unit proof. Inventory lists ALL own pending/delivered including malformed own records (retain rawID for safe cleanup); count otherpending separately forfuture conservativecapacity. No globalremoveAll. No otherowner data used toauthorize add.",
+        "Factory produces UNNotificationRequest from valid R1a Candidate+fresh attemptId+injected now. Validate canonicaldomainID via CareReminderPlan.identity, owner/plant/typedoccurrence/sourceYMD/locale, finite futurefire. Absolute UNCalendarNotificationTrigger full Gregorian UTC year/month/day/hour/minute/second, explicit UTC timezone, repeatsfalse; exactroundtripfire equality(no floatinglocal trigger or silentsecond truncation). No new care interval/day/expiry logic: coordinator owns current SDK/access ceiling anddurablePREPARED before add. Factory generic human EN/PL title/body, sounddefault, NO UUID label/diagnosis/sourceURL/JPEG/token/rawCareState/claimproof/personaltitle.",
+        "Property-list-safe route metadata version1, owner,plant,exactdomainoccurrence key/kind+rule-or-control,sourceYMD,attemptId,absoluteFire,locale only. Prefer strict namespaced String fields (avoid NSNumber bool/version ambiguity). Pure parser validates exact expectedkeys/version/UUID/date/locale/kind +requestidentifier equality to namespacedcanonicaldomainidentity; rejects foreign-prefix/forgedID/unknownversion/missing/wrongtypedmetadata. It MUST parse normal delivered/post-fire payload (no future-fire guard in parser), because tapafterfire validatesCURRENT sharedoccurrence laterR3, not R1futurePlan.requests. Parsing NEVER schedules/executes/authenticates ortrusts payloadowner asSDKowner.",
+        "Inventory puremapping extracts safe Sendable item data withoutpassing UN frameworkobjects acrossactor boundaries. Pending is trusted only withnonrepeating absolute UTCtrigger matchingmetadatafire; malformedprefix-ownedrequest stays rawcleanup item withniluntrustedmetadata, notacceptedasscheduleproof. Delivered items carryobserveddate and parsedmetadata whenvalid; neverfabricate delivery frompendingabsence. Unit mappinghelper canaccept realUNNotificationRequest+injected deliveredAt pairs (UNNotification hasno publicfixtureinit), System passes actual center results. No fake OS inventory asserted aslive.",
+        "Compact meaningful tests through actualUNNotificationRequest/UNCalendarNotificationTrigger objects (NOTcenter calls): stableIDs acrosslocale/hour/TZ, exactUTC/nonrepeat fire and minimalhumancontent+metadata roundtrip; post-fire parser acceptscurrentpayload, malformedversion/foreignID/owner/key/kind/types rejected; malformed/repeating/nonUTC/mismatchedfire own requests areuntrustedcleanupitems; mixedinventory preservesotherPendingCount and Trial/otherdeletefilter; absolute UTC date remainsfixed under changed default timezone/calendar, no now()-dependent nextTriggerDate assertion. Useinjectednow andexistingrealplan candidates helper; preserveall391assertions. Systemadapter proofhere is compile+purefactory tests only; actualpermission/add/delivery R3/R4 required.",
+        "FutureR2b mustuseALL plan.candidates thenpersisted spent/uncertain filter BEFOREcap32, outer optin+authorization/currentowner guards; futureRootbackgroundnil!=logout andlocalmutationcancel-only observation required. These arelatercontracts, doNOTimplement coordinator/framework here. FullSwift/build/welcome+MCP/highReviewQA; no OS side-effect claim from test objects."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "UN1",
+          "description": "Actual UN request/trigger factory, strict route parser and pure inventory/filter fixtures pass with allSwift/build/welcome.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "UN2",
+          "description": "MCP/highReviewQA accept care-only adapter scope and unchanged Trial; no actualpermission/OSdelivery claim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-store.md",
+        "docs/validation/automation/tasks/tester-care-reminder-notifications-controller-candidate.md"
+      ],
+      "candidate_base": "876f8fc892949f13ead31c7f0c2177a4e3794a2f"
+    }
+  ]
+}

@@ -523,3 +523,5 @@
 - R1b2 `7a7a8ef` принят:391Swift/MCP/highReviewQA; durable exact-owner receipts/CAS/disk/retention/purge/forged-sync и ABA проверены только fixtures. Ранний ordinary Personal iphoneos build/signature изefa9ddc PASS ([отчёт](../../docs/validation/tester-iphone-signing-preflight-2026-11-20.md)); без install/UI/OS и безR2/R3. R2a adapter→R2b coordinator→R3 wiring→R4 finalbuild далее; T075/T077/T098 и physical B01–B11 не закрыты.
 
 - R1b2 `7a7a8ef` accepted391Swift/MCP/highReviewQA: real disk/CAS/retention/purge/serverreject, noOS yet. R2a protocol/Systemadapter/requestfactory prep only; coordinator/opt-in/Root/deeplink/device pending, T075/T077/T098 remainopen.
+
+- R2a run01 BLOCKED after2 identical mechanical diffseparator failures; controller exactnormalized2filecandidate requires freshfullread-only candidate_base876f8fc Swift/MCP/149/ReviewQA. No R2a/OS/delivery readiness claim, T075/T077 stayopen.

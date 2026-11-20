@@ -1,6 +1,145 @@
 import XCTest
 import SwiftData
+import UserNotifications
 @testable import Plants
+
+extension CollectionWireTests {
+    private func notificationRequest(_ candidate: CareReminderPlan.Candidate) throws -> UNNotificationRequest {
+        try CareReminderNotificationFactory.request(.init(candidate: candidate, attemptId: operationId), now: receiptNow)
+    }
+
+    @MainActor
+    func testCareUNFactoryUsesRealPlanStableIDsAndMinimalContent() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let rows = [reminderRow(serverPlantId, controls: [reminderControl(1)])]
+        let base = reminderPlan(try reminderState(local, rows: rows)).candidates
+        XCTAssertEqual(base.count, 2)
+        let changed = reminderPlan(try reminderState(local, rows: rows, mode: "english", hour: 15),
+            locale: "en", zone: try XCTUnwrap(TimeZone(identifier: "America/New_York"))).candidates
+        XCTAssertEqual(Set(base.map(\.id)), Set(changed.map(\.id)))
+        for c in base + changed {
+            let request = try notificationRequest(c)
+            XCTAssertEqual(request.identifier, CareReminderNotificationFactory.prefix + c.id)
+            let route = try XCTUnwrap(CareReminderNotificationFactory.parse(
+                identifier: request.identifier, userInfo: request.content.userInfo))
+            XCTAssertEqual(route.candidate, c)
+            XCTAssertEqual(route.attemptId, operationId)
+            let trigger = try XCTUnwrap(request.trigger as? UNCalendarNotificationTrigger)
+            XCTAssertFalse(trigger.repeats)
+            let parts = trigger.dateComponents
+            XCTAssertEqual(parts.calendar?.identifier, .gregorian)
+            XCTAssertEqual(parts.timeZone, TimeZone(secondsFromGMT: 0))
+            XCTAssertEqual(parts.calendar?.date(from: parts), c.absoluteFireDate)
+            XCTAssertEqual([parts.hour, parts.minute, parts.second].compactMap { $0 }.count, 3)
+            XCTAssertEqual(request.content.title, c.locale == "pl" ? "Pielęgnacja roślin" : "Plant care")
+            XCTAssertEqual(request.content.body, c.locale == "pl"
+                ? "Sprawdź zadania pielęgnacji w Narat." : "Check your care tasks in Narat.")
+            XCTAssertNotNil(request.content.sound)
+            XCTAssertEqual(request.content.userInfo.count, 10)
+            XCTAssertTrue(request.content.userInfo.values.allSatisfy { $0 is String })
+            XCTAssertTrue(PropertyListSerialization.propertyList(request.content.userInfo, isValidFor: .binary))
+        }
+    }
+
+    func testCareUNStrictRouteAcceptsPostFireAndRejectsForgedMetadata() throws {
+        let c = try receiptCandidate(occurrence: .routine(ruleId: operationId))
+        let request = try notificationRequest(c)
+        let parse = CareReminderNotificationFactory.parse
+        XCTAssertNotNil(parse(request.identifier, request.content.userInfo))
+        // Parsing has no clock or future guard, including when observed after firing.
+        let observed = c.absoluteFireDate.addingTimeInterval(60)
+        XCTAssertNotNil(CareReminderNotificationFactory.inventory(pending: [],
+            delivered: [(request: request, deliveredAt: observed)]).delivered.first?.route)
+        let mutations: [(String, Any?)] = [
+            ("version", "2"), ("version", true), ("owner", "invalid"),
+            ("owner", otherSyncOwner.uuidString.lowercased()), ("plant", "invalid"),
+            ("occurrence", "care/forged"), ("kind", "unknown"), ("kind", "first-aid"),
+            ("rule", UUID().uuidString.lowercased()), ("attemptId", 1), ("attemptId", "invalid"),
+            ("sourceYMD", "2026-02-30"), ("sourceYMD", "2026-11-26"),
+            ("absoluteFire", "nan"), ("absoluteFire", 123), ("locale", "de"),
+            ("version", nil), ("extra", "unexpected")
+        ]
+        for (key, value) in mutations {
+            var info = request.content.userInfo
+            info["narat.care." + key] = value
+            XCTAssertNil(parse(request.identifier, info), key)
+        }
+        for id in [TrialReminderRequest.prefix + c.id, "foreign", request.identifier + "/forged"] {
+            XCTAssertNil(parse(id, request.content.userInfo))
+        }
+    }
+
+    func testCareUNInventoryRetainsUntrustedOwnItemsAndFiltersDeletion() throws {
+        let c = try receiptCandidate()
+        let valid = try notificationRequest(c)
+        let trigger = try XCTUnwrap(valid.trigger as? UNCalendarNotificationTrigger)
+        var nonUTC = trigger.dateComponents
+        nonUTC.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        var wrongFire = trigger.dateComponents
+        wrongFire.second = 1
+        var partial = DateComponents()
+        partial.hour = 9
+        let badTriggers: [UNNotificationTrigger?] = [
+            UNCalendarNotificationTrigger(dateMatching: trigger.dateComponents, repeats: true),
+            UNCalendarNotificationTrigger(dateMatching: nonUTC, repeats: false),
+            UNCalendarNotificationTrigger(dateMatching: wrongFire, repeats: false),
+            UNCalendarNotificationTrigger(dateMatching: partial, repeats: false),
+            UNTimeIntervalNotificationTrigger(timeInterval: 60, repeats: false), nil
+        ]
+        let untrusted = badTriggers.map {
+            UNNotificationRequest(identifier: valid.identifier, content: valid.content, trigger: $0)
+        }
+        let rawID = CareReminderNotificationFactory.prefix + "malformed"
+        let malformed = UNNotificationRequest(identifier: rawID, content: UNMutableNotificationContent(), trigger: nil)
+        let foreign = [TrialReminderRequest.prefix + "keep", "other.keep"].map {
+            UNNotificationRequest(identifier: $0, content: valid.content, trigger: valid.trigger)
+        }
+        let observed = c.absoluteFireDate.addingTimeInterval(30)
+        let inventory = CareReminderNotificationFactory.inventory(
+            pending: [valid, malformed] + untrusted + foreign,
+            delivered: [(valid, observed), (malformed, observed), (foreign[0], observed)])
+        XCTAssertEqual(inventory.otherPendingCount, 2)
+        XCTAssertEqual(inventory.pending.count, 8)
+        XCTAssertEqual(inventory.pending.compactMap(\.route).count, 1)
+        XCTAssertTrue(inventory.pending.allSatisfy { $0.deliveredAt == nil })
+        XCTAssertEqual(inventory.pending[1].rawIdentifier, rawID)
+        XCTAssertNil(inventory.pending[1].route)
+        XCTAssertTrue(inventory.pending.dropFirst(2).allSatisfy { $0.route == nil })
+        XCTAssertEqual(inventory.delivered.count, 2)
+        XCTAssertEqual(inventory.delivered[0].route?.candidate, c)
+        XCTAssertEqual(inventory.delivered[0].deliveredAt, observed)
+        XCTAssertNil(inventory.delivered[1].route)
+        XCTAssertEqual(CareReminderNotificationFactory.ownIdentifiers(
+            [valid.identifier, foreign[0].identifier, rawID, foreign[1].identifier]), [valid.identifier, rawID])
+        XCTAssertTrue(CareReminderNotificationFactory.inventory(pending: [], delivered: []).delivered.isEmpty)
+    }
+
+    func testCareUNAbsoluteUTCAndInvalidProposals() throws {
+        let c = try receiptCandidate()
+        let original = try notificationRequest(c)
+        let savedZone = NSTimeZone.default
+        defer { NSTimeZone.default = savedZone }
+        NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: "Pacific/Honolulu"))
+        let otherCalendar = Calendar(identifier: .buddhist)
+        let changed = try notificationRequest(c)
+        let parts = try XCTUnwrap((changed.trigger as? UNCalendarNotificationTrigger)?.dateComponents)
+        XCTAssertEqual(parts, (original.trigger as? UNCalendarNotificationTrigger)?.dateComponents)
+        XCTAssertNotEqual(otherCalendar.component(.year, from: c.absoluteFireDate), parts.year)
+        XCTAssertEqual(parts.calendar?.date(from: parts), c.absoluteFireDate)
+        for fire in [c.absoluteFireDate.addingTimeInterval(0.5), receiptNow, receiptNow.addingTimeInterval(-1),
+                     Date(timeIntervalSince1970: .infinity), Date(timeIntervalSince1970: .nan)] {
+            let bad = CareReminderPlan.Candidate(id: c.id, ownerId: c.ownerId, plantId: c.plantId,
+                occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD, absoluteFireDate: fire, locale: c.locale)
+            XCTAssertThrowsError(try notificationRequest(bad))
+        }
+        XCTAssertThrowsError(try notificationRequest(receiptCandidate(id: "forged")))
+        XCTAssertThrowsError(try notificationRequest(receiptCandidate(locale: "de")))
+        XCTAssertThrowsError(try CareReminderNotificationFactory.request(
+            .init(candidate: c, attemptId: operationId), now: Date(timeIntervalSince1970: .nan)))
+    }
+}
 
 extension CollectionWireTests {
     private var receiptNow: Date { SQLTimestamp.date(from: "2026-11-20T00:00:00Z")! }

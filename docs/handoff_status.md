@@ -1,5 +1,23 @@
 # Narat — текущий статус и передача работы
 
+## R2a mechanical candidate: run01 BLOCKED, acceptance required — 20 ноября2026
+
+Run tester-care-reminder-notifications-20261120-01 BLOCKED on2identical
+rawpatches: leading space beforeinterfile diffseparator causedatomicapply
+failure. No sourceapplied/no checks/Review/QA. Controller readallhunks and
+normalized ONLYseparator +recountheaders, verifiedexactbase876f8fc/clean/
+scope/no secrets/applycheck, thenapplied exact2filecandidate. No semantic
+changes, no DeveloperimplementationPASS. Provenance/hash in
+automation/tasks/tester-care-reminder-notifications-controller-candidate.md.
+
+Freshread-only tester-care-reminder-notifications-acceptance base876f8fc
+FULL2source+controllerdiff: actualSwift/MCP/149automation/diff→highReviewQA.
+CandidateNOTaccepted untilactualchecks. No thirdrewrite, oldBLOCKED retained.
+Scope newNotifications187lines+4Unit, no Root/Store/OSpermission/add/runtime
+wiring. R2bcoordinator/R3settings-route/R4device pending, parentcheckboxopen.
+Rootsigningpreflight+ordinarydatedTodaylive remainseparate. Actual84/16
+ordinaryallowed/reset0, same models/900/sharedlease.
+
 ## R1b2 disk принят; R2a UN adapter подготовлен — 20 ноября 2026
 
 Accepted/pushed `7a7a8efc60bff2fb767e7f7af693186d4b46dbb5`, run
