@@ -30,20 +30,26 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
     let version: Int
     let ownerId: UUID
     private(set) var entries: [String: Entry]
+    private(set) var blockedIdentifiers: Set<String>
 
     init(ownerId: UUID) {
         version = 1
         self.ownerId = ownerId
         entries = [:]
+        blockedIdentifiers = []
     }
 
-    private enum CodingKeys: String, CodingKey { case version, ownerId, entries }
+    private enum CodingKeys: String, CodingKey { case version, ownerId, entries, blockedIdentifiers }
     // An array of keyed records allows duplicate identities to be rejected during decoding.
     private struct Record: Codable { let key: String; let entry: Entry }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         version = try values.decode(Int.self, forKey: .version)
         ownerId = try values.decode(UUID.self, forKey: .ownerId)
+        let blocked = try values.contains(.blockedIdentifiers)
+            ? values.decode([String].self, forKey: .blockedIdentifiers) : []
+        blockedIdentifiers = Set(blocked)
+        guard blockedIdentifiers.count == blocked.count else { throw Invalid.metadata }
         entries = [:]
         for record in try values.decode([Record].self, forKey: .entries) {
             guard record.key == record.entry.id, entries[record.key] == nil else { throw Invalid.metadata }
@@ -57,6 +63,7 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(version, forKey: .version)
         try values.encode(ownerId, forKey: .ownerId)
+        try values.encode(blockedIdentifiers.sorted(), forKey: .blockedIdentifiers)
         try values.encode(entries.keys.sorted().compactMap { key in
             entries[key].map { Record(key: key, entry: $0) }
         }, forKey: .entries)
@@ -65,6 +72,8 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
     func validate(expectedOwner: UUID) throws {
         guard version == 1 else { throw Invalid.metadata }
         guard ownerId == expectedOwner else { throw Invalid.owner }
+        guard blockedIdentifiers.allSatisfy({ Self.canonicalOwner(of: $0) == ownerId })
+        else { throw Invalid.metadata }
         for (key, entry) in entries {
             guard key == entry.id, entry.ownerId == ownerId,
                   entry.id == CareReminderPlan.identity(ownerId: ownerId, plantId: entry.plantId,
@@ -90,6 +99,7 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
     func validateReplacement(of previous: Self) throws {
         try previous.validate(expectedOwner: ownerId)
         try validate(expectedOwner: previous.ownerId)
+        guard blockedIdentifiers.isSuperset(of: previous.blockedIdentifiers) else { throw Invalid.metadata }
         for (id, new) in entries where previous.entries[id] == nil {
             guard [.prepared, .spent, .uncertain].contains(new.phase),
                   new.phase != .prepared || (new.cancellation == nil
@@ -134,6 +144,7 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
               candidate.id == CareReminderPlan.identity(ownerId: ownerId, plantId: candidate.plantId,
                   occurrence: candidate.occurrence, sourceDueYMD: candidate.sourceDueYMD)
         else { throw Invalid.candidate }
+        if blockedIdentifiers.contains(candidate.id) { return .blocked }
         if let old = entries[candidate.id] {
             try observe(id: old.id, now: now)
             guard let current = entries[old.id] else { throw Invalid.metadata }
@@ -214,6 +225,26 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
             occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD,
             originalFireDate: c.absoluteFireDate, currentFireDate: c.absoluteFireDate,
             attemptId: route.attemptId, phase: delivered ? .spent : .uncertain, cancellation: nil)
+    }
+
+    /// Canonical raw identity only; this never manufactures scheduling metadata.
+    static func canonicalOwner(of id: String) -> UUID? {
+        let parts = id.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 5 || parts.count == 6, parts[0] == "care",
+              let owner = UUID(uuidString: parts[1]), owner.uuidString.lowercased() == parts[1],
+              let plant = UUID(uuidString: parts[2]), plant.uuidString.lowercased() == parts[2],
+              let occurrence = UUID(uuidString: parts[4]), occurrence.uuidString.lowercased() == parts[4]
+        else { return nil }
+        if parts[3] == "first-aid", parts.count == 5 { return owner }
+        if parts[3] == "routine", parts.count == 6, SQLCalendarDay.date(from: parts[5]) != nil {
+            return owner
+        }
+        return nil
+    }
+
+    mutating func blockIdentifier(_ id: String) throws {
+        guard Self.canonicalOwner(of: id) == ownerId else { throw Invalid.metadata }
+        blockedIdentifiers.insert(id)
     }
 
     private static func finite(_ date: Date) -> Bool { date.timeIntervalSinceReferenceDate.isFinite }

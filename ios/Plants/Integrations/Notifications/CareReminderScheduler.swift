@@ -295,6 +295,10 @@ final class CareReminderScheduler: ObservableObject {
                             // Metadata grants no add authority. Persist a conservative identity blocker
                             // BEFORE deleting the untrusted raw request (including skipped local days).
                             try ledger.recordUnknown(.init(candidate: candidate, attemptId: UUID()), delivered: false)
+                        } else if CareReminderReceipts.canonicalOwner(of: id) == input.lease.ownerId {
+                            // Eligibility may temporarily hide a canonical occurrence. Retain its
+                            // identity without inventing due/fire metadata or future add authority.
+                            try ledger.blockIdentifier(id)
                         }
                     }
                 }
@@ -371,10 +375,12 @@ final class CareReminderScheduler: ObservableObject {
                 return e.phase == .armed && e.currentFireDate > input.clock()
                     && items.count == 1 && exact(items[0], e)
             }.count
-            let blockers = entries.filter { e in
+            let blockers = Set(entries.filter { e in
                 (currentIDs?.contains(e.id) ?? true) && (e.phase == .uncertain || e.phase == .prepared
                     || (e.phase == .armed && !pending(e.id).contains { exact($0, e) }))
-            }.count
+            }.map { $0.id }).union((token?.receipts.blockedIdentifiers ?? []).filter {
+                currentIDs?.contains($0) == true
+            }).count
             return Result(confirmedPendingCount: confirmed, omittedCount: omitted,
                 unconfirmedBlockers: max(blockers, failed ? 1 : 0), failed: failed, deferred: deferred)
         }
@@ -386,7 +392,18 @@ final class CareReminderScheduler: ObservableObject {
                 }
                 let authorization = try await checked { try await notifications.authorization() }
                 try await readInventory()
-                // Presentation unknown is NOT logout or permission to cancel.
+                // A cold known owner may inherit another owner's OS remnants. Only strict raw
+                // identities establish foreign ownership; never consult a foreign ledger/payload.
+                let foreignRaw = Set((inventory.pending + inventory.delivered).compactMap { item -> String? in
+                    let raw = item.rawIdentifier
+                    guard raw.hasPrefix(CareReminderNotificationFactory.prefix),
+                          let owner = CareReminderReceipts.canonicalOwner(of:
+                            String(raw.dropFirst(CareReminderNotificationFactory.prefix.count))),
+                          owner != input.lease.ownerId else { return nil }
+                    return raw
+                })
+                for raw in foreignRaw.sorted() { try await remove(raw, entry: nil) }
+                // Presentation unknown is NOT logout or permission to cancel same-owner requests.
                 guard let state = input.state else { return result(failed: false, deferred: true) }
                 guard state.ownerId == input.lease.ownerId else { throw Failure.scope }
                 let plan = CareReminderPlan(expectedOwnerId: input.lease.ownerId, state: state,
@@ -413,6 +430,7 @@ final class CareReminderScheduler: ObservableObject {
                 if untrustedInventory { throw Failure.inventory }
                 if enabled && input.allowNewRequests {
                     let fresh = plan.candidates.filter { c in
+                        guard token?.receipts.blockedIdentifiers.contains(c.id) != true else { return false }
                         guard let e = token?.receipts.entries[c.id] else { return true }
                         return e.phase == .cancelledBeforeFire
                     }

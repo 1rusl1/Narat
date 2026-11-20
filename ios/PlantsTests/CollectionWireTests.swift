@@ -12373,3 +12373,158 @@ extension CollectionWireTests {
         XCTAssertFalse(skipped.candidates.contains { $0.id == candidate.id })
     }
 }
+
+extension CollectionWireTests {
+    func testReminderRawIdentityBlocksAreStrictMonotonicAndV1Compatible() throws {
+        let firstAid = try receiptCandidate()
+        let routine = try receiptCandidate(occurrence: .routine(ruleId: operationId))
+        var ledger = CareReminderReceipts(ownerId: syncOwner)
+        for candidate in [routine, firstAid] {
+            try ledger.blockIdentifier(candidate.id)
+            try ledger.blockIdentifier(candidate.id)
+        }
+        XCTAssertTrue(ledger.entries.isEmpty)
+        XCTAssertEqual(try coldReceipts(ledger), ledger)
+        for candidate in [firstAid, routine] {
+            XCTAssertEqual(try ledger.prepare(candidate, now: receiptNow), .blocked)
+        }
+        let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(ledger)) as? [String: Any])
+        XCTAssertEqual(wire["blockedIdentifiers"] as? [String], [firstAid.id, routine.id].sorted())
+        let foreign = try receiptCandidate(owner: otherSyncOwner).id
+        let upperUUID = "care/\(syncOwner.uuidString.lowercased())/ABCDEFAB-1234-4000-8000-000000000001/first-aid/\(operationId.uuidString.lowercased())"
+        for ids in [[firstAid.id, firstAid.id], [foreign], ["care/malformed"], [upperUUID],
+                    [routine.id + "/extra"], [firstAid.id + "/2026-11-25"],
+                    [routine.id.replacingOccurrences(of: "2026-11-25", with: "2026-02-30")]] {
+            var corrupt = wire
+            corrupt["blockedIdentifiers"] = ids
+            XCTAssertThrowsError(try JSONDecoder().decode(CareReminderReceipts.self,
+                from: JSONSerialization.data(withJSONObject: corrupt)))
+        }
+        XCTAssertThrowsError(try ledger.blockIdentifier(foreign))
+        var dropped = wire
+        dropped.removeValue(forKey: "blockedIdentifiers")
+        let oldEmpty = try JSONDecoder().decode(CareReminderReceipts.self,
+            from: JSONSerialization.data(withJSONObject: dropped))
+        XCTAssertTrue(oldEmpty.blockedIdentifiers.isEmpty)
+        XCTAssertThrowsError(try oldEmpty.validateReplacement(of: ledger))
+        var oldLedger = CareReminderReceipts(ownerId: syncOwner)
+        _ = try oldLedger.prepare(firstAid, now: receiptNow)
+        var oldWire = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(oldLedger)) as? [String: Any])
+        oldWire.removeValue(forKey: "blockedIdentifiers")
+        XCTAssertEqual(try JSONDecoder().decode(CareReminderReceipts.self,
+            from: JSONSerialization.data(withJSONObject: oldWire)), oldLedger)
+    }
+
+    @MainActor
+    func testReminderColdKnownOwnerCleansOnlyForeignRawBeforeUnknownDefer() async throws {
+        let (url, store, authority, lease, _) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let own = try receiptCandidate()
+        let foreign = try receiptCandidate(owner: otherSyncOwner)
+        func item(_ candidate: CareReminderPlan.Candidate) -> CareReminderNotificationInventory.Item {
+            .init(rawIdentifier: CareReminderNotificationFactory.prefix + candidate.id,
+                route: .init(candidate: candidate, attemptId: UUID()), deliveredAt: nil)
+        }
+        let ownItem = item(own)
+        let foreignItem = item(foreign)
+        let trial = CareReminderNotificationInventory.Item(rawIdentifier: "narat.trial-reminder.v1.test",
+            route: nil, deliveredAt: nil)
+        let other = CareReminderNotificationInventory.Item(rawIdentifier: "other.request", route: nil, deliveredAt: nil)
+        let opaque = CareReminderNotificationInventory.Item(
+            rawIdentifier: CareReminderNotificationFactory.prefix + "opaque",
+            route: foreignItem.route, deliveredAt: nil)
+        let fake = FakeCareReminderNotifications()
+        fake.pending = [foreignItem, ownItem, trial, other, opaque]
+        fake.delivered = fake.pending
+        let worker = CareReminderScheduler(notifications: fake)
+        await worker.waitUntilIdle()
+        XCTAssertEqual(fake.inventoryReads, 0)
+        XCTAssertTrue(fake.removed.isEmpty)
+        worker.update(workerInput(store, authority, lease, nil, fake))
+        await worker.waitUntilIdle()
+        XCTAssertEqual(worker.result?.failed, false)
+        XCTAssertEqual(worker.result?.deferred, true)
+        XCTAssertEqual(fake.pending, [ownItem, trial, other, opaque])
+        XCTAssertEqual(fake.delivered, [ownItem, trial, other, opaque])
+        XCTAssertEqual(fake.removed, [foreignItem.rawIdentifier, foreignItem.rawIdentifier])
+        XCTAssertTrue(fake.adds.isEmpty)
+        XCTAssertEqual(fake.permissionRequests, 0)
+        authority.bind(try profileSession(ownerId: otherSyncOwner))
+        let foreignLease = try authority.capture(ownerId: otherSyncOwner)
+        let foreignLedger = try await store.readCareReminderReceipts(context: foreignLease, authority: authority)
+        XCTAssertNil(foreignLedger)
+    }
+
+    @MainActor
+    func testReminderSuppressedRawIdentitiesSurviveDiskRestartWithoutRearming() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let (authority, lease) = try overviewBinding()
+        let state: CareOverviewViewState
+        let suppressed: CareOverviewViewState
+        let removed: CareOverviewViewState
+        let ids: Set<String>
+        let fake = FakeCareReminderNotifications()
+        do {
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId])
+            var page = overviewPage([overviewRow(serverPlantId, dated: true, controls: [overviewControl()])])
+            page["verified_access_until"] = NSNull()
+            let overviewToken = try await store.beginCareOverviewRead(locale: "pl", context: lease, authority: authority)
+            try await store.finishCareOverviewRead(overviewToken, snapshot: overviewSnapshot([page]), authority: authority)
+            let local = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+            let rows = [reminderRow(serverPlantId, controls: [reminderControl(1)])]
+            state = try reminderState(local, rows: rows)
+            suppressed = try reminderState(local, rows: rows, mode: "profile.update")
+            removed = try reminderState(local, rows: [])
+            ids = reminderPlan(state).currentOccurrenceIDs
+            XCTAssertEqual(ids.count, 2) // Routine and first-aid raw grammars.
+            XCTAssertTrue(suppressed.profileHourPending)
+            XCTAssertTrue(reminderPlan(suppressed).currentOccurrences.isEmpty)
+            fake.pending = ids.sorted().map {
+                .init(rawIdentifier: CareReminderNotificationFactory.prefix + $0, route: nil, deliveredAt: nil)
+            }
+            fake.delivered = fake.pending
+            _ = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+            let readOnly = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+            let failed = await reminderPass(readOnly, authority, lease, suppressed, fake)
+            XCTAssertTrue(failed.failed)
+            XCTAssertEqual(fake.pending.count, 2)
+            XCTAssertEqual(fake.delivered.count, 2)
+            XCTAssertTrue(fake.removed.isEmpty)
+            XCTAssertTrue(fake.adds.isEmpty)
+            let unchanged = try await store.readCareReminderReceipts(context: lease, authority: authority)
+            XCTAssertTrue(try XCTUnwrap(unchanged).receipts.blockedIdentifiers.isEmpty)
+            let cleaned = await reminderPass(store, authority, lease, suppressed, fake)
+            XCTAssertTrue(cleaned.failed) // Untrusted inventory was cleaned conservatively.
+            XCTAssertTrue(fake.pending.isEmpty)
+            XCTAssertTrue(fake.delivered.isEmpty)
+            XCTAssertTrue(fake.adds.isEmpty)
+        }
+        // Reopen the actual disk after releasing the original writable Store.
+        let cold = LocalStore(modelContainer: try diskContainer(url))
+        let read = try await cold.readCareReminderReceipts(context: lease, authority: authority)
+        let token = try XCTUnwrap(read)
+        let decoded = try coldReceipts(token.receipts)
+        XCTAssertEqual(decoded.blockedIdentifiers, ids)
+        XCTAssertTrue(decoded.entries.isEmpty) // No invented sourceDueYMD/fireDate.
+        await receiptReject {
+            _ = try await cold.commitCareReminderReceipts(CareReminderReceipts(ownerId: lease.ownerId),
+                replacing: token, authority: authority)
+        }
+        let recovered = await reminderPass(cold, authority, lease, state, fake)
+        XCTAssertFalse(recovered.failed)
+        XCTAssertEqual(recovered.unconfirmedBlockers, 2)
+        XCTAssertEqual(recovered.omittedCount, 0)
+        let optedOut = await reminderPass(cold, authority, lease, state, fake, optedIn: false)
+        XCTAssertFalse(optedOut.failed)
+        let noTask = await reminderPass(cold, authority, lease, removed, fake)
+        XCTAssertFalse(noTask.failed)
+        XCTAssertEqual(noTask.unconfirmedBlockers, 0)
+        try await overviewCanonical(cold, authority: authority, lease: lease, ids: [serverPlantId], fullRefresh: true)
+        let retained = try await cold.readCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertEqual(retained?.receipts.blockedIdentifiers, ids)
+        XCTAssertTrue(fake.adds.isEmpty)
+        XCTAssertEqual(fake.permissionRequests, 0)
+    }
+}
