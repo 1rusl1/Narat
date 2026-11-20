@@ -5396,9 +5396,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-reminder-lifecycle-core: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 769.63 с, проверки — 312.82 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-reminder-lifecycle-core](validation/automation/tasks/tester-care-reminder-lifecycle-core.md).
+tester-care-reminder-root-acceptance: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — reviewer 1, qa 1. Модели — 258.43 с, проверки — 947.79 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-reminder-root-acceptance](validation/automation/tasks/tester-care-reminder-root-acceptance.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
