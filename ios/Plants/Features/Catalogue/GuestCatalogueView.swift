@@ -1253,9 +1253,11 @@ private struct CatalogueCollectionCardView: View {
     @State private var basicCarePending = false
     @State private var enablingBasicCare = false
     @State private var basicCareEnableFailed = false
+    @State private var basicCareReadFailed = false
     @State private var adviceRefreshRead: Int?
     @State private var refreshingAdvice = false
     @State private var adviceRefreshFailed = false
+    @State private var adviceRefreshReadFailed = false
     @State private var attempt = 0
     @State private var adviceRequest = 0
     @State private var adviceResponse: Int?
@@ -2342,8 +2344,9 @@ private struct CatalogueCollectionCardView: View {
             && adviceResponse == adviceRequest && !adviceFailed
             && correction == .ready && !historyFailed && !routineFailed && !routineBusy
             && !checkingAdviceRefresh && pendingAdviceRefresh == nil
-            && !refreshingAdvice && !adviceRefreshFailed
-            && basicCareEnabled != nil && !basicCarePending && !enablingBasicCare && !basicCareEnableFailed
+            && !refreshingAdvice && !adviceRefreshFailed && !adviceRefreshReadFailed
+            && basicCareEnabled != nil && !basicCarePending && !enablingBasicCare
+            && !basicCareEnableFailed && !basicCareReadFailed
     }
 
     private var routineBusy: Bool {
@@ -2571,18 +2574,20 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func loadBasicCareState() async {
-        guard !enablingBasicCare, let repository = connection.repository else { return }
+        guard !enablingBasicCare else { return }
+        basicCareReadFailed = true
         basicCareEnabled = nil
+        guard let repository = connection.repository else { return }
         do {
             let lease = try await connection.collectionLease(expected: expected)
             let state = try await repository.basicCareEnableState(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected, !enablingBasicCare else { return }
             basicCareEnabled = state.enabled
             basicCarePending = state.pending
-            basicCareEnableFailed = false
+            basicCareReadFailed = false
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
-            basicCareEnableFailed = true
+            basicCareReadFailed = true
         }
     }
 
@@ -2631,14 +2636,17 @@ private struct CatalogueCollectionCardView: View {
         }
         if adviceRefreshFailed {
             Text("Couldn’t update the care recommendation.")
-        } else if let request = adviceRefreshRead, request == adviceResponse, request == adviceRequest,
+        } else if !checkingAdviceRefresh, !adviceRefreshReadFailed, !basicCareReadFailed,
+                  let request = adviceRefreshRead, request == adviceResponse, request == adviceRequest,
                   advice?.nextCheck == nil {
             Text("No next soil check is available yet.")
         }
     }
 
     private func loadPendingAdviceRefresh() async {
-        guard !refreshingAdvice, let repository = connection.repository else { return }
+        guard !refreshingAdvice else { return }
+        adviceRefreshReadFailed = true
+        guard let repository = connection.repository else { return }
         checkingAdviceRefresh = true
         defer { checkingAdviceRefresh = false }
         do {
@@ -2646,10 +2654,10 @@ private struct CatalogueCollectionCardView: View {
             let pending = try await repository.pendingCareRecommendationRefresh(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected, !refreshingAdvice else { return }
             pendingAdviceRefresh = pending
-            adviceRefreshFailed = false
+            adviceRefreshReadFailed = false
         } catch {
             guard !Task.isCancelled, connection.snapshot == expected, !refreshingAdvice else { return }
-            adviceRefreshFailed = true
+            adviceRefreshReadFailed = true
         }
     }
 
