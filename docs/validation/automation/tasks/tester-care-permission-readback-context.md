@@ -7,3 +7,5 @@ Test1: after prompt first readND, Pass read authorized; same pass arms one occur
 Required fresh fullSwift425/build/welcome +diff, highReviewQA. MCP/UI/backend omitted because product unchanged. Same routing/budgets/900s. Freshusage before Review/QA; hard95/noreset, no new Developer. Settings/delegate/actual closed-app delivery and parent tasks stay open.
 
 Initial preflight exit2 before checks/roles: criterion marked fixture but existing ios-tests evidence mode is local. Manifest corrected to local; fake-OS limitation unchanged, no test/product change.
+
+Run01 BLOCKED actual ios-tests compile FAIL19.080s: new tests referenced private Scheduler.plan. After terminal child, controller replaced exactly two references with existing reminderPlan(input.state); no production visibility/helper change. New tests also avoid implementation-mirroring total authorization-read counts: retain programmed post-prompt sequence and captured no-trigger read baseline, plus observable identity/prompt/add/status results. All earlier423 assertions untouched. Fresh run02 required; no Developer call.
