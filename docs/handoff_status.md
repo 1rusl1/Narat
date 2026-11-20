@@ -1,5 +1,36 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: B1 принят; B2a coherent local presentation — 20 ноября 2026
+
+B1 accepted/pushed `d2911e78e2d10478cb9c7cbf9fc84690bf381ee3`.
+Fresh `tester-care-overview-cache-store-acceptance-20261120-01` COMPLETED:
+339Swift (336XCTest+3),149automation,build/welcome/MCP24.6s PASS;
+high-risk Reviewer1/QA1 PASS. Семь новых actualdisk tests и обе прежние
+регрессии count пройдены. Контроллерский guard создаёт cache только
+первым beginRead; старые assertions не ослаблены. Старый BLOCKED сохранён.
+Это только persistence primitives; Repo/Today/notifications ещё не готовы.
+Отчёт `docs/validation/automation/tasks/tester-care-overview-cache-store-acceptance.md`.
+
+Следующий пакет намеренно сужен: B2a только LocalStore.swift и existing
+CollectionWireTests.swift — один ModelContext для cachedsnapshot+canonical
+cards/profile/entitlement+pending/rawcare metadata с actualgenerationUUID;
+полное равенство activecanonicalplantIDset при публикации (включая empty/subset
+негативы). Unknown/corruptentitlement не становитсяFree. Чтение без сети,
+без outbox mutation/Root/UI/schema/cursor изменений, с сохранениемlazyguard.
+Private coherentreader можно переиспользовать в finish до save, чтобы
+будущий Repo не смешивал эпохи отдельными await после публикации.
+
+Manifest `tools/automation/tasks.tester-care-overview-local-presentation.json`,
+actual run `tester-care-overview-local-presentation-20261120-01`, config ignored
+`docs/validation/automation/runs/tester-care-overview-native.config.json`.
+Approved mediumDeveloper/highReviewQA/900s, realSwift/MCP и sharedresource,
+временный ACcaffeinate lifetime. Далее B2b Repo boundedalignment/explicitlocale/
+pendingoverlay+local enqueuesignal, затем CToday. Без user confirmations.
+
+NativeAf612 и backend19023 live приняты отдельно; оба в текущей истории.
+Все родительские T066/T068/T075/T077/T098/B01–B11 остаются open. Не расширяем
+рекомендации, покупки, AI/данные или server deployment этим nativeпакетом.
+
 ## Этап 2: B1 candidate, tiny lazy-cache guard и свежая приёмка — 20 ноября 2026
 
 B1 run `tester-care-overview-cache-store-20261120-01` сохранил фактический

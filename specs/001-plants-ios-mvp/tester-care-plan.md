@@ -126,3 +126,7 @@ Native A принят `f6128f2` (332Swift/welcome/MCP/149automation/freshReviewQ
 только typed complete reader. Далее B1 Store wrapper/invalidation/token,
 B2 Repo/explicitlocale/pendingoverlay, затем C Today UI. Backend live read-only
 принят отдельно в `19023dd`, dated/frontend/iPhone остаются открытыми.
+
+B1 принят `d2911e7` (339Swift/149automation/welcome/MCP/highReviewQA), только
+durable cache primitives. Далее B2a coherent Store presentation/fullset,
+B2b Repo/explicitlocale/pendingoverlay+signal, затем CToday UI.

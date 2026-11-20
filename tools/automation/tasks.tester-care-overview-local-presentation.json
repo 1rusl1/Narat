@@ -1,0 +1,56 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-overview-local-presentation",
+      "description": "Read cache, canonical plants/profile and pending intentions coherently in one local epoch; enforce complete plant set on publication.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "docs/validation/automation/tasks/tester-care-overview-cache-store-acceptance.md",
+        "docs/validation/automation/runs/care-overview-swift-map.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "B1 accepted/pushed d2911e78e2d10478cb9c7cbf9fc84690bf381ee3:339Swift(336XCTest+3),149automation,build/welcome/MCP,highReview1QA1 PASS. NativeA and backend read-onlylive separatelyaccepted. This is B2a ONLY coherent LOCAL presentation/fullcanonicalset boundary. Exactly2existing writablefiles, noRepo/API/App/UI/notification/network/server/outboxmutation orModelschema/synccursor/whitelist changes. B2b laterwires explicitlocale network/Repo/localsignal; CToday follows. Do notrewrite acceptedB1 or recreate639lines.",
+        "Add a small Sendable local presentation/data snapshot from ONE fresh ModelContext and ONE originalpermanentSDKlease/authority criticalsection, with noawaitinside. It must include owner,actual canonicalgenerationUUID (notonlybool),validatedcachedFULLsnapshot+locale/fetchedAt,currentactive CatalogueCardSummary list,orderedownerpendingOutboxEntrySnapshot list,currentcanonicalprofile+entitlement and explicitcanonical-access-known flag,plus relevantcanonicalcare-row identity/payload/updatedAtRAW/deletedAt neededforfutureknownchange overlay. Do NOT separately awaitreadCareOverview/cards/profile/outbox or read each inindependentcontexts. Factor smallprivate in-context readhelpers andpreserve existingpublic methods semantics. FutureC mustnottrust oldboolgenmatches acrossawaits.",
+        "Profile/entitlement decoding MUST distinguish trueknown absence from unknown/corrupt retainedrow. Missingrawcanonicalcheckpoint/profile or malformedretainedentitlement sets canonicalAccessKnown=false (or typedunknown), never nil==Free. Preserve profileconfirmedhour and orderedpending profile.update separately; nooptimisticunconfirmedhour. Keep entitlementstate/verifiedAccessUntil authority unchanged and returnmetadata only, no newbilling/expiry policy. No defaults that silentlyresume automation.",
+        "Extend requireCareOverviewAlignment atomically tocompare the COMPLETE set ofactivecanonicalplantIDs with COMPLETE snapshotplantIDs, with existingid/care_revision andrawcheckpointceiling checks. Known2plants +empty/subset/superset response is needsCanonicalSync and cannotreplace lastsnapshot orbecomeNoSchedule. Legitimatelyemptycanonicalowner+emptycomplete snapshot remainsvalid. Useexisting CatalogueCardSummary validation andowner-boundrows; no HTTPN+1 orderivedcanonicalinserts. Do NOT require ownerwatermark==syncupperbound; <= andcurrentepoch remainintended.",
+        "Pure localpresentationread must retainoldcoherentsnapshot as cached/stale when genmismatches, noerase/fakeempty. Read pendingfacts/delete/edit/profilehourfromsamecontext andprovide enough currentcare-change metadata (rawmicrosecondstimestamps, include relevanttombstones) to suppressknownstale occurrences inB2b WITHOUT calculatinganynew date. No rawcompletedcare_tasks turnedintofuture tasks, no intervalarithmetic. Snapshotdates/source/rule/controlidentity stay unchanged. Read doesnotmaterialize absentreservedwrapper; preserveB1lazyguard andold countassertions.",
+        "Provide a private same-context presentationreader reusable inside successfulB1publication so B2b canobtain committedsnapshot+canonical+pending underoneepoch, ratherthan finish→separateawaitmix. A minimal @discardableResult return of coherentpresentation fromfinishCareOverviewRead isallowed if oldcallers/tests remainvalid andbodyiscomputed inSAMEdiskcontext beforeonesave/returnedonlyaftersuccess; no secondcache,SDKrebind,actorconversion ornewqueue. Originallease/latestrequest/generation/rollback/cancelguards remainidentical. Cachedread itselfneverclaims networkfreshness/OSauthorization orcareactionconfirmed.",
+        "Add compact meaningfultests usingacceptedB1/Ahelpers andcorrect @MainActor helperisolation fromthe start. Required: coherentcache+canonicalname/revision/profile/pending+actualgen aftersamecareRevision canonicalchange; wholecanonicalset empty/subset/superset failures preserveoldbytes/cursor and trueemptyownerworks; pendingplantdelete/edit/manualcare andprofilehour remainowned/ordered,foreignownerexcluded; malformed/missingprofile/retainedentitlement yieldsunknownnotFree whilecache retained; purelocalread beforefirstoverview createsnorow anddoesnotmovecursor; originalleaseABA/cancel stillfails. Reusehelpers/groupcases, do notweakenoldasserts oraddglobaluncheckedSendable. FullSwift/MCP, fixturesonly. No UI/live100%claim."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "OVLOCAL1",
+          "description": "FullSwift tests prove coherentowner dataset,completeplant-set guard,unknown-access separation and no read/cursor mutations whileacceptedB1disk andoldregressionsremainpassing.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "OVLOCAL2",
+          "description": "Build/welcome/MCP pass; same-context data fencing independentlyreviewed; network/Repo/UI explicitlynotclaimed.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-overview-cache-store-acceptance.md"
+      ]
+    }
+  ]
+}
