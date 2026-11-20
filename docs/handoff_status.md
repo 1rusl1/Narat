@@ -1,5 +1,35 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: B2a принят; следующий B2b Repo/network — 20 ноября 2026
+
+Accepted/pushed B2a `b98f7068021e0ae0ca261be98880748d7bd071b4`.
+Run `tester-care-overview-local-presentation-20261120-01` COMPLETED с первого
+Developer1/Reviewer1/QA1:343Swift (340XCTest+3),build/welcome/MCP20.3/diff PASS.
+LocalStore.swift/CollectionWireTests.swift (+333/-33): cache+canonicalcards+
+profile/access-known+pending/care metadata иactualUUID однойэпохи/ModelContext;
+finish возвращает coherentpresentation доsave/толькопослеуспеха. FullactiveIDset
+равенsnapshot припубликации; empty/subset/superset негативы проверены.
+Это data-only; сеть/Repo/Today ещё не подключены. Отчёт
+`docs/validation/automation/tasks/tester-care-overview-local-presentation.md`.
+
+Следующий actual B2b `tester-care-overview-repository-20261120-01`, manifest
+`tools/automation/tasks.tester-care-overview-repository.json`: Repo boundedrefresh
+с однимcanonicalalign/новымHTTP, explicitcapturedlocale APIinput иsanitized
+UIprojection. Только4existing files (Repo/APIClient/Store/Unit), безRoot/UI/OS/
+server/outboxmutation. Localenqueuesignal отдельным короткимпакетомдоC/reminders.
+
+Критический coldcase включён: knownahead/setmismatch или401/403 должны
+persistently stale/readonly пометитьСУЩЕСТВУЮЩИЙwrapper подoriginallease/latest
+token ДО неуспешногоsync; lastsnapshotJSON сохраняется, послеcold не оживает
+поoldgenmatches. Optionalreason безschema/новойqueue, clearтолькоприnewvalid
+alignedpublication. ОбычнаяURLError невыдумываетdenial/empty. Pending/claimproof/
+JPEG/rawerror/careJSON не переходятвUI DTO; толькоsafeIDs/status/derivedflags.
+
+B1d291/NativeAf612/backend19023 остаются принятыми; fullToday, notifications,
+T066/T068/T075/T077/T098/B01–B11 open. Approvedrouting/budgets900s, sharedSIMlock,
+временныйACcaffeinate. Actualusagepreflight68%used/32%remaining,ordinaryAllowed,
+reset неиспользован. РесурсныеopaqueIDs невыводились.
+
 ## Этап 2: B1 принят; B2a coherent local presentation — 20 ноября 2026
 
 B1 accepted/pushed `d2911e78e2d10478cb9c7cbf9fc84690bf381ee3`.

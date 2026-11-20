@@ -130,3 +130,7 @@ B2 Repo/explicitlocale/pendingoverlay, затем C Today UI. Backend live read-
 B1 принят `d2911e7` (339Swift/149automation/welcome/MCP/highReviewQA), только
 durable cache primitives. Далее B2a coherent Store presentation/fullset,
 B2b Repo/explicitlocale/pendingoverlay+signal, затем CToday UI.
+
+B2a принят `b98f706` (343Swift/welcome/MCP/ReviewQA): coherent Store
+presentation/full-set guard. Далее B2b bounded Repo refresh/explicitlocale/
+knowninvalid cold guard, затем localintent signal и CToday UI.

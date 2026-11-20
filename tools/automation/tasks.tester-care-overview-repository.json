@@ -1,0 +1,61 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-overview-repository",
+      "description": "Read and refresh complete owner overview through existing repository with bounded alignment, durable known-invalid cache and safe presentation.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "docs/validation/automation/tasks/tester-care-overview-local-presentation.md",
+        "docs/validation/automation/runs/care-overview-repo-next-contract.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md"
+      ],
+      "write_files": [
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "After accepted B2a b98f7068021e0ae0ca261be98880748d7bd071b4:343Swift/build/welcome/MCP/highReviewQA PASS. B2b ONLY repository complete-read orchestration + safe sanitized presentation mapping +tiny API explicitlocale +existingwrapper known-invalid persistence. No Root/Guest/UI/OSnotifications/localenqueue signal/schema/queue/server/content/billing/AI/command-drain edits. Exactly4existing writablefiles. Localenqueue signal is separatelyscheduled beforeC/reminders; do not bloat thispacket. Repo remains Sendable STRUCT, notactor/newserviceframework.",
+        "Add coherent cached/read and bounded refresh APIs to CollectionRepository using accepted ONE-context LocalCareOverviewPresentation. Use successful store.finishCareOverviewRead return directly: it already captures snapshot/cards/profile/entitlement/pending/careRows/actualgeneration atomically. Do NOT separately awaitcache/cards/profile/outbox or invoke collectionCards(context:) (networkfullRefresh invalidatescache andcausesloops). A returned view state is READ result, nevercareactionconfirmation ornotificationpermission.",
+        "Fix locale race by allowing an explicit SupportedLocale argument to fetchCareOverview while retaining currentdefault foroldcallers. Capture requestedlocale once, pass SAMEvalue to Store begin token and everyHTTPpage; no guessing actor.clientLocale via separateawait orafterresponse. Do not change existing fetchCareRecommendation hardcoded.en inthisslice oroldAvalidators. One originalpermanentSDKlease throughout allawaits/finalreturn, no rebind/newAPIclient/session/engine. Cancellation/ABA/superseded must not fallbackotherowner orclearnewerrequest.",
+        "Bounded refresh: begin originaltoken -> complete fetch -> finishAndPresentation. ONLY typed needsCanonicalSync may cause ONE existing syncEngine.performFullRefresh(context:) (read/sync,NOdrain/commands), then NEW begin token +NEW completeHTTPread. Neverrebase oldHTTP/token to newgen, never retryuntilsuccess. Atmost2 completeHTTP reads and1align. Secondmismatch/error -> oldcached readonly/error, neverempty/NoSchedule orpartialpublish. Useexisting clock injection fordynamicexpiry andvalidate authority afterawait.",
+        "CRITICAL persisted cold case: when ahead/setmismatch rejected andalignthenfails, B1rollbackleavesoldgenmatches. Add a small OPTIONAL known-invalid/revalidationreason to SAMEversionedwrapper and exposeit in localpresentation. Beforeattemptalign, persiststale/rotategen/clearrequest under ORIGINALlease +matchinglatesttoken/gen, retaining lastsnapshotJSON/locale/fetchedAt. Ifoldtoken superseded do notinvalidatecurrentwork. Preserve reason across begin/canonicalinvalidations/errors; clear ONLYafter successfulnewalignedcompletepublication. Diskreopen mustremainreadonly. No session/bearer/rawerror persisted; backward oldwrapper missingoptionalfield mustdecode.",
+        "Explicit API401/403 isknownauthorizationdenial and mustnot beordinaryofflinefreshcache. Markmatchingoriginalread known-denied/stale durably, keep lastsnapshotbytes, expose typedread-only/unavailable state. Scopeinvalid/ABA/cancel throws, neverrebinds. Ordinary URLError/5xx/malformedpage withoutknownremotechange mayretain ordinarycached data +error; failureisnotempty. Preserve latest-request fencing: oldfailure/abandon cannotclearnewertoken, oldowner cannotwrite currentowner.",
+        "Expose minimal Sendable UI/domain projection forC: owner/locale/actualepoch/cacheage+origin/errorstate,currentcanonicalcards,serverdatedroutine/controldata andsafeeligibility flags. Strip OutboxEntrySnapshot.payloadJSON,claimproof,JPEG,rawerror and rawcanonicalcareJSON from this UI DTO. Pendingsummary onlycommand/plant/operationUUID/status; IDsinternal,no productUUIDtext. Do not expose LocalCareOverviewPresentation rawpending/careRows directlyasTodaystate. No newcalendar/dates: onlyserverroutine_check rule+due identity andfirstaidcontrolUUID; legacy next_check alone remainsadvice,notschedulableoccurrence.",
+        "Combine serverautomation/accessdeadline with KNOWNcanonicalprofile/retainedentitlement authority andclock. canonicalAccessKnown=false neverFree; rowabsentonlyafterknowncanonicalprofile isFree; active/grace paidvalid_until ortrialmin(valid_until,trial_end_at), no grace_until extension. Knownexpiry/denial/revalidation/incompletecanonicalset/deleted/missing/revisionmismatch andpendingplant care/edit/delete/photo suppressautomateddates/actions, manualjournal/cardlinksremainavailableforactiveownedcards. Pendingprofilehour separateflag; neveroptimisticallyscheduleagainstunconfirmedhour. No UI/OSrequests yet.",
+        "For cached known canonical changes use returned rawupdatedAtmicroseconds/tombstone+plantassociation to suppressaffectedoldoccurrences without derivingnextdates or treating rawcompletedcare_tasks asfuture. Unmappednewcaremutation failsclosed/read-only, no fakeNoSchedule. Full canonical activeIDset mustmatchbeforecurrentpresentation. Retain originaloverdueYMD/source. Relevantcare metadata only;analysis/report/quota rows mustnot inventdates. Localread/canonical event triggersneverstartnetwork ontheir own; Cexternalcoordinator willcallrefresh.",
+        "Compact meaningful tests reuse acceptedA/B1/B2a @MainActorhelpers. Require exactexplicitlocale/header race +cachedsnapshotlocale; happyfresh thenURLError diskcached; ahead->ONEalign+NEWHTTP andtoken; failalign->actualdiskreopen knownreadonly/unchangedoldbytes; repeatedsetmismatch bounded;401/403 persistsdenial vsplainoffline doesnotinventit; malformed/mixed/partialHTTP neverreplace; overlappinglatest/ABA/cancel;pendingedit/delete/manual/profilehour andknowncanonicalcompletion/undo/revision/access/expiry gateprojection withno datecalc. Assert sanitizedUI DTO hasno payload/claimproof/rawerror, no encodedcredentials. Preserve343tests/oldasserts, no globaluncheckedSendable or newqueues. FullSwift/MCP; no frontendlive/Todayreadyclaim."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "OVREPO1",
+          "description": "FullSwift tests prove boundednetwork/samelease/explicitlocale, durablecoldreadonly afterknownchanges/denial, safeprojection/pending/access handling andpreservedcache, withoutcommands/schema/UI.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "OVREPO2",
+          "description": "Build/welcome/MCP remainpassing; fullrepository/sourcefences independentlyreviewed, no Today/livefrontend/OSnotification claim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-overview-local-presentation.md"
+      ]
+    }
+  ]
+}

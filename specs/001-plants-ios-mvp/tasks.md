@@ -172,6 +172,8 @@
 
   - B1 `d2911e7`: durable FULLsnapshot/generation/latesttoken/originallease принят —339Swift/149automation/build/welcome/MCP/ReviewQA PASS, семь disk cases. Полнота canonical set/presentation, Repo и Today UI следуют отдельно; T066 открыт.
 
+  - B2a `b98f706`: coherent one-context presentation/full canonical plant set приняты —343Swift/build/welcome/MCP/ReviewQA PASS. Repo/network/pending presentation и Today UI ещё отдельно; T066 открыт.
+
 - [ ] T067 Создать `CareHistoryView.swift` для фактов/прошедшей даты/отмены. Текущую следующую дату с коротким основанием показывать в карточке; отдельный NextCheckReasonView и история всех пересчётов не требуются. Покрытие: FR-026, FR-027, FR-028, FR-029, FR-030.
   - V11: EN-журнал карточки отменил ранее исправленную запись после офлайн-очереди, холодного запуска и потери ответа. SQL подтвердил одну отмену и сохранение даты. Положительная дата следующей проверки на стенде открыта. [Отчёт](../../docs/validation/mvp-acceptance.md#v11--отмена-полива-после-исправления-даты).
 
