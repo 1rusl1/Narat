@@ -33,5 +33,6 @@
   "evidence_directories": [
     "/private/tmp/narat-care-b01-live-save-evidence-20261120-56d7455/",
     "/private/tmp/narat-care-b01-live-save-evidence-20261120-56d7455-a2/"
-  ]
+  ],
+  "later_narrow_scope_report": "tester-catalogue-live-2026-11-20.json"
 }

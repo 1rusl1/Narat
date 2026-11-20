@@ -1,5 +1,56 @@
 # Narat — текущий статус и передача работы
 
+## Root: принят весь reminder worker; B01 live и уточнение reversals — 20 ноября 2026
+
+Принят и объединён `0e8466c6f3d1e09de6f0c018d69d8337e97390ca`, fresh union05 от dfe.
+Реально прошли 415 Swift (412 XCTest + 3 SwiftTesting, без failures/skips) за123.656с,
+149 automation за49.567с, MCP22.226с, diff0.024с, high Review1/QA1 (108.142/405.713с).
+Ранее wallclock-age QA ошибочно приняли за process.elapsed; authoritative runtime405.713с,
+тайм-аута не было. Старые infra/semantic/teststatus FAIL сохранены. Два tiny guard и
+regression groups честно отмечены controller/root-authored, Developer0.
+[Приёмка всего изменения](validation/automation/tasks/tester-care-reminder-worker-union.md).
+
+Изменены CareReminderPlanner.swift (current occurrences отдельно от будущего arm),
+CareReminderReceipts.swift (монотонные owner-scoped blocked IDs), CareReminderScheduler.swift
+(serialized latest worker/hold/permission intent/privacy cleanup), CollectionWireTests.swift.
+Это real-disk/fake-adapter proof. Подключения к Root/settings/delegate и actual SystemUN
+proof пока нет. Care budget32 TOTAL сохраняет Trial/other namespace. Unknown own evidence
+требует сохранённого terminal blocker до удаления; при storage error ambiguous own request
+остаётся с failure. False cancellation proof не создаётся; foreign cleanup не зависит от
+успеха own ledger. Три исходных пользовательских файла сохранены по SHA manifest718,
+PBX delta0, index пуст.
+
+Независимый ordinary EN Release56d/f3: [B01 narrow live PASS](validation/tester-catalogue-live-2026-11-20.md).
+Одна новая Ficus → typed saved/exact UUID + AX operation → canonical collection card →
+cold same saved → Back/Today → первый sheet в точную новую карточку → один known-ID delete →
+tombstone → cold с исходным растением. Все исходные строки raw sync (21) сохранены;
+total21→22 (новый tombstone), active plants1→2→1, прежние6care entries/6reversals неизменны,
+новых care/AI/photo facts0. Это не полный B01 care/physical/final R3. Nonfirst live
+не утверждаем: новый UUID первый по сортировке; nonfirst подтверждён C3 fixtures.
+Все failed operators сохранены. После подтверждённого save нового create не было.
+
+Dated MD/JSON исправлены: legacy helper reversals0/0 ошибочно назвали raw total — helper
+фильтровал по отсутствующему plant_id. Join сохранённых live responses подтвердил4→6,
+четыре прежние строки сохранены, две новые связаны с exact известными VOID entries.
+Сам join не делал новых сетевых записей.
+
+Новая политика пользователя: только техническая приёмка; внешняя передача и канал установки
+отложены. Текущий allowance: hard stop95%used/5%remaining; с93не начинать новый длинный
+Developer, завершить проверки/handoff в резерв. RESET ЗАПРЕЩЁН: старое разрешение Dec1
+отозвано, private policy max_redemptions0, consumedfalse. Последний actual90/10,
+ordinary allowed. Исторические условия ниже больше не действуют. Физические B01–B11 открыты.
+Native iPhone Mirroring1.5 установлен, доступ не проверен; mobilecli видит0real/2Sim,
+matching cached agent profile0. Новых agent/profile installations не было.
+
+В этом doc-этапе: handoff/tasks, новый B01 MD/JSON, уточнение dated MD/JSON и ссылки
+в прежней точке остановки. Проверены JSON/links/secret guards/git diff и сохранность user files;
+Swift ради документов не повторяли. Следующий точный шаг: fresh usage → малый SDK auth
+cause+epoch proof (GuestCatalogueConnection/CatalogueConnectionTests; initialSession nil,
+expired/unavailable и sticky didSignOut сами не доказывают logout) → lifecycle bridge
+независимо от Today/scene → Root @StateObject → settings/explicit permission → delegate/route →
+UI/SystemUN actual Simulator roundtrip/closed app и signed artifact в оставшемся бюджете.
+Родительские checkbox открыты. Commit/push этого doc-этапа фиксируются Git.
+
 ## Controller nil-defer status restored; union05 next — 20 ноября 2026
 
 Union04 actualBLOCKED onUnit154.319s:415tests ran, one existing coldknownB

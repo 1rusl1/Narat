@@ -67,8 +67,9 @@
     "semantic_active_care_restored": true,
     "full_canonical_digest_equal": false,
     "audit_history_retained": true,
-    "synced_reversals_array_before": 0,
-    "synced_reversals_array_after": 0
+    "legacy_helper_scoped_reversals_before": 0,
+    "legacy_helper_scoped_reversals_after": 0,
+    "scoped_zero_was_not_raw_sync_total": true
   },
   "operator": {
     "explicit_refresh_button_taps": 4,
@@ -94,5 +95,20 @@
     "No AI, purchases, SQL changes, new plants or erasure of prior history."
   ],
   "private_evidence_location": "/private/tmp/narat-today-dated-live-evidence-20261120-56d7455-a2",
-  "publication": "Sanitized report only; raw API, checkpoints, screenshots and signed archive stay private."
+  "publication": "Sanitized report only; raw API, checkpoints, screenshots and signed archive stay private.",
+  "supplemental_reversal_check": {
+    "status": "PASS",
+    "scope": "supplemental raw sync join; no domain writes",
+    "followup_completed_at_utc": "2026-11-20T17:12:57.980735+00:00",
+    "raw_sync_reversals_before_dated_cycle": 4,
+    "raw_sync_reversals_at_followup": 6,
+    "all_four_prior_raw_reversal_rows_preserved": true,
+    "two_new_reversals_reference_exact_known_dated_entries": true,
+    "both_known_dated_entries_voided": true,
+    "legacy_helper_scoped_reversals_were_zero": true,
+    "legacy_helper_scope_issue": "care_reversals has entry_id and no plant_id; old plant_id filter omitted its rows. Zero was not the total raw sync count.",
+    "method": "offline exact-ID join of saved raw live sync readbacks",
+    "fresh_network_call_for_this_join": false,
+    "live_data_origin": "dated-cycle baseline and B01 final canonical readback"
+  }
 }

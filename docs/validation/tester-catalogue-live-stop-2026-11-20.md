@@ -30,3 +30,6 @@ Wire guard private photos исправить с plant_photos на фактиче
 [Машинный отчёт](tester-catalogue-live-stop-2026-11-20.json). Raw API/SQLite/AX,
 снимки и имена тестовых записей остаются private в указанных там каталогах.
 Это не physical UI proof и не полный B01 care chain.
+
+Позднее выполнен отдельный [узкий live save/card/cold/cleanup](tester-catalogue-live-2026-11-20.md).
+Этот документ сохраняет первоначальную точку остановки; исходные FAIL остаются FAIL.

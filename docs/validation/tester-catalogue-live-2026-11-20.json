@@ -1,0 +1,82 @@
+{
+  "status": "PASS",
+  "source_commit": "56d7455451bf93e573ae1660665bd18360955bf7",
+  "binary_sha256": "f3b2184acd5b58575c3c60ae60886f57d9c8741d9e5a4cc1f6c0201d2490a271",
+  "scope": "ordinary signed EN Release; real SDK/Supabase; owned Simulator; known saved-plant continuation",
+  "actual_new_saves": 1,
+  "new_plant_created": 1,
+  "new_plant_tombstoned": true,
+  "cold_saved_result_same_canonical_id": true,
+  "today_first_sheet_after_saved_result_back_opens_same_plant": true,
+  "all_prior_canonical_rows_preserved": true,
+  "active_collection_restored": true,
+  "old_journal_entries": 6,
+  "new_care_or_ai_facts": 0,
+  "delete_confirm_taps": 1,
+  "full_canonical_digest_equal": false,
+  "source_operator_FAIL_retained": true,
+  "full_B01_care_chain_proven": false,
+  "physical_ui_proven": false,
+  "storage_purge_job_proven": false,
+  "completed_at_utc": "2026-11-20T17:12:57.980735+00:00",
+  "prior_canonical_rows": 21,
+  "canonical_rows_before": 21,
+  "canonical_rows_after": 22,
+  "active_plants_before": 1,
+  "active_plants_during": 2,
+  "active_plants_after": 1,
+  "candidate": "Ficus elastica",
+  "create_operation_ax_observed": true,
+  "wire_create_post_count_asserted": false,
+  "clock_or_timezone_manipulated": false,
+  "private_evidence_location": "/private/tmp/narat-care-b01-live-save-evidence-20261120-56d7455-a4-followup2",
+  "attempts": [
+    {
+      "name": "initial",
+      "status": "FAIL",
+      "saved": false,
+      "cause": "operator search viewport excludes y79",
+      "canonical_unchanged": true
+    },
+    {
+      "name": "a2",
+      "status": "FAIL",
+      "saved": false,
+      "cause": "keyboard remained; button callback not proven",
+      "canonical_unchanged_after_termination": true,
+      "all_create_tables_and_outbox_empty": true
+    },
+    {
+      "name": "a3",
+      "status": "FAIL",
+      "saved": false,
+      "cause": "agent visual gate stopped before Save; Enter did not close keyboard"
+    },
+    {
+      "name": "a4",
+      "status": "FAIL",
+      "saved": true,
+      "cause": "operator expected cold Today; app legitimately restored exact Plant saved result"
+    },
+    {
+      "name": "a4-followup",
+      "status": "FAIL",
+      "new_create_calls": 0,
+      "delete_confirm_taps": 0,
+      "cause": "operator excluded fixed footer Back center y829"
+    },
+    {
+      "name": "a4-followup2",
+      "status": "PASS",
+      "new_create_calls": 0,
+      "delete_confirm_taps": 1,
+      "known_identity_only": true
+    }
+  ],
+  "limitations": [
+    "Prior accepted source56d; final R3 build still separate.",
+    "No conditions, care entries, analysis, photos, profile edits, new source imports, purchases or SQL.",
+    "Full B01 save-advice-care chain and physical iPhone not proven by this narrow run.",
+    "Logical deletion/tombstone proven; asynchronous Storage purge not asserted."
+  ]
+}
