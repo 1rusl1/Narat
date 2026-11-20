@@ -1,0 +1,51 @@
+{
+  "tasks": [
+    {
+      "id": "tester-today-rotated-stale",
+      "description": "Show known stale cache after real canonical generation rotation followed by overview transport failure; preserve aligned offline availability.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Features/Today/TodayModel.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "docs/validation/automation/tasks/tester-today-ui-acceptance01-blocked.md",
+        "ios/Plants/Data/Local/LocalStore.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "TINY follow-on View+Unit semanticrepair ONLY. Prior marker-case repair accepted15b440249acf6f684cb29f64c4c8c5696b309123,375Swift/ReviewQA/MCP, but WHOLEC3b stillunaccepted. Do not rewrite existing5file candidate or change Root/Repo/Store/model/fixtures/UITests/schema/OS/network. Preserveall375assertions and old6UI/old13/PL. Sameapprovedmodels/900.",
+        "New concrete reachablecase: savedvalidsnapshot\u2192successful ordinary canonical empty sync publish rotates CareOverview canonicalGeneration but doesNOTset knownInvalidation\u2192overview transport fails. LocalDTO availability.readOnly +failure.transport +knownInvalidationnil; Calendar.status.unavailable; model.hasErrortrue. CurrentneedsRevalidation =readOnly&&(failure.revalidationRequired||status!=unavailable) false; status()hiddenbyhasError, so knownnonalignedcache losesstaleexplanation. This is NOT ordinaryalignedofflinecache (that availability.available).",
+        "Minimal View predicate/render fix must keep explicitrevalidation when readOnly ANDanyexistingstatefailure causesstatusunavailable (or equivalentexactgenerationmismatch); noerrorunavailable shouldshowONEstale label, no duplicate today.stale ID/text. Ordinaryalignedcache+transport remainscached/error withvalidreference dates andNOstale. Firstfailnocache nofakeempty/noschedule/stale; source/access/pending/expiry/sectionfences unchanged.",
+        "Add ONE meaningful test through actualLocalStore.publishSyncWindow withEMPTYdelta/sameWM to rotate canonicalgeneration, then realrepositoryrefresh mockHTTPnetworkfailure andTodayModel load. Assert gen mismatch/no knownInvalidation, readOnly/transport/hasError, Calendarunavailable/sections[], needsRevalidationtrue/lastcheckedretained. Includealignedsamecache+transport control =>available/validdates/needsRevalidationfalse, firstcase nofakeNoSchedule/empty. Reuseactualexistingprivatehelpers inCollectionWireTests, avoidhundredsofmirrors. Existing marker test staysunchanged.",
+        "FullSwift/build/welcome+MCP/highReviewQA mandatory forsmallrepair; then freshWHOLEbase4f4a5sourceunion acceptance all7checks incl149automation+old13+PL+new6/8ledgers. No rootmerge/live/device/reminders claims fromsubset. No arbitraryquota/reset/models/budgetchange."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ROTATED1",
+          "description": "Canonical generation mismatch after failed refresh remains visible with failed refresh, firstfail distinct; fullSwift/build/welcome preserve guards.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "ROTATED2",
+          "description": "MCP and highReviewQA accept narrow source repair; wholeC3b remains separately pending.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-today-ui-acceptance01-blocked.md"
+      ]
+    }
+  ]
+}

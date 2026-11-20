@@ -1,5 +1,22 @@
 # Narat — текущий статус и передача работы
 
+## C3b stale-marker subset accepted; rotation case remains — 20 ноября2026
+
+Accepted/pushed15b440249acf6f684cb29f64c4c8c5696b309123, run
+tester-today-stale-status-20261120-01 COMPLETED Developer1/Review1/QA1.
+View10lines+Unit39: explicit known-invalid marker + failed alignment stays
+visiblystale. Actual375Swift(372XCTest+3)/build/welcome123.872s, diff,
+MCP30.38s PASS. No dedicatedToday/legacyUI gate ran inthissubset.
+
+NEW independent finding beforewholeacceptance: ordinarycanonicalemptydelta
+rotates generation WITHOUTknownInvalidation; subsequentoverviewtransportfail
+yields readOnly+transport+unavailable+hasError. Predicate stillhidesstale.
+Alignedcache+transport isdifferent availability.available and mustremainusable.
+Next tinyView+Unit Developer tester-today-rotated-stale realemptydelta test;
+then freshWHOLEbase4f4a all7checks/old13/PL/new6/8ledgers/highReviewQA.
+Previousacceptance01BLOCKED preserved, rootnotmerge, Todayfullnotaccepted.
+Allparentcheckboxopen, reset0, latestactualusage78/22 ordinaryallowed.
+
 ## C3b acceptance01 BLOCKED: known-stale indication — 20 ноября2026
 
 Current generated5file candidate affff6b/HEAD69155c1 notaccepted. Actual
