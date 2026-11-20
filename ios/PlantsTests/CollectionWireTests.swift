@@ -9412,3 +9412,467 @@ extension CollectionWireTests {
         try await store.finishCareOverviewRead(token, snapshot: snapshot, authority: authority)
     }
 }
+
+
+extension CollectionWireTests {
+    @MainActor
+    private func overviewRepositoryFixture(
+        _ transport: any PlantsAPITransport, seed: Bool = true
+    ) async throws -> (URL, LocalStore, PlantsAPIClient, SyncSessionLease, CollectionRepository) {
+        let url = try diskURL()
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        try await overviewCanonical(store, authority: api.syncAuthority, lease: lease, ids: [serverPlantId])
+        if seed {
+            var page = overviewPage([overviewRow(serverPlantId, dated: true, controls: [overviewControl()])])
+            page["verified_access_until"] = NSNull()
+            let token = try await store.beginCareOverviewRead(
+                locale: "pl", context: lease, authority: api.syncAuthority
+            )
+            try await store.finishCareOverviewRead(
+                token, snapshot: overviewSnapshot([page]), authority: api.syncAuthority
+            )
+        }
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+        let repo = CollectionRepository(
+            store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api),
+            clock: { now }
+        )
+        return (url, store, api, lease, repo)
+    }
+
+    private func overviewAlignmentPage() -> [String: Any] {
+        var page = syncObject()
+        let time = "2026-11-19T09:00:00.000004+00:00"
+        page["until"] = time
+        page["next_since"] = time
+        var plant = syncChange(time, id: serverPlantId.uuidString)
+        plant["data"] = ["id": serverPlantId.uuidString, "revision": 2, "care_revision": 2]
+        page["changes"] = [plant]
+        return page
+    }
+
+    @MainActor
+    func testOverviewRepositoryFreshThenOfflineUsesDurableSnapshotLocaleAndNoCommands() async throws {
+        var page = overviewPage([overviewRow(serverPlantId, dated: true, controls: [overviewControl()])])
+        page["verified_access_until"] = NSNull()
+        let transport = CatalogueTransport([.http(200, try syncJSON(page)), .network])
+        let (url, _, api, lease, repo) = try await overviewRepositoryFixture(transport, seed: false)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try await api.updateClientLocale("en")
+        let fresh = try await repo.refreshCareOverview(locale: .pl, context: lease)
+        XCTAssertEqual(fresh.origin, .network)
+        XCTAssertEqual(fresh.snapshotLocale, "pl")
+        XCTAssertEqual(fresh.availability, .available)
+        XCTAssertEqual(fresh.plants.first?.routine?.dueLocalDate, "2026-11-05")
+        XCTAssertEqual(fresh.plants.first?.controls.first?.dueOn, "2026-11-01")
+        let bytes = try XCTUnwrap(overviewWrapper(url)["snapshotJSON"] as? String)
+        let offline = try await repo.refreshCareOverview(locale: .en, context: lease)
+        XCTAssertEqual(offline.origin, .cache)
+        XCTAssertEqual(offline.failure, .transport)
+        XCTAssertNil(offline.knownInvalidation)
+        XCTAssertEqual(offline.snapshotLocale, "pl")
+        XCTAssertEqual(offline.plants.first?.routine?.dueLocalDate, "2026-11-05")
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let local = try await reopened.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(local.cached?.state, .cached)
+        XCTAssertNil(local.knownInvalidation)
+        XCTAssertEqual(try overviewWrapper(url)["snapshotJSON"] as? String, bytes)
+        let wrapper = try syncJSON(overviewWrapper(url))
+        XCTAssertFalse(wrapper.contains("fixture-installation"))
+        XCTAssertFalse(wrapper.contains("fixture-user-token"))
+        XCTAssertFalse(wrapper.contains("eyJhbGci"))
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "X-Client-Locale") }, ["pl", "en"])
+        XCTAssertTrue(requests.allSatisfy { $0.httpMethod == "GET" && $0.url?.path.hasSuffix("care-overview") == true })
+    }
+
+    @MainActor
+    func testOverviewRepositoryAheadAlignsOnceAndReadsANewPublication() async throws {
+        var ahead = overviewPage([overviewRow(serverPlantId)])
+        ahead["owner_watermark"] = "2026-11-19T09:00:00.000003+00:00"
+        var aligned = ahead
+        aligned["publication_fingerprint"] = String(repeating: "b", count: 64)
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(ahead)), .http(200, try syncJSON(overviewAlignmentPage())),
+            .http(200, try syncJSON(aligned))
+        ])
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let pending = try await store.enqueueCommand(
+            ownerId: syncOwner, plantId: serverPlantId, commandName: "care.record", payloadJSON: "{}"
+        )
+        let old = try overviewWrapper(url)["canonicalGeneration"] as? String
+        let result = try await repo.refreshCareOverview(locale: .en, context: lease)
+        XCTAssertEqual(result.origin, .network)
+        XCTAssertNil(result.knownInvalidation)
+        XCTAssertEqual(result.snapshotLocale, "en")
+        XCTAssertNotEqual(try overviewWrapper(url)["canonicalGeneration"] as? String, old)
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(local.cached?.snapshot.pages.first?.publicationFingerprint, String(repeating: "b", count: 64))
+        XCTAssertEqual(local.canonicalGeneration, local.snapshotGeneration)
+        XCTAssertEqual(local.pending.map(\.operationId), [pending.operationId])
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map { $0.url?.lastPathComponent }, ["care-overview", "sync", "care-overview"])
+        XCTAssertTrue(requests.allSatisfy { $0.httpMethod == "GET" })
+        XCTAssertEqual(requests.filter { $0.url?.lastPathComponent == "care-overview" }
+            .map { $0.value(forHTTPHeaderField: "X-Client-Locale") }, ["en", "en"])
+    }
+
+    @MainActor
+    func testOverviewRepositoryRejectedReadSurvivesFailedAlignmentAndDiskReopen() async throws {
+        var ahead = overviewPage([overviewRow(serverPlantId)])
+        ahead["owner_watermark"] = "2026-11-19T09:00:00.000003+00:00"
+        let transport = CatalogueTransport([.http(200, try syncJSON(ahead)), .network])
+        let (url, _, api, lease, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let before = try overviewWrapper(url)
+        let result = try await repo.refreshCareOverview(locale: .en, context: lease)
+        XCTAssertEqual(result.availability, .readOnly)
+        XCTAssertEqual(result.failure, .revalidationRequired)
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let local = try await reopened.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(local.knownInvalidation, .canonicalRevalidation)
+        XCTAssertEqual(local.cached?.state, .stale)
+        XCTAssertFalse(local.cached?.canonicalGenerationMatches ?? true)
+        let after = try overviewWrapper(url)
+        for key in ["snapshotJSON", "snapshotLocale"] {
+            XCTAssertEqual(after[key] as? String, before[key] as? String)
+        }
+        XCTAssertEqual(after["fetchedAt"] as? Double, before["fetchedAt"] as? Double)
+        XCTAssertNotEqual(after["canonicalGeneration"] as? String, before["canonicalGeneration"] as? String)
+        let projected = CareOverviewViewState(local: local, now: Date(), origin: .cache)
+        XCTAssertNil(projected.plants.first?.routine)
+        XCTAssertTrue(projected.plants.first?.controls.isEmpty == true)
+        XCTAssertTrue(projected.plants.first?.manualJournalAvailable == true)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    @MainActor
+    func testOverviewRepositoryRepeatedSetMismatchIsBoundedAndPreservesSnapshot() async throws {
+        let mismatch = try syncJSON(overviewPage([]))
+        let transport = CatalogueTransport([
+            .http(200, mismatch), .http(200, try syncJSON(overviewAlignmentPage())), .http(200, mismatch)
+        ])
+        let (url, _, api, lease, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let bytes = try overviewWrapper(url)["snapshotJSON"] as? String
+        let result = try await repo.refreshCareOverview(locale: .en, context: lease)
+        XCTAssertEqual(result.failure, .revalidationRequired)
+        XCTAssertEqual(result.availability, .readOnly)
+        XCTAssertEqual(result.plants.count, 1)
+        XCTAssertNil(result.plants.first?.routine)
+        XCTAssertEqual(try overviewWrapper(url)["snapshotJSON"] as? String, bytes)
+        let reopened = LocalStore(modelContainer: try diskContainer(url))
+        let local = try await reopened.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        XCTAssertEqual(local.knownInvalidation, .canonicalRevalidation)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map { $0.url?.lastPathComponent }, ["care-overview", "sync", "care-overview"])
+    }
+
+    @MainActor
+    func testOverviewRepositoryAuthorizationDenialPersistsButOrdinaryFailuresDoNotInventDenial() async throws {
+        for status in [401, 403, 503, 200] {
+            let transport = CatalogueTransport([.http(status, "{}"), .network])
+            let (url, _, api, lease, repo) = try await overviewRepositoryFixture(transport)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let bytes = try overviewWrapper(url)["snapshotJSON"] as? String
+            let denied = status == 401 || status == 403
+            let result = try await repo.refreshCareOverview(locale: .en, context: lease)
+            XCTAssertEqual(result.failure, denied ? .authorizationDenied : .transport)
+            let offline = try await repo.refreshCareOverview(locale: .pl, context: lease)
+            XCTAssertEqual(offline.failure, denied ? .authorizationDenied : .transport)
+            let reopened = LocalStore(modelContainer: try diskContainer(url))
+            let local = try await reopened.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            XCTAssertEqual(local.knownInvalidation, denied ? .authorizationDenied : nil)
+            XCTAssertEqual(local.cached?.state, denied ? .stale : .cached)
+            XCTAssertEqual(try overviewWrapper(url)["snapshotJSON"] as? String, bytes)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 2)
+        }
+    }
+
+    @MainActor
+    func testOverviewRepositoryPartialAndMixedHTTPNeverReplaceCacheOrTriggerAlignment() async throws {
+        let ids = (1...200).map {
+            UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", $0))!
+        }
+        let first = overviewPage(ids.map { overviewRow($0) }, next: ids.last)
+        var mixed = overviewPage([overviewRow(serverPlantId)])
+        mixed["publication_fingerprint"] = String(repeating: "b", count: 64)
+        for last in [CatalogueTransport.Reply.network, .http(200, try syncJSON(mixed))] {
+            let transport = CatalogueTransport([.http(200, try syncJSON(first)), last])
+            let (url, _, _, lease, repo) = try await overviewRepositoryFixture(transport)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let bytes = try overviewWrapper(url)["snapshotJSON"] as? String
+            let result = try await repo.refreshCareOverview(locale: .en, context: lease)
+            XCTAssertEqual(result.failure, .transport)
+            XCTAssertEqual(result.snapshotLocale, "pl")
+            XCTAssertNil(result.knownInvalidation)
+            XCTAssertEqual(try overviewWrapper(url)["snapshotJSON"] as? String, bytes)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.count, 2)
+            XCTAssertTrue(requests.allSatisfy { $0.url?.lastPathComponent == "care-overview" })
+        }
+    }
+
+    @MainActor
+    func testOverviewRepositorySuspendedExplicitLocaleLatestABAAndCancellation() async throws {
+        for mode in 0..<4 {
+            let suspended = SuspendedCollectionTransport(try syncJSON(overviewPage([overviewRow(serverPlantId)])))
+            let (url, store, api, lease, repo) = try await overviewRepositoryFixture(suspended)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            try await api.updateClientLocale("en")
+            let task = Task { try await repo.refreshCareOverview(locale: .pl, context: lease) }
+            await suspended.waitForRequest()
+            try await api.updateClientLocale("pl")
+            var newer: CareOverviewReadToken?
+            if mode == 1 {
+                newer = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: api.syncAuthority)
+            } else if mode == 2 {
+                await api.bindSyncSession(try profileSession(ownerId: otherSyncOwner))
+                await api.bindSyncSession(try profileSession())
+            } else if mode == 3 {
+                task.cancel()
+            }
+            let before = try overviewWrapper(url)
+            await suspended.resume()
+            if mode == 0 {
+                let result = try await task.value
+                XCTAssertEqual(result.snapshotLocale, "pl")
+            } else {
+                do {
+                    _ = try await task.value
+                    XCTFail("Superseded, ABA and cancelled reads must throw")
+                } catch {}
+                XCTAssertEqual(try overviewWrapper(url)["snapshotJSON"] as? String, before["snapshotJSON"] as? String)
+                XCTAssertEqual(try overviewWrapper(url)["pendingRequestId"] as? String, before["pendingRequestId"] as? String)
+            }
+            if let newer {
+                let snapshot = try overviewSnapshot([overviewPage([overviewRow(serverPlantId)])])
+                try await store.finishCareOverviewRead(newer, snapshot: snapshot, authority: api.syncAuthority)
+            }
+            let requests = await suspended.capturedRequests()
+            XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "X-Client-Locale"), "pl")
+            XCTAssertEqual(requests.count, 1)
+        }
+    }
+
+    @MainActor
+    func testOverviewRevalidationContinuationCannotReplaceNewerReadAndUsesNewToken() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let authority = api.syncAuthority
+        let old = try await store.beginCareOverviewRead(locale: "pl", context: lease, authority: authority)
+        let oldID = try overviewWrapper(url)["pendingRequestId"] as? String
+        try await store.invalidateCareOverviewRead(old, reason: .canonicalRevalidation, authority: authority)
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: [serverPlantId], fullRefresh: true)
+        let next = try await store.beginCareOverviewRead(
+            locale: "pl", context: lease, authority: authority, revalidating: old
+        )
+        XCTAssertNotEqual(try overviewWrapper(url)["pendingRequestId"] as? String, oldID)
+        let before = try overviewDiskState(url)
+        do {
+            try await store.invalidateCareOverviewRead(old, reason: .authorizationDenied, authority: authority)
+            XCTFail("Old failure must not mark newer request denied")
+        } catch CareOverviewStoreError.superseded {}
+        do {
+            _ = try await store.beginCareOverviewRead(
+                locale: "pl", context: lease, authority: authority, revalidating: old
+            )
+            XCTFail("Consumed continuation must not replace the new token")
+        } catch CareOverviewStoreError.superseded {}
+        let abandoned = try await store.abandonCareOverviewRead(old, authority: authority)
+        XCTAssertFalse(abandoned)
+        XCTAssertEqual(try overviewDiskState(url), before)
+        try await store.finishCareOverviewRead(
+            next, snapshot: overviewSnapshot([overviewPage([overviewRow(serverPlantId)])]), authority: authority
+        )
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+        XCTAssertNil(local.knownInvalidation)
+    }
+
+    @MainActor
+    func testOverviewSafeProjectionPendingAndCanonicalMutationGates() async throws {
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+        let baseline = CareOverviewViewState(local: local, now: now, origin: .cache)
+        XCTAssertTrue(baseline.plants.first?.automatedActionsAllowed == true)
+        XCTAssertEqual(baseline.plants.first?.routine?.dueLocalDate, "2026-11-05")
+        for command in ["plant.edit", "plant.delete", "care.record", "care.routine.undo", "plant.photo", "profile.update"] {
+            let pending = OutboxEntrySnapshot(
+                operationId: UUID(), ownerId: syncOwner, plantId: command == "profile.update" ? nil : serverPlantId,
+                commandName: command, payloadJSON: "{\"claim_proof\":\"SECRET\",\"jpeg\":\"SECRET\"}", sequenceNumber: 1
+            )
+            let modified = LocalCareOverviewPresentation(
+                ownerId: local.ownerId, canonicalGeneration: local.canonicalGeneration,
+                snapshotGeneration: local.snapshotGeneration, cached: local.cached, cards: local.cards,
+                pending: [pending], profile: local.profile, entitlement: local.entitlement,
+                canonicalAccessKnown: true, careRows: local.careRows
+            )
+            let view = CareOverviewViewState(local: modified, now: now, origin: .cache)
+            XCTAssertFalse(view.plants.first?.automatedActionsAllowed ?? true, command)
+            XCTAssertNil(view.plants.first?.routine)
+            XCTAssertTrue(view.plants.first?.controls.isEmpty == true)
+            XCTAssertTrue(view.plants.first?.manualJournalAvailable == true)
+            XCTAssertTrue(view.plants.first?.cardLinkAvailable == true)
+            XCTAssertEqual(view.profileHourPending, command == "profile.update")
+            XCTAssertEqual(view.pending.map(\.operationId), [pending.operationId])
+            let rendered = String(reflecting: view)
+            for secret in ["SECRET", "payloadJSON", "claim_proof", "jpeg", "careRows", "lastError"] {
+                XCTAssertFalse(rendered.contains(secret))
+            }
+        }
+        for type in ["care_entries", "care_reversals", "care_tasks", "first_aid_followups", "analysis_summaries"] {
+            for mapped in [false, true] {
+                let evidence = LocalCareOverviewRow(
+                    entityType: type, entityId: UUID(),
+                    payloadJSON: mapped ? "{\"plant_id\":\"\(serverPlantId)\",\"state\":\"completed\"}" : "{}",
+                    updatedAtRaw: "2026-11-19T09:00:00.000002+00:00", deletedAt: now
+                )
+                let modified = LocalCareOverviewPresentation(
+                    ownerId: local.ownerId, canonicalGeneration: local.canonicalGeneration,
+                    snapshotGeneration: local.snapshotGeneration, cached: local.cached, cards: local.cards,
+                    pending: [], profile: local.profile, entitlement: local.entitlement,
+                    canonicalAccessKnown: true, careRows: [evidence]
+                )
+                let view = CareOverviewViewState(local: modified, now: now, origin: .cache)
+                XCTAssertEqual(view.plants.first?.automatedActionsAllowed, type == "analysis_summaries")
+                XCTAssertEqual(view.plants.first?.routine?.dueLocalDate,
+                               type == "analysis_summaries" ? "2026-11-05" : nil)
+                if !mapped && type != "analysis_summaries" { XCTAssertEqual(view.availability, .readOnly) }
+            }
+        }
+        let diskRead = try await repo.cachedCareOverview(context: lease)
+        XCTAssertEqual(diskRead.origin, .cache)
+    }
+
+    @MainActor
+    func testOverviewProjectionAccessRevisionDeletionAndLegacyDatesFailClosed() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+        var entitlement: [String: Any] = [
+            "product_id": "paid", "state": "grace", "offer_kind": "trial",
+            "valid_until": "2026-12-01T00:00:00Z", "grace_until": "2027-01-01T00:00:00Z",
+            "trial_end_at": "2026-11-20T00:00:00Z", "auto_renew_enabled": true
+        ]
+        for mode in 0..<7 {
+            var cards = local.cards
+            var snapshot = local.cached
+            var accessKnown = true
+            var retained: SyncWireEntitlementDTO?
+            if mode == 0 { accessKnown = false }
+            if mode == 1 { cards = [] }
+            if mode == 2 {
+                cards = [CatalogueCardSummary(
+                    id: serverPlantId, speciesSlug: nil, taxonId: nil, mainPhotoId: nil,
+                    personalName: nil, currentConditionSnapshotId: nil, revision: 3, careRevision: 3
+                )]
+            }
+            if mode == 3 || mode == 4 {
+                if mode == 4 {
+                    entitlement["offer_kind"] = "paid"
+                    entitlement["valid_until"] = "2026-11-20T00:00:00Z"
+                }
+                retained = try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data(syncJSON(entitlement).utf8))
+            }
+            if mode == 5 {
+                var row = overviewRow(serverPlantId, dated: true)
+                var recommendation = try XCTUnwrap(row["care_recommendation"] as? [String: Any])
+                recommendation.removeValue(forKey: "routine_check")
+                row["care_recommendation"] = recommendation
+                var page = overviewPage([row])
+                page["verified_access_until"] = NSNull()
+                snapshot = CachedCareOverview(
+                    snapshot: try overviewSnapshot([page]), fetchedAt: now, snapshotLocale: "pl",
+                    state: .cached, canonicalGenerationMatches: true
+                )
+            }
+            if mode == 6 {
+                var page = overviewPage([overviewRow(serverPlantId, dated: true)])
+                page["verified_access_until"] = "2026-11-20T00:00:00Z"
+                snapshot = CachedCareOverview(
+                    snapshot: try overviewSnapshot([page]), fetchedAt: now, snapshotLocale: "pl",
+                    state: .cached, canonicalGenerationMatches: true
+                )
+            }
+            let modified = LocalCareOverviewPresentation(
+                ownerId: local.ownerId, canonicalGeneration: local.canonicalGeneration,
+                snapshotGeneration: local.snapshotGeneration, cached: snapshot, cards: cards,
+                pending: [], profile: local.profile, entitlement: retained,
+                canonicalAccessKnown: accessKnown, careRows: []
+            )
+            let view = CareOverviewViewState(local: modified, now: now, origin: .cache)
+            XCTAssertNil(view.plants.first?.routine, "mode \(mode)")
+            XCTAssertFalse(view.plants.first?.automatedActionsAllowed ?? false)
+            if mode == 0 { XCTAssertEqual(view.access, .unknown) }
+            if mode == 3 || mode == 4 { XCTAssertEqual(view.access, .expired) }
+            if mode == 1 { XCTAssertTrue(view.plants.isEmpty) }
+            if mode == 5 { XCTAssertNotNil(view.plants.first?.advice) }
+        }
+    }
+
+    func testOverviewExplicitLocaleAppliesToEveryPageDespiteDifferentClientDefault() async throws {
+        let a = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
+        let b = UUID(uuidString: "00000000-0000-4000-8000-000000000002")!
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(overviewPage([overviewRow(a)], next: a))),
+            .http(200, try syncJSON(overviewPage([overviewRow(b)])))
+        ])
+        let api = client(transport)
+        let session = try profileSession()
+        await api.bindSyncSession(session)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let snapshot = try await api.fetchCareOverview(context: lease, limit: 1, locale: .pl)
+        XCTAssertEqual(snapshot.plants.map(\.plantId), [a, b])
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertTrue(requests.allSatisfy {
+            $0.value(forHTTPHeaderField: "X-Client-Locale") == "pl"
+                && $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(session.accessToken)"
+        })
+    }
+
+    @MainActor
+    func testOverviewProjectionVerifiedPaidAuthorityAndServerDeadlineUseCurrentClock() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let page = overviewPage([overviewRow(serverPlantId, dated: true)])
+        let now = try XCTUnwrap(SQLTimestamp.date(from: "2026-11-20T00:00:00Z"))
+        let later = try XCTUnwrap(SQLTimestamp.date(from: "2026-12-02T00:00:00Z"))
+        for state in ["active", "grace"] {
+            let entitlement = try JSONDecoder().decode(SyncWireEntitlementDTO.self, from: Data(syncJSON([
+                "product_id": "paid", "state": state, "offer_kind": "paid",
+                "valid_until": "2026-12-10T00:00:00Z", "grace_until": "2027-01-01T00:00:00Z",
+                "trial_end_at": NSNull(), "auto_renew_enabled": true
+            ]).utf8))
+            let modified = LocalCareOverviewPresentation(
+                ownerId: local.ownerId, canonicalGeneration: local.canonicalGeneration,
+                snapshotGeneration: local.snapshotGeneration,
+                cached: CachedCareOverview(
+                    snapshot: try overviewSnapshot([page]), fetchedAt: now, snapshotLocale: "pl",
+                    state: .cached, canonicalGenerationMatches: true
+                ),
+                cards: local.cards, pending: [], profile: local.profile, entitlement: entitlement,
+                canonicalAccessKnown: true, careRows: []
+            )
+            let valid = CareOverviewViewState(local: modified, now: now, origin: .cache)
+            XCTAssertEqual(valid.access, .verified)
+            XCTAssertTrue(valid.plants.first?.automatedActionsAllowed == true)
+            let expiredServer = CareOverviewViewState(local: modified, now: later, origin: .cache)
+            XCTAssertEqual(expiredServer.access, .verified)
+            XCTAssertEqual(expiredServer.availability, .readOnly)
+            XCTAssertNil(expiredServer.plants.first?.routine)
+            XCTAssertTrue(expiredServer.plants.first?.manualJournalAvailable == true)
+        }
+    }
+}

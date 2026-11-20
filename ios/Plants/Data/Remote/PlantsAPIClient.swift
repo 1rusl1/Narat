@@ -2105,10 +2105,14 @@ extension PlantsAPIClient {
     }
 
     /// All pages use the caller's one captured permanent SDK binding, including ABA invalidation.
-    func fetchCareOverview(context: SyncSessionLease, limit: Int = 200) async throws -> CareOverviewSnapshot {
+    func fetchCareOverview(
+        context: SyncSessionLease, limit: Int = 200, locale requestedLocale: SupportedLocale? = nil
+    ) async throws -> CareOverviewSnapshot {
         try syncAuthority.withPermanentBoundValid(context) {}
         guard (1...200).contains(limit) else { throw SyncWireValidationError.invalidRequest }
-        guard let locale = SupportedLocale(rawValue: clientLocale) else { throw LocaleError.unsupportedLocale }
+        guard let locale = requestedLocale ?? SupportedLocale(rawValue: clientLocale) else {
+            throw LocaleError.unsupportedLocale
+        }
         // Only the supported function root may become this fixed same-origin sibling.
         guard var endpoint = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
               endpoint.scheme?.lowercased() == "https", endpoint.host?.isEmpty == false,
@@ -2132,7 +2136,8 @@ extension PlantsAPIClient {
             request.url = url
             request.cachePolicy = .reloadIgnoringLocalCacheData
             let page: CareOverviewPage = try await analysisRequest(
-                request, locale: locale, context: context, status: [200], forbidRedirects: true
+                request, locale: locale, context: context, status: [200], forbidRedirects: true,
+                typedAuthorizationDenial: true
             )
             try syncAuthority.withPermanentBoundValid(context) {
                 try page.validated(ownerId: context.ownerId, after: after, limit: limit)
@@ -2198,7 +2203,8 @@ extension PlantsAPIClient {
 
     private func analysisRequest<T: Decodable>(
         _ input: URLRequest, locale: SupportedLocale, context: SyncSessionLease,
-        status: Set<Int>, installation: String? = nil, forbidRedirects: Bool = false
+        status: Set<Int>, installation: String? = nil, forbidRedirects: Bool = false,
+        typedAuthorizationDenial: Bool = false
     ) async throws -> T {
         var request = input
         try syncAuthority.withBoundValid(context) {
@@ -2216,6 +2222,9 @@ extension PlantsAPIClient {
         }
         try syncAuthority.withBoundValid(context) {}
         let decoder = JSONDecoder()
+        if typedAuthorizationDenial && [401, 403].contains(response.statusCode) {
+            throw CareOverviewAuthorizationError.denied
+        }
         guard status.contains(response.statusCode) else {
             if let failure = try? decoder.decode(APIErrorResponse.self, from: data) {
                 throw failure

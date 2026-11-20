@@ -323,6 +323,12 @@ public struct GuestDraftCacheSnapshot: Codable, Sendable, Equatable {
 
 // MARK: - Local care overview (no sync schema or credential persistence)
 
+enum CareOverviewAuthorizationError: Error { case denied }
+
+enum CareOverviewInvalidation: String, Codable, Sendable {
+    case canonicalRevalidation, authorizationDenied
+}
+
 enum CareOverviewStoreError: Error, Equatable {
     case invalidLocale
     case superseded
@@ -359,6 +365,7 @@ struct LocalCareOverviewPresentation: Sendable {
     let entitlement: SyncWireEntitlementDTO?
     let canonicalAccessKnown: Bool
     let careRows: [LocalCareOverviewRow]
+    var knownInvalidation: CareOverviewInvalidation? = nil
 }
 
 /// Raw canonical evidence, including tombstones; never interpreted as future tasks.
@@ -380,6 +387,9 @@ private struct CareOverviewCachePayload: Codable {
     var snapshotLocale: String?
     var pendingRequestId: UUID?
     var pendingRequestLocale: String?
+    // Optional fields preserve version-1 decoding; no session material is persisted.
+    var knownInvalidation: CareOverviewInvalidation?
+    var revalidationRequestId: UUID?
 
     func validatedSnapshot(ownerId: UUID) throws -> CareOverviewSnapshot? {
         guard version == 1,
@@ -2197,7 +2207,8 @@ public actor LocalStore {
     }
 
     func beginCareOverviewRead(
-        locale: String, context: SyncSessionLease, authority: SyncSessionAuthority
+        locale: String, context: SyncSessionLease, authority: SyncSessionAuthority,
+        revalidating original: CareOverviewReadToken? = nil
     ) throws -> CareOverviewReadToken {
         try authority.withPermanentBoundValid(context) {
             guard ["en", "pl"].contains(locale) else { throw CareOverviewStoreError.invalidLocale }
@@ -2205,6 +2216,14 @@ public actor LocalStore {
             do {
                 let row = try careOverviewRow(ownerId: context.ownerId, in: disk)
                 var payload = careOverviewPayload(row, ownerId: context.ownerId) ?? CareOverviewCachePayload()
+                if let original {
+                    guard payload.revalidationRequestId == original.requestId,
+                          original.lease.ownerId == context.ownerId,
+                          original.lease.generation == context.generation else {
+                        throw CareOverviewStoreError.superseded
+                    }
+                }
+                payload.revalidationRequestId = nil
                 let requestId = UUID()
                 payload.pendingRequestId = requestId
                 payload.pendingRequestLocale = locale
@@ -2236,7 +2255,8 @@ public actor LocalStore {
         guard let payload = careOverviewPayload(row, ownerId: ownerId),
               let snapshot = try payload.validatedSnapshot(ownerId: ownerId),
               let fetchedAt = payload.fetchedAt, let locale = payload.snapshotLocale else { return nil }
-        let aligned = payload.snapshotGeneration == payload.canonicalGeneration
+        let aligned = payload.knownInvalidation == nil
+            && payload.snapshotGeneration == payload.canonicalGeneration
         return CachedCareOverview(
             snapshot: snapshot, fetchedAt: fetchedAt, snapshotLocale: locale,
             state: aligned ? .cached : .stale, canonicalGenerationMatches: aligned
@@ -2294,7 +2314,8 @@ public actor LocalStore {
                     entityType: $0.entityType, entityId: $0.entityId, payloadJSON: $0.payloadJSON,
                     updatedAtRaw: $0.updatedAtRaw, deletedAt: $0.deletedAt
                 )
-            }
+            },
+            knownInvalidation: payload?.knownInvalidation
         )
     }
 
@@ -2356,6 +2377,8 @@ public actor LocalStore {
                 try requireCareOverviewAlignment(validated, ownerId: ownerId, in: disk)
                 payload.snapshotJSON = String(decoding: try JSONEncoder().encode(validated), as: UTF8.self)
                 payload.snapshotGeneration = payload.canonicalGeneration
+                payload.knownInvalidation = nil
+                payload.revalidationRequestId = nil
                 payload.snapshotLocale = token.locale
                 payload.fetchedAt = Date()
                 payload.pendingRequestId = nil
@@ -2372,6 +2395,37 @@ public actor LocalStore {
         }
     }
 
+    /// Persist rejection before sync, retaining the last snapshot bytes and metadata.
+    /// The continuation marker fences the alignment await against newer requests.
+    func invalidateCareOverviewRead(
+        _ token: CareOverviewReadToken, reason: CareOverviewInvalidation,
+        authority: SyncSessionAuthority
+    ) throws {
+        try authority.withPermanentBoundValid(token.lease) {
+            let disk = makeSyncContext()
+            do {
+                let row = try careOverviewRow(ownerId: token.lease.ownerId, in: disk)
+                guard var payload = careOverviewPayload(row, ownerId: token.lease.ownerId),
+                      matchesCareOverviewRequest(payload, token: token) else {
+                    throw CareOverviewStoreError.superseded
+                }
+                if payload.knownInvalidation != .authorizationDenied {
+                    payload.knownInvalidation = reason
+                }
+                payload.canonicalGeneration = UUID()
+                payload.pendingRequestId = nil
+                payload.pendingRequestLocale = nil
+                payload.revalidationRequestId = token.requestId
+                try stageCareOverview(payload, row: row, ownerId: token.lease.ownerId, in: disk)
+                try Task.checkCancellation()
+                try disk.save()
+            } catch {
+                disk.rollback()
+                throw error
+            }
+        }
+    }
+
     @discardableResult
     func abandonCareOverviewRead(
         _ token: CareOverviewReadToken, authority: SyncSessionAuthority
@@ -2381,7 +2435,9 @@ public actor LocalStore {
             do {
                 let row = try careOverviewRow(ownerId: token.lease.ownerId, in: disk)
                 guard var payload = careOverviewPayload(row, ownerId: token.lease.ownerId),
-                      matchesCareOverviewRequest(payload, token: token) else { return false }
+                      matchesCareOverviewRequest(payload, token: token)
+                        || payload.revalidationRequestId == token.requestId else { return false }
+                payload.revalidationRequestId = nil
                 payload.pendingRequestId = nil
                 payload.pendingRequestLocale = nil
                 try stageCareOverview(payload, row: row, ownerId: token.lease.ownerId, in: disk)

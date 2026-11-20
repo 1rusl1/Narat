@@ -354,12 +354,243 @@ struct CollectionCapacitySnapshot: Sendable {
     let entitlement: SyncWireEntitlementDTO?
 }
 
+/// A read result only. It conveys neither command success nor notification permission.
+struct CareOverviewViewState: Sendable {
+    enum Origin: Sendable, Equatable { case cache, network }
+    enum Availability: Sendable, Equatable { case unavailable, readOnly, available }
+    enum Failure: Sendable, Equatable { case transport, revalidationRequired, authorizationDenied }
+    enum Access: Sendable, Equatable { case unknown, free, verified, expired }
+    struct Pending: Sendable {
+        enum Status: Sendable, Equatable { case pending, retryRequired }
+        let command: String
+        let plantId: UUID?
+        let operationId: UUID
+        let status: Status
+    }
+    struct Control: Sendable {
+        let id: UUID
+        let dueOn: String
+        let source: PlantCareRecommendation.Source
+    }
+    struct Advice: Sendable {
+        let actionId: String
+        let actionCode: String
+        let text: String
+        let intervalDays: Int?
+        let source: PlantCareRecommendation.Source
+    }
+    struct Plant: Sendable {
+        let card: CatalogueCardSummary
+        let advice: Advice?
+        let routine: PlantCareRecommendation.RoutineCheck?
+        let routineSource: PlantCareRecommendation.Source?
+        let controls: [Control]
+        let automatedActionsAllowed: Bool
+        let manualJournalAvailable: Bool
+        let cardLinkAvailable: Bool
+    }
+
+    let ownerId: UUID
+    let snapshotLocale: String?
+    let canonicalGeneration: UUID?
+    let snapshotGeneration: UUID?
+    let cacheAge: TimeInterval?
+    let origin: Origin
+    let availability: Availability
+    let failure: Failure?
+    let access: Access
+    let knownInvalidation: CareOverviewInvalidation?
+    let pending: [Pending]
+    let profileHourPending: Bool
+    let reminderHourLocal: Int?
+    let plants: [Plant]
+
+    init(
+        local: LocalCareOverviewPresentation, now: Date, origin: Origin,
+        failure: Failure? = nil
+    ) {
+        ownerId = local.ownerId
+        snapshotLocale = local.cached?.snapshotLocale
+        canonicalGeneration = local.canonicalGeneration
+        snapshotGeneration = local.snapshotGeneration
+        cacheAge = local.cached.map { max(0, now.timeIntervalSince($0.fetchedAt)) }
+        self.origin = origin
+        knownInvalidation = local.knownInvalidation
+        switch local.knownInvalidation {
+        case .authorizationDenied: self.failure = .authorizationDenied
+        case .canonicalRevalidation: self.failure = .revalidationRequired
+        case nil: self.failure = failure
+        }
+        pending = local.pending.map {
+            Pending(command: $0.commandName, plantId: $0.plantId, operationId: $0.operationId,
+                    status: $0.lastError == nil ? .pending : .retryRequired)
+        }
+        // A pending profile command is conservatively treated as an unconfirmed hour.
+        profileHourPending = local.pending.contains { $0.commandName == "profile.update" }
+        let access: Access
+        if !local.canonicalAccessKnown {
+            access = .unknown
+        } else if let entitlement = local.entitlement {
+            access = entitlement.verifiedAccessUntil.map { $0 > now } == true ? .verified : .expired
+        } else {
+            access = .free
+        }
+        self.access = access
+        let page = local.cached?.snapshot.pages.first
+        let rows = local.cached?.snapshot.plants ?? []
+        let wire = Dictionary(rows.map { ($0.plantId, $0) }, uniquingKeysWith: { first, _ in first })
+        let ids = Set(local.cards.map(\.id))
+        let complete = local.cached != nil && ids.count == local.cards.count
+            && ids == Set(rows.map(\.plantId)) && rows.count == wire.count
+            && local.cards.allSatisfy { wire[$0.id]?.careRevision == $0.careRevision }
+        let aligned = complete && local.cached?.canonicalGenerationMatches == true
+            && local.knownInvalidation == nil
+        let ceiling: Bool
+        switch access {
+        case .verified: ceiling = true
+        case .free: ceiling = page?.verifiedAccessUntil == nil
+        case .unknown, .expired: ceiling = false
+        }
+        let serverValid = page.map {
+            $0.automationAllowed && ($0.verifiedAccessUntil.map {
+                SQLTimestamp.date(from: $0).map { $0 > now } == true
+            } ?? true)
+        } ?? false
+        let hourConfirmed = !profileHourPending && local.profile?.reminderHourLocal == page?.reminderHourLocal
+        let eligible = aligned && ceiling && serverValid && hourConfirmed
+        reminderHourLocal = eligible ? page?.reminderHourLocal : nil
+
+        // Only relevant care mutations newer than the snapshot can suppress occurrences.
+        // Raw task rows are evidence, never a source of future dates.
+        let relevant: Set<String> = [
+            "condition_snapshots", "care_tasks", "care_entries", "care_reversals",
+            "schedule_changes", "basic_care_memberships", "first_aid_followups",
+            "care_observations", "recovery_transitions"
+        ]
+        let watermark = page.flatMap { SQLTimestamp.microseconds(from: $0.ownerWatermark) }
+        var changed = Set<UUID>()
+        var unmappedChange = false
+        for row in local.careRows where relevant.contains(row.entityType) {
+            guard let updated = row.updatedAtRaw.flatMap(SQLTimestamp.microseconds(from:)),
+                  let watermark else {
+                unmappedChange = true
+                continue
+            }
+            let deleted = row.deletedAt.map { $0.timeIntervalSince1970 * 1_000_000 }
+            guard updated > watermark || deleted.map({ $0 > Double(watermark) }) == true else { continue }
+            guard let object = try? JSONSerialization.jsonObject(with: Data(row.payloadJSON.utf8)) as? [String: Any],
+                  let id = (object["plant_id"] as? String).flatMap(UUID.init(uuidString:)),
+                  ids.contains(id) else {
+                unmappedChange = true
+                continue
+            }
+            changed.insert(id)
+        }
+        availability = local.cached == nil ? .unavailable
+            : (eligible && !unmappedChange ? .available : .readOnly)
+        plants = local.cards.map { card in
+            let row = wire[card.id]
+            let blocked = local.pending.contains {
+                $0.plantId == card.id || ($0.plantId == nil && $0.commandName != "profile.update")
+            }
+            let allowed = eligible && !blocked && !unmappedChange && !changed.contains(card.id)
+            let recommendation = try? row?.careRecommendation.validated(for: card.id)
+            return Plant(
+                card: card, advice: recommendation.map {
+                    Advice(actionId: $0.actionId, actionCode: $0.actionCode, text: $0.text,
+                           intervalDays: $0.nextCheckIntervalDays, source: $0.source)
+                },
+                routine: allowed ? row?.careRecommendation.routineCheck : nil,
+                routineSource: allowed && row?.careRecommendation.routineCheck != nil
+                    ? row?.careRecommendation.nextCheck?.source : nil,
+                controls: allowed ? (row?.firstAidControls ?? []).map {
+                    Control(id: $0.controlId, dueOn: $0.policy.dueOn, source: $0.policy.source)
+                } : [],
+                automatedActionsAllowed: allowed && (row?.careRecommendation.routineCheck != nil
+                    || row?.firstAidControls.isEmpty == false),
+                manualJournalAvailable: true, cardLinkAvailable: true
+            )
+        }
+    }
+}
+
 /// Advisory only: the server's create guard remains authoritative.
 public struct CollectionRepository: Sendable {
     private let store: LocalStore
     private let apiClient: PlantsAPIClient
     private let syncEngine: SyncEngine
     private let clock: @Sendable () -> Date
+
+    /// A local event may call this method without starting any network operation.
+    func cachedCareOverview(context: SyncSessionLease) async throws -> CareOverviewViewState {
+        let local = try await store.readCareOverviewPresentation(
+            context: context, authority: apiClient.syncAuthority
+        )
+        return try apiClient.syncAuthority.withPermanentBoundValid(context) {
+            CareOverviewViewState(local: local, now: clock(), origin: .cache)
+        }
+    }
+
+    /// Two complete HTTP reads and one canonical alignment at most; never drains commands.
+    func refreshCareOverview(
+        locale: SupportedLocale, context: SyncSessionLease
+    ) async throws -> CareOverviewViewState {
+        let authority = apiClient.syncAuthority
+        try authority.withPermanentBoundValid(context) {}
+        var token = try await store.beginCareOverviewRead(
+            locale: locale.rawValue, context: context, authority: authority
+        )
+        var failure: CareOverviewViewState.Failure = .transport
+        do {
+            for attempt in 0..<2 {
+                let snapshot: CareOverviewSnapshot
+                do {
+                    snapshot = try await apiClient.fetchCareOverview(context: context, locale: locale)
+                } catch CareOverviewAuthorizationError.denied {
+                    try await store.invalidateCareOverviewRead(
+                        token, reason: .authorizationDenied, authority: authority
+                    )
+                    failure = .authorizationDenied
+                    throw CareOverviewAuthorizationError.denied
+                }
+                try authority.withPermanentBoundValid(context) {}
+                do {
+                    let local = try await store.finishCareOverviewRead(
+                        token, snapshot: snapshot, authority: authority
+                    )
+                    return try authority.withPermanentBoundValid(context) {
+                        CareOverviewViewState(local: local, now: clock(), origin: .network)
+                    }
+                } catch CareOverviewStoreError.needsCanonicalSync {
+                    try await store.invalidateCareOverviewRead(
+                        token, reason: .canonicalRevalidation, authority: authority
+                    )
+                    failure = .revalidationRequired
+                    guard attempt == 0 else { throw CareOverviewStoreError.needsCanonicalSync }
+                    _ = try await syncEngine.performFullRefresh(context: context)
+                    try authority.withPermanentBoundValid(context) {}
+                    token = try await store.beginCareOverviewRead(
+                        locale: locale.rawValue, context: context, authority: authority,
+                        revalidating: token
+                    )
+                }
+            }
+            throw CareOverviewStoreError.needsCanonicalSync
+        } catch {
+            // Cancellation, lost scope and supersession never fall back to another request/owner.
+            try authority.withPermanentBoundValid(context) {}
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            if case SyncWireValidationError.invalidSession = error { throw error }
+            if case CareOverviewStoreError.superseded = error { throw error }
+            guard try await store.abandonCareOverviewRead(token, authority: authority) else {
+                throw CareOverviewStoreError.superseded
+            }
+            let local = try await store.readCareOverviewPresentation(context: context, authority: authority)
+            return try authority.withPermanentBoundValid(context) {
+                CareOverviewViewState(local: local, now: clock(), origin: .cache, failure: failure)
+            }
+        }
+    }
 
     /// The caller captures one permanent owner's lease for the whole lifecycle trigger.
     /// A retained command or unavailable refresh is never presented as action success.

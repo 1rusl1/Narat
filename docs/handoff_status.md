@@ -4392,8 +4392,8 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-overview-local-presentation: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 676.17 с, проверки — 133.38 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-overview-local-presentation](validation/automation/tasks/tester-care-overview-local-presentation.md).
+tester-care-overview-repository: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 1119.09 с, проверки — 144.14 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-overview-repository](validation/automation/tasks/tester-care-overview-repository.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
