@@ -11804,3 +11804,308 @@ extension CollectionWireTests {
         XCTAssertEqual(try overviewDiskState(url), before)
     }
 }
+
+@MainActor
+private final class FakeCareReminderNotifications: CareReminderNotifications {
+    enum Fault: Error { case injected }
+    var now = SQLTimestamp.date(from: "2026-11-20T00:00:00Z")!
+    var authorizationValue = CareReminderPlan.Authorization.authorized
+    var pending: [CareReminderNotificationInventory.Item] = []
+    var delivered: [CareReminderNotificationInventory.Item] = []
+    var otherPendingCount = 1 // Trial/other namespace is never passed to care removals.
+    var adds: [CareReminderNotificationProposal] = []
+    var removed: [String] = []
+    var permissionRequests = 0
+    var failInventory = false
+    var afterRemove: (() -> Void)?
+    var onAuthorization: (() -> Void)?
+    var onAdd: ((CareReminderNotificationProposal) async throws -> Void)?
+
+    func authorization() async throws -> CareReminderPlan.Authorization {
+        onAuthorization?()
+        return authorizationValue
+    }
+    func requestAuthorization() async throws { permissionRequests += 1 }
+    func inventory() async throws -> CareReminderNotificationInventory {
+        if failInventory { throw Fault.injected }
+        return .init(pending: pending, delivered: delivered, otherPendingCount: otherPendingCount)
+    }
+    func add(_ proposal: CareReminderNotificationProposal, now: Date) async throws {
+        adds.append(proposal)
+        pending.append(.init(rawIdentifier: CareReminderNotificationFactory.prefix + proposal.candidate.id,
+            route: .init(candidate: proposal.candidate, attemptId: proposal.attemptId), deliveredAt: nil))
+        try await onAdd?(proposal)
+    }
+    func removePending(_ identifiers: [String]) async throws {
+        removed += identifiers
+        pending.removeAll { identifiers.contains($0.rawIdentifier) }
+        afterRemove?()
+    }
+    func removeDelivered(_ identifiers: [String]) async throws {
+        removed += identifiers
+        delivered.removeAll { identifiers.contains($0.rawIdentifier) }
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    private func reminderFixture() async throws
+        -> (URL, LocalStore, SyncSessionAuthority, SyncSessionLease, LocalCareOverviewPresentation) {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        return (url, store, api.syncAuthority, lease, local)
+    }
+
+    private func passState(_ local: LocalCareOverviewPresentation, count: Int = 1,
+                           hour: Int = 9, due: String = "2026-11-25") throws -> CareOverviewViewState {
+        try reminderState(local, rows: [overviewRow(serverPlantId, dated: true,
+            controls: (1...count).map { reminderControl($0, due: due) })], hour: hour)
+    }
+
+    @MainActor
+    private func reminderPass(_ store: LocalStore, _ authority: SyncSessionAuthority,
+                              _ lease: SyncSessionLease, _ state: CareOverviewViewState?,
+                              _ fake: FakeCareReminderNotifications, optedIn: Bool = true,
+                              allowNew: Bool = true, current: @escaping () -> Bool = { true })
+        async -> CareReminderScheduler.Result {
+        await CareReminderScheduler.reconcile(.init(lease: lease, store: store, authority: authority,
+            isCurrent: current, state: state, optedIn: optedIn, allowNewRequests: allowNew,
+            locale: "pl", timeZone: TimeZone(secondsFromGMT: 0)!, clock: { fake.now }),
+            notifications: fake)
+    }
+
+    @MainActor
+    func testReminderPassPersistsPrepareBeforeAddAndNoopPreservesOtherNamespace() async throws {
+        let (url, store, authority, lease, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try passState(local)
+        let fake = FakeCareReminderNotifications()
+        let foreign = try receiptCandidate(owner: otherSyncOwner)
+        fake.pending = [.init(rawIdentifier: CareReminderNotificationFactory.prefix + foreign.id,
+            route: .init(candidate: foreign, attemptId: UUID()), deliveredAt: nil)]
+        fake.onAdd = { proposal in
+            let disk = LocalStore(modelContainer: try self.diskContainer(url))
+            let read = try await disk.readCareReminderReceipts(context: lease, authority: authority)
+            let entry = try XCTUnwrap(read?.receipts.entries[proposal.candidate.id])
+            XCTAssertEqual(entry.phase, .prepared)
+            XCTAssertEqual(entry.attemptId, proposal.attemptId)
+            XCTAssertFalse(fake.pending.contains { $0.route?.candidate.ownerId == self.otherSyncOwner })
+        }
+        let first = await reminderPass(store, authority, lease, state, fake)
+        XCTAssertFalse(first.failed)
+        XCTAssertEqual(first.confirmedPendingCount, 1)
+        let read = try await store.readCareReminderReceipts(context: lease, authority: authority)
+        XCTAssertEqual(read?.receipts.entries.values.first?.phase, .armed)
+        let second = await reminderPass(store, authority, lease, state, fake)
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(fake.adds.count, 1)
+        XCTAssertEqual(fake.otherPendingCount, 1)
+        XCTAssertTrue(fake.removed.allSatisfy { $0.hasPrefix(CareReminderNotificationFactory.prefix) })
+        XCTAssertEqual(fake.permissionRequests, 0)
+    }
+
+    @MainActor
+    func testReminderPassColdRecoveryAndConsumedOrUnknownEvidenceNeverReplay() async throws {
+        // Exact accepted-add/lost-ACK recovery; elapsed, delivered, missing and unknown OS history.
+        for mode in 0...4 {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let state = try passState(local)
+            let candidate = try XCTUnwrap(reminderPlan(state).candidates.first)
+            let fake = FakeCareReminderNotifications()
+            if mode == 4 {
+                fake.pending = [.init(rawIdentifier: CareReminderNotificationFactory.prefix + candidate.id,
+                    route: .init(candidate: candidate, attemptId: UUID()), deliveredAt: nil)]
+            } else {
+                fake.onAdd = { _ in throw FakeCareReminderNotifications.Fault.injected }
+                let lost = await reminderPass(store, authority, lease, state, fake)
+                XCTAssertTrue(lost.failed)
+                let prepared = try await store.readCareReminderReceipts(context: lease, authority: authority)
+                XCTAssertEqual(prepared?.receipts.entries[candidate.id]?.phase, .prepared)
+            }
+            let attempt = fake.pending.first?.route?.attemptId
+            fake.onAdd = nil
+            if mode == 1 { fake.now = candidate.absoluteFireDate }
+            if mode == 2 {
+                let item = try XCTUnwrap(fake.pending.first)
+                fake.delivered = [.init(rawIdentifier: item.rawIdentifier, route: item.route, deliveredAt: fake.now)]
+                fake.pending = []
+            }
+            if mode == 3 { fake.pending = [] } // Dismissal/absence is not fresh-add authority.
+            let cold = LocalStore(modelContainer: try diskContainer(url))
+            let desired = try (mode == 0 ? state : passState(local, hour: 11, due: "2026-11-26"))
+            let recovered = await reminderPass(cold, authority, lease, desired, fake)
+            XCTAssertFalse(recovered.failed)
+            XCTAssertEqual(fake.adds.count, mode == 4 ? 0 : 1)
+            let read = try await cold.readCareReminderReceipts(context: lease, authority: authority)
+            let entry = try XCTUnwrap(read?.receipts.entries[candidate.id])
+            XCTAssertEqual(entry.attemptId, attempt)
+            XCTAssertEqual(entry.phase, mode == 0 ? .armed : mode <= 2 ? .spent : .uncertain)
+            XCTAssertEqual(recovered.confirmedPendingCount, mode == 0 ? 1 : 0)
+        }
+    }
+
+    @MainActor
+    func testReminderPassPrefireReadbackProofAndFailureBarriers() async throws {
+        for mode in 0...3 {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fake = FakeCareReminderNotifications()
+            let initial = await reminderPass(store, authority, lease, try passState(local), fake)
+            XCTAssertFalse(initial.failed)
+            let before = try await store.readCareReminderReceipts(context: lease, authority: authority)
+            let old = try XCTUnwrap(before?.receipts.entries.values.first)
+            if mode == 1 { fake.pending = [] }
+            if mode == 2 { fake.afterRemove = { fake.failInventory = true } }
+            if mode == 3 { fake.afterRemove = { fake.now = old.currentFireDate } }
+            let replacement = await reminderPass(store, authority, lease, try passState(local, hour: 11), fake)
+            XCTAssertEqual(replacement.failed, mode == 2)
+            let after = try await store.readCareReminderReceipts(context: lease, authority: authority)
+            let entry = try XCTUnwrap(after?.receipts.entries[old.id])
+            XCTAssertEqual(entry.originalFireDate, old.originalFireDate)
+            XCTAssertEqual(fake.adds.count, mode == 0 ? 2 : 1)
+            if mode == 0 {
+                XCTAssertEqual(entry.phase, .armed)
+                XCTAssertNotEqual(entry.attemptId, old.attemptId)
+                XCTAssertEqual(entry.currentFireDate, try receiptCandidate(hour: 11).absoluteFireDate)
+                XCTAssertEqual(entry.cancellation?.fireDate, old.currentFireDate)
+                var ledger = try XCTUnwrap(after).receipts
+                XCTAssertFalse(try ledger.acknowledge(id: old.id, attemptId: old.attemptId, now: fake.now))
+                XCTAssertFalse(try ledger.cancel(id: old.id, attemptId: old.attemptId,
+                    proof: .removedAndReadBackAbsent(confirmedAt: fake.now), now: fake.now))
+                XCTAssertEqual(ledger, after?.receipts)
+            } else {
+                XCTAssertEqual(entry.phase, mode == 3 ? .spent : .uncertain)
+            }
+        }
+    }
+
+    @MainActor
+    func testReminderPassFiltersSpentBeforeCapacityAndAccountsOtherRequests() async throws {
+        for other in [0, 40] {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let state = try passState(local, count: 74)
+            let candidates = reminderPlan(state).candidates
+            XCTAssertEqual(candidates.count, 74)
+            let token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+            var ledger = token.receipts
+            for c in candidates.prefix(40) {
+                _ = try ledger.prepare(c, now: receiptNow)
+                try ledger.observe(id: c.id, now: receiptNow, delivered: true)
+            }
+            _ = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+            let fake = FakeCareReminderNotifications()
+            fake.otherPendingCount = other
+            let result = await reminderPass(store, authority, lease, state, fake)
+            let count = other == 0 ? 32 : 24
+            XCTAssertFalse(result.failed)
+            XCTAssertEqual(result.confirmedPendingCount, count)
+            XCTAssertEqual(result.omittedCount, 34 - count)
+            XCTAssertEqual(fake.adds.map { $0.candidate.id }, Array(candidates.dropFirst(40).prefix(count)).map { $0.id })
+            XCTAssertEqual(fake.otherPendingCount, other)
+        }
+    }
+
+    @MainActor
+    func testReminderPassPermissionOptoutHoldAndUnknownPresentation() async throws {
+        for mode in 0...3 {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fake = FakeCareReminderNotifications()
+            let state = try passState(local)
+            let initial = await reminderPass(store, authority, lease, state, fake)
+            XCTAssertFalse(initial.failed)
+            let unknown = await reminderPass(store, authority, lease, nil, fake)
+            XCTAssertTrue(unknown.deferred)
+            XCTAssertEqual(fake.pending.count, 1)
+            if mode == 1 { fake.authorizationValue = .denied }
+            if mode == 2 { fake.authorizationValue = .notDetermined }
+            let result = await reminderPass(store, authority, lease, try passState(local, count: 2), fake,
+                optedIn: mode != 0, allowNew: false)
+            XCTAssertFalse(result.failed)
+            XCTAssertEqual(fake.adds.count, 1)
+            XCTAssertEqual(result.confirmedPendingCount, mode == 3 ? 1 : 0)
+            XCTAssertEqual(fake.permissionRequests, 0)
+            XCTAssertEqual(fake.otherPendingCount, 1)
+        }
+    }
+
+    @MainActor
+    func testReminderPassScopeStorageAndConflictingInventoryFailClosed() async throws {
+        for mode in 0...8 {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fake = FakeCareReminderNotifications()
+            let state = try passState(local)
+            var target = store
+            if mode == 1 {
+                _ = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+                target = LocalStore(modelContainer: try diskContainer(url, allowsSave: false))
+            }
+            if mode == 2 { fake.onAuthorization = { authority.bind(nil) } }
+            if mode == 3 {
+                let token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+                let c = try XCTUnwrap(reminderPlan(state).candidates.first)
+                var ledger = token.receipts
+                _ = try ledger.prepare(c, now: receiptNow)
+                let entry = try XCTUnwrap(ledger.entries[c.id])
+                _ = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+                let item = CareReminderNotificationInventory.Item(
+                    rawIdentifier: CareReminderNotificationFactory.prefix + c.id,
+                    route: .init(candidate: c, attemptId: entry.attemptId), deliveredAt: nil)
+                fake.pending = [item, item] // No Dictionary(uniqueKeysWithValues:) trap or replay.
+            }
+            if mode == 4 {
+                fake.pending = [.init(rawIdentifier: CareReminderNotificationFactory.prefix + "unknown",
+                    route: nil, deliveredAt: nil)]
+            }
+            if mode >= 5 {
+                var token = try await store.beginCareReminderReceipts(context: lease, authority: authority)
+                let c = try XCTUnwrap(reminderPlan(state).candidates.first)
+                var ledger = token.receipts
+                _ = try ledger.prepare(c, now: fake.now)
+                token = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+                let entry = try XCTUnwrap(ledger.entries[c.id])
+                XCTAssertTrue(try ledger.cancel(id: c.id, attemptId: entry.attemptId,
+                    proof: .removedAndReadBackAbsent(confirmedAt: fake.now), now: fake.now))
+                _ = try await store.commitCareReminderReceipts(ledger, replacing: token, authority: authority)
+                target = LocalStore(modelContainer: try diskContainer(url))
+                let cancelled = try await target.readCareReminderReceipts(context: lease, authority: authority)
+                XCTAssertEqual(cancelled?.receipts.entries[c.id]?.phase, .cancelledBeforeFire)
+                let raw = CareReminderNotificationFactory.prefix + c.id
+                let route = CareReminderNotificationRoute(candidate: c,
+                    attemptId: mode == 5 ? UUID() : entry.attemptId)
+                if mode == 5 || mode == 7 {
+                    // Both a different attempt and a reappearing cancelled attempt contradict absence.
+                    fake.pending = [.init(rawIdentifier: raw, route: route, deliveredAt: nil)]
+                } else {
+                    // Unverifiable delivered evidence blocks; verified delivery consumes the occurrence.
+                    fake.delivered = [.init(rawIdentifier: raw, route: mode == 6 ? nil : route,
+                        deliveredAt: fake.now)]
+                }
+            }
+            let result = await reminderPass(target, authority, lease, state, fake, current: { mode != 0 })
+            XCTAssertEqual(result.failed, mode != 3 && mode < 5)
+            XCTAssertTrue(fake.adds.isEmpty)
+            XCTAssertEqual(fake.permissionRequests, 0)
+            if mode == 3 || mode >= 5 {
+                let read = try await store.readCareReminderReceipts(context: lease, authority: authority)
+                let expected: CareReminderReceipts.Phase = mode == 8 ? .spent : .uncertain
+                XCTAssertEqual(read?.receipts.entries.values.first?.phase, expected)
+                XCTAssertEqual(result.unconfirmedBlockers, mode == 8 ? 0 : 1)
+                if mode >= 5 {
+                    XCTAssertTrue(fake.pending.isEmpty)
+                    XCTAssertTrue(fake.delivered.isEmpty)
+                    let cold = LocalStore(modelContainer: try diskContainer(url))
+                    let again = await reminderPass(cold, authority, lease, state, fake)
+                    XCTAssertFalse(again.failed)
+                    XCTAssertTrue(fake.adds.isEmpty)
+                    let persisted = try await cold.readCareReminderReceipts(context: lease, authority: authority)
+                    XCTAssertEqual(persisted?.receipts.entries.values.first?.phase, expected)
+                    XCTAssertEqual(again.unconfirmedBlockers, mode == 8 ? 0 : 1)
+                }
+            }
+        }
+    }
+}

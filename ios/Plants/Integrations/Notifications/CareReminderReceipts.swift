@@ -200,5 +200,21 @@ struct CareReminderReceipts: Codable, Sendable, Equatable {
         }
     }
 
+    /// Conservative OS-history import only. This can NEVER create PREPARED or authorize an add.
+    /// In particular, a verified past occurrence may block a later first-aid date proposal.
+    mutating func recordUnknown(_ route: CareReminderNotificationRoute, delivered: Bool) throws {
+        let c = route.candidate
+        guard c.ownerId == ownerId else { throw Invalid.owner }
+        guard c.id == CareReminderPlan.identity(ownerId: ownerId, plantId: c.plantId,
+                  occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD),
+              SQLCalendarDay.date(from: c.sourceDueYMD) != nil, Self.finite(c.absoluteFireDate)
+        else { throw Invalid.candidate }
+        guard entries[c.id] == nil else { return }
+        entries[c.id] = Entry(id: c.id, ownerId: ownerId, plantId: c.plantId,
+            occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD,
+            originalFireDate: c.absoluteFireDate, currentFireDate: c.absoluteFireDate,
+            attemptId: route.attemptId, phase: delivered ? .spent : .uncertain, cancellation: nil)
+    }
+
     private static func finite(_ date: Date) -> Bool { date.timeIntervalSinceReferenceDate.isFinite }
 }
