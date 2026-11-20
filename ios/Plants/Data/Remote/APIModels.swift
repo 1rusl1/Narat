@@ -1,5 +1,233 @@
 import Foundation
 
+// MARK: - Complete owner care overview (wire only; not a durable or actionable cache)
+
+private struct CareOverviewKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+
+    static func require(_ decoder: any Decoder, _ names: [String]) throws {
+        let keys = try decoder.container(keyedBy: Self.self).allKeys.map(\.stringValue)
+        guard Set(keys) == Set(names) else { throw SyncWireValidationError.invalidPage }
+    }
+}
+
+struct CareOverviewControl: Codable, Sendable {
+    struct Policy: Codable, Sendable {
+        let dueOn: String
+        let intervalDays: Int
+        let source: PlantCareRecommendation.Source
+
+        enum CodingKeys: String, CodingKey {
+            case dueOn = "due_on", intervalDays = "interval_days", source
+        }
+
+        init(from decoder: any Decoder) throws {
+            try CareOverviewKey.require(decoder, ["due_on", "interval_days", "source"])
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            dueOn = try values.decode(String.self, forKey: .dueOn)
+            intervalDays = try values.decode(Int.self, forKey: .intervalDays)
+            source = try values.decode(PlantCareRecommendation.Source.self, forKey: .source)
+            guard SQLCalendarDay.date(from: dueOn) != nil,
+                  (1...90).contains(intervalDays), source.isVerifiedLink else {
+                throw SyncWireValidationError.invalidPage
+            }
+        }
+    }
+
+    let controlId: UUID
+    let actionEntryId: UUID
+    let jobId: UUID
+    let originAnalysisId: UUID
+    let kbReleaseId: UUID
+    let protocolId: UUID
+    let contextRevision: Int
+    let actionId: String
+    let actionCode: String
+    let policy: Policy
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case controlId = "control_id", actionEntryId = "action_entry_id", jobId = "job_id"
+        case originAnalysisId = "origin_analysis_id", kbReleaseId = "kb_release_id"
+        case protocolId = "protocol_id", contextRevision = "context_revision"
+        case actionId = "action_id", actionCode = "action_code", policy
+    }
+
+    init(from decoder: any Decoder) throws {
+        try CareOverviewKey.require(decoder, CodingKeys.allCases.map(\.rawValue))
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        controlId = try values.decode(UUID.self, forKey: .controlId)
+        actionEntryId = try values.decode(UUID.self, forKey: .actionEntryId)
+        jobId = try values.decode(UUID.self, forKey: .jobId)
+        originAnalysisId = try values.decode(UUID.self, forKey: .originAnalysisId)
+        kbReleaseId = try values.decode(UUID.self, forKey: .kbReleaseId)
+        protocolId = try values.decode(UUID.self, forKey: .protocolId)
+        contextRevision = try values.decode(Int.self, forKey: .contextRevision)
+        actionId = try values.decode(String.self, forKey: .actionId)
+        actionCode = try values.decode(String.self, forKey: .actionCode)
+        policy = try values.decode(Policy.self, forKey: .policy)
+        guard (1...9_007_199_254_740_991).contains(contextRevision),
+              actionCode == "check_soil",
+              actionId.utf8.first.map({ (97...122).contains($0) }) == true,
+              actionId.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 95 }) else {
+            throw SyncWireValidationError.invalidPage
+        }
+    }
+}
+
+struct CareOverviewPlant: Codable, Sendable {
+    let plantId: UUID
+    let careRevision: Int
+    // Keep the FULL wire response: the view recommendation does not encode dates/context.
+    let careRecommendation: PlantCareRecommendationResponse
+    let firstAidControls: [CareOverviewControl]
+
+    enum CodingKeys: String, CodingKey {
+        case plantId = "plant_id", careRevision = "care_revision"
+        case careRecommendation = "care_recommendation", firstAidControls = "first_aid_controls"
+    }
+
+    func validated(automationAllowed: Bool) throws {
+        guard (1...9_007_199_254_740_991).contains(careRevision),
+              careRecommendation.routineCheck.map({ $0.careRevision == careRevision }) ?? true,
+              Set(firstAidControls.map(\.controlId)).count == firstAidControls.count,
+              firstAidControls.allSatisfy({ $0.contextRevision == careRevision }) else {
+            throw SyncWireValidationError.invalidPage
+        }
+        _ = try careRecommendation.validated(for: plantId)
+        guard automationAllowed || (
+            careRecommendation.nextCheck == nil && careRecommendation.routineCheck == nil
+                && firstAidControls.isEmpty
+        ) else { throw SyncWireValidationError.invalidPage }
+    }
+}
+
+struct CareOverviewPage: Codable, Sendable {
+    let ownerId: UUID
+    let serverNow: String
+    let ownerWatermark: String
+    let publicationFingerprint: String
+    let reminderHourLocal: Int
+    let automationAllowed: Bool
+    let verifiedAccessUntil: String?
+    let plants: [CareOverviewPlant]
+    let nextAfter: UUID?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case ownerId = "owner_id", serverNow = "server_now", ownerWatermark = "owner_watermark"
+        case publicationFingerprint = "publication_fingerprint", reminderHourLocal = "reminder_hour_local"
+        case automationAllowed = "automation_allowed", verifiedAccessUntil = "verified_access_until"
+        case plants, nextAfter = "next_after"
+    }
+
+    init(from decoder: any Decoder) throws {
+        try CareOverviewKey.require(decoder, CodingKeys.allCases.map(\.rawValue))
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        ownerId = try values.decode(UUID.self, forKey: .ownerId)
+        serverNow = try values.decode(String.self, forKey: .serverNow)
+        ownerWatermark = try values.decode(String.self, forKey: .ownerWatermark)
+        publicationFingerprint = try values.decode(String.self, forKey: .publicationFingerprint)
+        reminderHourLocal = try values.decode(Int.self, forKey: .reminderHourLocal)
+        automationAllowed = try values.decode(Bool.self, forKey: .automationAllowed)
+        verifiedAccessUntil = try values.decode(String?.self, forKey: .verifiedAccessUntil)
+        plants = try values.decode([CareOverviewPlant].self, forKey: .plants)
+        nextAfter = try values.decode(UUID?.self, forKey: .nextAfter)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(ownerId, forKey: .ownerId)
+        try values.encode(serverNow, forKey: .serverNow)
+        try values.encode(ownerWatermark, forKey: .ownerWatermark)
+        try values.encode(publicationFingerprint, forKey: .publicationFingerprint)
+        try values.encode(reminderHourLocal, forKey: .reminderHourLocal)
+        try values.encode(automationAllowed, forKey: .automationAllowed)
+        try values.encode(verifiedAccessUntil, forKey: .verifiedAccessUntil)
+        try values.encode(plants, forKey: .plants)
+        try values.encode(nextAfter, forKey: .nextAfter)
+    }
+
+    private static func utc(_ value: String) -> Int64? {
+        guard value.hasSuffix("Z") || value.hasSuffix("+00:00") else { return nil }
+        return SQLTimestamp.microseconds(from: value)
+    }
+
+    func validated(ownerId expected: UUID, after: UUID?, limit: Int) throws {
+        guard ownerId == expected, (1...200).contains(limit), plants.count <= limit,
+              let now = Self.utc(serverNow), Self.utc(ownerWatermark) != nil,
+              publicationFingerprint.utf8.count == 64,
+              publicationFingerprint.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+              (0...23).contains(reminderHourLocal) else {
+            throw SyncWireValidationError.invalidPage
+        }
+        if let deadline = verifiedAccessUntil {
+            guard let end = Self.utc(deadline), !automationAllowed || end > now else {
+                throw SyncWireValidationError.invalidPage
+            }
+        }
+        var previous = after?.uuidString.lowercased()
+        var controlIds = Set<UUID>()
+        for plant in plants {
+            let key = plant.plantId.uuidString.lowercased()
+            guard previous.map({ key > $0 }) ?? true else { throw SyncWireValidationError.invalidPage }
+            try plant.validated(automationAllowed: automationAllowed)
+            guard plant.firstAidControls.allSatisfy({ controlIds.insert($0.controlId).inserted }) else {
+                throw SyncWireValidationError.invalidPage
+            }
+            previous = key
+        }
+        if let nextAfter {
+            guard !plants.isEmpty, plants.count == limit, nextAfter == plants.last?.plantId,
+                  after.map({ nextAfter.uuidString.lowercased() > $0.uuidString.lowercased() }) ?? true else {
+                throw SyncWireValidationError.invalidPage
+            }
+        }
+    }
+
+    func hasSamePublication(as other: Self) -> Bool {
+        ownerId == other.ownerId && ownerWatermark == other.ownerWatermark
+            && publicationFingerprint == other.publicationFingerprint
+            && reminderHourLocal == other.reminderHourLocal
+            && automationAllowed == other.automationAllowed
+            && verifiedAccessUntil == other.verifiedAccessUntil
+    }
+}
+
+/// In-memory complete read. It grants no offline authority and performs no scheduling.
+struct CareOverviewSnapshot: Codable, Sendable {
+    let pages: [CareOverviewPage]
+    let pageLimit: Int
+    var plants: [CareOverviewPlant] { pages.flatMap(\.plants) }
+
+    @discardableResult
+    func validated(for ownerId: UUID) throws -> Self {
+        guard let first = pages.first, (1...1_000).contains(pages.count),
+              pages.last?.nextAfter == nil else { throw SyncWireValidationError.invalidPage }
+        var after: UUID?
+        var previousNow: Int64?
+        var controlIds = Set<UUID>()
+        for (index, page) in pages.enumerated() {
+            try page.validated(ownerId: ownerId, after: after, limit: pageLimit)
+            guard page.hasSamePublication(as: first),
+                  index == pages.count - 1 || page.nextAfter != nil,
+                  let now = SQLTimestamp.microseconds(from: page.serverNow),
+                  previousNow.map({ now >= $0 }) ?? true else {
+                throw SyncWireValidationError.invalidPage
+            }
+            for plant in page.plants {
+                guard plant.firstAidControls.allSatisfy({ controlIds.insert($0.controlId).inserted }) else {
+                    throw SyncWireValidationError.invalidPage
+                }
+            }
+            after = page.nextAfter
+            previousNow = now
+        }
+        return self
+    }
+}
+
 // MARK: - Canonical monthly access read wire (not the local forecast)
 
 enum AnalysisAccessWireError: Error, Sendable {

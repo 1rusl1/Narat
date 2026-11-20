@@ -1,0 +1,62 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-overview-native-read-acceptance",
+      "description": "Accept identical complete native overview reader after transport-incomplete overnight QA, with real fresh gates/Review/QA.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Data/Remote/APIModels.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "docs/validation/automation/runs/care-overview-http-contract-fixtures.md",
+        "docs/validation/automation/runs/care-overview-swift-map.md",
+        "specs/001-plants-ios-mvp/tester-care-plan.md",
+        "docs/validation/automation/tasks/tester-care-overview-http-full-acceptance.md",
+        "docs/handoff_status.md",
+        "tools/automation/tasks.tester-care-overview-native-read-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Full actual candidate-base read-only acceptance of three-file real Developer1 native reader. Original run tester-care-overview-native-read-20261119-01 ran actual build/welcome,332Swift(329XCTest+3),MCP and Reviewer1 PASS. Overnight host sleep produced many hours wall-time and WebSocket2/5 error events. QA eventually wrote PASS answer/exit0, but provider conservatively returned WAITING due transcript stream errors, NOT terminal accepted QA; no commit/push acceptance. Preserve that unknown/error record and do NOT claim late answer is accepted. Product source is unchanged. Fresh actual checks and independent high-risk Review/QA required, no Developer rewrite or inventedPASS.",
+        "Controller runs this bounded fresh queue under temporary caffeinate -s only for utility lifetime on AC power, preventing idle sleep without modifying pmset/settings or bypassing manual/lid sleep. Same approved models,900spercall,budgets and shared Xcode/Simulator wrapper. No source changes during checks. This accepts only DTO/transport/coherent complete reader, NOT durablecache/Today/reminders/livefrontend. Parent deployed additive backend/live parity separately; no server writes in this packet.",
+        "Native packetA only: typed HTTP wire, same-origin sibling transport, complete coherent paging and compact unit fixtures. No LocalStore/cache/schema/sync cursor/Repo/App/UI/notifications edits, no server deployment, AI/content/billing/Auth Admin/commands. All source edits in three existing target-member files. This does not make Today ready or offline-actionable. HTTP accepted/pushed0aff69f7f50a5c0fff235285548cd29b9fca586c:446Deno(436old+10new),149automation,threeactual entrypoints compile,fullcandidate_baseReviewQA PASS. SQL accepted25a unchanged. Parent prepares targeted deployment/live separately; native fixtures do not claim live.",
+        "Public page shape exactly owner_id/server_now/owner_watermark/publication_fingerprint/reminder_hour_local/automation_allowed/verified_access_until/plants[]/next_after. Plant row plant_id,care_revision,care_recommendation:<FULL existing card response>,first_aid_controls. Reuse current PlantCareRecommendationResponse.validated(for:) and models rather than another recommendation/date validator/calendar. It currently is PRIVATE Decodable and nested types are Decodable; minimally internal Sendable/Codable where necessary for future durable snapshot is permitted without semantic changes. Preserve raw microsecond watermark/deadline strings; Date fallback alone is not coherence proof. Critical persistence: PlantCareRecommendation CodingKeys omit nextCheck/routineContext; validated() populates only a returned copy. Store/encode FULL nested wire response with OUTER next_check/routine_check, then reuse validated(for:) after decode. Encoding only the view recommendation silently loses dates. Add real encode->fileData/read->decode->validated dated routine/source/context test; no LocalStore changes in A.",
+        "APIClient is the existing actor; CollectionRepository is a Sendable STRUCT, not actor (older scratch map incorrectly says actor). No new APIClient/session/engine or mutable latest request state. Every page uses ONE captured permanent SDK SyncSessionLease, validates authority before/after await and final return, never rebinds to replacement bearer/owner, handles cancel and A->B->A. No guest/anonymous/installation auth fallback or plain supplied NativeAuthSession bypass.",
+        "Build care-overview as a fixed sibling of configured plants-api function on SAME https scheme/host/effective port; strict supported function-root path, no userinfo/query/fragment/percent-encoded traversal. Never append care-overview UNDER plants-api or accept arbitrary remote URL. Reuse analysisRequest with forbidRedirects:true and existing transport/session headers; GET only, locale headers, after+limit only, no owner query. Ensure captured current SDK bearer overrides old configured bearer. Invalid base/redirect cannot forward token to another origin.",
+        "DTO strict owner and nested sameplant identity, positive safe integer care_revision, unique ascending UUID rows strictly after request cursor, <=requested limit. next_after when nonnull equals last emitted row, requires full page and advances; empty cannotcontinue. Strict finite UTC metadata timestamps (SQLTimestamp raw),64lowercasehex fingerprint,hour0..23,boolaccess, null/finite deadline; true+nonnulldeadline must be after server_now. Nulluntil is not permission. Preserve all plants inclno_schedule and >3, no silent truncation. Any malformed row/page fails the whole read, never partial/empty success. Also require routine_check.care_revision to equal outer row care_revision; reuse existing validator plus this cross-row identity check, not a second calendar.",
+        "Firstaid controls compact exact UUID/identity/context_revision match/unique ID/action_code check_soil/action_id/currentpolicy dueYMD+intinterval1..90+verified HTTPSsource+locator. Reuse SQLCalendarDay and existing Source validation. No date arithmetic/scheduling/AI: validate actual trusted due day, never derive future controls. automation_allowed=false suppresses dates/routine/controls; retainmanual/advice/source. Existing source and card validation remain authority; no new global registry rights policy.",
+        "Complete page reader collects all pages in memory, same lease. Require identical owner_watermark,publication_fingerprint,reminderhour,automation/verifieddeadline (server_now may advance) and no duplicates acrosspages. If ownerwrite/sourcewithdrawal/access/hour changes midread, throw with no usable partialsnapshot. Cursor nonadvance, malformed row, error, cancellation all throw. No cap3; bounded safety budget may fail explicitly, never silently truncate. Preserve calendarYMD strings and original overdue dates (west-of-UTC regression), no local reschedule.",
+        "Meaningful compact tests in existing CollectionWireTests: one real HTTPTransport spy validates exact sibling URL/query/currentSDKbearer/locale/no-redirect method; two pages >200 inclno_schedule to one complete snapshot; changedmetadata/dup/nonadvance/foreign/nestedidentity/malformedcontrol reject; expired access cannot revive calendar; valid old fixed card/routine/source decoding preserved; cancellation + suspended page2 ownerA->B->A reject without leaking response. No tests that only mirror the helper or SDKtoken guard; reuse current test transport/session helpers and permanent JWT shape. No live/physical claim. No tests/validators relaxed to pass. Preserve all existing Swift tests. Encode FULLwire snapshot to actual temporary file, reread/decode and reuse validated(for:) to prove nonnull routine due/source/rule/context survives; persist-facing view recommendation alone is insufficient."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "OVREAD1",
+          "description": "Native builds and full Swift tests including meaningful strict wire/paging/lease/redirect fixtures pass; no incomplete/ahead DTO claimed actionable.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "OVREAD2",
+          "description": "Existing deterministic welcome/MCP passes; owner-scoped read-only native transport independently reviewed without UI/session regressions.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/runs/care-overview-http-contract-fixtures.md",
+        "docs/validation/automation/tasks/tester-care-overview-http-full-acceptance.md"
+      ],
+      "candidate_base": "02d896f5a7ad8472dfd8c28784ca5ce11a530ab0"
+    }
+  ]
+}

@@ -78,8 +78,8 @@ struct ProfileReminderHourReceipt: Decodable, Sendable {
     }
 }
 
-struct PlantCareRecommendation: Decodable, Sendable, Equatable {
-    struct Source: Decodable, Sendable, Equatable {
+struct PlantCareRecommendation: Codable, Sendable, Equatable {
+    struct Source: Codable, Sendable, Equatable {
         let url: URL
         let locator: String
 
@@ -91,7 +91,7 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
         }
     }
 
-    struct NextCheck: Decodable, Sendable, Equatable {
+    struct NextCheck: Codable, Sendable, Equatable {
         let dueOn: String
         let anchorOn: String
         let intervalDays: Int
@@ -114,8 +114,8 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
         }
     }
 
-    struct RoutineCheck: Decodable, Sendable, Equatable {
-        enum AnchorKind: String, Decodable, Sendable {
+    struct RoutineCheck: Codable, Sendable, Equatable {
+        enum AnchorKind: String, Codable, Sendable {
             case water
             case checkSoil = "check_soil"
         }
@@ -156,8 +156,8 @@ struct PlantCareRecommendation: Decodable, Sendable, Equatable {
     }
 }
 
-private struct PlantCareRecommendationResponse: Decodable {
-    enum Status: String, Decodable { case available, unavailable }
+struct PlantCareRecommendationResponse: Codable, Sendable {
+    enum Status: String, Codable, Sendable { case available, unavailable }
 
     let plantId: UUID
     let status: Status
@@ -2102,6 +2102,54 @@ extension PlantsAPIClient {
         return try await analysisRequest(
             request, locale: .en, context: context, status: [200, 201], installation: credential, forbidRedirects: true
         )
+    }
+
+    /// All pages use the caller's one captured permanent SDK binding, including ABA invalidation.
+    func fetchCareOverview(context: SyncSessionLease, limit: Int = 200) async throws -> CareOverviewSnapshot {
+        try syncAuthority.withPermanentBoundValid(context) {}
+        guard (1...200).contains(limit) else { throw SyncWireValidationError.invalidRequest }
+        guard let locale = SupportedLocale(rawValue: clientLocale) else { throw LocaleError.unsupportedLocale }
+        // Only the supported function root may become this fixed same-origin sibling.
+        guard var endpoint = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              endpoint.scheme?.lowercased() == "https", endpoint.host?.isEmpty == false,
+              endpoint.user == nil, endpoint.password == nil,
+              endpoint.query == nil, endpoint.fragment == nil,
+              ["/functions/v1/plants-api", "/functions/v1/plants-api/"].contains(endpoint.percentEncodedPath) else {
+            throw SyncWireValidationError.invalidRequest
+        }
+        endpoint.percentEncodedPath = "/functions/v1/care-overview"
+        var pages: [CareOverviewPage] = []
+        var after: UUID?
+        for _ in 0..<1_000 {
+            try syncAuthority.withPermanentBoundValid(context) {}
+            endpoint.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+            if let after {
+                endpoint.queryItems?.append(URLQueryItem(name: "after", value: after.uuidString.lowercased()))
+            }
+            guard let url = endpoint.url else { throw SyncWireValidationError.invalidRequest }
+            // Preserve the standard transport headers; analysisRequest replaces any configured bearer.
+            var request = try buildRequest(path: "", method: "GET")
+            request.url = url
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            let page: CareOverviewPage = try await analysisRequest(
+                request, locale: locale, context: context, status: [200], forbidRedirects: true
+            )
+            try syncAuthority.withPermanentBoundValid(context) {
+                try page.validated(ownerId: context.ownerId, after: after, limit: limit)
+                if let first = pages.first, !page.hasSamePublication(as: first) {
+                    throw SyncWireValidationError.invalidPage
+                }
+            }
+            pages.append(page)
+            guard let next = page.nextAfter else {
+                return try syncAuthority.withPermanentBoundValid(context) {
+                    try CareOverviewSnapshot(pages: pages, pageLimit: limit).validated(for: context.ownerId)
+                }
+            }
+            after = next
+        }
+        // A bounded budget is an explicit failure, never a truncated collection.
+        throw SyncWireValidationError.invalidPage
     }
 
     func fetchCareRecommendation(

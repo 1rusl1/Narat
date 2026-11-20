@@ -2270,6 +2270,7 @@ extension CollectionWireTests {
 private actor CatalogueTransport: PlantsAPITransport {
     enum Reply: Sendable {
         case http(Int, String)
+        case redirect(String)
         case inspect(@Sendable ([URLRequest]) throws -> String)
         case photo(Data, mime: String)
         case network
@@ -2300,6 +2301,9 @@ private actor CatalogueTransport: PlantsAPITransport {
             throw CancellationError()
         case .urlCancelled:
             throw URLError(.cancelled)
+        case let .redirect(location):
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 302, httpVersion: nil,
+                                             headerFields: ["Location": location])!)
         case let .http(status, json):
             return (
                 Data(json.utf8),
@@ -8435,5 +8439,371 @@ extension CollectionWireTests {
                        posts.last?.value(forHTTPHeaderField: "X-Operation-Id"))
         let factCount = await transport.journalCount()
         XCTAssertEqual(factCount, 1)
+    }
+}
+
+private actor CareOverviewPagingTransport: PlantsAPITransport {
+    private let first: CatalogueTransport
+    private let rest: SuspendedCollectionTransport
+    private var sentFirst = false
+
+    init(first: String, rest: SuspendedCollectionTransport) {
+        self.first = CatalogueTransport([.http(200, first)])
+        self.rest = rest
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        throw URLError(.unsupportedURL)
+    }
+
+    func sendWithoutRedirect(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if !sentFirst {
+            sentFirst = true
+            return try await first.sendWithoutRedirect(request)
+        }
+        return try await rest.sendWithoutRedirect(request)
+    }
+}
+
+extension CollectionWireTests {
+    private func overviewRow(_ id: UUID, dated: Bool = false, controls: [[String: Any]] = []) -> [String: Any] {
+        var card = dated ? careProjection(anchor: "2026-10-29", due: "2026-11-05") : careProjection()
+        card["plant_id"] = id.uuidString
+        if dated {
+            card["routine_check"] = [
+                "rule_id": operationId.uuidString, "care_revision": 2,
+                "due_local_date": "2026-11-05", "anchor_local_date": "2026-10-29", "anchor_kind": "water"
+            ]
+        }
+        return ["plant_id": id.uuidString, "care_revision": 2,
+                "care_recommendation": card, "first_aid_controls": controls]
+    }
+
+    private func overviewControl() -> [String: Any] {
+        [
+            "control_id": operationId.uuidString, "action_entry_id": UUID().uuidString,
+            "job_id": UUID().uuidString, "origin_analysis_id": UUID().uuidString,
+            "kb_release_id": UUID().uuidString, "protocol_id": UUID().uuidString,
+            "context_revision": 2, "action_id": "fixed_soil", "action_code": "check_soil",
+            "policy": ["due_on": "2026-11-01", "interval_days": 7,
+                       "source": ["url": "https://example.invalid/soil", "locator": "Published check"]] as [String: Any]
+        ]
+    }
+
+    private func overviewPage(_ rows: [[String: Any]], next: UUID? = nil) -> [String: Any] {
+        [
+            "owner_id": syncOwner.uuidString, "server_now": "2026-11-19T10:00:00.000001Z",
+            "owner_watermark": "2026-11-19T09:00:00.000001+00:00",
+            "publication_fingerprint": String(repeating: "a", count: 64), "reminder_hour_local": 9,
+            "automation_allowed": true, "verified_access_until": "2026-12-01T00:00:00.000001Z",
+            "plants": rows, "next_after": next.map { $0.uuidString as Any } ?? NSNull()
+        ]
+    }
+
+    private func readOverview(_ pages: [[String: Any]], limit: Int = 200) async throws -> CareOverviewSnapshot {
+        let transport = CatalogueTransport(try pages.map { .http(200, try syncJSON($0)) })
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        return try await api.fetchCareOverview(context: lease, limit: limit)
+    }
+
+    func testCareOverviewCompleteSiblingTransportAndFullWireFileRoundTrip() async throws {
+        let ids = (1...201).map {
+            UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", $0))!
+        }
+        let rows = ids.enumerated().map { index, id in
+            overviewRow(id, dated: index == 0, controls: index == 0 ? [overviewControl()] : [])
+        }
+        let first = overviewPage(Array(rows.prefix(200)), next: ids[199])
+        var second = overviewPage(Array(rows.suffix(1)))
+        second["server_now"] = "2026-11-19T10:00:00.000002Z"
+        let transport = CatalogueTransport([
+            .http(200, try syncJSON(first)), .http(200, try syncJSON(second))
+        ])
+        let session = try profileSession()
+        let api = client(transport)
+        // Keep a stale configured bearer while the SDK authority holds the current session.
+        await api.updateContext(installationCredential: "old-install", clientLocale: "pl", bearerToken: "old-token")
+        api.syncAuthority.bind(session)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let snapshot = try await api.fetchCareOverview(context: lease)
+        XCTAssertEqual(snapshot.plants.map(\.plantId), ids)
+        XCTAssertEqual(snapshot.plants.count, 201)
+        XCTAssertNil(try snapshot.plants[200].careRecommendation.validated(for: ids[200])?.nextCheck)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.first?.url?.absoluteString,
+                       "https://example.invalid/functions/v1/care-overview?limit=200")
+        XCTAssertEqual(requests.last?.url?.absoluteString,
+                       "https://example.invalid/functions/v1/care-overview?limit=200&after=\(ids[199].uuidString.lowercased())")
+        XCTAssertTrue(requests.allSatisfy {
+            $0.httpMethod == "GET" && $0.httpBody == nil
+                && $0.value(forHTTPHeaderField: "Authorization") == "Bearer \(session.accessToken)"
+                && $0.value(forHTTPHeaderField: "X-Client-Locale") == "pl"
+                && $0.value(forHTTPHeaderField: "X-Installation-Credential") == nil
+                && $0.value(forHTTPHeaderField: "Accept") == "application/json"
+        })
+        let nonRedirecting = await transport.nonRedirectingRequests
+        XCTAssertEqual(nonRedirecting, 2)
+
+        let originalZone = NSTimeZone.default
+        NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        defer { NSTimeZone.default = originalZone }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try JSONEncoder().encode(snapshot).write(to: file, options: .atomic)
+        let restored = try JSONDecoder().decode(CareOverviewSnapshot.self, from: Data(contentsOf: file))
+            .validated(for: syncOwner)
+        XCTAssertEqual(restored.pages[0].ownerWatermark, first["owner_watermark"] as? String)
+        XCTAssertEqual(restored.pages[0].verifiedAccessUntil, first["verified_access_until"] as? String)
+        let card = try XCTUnwrap(restored.plants[0].careRecommendation.validated(for: ids[0]))
+        XCTAssertEqual(card.nextCheck?.dueOn, "2026-11-05") // original overdue day, including west of UTC
+        XCTAssertEqual(card.nextCheck?.anchorOn, "2026-10-29")
+        XCTAssertEqual(card.nextCheck?.source.locator, "Soil check interval")
+        XCTAssertEqual(card.source.url.absoluteString, "https://example.invalid/soil")
+        XCTAssertEqual(card.routineContext?.plantId, ids[0])
+        XCTAssertEqual(card.routineContext?.check.ruleId, operationId)
+        XCTAssertEqual(card.routineContext?.check.careRevision, 2)
+        XCTAssertEqual(card.routineContext?.check.dueLocalDate, "2026-11-05")
+        XCTAssertEqual(restored.plants[0].firstAidControls[0].policy.dueOn, "2026-11-01")
+    }
+
+    func testCareOverviewRejectsMalformedWholePagesAndMixedPublications() async throws {
+        let a = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
+        let b = UUID(uuidString: "00000000-0000-4000-8000-000000000002")!
+        let good = overviewPage([overviewRow(a, dated: true)])
+        var invalid: [[String: Any]] = []
+        for (key, value) in [
+            ("owner_id", otherSyncOwner.uuidString as Any), ("server_now", "2026-02-30T00:00:00Z"),
+            ("server_now", "2026-11-19T10:00:00+01:00"), ("owner_watermark", "infinity"),
+            ("publication_fingerprint", String(repeating: "A", count: 64)), ("reminder_hour_local", 24),
+            ("automation_allowed", 1), ("verified_access_until", "2026-11-19T10:00:00.000001Z"),
+            ("verified_access_until", "infinity")
+        ] {
+            var page = good
+            page[key] = value
+            invalid.append(page)
+        }
+        var missing = good
+        missing.removeValue(forKey: "verified_access_until")
+        invalid.append(missing)
+        for revision in [0, -1, 9_007_199_254_740_992, 1.5, true] as [Any] {
+            var row = overviewRow(a)
+            row["care_revision"] = revision
+            invalid.append(overviewPage([row]))
+        }
+        var mismatch = overviewRow(a)
+        mismatch["care_recommendation"] = careProjection()
+        invalid.append(overviewPage([mismatch]))
+        var routineMismatch = overviewRow(a, dated: true)
+        routineMismatch["care_revision"] = 3
+        invalid.append(overviewPage([routineMismatch]))
+        var badCard = overviewRow(a)
+        var card = careProjection()
+        card["plant_id"] = a.uuidString
+        card["recommendation"] = ["action_code": "water"]
+        badCard["care_recommendation"] = card
+        invalid.append(overviewPage([badCard]))
+        invalid.append(overviewPage([overviewRow(a), overviewRow(a)]))
+        invalid.append(overviewPage([overviewRow(b), overviewRow(a)]))
+        invalid.append(overviewPage([overviewRow(a), overviewRow(b), overviewRow(serverPlantId)]))
+        invalid.append(overviewPage([], next: a))
+        invalid.append(overviewPage([overviewRow(a)], next: b))
+        invalid.append(overviewPage([overviewRow(a)], next: a)) // short continuing page at limit=2
+        let control = overviewControl()
+        for (key, value) in [
+            ("control_id", "bad" as Any), ("action_entry_id", "bad"), ("job_id", "bad"),
+            ("origin_analysis_id", "bad"), ("kb_release_id", "bad"), ("protocol_id", "bad"),
+            ("context_revision", 3), ("action_id", ""), ("action_id", "bad-id"),
+            ("action_code", "water"), ("extra", true)
+        ] {
+            var broken = control
+            broken[key] = value
+            invalid.append(overviewPage([overviewRow(a, controls: [broken])]))
+        }
+        invalid.append(overviewPage([overviewRow(a, controls: [control, control])]))
+        invalid.append(overviewPage([overviewRow(a, controls: [control]), overviewRow(b, controls: [control])]))
+        for (key, value) in [
+            ("due_on", "2026-02-30" as Any), ("interval_days", 0), ("interval_days", 91),
+            ("interval_days", 1.5),
+            ("source", ["url": "https://user:password@example.invalid", "locator": "x"]),
+            ("source", ["url": "http://example.invalid", "locator": "x"]),
+            ("source", ["url": "https://example.invalid", "locator": " "])
+        ] {
+            var broken = control
+            var policy = try XCTUnwrap(control["policy"] as? [String: Any])
+            policy[key] = value
+            broken["policy"] = policy
+            invalid.append(overviewPage([overviewRow(a, controls: [broken])]))
+        }
+        for page in invalid {
+            do {
+                _ = try await readOverview([page], limit: 2)
+                XCTFail("Malformed overview must fail as a whole")
+            } catch {}
+        }
+        let first = overviewPage([overviewRow(a)], next: a)
+        let last = overviewPage([overviewRow(b)])
+        for (key, value) in [
+            ("owner_watermark", "2026-11-19T09:00:00.000002+00:00" as Any),
+            ("publication_fingerprint", String(repeating: "b", count: 64)), ("reminder_hour_local", 10),
+            ("verified_access_until", "2026-12-01T00:00:00.000002Z"), ("automation_allowed", false),
+            ("owner_id", otherSyncOwner.uuidString), ("server_now", "2026-11-19T09:59:59Z")
+        ] {
+            var changed = last
+            changed[key] = value
+            do {
+                _ = try await readOverview([first, changed], limit: 1)
+                XCTFail("Mixed publication must not produce a snapshot")
+            } catch {}
+        }
+        for badLast in [
+            overviewPage([overviewRow(a)]),
+            overviewPage([overviewRow(b)], next: a),
+            overviewPage([], next: a)
+        ] {
+            do {
+                _ = try await readOverview([first, badLast], limit: 1)
+                XCTFail("Duplicate or nonadvancing page must fail")
+            } catch {}
+        }
+        do {
+            _ = try await readOverview([
+                overviewPage([overviewRow(a, controls: [control])], next: a),
+                overviewPage([overviewRow(b, controls: [control])])
+            ], limit: 1)
+            XCTFail("Control identity cannot be reused across pages")
+        } catch {}
+        // Prove the same coherent baseline succeeds.
+        let valid = try await readOverview([first, last], limit: 1)
+        XCTAssertEqual(valid.plants.map(\.plantId), [a, b])
+    }
+
+    func testCareOverviewExpiredAccessCannotReviveCalendarAndOldCardsRemainValid() async throws {
+        let manual = overviewPage([overviewRow(serverPlantId)])
+        var expired = manual
+        expired["automation_allowed"] = false
+        expired["verified_access_until"] = "2026-11-01T00:00:00Z"
+        let snapshot = try await readOverview([expired])
+        let advice = try XCTUnwrap(snapshot.plants[0].careRecommendation.validated(for: serverPlantId))
+        XCTAssertNil(advice.nextCheck)
+        XCTAssertNil(advice.routineContext)
+        XCTAssertEqual(advice.text, "Check the substrate.")
+        XCTAssertTrue(advice.source.isVerifiedLink)
+        for row in [overviewRow(serverPlantId, dated: true),
+                    overviewRow(serverPlantId, controls: [overviewControl()])] {
+            var revived = expired
+            revived["plants"] = [row]
+            do {
+                _ = try await readOverview([revived])
+                XCTFail("Expired access must not revive a calendar")
+            } catch {}
+        }
+        var unknownAccess = expired
+        unknownAccess["verified_access_until"] = NSNull()
+        let unknown = try await readOverview([unknownAccess])
+        XCTAssertFalse(unknown.pages[0].automationAllowed)
+        var free = manual
+        free["verified_access_until"] = NSNull()
+        _ = try await readOverview([free])
+        var unavailable = overviewRow(serverPlantId)
+        unavailable["care_recommendation"] = [
+            "plant_id": serverPlantId.uuidString, "status": "unavailable", "recommendation": NSNull(),
+            "next_check": NSNull()
+        ]
+        _ = try await readOverview([overviewPage([unavailable])])
+        _ = try await readOverview([overviewPage([])])
+    }
+
+    func testCareOverviewRejectsUnsafeBaseRedirectErrorsAndUnboundSessions() async throws {
+        let session = try profileSession()
+        for base in [
+            "http://example.invalid/functions/v1/plants-api",
+            "https://user:pass@example.invalid/functions/v1/plants-api",
+            "https://example.invalid/functions/v1/plants-api?x=1",
+            "https://example.invalid/functions/v1/plants-api#fragment",
+            "https://example.invalid/functions/v1/plants-api/child",
+            "https://example.invalid/functions/v1/%70lants-api",
+            "https://example.invalid/functions/v1/plants-api/%2e%2e",
+            "https://example.invalid/plants-api"
+        ] {
+            let transport = CatalogueTransport([])
+            let api = PlantsAPIClient(baseURL: try XCTUnwrap(URL(string: base)), transport: transport)
+            await api.bindSyncSession(session)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            do {
+                _ = try await api.fetchCareOverview(context: lease)
+                XCTFail("Unsafe function root must fail before sending")
+            } catch {}
+            let requests = await transport.capturedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+        for reply in [
+            .redirect("https://foreign.invalid/care-overview"), .http(307, ""),
+            .http(503, "{}"), .network, .cancelled
+        ] as [CatalogueTransport.Reply] {
+            let transport = CatalogueTransport([reply])
+            let api = client(transport)
+            await api.bindSyncSession(session)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            do {
+                _ = try await api.fetchCareOverview(context: lease)
+                XCTFail("Redirect/error must not yield an empty success")
+            } catch {}
+            let nonRedirecting = await transport.nonRedirectingRequests
+            XCTAssertEqual(nonRedirecting, 1)
+        }
+        let transport = CatalogueTransport([])
+        let api = client(transport)
+        let explicit = try api.syncAuthority.capture(ownerId: syncOwner, explicitSession: session)
+        do {
+            _ = try await api.fetchCareOverview(context: explicit)
+            XCTFail("Plain supplied session is not SDK binding")
+        } catch SyncWireValidationError.invalidSession {}
+        await api.bindSyncSession(try profileSession(claims: ["sub": syncOwner.uuidString, "is_anonymous": true]))
+        let anonymous = try await api.captureSyncContext(ownerId: syncOwner)
+        do {
+            _ = try await api.fetchCareOverview(context: anonymous)
+            XCTFail("Anonymous binding is not permanent")
+        } catch SyncWireValidationError.invalidSession {}
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testCareOverviewSuspendedSecondPageRejectsCancellationAndOwnerABA() async throws {
+        let a = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
+        let b = UUID(uuidString: "00000000-0000-4000-8000-000000000002")!
+        for cancel in [false, true] {
+            let suspended = SuspendedCollectionTransport(try syncJSON(overviewPage([overviewRow(b)])))
+            let transport = CareOverviewPagingTransport(
+                first: try syncJSON(overviewPage([overviewRow(a)], next: a)), rest: suspended
+            )
+            let api = client(transport)
+            let original = try profileSession()
+            await api.bindSyncSession(original)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let task = Task { try await api.fetchCareOverview(context: lease, limit: 1) }
+            await suspended.waitForRequest()
+            if cancel {
+                task.cancel()
+            } else {
+                await api.bindSyncSession(try profileSession(ownerId: otherSyncOwner))
+                await api.bindSyncSession(original)
+            }
+            await suspended.resume()
+            do {
+                _ = try await task.value
+                XCTFail("Suspended response must not escape cancellation or owner ABA")
+            } catch is CancellationError {
+                XCTAssertTrue(cancel)
+            } catch SyncWireValidationError.invalidSession {
+                XCTAssertFalse(cancel)
+            }
+            let requests = await suspended.capturedRequests()
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Authorization"), "Bearer \(original.accessToken)")
+            XCTAssertTrue(requests[0].url?.absoluteString.contains("after=\(a.uuidString.lowercased())") == true)
+        }
     }
 }

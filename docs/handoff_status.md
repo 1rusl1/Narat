@@ -1,5 +1,44 @@
 # Narat — текущий статус и передача работы
 
+## Этап 2: native A candidate — свежая приёмка после host sleep, 20 ноября 2026
+
+Native A реализован реальным Developer1 в трёх existing Swift файлах:
+APIModels.swift,PlantsAPIClient.swift,CollectionWireTests.swift (+653/-7).
+Typed FULLwire с outer dates/context, strict pages/metadata/control validation,
+фиксированный sibling endpoint/oneSDKlease/no redirects, complete bounded
+paging безcap3. Только wire read, без Store/Repo/cache/Root/UI/notifications.
+
+Исходный `tester-care-overview-native-read-20261119-01`: реально PASS build,
+welcome1,332Swift (329XCTest+3SwiftTesting),MCP27s,Reviewer1. Пять новых тестов
+покрывают201plant/file roundtrip/dates+source/context/mixedmetadata/expiry/
+unsafeURL/redirect/guest/cancel/A→B→A. Evidence unit
+`docs/validation/automation/runs/q-2f3d377e9ce769834bc67de5/summary.json`,
+MCP `q-9daf1d15028d7206bc5524de/summary.json`.
+
+Ночью host sleep растянул QA на много часов wall-time, WebSocket stream
+переподключался2/5. QA в конце записал PASS и процесс вернул0, но transcript
+содержит stream errors: provider консервативно оставил WAITING/CLI timeout.
+Это НЕ accepted QA; latePASS не подменяет завершённую приёмку. SIGTERM не
+посылался: короткий healthcheck увидел файл ответа, existingcontroller уже
+завершился сам. Product source не переписывался и пока НЕ принят/pushed.
+
+Следующий точный шаг — fresh read-only candidate_base от `02d896f5a7ad8472dfd8c28784ca5ce11a530ab0`,
+run `tester-care-overview-native-read-acceptance-20261120-01`, manifest
+`tools/automation/tasks.tester-care-overview-native-read-acceptance.json`:
+real iOS/MCP/automation → high-risk Review → QA → commit/push. Тот же approved
+routing/budgets/900s. Временный `caffeinate -s` действует только наAC и lifetime
+этогоutility, не меняет power settings и не обходит manual/lid sleep.
+
+HTTP0aff и SQL25a приняты; parent отдельно подтвердил guarded target deployment
+и ordinary Free1owner EN/PLoldcard parity/7negativeHTTP/canonicaldigest unchanged
+в root19023dd. Это не dated/multiowner/physical frontend proof. Его docs
+подтянем обычным merge после принятияA, не во время activechecks.
+
+Далее B1: reserved owner wrapper/generation/requesttoken/atomicpublication/disk;
+B2: Repo boundedalign/pendingoverlay + explicitlocaleAPIparam; CToday/UI. Snapshot
+хранит полный nested cardwire, не толькоview recommendation; scope locale
+тоже фиксируется readcontext. Full T066/T068/T075/T077/T098 и B01–B11 открыты.
+
 ## Этап 2: полный HTTP принят; следующий native read packet — 19 ноября 2026
 
 Accepted/pushed HTTP `0aff69f7f50a5c0fff235285548cd29b9fca586c`.
