@@ -21,6 +21,13 @@ second→q-412a9ac61eb5552e10343db9, pass→q-0355a18d121c18b231611c70.
 Secondlog oldline14759 vs current14767 — indicator, точная infra-причина не установлена;
 controller не создавал новый DD и не делал reinstall/globalreset. Последний PASS на том же corrected source.
 
+Controller усилил только новый4gate (SHA256 5b7174ba4cebd34ed95912caa50eba635c950ddbce80ac88bd882355a546e5fb):
+1positive+19negative validation groups, включая отказ historical empty export, PASS;
+декодер также принял реальный существующий XCTest PNG1206x2622. Это НЕ новый AppUI proof.
+Подготовлен actual узкий Developer для keepAlways; owncontroller остановится только после applied
+patch в проверенном automation-tests окне до Xcode. Затем fresh readonly UNIONbasec590.
+Непринятый candidate сохранён c24cb31, Root не обновлён.
+
 Следующий шаг: только evidence repair — keepAlways screenshots в общем helper четырёх
 existing EN/PL tests (без изменения assertions), усилить ONLY новый4gate: exact per-test mapping,
 непустые настоящие PNG, уникальные paths/hash, запрет missing/other-case substitution.
