@@ -68,15 +68,26 @@ enum CatalogueUIFixtures {
     }
 
     static func make(
-        namespace: String, scenario: CatalogueUIFixtureScenario
+        namespace: String, scenario: CatalogueUIFixtureScenario,
+        reminderConfiguration: ReminderConsentLaunch.Configuration? = nil,
+        reminderPreparation: ((CatalogueFixtureServer, URL) throws -> Void)? = nil
     ) async throws -> CatalogueUIFixtureContext {
+        if let reminderConfiguration {
+            guard reminderConfiguration.namespace.uuidString.lowercased() == namespace.lowercased(),
+                  scenario == .todayFuture else { throw CatalogueUIFixtureError.scenarioMismatch }
+        }
+        guard (reminderConfiguration != nil) == (reminderPreparation != nil)
+        else { throw CatalogueUIFixtureError.invalidRequest }
+        let reminderMode = reminderConfiguration?.mode.rawValue
         let directory = try directory(namespace: namespace)
         let name = UUID(uuidString: namespace)!.uuidString.lowercased()
         guard !CatalogueFixtureProtocol.registry.contains(name) else {
             throw CatalogueUIFixtureError.namespaceInUse
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let server = try CatalogueFixtureServer(directory: directory, namespace: name, scenario: scenario)
+        let server = try CatalogueFixtureServer(directory: directory, namespace: name, scenario: scenario,
+                                                reminderMode: reminderMode)
+        try reminderPreparation?(server, directory) // Validate fake disk state BEFORE SDK construction.
         let schema = Schema([
             LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
             CatalogueInputCheckpointRecord.self, GuestDraftCacheRecord.self,
@@ -361,6 +372,11 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var todayTransport: TodayPhase?
         var todayWithdrawn: Bool?
         var overviewRequests: Int?
+        var reminderMode: String?
+        var reminderCommandRequests: Int?
+        var reminderAuthRequests: Int?
+        var reminderReadRequests: Int?
+        var reminderScheduleRestored: Bool?
     }
     struct Reply {
         let status: Int
@@ -375,15 +391,22 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     private var capturedRequests: [URLRequest] = []
     var requests: [URLRequest] { lock.withLock { capturedRequests } }
 
-    fileprivate init(directory: URL, namespace: String, scenario: CatalogueUIFixtureScenario) throws {
+    fileprivate init(directory: URL, namespace: String, scenario: CatalogueUIFixtureScenario,
+                     reminderMode: String? = nil) throws {
         self.namespace = namespace
         file = directory.appendingPathComponent("server-ledger.json")
         if FileManager.default.fileExists(atPath: file.path) {
             ledger = try JSONDecoder().decode(Ledger.self, from: Data(contentsOf: file))
-            guard ledger.scenario == scenario else { throw CatalogueUIFixtureError.scenarioMismatch }
+            guard ledger.scenario == scenario, ledger.reminderMode == reminderMode
+            else { throw CatalogueUIFixtureError.scenarioMismatch }
         } else {
             let owner = UUID()
             ledger = Ledger(scenario: scenario, guest: UUID(), permanent: owner, plants: [])
+            ledger.reminderMode = reminderMode
+            if reminderMode != nil {
+                ledger.reminderCommandRequests = 0; ledger.reminderAuthRequests = 0
+                ledger.reminderReadRequests = 0; ledger.reminderScheduleRestored = false
+            }
             if scenario.testsToday {
                 let now = Date()
                 ledger.todayClockSeed = ISO8601DateFormatter().string(from: now)
@@ -392,7 +415,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 day.timeZone = TimeZone(secondsFromGMT: 0)
                 ledger.todayAnchorDay = day.string(from: now)
                 ledger.todayTransport = scenario == .todayFirstFailure ? .failOverview : .normal
-                ledger.todayWithdrawn = false
+                ledger.todayWithdrawn = reminderMode == ReminderConsentFixtureMode.noSchedule.rawValue
                 ledger.overviewRequests = 0
             }
             ledger.plants = (0..<scenario.initialCount).map { index in
@@ -411,7 +434,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 next.todayWithdrawn = true
             } else {
                 next.todayTransport = phase
-                if phase == .normal { next.todayWithdrawn = false }
+                if phase == .normal {
+                    next.todayWithdrawn = false
+                    if next.reminderMode == ReminderConsentFixtureMode.noSchedule.rawValue {
+                        next.reminderScheduleRestored = true
+                    }
+                }
             }
             try persist(next)
         }
@@ -546,6 +574,18 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 throw URLError(.unsupportedURL)
             }
             capturedRequests.append(request)
+            if ledger.reminderMode != nil {
+                var next = ledger
+                if url.path.hasSuffix("/commands") {
+                    next.reminderCommandRequests = (next.reminderCommandRequests ?? 0) + 1
+                } else if url.path.hasPrefix("/auth/") {
+                    next.reminderAuthRequests = (next.reminderAuthRequests ?? 0) + 1
+                } else {
+                    next.reminderReadRequests = (next.reminderReadRequests ?? 0) + 1
+                }
+                try persist(next)
+                if url.path.hasSuffix("/commands") { return try error(403, "fixture_read_only") }
+            }
             let body = request.httpBody ?? Data()
             let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
             let method = request.httpMethod ?? "GET"

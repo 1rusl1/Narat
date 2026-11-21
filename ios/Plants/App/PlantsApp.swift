@@ -187,6 +187,7 @@ struct RootContainerView: View {
         fixtureContext != nil || ProcessInfo.processInfo.arguments.contains {
             $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
                 || $0.hasPrefix("--today-fixture") || $0.hasPrefix("--narat-staging-")
+                || $0.hasPrefix("--care-reminder")
         }
 #else
         false
@@ -981,6 +982,9 @@ struct RootContainerView: View {
     private func prepareCatalogue() async {
         guard !starting else { return }
         starting = true
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--care-reminder") }) { startupFailed = true; return }
+#endif
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
             guard !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--today-fixture") })

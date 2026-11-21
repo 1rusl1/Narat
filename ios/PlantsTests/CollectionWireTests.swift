@@ -13434,3 +13434,196 @@ extension CollectionWireTests {
         }
     }
 }
+
+#if DEBUG
+extension CollectionWireTests {
+    func testReminderFixtureStrictLaunchNeverFallsBackForNewFlags() throws {
+        let namespace = UUID().uuidString
+        let valid = ["--care-reminder-fixture", "eligible", "--care-reminder-namespace", namespace]
+        guard case .fixture(let configuration) = ReminderConsentLaunch.parse(valid) else {
+            return XCTFail("Valid dedicated configuration")
+        }
+        XCTAssertEqual(configuration.namespace, UUID(uuidString: namespace))
+        XCTAssertEqual(ReminderConsentLaunch.parse(["app", "--today-fixture", "todayFuture"]), .ordinary)
+        for arguments in [
+            ["--care-reminder-typo"], Array(valid.dropLast()), valid + ["--care-reminder-typo"],
+            valid + ["--care-reminder-fixture", "eligible"], valid + ["--care-reminder-namespace", namespace],
+            valid + ["--today-fixture", "todayFuture"], valid + ["--catalogue-namespace", namespace],
+            valid + ["--narat-staging-analysis"],
+            ["--care-reminder-fixture", "unknown", "--care-reminder-namespace", namespace],
+            ["--care-reminder-fixture", "eligible", "--care-reminder-namespace", "invalid"]
+        ] { XCTAssertEqual(ReminderConsentLaunch.parse(arguments), .invalid, arguments.description) }
+        for mode in ReminderConsentFixtureMode.allCases {
+            guard case .fixture = ReminderConsentLaunch.parse([
+                "--care-reminder-namespace", namespace, "--care-reminder-fixture", mode.rawValue])
+            else { return XCTFail(mode.rawValue) }
+        }
+    }
+
+    @MainActor
+    func testReminderRuntimeOwnsOneInertCoreAndWeaklyForwardsRealChanges() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fake = FakeCareReminderNotifications()
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        var runtime: CareReminderRuntime? = .init(core: core)
+        weak var weakRuntime = runtime
+        XCTAssertTrue(runtime?.core === core)
+        XCTAssertNil(core.state)
+        XCTAssertEqual(fake.inventoryReads, 0)
+        XCTAssertTrue(fake.adds.isEmpty)
+        XCTAssertEqual(fake.permissionRequests, 0)
+        var publications = 0
+        let subscription = runtime!.objectWillChange.sink { publications += 1 }
+        core.setSceneActive(true)
+        core.accept(lifecycleContext(store, api, lease))
+        await core.waitUntilIdle()
+        XCTAssertGreaterThan(publications, 0)
+        XCTAssertTrue(runtime?.core === core)
+        core.logout()
+        await core.waitUntilIdle()
+        runtime = nil
+        XCTAssertNil(weakRuntime)
+        XCTAssertEqual(fake.permissionRequests, 0)
+        withExtendedLifetime(subscription) {}
+    }
+
+    @MainActor
+    func testReminderFixtureColdLedgerIdentityIsolationAndCorruption() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("os.json"), namespace = UUID()
+        let candidate = try receiptCandidate()
+        let proposal = CareReminderNotificationProposal(candidate: candidate, attemptId: operationId)
+        let fake = try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: syncOwner, seed: receiptNow)
+        try await fake.add(proposal, now: receiptNow)
+        let other = try ReminderConsentNotifications(file: directory.appendingPathComponent("other.json"),
+            namespace: UUID(), mode: .eligible, owner: syncOwner, seed: receiptNow)
+        try await other.add(proposal, now: receiptNow)
+        let cold = try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: syncOwner, seed: receiptNow)
+        let inventory = try await cold.inventory()
+        XCTAssertEqual(inventory.pending.first?.route,
+            CareReminderNotificationRoute(candidate: candidate, attemptId: operationId))
+        XCTAssertEqual(cold.ledger.adds, fake.ledger.adds)
+        XCTAssertEqual(cold.ledger.adds.count, 1)
+        XCTAssertEqual(inventory.otherPendingCount, 1)
+        XCTAssertThrowsError(try ReminderConsentNotifications(file: file, namespace: UUID(),
+            mode: .eligible, owner: syncOwner, seed: receiptNow))
+        XCTAssertThrowsError(try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .denied, owner: syncOwner, seed: receiptNow))
+        XCTAssertThrowsError(try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: otherSyncOwner, seed: receiptNow))
+        try cold.advance(to: candidate.absoluteFireDate)
+        let delivered = try await cold.inventory()
+        XCTAssertEqual(delivered.delivered.first?.deliveredAt, candidate.absoluteFireDate)
+        let identifier = try XCTUnwrap(delivered.delivered.first?.rawIdentifier)
+        try await cold.removeDelivered([identifier, "narat.trial.fixture"])
+        try await cold.removePending([identifier, "narat.trial.fixture"])
+        let cleaned = try await cold.inventory()
+        XCTAssertTrue(cleaned.delivered.isEmpty)
+        XCTAssertEqual(cleaned.otherPendingCount, 1)
+        XCTAssertEqual(other.ledger.pending.count, 1)
+        XCTAssertFalse(cold.ledger.removedPending.contains("narat.trial.fixture"))
+        try Data("corrupt".utf8).write(to: file)
+        XCTAssertThrowsError(try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: syncOwner, seed: receiptNow))
+    }
+
+    @MainActor
+    func testReminderFixtureLagStatusAndUncertainFailureEvidence() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for mode in [ReminderConsentFixtureMode.oneReadLag, .twoReadLag, .denied, .failure] {
+            let fake = try ReminderConsentNotifications(file: directory.appendingPathComponent(mode.rawValue),
+                namespace: UUID(), mode: mode, owner: syncOwner, seed: receiptNow)
+            try await fake.requestAuthorization()
+            let first = try await fake.authorization(), second = try await fake.authorization()
+            XCTAssertEqual(first, mode == .failure ? .authorized : (mode == .denied ? .denied : .notDetermined))
+            XCTAssertEqual(second, mode == .oneReadLag || mode == .failure ? .authorized :
+                (mode == .denied ? .denied : .notDetermined))
+            let reads = fake.ledger.authReads
+            try fake.setAuthorization(.authorized)
+            XCTAssertEqual(fake.ledger.authReads, reads)
+            let retry = try await fake.authorization()
+            XCTAssertEqual(retry, .authorized)
+            XCTAssertEqual(fake.ledger.promptCount, 1)
+            if mode == .failure {
+                do {
+                    try await fake.add(.init(candidate: receiptCandidate(), attemptId: operationId), now: receiptNow)
+                    XCTFail("Expected uncertain add failure")
+                } catch ReminderConsentNotifications.Fault.injected {}
+                let inventory = try await fake.inventory()
+                XCTAssertEqual(inventory.pending.count, 1)
+                XCTAssertEqual(fake.ledger.adds.count, 1)
+                try fake.setFailures(add: false, inventory: true)
+                do { _ = try await fake.inventory(); XCTFail("Expected inventory failure") }
+                catch ReminderConsentNotifications.Fault.injected {}
+            }
+        }
+    }
+
+    @MainActor
+    func testReminderFixtureReadinessAndExplicitReadOnlyContextColdRestore() async throws {
+        try await CareReminderReadiness().wait()
+        let barrier = CareReminderReadiness(held: true)
+        let release = Task { @MainActor in
+            XCTAssertEqual(barrier.waitingCount, 1)
+            barrier.release()
+        }
+        try await barrier.wait()
+        await release.value
+        let cancelledBarrier = CareReminderReadiness(held: true)
+        let waiter = Task { @MainActor in try await cancelledBarrier.wait() }
+        waiter.cancel()
+        do { try await waiter.value; XCTFail("Expected cancellation") } catch is CancellationError {}
+        XCTAssertEqual(cancelledBarrier.waitingCount, 0)
+        let namespace = UUID().uuidString
+        guard case .fixture(let configuration) = ReminderConsentLaunch.parse([
+            "--care-reminder-fixture", "noSchedule", "--care-reminder-namespace", namespace])
+        else { return XCTFail("Configuration") }
+        let fixture = try await ReminderConsentFixture.makeContext(configuration)
+        defer { try? fixture.cleanup() }
+        XCTAssertNil(fixture.runtime.core.state)
+        XCTAssertEqual(fixture.notifications.ledger.promptCount, 0)
+        XCTAssertTrue(fixture.matches(context: fixture.context, connection: fixture.context.connection))
+        XCTAssertEqual(fixture.context.server.snapshot.reminderCommandRequests, 0)
+        XCTAssertTrue(fixture.context.server.snapshot.todayWithdrawn == true)
+        XCTAssertEqual(fixture.notifications.now,
+            fixture.context.server.snapshot.todayClockSeed.flatMap(SQLTimestamp.date(from:)))
+        fixture.context.connection.reconcileFixtureReconnect = {}
+        try fixture.restoreSchedule()
+        fixture.context.shutdown()
+        let cold = try await ReminderConsentFixture.makeContext(configuration)
+        defer { try? cold.cleanup() }
+        XCTAssertEqual(cold.context.server.snapshot.reminderScheduleRestored, true)
+        XCTAssertEqual(cold.context.server.snapshot.todayWithdrawn, false)
+        XCTAssertEqual(cold.notifications.now, fixture.notifications.now)
+        var request = URLRequest(url: URL(string: "https://" + namespace.lowercased() + ".invalid/functions/v1/plants-api/commands")!)
+        request.httpMethod = "POST"
+        let (_, response) = try await cold.context.http.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 403)
+        XCTAssertEqual(cold.context.server.snapshot.reminderCommandRequests, 1) // Deliberate rejected probe.
+        XCTAssertTrue(cold.context.server.snapshot.attempts.isEmpty)
+        XCTAssertGreaterThan(cold.context.server.snapshot.reminderAuthRequests ?? 0, 0)
+        let authCount = cold.context.server.snapshot.reminderAuthRequests
+        cold.context.shutdown()
+        try Data("corrupt".utf8).write(to: cold.context.directory.appendingPathComponent("reminder-os.json"))
+        do {
+            let unexpected = try await ReminderConsentFixture.makeContext(configuration)
+            unexpected.context.shutdown()
+            XCTFail("Corrupt OS ledger must fail before SDK bootstrap")
+        } catch {}
+        let persisted = try JSONDecoder().decode(CatalogueFixtureServer.Ledger.self,
+            from: Data(contentsOf: cold.context.directory.appendingPathComponent("server-ledger.json")))
+        XCTAssertEqual(persisted.reminderAuthRequests, authCount)
+    }
+}
+#endif
