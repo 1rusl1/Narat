@@ -1,5 +1,21 @@
 # Narat — текущий статус и передача работы
 
+## Общая приёмка B: первый прогон остановлен до Swift-тестов — 21 ноября 2026
+
+WholeB01 tester-care-reminder-whole-b-20261121-01 BLOCKED/checks, Developer0/Review0/QA0.
+Source624d812 неизменён; diff0.024с и149automation45.734с PASS. iOSgate52.575с FAIL:
+build16.420с/welcome11.340с PASS, unit24.010с exit65 ДО testcases — testhost не загрузил
+PlantsTests.xctest из CoreSimulator containermanagerd/Dead/temp path. Это bundle-load error,
+не semantic assertion; raw q-610abcb299b336b00762e2ee и прежний BLOCKED сохранены.
+
+Под shared lease выполнено только ownedSim32009/ourapp terminate→bootstatus→install уже
+построенного приложения. Installed/built executableSHA совпали, PlantsTests.xctest/PlantsTests
+существует. No uninstall/globalreset/cache/DD/service changes; это readiness, не testPASS и
+не установленная точная причина. Private proof narat-whole-b-owned-simulator-readiness-20261121.json.
+Следующий шаг — fresh read-only WHOLEB02 с тем же Appsource/base80e/all70paths и всеми
+прежними gates/ReviewQA. M2c4f002 остаётся принят; общаяB/делегат/Systemdelivery/finalsigning
+ещё открыты. Hard50soft48/noreset, actual19/81, parent taskboxes не закрывались.
+
 ## Мосты SavedCard M2c приняты; подготовлена общая приёмка B — 21 ноября 2026
 
 Принят/pushed `4f002ca2969481bf81c5f3a0d6cf310870349c13`. Изменены PreliminaryResultView.swift,
