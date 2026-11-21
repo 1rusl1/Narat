@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6B4D7345274BAED37CC8DC00 /* ReminderConsentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1CCDF3A48C2BF9BA4DACEF /* ReminderConsentView.swift */; };
 		D71A99EF722D60282DD12D73 /* CareReminderLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */; };
 		5E12CED5D11E2B29A1965AA8 /* CareReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */; };
 		6464DA2E0C5E1A80723E8F61 /* CareReminderNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */; };
@@ -77,6 +78,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		3F1CCDF3A48C2BF9BA4DACEF /* ReminderConsentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderConsentView.swift; sourceTree = "<group>"; };
 		CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderLifecycle.swift; sourceTree = "<group>"; };
 		FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderScheduler.swift; sourceTree = "<group>"; };
 		D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderNotifications.swift; sourceTree = "<group>"; };
@@ -341,6 +343,7 @@
 		91B9587291B020B05F140945 /* CareTasks */ = {
 			isa = PBXGroup;
 			children = (
+				3F1CCDF3A48C2BF9BA4DACEF /* ReminderConsentView.swift */,
 			);
 			path = CareTasks;
 			sourceTree = "<group>";
@@ -627,6 +630,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6B4D7345274BAED37CC8DC00 /* ReminderConsentView.swift in Sources */,
 				20AFEADD5CA53F9CE99A45B1 /* APIModels.swift in Sources */,
 				A68BFAA4888CF13B957BEE11 /* TodayModel.swift in Sources */,
 				9CC669C66922C8DCD8146150 /* TodayHomeView.swift in Sources */,

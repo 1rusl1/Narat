@@ -1,5 +1,17 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен consent A; бюджет естественно обновился — 21 ноября 2026
+
+Лимит0/100, новый hard50%used/soft48%, сброс запрещён; старые93/95 — история.
+Подготовлены properReminderConsentView.swift scaffold и4PBXrefs в lane, manifest
+и контекст A: owner-boundsettings/Todayentry, честные pending/permissionlag states,
+reuseprofilehour/defaultoff/expliciteligibleprompt. Реализация через Developer
+ещё не запущена. B отдельно докажет новый UI с fake до runtime; затем delegate/
+currentOccurrence route→actual Scheduler+Store/System→signedfinal. Техническая
+приёмка, покупки/рекомендации/externaldistribution вне scope. Parentcheckboxopen.
+Следующий шаг: передать prepSHA родителю для preservePBX, затем actual A run с
+прежними models900 и полными Swift/MCP/legacyUI/ReviewQA. Rootuser3 не тронуты.
+
 ## Работа возобновлена с обновлённым лимитом — 21 ноября 2026
 
 Новое поручение владельца: последовательно продолжать через оркестраторы
