@@ -587,3 +587,5 @@
 - WholeB01 readonly stopped before unitcases: bundle-load Dead/temp testhost exit65, no semantic testcase result; build/welcome passed. OwnSim/app reinstall+samebinary/testbundle presence only readiness, no reset/uninstall/cache changes. Raw BLOCKED retained; freshsame-source whole02 allgates/highReviewQA next. M2c accepted, parent tasks remain open.
 
 - WholeB02 BLOCKED:5TodayPASS/1FAIL beforetap, UTCfixtureanchor21 vslocalViewNov22. ActualAX/MP4frame confirm correctOverdue, notprovenproductnavigationbug. Other9gatesPASS/highReview219.588PASS/QA0 retained. NarrowactualDeveloper2files localdayseed+fixedyearboundary/reopen test, alloldUI/assertions/gates preserved; freshWHOLEbase80e all10gates/ReviewQA next, noD1untilaccepted.
+
+- Todaylocaldayfixture actualDeveloper1 PASS192.560s/2files97+/6- checkpointUNACCEPTED: ordinarylocalday, dedicatedUTC unchanged, fixedyearboundary/reopen/cardoverview tests2. Expected467 notrun; all465oldassertions preserved/onejustifiedfixturecalendarinput.current. OwnedcontrollerSTOPexit130 beforeios inautomationwindow, QA0/Review0; rawWhole02TodayFAIL preserved. FreshWHOLE03base80e all10gates/highReviewQA next, noD1untilaccepted.

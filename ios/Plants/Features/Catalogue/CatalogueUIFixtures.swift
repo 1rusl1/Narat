@@ -70,7 +70,8 @@ enum CatalogueUIFixtures {
     static func make(
         namespace: String, scenario: CatalogueUIFixtureScenario,
         reminderConfiguration: ReminderConsentLaunch.Configuration? = nil,
-        reminderPreparation: ((CatalogueFixtureServer, URL) throws -> Void)? = nil
+        reminderPreparation: ((CatalogueFixtureServer, URL) throws -> Void)? = nil,
+        initialDate: Date = Date(), initialTimeZone: TimeZone = .current
     ) async throws -> CatalogueUIFixtureContext {
         if let reminderConfiguration {
             guard reminderConfiguration.namespace.uuidString.lowercased() == namespace.lowercased(),
@@ -86,7 +87,8 @@ enum CatalogueUIFixtures {
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let server = try CatalogueFixtureServer(directory: directory, namespace: name, scenario: scenario,
-                                                reminderMode: reminderMode)
+                                                reminderMode: reminderMode, initialDate: initialDate,
+                                                initialTimeZone: initialTimeZone)
         try reminderPreparation?(server, directory) // Validate fake disk state BEFORE SDK construction.
         let schema = Schema([
             LocalOutboxRecord.self, CatalogueCreateConfirmationRecord.self,
@@ -396,7 +398,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     var requests: [URLRequest] { lock.withLock { capturedRequests } }
 
     fileprivate init(directory: URL, namespace: String, scenario: CatalogueUIFixtureScenario,
-                     reminderMode: String? = nil) throws {
+                     reminderMode: String? = nil, initialDate: Date = Date(),
+                     initialTimeZone: TimeZone = .current) throws {
         self.namespace = namespace
         file = directory.appendingPathComponent("server-ledger.json")
         if FileManager.default.fileExists(atPath: file.path) {
@@ -412,11 +415,12 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 ledger.reminderReadRequests = 0; ledger.reminderScheduleRestored = false
             }
             if scenario.testsToday {
-                let now = Date()
+                let now = initialDate
                 ledger.todayClockSeed = ISO8601DateFormatter().string(from: now)
                 let day = ISO8601DateFormatter()
                 day.formatOptions = [.withFullDate]
-                day.timeZone = TimeZone(secondsFromGMT: 0)
+                // Ordinary Today uses the local day; consent runs on its fake UTC clock.
+                day.timeZone = reminderMode == nil ? initialTimeZone : TimeZone(secondsFromGMT: 0)!
                 ledger.todayAnchorDay = day.string(from: now)
                 ledger.todayTransport = scenario == .todayFirstFailure ? .failOverview : .normal
                 ledger.todayWithdrawn = reminderMode == ReminderConsentFixtureMode.noSchedule.rawValue

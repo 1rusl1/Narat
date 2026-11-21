@@ -11353,6 +11353,93 @@ extension CollectionWireTests {
 #if DEBUG && targetEnvironment(simulator)
 extension CollectionWireTests {
     @MainActor
+    func testTodayFixtureLocalBoundarySeedSurvivesReadsAndReopen() async throws {
+        let cases = [
+            ("2026-12-31T21:30:00Z", 3 * 3600, "2027-01-01", "2026-12-31"),
+            ("2027-01-01T00:30:00Z", -3 * 3600, "2026-12-31", "2026-12-30"),
+            ("2026-12-31T21:30:00Z", 0, "2026-12-31", "2026-12-30")
+        ]
+        for (timestamp, offset, day, overdue) in cases {
+            let now = try XCTUnwrap(SQLTimestamp.date(from: timestamp))
+            let zone = try XCTUnwrap(TimeZone(secondsFromGMT: offset))
+            let namespace = UUID().uuidString
+            var h = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .todayMixed,
+                initialDate: now, initialTimeZone: zone)
+            defer { try? h.cleanup() }
+            let seed = h.server.snapshot
+            let first = try XCTUnwrap(seed.plants.first?.id)
+            for cold in [false, true] {
+                if cold {
+                    h.shutdown()
+                    h = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .todayMixed,
+                        initialDate: now.addingTimeInterval(3 * 86400),
+                        initialTimeZone: TimeZone(secondsFromGMT: -offset)!)
+                }
+                XCTAssertEqual(h.server.snapshot.todayAnchorDay, day)
+                XCTAssertEqual(h.server.snapshot.todayClockSeed, timestamp)
+                XCTAssertEqual(h.server.snapshot.permanent, seed.permanent)
+                XCTAssertEqual(h.server.snapshot.guest, seed.guest)
+                XCTAssertEqual(h.server.snapshot.plants.map(\.id), seed.plants.map(\.id))
+                let session = try await h.connection.sessionSnapshot()
+                let sync = try XCTUnwrap(h.connection.syncEngine)
+                _ = try await sync.pullDelta(for: session.session.userId)
+                let lease = try await h.connection.collectionLease(expected: session)
+                let repo = try XCTUnwrap(h.connection.repository)
+                let state = try await repo.refreshCareOverview(locale: .en, context: lease)
+                XCTAssertNil(state.failure)
+                let calendar = TodayCalendar(state: state, now: now, timeZone: zone)
+                XCTAssertEqual(calendar.today, day)
+                XCTAssertEqual(calendar.status, .scheduled)
+                XCTAssertEqual(calendar.sections.map(\.day), [overdue, day])
+                XCTAssertEqual(calendar.sections.last?.checks.map(\.plantId), [first])
+                let api = try XCTUnwrap(h.connection.apiClient)
+                let overview = try await api.fetchCareOverview(context: lease, limit: 2, locale: .en)
+                XCTAssertTrue(overview.pages.allSatisfy { $0.serverNow == timestamp })
+                for row in overview.plants {
+                    let card = try await api.fetchCareRecommendation(plantId: row.plantId, context: lease)
+                    XCTAssertEqual(card, try row.careRecommendation.validated(for: row.plantId))
+                    if row.plantId == first { XCTAssertEqual(card.nextCheck?.dueOn, day) }
+                }
+                XCTAssertEqual(h.server.snapshot.todayAnchorDay, seed.todayAnchorDay)
+                XCTAssertEqual(h.server.snapshot.todayClockSeed, seed.todayClockSeed)
+                XCTAssertTrue(h.server.snapshot.attempts.isEmpty)
+                XCTAssertTrue(h.server.snapshot.commits.isEmpty)
+            }
+        }
+    }
+
+    @MainActor
+    func testTodayConsentSeedKeepsUTCAtLocalYearBoundary() async throws {
+        let timestamp = "2026-12-31T21:30:00Z"
+        let now = try XCTUnwrap(SQLTimestamp.date(from: timestamp))
+        let zone = try XCTUnwrap(TimeZone(secondsFromGMT: 3 * 3600))
+        let ordinary = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .todayFuture,
+            initialDate: now, initialTimeZone: zone)
+        defer { try? ordinary.cleanup() }
+        let namespace = UUID().uuidString.lowercased()
+        guard case let .fixture(configuration) = ReminderConsentLaunch.parse([
+            "app", "--care-reminder-fixture", "eligible", "--care-reminder-namespace", namespace
+        ]) else { return XCTFail("Valid dedicated consent configuration rejected") }
+        var consent = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .todayFuture,
+            reminderConfiguration: configuration, reminderPreparation: { _, _ in },
+            initialDate: now, initialTimeZone: zone)
+        defer { try? consent.cleanup() }
+        let owner = consent.server.snapshot.permanent
+        XCTAssertEqual(consent.server.snapshot.todayAnchorDay, "2026-12-31")
+        XCTAssertEqual(consent.server.snapshot.todayClockSeed, timestamp)
+        consent.shutdown()
+        consent = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .todayFuture,
+            reminderConfiguration: configuration, reminderPreparation: { _, _ in },
+            initialDate: now.addingTimeInterval(86400), initialTimeZone: zone)
+        XCTAssertEqual(ordinary.server.snapshot.todayAnchorDay, "2027-01-01")
+        XCTAssertEqual(consent.server.snapshot.todayAnchorDay, "2026-12-31")
+        XCTAssertEqual(consent.server.snapshot.todayClockSeed, timestamp)
+        XCTAssertEqual(ordinary.server.snapshot.todayClockSeed, timestamp)
+        XCTAssertEqual(consent.server.snapshot.permanent, owner)
+        XCTAssertEqual(consent.server.snapshot.reminderMode, "eligible")
+    }
+
+    @MainActor
     func testTodayFixtureCompletePagesMatchCardsWithoutCareWrites() async throws {
         for scenario in [CatalogueUIFixtureScenario.todayMixed, .todayFuture] {
             let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: scenario)
@@ -11409,7 +11496,7 @@ extension CollectionWireTests {
             XCTAssertEqual(state.access, .free)
             XCTAssertEqual(state.plants.filter { $0.routine == nil }.count, 1)
             let now = try XCTUnwrap(h.server.snapshot.todayClockSeed.flatMap(SQLTimestamp.date(from:)))
-            let calendar = TodayCalendar(state: state, now: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+            let calendar = TodayCalendar(state: state, now: now, timeZone: .current)
             XCTAssertEqual(calendar.status, .scheduled)
             XCTAssertEqual(calendar.sections.flatMap(\.checks).count, 2)
             XCTAssertEqual(calendar.sections.count, scenario == .todayFuture ? 1 : 2)
