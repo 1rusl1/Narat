@@ -1,5 +1,40 @@
 # Narat — текущий статус и передача работы
 
+## Основа M2b принята; мосты SavedCard остаются в M2c — 21 ноября 2026
+
+Принят/pushed `28ce549eb1ba2a9bd778304e845a39a994071ae3`. Шесть файлов: CatalogueSaveModel.swift,
+CatalogueSaveView.swift, GuestCatalogueView.swift, PlantsApp.swift,
+CatalogueSaveModelTests.swift и CollectionWireTests.swift. Model фиксирует actual save/manual typed ACK,
+ждёт optional canonical read и публикует guarded completion после success ИЛИ failure;
+Root ordinary catalogue передаёт исходный locale guard. Original model lease/SDK, UI ticket,
+Task cancellation сохраняются; passive restored.saved не считается mutationACK.
+
+Проверки PASS: 463 Swift (460 XCTest), missing0,
+build/welcome 160.26с;149 46.127с;
+diff 0.041с;8 consentUI+strict fakeOS/server ledgers
+602.605с, skips0;MCP 27.913с.
+Developer 565.015с; high Review 142.4с,
+QA 192.047с semanticPASS. Три новые fixture tests проверили Model guards,
+manual typed ACK+optional failure и realStore/Repo latefullread→finalfreshcache/eligibleplan.
+QA1 protocolFAIL188.058с сохранён: raw semanticPASS имел ошибочный72-char fingerprint,
+ответ не принят/не исправлялся. Bounded QA2 того же неизменённого кандидата — отдельная приёмка.
+Это local/fixture foundation, не закрытый actual analysis post-save UI сценарий и не ordinary System proof.
+
+Подтверждён обязательный следующий M2c: реальные post-save manual controls доступны только
+в двух PreliminaryResultView SaveViews, оба ещё default callback=false. Plain catalogue
+получил callback, но manual controls там hidden. Также native firstsettle default includeManual=false
+может дать loaded card без ready manual phase; флаг нужен ДО первого settle, без позднего fullread.
+Наконец restore/explicitdetailsretry SavedCard fullrefresh может опоздать за Root overview:
+нужен отдельный scoped UI READ-completion после actual await/JOIN detailsTask success ИЛИ failure,
+не ACK/status observer. Mutation paths не должны дублировать completion.
+
+Подготовлен M2c7existingfiles/PBX0 с meaningful Model/native/heldread regressions и четырьмя
+existing EN/PL presentationUI (они только render, НЕ submit/AI proof). Затем wholeB base80e:
+старые care/Today/PL+7metadata/new8/4render/fullSwift149MCP/highReviewQA; дальше routing,
+обычная SDK/System unmasked collection→closed delivery/tap и finalsigned source.
+T075/T077/T080/T098 открыты; technical only, external/physical отложены, root user3 не тронуты.
+Hard50/soft48, reset запрещён. Следующий шаг — M2c Developer→полные gates→Review/QA.
+
 ## M2a принят: точный post-save record/undo ACK; подготовлен UI completion — 21 ноября 2026
 
 Принят/pushed `1769481af801327cb03ff3ad55f639cff94d73ea`. Три файла: SyncEngine.swift,

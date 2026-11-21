@@ -1,0 +1,126 @@
+{
+  "tasks": [
+    {
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "id": "tester-care-reminder-saved-card-bridge",
+      "description": "Complete real analysis SaveView scope bridge, native first-settle manual policy and explicit joined SavedCard read revalidation.",
+      "files": [
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-context.md",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-accessibility-context.md",
+        "tools/automation/tasks.tester-care-reminder-accessibility.json",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "docs/validation/automation/tasks/tester-care-reminder-collection-events-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-receipt-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-ui-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-bridge-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "M2c7existingfilesonly compact<=350-400linesincltests, no PBX/newfiles/AI/backend/schema/queue/datepolicy expansion. Existing files ALREADY EXIST; generate diff programmatically fromactualbytes/difflib, no /dev/null/guessedcontext. Same900/models/budgets/hard50soft48/noreset.",
+        "Bothactual Prelim manual SaveViews frozenlanguageStore locale guard; preserveENmanualpolicy. Native includeManual propagates BEFOREfirstmodel.save/settle, adopt.loadedskip mustretainready/pending. No additionalfullread after publishedmutationcompletion. PreserveexactoriginalguestSDK/input/body/epoch/nativeAuth/cancelguards.",
+        "Separate scoped READcompletion foractual SavedCard restore/detailsretry await/JOIN (rawloadCard busyreturn notsettled). SuccessORsame-scopefailureincludingpartialcanonicalpublish, guardedoriginalSDK/modellease/locale/ticket/!cancel. .saved/.loadednotproof/no mutation event. Mutationsettle no readcallbackdup; no observer->HTTP/newclient/poll. ExistingRootcoalesceronlyfetch.",
+        "Meaningful realStore/Repo heldread+earlyoverview+latecanonicalcompletion/failure->finalfreshalignedeligibleplan, nativefirstsettle ready and1fullread/callback, stalescope/cancel/locale0signals/restoredsaved0mutation/newPOST. Oldassertions/helperdefaults/securityguards/UIhashes unchanged, newfixtureJWT+monotonicwatermarks.",
+        "FullSwift/build/welcome/149/diff/8consent+strictledgers/4existingENPLpresentation/MCP/highReviewQA. FourUIrenderonlyNOTsubmit/careproof, noAI/livewrites. WholeB/routing/ordinaryunmaskedSystemdeliverytap/finalsigning remain, parenttasksopen/technicalonly."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "BR1",
+          "description": "Both real Preliminary SaveView paths carry original frozen UI locale guard. Native original-scope flow propagates manual policy before firstsettle and keeps ready/pending after loadedadopt without anotherfullread or duplicate completion. Existingauth/input/body/SDKguards preserved.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "BR2",
+          "description": "SavedCard restore/explicitretry read-completion awaits or joins actualtask through success/failure, distinct ACK. Deterministic productionhelper+realStore/Repo latefullread/partialfailure with independentearlyoverview ends freshalignedcache+eligibleplan; canceled/staleSDK/locale/ticket0signals, no newintentPOST/UUID.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "BR3",
+          "description": "All4existing diagnosis/identification English/Polish presentation tests pass exactcount/skips0/attachments, no newAI/submit claims; eightconsent and ledger regressions unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "tester-result-save-ui",
+            "tester-consent-ui"
+          ]
+        },
+        {
+          "id": "UI1",
+          "description": "All8 exact named rendered consent cases pass with strict synthetic OS/server ledgers, snapshots/coldpref/SDK readiness, screenshots and no missing/skipped tests.",
+          "mode": "fixture",
+          "checks": [
+            "tester-consent-ui"
+          ]
+        },
+        {
+          "id": "UI2",
+          "description": "FullSwift/build/welcome and149/MCP/diff regressions pass; highReviewQA checks real production UI paths and no weakened assertions.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "UI3",
+          "description": "149 automation regression tests pass.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-bridge-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-ui.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-receipt.md"
+      ]
+    }
+  ]
+}
