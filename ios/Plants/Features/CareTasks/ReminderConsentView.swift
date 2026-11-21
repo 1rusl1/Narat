@@ -4,7 +4,7 @@ import UIKit
 /// Presentation only: the accepted worker remains the sole scheduling authority.
 struct ReminderConsentStatus: Equatable {
     enum Phase: Equatable {
-        case unavailable, off, loading, unknown, readFailed, expired, paused
+        case unavailable, off, stopping, loading, unknown, readFailed, expired, paused
         case permissionPending, pending, confirmed, denied, noEligible, unconfirmed, failed
     }
     let phase: Phase
@@ -18,7 +18,16 @@ struct ReminderConsentStatus: Equatable {
          authorization: CareReminderPlan.Authorization?, requestingPermission: Bool,
          result: CareReminderScheduler.Result?, now: Date) {
         guard current else { phase = .unavailable; return }
-        guard optedIn else { phase = .off; return }
+        guard optedIn else {
+            if !reading, !readFailed, let result, !result.failed, !result.deferred,
+               result.unconfirmedBlockers == 0, result.confirmedPendingCount == 0 {
+                phase = .off
+            } else {
+                phase = .stopping
+                readbackWarning = true
+            }
+            return
+        }
         guard !reading else { phase = .loading; return }
         guard !readFailed else { phase = .readFailed; return }
         guard let state else { phase = .unknown; return }
@@ -66,10 +75,19 @@ struct ReminderConsentHost: View {
     let expected: CatalogueSDKSnapshot
     let polish: Bool
     let isLocaleCurrent: () -> Bool
+#if DEBUG
+    @Environment(\.reminderConsentFixture) private var fixture
+#endif
 
     var body: some View {
         Group {
             if connection.authClassification == .permanent(expected), isLocaleCurrent() {
+#if DEBUG
+                if let fixture {
+                    ReminderConsentFixtureControls(fixture: fixture, lifecycle: lifecycle,
+                        connection: connection, expected: expected, isLocaleCurrent: isLocaleCurrent)
+                }
+#endif
                 if let binding = lifecycle.consentBinding(
                     expectedOwnerId: expected.session.userId, locale: polish ? "pl" : "en") {
                     ReminderConsentView(lifecycle: lifecycle, binding: binding, polish: polish)
@@ -88,6 +106,9 @@ struct ReminderConsentView: View {
     let polish: Bool
     var compact = false
     @Environment(\.openURL) private var openURL
+#if DEBUG
+    @Environment(\.reminderConsentFixture) private var fixture
+#endif
 
     private var status: ReminderConsentStatus {
         lifecycle.consentStatus(binding: binding)
@@ -122,8 +143,11 @@ struct ReminderConsentView: View {
                     .accessibilityIdentifier("care.reminders.confirmed")
             }
             if status.readbackWarning {
-                Text(polish ? "Ostatnie sprawdzenie nie potwierdziło uprawnień iOS. Sprawdź status ponownie."
-                     : "The latest status check did not confirm iOS permission. Check status again.")
+                Text(status.phase == .stopping
+                     ? (polish ? "Powiadomienia iOS mogą nadal oczekiwać. Ponów sprawdzenie."
+                        : "iOS notifications may still be pending. Retry the check.")
+                     : (polish ? "Ostatnie sprawdzenie nie potwierdziło uprawnień iOS. Sprawdź status ponownie."
+                        : "The latest status check did not confirm iOS permission. Check status again."))
                     .accessibilityIdentifier("care.reminders.readback")
             }
             if status.partial {
@@ -138,11 +162,20 @@ struct ReminderConsentView: View {
                 .accessibilityIdentifier("care.reminders.allow")
             }
             Button(polish ? "Sprawdź status / ponów" : "Check status / retry") {
+#if DEBUG
+                if let fixture, lifecycle.isCurrent(binding: binding),
+                   fixture.runtime.core === lifecycle,
+                   let connection = fixture.context.connection,
+                   fixture.matches(context: fixture.context, connection: connection),
+                   fixture.notifications.ledger.owner == binding.ownerId {
+                    try? fixture.notifications.markRetry()
+                }
+#endif
                 lifecycle.performConsentAction(.checkStatus, binding: binding)
             }
             .disabled(!lifecycle.isCurrent(binding: binding) || lifecycle.requestingPermission)
             .accessibilityIdentifier("care.reminders.retry")
-            if status.phase == .denied || (status.readbackWarning && lifecycle.authorization == .denied) {
+            if status.phase == .denied || (status.phase == .confirmed && status.readbackWarning && lifecycle.authorization == .denied) {
                 Button(polish ? "Ustawienia iOS" : "iOS Settings") {
                     guard lifecycle.isCurrent(binding: binding),
                           let url = URL(string: UIApplication.openSettingsURLString) else { return }
@@ -162,6 +195,9 @@ struct ReminderConsentView: View {
             polish ? "Potwierdź bieżące konto." : "Confirm the current account."
         case .off:
             polish ? "Przypomnienia są wyłączone dla tego konta." : "Reminders are off for this account."
+        case .stopping:
+            polish ? "Zgoda wyłączona. Nie potwierdzono usunięcia powiadomień iOS. Ponów sprawdzenie."
+                : "Preference is off. iOS notification cleanup is not confirmed. Retry the check."
         case .loading:
             polish ? "Odczytywanie stanu…" : "Reading reminder state…"
         case .unknown:

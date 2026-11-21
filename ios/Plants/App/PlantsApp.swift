@@ -26,6 +26,7 @@ struct PlantsApp: App {
                     RootContainerView(languageStore: languageStore,
                                       analysisModel: analysisModel, careReminderRuntime: fixture.runtime,
                                       preloadedReminderFixture: fixture)
+                        .environment(\.reminderConsentFixture, fixture)
 #endif
                 }
             }

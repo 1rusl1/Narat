@@ -13187,7 +13187,7 @@ extension CollectionWireTests {
         let stale = consentProjection(state, result: confirmed, current: false)
         XCTAssertEqual(stale.phase, .unavailable)
         XCTAssertEqual(stale.confirmedPendingCount, 0)
-        XCTAssertEqual(consentProjection(state, result: confirmed, optedIn: false).phase, .off)
+        XCTAssertEqual(consentProjection(state, result: confirmed, optedIn: false).phase, .stopping)
         XCTAssertEqual(consentProjection(state, result: confirmed, reading: true).phase, .loading)
         XCTAssertEqual(consentProjection(nil, result: confirmed).phase, .unknown)
         XCTAssertEqual(consentProjection(state, result: confirmed, readFailed: true).phase, .readFailed)
@@ -13784,6 +13784,131 @@ extension CollectionWireTests {
             fixtureFactory: { _ in throw CancellationError() })
         await failure.prepare()
         guard case .failed = failure.startup else { return XCTFail("Failed factory must fail closed") }
+    }
+}
+#endif
+
+
+extension CollectionWireTests {
+    func testConsentOffRequiresVerifiedCleanupMatrix() {
+        let results: [CareReminderScheduler.Result?] = [nil,
+            .init(confirmedPendingCount: 0, omittedCount: 0, unconfirmedBlockers: 0, failed: true, deferred: false),
+            .init(confirmedPendingCount: 0, omittedCount: 0, unconfirmedBlockers: 0, failed: false, deferred: true),
+            .init(confirmedPendingCount: 0, omittedCount: 0, unconfirmedBlockers: 1, failed: false, deferred: false),
+            .init(confirmedPendingCount: 1, omittedCount: 0, unconfirmedBlockers: 0, failed: false, deferred: false),
+            .init(confirmedPendingCount: 0, omittedCount: 0, unconfirmedBlockers: 0, failed: false, deferred: false),
+            .init(confirmedPendingCount: 0, omittedCount: 3, unconfirmedBlockers: 0, failed: false, deferred: false)]
+        for (index, result) in results.enumerated() {
+            let status = consentProjection(nil, result: result, optedIn: false)
+            XCTAssertEqual(status.phase, index >= 5 ? .off : .stopping)
+            XCTAssertEqual(status.readbackWarning, index < 5)
+            XCTAssertFalse(status.canAllow)
+            XCTAssertEqual(status.confirmedPendingCount, 0)
+            let stale = consentProjection(nil, result: result, current: false, optedIn: false)
+            XCTAssertEqual(stale.phase, .unavailable)
+            XCTAssertFalse(stale.readbackWarning)
+            XCTAssertEqual(stale.confirmedPendingCount, 0)
+        }
+        let zero = results[5]
+        XCTAssertEqual(consentProjection(nil, result: zero, reading: true, optedIn: false).phase, .stopping)
+        XCTAssertEqual(consentProjection(nil, result: zero, optedIn: false, readFailed: true).phase, .stopping)
+    }
+
+    @MainActor
+    func testConsentOffCleanupFailurePersistsPreferenceUntilExplicitRetry() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let state = try passState(local)
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = CareReminderLifecycle.preferenceKey(ownerId: syncOwner)
+        defaults.set(true, forKey: key)
+        let fake = FakeCareReminderNotifications()
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        core.setSceneActive(true)
+        core.accept(lifecycleContext(store, api, lease, reader: { state }))
+        await core.waitUntilIdle()
+        let binding = try XCTUnwrap(core.consentBinding(expectedOwnerId: syncOwner, locale: "pl"))
+        XCTAssertEqual(fake.pending.count, 1)
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .confirmed)
+        fake.failInventory = true
+        core.performConsentAction(.setOptedIn(false), binding: binding)
+        XCTAssertFalse(defaults.bool(forKey: key))
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .stopping)
+        await core.waitUntilIdle()
+        XCTAssertFalse(core.optedIn)
+        XCTAssertEqual(fake.pending.count, 1)
+        XCTAssertEqual(core.result?.failed, true)
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .stopping)
+        XCTAssertTrue(core.consentStatus(binding: binding).readbackWarning)
+        let reads = fake.inventoryReads
+        let adds = fake.adds.count
+        fake.failInventory = false // An external OS change is not a Core trigger.
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.inventoryReads, reads)
+        XCTAssertEqual(fake.pending.count, 1)
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .stopping)
+        core.performConsentAction(.checkStatus, binding: binding)
+        await core.waitUntilIdle()
+        XCTAssertGreaterThan(fake.inventoryReads, reads)
+        XCTAssertTrue(fake.pending.isEmpty)
+        XCTAssertEqual(fake.adds.count, adds)
+        XCTAssertFalse(defaults.bool(forKey: key))
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .off)
+        XCTAssertFalse(core.consentStatus(binding: binding).readbackWarning)
+        XCTAssertEqual(fake.otherPendingCount, 1)
+        XCTAssertEqual(fake.permissionRequests, 0)
+        core.logout()
+        await core.waitUntilIdle()
+    }
+}
+
+#if DEBUG
+extension CollectionWireTests {
+
+    @MainActor
+    func testConsentFixtureLegacyColdEvidenceAndExplicitRetryMarkers() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("os.json"), namespace = UUID()
+        let fake = try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: syncOwner, seed: receiptNow)
+        let proposal = CareReminderNotificationProposal(candidate: try receiptCandidate(), attemptId: UUID())
+        try await fake.add(proposal, now: receiptNow)
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(fake.ledger)) as? [String: Any])
+        for key in ["initialPending", "initialDelivered", "events", "markers"] { old.removeValue(forKey: key) }
+        try JSONSerialization.data(withJSONObject: old).write(to: file)
+        let cold = try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: syncOwner, seed: receiptNow)
+        XCTAssertEqual(cold.ledger.initialPending, fake.ledger.pending)
+        XCTAssertEqual(cold.ledger.events?.count, 0)
+        try cold.setFailures(add: false, inventory: true)
+        try cold.setFailures(add: false, inventory: false)
+        try cold.setAuthorization(.authorized)
+        try cold.markRetry()
+        XCTAssertEqual(cold.ledger.markers?.map(\.kind), [.failures, .failures, .authorization, .retry])
+        XCTAssertTrue(cold.ledger.markers!.allSatisfy { $0.authReads == 0 && $0.inventoryReads == 0 })
+        do {
+            try await cold.add(.init(candidate: proposal.candidate, attemptId: UUID()), now: receiptNow)
+            XCTFail("Duplicate pending identifier must be rejected")
+        } catch ReminderConsentNotifications.Fault.corrupt {}
+        try await cold.removePending(cold.ledger.pending.map(\.identifier))
+        let latest = CareReminderNotificationProposal(candidate: proposal.candidate, attemptId: UUID())
+        try await cold.add(latest, now: receiptNow)
+        let reopened = try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: syncOwner, seed: receiptNow)
+        XCTAssertEqual(reopened.ledger.events?.map(\.kind), [.removePending, .add])
+        XCTAssertEqual(reopened.ledger.pending.first?.route?.attemptId, latest.attemptId)
+        XCTAssertEqual(reopened.ledger.otherPending, ["narat.trial.fixture"])
+        var corrupt = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(reopened.ledger)) as? [String: Any])
+        corrupt["events"] = [["kind": "removePending", "wires": [], "identifiers": ["narat.trial.fixture"]]]
+        try JSONSerialization.data(withJSONObject: corrupt).write(to: file)
+        XCTAssertThrowsError(try ReminderConsentNotifications(file: file, namespace: namespace,
+            mode: .eligible, owner: syncOwner, seed: receiptNow))
     }
 }
 #endif

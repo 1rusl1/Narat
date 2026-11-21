@@ -50,6 +50,18 @@ final class ReminderConsentNotifications: CareReminderNotifications {
             CareReminderNotificationFactory.parse(identifier: identifier, userInfo: metadata)
         }
     }
+    struct Event: Codable {
+        enum Kind: String, Codable { case add, removePending, removeDelivered, deliver }
+        let kind: Kind
+        let wires: [Wire]
+        let identifiers: [String]
+    }
+    struct Marker: Codable {
+        enum Kind: String, Codable { case authorization, failures, retry }
+        let kind: Kind
+        let authReads: Int
+        let inventoryReads: Int
+    }
     struct Ledger: Codable {
         let version: Int
         let namespace: UUID
@@ -70,6 +82,11 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         var otherPending = ["narat.trial.fixture"]
         var addFailure = false
         var inventoryFailure = false
+        // Optional keys keep old version-1 cold ledgers decodable.
+        var initialPending: [Wire]?
+        var initialDelivered: [Wire]?
+        var events: [Event]?
+        var markers: [Marker]?
     }
     private let file: URL
     private(set) var ledger: Ledger
@@ -104,7 +121,83 @@ final class ReminderConsentNotifications: CareReminderNotifications {
               (ledger.removedPending + ledger.removedDelivered).allSatisfy({
                   $0.hasPrefix(CareReminderNotificationFactory.prefix)
               }) else { throw Fault.corrupt }
+        try validateEvidence()
+        if ledger.events == nil {
+            ledger.initialPending = ledger.pending
+            ledger.initialDelivered = ledger.delivered
+            ledger.events = []
+        }
+        if ledger.markers == nil { ledger.markers = [] }
         try save(ledger)
+    }
+
+    private func validateEvidence() throws {
+        guard let events = ledger.events else {
+            guard ledger.initialPending == nil, ledger.initialDelivered == nil,
+                  ledger.markers == nil else { throw Fault.corrupt }
+            return
+        }
+        guard let initialPending = ledger.initialPending,
+              let initialDelivered = ledger.initialDelivered else { throw Fault.corrupt }
+        var pending = initialPending, delivered = initialDelivered
+        func valid(_ wires: [Wire]) -> Bool {
+            wires.allSatisfy { $0.route?.candidate.ownerId == ledger.owner
+                    && ($0.deliveredAt == nil || $0.deliveredAt! <= ledger.now) }
+                && Set(wires.map(\.identifier)).count == wires.count
+        }
+        guard valid(pending), valid(delivered),
+              Set(pending.map(\.identifier)).isDisjoint(with: delivered.map(\.identifier)),
+              pending.allSatisfy({ $0.deliveredAt == nil }),
+              delivered.allSatisfy({ $0.deliveredAt == $0.route?.candidate.absoluteFireDate })
+        else { throw Fault.corrupt }
+        var attempts = Set(initialPending.compactMap { $0.route?.attemptId }
+            + initialDelivered.compactMap { $0.route?.attemptId })
+        for event in events {
+            guard valid(event.wires), event.identifiers.allSatisfy({
+                $0.hasPrefix(CareReminderNotificationFactory.prefix)
+            }) else { throw Fault.corrupt }
+            switch event.kind {
+            case .add:
+                guard event.wires.count == 1, event.identifiers.isEmpty,
+                      let wire = event.wires.first, wire.deliveredAt == nil,
+                      !pending.contains(where: { $0.identifier == wire.identifier }),
+                      let attempt = wire.route?.attemptId, attempts.insert(attempt).inserted
+                else { throw Fault.corrupt }
+                pending += event.wires
+            case .removePending, .removeDelivered:
+                guard event.wires.isEmpty else { throw Fault.corrupt }
+                if event.kind == .removePending {
+                    pending.removeAll { event.identifiers.contains($0.identifier) }
+                } else { delivered.removeAll { event.identifiers.contains($0.identifier) } }
+            case .deliver:
+                guard event.identifiers.isEmpty, event.wires.allSatisfy({ wire in
+                    pending.contains(where: { $0.identifier == wire.identifier && $0.metadata == wire.metadata })
+                        && wire.deliveredAt == wire.route?.candidate.absoluteFireDate
+                        && wire.deliveredAt! <= ledger.now
+                }) else { throw Fault.corrupt }
+                pending.removeAll { item in event.wires.contains { $0.identifier == item.identifier } }
+                delivered += event.wires
+            }
+        }
+        guard pending == ledger.pending, delivered == ledger.delivered else { throw Fault.corrupt }
+        var auth = 0, inventory = 0
+        for marker in ledger.markers ?? [] {
+            guard marker.authReads >= auth, marker.authReads <= ledger.authReads,
+                  marker.inventoryReads >= inventory, marker.inventoryReads <= ledger.inventoryReads
+            else { throw Fault.corrupt }
+            auth = marker.authReads; inventory = marker.inventoryReads
+        }
+    }
+
+    private func mark(_ kind: Marker.Kind, in next: inout Ledger) {
+        let marker = Marker(kind: kind, authReads: next.authReads, inventoryReads: next.inventoryReads)
+        next.markers?.append(marker)
+    }
+
+    func markRetry() throws {
+        var next = ledger
+        mark(.retry, in: &next)
+        try save(next)
     }
 
     private func save(_ next: Ledger) throws {
@@ -142,11 +235,13 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         case .notDetermined: next.status = "notDetermined"
         }
         next.lag = 0
+        mark(.authorization, in: &next)
         try save(next)
     }
 
     func setFailures(add: Bool, inventory: Bool) throws {
         var next = ledger; next.addFailure = add; next.inventoryFailure = inventory
+        mark(.failures, in: &next)
         try save(next)
     }
 
@@ -166,7 +261,11 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         let request = try CareReminderNotificationFactory.request(proposal, now: now)
         guard let metadata = request.content.userInfo as? [String: String] else { throw Fault.corrupt }
         let wire = Wire(identifier: request.identifier, metadata: metadata)
+        guard !ledger.pending.contains(where: { $0.identifier == wire.identifier }),
+              !ledger.adds.contains(where: { $0.route?.attemptId == proposal.attemptId })
+        else { throw Fault.corrupt }
         var next = ledger; next.adds.append(wire)
+        next.events?.append(.init(kind: .add, wires: [wire], identifiers: []))
         next.pending.removeAll { $0.identifier == wire.identifier }
         next.pending.append(wire)
         try save(next)
@@ -179,6 +278,8 @@ final class ReminderConsentNotifications: CareReminderNotifications {
     private func remove(_ identifiers: [String], delivered: Bool) throws {
         let own = CareReminderNotificationFactory.ownIdentifiers(identifiers)
         var next = ledger
+        next.events?.append(.init(kind: delivered ? .removeDelivered : .removePending,
+                                  wires: [], identifiers: own))
         if delivered {
             next.removedDelivered += own
             next.delivered.removeAll { own.contains($0.identifier) }
@@ -194,6 +295,7 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         var next = ledger; next.now = date
         for var wire in next.pending where wire.route!.candidate.absoluteFireDate <= date {
             wire.deliveredAt = wire.route!.candidate.absoluteFireDate
+            next.events?.append(.init(kind: .deliver, wires: [wire], identifiers: []))
             next.delivered.removeAll { $0.identifier == wire.identifier }
             next.delivered.append(wire)
         }
