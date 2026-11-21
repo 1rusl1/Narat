@@ -1,5 +1,31 @@
 # Narat — текущий статус и передача работы
 
+## Named8 UI + product AX исправление принято; подготовлен M1 — 21 ноября 2026
+
+UNION относительно accepted2187419 принят/pushed e8596c654957f0f1aedadac29ee4a172e951cbaf.
+Финальные452Swift/build/welcome112.937с,14947.097с,diff0.022с,MCP28.422с PASS;
+actual8+strict8namespace OS/serverledgers597.974с PASS (8/8,0skip). HighReview118.077с
+и QA168.482с semanticPASS, оба проверили весь candidate от218. Это real rendered
+SwiftUI/Core/Store/SDK с injectedfake, НЕ ordinary System/backend/physical proof.
+
+Sourcefix толькоReminderConsentView: настоящий AXcontainer(children.contain) сохраняет
+childIDs; нативный Toggle имеет отдельный hit target, подпись и VoiceOver labeledPair.
+Прежний широкий Switch row направлял native tap вx201 мимо правого переключателя,
+что подтверждено SynthesizedEvent. Binding/SDK/permission/businesslogic не менялись.
+UIhash57f7ed4a... и trustedgatehashf98cf644... сохранены. Developer1 70.107с (AXcontainer),
+Developer2 semanticFAIL101.131с безpatch/догадок, Developer3 105.502с (native hit target).
+Все прежние0/8 FAIL (274.316/457.238/342.236с) и semanticBLOCKED сохранены, неPASS.
+
+Подготовлен M1: explicit successful canonical collectionload/retry + exact editACK +
+typed deleteconfirmed будят existing owner-scoped coalescer. Иначе globalgeneration
+оставляет otherplants cancelled/readOnly до dismiss. Ни cached/failed/stale/quietcanonical
+не должны эмитить. Write4files Guest/Repo/ConnectionTests/WireTests, безPBX/новойочереди.
+Next Developer→Swift/149/diff/exact8preReview/MCP→highReviewQA. Без9гоDEBUGprobe:
+положительный collection-only ordinary proof позже обязан открытьMyplants/cardБЕЗsettings,
+дождатьсяНОВОГОfreshoverview+currentARMED/no duplicate, затемbackground/delivery.
+M2postsave exactpositive witness/undo неqueueempty, wholeB/routing/System/finalsigning ещё
+открыты. Parentcheckboxopen, user3/PBXRoot не тронуты; hard50soft48/reset запрещён.
+
 ## Actual8 повторно FAIL: доказан product AX bug; подготовлен repair — 21 ноября 2026
 
 Fresh readonly run tester-care-reminder-rendered-ui-acceptance-20261121-01
