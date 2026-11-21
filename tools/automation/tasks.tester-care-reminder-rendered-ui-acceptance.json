@@ -1,0 +1,83 @@
+{
+  "tasks": [
+    {
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "id": "tester-care-reminder-rendered-ui-acceptance",
+      "description": "Fresh read-only actual eight consent UI scenarios before high Review/QA on unaccepted Dev1/Dev2 test candidate.",
+      "files": [
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-context.md",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-acceptance-context.md",
+        "tools/automation/tasks.tester-care-reminder-rendered-ui-acceptance.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "READONLY Developer0. Actual source produced by priorDev1/2; nofakeDeveloperPASS, source candidate remainsunaccepted untilallactualgates/highReviewQA. Read provenance/context, rawoldFAIL/semanticBLOCKED preserved. Do notwriteanysource.",
+        "Actual8+strictledgers MUSTpreceedeReview inthisnewcheckonly. Allotherchecks/stages/models900/budgets unchanged. CurrentUITestsourceexactSHA/candidatebase218verified. Full452Swift/149/MCP/diff/named8/PASS/skips0/attachments/fresh8ledgers, no broadacceptancefromstaticReview.",
+        "IfsameoptInFAIL inspectactualAX/screenshot: physicalTogglepresentlastframe doesnotproveAX IDs. No bypassbylabel/weakchecks/newdomainwrites; separateproductrepair ifproven. No realSystem/backend/AI/permission/TCC actions.",
+        "Actual8stillnotwholeB/productionSystemproof. Parent ACKmetadatahooks/wholeB/routing/live/finalsigning remainnext. Parentcheckboxesopen, technicalonly, hard50soft48/noreset."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "UI1",
+          "description": "All8 exact named rendered consent cases pass with strict synthetic OS/server ledgers, snapshots/coldpref/SDK readiness, screenshots and no missing/skipped tests.",
+          "mode": "fixture",
+          "checks": [
+            "tester-consent-ui"
+          ]
+        },
+        {
+          "id": "UI2",
+          "description": "FullSwift/build/welcome and149/MCP/diff regressions pass; highReviewQA checks real production UI paths and no weakened assertions.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "UI3",
+          "description": "149 automation regression tests pass.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-acceptance-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture-context.md"
+      ],
+      "candidate_base": "2187419dfb0ace98c547ab5423e93817c267355f"
+    }
+  ]
+}

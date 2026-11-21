@@ -17,7 +17,10 @@ PASS. Reviewer2 answer semantic BLOCKED140.461с (protocol call successful):
 статических дефектов нет, UI1 не подтверждён повторным прогоном. Второго UI/QA
 ещё НЕ было; прошлые verdicts/FAIL не переписаны.
 
-Сохраняется явно НЕПРИНЯТЫЙ candidate. Следующий шаг — fresh read-only acceptance
+Сохранён явно НЕПРИНЯТЫЙ source candidate 954886de6cf60dc53ddf91c95f3a8a86f707fe95.
+Подготовлены fresh readonly manifest/context и ignored prereview-config: единственное
+изменение — stage нового consent gate, прежние маршруты/бюджеты/проверки неизменны.
+Следующий шаг — fresh read-only acceptance
 base2187419 с Developer0/provenanceDev1+Dev2, прежними моделями/900/бюджетами.
 Только новый consent UI gate будет pre-review, чтобы получить actual8+AX доReview;
 старые checks/stages не менять. Если найдётся product AX/Host bug — отдельный
