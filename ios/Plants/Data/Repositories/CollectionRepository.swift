@@ -1083,11 +1083,21 @@ public struct CollectionRepository: Sendable {
         return try await syncEngine.flushCareOperation(command, context: context) ? .confirmed : .unconfirmed
     }
 
-    /// The typed receipt must be validated by the existing outbox drain before the queue item disappears.
+    /// Compatibility only; new completion events must consume the typed target outcome.
     func submitManualWatering(
         _ command: CommandEnvelopeDTO, confirmation: CatalogueCreateConfirmationSnapshot,
         context: SyncSessionLease
     ) async throws -> Bool {
+        try await submitManualWateringAcceptance(
+            command, confirmation: confirmation, context: context
+        ) == .confirmed
+    }
+
+    /// Proof of this full envelope in this ordered drain, after typed receipt and canonical finish.
+    func submitManualWateringAcceptance(
+        _ command: CommandEnvelopeDTO, confirmation: CatalogueCreateConfirmationSnapshot,
+        context: SyncSessionLease
+    ) async throws -> CareOperationOutcome {
         try apiClient.syncAuthority.withBoundValid(context) {}
         guard confirmation.ownerId == context.ownerId,
               command.plantId == confirmation.receipt.plantId,
@@ -1098,20 +1108,11 @@ public struct CollectionRepository: Sendable {
             throw SyncWireValidationError.invalidSession
         }
         try await store.enqueueManualWatering(command, context: context, authority: apiClient.syncAuthority)
-        // This is a user retry of one confirmed post-save intent, not a background drain.
-        // Preserve generic ordering; only this exact rejected record may be reviewed again.
+        // Preserve predecessor/deletion ordering and explicit review of only this record.
         let review = ManualWateringAction(envelope: command) == .record ? command.operationId : nil
-        _ = try await syncEngine.flushOutbox(context: context, reviewingWateringOperation: review)
-        let pending = try await store.pendingOutboxEntries(for: context.ownerId)
-        if ManualWateringAction(envelope: command) == .record {
-            guard !pending.contains(where: { $0.operationId == command.operationId }) else { return false }
-            return try await store.confirmedWateringRecord(
-                command, context: context, authority: apiClient.syncAuthority
-            ) != nil
-        }
-        return try apiClient.syncAuthority.withBoundValid(context) {
-            !pending.contains { $0.operationId == command.operationId }
-        }
+        return try await syncEngine.flushCareOperation(
+            command, context: context, reviewingWateringOperation: review
+        ) ? .confirmed : .unconfirmed
     }
 
     /// Read only after catalogueCard has refreshed the exact confirmed card.

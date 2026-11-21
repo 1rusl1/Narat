@@ -14359,3 +14359,170 @@ extension CollectionWireTests {
     }
 }
 #endif
+
+extension CollectionWireTests {
+    @MainActor
+    func testPostSaveTypedAcceptanceRequiresTargetReceiptAndReplaysDurableIntent() async throws {
+        for undo in [false, true] {
+            for mode in ["accepted", "rejected", "lost", "canonical", "blocked"] {
+                let url = try diskURL()
+                defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+                let create = createCommand(), entry = UUID(), reversal = UUID()
+                _ = try await seedEngineCreate(url, command: create)
+                let command = try (undo ? ManualWateringAction.undo(entry) : .record).envelope(plantId: serverPlantId)
+                let later = "2026-11-03T09:10:00Z"
+                var receipt = manualWateringReceipt(entryId: entry, state: undo ? "voided" : "active",
+                                                   reversalId: undo ? reversal : nil)
+                receipt["watermark"] = later
+                let page = try careAckPage(entry: entry, state: undo ? "voided" : "active",
+                    reversal: undo ? reversal : nil, operation: command.operationId, at: later)
+                var canonical = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(page.utf8)) as? [String: Any])
+                var rows = try XCTUnwrap(canonical["changes"] as? [[String: Any]])
+                if !undo {
+                    let index = try XCTUnwrap(rows.firstIndex { $0["entity_type"] as? String == "care_entries" })
+                    var fact = try XCTUnwrap(rows[index]["data"] as? [String: Any])
+                    fact["operation_id"] = command.operationId.uuidString
+                    rows[index]["data"] = fact
+                }
+                canonical["changes"] = rows
+                let success: [CatalogueTransport.Reply] = [
+                    .http(200, try syncJSON(receipt)), .http(200, try syncJSON(canonical))]
+                let rejected = try syncJSON(["error": ["code": "CONFLICT",
+                    "message": "Fixture rejection", "retryable": false]])
+                var replies: [CatalogueTransport.Reply] = [.http(200, try careAckPage(entry: entry))]
+                if mode == "rejected" {
+                    // An accepted predecessor cannot prove the rejected target.
+                    replies += [.http(200, try syncJSON(["plant_id": serverPlantId.uuidString,
+                        "enabled": true, "enabled_at": syncUntil] as [String: Any])),
+                        .http(200, try careReconcilePage(syncUntil)), .http(409, rejected)]
+                    if undo { replies += [.http(200, try careReconcilePage(syncUntil))] }
+                } else if mode == "canonical" { replies += [.http(200, try syncJSON(receipt)), .network] }
+                else if mode == "accepted" { replies += success }
+                else { replies += [.network] }
+                if mode != "accepted" && mode != "blocked" && !(mode == "rejected" && undo) {
+                    replies += success
+                }
+                let transport = CatalogueTransport(replies), api = client(transport)
+                await api.bindSyncSession(syncSession)
+                let lease = try await api.captureSyncContext(ownerId: syncOwner)
+                var store = LocalStore(modelContainer: try diskContainer(url))
+                try await store.acknowledgeCatalogueCreate(
+                    create, receipt: decodedCreateReceipt(), context: lease, authority: api.syncAuthority)
+                let saved = try await store.catalogueCreateConfirmation(ownerId: syncOwner, operationId: create.operationId)
+                let confirmation = try XCTUnwrap(saved)
+                var engine = SyncEngine(store: store, apiClient: api)
+                _ = try await engine.pullDelta(for: syncOwner)
+                var predecessor: CommandEnvelopeDTO?
+                if mode == "rejected" || mode == "blocked" {
+                    predecessor = try await store.enqueueBasicCareEnable(
+                        plantId: serverPlantId, context: lease, authority: api.syncAuthority)
+                }
+                let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+                let outcome = try await repo.submitManualWateringAcceptance(command, confirmation: confirmation, context: lease)
+                XCTAssertEqual(outcome, mode == "accepted" ? .confirmed : .unconfirmed, mode)
+                let pending = try await store.pendingOutboxEntries(for: syncOwner)
+                let dequeued = mode == "accepted" || (mode == "rejected" && undo)
+                XCTAssertEqual(pending.map(\.envelope), dequeued ? [] :
+                    (mode == "blocked" ? [try XCTUnwrap(predecessor), command] : [command]), mode)
+                if mode == "rejected" && !undo {
+                    XCTAssertTrue(PersistedWateringRejection.requiresReview(try XCTUnwrap(pending.first)))
+                }
+                if !dequeued && mode != "blocked" {
+                    store = LocalStore(modelContainer: try diskContainer(url))
+                    engine = SyncEngine(store: store, apiClient: api)
+                    let reopened = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+                    let replay = try await reopened.submitManualWateringAcceptance(
+                        command, confirmation: confirmation, context: lease)
+                    XCTAssertEqual(replay, .confirmed, mode)
+                    let remaining = try await store.pendingOutboxEntries(for: syncOwner)
+                    XCTAssertTrue(remaining.isEmpty)
+                }
+                let posts = await transport.capturedRequests().filter { $0.httpMethod == "POST" }
+                let sent = try posts.map { try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap($0.httpBody)) }
+                let targetAttempts = dequeued ? 1 : (mode == "blocked" ? 0 : 2)
+                XCTAssertEqual(sent, (predecessor.map { [$0] } ?? []) + Array(repeating: command, count: targetAttempts))
+            }
+        }
+    }
+
+    @MainActor
+    func testCareDrainFullEnvelopeProofRejectsWrongBodyUnrelatedAckAndQueueAbsence() async throws {
+        for wrongBody in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let entry = UUID(), reversal = UUID()
+            let command = try ManualWateringAction.undo(entry).envelope(plantId: serverPlantId)
+            let other = try ManualWateringAction.undo(UUID()).envelope(plantId: serverPlantId)
+            let tracked = CommandEnvelopeDTO(operationId: wrongBody ? command.operationId : UUID(),
+                commandName: command.commandName, plantId: command.plantId,
+                payloadJSON: wrongBody ? other.payloadJSON : command.payloadJSON)
+            let later = "2026-11-03T09:10:00Z"
+            var receipt = manualWateringReceipt(entryId: entry, state: "voided", reversalId: reversal)
+            receipt["watermark"] = later
+            let transport = CatalogueTransport([.http(200, try careAckPage(entry: entry)),
+                .http(200, try syncJSON(receipt)),
+                .http(200, try careAckPage(entry: entry, state: "voided", reversal: reversal,
+                    operation: command.operationId, at: later))])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let engine = SyncEngine(store: store, apiClient: api)
+            _ = try await engine.pullDelta(for: syncOwner)
+            try await store.enqueueManualWatering(command, context: lease, authority: api.syncAuthority)
+            let mismatch = try await engine.flushCareOperation(tracked, context: lease)
+            XCTAssertFalse(mismatch)
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(pending.isEmpty, "The actual envelope was accepted")
+            let absent = try await engine.flushCareOperation(command, context: lease)
+            XCTAssertFalse(absent, "An old canonical reversal is not a new target receipt")
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "GET"])
+        }
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testPostSaveTypedAcceptanceRejectsForgedConfirmationBodyAndStaleLease() async throws {
+        for aba in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let create = createCommand()
+            _ = try await seedEngineCreate(url, command: create)
+            let transport = CatalogueTransport([]), api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            try await store.acknowledgeCatalogueCreate(
+                create, receipt: decodedCreateReceipt(), context: lease, authority: api.syncAuthority)
+            let saved = try await store.catalogueCreateConfirmation(ownerId: syncOwner, operationId: create.operationId)
+            let confirmation = try XCTUnwrap(saved)
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: SyncEngine(store: store, apiClient: api))
+            let command = try ManualWateringAction.record.envelope(plantId: serverPlantId)
+            let forged = CatalogueCreateConfirmationSnapshot(ownerId: confirmation.ownerId,
+                operationId: confirmation.operationId, payloadJSON: confirmation.payloadJSON + " ", receipt: confirmation.receipt)
+            do {
+                _ = try await repo.submitManualWateringAcceptance(command, confirmation: forged, context: lease)
+                XCTFail("Only the exact durable create confirmation authorizes enqueue")
+            } catch SyncWireValidationError.invalidSession {}
+            try await store.enqueueManualWatering(command, context: lease, authority: api.syncAuthority)
+            let wrong = CommandEnvelopeDTO(operationId: command.operationId, commandName: command.commandName,
+                plantId: command.plantId, payloadJSON: command.payloadJSON + " ")
+            do {
+                _ = try await repo.submitManualWateringAcceptance(wrong, confirmation: confirmation, context: lease)
+                XCTFail("The same UUID cannot replace the frozen full body")
+            } catch OutboxEnqueueError.operationIdentityMismatch {}
+            await api.bindSyncSession(NativeAuthSession(userId: otherSyncOwner, accessToken: "other", expiresAt: .distantFuture))
+            if aba { await api.bindSyncSession(syncSession) }
+            do {
+                _ = try await repo.submitManualWateringAcceptance(command, confirmation: confirmation, context: lease)
+                XCTFail("A stale original lease cannot confirm")
+            } catch SyncWireValidationError.invalidSession {}
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(pending.map(\.envelope), [command])
+            let requests = await transport.capturedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+    }
+}

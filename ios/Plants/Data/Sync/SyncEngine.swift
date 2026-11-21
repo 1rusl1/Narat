@@ -269,10 +269,14 @@ public actor SyncEngine {
     }
 
     func flushCareOperation(
-        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease,
+        reviewingWateringOperation: UUID? = nil
     ) async throws -> Bool {
         try apiClient.syncAuthority.withBoundValid(context) {}
-        let report = try await drainOutbox(for: context.ownerId, context: context, tracking: command)
+        let report = try await drainOutbox(
+            for: context.ownerId, context: context,
+            reviewingWateringOperation: reviewingWateringOperation, tracking: command
+        )
         try Task.checkCancellation()
         return try apiClient.syncAuthority.withBoundValid(context) { report.accepted }
     }
