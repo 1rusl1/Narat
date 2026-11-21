@@ -203,6 +203,12 @@ final class PlantsUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", label)).count, 1)
         XCTAssertFalse(app.staticTexts["catalogue.selected.scientific"].exists)
         XCTAssertFalse(app.buttons["catalogue.saved.collection"].exists)
+        let locale = polish ? "pl" : "en"
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "result-save-\(mode)-\(locale)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     /// Fixture-only presentation; no live analysis, authentication or save is performed.
