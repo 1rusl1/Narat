@@ -1,5 +1,24 @@
 # Narat — текущий статус и передача работы
 
+## Consent A не принят: обязательный guard исходной сессии — 21 ноября 2026
+
+Run tester-care-reminder-consent-20261121-01 сохранён WAITING/exit130: Dev1
+474.913с иDev2 44.242с PASS; после новойfixtureFAIL177.550с исправлен только
+еёonAuthorization hook. Повтор430Swift153.201с/14952.314с/MCP27.648с PASS.
+Review117.273с rawPASS пропустил блокер, вердикт не переписан: UIcaptureUUID
+валидирует текущийCoreScope, поэтому старыйcallbackприsameownerSDKepoch/locale/
+ABA может изменить новыйконтекст. Controller semanticBLOCKED отдельно.
+
+Только owncontroller былpaused; активныйPLchild завершилrawPASS сledger/attachments
+(q-6e3c58c4dc60ccc3108809ab), после чего INT/CONT exit130. Xcode/Simulator
+не прерывались. QA/care13/Today не запускались; исходныйA-кандидат НЕпринят.
+Изменены5Swift(вид/App/Guest/Core/Unit), PBXrefs раньше53ab; old425неизменны.
+
+Следующий шаг: fresh узкийDeveloperrepair immutableoriginalScope+locale binding
+и regression stale sameowner callback, затем обязательный fullwholeAfrom53ab
+со всеми7gates/highReviewQA, B dedicatedfakeUI позже. Lastactualusage1%,
+hard50/soft48/reset0; parentcheckboxopen, live/System readiness не claim.
+
 ## Подготовлен consent A; бюджет естественно обновился — 21 ноября 2026
 
 Лимит0/100, новый hard50%used/soft48%, сброс запрещён; старые93/95 — история.

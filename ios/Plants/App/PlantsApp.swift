@@ -186,11 +186,20 @@ struct RootContainerView: View {
 #if DEBUG
         fixtureContext != nil || ProcessInfo.processInfo.arguments.contains {
             $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
-                || $0.hasPrefix("--today-fixture") || $0 == "--narat-staging-analysis"
+                || $0.hasPrefix("--today-fixture") || $0.hasPrefix("--narat-staging-")
         }
 #else
         false
 #endif
+    }
+
+    private var consentOwnerId: UUID? {
+        guard !isolatesCareReminders, let connection = catalogue,
+              case .permanent(let expected) = connection.authClassification,
+              let context = careReminderContext, context.isCurrent(),
+              context.lease.ownerId == expected.session.userId,
+              careReminder.isCurrent(ownerId: expected.session.userId) else { return nil }
+        return expected.session.userId
     }
 
     private var careReminderRead: CareReminderRead {
@@ -277,6 +286,13 @@ struct RootContainerView: View {
                             },
                             check: { open(.diagnosis) }, identify: { open(.identification) }
                         )
+                        if let ownerId = consentOwnerId,
+                           todayContext.map({ isTodayCurrent($0) && !todayFenced }) == true,
+                           !todayUnavailable, careReminder.offersConsent(expectedOwnerId: ownerId) {
+                            ReminderConsentView(lifecycle: careReminder, expectedOwnerId: ownerId,
+                                                polish: isPolish, compact: true)
+                                .id(ownerId)
+                        }
                     } else {
                         PlantHomeView(
                             polish: isPolish,
@@ -432,7 +448,9 @@ struct RootContainerView: View {
             if let catalogue {
                 CatalogueCollectionView(
                     connection: catalogue, polish: isPolish, repeatDiagnosis: repeatDiagnosisEntry(for: catalogue),
-                    trialReminder: trialReminder, requestedTarget: presentation.target
+                    trialReminder: trialReminder,
+                    careReminder: consentOwnerId == nil ? nil : careReminder,
+                    requestedTarget: presentation.target
                 )
                 .id(presentation.id)
             }

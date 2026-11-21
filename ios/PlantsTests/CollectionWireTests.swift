@@ -13163,3 +13163,180 @@ extension CollectionWireTests {
         XCTAssertEqual(fake.pending.count, 1)
     }
 }
+
+extension CollectionWireTests {
+    private func consentProjection(
+        _ state: CareOverviewViewState?, result: CareReminderScheduler.Result? = nil,
+        authorization: CareReminderPlan.Authorization? = .authorized,
+        current: Bool = true, reading: Bool = false, active: Bool = true,
+        optedIn: Bool = true, readFailed: Bool = false, eligible: Int = 1
+    ) -> ReminderConsentStatus {
+        ReminderConsentStatus(current: current, reading: reading, active: active,
+            optedIn: optedIn, readFailed: readFailed, state: state, eligibleCount: eligible,
+            authorization: authorization, requestingPermission: false, result: result,
+            now: SQLTimestamp.date(from: "2026-11-20T00:00:00Z")!)
+    }
+
+    @MainActor
+    func testConsentProjectionRejectsStaleAndUnreadyConfirmation() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try passState(local)
+        let confirmed = CareReminderScheduler.Result(confirmedPendingCount: 1,
+            omittedCount: 0, unconfirmedBlockers: 0, failed: false, deferred: false)
+        let stale = consentProjection(state, result: confirmed, current: false)
+        XCTAssertEqual(stale.phase, .unavailable)
+        XCTAssertEqual(stale.confirmedPendingCount, 0)
+        XCTAssertEqual(consentProjection(state, result: confirmed, optedIn: false).phase, .off)
+        XCTAssertEqual(consentProjection(state, result: confirmed, reading: true).phase, .loading)
+        XCTAssertEqual(consentProjection(nil, result: confirmed).phase, .unknown)
+        XCTAssertEqual(consentProjection(state, result: confirmed, readFailed: true).phase, .readFailed)
+        XCTAssertEqual(consentProjection(state, result: confirmed, active: false).phase, .paused)
+        let expired = try reminderState(local, rows: [reminderRow(serverPlantId)],
+                                        deadline: "2026-11-19T12:00:00Z")
+        XCTAssertEqual(consentProjection(expired, result: confirmed).phase, .expired)
+        let pending = try reminderState(local, rows: [reminderRow(serverPlantId)], mode: "profile.update")
+        XCTAssertEqual(consentProjection(pending, result: confirmed).phase, .pending)
+        let paused = try reminderState(local, rows: [reminderRow(serverPlantId)], mode: "invalidated")
+        XCTAssertEqual(consentProjection(paused, result: confirmed).phase, .paused)
+    }
+
+    @MainActor
+    func testConsentProjectionZeroPartialAndFailureNeverPromiseScheduling() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try passState(local)
+        let zero = CareReminderScheduler.Result(confirmedPendingCount: 0,
+            omittedCount: 0, unconfirmedBlockers: 0, failed: false, deferred: false)
+        let status = consentProjection(state, result: zero, authorization: .notDetermined)
+        XCTAssertEqual(status.phase, .unconfirmed)
+        XCTAssertEqual(status.confirmedPendingCount, 0)
+        XCTAssertTrue(status.canAllow)
+        XCTAssertEqual(consentProjection(state).phase, .pending)
+        XCTAssertEqual(consentProjection(state, result: zero, eligible: 0).phase, .noEligible)
+        XCTAssertFalse(consentProjection(state, result: zero, authorization: .notDetermined, eligible: 0).canAllow)
+        XCTAssertEqual(consentProjection(state, result: zero, authorization: .denied).phase, .denied)
+        let failure = CareReminderScheduler.Result(confirmedPendingCount: 0,
+            omittedCount: 0, unconfirmedBlockers: 1, failed: true, deferred: false)
+        XCTAssertEqual(consentProjection(state, result: failure).phase, .failed)
+        let partial = CareReminderScheduler.Result(confirmedPendingCount: 1,
+            omittedCount: 2, unconfirmedBlockers: 1, failed: true, deferred: false)
+        let confirmed = consentProjection(state, result: partial, authorization: .notDetermined)
+        XCTAssertEqual(confirmed.phase, .confirmed)
+        XCTAssertEqual(confirmed.confirmedPendingCount, 1)
+        XCTAssertTrue(confirmed.partial)
+        XCTAssertTrue(confirmed.readbackWarning)
+    }
+
+    @MainActor
+    func testConsentProjectionUsesActualDelayedPermissionReadback() async throws {
+        for catchesUp in [false, true] {
+            let (url, store, authority, lease, local) = try await reminderFixture()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let fake = FakeCareReminderNotifications()
+            fake.authorizationValue = .notDetermined
+            var prompted = false
+            var reads = 0
+            fake.onPermission = { prompted = true }
+            fake.onAuthorization = {
+                if prompted {
+                    reads += 1
+                    fake.authorizationValue = catchesUp && reads > 1 ? .authorized : .notDetermined
+                }
+            }
+            let state = try passState(local)
+            let worker = CareReminderScheduler(notifications: fake)
+            worker.update(workerInput(store, authority, lease, state, fake))
+            await worker.waitUntilIdle()
+            worker.requestPermission()
+            await worker.waitUntilIdle()
+            let status = consentProjection(state, result: worker.result, authorization: worker.authorization)
+            XCTAssertEqual(status.phase, catchesUp ? .confirmed : .unconfirmed)
+            XCTAssertEqual(status.confirmedPendingCount, catchesUp ? 1 : 0)
+            XCTAssertEqual(status.readbackWarning, catchesUp)
+            XCTAssertEqual(fake.permissionRequests, 1)
+            // End the simulated readback lag before the independent OS permission change.
+            fake.onAuthorization = nil
+            fake.authorizationValue = .authorized
+            worker.retry()
+            await worker.waitUntilIdle()
+            let checked = consentProjection(state, result: worker.result, authorization: worker.authorization)
+            XCTAssertEqual(checked.phase, .confirmed)
+            XCTAssertFalse(checked.readbackWarning)
+            XCTAssertEqual(fake.permissionRequests, 1)
+        }
+    }
+
+    @MainActor
+    func testConsentActionsRejectOriginalOwnerAfterSDKChanges() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fake = FakeCareReminderNotifications()
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        core.setSceneActive(true)
+        core.accept(lifecycleContext(store, api, lease))
+        await core.waitUntilIdle()
+        XCTAssertEqual(core.consentStatus(expectedOwnerId: syncOwner).phase, .off)
+        core.performConsentAction(.setOptedIn(true), expectedOwnerId: syncOwner)
+        await core.waitUntilIdle()
+        api.syncAuthority.bind(try profileSession(ownerId: otherSyncOwner))
+        let revision = core.revision
+        let actions: [CareReminderLifecycle.ConsentAction] = [.setOptedIn(false), .allow, .checkStatus]
+        for action in actions {
+            core.performConsentAction(action, expectedOwnerId: syncOwner)
+        }
+        XCTAssertEqual(core.revision, revision)
+        XCTAssertTrue(defaults.bool(forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner)))
+        XCTAssertEqual(core.consentStatus(expectedOwnerId: syncOwner).phase, .unavailable)
+        let b = try api.syncAuthority.capture(ownerId: otherSyncOwner)
+        core.accept(lifecycleContext(store, api, b))
+        await core.waitUntilIdle()
+        core.performConsentAction(.setOptedIn(true), expectedOwnerId: syncOwner)
+        XCTAssertFalse(core.optedIn)
+        XCTAssertFalse(defaults.bool(forKey: CareReminderLifecycle.preferenceKey(ownerId: otherSyncOwner)))
+        XCTAssertEqual(fake.permissionRequests, 0)
+        core.logout()
+        await core.waitUntilIdle()
+    }
+
+    @MainActor
+    func testConsentNoSchedulePreferenceAndRetryNeverQueuePermission() async throws {
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fake = FakeCareReminderNotifications()
+        fake.authorizationValue = .notDetermined
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        core.setSceneActive(true)
+        core.accept(lifecycleContext(store, api, lease))
+        await core.waitUntilIdle()
+        core.performConsentAction(.setOptedIn(true), expectedOwnerId: syncOwner)
+        core.performConsentAction(.allow, expectedOwnerId: syncOwner)
+        await core.waitUntilIdle()
+        XCTAssertFalse(core.offersConsent(expectedOwnerId: syncOwner))
+        XCTAssertEqual(fake.permissionRequests, 0)
+        try await lifecycleCache(store, api, lease, rows: [reminderRow(serverPlantId)])
+        core.cachePublicationOrTimeChanged()
+        await core.waitUntilIdle()
+        XCTAssertTrue(core.offersConsent(expectedOwnerId: syncOwner))
+        XCTAssertTrue(core.consentStatus(expectedOwnerId: syncOwner).canAllow)
+        core.setSceneActive(false)
+        core.setSceneActive(true)
+        core.performConsentAction(.checkStatus, expectedOwnerId: syncOwner)
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 0)
+        core.performConsentAction(.allow, expectedOwnerId: syncOwner)
+        await core.waitUntilIdle()
+        XCTAssertEqual(fake.permissionRequests, 1)
+        XCTAssertEqual(core.consentStatus(expectedOwnerId: syncOwner).phase, .unconfirmed)
+        core.logout()
+        await core.waitUntilIdle()
+    }
+}

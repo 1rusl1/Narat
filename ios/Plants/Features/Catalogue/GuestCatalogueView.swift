@@ -776,6 +776,7 @@ struct CatalogueCollectionView: View {
     let polish: Bool
     var repeatDiagnosis: RepeatDiagnosisEntry? = nil
     var trialReminder: TrialReminderScheduler? = nil
+    var careReminder: CareReminderLifecycle? = nil
     var requestedTarget: CataloguePlantTarget? = nil
     @State private var targetConsumed = false
     @Environment(\.dismiss) private var dismiss
@@ -880,9 +881,15 @@ struct CatalogueCollectionView: View {
                 Group {
                     if let scope = accountSettingsScope,
                        scope == connection.snapshot, !scope.isAnonymous {
-                        VStack {
-                            ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
-                            AccountSignOutSettings(connection: connection, expected: scope, polish: polish)
+                        ScrollView {
+                            VStack {
+                                ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
+                                if let careReminder {
+                                    ReminderConsentView(lifecycle: careReminder,
+                                                        expectedOwnerId: scope.session.userId, polish: polish)
+                                }
+                                AccountSignOutSettings(connection: connection, expected: scope, polish: polish)
+                            }
                         }
                         .id(scope.session.userId)
                     }

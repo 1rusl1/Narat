@@ -1,0 +1,60 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-consent-binding",
+      "description": "Repair original consent-presentation SDK/locale/scope authority and deterministic stale-callback regression; A whole-union acceptance follows.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-permission-readback.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-binding-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Read binding-context first. NARROWREPAIR only originalimmutablebinding across View/Core/Root/Guest +compact meaningfulregression. Not a new consentfeature/refactor. Existing A source is UNACCEPTED candidate. Preserve allold425 assertions and five currentnewtests/laghookfix.",
+        "Blocking: ownerUUID-only guard against CURRENTscope allows stale sameownerSDKepoch/locale/ABA callback to mutate newly acceptedCore scope. Add frozen originalScope+owner+locale authority, nonreused scopeUUID or equivalentoriginalSDKguard; validate token against actualcurrentscope+originallease before everymutating action AND status, not rerender/.id(owner). Never recapture latestbinding inside oldaction. AlloriginalUI actions toggle/allow/checkstatus/iOSSettings must obey originalbinding.",
+        "Small deterministic regression group: frozen oldbinding\u2192new sameownerSDKepoch/context; localechange; A\u2192B\u2192A ifcompact. Assert prefs/defaults/permission/adds/revision unchanged by all old toggle/allow/retry callbacks; freshbinding works. No System/sleep or new helperframework, no weakening oldassertions.",
+        "No newfile/PBX/calendar/queue/receipt/store/profilehour/schedulerpolicy/Trial/backend/network/SDKobserver/diagnosis/purchase/route/delegate expansion. Fixedmodels900/budgets. Narrow fullSwift/build/welcome,diff,MCP,highReviewQA. Final wholeA from53ab all7gates afterrepair required; parentcheckboxopen/technicalonly/noreset/hard50soft48."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "BINDING1",
+          "description": "Full Swift and deterministic frozen originalbinding SDKepoch/locale/ABA regression preserve old425 and honest consent lag states.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "BINDING2",
+          "description": "MCP/highReviewQA confirm originalbinding authority, no new effects; initialA whole-union remains pending.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-consent-binding-context.md",
+        "docs/validation/automation/tasks/tester-care-permission-readback.md"
+      ]
+    }
+  ]
+}

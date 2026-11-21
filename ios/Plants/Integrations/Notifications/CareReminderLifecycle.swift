@@ -155,6 +155,54 @@ final class CareReminderLifecycle: ObservableObject {
         signal(scope, durable: false)
     }
 
+    // Read-only presentation scope; every action rechecks the original SDK lease synchronously.
+    func isCurrent(ownerId: UUID) -> Bool {
+        guard let scope, scope.context.lease.ownerId == ownerId else { return false }
+        return valid(scope)
+    }
+
+    func eligibleCandidateCount(expectedOwnerId: UUID) -> Int {
+        guard isCurrent(ownerId: expectedOwnerId), let scope, readTask == nil,
+              !readFailed else { return 0 }
+        return CareReminderPlan(expectedOwnerId: expectedOwnerId, state: state,
+            optedIn: true, authorization: .authorized, now: clock(),
+            timeZone: timeZone(), locale: scope.context.locale).candidates.count
+    }
+
+    func offersConsent(expectedOwnerId: UUID) -> Bool {
+        active && eligibleCandidateCount(expectedOwnerId: expectedOwnerId) > 0
+    }
+
+    func consentStatus(expectedOwnerId: UUID) -> ReminderConsentStatus {
+        ReminderConsentStatus(
+            current: isCurrent(ownerId: expectedOwnerId)
+                && (state == nil || state?.ownerId == expectedOwnerId),
+            reading: readTask != nil, active: active, optedIn: optedIn,
+            readFailed: readFailed, state: state,
+            eligibleCount: eligibleCandidateCount(expectedOwnerId: expectedOwnerId),
+            authorization: authorization, requestingPermission: requestingPermission,
+            result: result, now: clock())
+    }
+
+    enum ConsentAction {
+        case setOptedIn(Bool), allow, checkStatus
+    }
+
+    func performConsentAction(_ action: ConsentAction, expectedOwnerId: UUID) {
+        guard isCurrent(ownerId: expectedOwnerId) else { return }
+        switch action {
+        case .setOptedIn(let value):
+            // Preference only: neither now nor on later eligibility does this create prompt intent.
+            setOptedIn(value)
+        case .allow:
+            guard active, optedIn,
+                  eligibleCandidateCount(expectedOwnerId: expectedOwnerId) > 0 else { return }
+            requestEligiblePermission()
+        case .checkStatus:
+            retry()
+        }
+    }
+
     func waitUntilIdle() async {
         repeat {
             await readTask?.value
