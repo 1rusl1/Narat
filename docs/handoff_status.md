@@ -1,5 +1,26 @@
 # Narat — текущий статус и передача работы
 
+## Actual8 повторно FAIL: доказан product AX bug; подготовлен repair — 21 ноября 2026
+
+Fresh readonly run tester-care-reminder-rendered-ui-acceptance-20261121-01
+BLOCKED доReview/QA:452Swift/build/welcome123.862с,14946.685с,diff0.023с PASS;
+actual8 UI457.238с FAIL (8FAIL/0PASS/0skip), strict ledger gate FAIL. Developer0.
+Первый run и его semanticBLOCKED также сохранены, никаких прошлых PASS не выдумано.
+
+Actual AX q-8504b040cd6153f734e3f1d5 attachment A71C7D9D-F4F0-4CCB-A2A2-16EFB763AA3B.txt:
+Switch Care reminders(value0), Off StaticText, Retry Button и footer получили
+родительский identifier care.reminders; child care.reminders.optIn отсутствует.
+Снимок показывает физические Toggle/Off/Retry. Это доказанный product accessibility
+bug Group-модификатора, не отсутствие Corebinding и не повод обходить идентификаторы.
+
+Подготовлен source repair writeONLYReminderConsentView: правильный AXcontainer,
+сохранить отдельные childIDs/действия/VoiceOver, тесты+gate не менять. Next настоящий
+Developer→452/149/diff/exact8preReview/MCP→highReviewQA; приёмка UNIONunaccepted
+UIcandidate384added+sourcefix относительно accepted2187419. Далее edit/delete/postsave
+точные ACKhooks и wholeB/routing/System delivery/final signing. Всё ещё техническая
+приёмка, parentsopen, sourceда79 не принято/Root остаётся2187419. PBX0/rootuser3
+не тронуты. Lastactual11/89, hard50soft48/reset запрещён.
+
 ## Named8 UI ещё не принято: сохранён BLOCKED checkpoint — 21 ноября 2026
 
 Run tester-care-reminder-rendered-ui-20261121-01 завершился BLOCKED. Developer1
