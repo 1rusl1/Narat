@@ -1,21 +1,49 @@
 # Narat — текущий статус и передача работы
 
-## Consent A: оба узких исправления приняты; подготовлена whole-приёмка — 21 ноября 2026
+## Consent A принят целиком; новый UI-сценарий проверяем в B — 21 ноября 2026
 
-Hostrepair03b2bbe63da9f07b7fc420c6af30bdee625e8364 принят/pushed:
-431Swift/build/welcome152.623с,MCP27.106с,diff0.039с,Review94.538с/QA92.285с
-PASS. Dev96.016+55.323с; mechanicalapplyFAIL сохранён. Изменены3Swift+40/-6,
-Core/Unit/PBXнетронуты: observedhostподcapturedSDK/localeguard видитготовность,
-RootпередаёттотжеCoreдоready, immutableactionbindingсохранён. Ранееbinding
-0e1ac33 принят431/ReviewQA. Old425Unitprefixbyteeq08710c8, всего431тест.
+Принят и отправлен `7bdf4c229ef43204c6527a38cfd992c4b11e102a`, run
+`tester-care-reminder-consent-whole-20261121-01`, fresh read-only сравнение
+всего A с `53ab556`. Developer0, Review194.085с и QA119.276с — PASS.
 
-InitialA run01 остаётсянепринятым WAITING сrawReviewPASS+отдельнымsemantic
-BLOCKED; историяFAIL/безопасногоstopнепереписана. Подготовленаfreshreadonly
-candidate_base53ab556 wholeA: все5Swift/delta/docs,7gates(431/149/MCP/PL/
-care13ledger/Today6+8namespaces/diff),highReviewQA,Developer0. Это следующий
-точныйшаг. НоваяrenderedConsentUI/hostbarrier проверяетсяотдельноB, actual
-System/SDK/deliveryещёоткрыты, parentcheckboxне закрываются. Lastusage2/98,
-hard50/soft48/noreset. Rootuser3/PBXbaseline53abuntouched; доwholeнеRootFF.
+Реализованы `ReminderConsentView.swift` и readonly presentation API в
+`CareReminderLifecycle.swift`; подключение в `PlantsApp.swift` и
+`GuestCatalogueView.swift`, шесть новых групп в `CollectionWireTests.swift`.
+Согласие отдельно для владельца, по умолчанию выключено. Разрешение — только
+явным eligible-действием; NoSchedule не переносит prompt в будущее. Статус
+показывает подтверждённые pending отдельно от permission/readback lag;
+opt-in/failed=false не считаются доказательством запланированных уведомлений.
+Существующая настройка часа переиспользуется. Действия хранят immutable
+ScopeUUID/owner/locale binding; observed host ждёт готовности под исходным
+SDK/locale guard. Все прежние fixtures изолированы от System runtime.
+
+Свежие проверки полного A:
+
+- 431 Swift (428 XCTest +3 SwiftTesting), build/welcome — PASS127.149с;
+  префикс прежних425 тестов побайтно сохранён.
+- 149 automation — PASS51.987с; diff — PASS0.021с; MCP — PASS46.576с.
+- PL replay — PASS41.376с; care13/13 + exact ledger — PASS502.648с;
+  Today6/6 +8 read-only namespaces — PASS209.737с.
+
+Это local/fixtures и старые UI-регрессии. Новый rendered consent/ready-barrier
+сценарий, actual Scheduler+Store/System delivery и tap routing ещё не доказаны.
+[Отчёт whole A](validation/automation/tasks/tester-care-reminder-consent-whole.md),
+[происхождение исправлений](validation/automation/tasks/tester-care-reminder-consent-whole-context.md).
+Initial A остаётся WAITING с raw ReviewPASS и отдельным controller blocker;
+все fixture/apply FAIL и безопасная остановка сохранены, результаты не переписаны.
+Никаких новых backend/HTTP/SDK observer, дат, покупок или рекомендаций нет.
+PBX после scaffold53ab не менялся; пользовательские root-файлы не тронуты.
+
+Следующий точный шаг: родитель FF этого статуса, добавляет подготовленный
+read-only live preflight отчёт отдельным линейным коммитом; lane FF его.
+Затем B1 — пока не подключённые stable runtime/fake components; B2 — единая
+fake-инъекция до startup и rendered проверки consent/readiness без System
+эффектов. Далее delegate/current-occurrence route, реальный System runtime
+с обычным SDK и подписанная итоговая сборка. Parent T075/T077/T098/B01–B11
+открыты; сейчас только техническая приёмка, внешняя передача отложена.
+Последний actual usage3%/97%, hard50%/soft48%, сброс0 и запрещён.
+Документальная сверка tasks/diff выполнена; runtime-проверки ради документов
+не повторялись. Commit/push фиксируются Git.
 
 ## Исходный consent-binding принят; нужен наблюдаемый host — 21 ноября 2026
 
