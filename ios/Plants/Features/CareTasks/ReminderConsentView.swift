@@ -125,6 +125,7 @@ struct ReminderConsentView: View {
     var compact = false
     var explicitRetry: () -> Void = {}
     @Environment(\.openURL) private var openURL
+    @Namespace private var consentAccessibility
 #if DEBUG
     @Environment(\.reminderConsentFixture) private var fixture
 #endif
@@ -134,7 +135,7 @@ struct ReminderConsentView: View {
     }
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             if compact {
                 DisclosureGroup(polish ? "Przypomnienia o pielęgnacji" : "Care reminders") {
                     controls
@@ -143,17 +144,27 @@ struct ReminderConsentView: View {
                 controls
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("care.reminders")
     }
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(polish ? "Przypomnienia o pielęgnacji" : "Care reminders", isOn: Binding(
-                get: { lifecycle.isCurrent(binding: binding) && lifecycle.optedIn },
-                set: { lifecycle.performConsentAction(.setOptedIn($0), binding: binding) }
-            ))
-            .disabled(!lifecycle.isCurrent(binding: binding))
-            .accessibilityIdentifier("care.reminders.optIn")
+            // Keep the accessibility action target on the native switch.
+            HStack {
+                Text(polish ? "Przypomnienia o pielęgnacji" : "Care reminders")
+                    .accessibilityLabeledPair(role: .label, id: "optIn", in: consentAccessibility)
+                Spacer()
+                Toggle(isOn: Binding(
+                    get: { lifecycle.isCurrent(binding: binding) && lifecycle.optedIn },
+                    set: { lifecycle.performConsentAction(.setOptedIn($0), binding: binding) }
+                )) { EmptyView() }
+                .fixedSize()
+                .disabled(!lifecycle.isCurrent(binding: binding))
+                .accessibilityIdentifier("care.reminders.optIn")
+                .accessibilityLabel(polish ? "Przypomnienia o pielęgnacji" : "Care reminders")
+                .accessibilityLabeledPair(role: .content, id: "optIn", in: consentAccessibility)
+            }
             Text(message(status.phase))
                 .accessibilityIdentifier("care.reminders.status")
             if status.phase == .confirmed {
