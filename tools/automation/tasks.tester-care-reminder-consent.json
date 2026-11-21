@@ -59,6 +59,14 @@
             "tester-today-ui",
             "tester-care-pl-ui"
           ]
+        },
+        {
+          "id": "CONSENT4",
+          "description": "Existing149 automation tests pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
         }
       ],
       "evidence_files": [
