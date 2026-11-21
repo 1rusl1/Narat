@@ -59,6 +59,29 @@ struct ReminderConsentStatus: Equatable {
     }
 }
 
+/// Observes readiness without starting work or rebinding an existing action.
+struct ReminderConsentHost: View {
+    @ObservedObject var lifecycle: CareReminderLifecycle
+    let connection: CatalogueConnection
+    let expected: CatalogueSDKSnapshot
+    let polish: Bool
+    let isLocaleCurrent: () -> Bool
+
+    var body: some View {
+        Group {
+            if connection.authClassification == .permanent(expected), isLocaleCurrent() {
+                if let binding = lifecycle.consentBinding(
+                    expectedOwnerId: expected.session.userId, locale: polish ? "pl" : "en") {
+                    ReminderConsentView(lifecycle: lifecycle, binding: binding, polish: polish)
+                } else {
+                    Text(polish ? "Odczytywanie stanu…" : "Reading reminder state…")
+                        .accessibilityIdentifier("care.reminders.loading")
+                }
+            }
+        }
+    }
+}
+
 struct ReminderConsentView: View {
     @ObservedObject var lifecycle: CareReminderLifecycle
     let binding: CareReminderLifecycle.ConsentBinding

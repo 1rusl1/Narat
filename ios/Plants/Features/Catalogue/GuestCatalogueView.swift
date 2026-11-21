@@ -777,6 +777,7 @@ struct CatalogueCollectionView: View {
     var repeatDiagnosis: RepeatDiagnosisEntry? = nil
     var trialReminder: TrialReminderScheduler? = nil
     var careReminder: CareReminderLifecycle? = nil
+    var careReminderLocaleIsCurrent: () -> Bool = { false }
     var requestedTarget: CataloguePlantTarget? = nil
     @State private var targetConsumed = false
     @Environment(\.dismiss) private var dismiss
@@ -884,11 +885,12 @@ struct CatalogueCollectionView: View {
                         ScrollView {
                             VStack {
                                 ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
-                                if let careReminder,
-                                   let binding = careReminder.consentBinding(
-                                    expectedOwnerId: scope.session.userId, locale: polish ? "pl" : "en") {
-                                    ReminderConsentView(lifecycle: careReminder,
-                                                        binding: binding, polish: polish)
+                                if let careReminder {
+                                    ReminderConsentHost(
+                                        lifecycle: careReminder, connection: connection,
+                                        expected: scope, polish: polish,
+                                        isLocaleCurrent: careReminderLocaleIsCurrent
+                                    )
                                 }
                                 AccountSignOutSettings(connection: connection, expected: scope, polish: polish)
                             }

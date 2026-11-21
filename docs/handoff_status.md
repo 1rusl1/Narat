@@ -5567,9 +5567,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-reminder-consent-binding: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 505.19 с, проверки — 343.02 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-reminder-consent-binding](validation/automation/tasks/tester-care-reminder-consent-binding.md).
+tester-care-reminder-consent-host: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 2, reviewer 1, qa 1. Модели — 338.16 с, проверки — 179.77 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-reminder-consent-host](validation/automation/tasks/tester-care-reminder-consent-host.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 

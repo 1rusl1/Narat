@@ -193,6 +193,12 @@ struct RootContainerView: View {
 #endif
     }
 
+    private var accountConsentLifecycle: CareReminderLifecycle? {
+        guard !isolatesCareReminders, let connection = catalogue,
+              case .permanent = connection.authClassification else { return nil }
+        return careReminder
+    }
+
     private var consentOwnerId: UUID? {
         guard !isolatesCareReminders, let connection = catalogue,
               case .permanent(let expected) = connection.authClassification,
@@ -450,7 +456,10 @@ struct RootContainerView: View {
                 CatalogueCollectionView(
                     connection: catalogue, polish: isPolish, repeatDiagnosis: repeatDiagnosisEntry(for: catalogue),
                     trialReminder: trialReminder,
-                    careReminder: consentOwnerId == nil ? nil : careReminder,
+                    careReminder: accountConsentLifecycle,
+                    careReminderLocaleIsCurrent: { [languageStore, locale = languageStore.currentLocale] in
+                        languageStore.currentLocale == locale
+                    },
                     requestedTarget: presentation.target
                 )
                 .id(presentation.id)
