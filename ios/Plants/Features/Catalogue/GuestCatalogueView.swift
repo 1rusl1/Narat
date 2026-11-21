@@ -137,6 +137,19 @@ final class CatalogueConnection {
         return true
     }
 
+    /// Only the explicit UI read completion calls this; canonical publication is passive.
+    @discardableResult
+    func publishCollectionLoadCompletion(
+        _ result: CatalogueCollectionSnapshot, expected: CatalogueSDKSnapshot,
+        context: SyncSessionLease, locale: String,
+        isReadCurrent: () -> Bool, isLocaleCurrent: () -> Bool
+    ) throws -> Bool {
+        guard !result.isCached, isReadCurrent(), isLocaleCurrent(),
+              !Task.isCancelled, snapshot == expected, let apiClient else { return false }
+        try apiClient.syncAuthority.withPermanentBoundValid(context) {}
+        return publishExplicitCareRead(expected: expected, locale: locale, isLocaleCurrent: isLocaleCurrent)
+    }
+
     /// Root consumes once before requesting its existing external coalescer pass.
     func consumeExplicitCareRead(_ intent: CatalogueCareReadIntent, locale: String) -> Bool {
         guard intent.connection == ObjectIdentifier(self),
@@ -1025,6 +1038,10 @@ struct CatalogueCollectionView: View {
             guard let repository = connection.repository else { throw CatalogueConnectionUnavailable.storageUnavailable }
             let result = try await repository.collectionCards(context: lease)
             guard !Task.isCancelled, read == requested else { return }
+            try connection.publishCollectionLoadCompletion(
+                result, expected: expected, context: lease, locale: polish ? "pl" : "en",
+                isReadCurrent: { read == requested },
+                isLocaleCurrent: { careReminder != nil && careReminderLocaleIsCurrent() })
             cards = result.cards
             usingCachedCards = result.isCached
             if !targetConsumed, let target = requestedTarget {
@@ -1705,7 +1722,9 @@ private struct CatalogueCollectionCardView: View {
             guard connection.snapshot == expected else { return }
             switch outcome {
             case .pending: break
-            case .confirmed: onDeleted()
+            case .confirmed:
+                try publishConfirmedCareRead(lease)
+                onDeleted()
             case .rejected:
                 pendingDeletion = nil
                 deletionFailed = true
@@ -1833,7 +1852,9 @@ private struct CatalogueCollectionCardView: View {
                 return
             }
             pendingRename = command
-            let updated = try await repository.retryPlantEdit(command, context: lease)
+            let acceptance = try await repository.retryPlantEditAcceptance(command, context: lease)
+            if acceptance == .confirmed { try publishConfirmedCareRead(lease) }
+            let updated = try await repository.plantEditCard(command, context: lease)
             let remaining = try await repository.pendingPlantEdit(plantId: card.id, context: lease)
             let savedConditions: PlantConditionCodes?
             if let updated {
@@ -2021,6 +2042,8 @@ private struct CatalogueCollectionCardView: View {
     }
 
     private func publishConfirmedCareRead(_ lease: SyncSessionLease) throws {
+        // Disabled integration must not impose JWT requirements on legacy domain callers.
+        guard isLocaleCurrent() else { return }
         try Task.checkCancellation()
         guard connection.snapshot == expected, let api = connection.apiClient else { return }
         try api.syncAuthority.withPermanentBoundValid(lease) {}

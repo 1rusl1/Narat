@@ -800,9 +800,34 @@ public struct CollectionRepository: Sendable {
     func retryPlantEdit(
         _ command: CommandEnvelopeDTO, context: SyncSessionLease
     ) async throws -> CatalogueCardSummary? {
+        _ = try await retryPlantEditAcceptance(command, context: context)
+        return try await plantEditCard(command, context: context)
+    }
+
+    /// Exact pending envelope plus this single-operation drain's receipt/canonical ACK.
+    /// A matching card or an empty queue alone is never positive proof.
+    func retryPlantEditAcceptance(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> CareOperationOutcome {
+        try Task.checkCancellation()
+        try apiClient.syncAuthority.withBoundValid(context) {}
         guard let plantId = command.plantId, PlantEditCommand(command) != nil
         else { throw SyncWireValidationError.invalidRequest }
-        try await syncEngine.flushPlantCommand(command, context: context)
+        guard try await pendingPlantEdit(plantId: plantId, context: context) == command
+        else { return .unconfirmed }
+        let accepted = try await syncEngine.flushPlantCommand(command, context: context) == 1
+        try Task.checkCancellation()
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            accepted ? .confirmed : .unconfirmed
+        }
+    }
+
+    /// Optional presentation read, deliberately separate from the accepted-operation witness.
+    func plantEditCard(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> CatalogueCardSummary? {
+        guard let plantId = command.plantId, PlantEditCommand(command) != nil
+        else { throw SyncWireValidationError.invalidRequest }
         guard try await pendingPlantEdit(plantId: plantId, context: context) == nil else { return nil }
         return try await store.syncedCollectionCard(plantId: plantId, context: context, authority: apiClient.syncAuthority)
     }

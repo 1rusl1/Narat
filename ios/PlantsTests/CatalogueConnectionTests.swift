@@ -2855,6 +2855,122 @@ final class CatalogueConnectionTests: XCTestCase {
         XCTAssertNil(failedDisk.repository)
     }
 
+    private func collectionReadReply(_ h: Harness, failure: URLError.Code? = nil, suspend: Bool = false) throws {
+        let at = "2026-11-03T09:00:00.123456+00:00"
+        h.fixture.append(.init(method: "GET", path: "/functions/v1/plants-api/sync",
+            data: try json(["until": at, "next_since": at, "has_more": false,
+                "last_cursor": NSNull(), "changes": [], "entitlement": NSNull(),
+                "profile": ["preferred_locale": "en", "reminder_hour_local": 9,
+                    "report_notifications_enabled": true, "trial_reminder_enabled": false]]),
+            suspend: suspend, query: "limit=200", failure: failure))
+    }
+
+    private func permanentCollection(_ h: Harness) async throws -> CatalogueSDKSnapshot {
+        let payload = try json(["sub": owner.uuidString, "is_anonymous": false]).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        try auth(h, owner: owner, token: "fixture." + payload + ".signature")
+        try await h.signIn()
+        return try await h.connection.sessionSnapshot()
+    }
+
+    func testCollectionFreshCompletionEmitsOnceButQuietCanonicalCachedAndFailedReadsDoNot() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let original = try await permanentCollection(h)
+        let lease = try await h.connection.collectionLease(expected: original)
+        let repository = try XCTUnwrap(h.connection.repository)
+        try collectionReadReply(h)
+        let fresh = try await repository.collectionCards(context: lease)
+        XCTAssertTrue(fresh.cards.isEmpty, "A legitimate empty collection is still a fresh read")
+        XCTAssertFalse(fresh.isCached)
+        XCTAssertNil(h.connection.explicitCareReadIntent, "Canonical publication itself is quiet")
+        let requests = h.fixture.captured.count
+        XCTAssertTrue(try h.connection.publishCollectionLoadCompletion(fresh, expected: original,
+            context: lease, locale: "en", isReadCurrent: { true }, isLocaleCurrent: { true }))
+        let intent = try XCTUnwrap(h.connection.explicitCareReadIntent)
+        XCTAssertTrue(h.connection.consumeExplicitCareRead(intent, locale: "en"))
+        XCTAssertFalse(h.connection.consumeExplicitCareRead(intent, locale: "en"))
+        XCTAssertEqual(h.fixture.captured.count, requests, "Publication never performs HTTP")
+        try collectionReadReply(h, failure: .notConnectedToInternet)
+        let cached = try await repository.collectionCards(context: lease)
+        XCTAssertTrue(cached.isCached)
+        XCTAssertFalse(try h.connection.publishCollectionLoadCompletion(cached, expected: original,
+            context: lease, locale: "en", isReadCurrent: { true }, isLocaleCurrent: { true }))
+        XCTAssertNil(h.connection.explicitCareReadIntent)
+        assertClosed(h)
+
+        let empty = try Harness()
+        defer { empty.close() }
+        let scope = try await permanentCollection(empty)
+        let emptyLease = try await empty.connection.collectionLease(expected: scope)
+        try collectionReadReply(empty, failure: .notConnectedToInternet)
+        do {
+            _ = try await XCTUnwrap(empty.connection.repository).collectionCards(context: emptyLease)
+            XCTFail("No cached profile: a failed read must throw")
+        } catch let error as URLError { XCTAssertEqual(error.code, .notConnectedToInternet) }
+        XCTAssertNil(empty.connection.explicitCareReadIntent)
+        assertClosed(empty)
+    }
+
+    func testCollectionCompletionRejectsOldReadLocaleAndSDKEpochABA() async throws {
+        for mode in 0..<4 {
+            let h = try Harness()
+            defer { h.close() }
+            let original = try await permanentCollection(h)
+            let lease = try await h.connection.collectionLease(expected: original)
+            try collectionReadReply(h)
+            let result = try await XCTUnwrap(h.connection.repository).collectionCards(context: lease)
+            if mode >= 2 {
+                try auth(h, owner: other, token: "fixture-b")
+                try await h.signIn()
+                if mode == 3 { _ = try await permanentCollection(h) }
+            }
+            let count = h.fixture.captured.count
+            XCTAssertFalse(try h.connection.publishCollectionLoadCompletion(result, expected: original,
+                context: lease, locale: "en", isReadCurrent: { mode != 0 },
+                isLocaleCurrent: { mode != 1 }))
+            XCTAssertNil(h.connection.explicitCareReadIntent)
+            XCTAssertEqual(h.fixture.captured.count, count)
+            assertClosed(h)
+        }
+    }
+
+    func testSuspendedCollectionLoadCannotPublishAfterLocaleChangeCancellationOrABA() async throws {
+        for mode in 0..<3 {
+            let h = try Harness()
+            defer { h.close() }
+            let original = try await permanentCollection(h)
+            let lease = try await h.connection.collectionLease(expected: original)
+            let repository = try XCTUnwrap(h.connection.repository)
+            var localeCurrent = true
+            try collectionReadReply(h, suspend: true)
+            let task = Task { @MainActor in
+                let result = try await repository.collectionCards(context: lease)
+                return try h.connection.publishCollectionLoadCompletion(result, expected: original,
+                    context: lease, locale: "en", isReadCurrent: { true },
+                    isLocaleCurrent: { localeCurrent })
+            }
+            try await waitForSuspension(h.fixture)
+            if mode == 0 { localeCurrent = false }
+            if mode == 1 { task.cancel() }
+            if mode == 2 {
+                try auth(h, owner: other, token: "fixture-b")
+                try await h.signIn()
+                _ = try await permanentCollection(h)
+            }
+            h.fixture.release()
+            do {
+                let published = try await task.value
+                XCTAssertFalse(published)
+            } catch {
+                XCTAssertNotEqual(mode, 0, "Locale-only completion must finish the domain read")
+            }
+            XCTAssertNil(h.connection.explicitCareReadIntent)
+            assertClosed(h)
+        }
+    }
+
     func testExplicitCareReadIsOneShotScopedAndPassiveCacheReadsEmitNothing() async throws {
         let h = try Harness(), foreign = try Harness()
         defer { h.close(); foreign.close() }

@@ -8366,6 +8366,111 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testPlantEditAcceptanceRequiresExactEnvelopeAndCanonicalAck() async throws {
+        for mode in 0..<4 {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let snapshot = UUID(), neighbour = UUID(uuidString: "44444444-4444-4444-8444-444444444444")!
+            let later = "2026-11-03T09:10:00.000001+00:00"
+            func page(_ at: String, revision: Int) throws -> String {
+                var page = syncObject(), row = syncChange(at, id: serverPlantId.uuidString)
+                page["until"] = at
+                page["next_since"] = at
+                row["data"] = ["id": serverPlantId.uuidString, "personal_name": "Requested",
+                    "revision": revision, "care_revision": 1,
+                    "current_condition_snapshot_id": snapshot.uuidString] as [String: Any]
+                var other = syncChange(at, id: neighbour.uuidString)
+                other["data"] = ["id": neighbour.uuidString, "personal_name": "Other",
+                    "revision": 1, "care_revision": 1] as [String: Any]
+                page["changes"] = [row, other]
+                return try syncJSON(page)
+            }
+            let receipt = try syncJSON(["plant_id": serverPlantId.uuidString, "revision": 2,
+                "care_revision": 1, "condition_snapshot_id": snapshot.uuidString,
+                "watermark": later] as [String: Any])
+            let rejected = try syncJSON(["error": ["code": "CONFLICT",
+                "message": "Rejected", "retryable": false]])
+            var replies: [CatalogueTransport.Reply] = [.http(200, try page(syncUntil, revision: 1))]
+            switch mode {
+            case 0: replies += [.http(200, receipt), .http(200, try page(later, revision: 2))]
+            case 1: replies += [.network]
+            case 2: replies += [.http(200, receipt), .network]
+            default: replies += [.http(409, rejected)]
+            }
+            let transport = CatalogueTransport(replies), api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let repo = CollectionRepository(store: store, apiClient: api,
+                syncEngine: SyncEngine(store: store, apiClient: api))
+            _ = try await repo.collectionCards(context: lease)
+            let unrelated = try await repo.enqueuePlantRename(plantId: neighbour, personalName: "Other", context: lease)
+            let target = try await repo.enqueuePlantRename(plantId: serverPlantId, personalName: "Requested", context: lease)
+            let wrongBody = try PlantEditCommand.make(plantId: serverPlantId, change: .name("Wrong")).envelope
+            let impostor = CommandEnvelopeDTO(operationId: target.operationId, commandName: target.commandName,
+                plantId: target.plantId, payloadJSON: wrongBody.payloadJSON)
+            let wrong = try await repo.retryPlantEditAcceptance(impostor, context: lease)
+            XCTAssertEqual(wrong, .unconfirmed)
+            let before = await transport.capturedRequests()
+            XCTAssertEqual(before.count, 1, "Same UUID with another body must not dispatch")
+            let outcome = try await repo.retryPlantEditAcceptance(target, context: lease)
+            XCTAssertEqual(outcome, mode == 0 ? .confirmed : .unconfirmed)
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertTrue(pending.contains { $0.envelope == unrelated })
+            XCTAssertEqual(pending.contains { $0.envelope == target }, mode == 1 || mode == 2)
+            let again = try await repo.retryPlantEditAcceptance(impostor, context: lease)
+            XCTAssertEqual(again, .unconfirmed, "Queue absence and matching old card are not ACK")
+            if mode == 0 {
+                let card = try await repo.plantEditCard(target, context: lease)
+                XCTAssertEqual(card?.personalName, "Requested")
+                let replay = try await repo.retryPlantEditAcceptance(target, context: lease)
+                XCTAssertEqual(replay, .unconfirmed)
+            }
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), mode == 0 || mode == 2
+                ? ["GET", "POST", "GET"] : ["GET", "POST"])
+            let posts = requests.filter { $0.httpMethod == "POST" }
+            XCTAssertEqual(posts.count, 1)
+            let sent = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap(posts.first?.httpBody))
+            XCTAssertEqual(sent, target)
+        }
+    }
+
+    @MainActor
+    func testPlantEditAcceptanceRejectsReceiptAcrossOwnerABA() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var page = syncObject(), row = syncChange(id: serverPlantId.uuidString)
+        row["data"] = ["id": serverPlantId.uuidString, "revision": 1, "care_revision": 1] as [String: Any]
+        page["changes"] = [row]
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let seedAPI = client(CatalogueTransport([.http(200, try syncJSON(page))]))
+        await seedAPI.bindSyncSession(syncSession)
+        _ = try await SyncEngine(store: store, apiClient: seedAPI).pullDelta(for: syncOwner)
+        let transport = SuspendedCollectionTransport(try syncJSON([
+            "plant_id": serverPlantId.uuidString, "revision": 2, "care_revision": 1,
+            "condition_snapshot_id": NSNull(), "watermark": syncUntil]))
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let repo = CollectionRepository(store: store, apiClient: api,
+            syncEngine: SyncEngine(store: store, apiClient: api))
+        let command = try await repo.enqueuePlantRename(plantId: serverPlantId, personalName: "New", context: lease)
+        let attempt = Task { try await repo.retryPlantEditAcceptance(command, context: lease) }
+        await transport.waitForRequest()
+        await api.bindSyncSession(NativeAuthSession(userId: otherSyncOwner,
+            accessToken: "owner-b-token", expiresAt: .distantFuture))
+        await api.bindSyncSession(syncSession)
+        await transport.resume()
+        do {
+            _ = try await attempt.value
+            XCTFail("A receipt from the previous binding cannot confirm the edit")
+        } catch SyncWireValidationError.invalidSession {}
+        let pending = try await store.pendingOutboxEntries(for: syncOwner)
+        XCTAssertEqual(pending.map(\.envelope), [command])
+    }
+
+    @MainActor
     func testPlantRenameWaitsForCanonicalCardAndPreservesExactOperation() async throws {
         let url = try diskURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
