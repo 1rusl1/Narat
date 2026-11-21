@@ -1,5 +1,15 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен новый полный WholeB03 после fixture repair — 22 ноября 2026
+
+Непринятый source60891ab/pushed: actualDeveloper192.560с, только2DEBUG/testfiles,
+no-ios safeSTOP130/WAITING. Fullmanifestbase80e/all73readpaths сохранён; Developer0
+в НОВОЙ read-only приёмке с реальным прошлымDeveloper provenance, all10gates/highReviewQA.
+467Swift ожидаются(465старых+2новых), прежниеUI/assertions/gates неизменны.
+Root остаётся624d812 до приёмки; D1 НЕдопущен. Следующий шаг — Whole03run,
+включая полныйSwift/149/8consent/7metadata/4PNG/MCP/PL/care13/Today6/ReviewQA.
+Оба предыдущихWholeFAIL и ancillaryscopeRoot сохранены; hard50soft48/noreset.
+
 ## Узкий Today fixture repair сохранён реальным Developer; ещё не принят — 22 ноября 2026
 
 Run tester-care-today-local-day-fixture-20261122-01. Actual Developer1 semantic+protocolPASS192.560s, patch2files97+/6-, diffSHA256 af03114b9e311f9892aee2f98ec392f3e3e40bb44ad25ffcab99e635ae953be6. CatalogueUIFixtures.swift adds DEBUG-only actualinitialDate/timeZone input, freshordinarylocalday whilededicatedconsentUTC unchanged, persistedday/UTCclock unchanged onreopen. CollectionWireTests adds2fixedyearboundary/offset/UTC/init/reopen/cardoverviewagreement methods. Expectedsourcecount467 (old465+2), NOT YETexecuted. Existingfixtureunit calendarinput .current isonlyoldtestsetupchange; normalizedcomparison verified everyoldbyte includingassertions otherwiseunchanged. Old8UI/gate hashes unchanged.
