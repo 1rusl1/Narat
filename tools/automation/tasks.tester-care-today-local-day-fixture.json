@@ -1,0 +1,75 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-today-local-day-fixture",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "description": "Repair fresh Today fixture local-calendar anchor at UTC day/year boundary without changing production calendar or UI assertions.",
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "docs/validation/automation/tasks/tester-care-today-local-day-fixture-context.md",
+        "tools/automation/tasks.tester-care-today-local-day-fixture.json",
+        "docs/validation/automation/tasks/tester-care-reminder-whole-b-context.md",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "TWO existing writefiles only, compacttarget<=100-130newlines inclmeaningfultests. DEBUGfixturefreshlocalcalendarseed only; no prodRoot/TodayView/Planner/clock/globaltimezone/UItest/gate/PBX/newContent/domainwrites. Generate exactprogrammaticunifieddiff fromactualworktreebytes, no/dev/null/guessedhunks/parentRootreads. Preserve models900/budgets/hard50soft48/noreset.",
+        "Actual UTCseed mismatch caused require(today.section.today.21)fail atlocalNov22 BEFOREtap. UsecurrentlocalGregorian day onFIRSTordinaryTodayseed(reminderMode==nil), dedicatedconsent(reminderMode!=nil) MUSTretainUTCanchor/seed becausefakeRuntimeUTC, persistday+UTCclockseed once, cardoverviewshared unchanged/noGETcoldreseed. SQLCalendarDay parser andUTCwiretimestamps remain. Tiny DEBUGinitialDate/zone injection permitted onlytoactualfixtureinit fordeterministicunit, defaultsDate/.current; reminderfakeUTC runtime untouched.",
+        "New fixedUTCyearboundary+GMT+3/negativeTZ/UTC and actualstorage/reopen regression. Preserve465baseline methods/assertions andallUI/gates. Onlyexistingfixtureunit TodayCalendarinputUTC->.current justified bysameViewcalendar, assertions unchanged. No no-op helpermirroronlytest: prove actualseedLedger and retainedcoldstate. Dedicatedconsent fixedinstant test mustretainUTCanchor withsameclockseed whileordinaryGMT+3nextday, nochangingReminderConsentFixtures.",
+        "ActualDeveloper patch may be checkpointedUNACCEPTED_STOPPED beforeXcode then freshfullWHOLEbase80e highReviewQA withrealprovenance; nofakeDevPASS/oldverdictrewrite. FullSwift149diff/Today6/MCP gates ifrunmustpass; allotherwholegates mandatory afterfix, noD1yet."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "DAY1",
+          "description": "Fresh actual Today fixture day agrees with local Viewcalendar across UTC/year/month boundaries, UTCtimestamp remains timestamp; persistedday/sourcecardoverview never reset onread/cold. Meaningful deterministic actualinit/reopen regression.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "DAY2",
+          "description": "All unchanged Today6 UI pass including todayMixed today+overdue/nonfirsttargetone-shot;465oldmethods/assertions preserved, fullSwift/build/welcome/MCP pass.",
+          "mode": "fixture",
+          "checks": [
+            "tester-today-ui"
+          ]
+        },
+        {
+          "id": "DAY3",
+          "description": "149automation regressions pass, no source/gate weakening or claimnarrowDeveloper aswholeacceptance.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        },
+        {
+          "id": "DAY4",
+          "description": "FullSwift/build/welcome/MCP anddiff pass with465baseline assertions unchanged; dedicatedconsent seedUTC unchanged.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke",
+            "diff-check"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-today-local-day-fixture-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-whole-b-context.md"
+      ]
+    }
+  ]
+}

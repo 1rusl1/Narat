@@ -1,5 +1,23 @@
 # Narat — текущий статус и передача работы
 
+## WholeB02 остановлен на календаре Today fixture; подготовлен узкий repair — 22 ноября 2026
+
+WholeB02 BLOCKED/qa_checks, QA0; Review219.588с PASS не равен общей приёмке.
+Девять остальных gates PASS:465Swift128.971/14948.467/diff.024/8consent605.063/
+7metadata285.288/4realPNG60.474/MCP31.430/PL40.345/old13care503.313.
+Today6 FAIL215.510с:5PASS1FAIL, BEFOREtap require section.today.21. UTCseed21Nov
+против localView22Nov00:32. AX и извлечённый MP4frame подтверждают оба Overdue;
+productionCalendar корректен. Никакого заявленного navigation/product defect.
+
+Подготовлен реальный Developer только CatalogueUIFixtures.swift+CollectionWireTests.swift:
+ordinaryToday(reminderMode==nil) freshlocalday seed; dedicatedconsent anchor remainsUTC, persistedUTCclock/sharedprojection unchanged, fixedyearboundary+reopenunit;
+только justified existingunit calendarinput к.current, прежниеassertions/UI/gates неизменны.
+Owncontroller безопасно может остановиться ПОСЛЕterminalDeveloper/applied ДОios/Xcode
+в automation-window как UNACCEPTED_STOPPED; затем freshWHOLEbase80e все10gates/ReviewQA.
+Еслиокнанет — здоровый check не прерывать. D1 НЕдопущен до wholeaccepted.
+Всеraw Whole01bundleload/Whole02TodayFAIL сохранены, M2c4f002 принят отдельно.
+PBX0/rootuser3 не тронуты; hard50soft48/noreset, actual20/80, parenttasksopen.
+
 ## Общая приёмка B: первый прогон остановлен до Swift-тестов — 21 ноября 2026
 
 WholeB01 tester-care-reminder-whole-b-20261121-01 BLOCKED/checks, Developer0/Review0/QA0.
