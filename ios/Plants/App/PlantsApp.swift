@@ -375,10 +375,16 @@ struct RootContainerView: View {
                             .accessibilityIdentifier("catalogue.back")
                         } else {
                             GuestCatalogueView(connection: catalogue, polish: isPolish,
+                                           careReminderLocaleIsCurrent: { [languageStore, locale = languageStore.currentLocale] in
+                                               languageStore.currentLocale == locale
+                                           },
                                            openCollection: openSavedCollection, back: closeCatalogue)
                         }
 #else
                         GuestCatalogueView(connection: catalogue, polish: isPolish,
+                                           careReminderLocaleIsCurrent: { [languageStore, locale = languageStore.currentLocale] in
+                                               languageStore.currentLocale == locale
+                                           },
                                            openCollection: openSavedCollection, back: closeCatalogue)
 #endif
                     } else {

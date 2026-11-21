@@ -3133,6 +3133,7 @@ extension CollectionWireTests {
 private actor CatalogueTransport: PlantsAPITransport {
     enum Reply: Sendable {
         case http(Int, String)
+        case held(Int, String)
         case redirect(String)
         case inspect(@Sendable ([URLRequest]) throws -> String)
         case photo(Data, mime: String)
@@ -3140,6 +3141,14 @@ private actor CatalogueTransport: PlantsAPITransport {
         case cancelled
         case urlCancelled
     }
+
+    private var held: CheckedContinuation<Void, Never>?
+    private var heldObservers: [CheckedContinuation<Void, Never>] = []
+    func waitForHeld() async {
+        if held != nil { return }
+        await withCheckedContinuation { heldObservers.append($0) }
+    }
+    func releaseHeld() { held?.resume(); held = nil }
 
     private var replies: [Reply]
     private var requests: [URLRequest] = []
@@ -3167,6 +3176,14 @@ private actor CatalogueTransport: PlantsAPITransport {
         case let .redirect(location):
             return (Data(), HTTPURLResponse(url: request.url!, statusCode: 302, httpVersion: nil,
                                              headerFields: ["Location": location])!)
+        case let .held(status, json):
+            await withCheckedContinuation { continuation in
+                held = continuation
+                for observer in heldObservers { observer.resume() }
+                heldObservers.removeAll()
+            }
+            return (Data(json.utf8), HTTPURLResponse(url: request.url!, statusCode: status,
+                                                    httpVersion: nil, headerFields: nil)!)
         case let .http(status, json):
             return (
                 Data(json.utf8),
@@ -14523,6 +14540,143 @@ extension CollectionWireTests {
             XCTAssertEqual(pending.map(\.envelope), [command])
             let requests = await transport.capturedRequests()
             XCTAssertTrue(requests.isEmpty)
+        }
+    }
+}
+
+
+extension CollectionWireTests {
+    @MainActor
+    func testProductionSaveCompletionRepairsEarlyOverviewAfterLateCanonicalSettlement() async throws {
+        for failDetails in [false, true] {
+            var sync = overviewAlignmentPage()
+            var rows = try XCTUnwrap(sync["changes"] as? [[String: Any]])
+            var data = try XCTUnwrap(rows[0]["data"] as? [String: Any])
+            data["plant_id"] = "fixture-fern"
+            rows[0]["data"] = data
+            sync["changes"] = rows
+            var overview = overviewPage([reminderRow(serverPlantId)])
+            overview["verified_access_until"] = NSNull()
+            let body = try syncJSON(overview)
+            let transport = CatalogueTransport([
+                .http(200, try syncJSON(sync)), .http(200, receiptJSON()),
+                .held(failDetails ? 503 : 200, try syncJSON(sync)),
+                .http(200, body), .http(200, body)
+            ])
+            let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport, seed: false)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let target = try await CatalogueSaveModel(
+                store: store, apiClient: api, repository: repo, flowId: UUID(), operationId: UUID(),
+                input: CatalogueInput(speciesSlug: "fixture-fern", personalName: nil),
+                session: try profileSession(), isAnonymous: false)
+            var finalRead: Task<CareOverviewViewState, Error>?
+            let done = CatalogueSaveCompletion(isCurrent: { true }, publish: {
+                finalRead = Task { try await repo.refreshCareOverview(locale: .pl, context: lease) }
+            })
+            let saving = Task { await target.save(completion: done) }
+            await transport.waitForHeld()
+            guard case .saved = target.state else { return XCTFail("Actual create ACK required") }
+            XCTAssertNil(finalRead)
+            let early = try await repo.refreshCareOverview(locale: .pl, context: lease)
+            XCTAssertEqual(early.availability, .available)
+            XCTAssertFalse(reminderPlan(early).candidates.isEmpty)
+            let before = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            await transport.releaseHeld()
+            await saving.value
+            let finalTask = try XCTUnwrap(finalRead)
+            let fresh = try await finalTask.value
+            XCTAssertEqual(fresh.origin, .network)
+            XCTAssertNil(fresh.failure)
+            XCTAssertEqual(fresh.availability, .available)
+            let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            XCTAssertEqual(local.canonicalGeneration, local.snapshotGeneration)
+            XCTAssertTrue(local.cached?.canonicalGenerationMatches == true)
+            XCTAssertNil(local.knownInvalidation)
+            if !failDetails {
+                XCTAssertNotEqual(before.canonicalGeneration, local.canonicalGeneration)
+                guard case .loaded = target.cardState else { return XCTFail("Canonical details must load") }
+            } else { XCTAssertEqual(target.cardState, .unavailable) }
+            let cached = try await repo.cachedCareOverview(context: lease)
+            XCTAssertEqual(cached.availability, .available)
+            XCTAssertEqual(reminderPlan(cached).candidates, reminderPlan(fresh).candidates)
+            XCTAssertFalse(reminderPlan(cached).candidates.isEmpty)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map { $0.url?.lastPathComponent },
+                           ["sync", "commands", "sync", "care-overview", "care-overview"])
+            XCTAssertEqual(requests.filter { $0.httpMethod == "POST" }.count, 1)
+        }
+    }
+}
+
+
+extension CollectionWireTests {
+    @MainActor
+    func testManualCompletionUsesTypedRecordUndoACKAfterOptionalReadFailure() async throws {
+        for undo in [false, true] {
+            for mode in ["pending", "accepted", "retry"] {
+                let accepted = mode != "pending"
+                let url = try diskURL()
+                defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+                let entry = UUID(), reversal = UUID(), placeholder = UUID()
+                let later = "2026-11-03T09:10:00Z"
+                var initial = try XCTUnwrap(JSONSerialization.jsonObject(
+                    with: Data(careAckPage(entry: entry).utf8)) as? [String: Any])
+                var rows = try XCTUnwrap(initial["changes"] as? [[String: Any]])
+                let plantIndex = try XCTUnwrap(rows.firstIndex { $0["entity_type"] as? String == "plants" })
+                var plant = try XCTUnwrap(rows[plantIndex]["data"] as? [String: Any])
+                plant["plant_id"] = "fixture-fern"
+                rows[plantIndex]["data"] = plant
+                initial["changes"] = rows
+                var canonical = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(careAckPage(
+                    entry: entry, state: undo ? "voided" : "active", reversal: undo ? reversal : nil,
+                    operation: placeholder, at: later).utf8)) as? [String: Any])
+                var facts = try XCTUnwrap(canonical["changes"] as? [[String: Any]])
+                if !undo {
+                    let index = try XCTUnwrap(facts.firstIndex { $0["entity_type"] as? String == "care_entries" })
+                    var fact = try XCTUnwrap(facts[index]["data"] as? [String: Any])
+                    fact["operation_id"] = placeholder.uuidString
+                    facts[index]["data"] = fact
+                }
+                canonical["changes"] = facts
+                let canonicalBody = try syncJSON(canonical), baseline = try syncJSON(initial)
+                var receipt = manualWateringReceipt(entryId: entry, state: undo ? "voided" : "active",
+                                                    reversalId: undo ? reversal : nil)
+                receipt["watermark"] = later
+                let transport = CatalogueTransport([
+                    .http(200, baseline), .http(200, receiptJSON()), .http(200, baseline)
+                ] + (mode == "retry" ? [.network] : []) + [
+                    accepted ? .http(200, try syncJSON(receipt)) : .network,
+                    .inspect { requests in
+                        let command = try JSONDecoder().decode(CommandEnvelopeDTO.self,
+                            from: XCTUnwrap(requests.last(where: { $0.httpMethod == "POST" })?.httpBody))
+                        return canonicalBody.replacingOccurrences(of: placeholder.uuidString,
+                                                                   with: command.operationId.uuidString)
+                    }, .network
+                ])
+                let api = client(transport), sdk = try profileSession()
+                await api.bindSyncSession(sdk)
+                let store = LocalStore(modelContainer: try diskContainer(url))
+                let repo = CollectionRepository(store: store, apiClient: api,
+                                                syncEngine: SyncEngine(store: store, apiClient: api))
+                let target = try await CatalogueSaveModel(store: store, apiClient: api, repository: repo,
+                    flowId: UUID(), operationId: UUID(), input: CatalogueInput(speciesSlug: "fixture-fern",
+                    personalName: nil), session: sdk, isAnonymous: false)
+                await target.save()
+                await target.loadCard(includeManualWateringActions: true)
+                XCTAssertEqual(target.manualWateringState, .ready)
+                var completions = 0
+                let done = CatalogueSaveCompletion(isCurrent: { true }, publish: { completions += 1 })
+                if undo { await target.undoWatering(entryId: entry, completion: done) }
+                else { await target.recordWatering(completion: done) }
+                if mode == "retry" {
+                    XCTAssertEqual(completions, 0)
+                    XCTAssertEqual(target.manualWateringState, .pending)
+                    await target.retryManualWatering(completion: done)
+                }
+                XCTAssertEqual(completions, accepted ? 1 : 0)
+                XCTAssertEqual(target.manualWateringState, accepted ? .unavailable : .pending)
+                if accepted { XCTAssertEqual(target.cardState, .unavailable) }
+            }
         }
     }
 }

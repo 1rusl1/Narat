@@ -190,6 +190,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let displayName: String
     let scientificName: String
     let polish: Bool
+    var careReminderLocaleIsCurrent: () -> Bool = { false }
     var showsSpeciesHeading: Bool = true
     var analysisSaveIdentity: UUID? = nil
     var identification: CatalogueInput.Identification? = nil
@@ -547,7 +548,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                             Text(entry.state == "voided" ? "Undone" : "Active")
                             if showsManualWateringActions(model), entry.state == "active",
                                model.manualWateringState == .ready {
-                                Button("Undo") { Task { await model.undoWatering(entryId: entry.id) } }
+                                Button("Undo") { watering(model, entryId: entry.id) }
                                     .accessibilityIdentifier("catalogue.care.undo." + entry.id.uuidString.lowercased())
                             }
                         }
@@ -569,7 +570,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     private func wateringControls(_ model: CatalogueSaveModel) -> some View {
         switch model.manualWateringState {
         case .ready:
-            Button("Record watering") { Task { await model.recordWatering() } }
+            Button("Record watering") { watering(model) }
                 .accessibilityIdentifier("catalogue.care.record")
         case .saving:
             ProgressView("Saving watering history…")
@@ -577,7 +578,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         case .pending:
             Text("Watering history change pending.")
                 .accessibilityIdentifier("catalogue.care.pending")
-            Button("Retry watering change") { Task { await model.retryManualWatering() } }
+            Button("Retry watering change") { watering(model, retry: true) }
                 .accessibilityIdentifier("catalogue.care.retry")
         case .unavailable:
             Button("Reload watering history") { loadDetails(model) }
@@ -707,8 +708,33 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         }
     }
 
+    private func completion(
+        expected: CatalogueSDKSnapshot, ticket: Int, locale: String,
+        localeIsCurrent: @escaping () -> Bool
+    ) -> CatalogueSaveCompletion {
+        CatalogueSaveCompletion(
+            isCurrent: { active && revision == ticket && connection.snapshot == expected && localeIsCurrent() },
+            publish: {
+                connection.publishExplicitCareRead(expected: expected, locale: locale,
+                    isLocaleCurrent: { active && revision == ticket && localeIsCurrent() })
+            })
+    }
+
+    private func watering(_ target: CatalogueSaveModel, entryId: UUID? = nil, retry: Bool = false) {
+        guard !working, scopeIsCurrent, let expected = scope else { return }
+        let done = completion(expected: expected, ticket: revision, locale: polish ? "pl" : "en",
+                              localeIsCurrent: careReminderLocaleIsCurrent)
+        Task {
+            if retry { await target.retryManualWatering(completion: done) }
+            else if let entryId { await target.undoWatering(entryId: entryId, completion: done) }
+            else { await target.recordWatering(completion: done) }
+        }
+    }
+
     private func save() {
         guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
+        let locale = polish ? "pl" : "en"
+        let localeIsCurrent = careReminderLocaleIsCurrent
         nameFocused = false
         if model == nil && intent == nil {
             let personalName = name.isEmpty ? nil : name
@@ -761,9 +787,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 let checkpoint = try await connection.rememberModel(target, expected: expected)
                 guard isCurrent(ticket, expected) else { return }
                 previousFlow = checkpoint.flowId
-                await target.save()
+                let done = localeIsCurrent() ? completion(expected: expected, ticket: ticket,
+                    locale: locale, localeIsCurrent: localeIsCurrent) : nil
+                await target.save(completion: done, includeManualWateringActions: showsManualWateringActions(target))
                 guard isCurrent(ticket, expected) else { return }
-                await loadIfSaved(target)
+                if done == nil { await loadIfSaved(target) }
             } catch {
                 if isCurrent(ticket, expected) { notice = .unavailable }
             }
@@ -811,6 +839,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
               case .signInRequired = original.state,
               let presenter, presenter.viewIfLoaded?.window != nil else { return }
         let ticket = revision
+        let locale = polish ? "pl" : "en"
+        let localeIsCurrent = careReminderLocaleIsCurrent
         working = true
         nativeInFlight = true
         notice = nil
@@ -825,7 +855,12 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             }
             do {
                 _ = try await connection.rememberModel(original, expected: expected)
-                let outcome = await connection.signInAndSave(original, with: provider, presenting: presenter)
+                let outcome = await connection.signInAndSave(original, with: provider, presenting: presenter,
+                    completion: { expected in
+                        guard localeIsCurrent() else { return nil }
+                        return completion(expected: expected, ticket: ticket, locale: locale,
+                                          localeIsCurrent: localeIsCurrent)
+                    })
                 guard active, revision == ticket, !Task.isCancelled else { return }
                 switch outcome {
                 case let .continued(verified):
@@ -872,7 +907,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         intent = nil
         name = ""
         previousFlow = verified.checkpoint?.flowId
-        await loadIfSaved(verified)
+        if verified.cardState == .idle { await loadIfSaved(verified) }
     }
 
     private func clearPrivateState() {

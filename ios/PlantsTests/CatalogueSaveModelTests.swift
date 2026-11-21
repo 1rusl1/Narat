@@ -277,6 +277,53 @@ final class CatalogueSaveModelTests: XCTestCase {
         }
     }
 
+    func testScopedSaveCompletionRequiresActualACKAndSurvivesOptionalReadFailure() async throws {
+        let payload = Data("{\"sub\":\"11111111-1111-4111-8111-111111111111\",\"is_anonymous\":false}".utf8)
+            .base64EncodedString().replacingOccurrences(of: "=", with: "")
+        let sdk = NativeAuthSession(userId: owner, accessToken: "eyJhbGciOiJIUzI1NiJ9." + payload + ".fixture",
+                                    expiresAt: .distantFuture)
+        for mode in ["success", "detailsFailed", "pending", "locale", "aba", "refresh", "cancel"] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let transport = SaveModelTransport([
+                .http("GET", 200, try page()),
+                .http("POST", mode == "pending" ? 503 : 200, try receipt()),
+                .http("GET", mode == "detailsFailed" ? 503 : 200, try cardPage())
+            ], suspendAt: mode == "pending" ? nil : 2)
+            let stack = try await stack(url, transport, session: sdk)
+            let flow = UUID()
+            let target = try await CatalogueSaveModel(
+                store: stack.store, apiClient: stack.api, repository: stack.repository,
+                flowId: flow, operationId: UUID(), input: input, session: sdk, isAnonymous: false)
+            var currentLocale = "en", completions = 0
+            let done = CatalogueSaveCompletion(isCurrent: { currentLocale == "en" },
+                                               publish: { completions += 1 })
+            let saving = Task { await target.save(completion: done) }
+            if mode != "pending" {
+                await transport.waitForSuspension()
+                XCTAssertEqual(completions, 0, "ACK must wait for optional fullread settlement")
+                _ = try saved(target)
+                if mode == "locale" { currentLocale = "pl" }
+                if mode == "aba" {
+                    await stack.api.bindSyncSession(otherSession)
+                    await stack.api.bindSyncSession(sdk)
+                }
+                if mode == "refresh" { await stack.api.bindSyncSession(refreshedSession) }
+                if mode == "cancel" { saving.cancel() }
+                await transport.resume()
+            }
+            await saving.value
+            XCTAssertEqual(completions, ["success", "detailsFailed"].contains(mode) ? 1 : 0, mode)
+            if ["success", "detailsFailed"].contains(mode) {
+                let restored = try self.restored(await CatalogueSaveModel.restore(
+                    store: stack.store, apiClient: stack.api, repository: stack.repository,
+                    ownerId: owner, flowId: flow, session: sdk, isAnonymous: false))
+                await restored.save(completion: done)
+                XCTAssertEqual(completions, 1, "Restored saved is not a new mutation")
+            }
+        }
+    }
+
     func testCardRequiresDurableSaveAndReadsExactCanonicalUUIDNameSpeciesAndRevisions() async throws {
         let url = try diskURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

@@ -676,7 +676,8 @@ final class CatalogueConnection {
     /// Explicit user intent only. The auth observer never invokes this continuation.
     func signInAndSave(
         _ original: CatalogueSaveModel, with provider: NativeAuthProvider,
-        presenting: UIViewController
+        presenting: UIViewController,
+        completion: ((CatalogueSDKSnapshot) -> CatalogueSaveCompletion?)? = nil
     ) async -> CatalogueNativeOutcome {
         guard nativeFlow == nil else { return .busy }
         guard let nativeAuth, let store, let apiClient,
@@ -750,7 +751,7 @@ final class CatalogueConnection {
             guard nativeFlow == intent, isCurrent(expected) else { return .unavailable(.sessionChanged) }
             // A cancelled caller may explicitly retry later via the guarded flow pointer.
             guard !Task.isCancelled, !original.isCancelled else { return .inputRetained(model, .cancelled) }
-            await model.save()
+            await model.save(completion: completion?(expected))
             guard isCurrent(expected) else { return .unavailable(.sessionChanged) }
             if Task.isCancelled || original.isCancelled { return .inputRetained(model, .cancelled) }
             return .continued(model)
@@ -3095,6 +3096,7 @@ struct GuestCatalogueView: View {
 
     let connection: CatalogueConnection
     let polish: Bool
+    var careReminderLocaleIsCurrent: () -> Bool = { false }
     var speciesPicker: SpeciesPicker? = nil
     var openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil
     let back: () -> Void
@@ -3198,7 +3200,8 @@ struct GuestCatalogueView: View {
                 CatalogueSaveView(
                     connection: connection, speciesSlug: slug,
                     displayName: card?.displayName ?? slug, scientificName: card?.scientificName ?? "",
-                    polish: polish, openCollection: openCollection, selectionLocked: $selectionLocked
+                    polish: polish, careReminderLocaleIsCurrent: careReminderLocaleIsCurrent,
+                    openCollection: openCollection, selectionLocked: $selectionLocked
                 ) {
                     if let card { speciesDetails(card) }
                 }

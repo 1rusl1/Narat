@@ -53,6 +53,13 @@ enum CatalogueSaveRestoration {
     case unavailable(CatalogueSaveUnavailable)
 }
 
+/// Transient operation-entry UI authority. Inactive callers keep the legacy read behavior.
+@MainActor
+struct CatalogueSaveCompletion {
+    let isCurrent: () -> Bool
+    let publish: () -> Void
+}
+
 /// One immutable SDK snapshot, flow, operation and original bound lease.
 /// A replacement SDK session requires a new model, even for the same owner/token.
 @MainActor
@@ -152,40 +159,43 @@ final class CatalogueSaveModel {
         return manualWateringPhase
     }
 
-    func recordWatering() async {
-        await beginManualWatering(.record)
+    func recordWatering(completion: CatalogueSaveCompletion? = nil) async {
+        await beginManualWatering(.record, completion: completion)
     }
 
-    func undoWatering(entryId: UUID) async {
+    func undoWatering(entryId: UUID, completion: CatalogueSaveCompletion? = nil) async {
         guard case let .loaded(entries) = wateringHistoryState,
               entries.contains(where: { $0.id == entryId && $0.state == "active" }) else { return }
-        await beginManualWatering(.undo(entryId))
+        await beginManualWatering(.undo(entryId), completion: completion)
     }
 
-    private func beginManualWatering(_ action: ManualWateringAction) async {
+    private func beginManualWatering(_ action: ManualWateringAction, completion: CatalogueSaveCompletion?) async {
         guard manualWateringState == .ready, let card = cardSummary,
               let command = try? action.envelope(plantId: card.id) else { return }
-        await sendManualWatering(command)
+        await sendManualWatering(command, completion: completion)
     }
 
-    func retryManualWatering() async {
+    func retryManualWatering(completion: CatalogueSaveCompletion? = nil) async {
         guard manualWateringState == .pending, let command = frozenWateringCommand else { return }
-        await sendManualWatering(command)
+        await sendManualWatering(command, completion: completion)
     }
 
-    private func sendManualWatering(_ command: CommandEnvelopeDTO) async {
+    private func sendManualWatering(_ command: CommandEnvelopeDTO, completion: CatalogueSaveCompletion?) async {
         guard !isAnonymous, case let .saved(confirmation) = state,
               let card = cardSummary, command.plantId == card.id,
               manualWateringPhase != .saving else { return }
+        var accepted = false
+        defer { finishCompletion(completion, accepted: accepted) }
         do {
             try publish {
                 frozenWateringCommand = command
                 manualWateringPhase = .saving
             }
-            let confirmed = try await repository.submitManualWatering(
+            let outcome = try await repository.submitManualWateringAcceptance(
                 command, confirmation: confirmation, context: context
             )
-            if !confirmed {
+            accepted = outcome == .confirmed
+            if !accepted {
                 try publish { manualWateringPhase = .pending }
                 return
             }
@@ -197,7 +207,8 @@ final class CatalogueSaveModel {
                     recommendationPhase = .idle
                 }
             }
-            await loadCard(includeManualWateringActions: true)
+            if completion != nil { await settleCard(includeManualWateringActions: true) }
+            else { await loadCard(includeManualWateringActions: true) }
             if case .loaded = wateringHistoryState {
                 try publish { manualWateringPhase = .ready }
                 if reloadRecommendation { await loadCareRecommendation() }
@@ -378,11 +389,17 @@ final class CatalogueSaveModel {
     }
 
     /// Duplicate taps join no new operation and cannot turn busy into success.
-    func save() async {
+    func save(completion: CatalogueSaveCompletion? = nil, includeManualWateringActions: Bool = false) async {
         guard work == nil, !cancelled else { return }
         if Task.isCancelled { cancel(); return }
         if case .saved = state { return }
-        let task = Task { await self.performSave() }
+        let task = Task {
+            let accepted = await self.performSave()
+            if accepted, completion != nil {
+                await self.settleCard(includeManualWateringActions: includeManualWateringActions)
+            }
+            self.finishCompletion(completion, accepted: accepted)
+        }
         work = task
         await withTaskCancellationHandler {
             await task.value
@@ -390,6 +407,11 @@ final class CatalogueSaveModel {
             task.cancel()
         }
         work = nil
+    }
+
+    private func settleCard(includeManualWateringActions: Bool) async {
+        if let detailsTask { await detailsTask.value }
+        else { await loadCard(includeManualWateringActions: includeManualWateringActions) }
     }
 
     /// Explicit initial read or retry. Details failure never rewrites durable save truth.
@@ -488,7 +510,15 @@ final class CatalogueSaveModel {
         try validateAuthority()
     }
 
-    private func performSave() async {
+    /// The original model lease is rechecked after every optional read settles.
+    private func finishCompletion(_ completion: CatalogueSaveCompletion?, accepted: Bool) {
+        guard accepted, let completion, !Task.isCancelled, !cancelled,
+              completion.isCurrent(),
+              (try? apiClient.syncAuthority.withPermanentBoundValid(context, {})) != nil else { return }
+        completion.publish()
+    }
+
+    private func performSave() async -> Bool {
         do {
             try publish { phase = .busy }
             if frozenCheckpoint == nil {
@@ -497,12 +527,14 @@ final class CatalogueSaveModel {
             // The SDK's explicit anonymous snapshot guards the registered path.
             if isAnonymous {
                 try publish { phase = .signInRequired }
-                return
+                return false
             }
             try validateAuthority()
             let result = try await repository.saveCatalogueCreate(
                 envelope: frozenEnvelope, context: context
             )
+            let accepted: Bool
+            if case .saved = result { accepted = true } else { accepted = false }
             try publish {
                 switch result {
                 case .signInRequired: phase = .signInRequired
@@ -512,6 +544,7 @@ final class CatalogueSaveModel {
                     phase = .collectionLimitNotEnqueued(capacity)
                 }
             }
+            return accepted
         } catch {
             if Task.isCancelled || error is CancellationError ||
                 (error as? URLError)?.code == .cancelled {
@@ -521,5 +554,6 @@ final class CatalogueSaveModel {
                 phase = .unavailable(isAccessible ? .storageOrServiceUnavailable : .sessionChanged)
             }
         }
+        return false
     }
 }
