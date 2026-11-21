@@ -387,6 +387,10 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     private let file: URL
     let namespace: String
     private var ledger: Ledger
+    private var canonicalProfileHour: Int {
+        (ledger.scenario == .profileReminderHour || ledger.reminderMode == ReminderConsentFixtureMode.hour.rawValue)
+            && ledger.tick > 0 ? 23 : 9
+    }
     var snapshot: Ledger { lock.withLock { ledger } }
     private var capturedRequests: [URLRequest] = []
     var requests: [URLRequest] { lock.withLock { capturedRequests } }
@@ -584,7 +588,22 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     next.reminderReadRequests = (next.reminderReadRequests ?? 0) + 1
                 }
                 try persist(next)
-                if url.path.hasSuffix("/commands") { return try error(403, "fixture_read_only") }
+                if url.path.hasSuffix("/commands") {
+                    // The eighth mode opens exactly one typed profile write, never care/plant writes.
+                    guard ledger.reminderMode == ReminderConsentFixtureMode.hour.rawValue,
+                          request.httpMethod == "POST",
+                          url.path == "/functions/v1/plants-api/commands", url.query == nil,
+                          request.value(forHTTPHeaderField: "Authorization") == "Bearer " + token(ledger.permanent),
+                          !ledger.revoked.contains(ledger.permanent),
+                          let body = request.httpBody,
+                          let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                          Set(object.keys) == Set(["operation_id", "command_name", "payload_json"]),
+                          let envelope = try? JSONDecoder().decode(CommandEnvelopeDTO.self, from: body),
+                          let command = ProfileReminderHourCommand(envelope),
+                          command.reminderHourLocal == 23,
+                          request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
+                    else { return try error(403, "fixture_read_only") }
+                }
             }
             let body = request.httpBody ?? Data()
             let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
@@ -709,7 +728,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     "owner_id": caller.uuidString, "server_now": clock,
                     "owner_watermark": Self.time(ledger.tick),
                     "publication_fingerprint": String(repeating: ledger.todayWithdrawn == true ? "b" : "a", count: 64),
-                    "reminder_hour_local": 9, "automation_allowed": true,
+                    "reminder_hour_local": ledger.reminderMode == ReminderConsentFixtureMode.hour.rawValue ? canonicalProfileHour : 9, "automation_allowed": true,
                     "verified_access_until": NSNull(), "plants": rows,
                     "next_after": ordered.count > limit ? page.last!.id.uuidString.lowercased() as Any : NSNull()
                 ]))
@@ -730,7 +749,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 }
                 return Reply(status: 200, data: try json([
                     "profile": ["preferred_locale": "en",
-                                "reminder_hour_local": ledger.scenario == .profileReminderHour && ledger.tick > 0 ? 23 : 9]
+                                "reminder_hour_local": canonicalProfileHour]
                 ]))
             }
             if ledger.scenario == .photoHistory || ledger.scenario.testsPlantEdit,
@@ -1016,7 +1035,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 return Reply(status: 200, data: try json([
                     "until": until, "has_more": false, "last_cursor": NSNull(), "next_since": until,
                     "profile": ["preferred_locale": "pl",
-                                "reminder_hour_local": ledger.scenario == .profileReminderHour && ledger.tick > 0 ? 23 : 9,
+                                "reminder_hour_local": canonicalProfileHour,
                                 "report_notifications_enabled": true, "trial_reminder_enabled": false],
                     "entitlement": entitlement, "changes": orderedChanges
                 ]))
@@ -1024,7 +1043,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             guard method == "POST", url.path == "/functions/v1/plants-api/commands", query.isEmpty,
                   caller == ledger.permanent else { throw CatalogueUIFixtureError.invalidRequest }
             let envelope = try JSONDecoder().decode(CommandEnvelopeDTO.self, from: body)
-            if ledger.scenario == .profileReminderHour,
+            if ledger.scenario == .profileReminderHour || ledger.reminderMode == ReminderConsentFixtureMode.hour.rawValue,
                let command = ProfileReminderHourCommand(envelope) {
                 guard command.reminderHourLocal == 23,
                       request.value(forHTTPHeaderField: "X-Operation-Id") == envelope.operationId.uuidString.lowercased()
@@ -1033,7 +1052,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 var next = ledger
                 next.attempts.append(Attempt(owner: caller, body: body))
                 if let commit = ledger.commits[key] {
-                    guard ledger.attempts.count == 1, ledger.commits.count == 1,
+                    guard (ledger.attempts.count == 1 || ledger.reminderMode == ReminderConsentFixtureMode.hour.rawValue), ledger.commits.count == 1,
                           commit.owner == caller, commit.body == body, commit.envelope == envelope
                     else {
                         try persist(next)

@@ -68,6 +68,16 @@ struct ReminderConsentStatus: Equatable {
     }
 }
 
+/// OS status retry stays local while the care data is aligned, including transport cache.
+enum ReminderConsentReadPolicy {
+    static func needsExternalRead(state: CareOverviewViewState?, readFailed: Bool) -> Bool {
+        guard !readFailed, let state else { return true }
+        return state.access == .unknown || state.availability != .available
+            || state.knownInvalidation != nil
+            || state.failure == .revalidationRequired || state.failure == .authorizationDenied
+    }
+}
+
 /// Observes readiness without starting work or rebinding an existing action.
 struct ReminderConsentHost: View {
     @ObservedObject var lifecycle: CareReminderLifecycle
@@ -92,7 +102,10 @@ struct ReminderConsentHost: View {
                     expectedOwnerId: expected.session.userId, locale: polish ? "pl" : "en") {
                     ReminderConsentView(lifecycle: lifecycle, binding: binding, polish: polish,
                         explicitRetry: {
-                            guard lifecycle.isCurrent(binding: binding) else { return }
+                            guard lifecycle.isCurrent(binding: binding),
+                                  ReminderConsentReadPolicy.needsExternalRead(
+                                    state: lifecycle.state, readFailed: lifecycle.readFailed)
+                            else { return }
                             connection.publishExplicitCareRead(expected: expected,
                                 locale: polish ? "pl" : "en", isLocaleCurrent: isLocaleCurrent)
                         })

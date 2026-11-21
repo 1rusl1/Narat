@@ -14090,3 +14090,167 @@ extension CollectionWireTests {
         }
     }
 }
+
+#if DEBUG
+extension CollectionWireTests {
+    @MainActor
+    func testConsentRetryReadPolicyUsesActualAlignmentAndCareDataFailures() async throws {
+        let (url, store, authority, lease, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        for mode in ["", "offline", "readOnly", "unknown", "invalidated", "denied", "revalidate", "profile.update"] {
+            let state = try reminderState(local, rows: [overviewRow(serverPlantId, dated: true)], mode: mode)
+            XCTAssertEqual(ReminderConsentReadPolicy.needsExternalRead(state: state, readFailed: false),
+                           !["", "offline"].contains(mode), mode)
+        }
+        let aligned = try passState(local)
+        for authorization in [CareReminderPlan.Authorization.notDetermined, .denied, .authorized] {
+            let status = consentProjection(aligned,
+                result: .init(confirmedPendingCount: 0, omittedCount: 0, unconfirmedBlockers: 1,
+                              failed: true, deferred: false), authorization: authorization)
+            XCTAssertTrue([.failed, .denied, .paused].contains(status.phase))
+            XCTAssertFalse(ReminderConsentReadPolicy.needsExternalRead(state: aligned, readFailed: false))
+        }
+        XCTAssertTrue(ReminderConsentReadPolicy.needsExternalRead(state: nil, readFailed: false))
+        XCTAssertTrue(ReminderConsentReadPolicy.needsExternalRead(state: aligned, readFailed: true))
+        try await overviewCanonical(store, authority: authority, lease: lease, ids: [])
+        let rotated = try await store.readCareOverviewPresentation(context: lease, authority: authority)
+        let stale = CareOverviewViewState(local: rotated, now: receiptNow, origin: .cache)
+        XCTAssertEqual(stale.availability, .readOnly)
+        XCTAssertTrue(ReminderConsentReadPolicy.needsExternalRead(state: stale, readFailed: false))
+    }
+
+    @MainActor
+    func testConsentHourFixtureExactProfileReplayAndCanonicalWireCoherence() async throws {
+        guard case .fixture(let configuration) = ReminderConsentLaunch.parse([
+            "--care-reminder-fixture", "hour", "--care-reminder-namespace", UUID().uuidString])
+        else { return XCTFail("hour configuration") }
+        let fixture = try await ReminderConsentFixture.makeContext(configuration)
+        defer { try? fixture.cleanup() }
+        let connection = fixture.context.connection!
+        let api = try XCTUnwrap(connection.apiClient)
+        let store = try XCTUnwrap(connection.store)
+        let repo = try XCTUnwrap(connection.repository)
+        let owner = fixture.context.server.snapshot.permanent
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let initial = try await api.fetchProfileSettings(context: lease)
+        XCTAssertEqual(initial.reminderHourLocal, 9)
+        let overview = try await api.fetchCareOverview(context: lease)
+        XCTAssertEqual(overview.pages.first?.reminderHourLocal, 9)
+        let initialSync = try await api.fetchSyncPage(context: lease, since: nil, until: nil, cursor: nil, limit: 200)
+        XCTAssertEqual(initialSync.page.profile.reminderHourLocal, 9)
+        let before = fixture.context.server.snapshot
+        let command = try await repo.enqueueProfileReminderHour(reminderHourLocal: 23, context: lease)
+        let lost = try await repo.retryProfileReminderHour(command, context: lease)
+        XCTAssertEqual(lost, .pending)
+        let pending = try await repo.pendingProfileReminderHour(context: lease)
+        XCTAssertEqual(pending?.envelope, command.envelope)
+        let confirmed = try await repo.retryProfileReminderHour(command, context: lease)
+        XCTAssertEqual(confirmed, .confirmed(hour: 23))
+        let saved = try await store.syncedProfile(ownerId: owner)
+        XCTAssertEqual(saved?.reminderHourLocal, 23)
+        let absent = try await repo.pendingProfileReminderHour(context: lease)
+        XCTAssertNil(absent)
+        let me = try await api.fetchProfileSettings(context: lease)
+        let afterOverview = try await api.fetchCareOverview(context: lease)
+        XCTAssertEqual(me.reminderHourLocal, 23)
+        XCTAssertEqual(afterOverview.pages.first?.reminderHourLocal, 23)
+        let finalSync = try await api.fetchSyncPage(context: lease, since: nil, until: nil, cursor: nil, limit: 200)
+        XCTAssertEqual(finalSync.page.profile.reminderHourLocal, 23)
+        XCTAssertEqual(finalSync.page.changes, initialSync.page.changes)
+        let after = fixture.context.server.snapshot
+        XCTAssertEqual(after.tick, before.tick + 1)
+        XCTAssertEqual(after.commits.count, 1)
+        XCTAssertEqual(after.attempts.count, 2)
+        XCTAssertEqual(after.attempts[0].body, after.attempts[1].body)
+        XCTAssertEqual(after.plants.map(\.id), before.plants.map(\.id))
+        let commands = fixture.context.server.requests.filter { $0.url?.lastPathComponent == "commands" }
+        XCTAssertEqual(commands.count, 2)
+        XCTAssertEqual(commands[0].value(forHTTPHeaderField: "X-Operation-Id"),
+                       command.envelope.operationId.uuidString.lowercased())
+        // Same-operation replay remains idempotent in hour mode, including after ACK.
+        let replay = try await api.updateProfileReminderHour(command, context: lease)
+        XCTAssertEqual(replay.profile.reminderHourLocal, 23)
+        var probe = try XCTUnwrap(commands.first)
+        for body in [
+            Data("{}".utf8),
+            try JSONEncoder().encode(CommandEnvelopeDTO(operationId: UUID(), commandName: "care.record", payloadJSON: "{}")),
+            try JSONEncoder().encode(CommandEnvelopeDTO(operationId: UUID(), commandName: "plant.create", payloadJSON: "{}"))
+        ] {
+            probe.httpBody = body
+            if let envelope = try? JSONDecoder().decode(CommandEnvelopeDTO.self, from: body) {
+                probe.setValue(envelope.operationId.uuidString.lowercased(), forHTTPHeaderField: "X-Operation-Id")
+            }
+            let (_, response) = try await fixture.context.http.data(for: probe)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 403)
+        }
+        probe = commands[0]
+        for mutation in 0..<3 {
+            var invalid = probe
+            if mutation == 0 { invalid.setValue(UUID().uuidString, forHTTPHeaderField: "X-Operation-Id") }
+            if mutation == 1 { invalid.url = URL(string: probe.url!.absoluteString + "?limit=1") }
+            if mutation == 2 { invalid.setValue("Bearer foreign", forHTTPHeaderField: "Authorization") }
+            let (_, response) = try await fixture.context.http.data(for: invalid)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 403)
+        }
+        XCTAssertEqual(fixture.context.server.snapshot.commits.count, 1)
+        XCTAssertEqual(fixture.context.server.snapshot.attempts.count, 3)
+        for mode in ReminderConsentFixtureMode.allCases where mode != .hour {
+            guard case .fixture(let config) = ReminderConsentLaunch.parse([
+                "--care-reminder-fixture", mode.rawValue, "--care-reminder-namespace", UUID().uuidString])
+            else { return XCTFail(mode.rawValue) }
+            let other = try await ReminderConsentFixture.makeContext(config)
+            defer { try? other.cleanup() }
+            probe.url = URL(string: "https://" + other.context.namespace + ".invalid/functions/v1/plants-api/commands")
+            probe.setValue(other.context.namespace, forHTTPHeaderField: "X-Catalogue-Fixture-Namespace")
+            probe.httpBody = try JSONEncoder().encode(command.envelope)
+            let (_, response) = try await other.context.http.data(for: probe)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 403)
+            XCTAssertTrue(other.context.server.snapshot.commits.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testConsentPassiveSnapshotBeforeBindingAndColdValidation() async throws {
+        guard case .fixture(let configuration) = ReminderConsentLaunch.parse([
+            "--care-reminder-fixture", "readiness", "--care-reminder-namespace", UUID().uuidString])
+        else { return XCTFail("readiness configuration") }
+        let fixture = try await ReminderConsentFixture.makeContext(configuration)
+        defer { try? fixture.cleanup() }
+        let api = try XCTUnwrap(fixture.context.connection.apiClient)
+        let lease = try await api.captureSyncContext(ownerId: fixture.notifications.ledger.owner)
+        _ = try await api.fetchCareOverview(context: lease)
+        _ = try await fixture.notifications.authorization()
+        _ = try await fixture.notifications.inventory()
+        try await fixture.notifications.requestAuthorization()
+        let before = try JSONEncoder().encode(fixture.notifications.ledger)
+        let requests = fixture.context.server.requests.count
+        try fixture.snapshotEvidence()
+        let marker = try XCTUnwrap(fixture.notifications.ledger.markers?.last)
+        XCTAssertEqual(marker.kind, .snapshot)
+        XCTAssertEqual(marker.overviewReads, fixture.context.server.snapshot.overviewRequests)
+        XCTAssertEqual(marker.addsCount, 0)
+        XCTAssertEqual(marker.pendingCount, 0)
+        XCTAssertEqual(marker.promptCount, 1)
+        XCTAssertEqual(marker.authReads, 1)
+        XCTAssertEqual(marker.inventoryReads, 1)
+        XCTAssertNil(fixture.runtime.core.state)
+        XCTAssertEqual(fixture.context.server.requests.count, requests)
+        var original = try XCTUnwrap(JSONSerialization.jsonObject(with: before) as? [String: Any])
+        var observed = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(fixture.notifications.ledger)) as? [String: Any])
+        original.removeValue(forKey: "markers"); observed.removeValue(forKey: "markers")
+        XCTAssertEqual(NSDictionary(dictionary: observed), NSDictionary(dictionary: original))
+        fixture.context.shutdown()
+        let cold = try await ReminderConsentFixture.makeContext(configuration)
+        defer { try? cold.cleanup() }
+        XCTAssertEqual(cold.notifications.ledger.markers?.last?.kind, .snapshot)
+        let file = cold.context.directory.appendingPathComponent("reminder-os.json")
+        var corrupt = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        corrupt["markers"] = [["kind": "snapshot", "authReads": 0, "inventoryReads": 0,
+                               "overviewReads": -1, "addsCount": 0, "promptCount": 0, "pendingCount": 0]]
+        try JSONSerialization.data(withJSONObject: corrupt).write(to: file)
+        XCTAssertThrowsError(try ReminderConsentNotifications(file: file, namespace: configuration.namespace,
+            mode: .readiness, owner: cold.notifications.ledger.owner, seed: cold.notifications.ledger.seed))
+    }
+}
+#endif

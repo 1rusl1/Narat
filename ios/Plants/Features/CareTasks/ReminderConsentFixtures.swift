@@ -3,7 +3,7 @@ import Foundation
 
 enum ReminderConsentFixtureMode: String, Codable, CaseIterable {
     case eligible, oneReadLag = "one-readlag", twoReadLag = "two-readlag"
-    case denied, noSchedule = "noSchedule", failure, readiness
+    case denied, noSchedule = "noSchedule", failure, readiness, hour
 }
 
 enum ReminderConsentLaunch: Equatable {
@@ -57,10 +57,14 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         let identifiers: [String]
     }
     struct Marker: Codable {
-        enum Kind: String, Codable { case authorization, failures, retry }
+        enum Kind: String, Codable { case authorization, failures, retry, snapshot }
         let kind: Kind
         let authReads: Int
         let inventoryReads: Int
+        var overviewReads: Int? = nil
+        var addsCount: Int? = nil
+        var promptCount: Int? = nil
+        var pendingCount: Int? = nil
     }
     struct Ledger: Codable {
         let version: Int
@@ -185,6 +189,12 @@ final class ReminderConsentNotifications: CareReminderNotifications {
             guard marker.authReads >= auth, marker.authReads <= ledger.authReads,
                   marker.inventoryReads >= inventory, marker.inventoryReads <= ledger.inventoryReads
             else { throw Fault.corrupt }
+            let metadata = [marker.overviewReads, marker.addsCount, marker.promptCount, marker.pendingCount]
+            guard metadata.compactMap({ $0 }).allSatisfy({ (0...Int(Int32.max)).contains($0) }),
+                  marker.addsCount.map({ $0 <= ledger.adds.count }) ?? true,
+                  marker.promptCount.map({ $0 <= ledger.promptCount }) ?? true,
+                  marker.kind != .snapshot || metadata.allSatisfy({ $0 != nil })
+            else { throw Fault.corrupt }
             auth = marker.authReads; inventory = marker.inventoryReads
         }
     }
@@ -192,6 +202,16 @@ final class ReminderConsentNotifications: CareReminderNotifications {
     private func mark(_ kind: Marker.Kind, in next: inout Ledger) {
         let marker = Marker(kind: kind, authReads: next.authReads, inventoryReads: next.inventoryReads)
         next.markers?.append(marker)
+    }
+
+    /// Reads stored evidence only, even before Core has a consent binding.
+    func snapshot(overviewReads: Int) throws {
+        guard (0...Int(Int32.max)).contains(overviewReads) else { throw Fault.corrupt }
+        var next = ledger
+        next.markers?.append(Marker(kind: .snapshot, authReads: next.authReads,
+            inventoryReads: next.inventoryReads, overviewReads: overviewReads,
+            addsCount: next.adds.count, promptCount: next.promptCount, pendingCount: next.pending.count))
+        try save(next)
     }
 
     func markRetry() throws {
@@ -354,6 +374,13 @@ final class ReminderConsentFixture {
         try context.cleanup()
         UserDefaults(suiteName: "NaratCareReminderFixture." + context.namespace)?
             .removePersistentDomain(forName: "NaratCareReminderFixture." + context.namespace)
+    }
+
+    func snapshotEvidence() throws {
+        guard let reads = context.server.snapshot.overviewRequests else {
+            throw ReminderConsentNotifications.Fault.corrupt
+        }
+        try notifications.snapshot(overviewReads: reads)
     }
 
     func restoreSchedule() throws {

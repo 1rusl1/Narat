@@ -35,6 +35,8 @@ struct ReminderConsentFixtureControls: View {
                     Button("Release readiness") { perform { fixture.runtime.readiness.release() } }
                         .accessibilityIdentifier("care.fixture.ready")
                 }
+                Button("Snapshot fixture evidence") { perform { try fixture.snapshotEvidence() } }
+                    .accessibilityIdentifier("care.fixture.snapshot")
                 Button("Authorize fake OS") { perform { try fixture.notifications.setAuthorization(.authorized) } }
                     .accessibilityIdentifier("care.fixture.authorized")
                 Button("Clear fake failure") { perform { try fixture.notifications.setFailures(add: false, inventory: false) } }
