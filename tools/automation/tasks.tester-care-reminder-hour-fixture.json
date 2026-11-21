@@ -1,0 +1,82 @@
+{
+  "tasks": [
+    {
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "id": "tester-care-reminder-hour-fixture",
+      "description": "Prepare strict profile-hour-only eighth fixture and passive evidence; keep aligned OS status Retry cache-only.",
+      "files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture-context.md",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "SMALL next rendered-foundation only (~250-350lines). Existing files ALREADY EXIST; generate actual unified diff programmatically with difflib/equivalent, no /dev/null/guessed headers. Five writefiles only, no PBX/Core/Runtime/Engine/backend/System changes. All449 baseline assertions unchanged.",
+        "BLOCKER guard Host explicitRetry: only nil/unknown/knownInvalid/readOnly/revalidation/careDATAdenied/localreadfailed may emit bounded Root externalintent. Aligned available data+OS ND/denied/inventory/add/remove errors must ONLY Core.retry, no GET/reconcile/cancel-rearm. Preserve immutable binding/currentSDK/locale and existing positive settings/hour/care events.",
+        "Add explicit eighth hour mode; permit ONLY exact typed profile.update/idempotent replay/currentowner/header/body via existing legacy handler. Other7 modes all commandsblocked, hour care/plant/malformedblocked, no carefacts. Canonical hour shared across me/sync/overview. Existing legacy profileReminderHour behavior untouched, no new calendar/projection/schedule dates.",
+        "DEBUG passive Snapshot button samefixture/core/capturedSDK/locale, readiness outsidebinding. Optional backcompatible Marker fields real stored overviewReads/adds/prompt/pending/auth/inventory, operational counts never change merely taking snapshot. No calls authorization/inventory/Core/retry/release. Existing oldv1 cold decoding/failclosed corrupt checks preserved.",
+        "Meaningful compact tests actual fixture SDK/Store profilehour loss+exactACK+wire coherence and rejected othercommands; actual data-readPolicy and passive snapshot/cold evidence, old449 assertions unchanged. FullSwift/149/MCP/diff/highReviewQA. Named8/wholeB/System live remain next, no parent closure. Same900/routes/budgets hard50soft48/noreset."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "HOUR1",
+          "description": "FullSwift/build/welcome and meaningful strict hour/retry-policy/passive-snapshot regressions pass with old449 assertions preserved.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "HOUR2",
+          "description": "MCP/highReviewQA verify realSystem isolation, exact profile-only synthetic writes and no-network aligned OS retry.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "HOUR3",
+          "description": "149 automation checks pass; rendered8/wholeB remains next.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Care-ACK B принят; подготовлен hour/Retry fixture — 21 ноября 2026
+
+Принят/pushed c85652343b9592928b2e7291b00a7e1529c78d24: 449 Swift
+(446 XCTest +3 SwiftTesting), build/welcome 161.667с, missing0; automation149
+54.364с, MCP30.302с, diff0.040с — PASS. Review101.612с/QA128.055с PASS.
+Developer428.828+95.735с. Первый Swift FAIL176.813с сохранён: четыре новых
+fixture нарушали порядок entity_type при одинаковом updated_at; две прежние
+correction/undo проверки выявили добавленный permanent guard поверх исходного
+bound contract. Новые guards возвращены к baseline withBoundValid, исходные
+security checks сохранены; публикация UI intent остаётся permanent SDK/epoch/locale.
+Прежние445 assertions побайтно сохранены. Четыре Swift: transient exact accepted
+operation report того же ordered drain, typed care outcomes и события до optional
+history reads. Порядок/UUID/CAS/схема/очереди не менялись.
+
+Перед wholeB остаётся blocker: aligned OS-status Retry не должен делать HTTP и
+cancel/rearm. Следующий prepared manifest: точный UI guard (care-data invalidation
+отдельно от OSdenied/error), strict восьмой hour fixture только profile.update,
+пассивные matched DEBUG snapshot markers с реальными counters. Никаких Core/OS
+изменений или care facts. Далее8 rendered сценариев, включая first-task compact
+consent и in-sheet hour ACK, затем полный wholeB. Нового System/ordinary live proof
+не заявляем, родители открыты. PBX0, protected root user3 не тронуты. Hard50/soft48,
+reset запрещён, только техническая приёмка.
+
 ## Dataflow A принят; подготовлен care-ACK B — 21 ноября 2026
 
 Принят/pushed 20ec8baace2581c55a3c153da7e89e70d8eaf19d: 445 Swift
