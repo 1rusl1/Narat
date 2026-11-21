@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		618044FC0B27BD83000080CC /* ReminderConsentFixtureControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51FF1E832CDF2215F541043D /* ReminderConsentFixtureControls.swift */; };
 		6C717A874BF3D7D213342953 /* CareReminderBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F20ECF3073BF25DE8344D62 /* CareReminderBootstrap.swift */; };
+		05CAC0EF345A024163EB4195 /* CareReminderAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4B045B2D5175736C90F392 /* CareReminderAppDelegate.swift */; };
 		67D295982E6A88602A3097C4 /* ReminderConsentFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54BD046F2EF08906B462D6E7 /* ReminderConsentFixtures.swift */; };
 		7017402DBEC6B2B677216817 /* CareReminderRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7662F67BF8EDB530FDCDE /* CareReminderRuntime.swift */; };
 		6B4D7345274BAED37CC8DC00 /* ReminderConsentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1CCDF3A48C2BF9BA4DACEF /* ReminderConsentView.swift */; };
@@ -86,6 +87,7 @@
 /* Begin PBXFileReference section */
 		51FF1E832CDF2215F541043D /* ReminderConsentFixtureControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderConsentFixtureControls.swift; sourceTree = "<group>"; };
 		2F20ECF3073BF25DE8344D62 /* CareReminderBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderBootstrap.swift; sourceTree = "<group>"; };
+		3C4B045B2D5175736C90F392 /* CareReminderAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderAppDelegate.swift; sourceTree = "<group>"; };
 		54BD046F2EF08906B462D6E7 /* ReminderConsentFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderConsentFixtures.swift; sourceTree = "<group>"; };
 		90B7662F67BF8EDB530FDCDE /* CareReminderRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderRuntime.swift; sourceTree = "<group>"; };
 		3F1CCDF3A48C2BF9BA4DACEF /* ReminderConsentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderConsentView.swift; sourceTree = "<group>"; };
@@ -202,6 +204,7 @@
 			isa = PBXGroup;
 			children = (
 				2F20ECF3073BF25DE8344D62 /* CareReminderBootstrap.swift */,
+				3C4B045B2D5175736C90F392 /* CareReminderAppDelegate.swift */,
 				04236BC9DAE108A2BDCAC0D2 /* LanguageStore.swift */,
 				82F16427E05A0E1221A97B6D /* PlantsApp.swift */,
 			);
@@ -650,6 +653,7 @@
 			files = (
 				618044FC0B27BD83000080CC /* ReminderConsentFixtureControls.swift in Sources */,
 				6C717A874BF3D7D213342953 /* CareReminderBootstrap.swift in Sources */,
+				05CAC0EF345A024163EB4195 /* CareReminderAppDelegate.swift in Sources */,
 				67D295982E6A88602A3097C4 /* ReminderConsentFixtures.swift in Sources */,
 				7017402DBEC6B2B677216817 /* CareReminderRuntime.swift in Sources */,
 				6B4D7345274BAED37CC8DC00 /* ReminderConsentView.swift in Sources */,

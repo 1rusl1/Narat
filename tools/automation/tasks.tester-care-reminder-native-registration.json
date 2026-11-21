@@ -1,0 +1,64 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-native-registration",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "description": "Register strongly owned UN bridge synchronously in early UIApplication launch behind shared Debug/Release isolation, same pre-Root inbox with existing runtime; no routing yet.",
+      "files": [
+        "ios/Plants/App/CareReminderAppDelegate.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-native-registration-context.md",
+        "tools/automation/tasks.tester-care-reminder-native-registration.json",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotificationBridge.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-native-bridge.md",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "ios/Plants/App/CareReminderAppDelegate.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "# D2B early registration — no routing consumption yet\n\nBase accepted D2A eaaef440: 478Swift/149/diff/MCP/highReviewQA. D1 currentOccurrences validator accepted59bd456, WholeB1624092 all10gates. Read authoritative /private/tmp/narat-care-d2-installed-sdk-bridge-packet-20261122.md. Swift6.0 project, installed SDK26.5/Swift6.3.2; completion IS @Sendable, synchronous completion our policy. UN delegate weak; strong owner and registration BEFORE didFinish returns, not Root.task/property order assumptions.\n\nTHREE existing write files ONLY CareReminderAppDelegate.swift scaffold, PlantsApp.swift, CollectionWireTests.swift. Target <=300 production+250 test added lines. Scaffolds EXIST: generate programmatic difflib from actual lane content; no /dev/null/guessed hunk/read parent root. PBX4refs mechanically prepared/read-only. No Bridge/Bootstrap/Runtime/Core/Planner/Factory/SDK/Auth/Store/HTTP/domain/scheduling/permission/Trial/consent/UI redesign edits. No new queue/schema/clock/routes. Same models/900/hard50soft48/noreset. Read actual source before patch.\n\nOne proper @MainActor NSObject UIApplicationDelegate with one owned CareReminderNotificationInbox constructed before Root and strongly retained CareReminderNotificationBridge. One @UIApplicationDelegateAdaptor in PlantsApp. In didFinishLaunching: shared CareReminderSystemLaunchPolicy.allowsSystem(arguments:) BEFORE ANY UNUserNotificationCenter.current/acquisition or delegate install; blocked old/new/mixed/malformed catalogue/today/staging/care/result families return success without acquisition. Ordinary create/strong-retain Bridge and synchronously install it as weak center delegate before method returns. Idempotent one install. Constructor inert, no OS effects. A tiny lazy injected installer closure for unit proof is reasonable: default closure acquires center ONLY when called after guard; test closure records weak delegate without any System acquisition. Preserve real UIApplication optional-selector/compiler witness. No async launch registration, no native object crossing Task; sink captures immutable MainActor inbox and receives only typed event. No dependence on StateObject declaration ordering.\n\nPass SAME appDelegate.inbox to Root together with EXISTING selected runtime in BOTH ordinary and verified dedicated fixture branches; never second Core/runtime/inbox for UI/clock/callbacks. Root may observe but DOES NOT CONSUME/routes in this packet (D3). Early fixture delegate remains uninstalled even dedicated fake: its UI/runtime still injected. Existing Root isolatesCareReminders guard must reuse shared policy Debug AND Release. Keep FULL validated dedicated fake configuration/runtime/context/connection identity exemption FIRST, keep fixtureContext!=nil defense; then shared no-System policy. Release must failclosed for reserved flags, not current #else false. Do NOT remove late Root SDK/lease/locale/current guards. Runtime constructor inert; no OS effects in blocked launches.\n\nMeaningful tests (preserve ALL old478 source tests/assertions/helper defaults): inert constructor; actual didFinish helper/witness ordinary installs synchronously once, weak registration strong lifetime held by delegate, exactly SAME precreated inbox retains typed cold tap before any Root/SDK; blocked matrix old/new/malformed/mixed does0 installer/acquisition and0permission/add/remove; foreground distinct/no routing. Test lazy fake installer ONLY, never real center/TCC/notifications just to test. NSObject optional selector witness if practical. Source App passes same inbox+runtime references, no placeholder replaced after publication. Tests do not claim actual OS didFinish/callback scheduling.\n\nActual acceptance fullSwift/sourcecoverage/build/welcome,149,diff,MCP, ordinary Release compile (real #else branches), new8consent strictledger +oldcare13/Today6/4ENPLresult presentation affectedstartup regressions. Existing UI files and gate hashes unchanged, all under shared lease. Release compile only disables backend/Google and codesigning via same local settings, no launch/install/live. Final signed ordinary SDK/System proof remains separately required. No backend redeploy/live writes.\n\nD3 NEXT, NOT here: SDK/lease/locale immutable first-binding before await, initial unresolved HOLD vs definite logout/anonymous/wrongowner DROP, currentOccurrences+sourceDue/exact canonical active noncached card, one-shot existing CollectionPresentation, no care action. Foreground event checks current SDK owner then local Core.cachePublicationOrTimeChanged only (NOT consent.checkStatus which can HTTP). Native transport latestForeground is NOT auth. No route consumption/navigation/system delivery readiness claimed D2B. Background clearToday !=logout, Core.isCurrent independent scene. Technical only/externalphysicaldeferred/parenttasksopen.\n"
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "NR1",
+          "description": "Inert constructor and shared Debug/Release policy before acquisition; synchronous idempotent strong delegate registration, same early inbox with runtime; baseline478 plus launch/lifetime tests and actual Release compiler witness. No route/HTTP/care effects.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check",
+            "care-release-compile",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "NR2",
+          "description": "Affected old/new fixture startup paths actual8consent/13care/Today6/4result strictledgers/assertions unchanged and149automation; highReviewQA. No System delivery claim.",
+          "mode": "fixture",
+          "checks": [
+            "tester-consent-ui",
+            "tester-care-ui",
+            "tester-today-ui",
+            "tester-result-save-ui",
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-native-registration-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-native-bridge.md"
+      ]
+    }
+  ]
+}

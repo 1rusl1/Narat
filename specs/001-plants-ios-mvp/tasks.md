@@ -603,3 +603,7 @@
 - D1 `59bd456` accepted: purecurrentOccurrences/exactsourceDue/ownerplantkindsubject identity, postfire/firstaidmoveddate/unknown/drop/transport/OSdeniedregressions.471Swift/149/diff/MCP PASS, Dev237.883/Review73.993/QA78.079 semantic+protocolPASS. Old467preserved; no native/Root/SDKepoch/Systemproof. NextD2Apolicy+channel+inertcallbackcompilerwitness thenD2BregistrationRelease andD3navigation/legacy/ordinarySystem/finalsigning; parenttasksopen, hard50/noreset.
 
 - D2A prep only: properBridge scaffold+4PBXrefs/context/manifest, plutil/diff/validatePASS. ActualDeveloper2files earlycommonDebugReleasepolicy/boundedtypedInbox/inertnativecallbackSDKwitness, noCenter/AppRootregistration/effects. Preserve471baseline; fullSwift149MCP/diff/highReviewQA next. D2BstrongregistrationRelease/legacy+D3scopednav+ordinarySystem/finalsigning remain, parenttasksopen/hard50soft48/noreset.
+
+- D2A eaaef440 accepted: shared early isolation, bounded typed inbox and inert UN adapter, both optional selectors/compiler witness. 478Swift/149/diff/MCP/highReviewQA actualPASS. No center/registration/SDK navigation/System proof; D2B/D3/ordinary delivery+tap/finalsigning and parentT075/T077/T080/T098 remain open. Hard50soft48/noreset.
+
+- D2B prep only: AppDelegate scaffold/4refs +manifest/context/Release gate, no registration implementation yet. ThreefileDeveloper then fullSwift/Release/affected8+13+6+4/MCP/149/highReviewQA. Parenttasks stayopen; D3/ordinarySystem/finalsigning pending.
