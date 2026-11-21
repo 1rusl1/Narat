@@ -677,6 +677,7 @@ final class CatalogueConnection {
     func signInAndSave(
         _ original: CatalogueSaveModel, with provider: NativeAuthProvider,
         presenting: UIViewController,
+        includeManualWateringActions: Bool = false,
         completion: ((CatalogueSDKSnapshot) -> CatalogueSaveCompletion?)? = nil
     ) async -> CatalogueNativeOutcome {
         guard nativeFlow == nil else { return .busy }
@@ -751,7 +752,8 @@ final class CatalogueConnection {
             guard nativeFlow == intent, isCurrent(expected) else { return .unavailable(.sessionChanged) }
             // A cancelled caller may explicitly retry later via the guarded flow pointer.
             guard !Task.isCancelled, !original.isCancelled else { return .inputRetained(model, .cancelled) }
-            await model.save(completion: completion?(expected))
+            await model.save(completion: completion?(expected),
+                             includeManualWateringActions: includeManualWateringActions)
             guard isCurrent(expected) else { return .unavailable(.sessionChanged) }
             if Task.isCancelled || original.isCancelled { return .inputRetained(model, .cancelled) }
             return .continued(model)

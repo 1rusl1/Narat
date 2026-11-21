@@ -66,6 +66,7 @@ public struct PreliminaryResultView: View {
     private var isPolish: Bool { languageStore.currentLocale == .pl }
 
     public var body: some View {
+        let locale = languageStore.currentLocale
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if model.isAnalyzing {
@@ -83,6 +84,7 @@ public struct PreliminaryResultView: View {
                             CatalogueSaveView(
                                 connection: connection, speciesSlug: confirmed.speciesSlug,
                                 displayName: label, scientificName: "", polish: isPolish,
+                                careReminderLocaleIsCurrent: { [languageStore, locale] in languageStore.currentLocale == locale },
                                 showsSpeciesHeading: false,
                                 analysisSaveIdentity: confirmed.jobId,
                                 identification: .init(jobId: confirmed.jobId, taxonId: confirmed.taxonId),
@@ -194,6 +196,7 @@ public struct PreliminaryResultView: View {
                         CatalogueSaveView(
                             connection: connection, speciesSlug: species,
                             displayName: label, scientificName: "", polish: isPolish,
+                            careReminderLocaleIsCurrent: { [languageStore, locale] in languageStore.currentLocale == locale },
                             showsSpeciesHeading: false,
                             analysisSaveIdentity: result.jobId, diagnosisJobId: result.jobId,
                             expectedPhotoId: photo.id, openCollection: openCollection,

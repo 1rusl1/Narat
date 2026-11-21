@@ -622,6 +622,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         journalAllowsNewIntent = false
         scope = connection.snapshot
         guard let expected = scope else { working = false; return }
+        let locale = polish ? "pl" : "en"
+        let localeIsCurrent = careReminderLocaleIsCurrent
         working = true
         work = Task { @MainActor in
             defer { if revision == ticket { working = false; work = nil } }
@@ -654,7 +656,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                                 }
                             default: break
                             }
-                            await loadIfSaved(restored)
+                            await loadIfSaved(restored, completion: readCompletion(restored,
+                                expected: expected, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent))
                         } else {
                             // An undisplayed flow still owns its pointer until its journal
                             // proves that a different species can start safely.
@@ -717,6 +720,18 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             publish: {
                 connection.publishExplicitCareRead(expected: expected, locale: locale,
                     isLocaleCurrent: { active && revision == ticket && localeIsCurrent() })
+            })
+    }
+
+    private func readCompletion(
+        _ target: CatalogueSaveModel, expected: CatalogueSDKSnapshot, ticket: Int,
+        locale: String, localeIsCurrent: @escaping () -> Bool
+    ) -> CatalogueCardReadCompletion {
+        CatalogueCardReadCompletion(
+            isCurrent: { isCurrent(ticket, expected) && model === target && localeIsCurrent() },
+            publish: {
+                connection.publishExplicitCareRead(expected: expected, locale: locale,
+                    isLocaleCurrent: { isCurrent(ticket, expected) && model === target && localeIsCurrent() })
             })
     }
 
@@ -843,6 +858,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         let localeIsCurrent = careReminderLocaleIsCurrent
         working = true
         nativeInFlight = true
+        let includeManual = showsManualWateringActions(original)
         notice = nil
         work = Task { @MainActor in
             defer {
@@ -856,6 +872,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             do {
                 _ = try await connection.rememberModel(original, expected: expected)
                 let outcome = await connection.signInAndSave(original, with: provider, presenting: presenter,
+                    includeManualWateringActions: includeManual,
                     completion: { expected in
                         guard localeIsCurrent() else { return nil }
                         return completion(expected: expected, ticket: ticket, locale: locale,
@@ -864,9 +881,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 guard active, revision == ticket, !Task.isCancelled else { return }
                 switch outcome {
                 case let .continued(verified):
-                    try await adopt(verified, ticket: ticket)
+                    try await adopt(verified, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
                 case let .inputRetained(verified, reason):
-                    try await adopt(verified, ticket: ticket)
+                    try await adopt(verified, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
                     notice = reason == .cancelled ? .nativeCancelled : .authenticationFailed
                 case .busy:
                     notice = .authenticationFailed
@@ -888,7 +905,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         }
     }
 
-    private func adopt(_ verified: CatalogueSaveModel, ticket: Int) async throws {
+    private func adopt(
+        _ verified: CatalogueSaveModel, ticket: Int, locale: String, localeIsCurrent: @escaping () -> Bool
+    ) async throws {
         let expected = try await connection.sessionSnapshot()
         guard active, revision == ticket, !Task.isCancelled,
               let store = connection.store, let api = connection.apiClient else {
@@ -907,7 +926,10 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         intent = nil
         name = ""
         previousFlow = verified.checkpoint?.flowId
-        if verified.cardState == .idle { await loadIfSaved(verified) }
+        if verified.cardState == .idle {
+            await loadIfSaved(verified, completion: readCompletion(verified,
+                expected: expected, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent))
+        }
     }
 
     private func clearPrivateState() {
@@ -920,17 +942,24 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         notice = .sessionChanged
     }
 
-    private func loadIfSaved(_ model: CatalogueSaveModel) async {
-        if case .saved = model.state { await model.loadCard(includeManualWateringActions: showsManualWateringActions(model)) }
+    private func loadIfSaved(_ target: CatalogueSaveModel, completion: CatalogueCardReadCompletion? = nil) async {
+        guard case .saved = target.state else { return }
+        if let completion {
+            await target.readCard(includeManualWateringActions: showsManualWateringActions(target), completion: completion)
+        } else {
+            await target.loadCard(includeManualWateringActions: showsManualWateringActions(target))
+        }
     }
 
     private func loadDetails(_ target: CatalogueSaveModel) {
-        guard !working, scopeIsCurrent else { return }
+        guard !working, scopeIsCurrent, let expected = scope, model === target else { return }
         let ticket = revision
+        let done = readCompletion(target, expected: expected, ticket: ticket,
+            locale: polish ? "pl" : "en", localeIsCurrent: careReminderLocaleIsCurrent)
         working = true
         work = Task { @MainActor in
             defer { if revision == ticket { working = false; work = nil } }
-            await target.loadCard(includeManualWateringActions: showsManualWateringActions(target))
+            await target.readCard(includeManualWateringActions: showsManualWateringActions(target), completion: done)
         }
     }
 }

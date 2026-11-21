@@ -14680,3 +14680,140 @@ extension CollectionWireTests {
         }
     }
 }
+
+extension CollectionWireTests {
+    @MainActor
+    func testRestoredCardReadJoinsLateCanonicalTaskWithoutAnotherCommand() async throws {
+        for joinExisting in [false, true] {
+            for mode in ["success", "partialFailure", "httpFailure", "cancel", "modelCancel",
+                         "locale", "ticket", "disappear", "sdk", "aba"] {
+                let signals = ["success", "partialFailure", "httpFailure"].contains(mode)
+                let sdk = try profileSession(claims: ["sub": syncOwner.uuidString, "is_anonymous": false])
+                let flow = UUID(), operation = UUID()
+                var initial = overviewAlignmentPage()
+                let baselineWatermark = "2026-11-19T09:00:00.000005+00:00"
+                initial["until"] = baselineWatermark
+                initial["next_since"] = baselineWatermark
+                var rows = try XCTUnwrap(initial["changes"] as? [[String: Any]])
+                var plant = try XCTUnwrap(rows[0]["data"] as? [String: Any])
+                plant["plant_id"] = "fixture-fern"
+                rows[0]["data"] = plant
+                rows[0]["updated_at"] = baselineWatermark
+                initial["changes"] = rows
+                var late = initial
+                let watermark = "2026-11-19T09:00:00.000006+00:00"
+                late["until"] = watermark
+                late["next_since"] = watermark
+                rows[0]["updated_at"] = watermark
+                if mode == "partialFailure" {
+                    // Canonical publish succeeds, then catalogueCard rejects the missing species.
+                    plant.removeValue(forKey: "plant_id")
+                    rows[0]["data"] = plant
+                }
+                late["changes"] = rows
+                var receipt = try XCTUnwrap(JSONSerialization.jsonObject(
+                    with: Data(receiptJSON().utf8)) as? [String: Any])
+                receipt["watermark"] = baselineWatermark
+                var earlyPage = overviewPage([reminderRow(serverPlantId)])
+                earlyPage["verified_access_until"] = NSNull()
+                earlyPage["owner_watermark"] = receipt["watermark"]
+                var finalPage = earlyPage
+                // A rejected details GET publishes no newer canonical window.
+                finalPage["owner_watermark"] = mode == "httpFailure" ? baselineWatermark : watermark
+                let transport = CatalogueTransport([
+                    .http(200, try syncJSON(initial)), .http(200, try syncJSON(receipt)),
+                    .held(mode == "httpFailure" ? 503 : 200, try syncJSON(late)),
+                    .http(200, try syncJSON(earlyPage))
+                ] + (signals ? [.http(200, try syncJSON(finalPage))] : []))
+                let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport, seed: false)
+                defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+                let original = try await CatalogueSaveModel(store: store, apiClient: api, repository: repo,
+                    flowId: flow, operationId: operation,
+                    input: CatalogueInput(speciesSlug: "fixture-fern", personalName: nil),
+                    session: sdk, isAnonymous: false)
+                await original.save()
+                guard case let .saved(confirmation) = original.state else { return XCTFail("Create fixture ACK") }
+                let restored = await CatalogueSaveModel.restore(store: store, apiClient: api, repository: repo,
+                    ownerId: syncOwner, flowId: flow, session: sdk, isAnonymous: false)
+                guard case let .restored(target) = restored else { return XCTFail("Durable restore") }
+                XCTAssertEqual(target.state, .saved(confirmation))
+                XCTAssertEqual(target.envelope, original.envelope)
+                XCTAssertEqual(target.cardState, .idle)
+                var active = true, locale = "en", ticket = 1, completions = 0, joined = false
+                let originalTicket = ticket, originalLocale = locale
+                var finalRead: Task<CareOverviewViewState, Error>?
+                let done = CatalogueCardReadCompletion(
+                    isCurrent: { active && ticket == originalTicket && locale == originalLocale },
+                    publish: {
+                        completions += 1
+                        finalRead = Task { try await repo.refreshCareOverview(locale: .pl, context: lease) }
+                    })
+                let loading: Task<Void, Never>?
+                if joinExisting {
+                    loading = Task { await target.loadCard(includeManualWateringActions: true) }
+                    await transport.waitForHeld()
+                } else { loading = nil }
+                let reading = Task {
+                    joined = true
+                    await target.readCard(includeManualWateringActions: true, completion: done)
+                }
+                while !joined { await Task.yield() }
+                if !joinExisting { await transport.waitForHeld() }
+                // Independent early overview is eligible, but cannot finish the held card read.
+                let early = try await repo.refreshCareOverview(locale: .pl, context: lease)
+                XCTAssertEqual(early.origin, .network)
+                XCTAssertNil(early.failure)
+                XCTAssertEqual(early.availability, .available)
+                XCTAssertFalse(reminderPlan(early).candidates.isEmpty)
+                XCTAssertEqual(completions, 0)
+                XCTAssertNil(finalRead)
+                let before = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+                switch mode {
+                case "cancel": reading.cancel()
+                case "modelCancel": target.cancel()
+                case "locale": locale = "pl"
+                case "ticket": ticket += 1
+                case "disappear": active = false
+                case "sdk": await api.bindSyncSession(sdk)
+                case "aba":
+                    await api.bindSyncSession(try profileSession(ownerId: otherSyncOwner))
+                    await api.bindSyncSession(sdk)
+                default: break
+                }
+                await transport.releaseHeld()
+                if let loading { await loading.value }
+                await reading.value
+                XCTAssertEqual(completions, signals ? 1 : 0, mode)
+                if signals {
+                    let finalTask = try XCTUnwrap(finalRead)
+                    let fresh = try await finalTask.value
+                    XCTAssertEqual(fresh.origin, .network)
+                    XCTAssertNil(fresh.failure)
+                    XCTAssertEqual(fresh.availability, .available)
+                    let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+                    XCTAssertEqual(local.canonicalGeneration, local.snapshotGeneration)
+                    XCTAssertTrue(local.cached?.canonicalGenerationMatches == true)
+                    XCTAssertNil(local.knownInvalidation)
+                    if mode != "httpFailure" {
+                        XCTAssertNotEqual(before.canonicalGeneration, local.canonicalGeneration)
+                    }
+                    let cached = try await repo.cachedCareOverview(context: lease)
+                    XCTAssertEqual(cached.availability, .available)
+                    XCTAssertEqual(reminderPlan(cached).candidates, reminderPlan(fresh).candidates)
+                    XCTAssertFalse(reminderPlan(cached).candidates.isEmpty)
+                    XCTAssertEqual(target.state, .saved(confirmation))
+                    if mode == "success" {
+                        guard case .loaded = target.cardState else { return XCTFail("Settled card") }
+                        XCTAssertEqual(target.manualWateringState, .ready)
+                    } else { XCTAssertEqual(target.cardState, .unavailable) }
+                } else { XCTAssertNil(finalRead) }
+                let requests = await transport.capturedRequests()
+                XCTAssertEqual(requests.map { $0.url?.lastPathComponent },
+                    ["sync", "commands", "sync", "care-overview"] + (signals ? ["care-overview"] : []))
+                XCTAssertEqual(requests.filter { $0.httpMethod == "POST" }.count, 1)
+                let persisted = try await store.catalogueCreateConfirmation(ownerId: syncOwner, operationId: operation)
+                XCTAssertEqual(persisted, confirmation)
+            }
+        }
+    }
+}

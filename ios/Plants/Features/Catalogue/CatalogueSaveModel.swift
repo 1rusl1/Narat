@@ -60,6 +60,13 @@ struct CatalogueSaveCompletion {
     let publish: () -> Void
 }
 
+/// Completion of an explicit card read, independent of command acceptance.
+@MainActor
+struct CatalogueCardReadCompletion {
+    let isCurrent: () -> Bool
+    let publish: () -> Void
+}
+
 /// One immutable SDK snapshot, flow, operation and original bound lease.
 /// A replacement SDK session requires a new model, even for the same owner/token.
 @MainActor
@@ -412,6 +419,16 @@ final class CatalogueSaveModel {
     private func settleCard(includeManualWateringActions: Bool) async {
         if let detailsTask { await detailsTask.value }
         else { await loadCard(includeManualWateringActions: includeManualWateringActions) }
+    }
+
+    /// Join the actual details task through all optional reads, including same-scope failure.
+    /// A busy raw loadCard return or a published .loaded value is not completion.
+    func readCard(includeManualWateringActions: Bool = false, completion: CatalogueCardReadCompletion) async {
+        guard !Task.isCancelled, !cancelled, case .saved = state else { return }
+        await settleCard(includeManualWateringActions: includeManualWateringActions)
+        guard !Task.isCancelled, !cancelled, completion.isCurrent(),
+              (try? apiClient.syncAuthority.withPermanentBoundValid(context, {})) != nil else { return }
+        completion.publish()
     }
 
     /// Explicit initial read or retry. Details failure never rewrites durable save truth.

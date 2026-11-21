@@ -1384,6 +1384,66 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
+    func testNativeFirstSettlementIncludesManualPolicyAndDoesNotReloadSavedModel() async throws {
+        for pending in [false, true] {
+            let h = try Harness()
+            defer { h.close() }
+            let flow = UUID(), operation = UUID()
+            let original = try await guestModel(h, flow: flow, operation: operation)
+            let claims = try json(["sub": other.uuidString, "is_anonymous": false])
+            let payload = claims.base64EncodedString().replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+            try auth(h, owner: other, token: "eyJhbGciOiJIUzI1NiJ9.\(payload).fixture-signature")
+            try plants(h)
+            let plant = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+            let time = "2026-11-04T09:00:00.123456+00:00"
+            h.fixture.append(.init(method: "GET", path: "/functions/v1/plants-api/sync",
+                data: try json([
+                    "until": time, "next_since": time, "has_more": false, "last_cursor": NSNull(),
+                    "entitlement": NSNull(),
+                    "profile": ["preferred_locale": "pl", "reminder_hour_local": 9,
+                                "report_notifications_enabled": true, "trial_reminder_enabled": false],
+                    "changes": [["entity_type": "plants", "id": plant.uuidString, "updated_at": time,
+                        "deleted_at": NSNull(), "data": ["id": plant.uuidString, "plant_id": "fixture-fern",
+                                                         "revision": 1, "care_revision": 1]]]
+                ]), suspend: true, query: "limit=200"))
+            var completions = 0
+            let signing = Task { await h.connection.signInAndSave(original, with: .apple, presenting: UIViewController(),
+                includeManualWateringActions: true, completion: { _ in
+                    CatalogueSaveCompletion(isCurrent: { true }, publish: { completions += 1 })
+                }) }
+            try await waitForSuspension(h.fixture)
+            XCTAssertEqual(completions, 0)
+            if pending {
+                let api = try XCTUnwrap(h.connection.apiClient)
+                let sdk = try await h.connection.sessionSnapshot()
+                let lease = try await api.captureSyncContext(ownerId: sdk.session.userId)
+                let queued = try ManualWateringAction.record.envelope(plantId: plant)
+                try await h.store.enqueueManualWatering(queued, context: lease, authority: api.syncAuthority)
+            }
+            h.fixture.release()
+            let result = await signing.value
+            let permanent = try continued(result)
+            // Outcome precedes SwiftUI adoption: its .loaded skip must preserve this ready phase.
+            guard case .loaded = permanent.cardState else { return XCTFail("First settlement required") }
+            XCTAssertEqual(permanent.manualWateringState, pending ? .pending : .ready)
+            XCTAssertEqual(completions, 1)
+            XCTAssertEqual(permanent.envelope?.operationId, operation)
+            XCTAssertEqual(permanent.checkpoint?.flowId, flow)
+            let source = try XCTUnwrap(try diskInput(h, owner: owner, flow: flow))
+            XCTAssertEqual(permanent.envelope?.payloadJSON, source.envelope.payloadJSON)
+            await permanent.save(completion: CatalogueSaveCompletion(
+                isCurrent: { true }, publish: { completions += 1 }), includeManualWateringActions: true)
+            XCTAssertEqual(permanent.manualWateringState, pending ? .pending : .ready)
+            XCTAssertEqual(completions, 1)
+            let requests = h.fixture.captured.filter { $0.url?.path.contains("/plants-api/") == true }
+            XCTAssertEqual(requests.map { $0.url?.lastPathComponent }, ["sync", "commands", "sync"])
+            XCTAssertEqual(requests.filter { $0.httpMethod == "POST" }.count, 1)
+            assertRedacted(original)
+            assertClosed(h)
+        }
+    }
+
     func testNativeSameUUIDStillReplacesGuestModelAndSDKGeneration() async throws {
         let h = try Harness()
         defer { h.close() }
