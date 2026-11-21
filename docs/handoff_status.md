@@ -5669,9 +5669,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-reminder-fixture-foundation: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — developer 2, reviewer 1, qa 1. Модели — 1189.23 с, проверки — 240.75 с. Повторы моделей — 1, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-reminder-fixture-foundation](validation/automation/tasks/tester-care-reminder-fixture-foundation.md).
+tester-care-reminder-bootstrap: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 3, reviewer 1, qa 1. Модели — 873.66 с, проверки — 988.85 с. Повторы моделей — 2, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-reminder-bootstrap](validation/automation/tasks/tester-care-reminder-bootstrap.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 

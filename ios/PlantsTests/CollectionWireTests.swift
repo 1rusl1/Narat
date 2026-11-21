@@ -13627,3 +13627,163 @@ extension CollectionWireTests {
     }
 }
 #endif
+
+#if DEBUG
+extension CollectionWireTests {
+    @MainActor
+    func testReminderBootstrapStrictSelectionConstructsOnlyOrdinaryRuntime() async throws {
+        let suite = "BootstrapSelection." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let inert = CareReminderRuntime(core: .init(
+            notifications: FakeCareReminderNotifications(), defaults: defaults,
+            clock: { Date() }, timeZone: { TimeZone(secondsFromGMT: 0)! }))
+        var productionCalls = 0
+        var fixtureCalls = 0
+        let namespace = UUID().uuidString
+        let valid = ["--care-reminder-fixture", "eligible", "--care-reminder-namespace", namespace]
+        let production: @MainActor () -> CareReminderRuntime = {
+            productionCalls += 1
+            return inert
+        }
+        let fixture: @MainActor (ReminderConsentLaunch.Configuration) async throws -> ReminderConsentFixture = { _ in
+            fixtureCalls += 1
+            throw CancellationError()
+        }
+        for arguments in [
+            ["app"], ["app", "--today-fixture", "todayFuture"],
+            ["app", "--catalogue-fixture", "collection"],
+            ["app", "--narat-staging-analysis"]
+        ] {
+            let bootstrap = CareReminderBootstrap(arguments: arguments,
+                productionFactory: production, fixtureFactory: fixture)
+            guard case .ordinary(let runtime) = bootstrap.startup else {
+                return XCTFail("Ordinary and legacy launches retain the ordinary runtime")
+            }
+            XCTAssertTrue(runtime === inert)
+            await bootstrap.prepare()
+        }
+        XCTAssertEqual(productionCalls, 4)
+        productionCalls = 0
+        for arguments in [
+            ["--care-reminder-unknown"], Array(valid.dropLast()),
+            valid + ["--care-reminder-unknown"], valid + ["--today-fixture", "todayFuture"],
+            valid + ["--catalogue-namespace", namespace], valid + ["--narat-staging-analysis"],
+            valid + ["--care-reminder-fixture", "eligible"],
+            ["--care-reminder-fixture", "unknown", "--care-reminder-namespace", namespace],
+            ["--care-reminder-fixture", "eligible", "--care-reminder-namespace", "invalid"]
+        ] {
+            let bootstrap = CareReminderBootstrap(arguments: arguments,
+                productionFactory: production, fixtureFactory: fixture)
+            guard case .failed = bootstrap.startup else { return XCTFail(arguments.description) }
+            await bootstrap.prepare()
+        }
+        for mode in ReminderConsentFixtureMode.allCases {
+            let bootstrap = CareReminderBootstrap(arguments: [
+                "--care-reminder-fixture", mode.rawValue, "--care-reminder-namespace", namespace],
+                productionFactory: production, fixtureFactory: fixture)
+            guard case .loading = bootstrap.startup else { return XCTFail(mode.rawValue) }
+        }
+        XCTAssertEqual(productionCalls, 0)
+        XCTAssertEqual(fixtureCalls, 0)
+        XCTAssertNil(inert.core.state)
+    }
+
+    @MainActor
+    func testReminderBootstrapPublishesOneExactSDKRuntimePairAndReleasesOnlyNormalModes() async throws {
+        for mode in [ReminderConsentFixtureMode.eligible, .readiness, .noSchedule] {
+            var calls = 0
+            var made: ReminderConsentFixture?
+            let bootstrap = CareReminderBootstrap(arguments: [
+                "--care-reminder-fixture", mode.rawValue,
+                "--care-reminder-namespace", UUID().uuidString],
+                productionFactory: { fatalError("Dedicated launch must never construct System") },
+                fixtureFactory: { configuration in
+                    calls += 1
+                    let fixture = try await ReminderConsentFixture.makeContext(configuration)
+                    made = fixture
+                    return fixture
+                })
+            guard case .loading = bootstrap.startup else { return XCTFail("Must await SDK bootstrap") }
+            XCTAssertEqual(calls, 0)
+            await bootstrap.prepare()
+            let fixture = try XCTUnwrap(made)
+            defer { try? fixture.cleanup() }
+            guard case .fixture(let published) = bootstrap.startup else { return XCTFail("Pair missing") }
+            XCTAssertTrue(published === fixture)
+            XCTAssertTrue(published.runtime === fixture.runtime)
+            XCTAssertTrue(published.runtime.core === fixture.runtime.core)
+            XCTAssertTrue(published.matches(context: fixture.context, connection: fixture.context.connection))
+            let root = RootContainerView(languageStore: LanguageStore(), analysisModel: AnalysisFlowModel(),
+                careReminderRuntime: published.runtime, preloadedReminderFixture: published)
+            XCTAssertTrue(root.careReminderRuntime === fixture.runtime)
+            XCTAssertTrue(root.preloadedReminderFixture === fixture)
+            XCTAssertNil(fixture.runtime.core.state)
+            XCTAssertEqual(fixture.notifications.ledger.promptCount, 0)
+            XCTAssertTrue(fixture.notifications.ledger.adds.isEmpty)
+            XCTAssertEqual(fixture.context.server.snapshot.reminderCommandRequests, 0)
+            if mode == .readiness {
+                let release = Task { @MainActor in
+                    XCTAssertEqual(fixture.runtime.readiness.waitingCount, 1)
+                    fixture.runtime.readiness.release()
+                }
+                try await fixture.runtime.readiness.wait()
+                await release.value
+            } else {
+                try await fixture.runtime.readiness.wait()
+                XCTAssertEqual(fixture.runtime.readiness.waitingCount, 0)
+            }
+            await bootstrap.prepare()
+            XCTAssertEqual(calls, 1)
+            XCTAssertEqual(fixture.context.server.snapshot.reminderCommandRequests, 0)
+        }
+    }
+
+    @MainActor
+    func testReminderBootstrapCancelledLateFactoryShutsDownWithoutPublishingOrErasingColdState() async throws {
+        let arguments = ["--care-reminder-fixture", "eligible",
+                         "--care-reminder-namespace", UUID().uuidString]
+        guard case .fixture(let configuration) = ReminderConsentLaunch.parse(arguments)
+        else { return XCTFail("Configuration") }
+        let fixture = try await ReminderConsentFixture.makeContext(configuration)
+        defer { try? fixture.cleanup() }
+        let entered = CareReminderReadiness(held: true)
+        var continuation: CheckedContinuation<ReminderConsentFixture, Never>?
+        var calls = 0
+        let bootstrap = CareReminderBootstrap(arguments: arguments,
+            productionFactory: { fatalError("Cancelled fixture must never construct System") },
+            fixtureFactory: { _ in
+                calls += 1
+                return await withCheckedContinuation {
+                    continuation = $0
+                    entered.release()
+                }
+            })
+        let task = Task { @MainActor in await bootstrap.prepare() }
+        try await entered.wait()
+        guard case .loading = bootstrap.startup else { return XCTFail("No premature publication") }
+        task.cancel()
+        let pending = try XCTUnwrap(continuation)
+        pending.resume(returning: fixture)
+        await task.value
+        guard case .failed = bootstrap.startup else { return XCTFail("Late pair was published") }
+        XCTAssertNil(fixture.context.connection)
+        XCTAssertNil(fixture.runtime.core.state)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: fixture.context.directory.appendingPathComponent("server-ledger.json").path))
+        await bootstrap.prepare()
+        XCTAssertEqual(calls, 1)
+        let cold = try await ReminderConsentFixture.makeContext(configuration)
+        defer { try? cold.cleanup() }
+        XCTAssertTrue(cold.matches(context: cold.context, connection: cold.context.connection))
+        XCTAssertEqual(cold.notifications.now, fixture.notifications.now)
+        XCTAssertEqual(cold.context.server.snapshot.reminderCommandRequests, 0)
+
+        let failure = CareReminderBootstrap(arguments: arguments,
+            productionFactory: { fatalError("Failure must never construct System") },
+            fixtureFactory: { _ in throw CancellationError() })
+        await failure.prepare()
+        guard case .failed = failure.startup else { return XCTFail("Failed factory must fail closed") }
+    }
+}
+#endif

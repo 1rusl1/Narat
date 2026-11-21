@@ -8,13 +8,28 @@ import UIKit
 struct PlantsApp: App {
     @State private var languageStore = LanguageStore()
     @State private var analysisModel = AnalysisFlowModel()
+    @StateObject private var reminderBootstrap = CareReminderBootstrap()
 
     var body: some Scene {
         WindowGroup {
-            RootContainerView(
-                languageStore: languageStore,
-                analysisModel: analysisModel
-            )
+            Group {
+                switch reminderBootstrap.startup {
+                case .loading:
+                    ProgressView()
+                case .failed:
+                    Text("Unable to start.")
+                case .ordinary(let runtime):
+                    RootContainerView(languageStore: languageStore,
+                                      analysisModel: analysisModel, careReminderRuntime: runtime)
+#if DEBUG
+                case .fixture(let fixture):
+                    RootContainerView(languageStore: languageStore,
+                                      analysisModel: analysisModel, careReminderRuntime: fixture.runtime,
+                                      preloadedReminderFixture: fixture)
+#endif
+                }
+            }
+            .task { await reminderBootstrap.prepare() }
             .environment(\.locale, languageStore.currentLocale.locale)
             .onOpenURL { url in
                 _ = NativeIdentityProvider.handleCallbackURL(url)
@@ -100,10 +115,8 @@ struct RootContainerView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var catalogue: CatalogueConnection?
-    @StateObject private var careReminder = CareReminderLifecycle(
-        notifications: SystemCareReminderNotifications(), defaults: .standard,
-        clock: { Date() }, timeZone: { TimeZone.current }
-    )
+    @ObservedObject var careReminderRuntime: CareReminderRuntime
+    private var careReminder: CareReminderLifecycle { careReminderRuntime.core }
     @State private var careReminderContext: CareReminderLifecycle.Context?
     @State private var careReminderClockRevision: UInt64 = 0
     private struct CareReminderRead: Equatable {
@@ -167,6 +180,7 @@ struct RootContainerView: View {
     @State private var stagingSpecies: PublishedSpeciesCard?
 #endif
 #if DEBUG
+    var preloadedReminderFixture: ReminderConsentFixture? = nil
     @State private var fixtureContext: CatalogueUIFixtureContext?
 #endif
 
@@ -184,7 +198,12 @@ struct RootContainerView: View {
 
     private var isolatesCareReminders: Bool {
 #if DEBUG
-        fixtureContext != nil || ProcessInfo.processInfo.arguments.contains {
+        if let fixture = preloadedReminderFixture,
+           case .fixture(let configuration) = ReminderConsentLaunch.parse(ProcessInfo.processInfo.arguments),
+           configuration == fixture.configuration, fixture.runtime === careReminderRuntime,
+           let fixtureContext, let catalogue,
+           fixture.matches(context: fixtureContext, connection: catalogue) { return false }
+        return fixtureContext != nil || ProcessInfo.processInfo.arguments.contains {
             $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
                 || $0.hasPrefix("--today-fixture") || $0.hasPrefix("--narat-staging-")
                 || $0.hasPrefix("--care-reminder")
@@ -572,6 +591,11 @@ struct RootContainerView: View {
                 guard careReminderRead == read else { return }
                 let lease = try await connection.collectionLease(expected: expected)
                 guard !Task.isCancelled, !isolatesCareReminders, careReminderRead == read else { return }
+                try await careReminderRuntime.readiness.wait()
+                guard !Task.isCancelled, !isolatesCareReminders, careReminderRead == read,
+                      catalogue === connection,
+                      connection.authClassification == .permanent(expected),
+                      language.currentLocale == read.locale else { return }
                 try authority.withPermanentBoundValid(lease) {}
                 let context = CareReminderLifecycle.Context(
                     lease: lease, store: store, authority: authority, engine: engine,
@@ -983,7 +1007,20 @@ struct RootContainerView: View {
         guard !starting else { return }
         starting = true
 #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--care-reminder") }) { startupFailed = true; return }
+        if let fixture = preloadedReminderFixture {
+            guard case .fixture(let configuration) = ReminderConsentLaunch.parse(ProcessInfo.processInfo.arguments),
+                  configuration == fixture.configuration, fixture.runtime === careReminderRuntime,
+                  let connection = fixture.context.connection,
+                  fixture.matches(context: fixture.context, connection: connection) else {
+                startupFailed = true
+                return
+            }
+            fixtureContext = fixture.context
+            catalogue = connection
+        } else if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--care-reminder") }) {
+            startupFailed = true
+            return
+        }
 #endif
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
         if ProcessInfo.processInfo.arguments.contains("--narat-staging-analysis") {
@@ -999,7 +1036,9 @@ struct RootContainerView: View {
             $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
                 || $0.hasPrefix("--today-fixture")
         }
-        if !fixtureFlags.isEmpty {
+        if preloadedReminderFixture != nil {
+            // The validated bootstrap already owns this exact SDK and runtime pair.
+        } else if !fixtureFlags.isEmpty {
             func value(_ flag: String) -> String? {
                 let positions = arguments.indices.filter { arguments[$0] == flag }
                 guard positions.count == 1, let index = positions.first,
