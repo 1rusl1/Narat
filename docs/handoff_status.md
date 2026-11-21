@@ -1,5 +1,23 @@
 # Narat — текущий статус и передача работы
 
+## B1 foundation принят; подготовлен B2a strict bootstrap — 21 ноября 2026
+
+Принят/pushed6637c513c17acef93d74c9a5671f030e743f863f:436Swift(433XCTest+3)/
+build/welcome165.383с,14949.798с,diff0.048с,MCP25.518с,Review109.220с/
+QA98.499с PASS. Dev696.293+285.215с; mechanicalapplyFAIL сохранён, timeout0.
+ПятьSwift+565/-8: unusedruntime/publisher/readiness, DEBUGfake+namespaceledger,
+optionalserverread-onlyguard, пятьUnitгрупп; Rootтолько4строкиprefixblock.
+Прежний431Unitprefixпобайтносохранён. Этоfake/local, неactualSystem/newUI.
+
+Подготовлены App/CareReminderBootstrap.swift scaffold+4refs иB2amanifest/context.
+Следующий шаг: Developer→полныеSwift/149/MCP/legacycare/Today/PL→ReviewQA.
+СтрогийparseдоSystem, одинobservedRuntimeдоRootpublication, matchedpreloaded
+fixturecontext, originalscopecheckпослеcancel-awarereadiness; новыеrendered
+controls/testsещёB2b. Никакойфальшивойготовности, parentcheckboxopen.
+Lastactual5/95,hard50/soft48/noreset. Rootuser3не тронуты; новые4refsродителю
+сообщитьдоFF, затем продолжатьбезподтверждения. Backend/покупки/рекомендации/
+delegate/routes/реальныеcarewritesвэтомэтапеотсутствуют.
+
 ## Подготовлен B1: пока не подключённые runtime/fake-компоненты — 21 ноября 2026
 
 Parent80eaa98 FF принят, source равен принятому A7bdf4c. Созданы только два

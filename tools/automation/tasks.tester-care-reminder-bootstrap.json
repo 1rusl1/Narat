@@ -1,0 +1,73 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-bootstrap",
+      "description": "Strict startup before System construction; inject one observed runtime into Root and revalidate original scope after readiness. New rendered fixture controls/tests follow in B2b.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-fixture-foundation.md"
+      ],
+      "write_files": [
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Readbootstrapcontext first. SMALL B2a onlynewbootstrapfile+RootDI+2-3compactUnitgroups. ExistingRuntime/Fake/Core/Host/Planner/Scheduler/receipt/profilehour/Trial codefixed; no newcontrols/UITests/delegate/routes/backend/carecommands/SDKobserver. Controllerpreppednewfile+4refs, no DeveloperPBX/extra file edits. Old436prefix/assertionsunchanged.",
+        "FullstrictDEBUGparse BEFORE productionruntime/Systemconstruction. Invalid/mixed/unknownnewflags failclosed, neverordinary/stagingfallback; dedicatedmakeContextexplicitasync only, createsexactoneFakeCore/runtime BEFORERootpublication. Ordinary createsonlyoneSystemruntimeinertconstructor. Useonepublishedpairedstartupcase, neverseparatebool/target. Cancel/lateasync cannotpublish wrongpair. Factoriesmay beinjectedonlyDEBUGUnitforcountproof, no network/provider outsidevalidated.invalidnamespace.",
+        "Root REQUIRED injected@ObservedObjectRuntime withcomputedcore; removeold@StateObjectSystemCorecompletely. SameoneCoreforUI/auth/cache/clock/scene, no fakeUIalongsideSystemcallbacks. Validpreloadedfixturecontext reusedinprepareCatalogue, no duplicateSDKmake. RefinepartialdefaultblockONLYwhenstrictconfiguration+contextnamespace/scenario/connectionpairmatches. ALLlegacycatalogue/Today/stagingisolation unchanged/nilSystemcareUI. NoFakeinRelease.",
+        "Awaitruntime.readiness.wait BEFOREcareReminderContextpublication/Core.accept, recheckoriginalCareReminderRead/task/SDKlease/localeafterawait. Ordinaryimmediate, normaldedicatedreleasebeforeRootpublication, readinessmodeheldforB2bUI. No onAppearCore retry/prompt or newHTTP/syncloop. Preserve background/unresolvedHOLD/definitelogout and Context.isCurrentindependentToday/scene. AllnewUIactions keepimmutableConsentBinding.",
+        "MeaningfulUnitstrictbranchSystemfactory0/new/invalid, exactsameFakeRuntime/Core/pairbeforepublication/cancellationlatecontextnoPublish/shutdown, actualfixtureSDKreadOnly/coldnamespacewhereuseful. Appendonlyold436unchanged. FullSwift/build/welcome/149/MCP/PL/care13ledger/Today6+8readonly/diff/highReviewQA. B2a notrenderedconsentreadiness; B2bnewcases+wholeB latermandatory. Technicalonly,parentcheckboxopen,noreset,hard50soft48,sameroutes900/budgets."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "BOOT1",
+          "description": "Full Swift and meaningful strictbranch/singlepairedruntime/cancellation regressions preserveold436 and compile/welcome.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "BOOT2",
+          "description": "MCP confirms ordinary/legacy startup isolation and highReviewQA checks full Root callback DI.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "BOOT3",
+          "description": "Old care13ledger/Today6readonly/PL/149 regressions pass unchanged after bootstrap changes.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui",
+            "tester-today-ui",
+            "tester-care-pl-ui",
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-fixture-foundation.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-whole.md"
+      ]
+    }
+  ]
+}
