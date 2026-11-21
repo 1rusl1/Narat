@@ -11398,7 +11398,7 @@ extension CollectionWireTests {
                 for row in overview.plants {
                     let card = try await api.fetchCareRecommendation(plantId: row.plantId, context: lease)
                     XCTAssertEqual(card, try row.careRecommendation.validated(for: row.plantId))
-                    if row.plantId == first { XCTAssertEqual(card.nextCheck?.dueOn, day) }
+                    if row.plantId == first { XCTAssertEqual(card?.nextCheck?.dueOn, day) }
                 }
                 XCTAssertEqual(h.server.snapshot.todayAnchorDay, seed.todayAnchorDay)
                 XCTAssertEqual(h.server.snapshot.todayClockSeed, seed.todayClockSeed)
