@@ -14904,3 +14904,137 @@ extension CollectionWireTests {
         }
     }
 }
+
+
+extension CollectionWireTests {
+    private func routingPayload(_ candidate: CareReminderPlan.Candidate) throws -> CareReminderNotificationRoute {
+        let request = try CareReminderNotificationFactory.request(
+            .init(candidate: candidate, attemptId: UUID()),
+            now: SQLTimestamp.date(from: "2026-11-20T00:00:00Z")!)
+        return try XCTUnwrap(CareReminderNotificationFactory.parse(
+            identifier: request.identifier, userInfo: request.content.userInfo))
+    }
+
+    private func routingDecision(
+        _ route: CareReminderNotificationRoute, _ state: CareOverviewViewState?,
+        owner: UUID? = nil, locale: String = "pl"
+    ) -> CareReminderRouting.Decision {
+        CareReminderRouting.decide(route, expectedOwnerId: owner ?? syncOwner,
+            locale: locale, state: state, now: SQLTimestamp.date(from: "2026-11-27T12:00:00Z")!,
+            timeZone: TimeZone(secondsFromGMT: 0)!)
+    }
+
+    @MainActor
+    func testRoutingPostFireUsesCurrentOccurrenceDespiteOptoutAndOSDenial() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rows = [reminderRow(serverPlantId)]
+        let state = try reminderState(local, rows: rows)
+        let candidate = try XCTUnwrap(reminderPlan(state).candidates.first)
+        let route = try routingPayload(candidate)
+        let postFire = reminderPlan(state, optedIn: false, authorization: .denied,
+                                    now: "2026-11-27T12:00:00Z")
+        XCTAssertTrue(postFire.candidates.isEmpty)
+        XCTAssertTrue(postFire.requests.isEmpty)
+        XCTAssertEqual(postFire.currentOccurrences.map(\.id), [candidate.id])
+        XCTAssertEqual(routingDecision(route, state), .open(plantId: serverPlantId))
+        let changedHour = try reminderState(local, rows: rows, hour: 23)
+        XCTAssertNotEqual(reminderPlan(changedHour).currentOccurrences.first, candidate)
+        XCTAssertEqual(routingDecision(route, changedHour), .open(plantId: serverPlantId))
+        let english = try reminderState(local, rows: rows, mode: "english")
+        XCTAssertEqual(routingDecision(route, english, locale: "en"), .open(plantId: serverPlantId))
+        XCTAssertEqual(routingDecision(route, english), .hold)
+        let offline = try reminderState(local, rows: rows, mode: "offline")
+        XCTAssertEqual(offline.failure, .transport)
+        XCTAssertEqual(routingDecision(route, offline), .open(plantId: serverPlantId))
+    }
+
+    @MainActor
+    func testRoutingFirstAidMovedDayDropsEvenWithStableID() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let original = try reminderState(local, rows: [
+            reminderRow(serverPlantId, controls: [reminderControl(1)])])
+        let candidate = try XCTUnwrap(reminderPlan(original).candidates.first {
+            if case .firstAid = $0.occurrence { return true }; return false
+        })
+        let route = try routingPayload(candidate)
+        XCTAssertEqual(routingDecision(route, original), .open(plantId: serverPlantId))
+        let moved = try reminderState(local, rows: [
+            reminderRow(serverPlantId, controls: [reminderControl(1, due: "2026-11-26")])])
+        let current = try XCTUnwrap(reminderPlan(moved).currentOccurrences.first { $0.id == candidate.id })
+        XCTAssertEqual(current.sourceDueYMD, "2026-11-26")
+        XCTAssertEqual(routingDecision(route, moved), .drop)
+        XCTAssertEqual(routingDecision(try routingPayload(current), moved), .open(plantId: serverPlantId))
+    }
+
+    @MainActor
+    func testRoutingRequiresEveryIdentityFieldAndIndependentOwner() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)])
+        let c = try XCTUnwrap(reminderPlan(state).candidates.first)
+        let route = try routingPayload(c)
+        XCTAssertEqual(routingDecision(route, nil, owner: otherSyncOwner), .drop)
+        XCTAssertEqual(routingDecision(route, state, owner: otherSyncOwner), .drop)
+        // Typed corruption also protects callers constructing routes directly.
+        let wrong: [CareReminderPlan.Candidate] = [
+            .init(id: c.id + "/extra", ownerId: c.ownerId, plantId: c.plantId,
+                  occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD,
+                  absoluteFireDate: c.absoluteFireDate, locale: c.locale),
+            .init(id: c.id, ownerId: otherSyncOwner, plantId: c.plantId,
+                  occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD,
+                  absoluteFireDate: c.absoluteFireDate, locale: c.locale),
+            .init(id: c.id, ownerId: c.ownerId, plantId: otherSyncOwner,
+                  occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD,
+                  absoluteFireDate: c.absoluteFireDate, locale: c.locale),
+            .init(id: c.id, ownerId: c.ownerId, plantId: c.plantId,
+                  occurrence: .routine(ruleId: otherSyncOwner), sourceDueYMD: c.sourceDueYMD,
+                  absoluteFireDate: c.absoluteFireDate, locale: c.locale),
+            .init(id: c.id, ownerId: c.ownerId, plantId: c.plantId,
+                  occurrence: .firstAid(controlId: operationId), sourceDueYMD: c.sourceDueYMD,
+                  absoluteFireDate: c.absoluteFireDate, locale: c.locale),
+            .init(id: c.id, ownerId: c.ownerId, plantId: c.plantId,
+                  occurrence: c.occurrence, sourceDueYMD: "2026-11-25",
+                  absoluteFireDate: c.absoluteFireDate, locale: c.locale)
+        ]
+        for candidate in wrong {
+            XCTAssertEqual(routingDecision(.init(candidate: candidate, attemptId: UUID()), state), .drop)
+        }
+        let foreign = try routingPayload(.init(
+            id: CareReminderPlan.identity(ownerId: otherSyncOwner, plantId: c.plantId,
+                occurrence: c.occurrence, sourceDueYMD: c.sourceDueYMD),
+            ownerId: otherSyncOwner, plantId: c.plantId, occurrence: c.occurrence,
+            sourceDueYMD: c.sourceDueYMD, absoluteFireDate: c.absoluteFireDate, locale: c.locale))
+        XCTAssertEqual(routingDecision(foreign, state, owner: otherSyncOwner), .hold)
+    }
+
+    @MainActor
+    func testRoutingUnavailableHoldsAndKnownDenialsOrAbsentTasksDrop() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rows = [reminderRow(serverPlantId)]
+        let state = try reminderState(local, rows: rows)
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        XCTAssertEqual(routingDecision(route, nil), .hold)
+        for mode in ["absent", "unknown", "readOnly", "generation", "nilGeneration",
+                     "invalidated", "revalidate", "english", "profile.update", "nilHour", "deleted"] {
+            XCTAssertEqual(routingDecision(route, try reminderState(local, rows: rows, mode: mode)), .hold, mode)
+        }
+        XCTAssertEqual(routingDecision(route, state, locale: "de"), .hold)
+        XCTAssertEqual(routingDecision(route, try reminderState(local, rows: rows, mode: "denied")), .drop)
+        for deadline in ["2026-11-20T00:00:00Z", "2026-11-27T12:00:00Z"] {
+            XCTAssertEqual(routingDecision(route, try reminderState(local, rows: rows, deadline: deadline)), .drop)
+        }
+        // Accepted projection removed/suppressed the task or its source (paused/withdrawn care).
+        let replacements: [[[String: Any]]] = [
+            [], [overviewRow(serverPlantId)], [reminderRow(serverPlantId, due: "2026-11-27")]
+        ]
+        for replacement in replacements {
+            XCTAssertEqual(routingDecision(route, try reminderState(local, rows: replacement)), .drop)
+        }
+        for mode in ["plant.edit", "plant.delete", "care.record", "care.routine.undo", "plant.photo", "global"] {
+            XCTAssertEqual(routingDecision(route, try reminderState(local, rows: rows, mode: mode)), .drop, mode)
+        }
+    }
+}
