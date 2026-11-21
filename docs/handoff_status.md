@@ -1,5 +1,33 @@
 # Narat — текущий статус и передача работы
 
+## M1 принят: события коллекции; следующий срез — точный post-save ACK — 21 ноября 2026
+
+Принят и отправлен `caede0b0f880d86b067861818d681872c3c60f3f`. Изменены GuestCatalogueView.swift,
+CollectionRepository.swift, CatalogueConnectionTests.swift и CollectionWireTests.swift:
+свежая canonical-загрузка коллекции, точный ACK изменения и typed confirmed удаления
+публикуют scoped intent в существующий Root coalescer. Cached/failed/stale/cancelled
+и тихие canonical-сигналы не публикуют событие; legacy-интеграция пропускается до JWT guard.
+Новый edit witness проверяет весь pending envelope и receipt/canonical ACK, не карточку/пустую очередь.
+
+Фактические проверки PASS:457 Swift (454 XCTest+3 SwiftTesting), missing0,
+build/welcome/162.85с;149 automation 45.991с;
+diff 0.049с;8 UI+strict fake OS/server ledger 599.202с
+(8/8,0skip); MCP 24.639с.
+Developer 446.052с, high Review 102.054с
+и QA 174.193с — semantic PASS. Прежние452 assertions и UI/gate hashes неизменны.
+Это fixture/local proof, не новая обычная System/backend/physical приёмка.
+
+Подготовлен M2a: typed точное подтверждение post-save record/undo через тот же ordered
+DrainReport с исходными create-confirmation/enqueue/reviewingWateringOperation guards.
+Старый Bool для undo основан на !pending и не разрешает новый confirmed-event.
+Далее M2b: исходные SDK/locale и actual ACK witness; completion публиковать после optional
+canonical-read success ИЛИ failure, чтобы поздний full refresh не погасил свежий план.
+Audit M1/careACK: их optional UI reads локальные; orphan full refresh уже ДО proof/event.
+WholeB/старые UI+metadata/PL/Today, delegate/currentOccurrences, ordinary closed-app
+System delivery/tap, collection-only fresh-plan proof и final signing остаются открыты.
+T075/T077/T080/T098 не закрывались. PBX0/root user3 не тронуты; technical only,
+hard50/soft48, reset запрещён. Следующий шаг — M2a Developer→полные проверки→Review/QA.
+
 ## Named8 UI + product AX исправление принято; подготовлен M1 — 21 ноября 2026
 
 UNION относительно accepted2187419 принят/pushed e8596c654957f0f1aedadac29ee4a172e951cbaf.
