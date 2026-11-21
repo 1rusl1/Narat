@@ -1,0 +1,90 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-consent-whole",
+      "description": "Fresh whole Consent A acceptance of initial implementation plus original-scope repair; B dedicated fake rendered scenarios remain next.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "docs/handoff_status.md",
+        "docs/validation/automation/tasks/tester-care-permission-readback.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-binding-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-binding.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-host-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-host.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-whole-context.md",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "tools/automation/tasks.tester-care-reminder-consent-binding.json",
+        "tools/automation/tasks.tester-care-reminder-consent-host.json",
+        "tools/automation/tasks.tester-care-reminder-consent-whole.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "Read whole-context for exactprovenance. OriginalSDKbinding and observedhost repairs are narrowaccepted, but initialA whole source has NOT beenaccepted. Bothknownblockersmustbecheckedacrossallhunks; Bnewrenderedreadinesscase isstillpending, donotclaim100%newUIfromlegacygates. All425oldassertionsunchanged, current431 expected.",
+        "Read-only WHOLE source union from53ab. InitialA run01 WAITING/interrupted because actualReviewPASS missed originalSDKepoch/locale blocker; no false semanticFAIL/rawverdict rewrite. Narrow bindingrepair acceptance does not itself accept initialA. Read all originalA+repair hunks and actual context, fresh all7gates/highReviewQA. Developer0 here, genuine earlierDeveloper provenance only. Require immutable captured originalbinding for everyaction/status, deterministic sameownerSDKepoch/locale/ABA callbacks cannot mutate newcontext. No acceptance reuse. Dedicated new renderedConsent B is NOT yet proved; parentcheckboxopen.",
+        "Read context first. Small A only: proper newView/status + tiny lifecycle read-only originalowner/readiness/eligibilityAPI + App/Guest binding. Existing scheduler/planner/receipt/profilehour/Trial/readback behavior fixed. PBX already controller-scaffolded; no newfiles/PBX from Developer. No backend/network/SDKobserver/queue/calendar/AI/purchase/delegate/route work.",
+        "Per-ownerdefaultoff. Every optin/permission/retryaction checks original expectedowner and currentSDK scope before synchronousmutation. Existing profilehour reused. NoSchedule may store appconsent but no OS prompt or deferredpromptintent; automaticrefresh/foreground/eligiblearrival only status-read, never prompt. ExpliciteligibleAllow action and independentCheckstatus/retry only; deniedexplicitSettingsbutton allowed.",
+        "Honest UI projection: confirmedPending>0 only from actual workerresult and matching currentowner/state. It may coexist publishedND and mustshow readbackwarning. confirmed0 withND/failedfalse/deferredfalse is unconfirmed, notscheduled. Differentiate off/loading/unknown/noeligible/paused/expiry/pending/readfailed/permissiondenied/partial/failure sufficiently without falsepositive promises. Do not suppress manual journal. All prior425 assertions MUST remain unchanged; add only compactmeaningful4-6status+owner/action regressions usingexistingfake/realStorehelpers, no mirror implementation/sleeps.",
+        "ObservedObject lifecycle, not copiedState. Root guard all priorDEBUGfixtures before anySystem effects; optionalnil binding in legacycollection callsites. No newfixture in A; future B injectedfake-before-runtime mandatory. Today offer after firsteligible task without automatic popup/permission, safe through owner/locale/scene; accountsettings always accessible for currentpermanent owner. Keep change narrow/no Guest/App refactor.",
+        "All configured fullSwift/build/welcome,149automation,MCP,care13+ledger,Today6+8readonlynamespaces,PL/highReviewQA. A does not establish newUIscenario until B dedicatedtest. Runtime live/Systemproof older source not transferable. Parent T075/T077/T098 etc stayopen. Naturalrenewal actual0 hard50/soft48,noreset; unchanged models/900budgets."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "CONSENT1",
+          "description": "Full Swift and meaningful projection/owner/action regressions pass; default-off and delayed permission readback remain honest.",
+          "mode": "local",
+          "checks": [
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "CONSENT2",
+          "description": "MCP and unchanged care/Today/PL UI pass with prior fixtures isolated from System.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "CONSENT3",
+          "description": "Old13care/ledger,Today6/namespaces and PL replay pass unchanged; dedicated new consent UI comes in B.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui",
+            "tester-today-ui",
+            "tester-care-pl-ui"
+          ]
+        },
+        {
+          "id": "CONSENT4",
+          "description": "Existing149 automation tests pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-permission-readback.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-binding-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-binding.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-host-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-host.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-whole-context.md"
+      ],
+      "candidate_base": "53ab556e549b6820c41a28d679c55afc8329e7a5"
+    }
+  ]
+}

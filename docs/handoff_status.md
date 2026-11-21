@@ -1,5 +1,22 @@
 # Narat — текущий статус и передача работы
 
+## Consent A: оба узких исправления приняты; подготовлена whole-приёмка — 21 ноября 2026
+
+Hostrepair03b2bbe63da9f07b7fc420c6af30bdee625e8364 принят/pushed:
+431Swift/build/welcome152.623с,MCP27.106с,diff0.039с,Review94.538с/QA92.285с
+PASS. Dev96.016+55.323с; mechanicalapplyFAIL сохранён. Изменены3Swift+40/-6,
+Core/Unit/PBXнетронуты: observedhostподcapturedSDK/localeguard видитготовность,
+RootпередаёттотжеCoreдоready, immutableactionbindingсохранён. Ранееbinding
+0e1ac33 принят431/ReviewQA. Old425Unitprefixbyteeq08710c8, всего431тест.
+
+InitialA run01 остаётсянепринятым WAITING сrawReviewPASS+отдельнымsemantic
+BLOCKED; историяFAIL/безопасногоstopнепереписана. Подготовленаfreshreadonly
+candidate_base53ab556 wholeA: все5Swift/delta/docs,7gates(431/149/MCP/PL/
+care13ledger/Today6+8namespaces/diff),highReviewQA,Developer0. Это следующий
+точныйшаг. НоваяrenderedConsentUI/hostbarrier проверяетсяотдельноB, actual
+System/SDK/deliveryещёоткрыты, parentcheckboxне закрываются. Lastusage2/98,
+hard50/soft48/noreset. Rootuser3/PBXbaseline53abuntouched; доwholeнеRootFF.
+
 ## Исходный consent-binding принят; нужен наблюдаемый host — 21 ноября 2026
 
 Принят/pushed узкий0e1ac33202a59f2292d182c96beabd81364f8dee:431Swift/build/
