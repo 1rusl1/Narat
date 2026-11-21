@@ -1,23 +1,28 @@
-# tester-care-reminder-routing-eligibility
+# D1 pure routing acceptance
 
-Add pure post-fire current-occurrence notification route eligibility with exact owner/plant/subject/source date matching; no native or Root wiring.
+## D1 проверка актуальности маршрута уведомления принята — 22 ноября 2026
 
-Подготовлен чистый валидатор текущего occurrence и четыре группы регрессионных тестов.
+Принят/pushed `59bd4563db8e7142794a8caaada4a1cfc3ca4860`. Два изменённых файла: CareReminderRouting.swift и CollectionWireTests.swift,
+174+/1-; старые467methods/assertions/helperdefaults сохранены,4новые группы регрессий.
+Чистое решение hold/drop/open использует только sharedPlan.currentOccurrences иточные
+owner/plant/kind/subject/id/sourceDueYMD. Post-fire допустим; firstaidcontrolс тем жеUUID,
+но другойдатой отклоняется. Fire/attempt/notificationlocale не являются readingauthority;
+careData/APIauthorizationDenied отдельно от OSdenied/optout. Unknown/incoherent/currentlocale
+mismatch holds; knownexpired/denied/currenttaskabsent drops. Побочныхэффектовнет.
 
-Изменённые файлы: ios/Plants/Integrations/Notifications/CareReminderRouting.swift, ios/PlantsTests/CollectionWireTests.swift.
+Фактические PASS:471Swift(468XCTest+3/missing0), build/welcome165.729с;
+149automation45.658с,diff0.024с,
+MCP29.778с. ActualDeveloper237.883с,
+highReview73.993с/QA78.079с — semantic+protocolPASS,
+findings[]. Это unit/local/fixturepredicate, НЕ nativecallback/registration/SDKepoch/Rootnavigation/
+Systemdeliverytap. СкриншотыMCP просмотрены QA; ordinary integration не заявляется.
 
-Вызовы — developer 1, reviewer 1, qa 1. Модели — 389.95 с, проверки — 241.19 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-
-Проверки:
-
-- diff-check — PASS (local, exit 0, 0.02 с). Лог `/private/tmp/narat-tester-care-20261119/docs/validation/automation/runs/orchestrator-tester-care-reminder-routing-eligibility-20261122-01/tester-care-reminder-routing-eligibility/check-1-diff-check/stdout.log`.
-- automation-tests — PASS (fixture, exit 0, 45.66 с). Лог `/private/tmp/narat-tester-care-20261119/docs/validation/automation/runs/orchestrator-tester-care-reminder-routing-eligibility-20261122-01/tester-care-reminder-routing-eligibility/check-2-automation-tests/stdout.log`.
-- ios-tests — PASS (local, exit 0, 165.73 с). Лог `/private/tmp/narat-tester-care-20261119/docs/validation/automation/runs/orchestrator-tester-care-reminder-routing-eligibility-20261122-01/tester-care-reminder-routing-eligibility/check-3-ios-tests/stdout.log`.
-- simulator-smoke — PASS (local, exit 0, 29.78 с). Лог `/private/tmp/narat-tester-care-20261119/docs/validation/automation/runs/orchestrator-tester-care-reminder-routing-eligibility-20261122-01/tester-care-reminder-routing-eligibility/check-4-simulator-smoke/stdout.log`.
-
-Review и QA подтвердили критерии manifest; это не автоматическое закрытие полной продуктовой задачи.
-
-Решения: ["Право чтения определяется через sharedPlan.currentOccurrences с точным сравнением ID, owner, plant, kind/subject и sourceDueYMD.", "Неопределённое или несогласованное состояние возвращает hold; известный careData authorizationDenied, expiry или отсутствие текущей задачи — drop.", "Изменены только два разрешённых файла в предлагаемом патче; существующие тесты и helper defaults сохранены.", "Патч сформирован difflib из фактических файлов без записи. Проверки выполняет контроллер.", "D2/D3: native callbacks, startup, SDK/epoch fences, Root/navigation и System delivery/tap остаются вне этого пакета; живые интеграции не проверялись."].
-
-Ограничения: подтверждены только явно указанные режимы и критерии. State/metrics: `/private/tmp/narat-tester-care-20261119/docs/validation/automation/runs/orchestrator-tester-care-reminder-routing-eligibility-20261122-01`.
-Следующий шаг: следующая независимая задача manifest; ошибки публикации смотреть в state.json.
+Следующий шаг D2A: properBridgefile+Wiretests с sharedearlyDebug/Release System-isolation policy,
+маленьким typedboundedmemoryinbox и inert nativecallbackadapter, actualSDKcompilerwitness.
+D2B — earlyAppDelegate strongregistration/samechannel/runtimepair+Release/legacy;
+D3 — originalSDK/lease/locale pendingintentbinding, currentOccurrences targetcanonicalcard,
+foregroundlocalinventoryread безHTTP. LatestinstalledSDK26.5 callbackcompletion@Sendable;
+synccompletion — нашtiming/lifetimecontract, не compilerban(nonSendable).
+НиодногоnewRoot/Native/UIstart вD1; parentT075/T077/T080/T098open. Technicalonly,
+physical/external отложены, hard50soft48/resetзапрещён. WholeB1624092all10gates/FAILhistory
+и ledgercontainerlimitation сохранены; parentprotectedbaseline1916,user3не тронуты.
