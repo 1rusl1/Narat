@@ -1,5 +1,23 @@
 # Narat — текущий статус и передача работы
 
+## B2a strict bootstrap принят; подготовлен B2b1 UI truth/controls — 21 ноября 2026
+
+Принят/pushed f7ee8db43fa40f1f97c233ce25e88b548e30c87c:439Swift/build/welcome
+165.793с,14950.475с,MCP25.566с,PL38.512с,care13ledger503.229с,Today6+8readonly
+205.227с,diff0.049с — PASS. Review126.805с/QA180.029с PASS. Dev306.929+
+149.144+110.750с; дваmechanicalapplyFAIL сохранены. ТриSwift+277/-12: strict
+pairedbootstrapдоRoot, injectedobservedruntime/coreвместоотдельногоSystemCore,
+originalSDK/localeпроверкапослеreadiness. Old436prefixпобайтносохранён.
+
+НовыйconsentUIещёнепроверенrendered. ОбязательныйblockerwholeB: preferenceoff
+сейчасскрываетnil/failed/deferred/blocked/nonzeropendingcleanup. B2b1 должен
+показатьpreferenceoff+stopping/unconfirmed/Retryдоverifiedzero, Core/receiptpolicy
+не менять; затемB2b2realView/fakeledgerUIarmed→failure→off→retry. Подготовлены
+scaffoldReminderConsentFixtureControls.swift+4refs, manifest/context. Следующий
+шагDeveloper→Swift/149/MCP/diff/ReviewQA, затемnamedUItestsиwholeBfrom80e.
+Lastactual6/94,hard50soft48/reset0; technicalonly/externalhandoffотложен,
+parentcheckboxopen. SourceRootuser3/PBXне тронуты, новые4refsпередатьродителю.
+
 ## B1 foundation принят; подготовлен B2a strict bootstrap — 21 ноября 2026
 
 Принят/pushed6637c513c17acef93d74c9a5671f030e743f863f:436Swift(433XCTest+3)/

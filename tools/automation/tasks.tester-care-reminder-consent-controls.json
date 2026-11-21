@@ -1,0 +1,74 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-consent-controls",
+      "description": "Fix opt-out UI truth and add matched DEBUG controls/evidence for rendered consent tests; Core/receipt policy unchanged.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Readcontext. TINYB2b1 UItruth+scopedDEBUGcontrols+minimalfakeledger evidence, ~350-450lines. ExistingscaffoldsALREADYexist, never/dev/null; generateunifieddiffPROGRAMMATICALLY fromactualworktreebytes withdifflib/equivalent, no guessed@@line/context/leadingdiffspaces. NoPBX/extra files. Core/Runtime/Bootstrap/Planner/Scheduler/receipt/profilehour/Trial fixed, no newUItestcasesyet.",
+        "BLOCKINGoptouttruth: pref=false separatefromverifiedOScleanup. resultnil/pending, failed, deferred, blockers>0 or confirmedPending>0 cannotpromiseoff. Honest preferenceoff+stopping/unconfirmed/Retry; onlyverifiedzero/noerror finaloff. Invalidcapturedscope unavailable/noleak. Fixprojection/copy notCorepolicy. ParentpermitsONLYoldAoffprojectionexpectationadaptation; baseline425prefix/allotheroldassertionsunchanged. Newmeaningfulmatrix+actualCorefakearmed\u2192cleanupfailure\u2192storedfalse/pendingremain/warning\u2192externalclear(noautoread)\u2192retryverifiedzero.",
+        "NewDEBUGoptionalEnvironment/defaultnil controls, injectedONLYApp.fixturebranch andmatchedcontext. InsideHostoriginalSDK/localeguard butOUTSIDEbindingiflet, so readinessreleaseworksbeforeCorebinding. Samefixture.runtime.core===lifecycle, capturedscopeguardsbeforetaps, no globaloverride/secondCore. ReadinessbuttonnotgatedonunobservedwaitingCount. Fakeauthorized/failurechangealone neverCoretrigger; restoreusesexistingcoalescer. ProductionAllow/retry/toggle unchangedimmutablebinding. NoControls/FakeinRelease, no actualSettings/TCC.",
+        "Optionalbackcompatiblefakeevents/markers forlaterUIledger: add/removepending/delivered ordered/currentowner/initialsnapshotlegacyifneeded; nooverlapduplicatepending andattemptunique, othernamespace1. MarkexternalOSchange/readcounters vs explicitproductionRetry intent undercurrentbinding, no mirroredtotal2/5/7. Newoptional/customdecodedfields preserveoldversion1cold, corruptfilefailclosed BEFORESDK. PureFactorywire reused, no date/identity codec. NoSystem/commands/backendwrites. Sourcefuturehas2eligible checks; coldsync maylegitprefirecancel/rearm, donotblanketassertlifetimeadds2.",
+        "Unit/MCP/149/diff/highReviewQA now. B2b2rendered7cases/readinessandoptoutfailure+strictDoctorledgergate THENfreshwholeBbase80ealloldcare13/Today6+8readonly/PL/149/fullSwift/MCP/newUI/highReviewQA. Do notcloseparenttasksorclaimnewUI/Systemready. Same900/models/budgets,hard50soft48,noreset,technicalonly."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "CONTROL1",
+          "description": "Full Swift and meaningful off-cleanup truth regressions preservebaseline425/otheroldassertions; failure cannot falselylookoff.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "CONTROL2",
+          "description": "MCP/highReviewQA verify matchedDEBUGonlycontrols/immutablebinding/noCorepolicy/Systemchanges; renderedUIremainsnext.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "CONTROL3",
+          "description": "149existingautomation tests pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md",
+        "docs/validation/automation/tasks/tester-care-reminder-fixture-foundation.md"
+      ]
+    }
+  ]
+}
