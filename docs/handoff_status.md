@@ -1,5 +1,25 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен D1: проверка актуальности маршрута уведомления — 22 ноября 2026
+
+WholeB принят1624092, final docs daab903/pushed. Для D1 подготовлены только scaffold
+CareReminderRouting.swift, manifest/context и4 PBX membership refs, без реализации/запуска.
+PBX IDs: build7DC3452FB69AB072E242AFA8/ref6FA1819EA1C5AF61AE068CAB; plutil/diff/manifest validate PASS.
+Controller не переписывал проект, Root original3userfiles не тронуты; parent сохранит их приFF.
+
+Следующий actual Developer: ровно CareReminderRouting.swift+CollectionWireTests.swift,
+чистое решение hold/drop/open по independently currentowner/sharedPlan.currentOccurrences
+с точными plant/kind/subject/sourceDue (включая firstaidstableID). Не futurecandidates/ARMED,
+не полныйCandidateсравнения fire/locale. CareData/APIauthorizationDenied отдельноотOSdenied;
+optout/OSdenial не запрещают чтение ещёактуальнойкарточки. Базовые467tests/assertions сохранены.
+Нативный delegate/inbox/Root SDKepoch/locale asyncfences ещёНЕподключены и не принимаются D1.
+
+Admission freshusage23/77 ordinaryAllowed; hard50soft48/resetзапрещён. Модели/900/config routes
+прежние. D1 fullSwift/build/welcome149/diff/MCP/highReviewQA, затем D2 nativeearlyisolation/
+channel и D3 one-shotcanonicalnavigation. ПослеLASTstartup изменения нужны actualReleasecompile
+иaffectedlegacycare13/Today6/4render+new8, затемordinarySDK/Systemdeliverytap иfinalsigning.
+ParentT075/T077/T080/T098open, technicalonly/externalphysicalотложены. Scaffoldнеравенготовности.
+
 ## Общая приёмка напоминаний B принята; маршрутизация уведомлений следующая — 22 ноября 2026
 
 Принят/pushed `16240920495eb9d0ff0785c3aa000eec8fff2cad`, read-only run tester-care-reminder-whole-b-20261121-04, candidate_base80eaa98.

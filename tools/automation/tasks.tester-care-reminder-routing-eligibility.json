@@ -1,0 +1,81 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-routing-eligibility",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "description": "Add pure post-fire current-occurrence notification route eligibility with exact owner/plant/subject/source date matching; no native or Root wiring.",
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderRouting.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-routing-eligibility-context.md",
+        "tools/automation/tasks.tester-care-reminder-routing-eligibility.json",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-whole-b.md",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderRouting.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "D1 TWO existing writefiles only, target compact<=250-300newlines incltests. Pure type/decision, noUNcenter/App/Root/Bootstrap/runtime/Core/Store/Auth/HTTP/sync/queue/permission/navigation/mutation effects. PBX4refs scaffold prepared bycontroller, noPBXregeneration. SameSolmedium/Astrahigh900/budgets; hard50soft48/noreset. Generate actual difflib unifieddiff from existingbytes, no/dev/null or guessedhunks; laneabsolute path only.",
+        "Reuse sharedPlan.currentOccurrences NOT candidates/requests/futureFire/ARMEDreceipt. Match currentexactID+owner+plant+Occurrencekind/subject+sourceDueYMD; firstaidstableID intentionallyexcludesday. Do NOTfullCandidatecompare: originalfire/attempt/payloadlocale not readingauthority. Currentcapturedlocale mustalignstate, but notificationlocale mustnot switchapp or rejectotherwisevalidsamecurrentoccurrence.",
+        "Wrongpayloadowner/knownexpired/CARE-DATA(API)failure.authorizationDenied/currenttaskabsent drop. Missing/readpending/unknown/revalidation/localemismatch may hold for existingRootpipeline, no automaticfetch. OSnotificationauthorization.denied and optout are DIFFERENT and doNOTforbid readingstillcurrentcard. Available aligned cache+transportfailure allowed under sharedPlan. No duplicatedcalendar/sourceeligibilitylogic. Authunresolved/definitesignout/currentSDKlease/epoch/connection/token/cancel fences deferredD3, purevalidatornotauthentication.",
+        "Meaningful tests fixedpostfire routine wherefuturecandidatesempty, firstaid movedday sameid denial, changedfire/payloadlocale legitimateidentity, wrongowner/plant/kind/rule/id, removed/paused/expired/sourcewithdrawn/pending/gen/readOnly/unknown, validalignedtransport and OSdenied/optout. Preserve467baselineassertions/helperdefaults, no newmirrorframework/transport. FullSwift/build/welcome149diff/MCP/highReviewQA. Packetfoundationonly, not delegate/tap/Systemacceptance."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "RT1",
+          "description": "Pure typed decision accepts only exact independently-current shared occurrence, including post-fire routine, denies moved firstaid source date and wrong owner/identity; no future/receipt/fullCandidate shortcut.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "RT2",
+          "description": "Unavailable/incoherent/unknown state never opens, known careData denial/expired/absent drops, aligned transport cache and independent notification optout/OSdenial remain readable. No auth/HTTP/UN/navigation effects or baseline weakening.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "RT3",
+          "description": "FullSwift source coverage/build/welcome/MCP and149 automation unchanged; highReviewQA preserve D2/D3 startup/SDK/route/System limitations.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "RT4",
+          "description": "149 automation regressions pass.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-routing-eligibility-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-whole-b.md"
+      ]
+    }
+  ]
+}

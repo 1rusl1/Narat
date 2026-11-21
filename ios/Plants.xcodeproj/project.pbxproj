@@ -15,6 +15,7 @@
 		D71A99EF722D60282DD12D73 /* CareReminderLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */; };
 		5E12CED5D11E2B29A1965AA8 /* CareReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */; };
 		6464DA2E0C5E1A80723E8F61 /* CareReminderNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */; };
+		7DC3452FB69AB072E242AFA8 /* CareReminderRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA1819EA1C5AF61AE068CAB /* CareReminderRouting.swift */; };
 		DAA5E3F3850411A6F8017DB2 /* CareReminderReceipts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2A76093DD91DC7AE775EE7A /* CareReminderReceipts.swift */; };
 		E06894047BFCB8EC7F39DD46 /* CareReminderPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F3103C3699D3C31ED6F8B6 /* CareReminderPlanner.swift */; };
 		9CC669C66922C8DCD8146150 /* TodayHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03A2190992F5B9A742AF4EB7 /* TodayHomeView.swift */; };
@@ -90,6 +91,7 @@
 		CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderLifecycle.swift; sourceTree = "<group>"; };
 		FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderScheduler.swift; sourceTree = "<group>"; };
 		D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderNotifications.swift; sourceTree = "<group>"; };
+		6FA1819EA1C5AF61AE068CAB /* CareReminderRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderRouting.swift; sourceTree = "<group>"; };
 		B2A76093DD91DC7AE775EE7A /* CareReminderReceipts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderReceipts.swift; sourceTree = "<group>"; };
 		A9F3103C3699D3C31ED6F8B6 /* CareReminderPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareReminderPlanner.swift; sourceTree = "<group>"; };
 		03A2190992F5B9A742AF4EB7 /* TodayHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayHomeView.swift; sourceTree = "<group>"; };
@@ -328,6 +330,7 @@
 				CF23308AB54918574B1F5F58 /* CareReminderLifecycle.swift */,
 				FCABA6FE3D96B1F468267CE6 /* CareReminderScheduler.swift */,
 				D1EA8DDDAE29DB6441C4ACE0 /* CareReminderNotifications.swift */,
+				6FA1819EA1C5AF61AE068CAB /* CareReminderRouting.swift */,
 				B2A76093DD91DC7AE775EE7A /* CareReminderReceipts.swift */,
 				A9F3103C3699D3C31ED6F8B6 /* CareReminderPlanner.swift */,
 			);
@@ -675,6 +678,7 @@
 				D71A99EF722D60282DD12D73 /* CareReminderLifecycle.swift in Sources */,
 				5E12CED5D11E2B29A1965AA8 /* CareReminderScheduler.swift in Sources */,
 				6464DA2E0C5E1A80723E8F61 /* CareReminderNotifications.swift in Sources */,
+				7DC3452FB69AB072E242AFA8 /* CareReminderRouting.swift in Sources */,
 				DAA5E3F3850411A6F8017DB2 /* CareReminderReceipts.swift in Sources */,
 				E06894047BFCB8EC7F39DD46 /* CareReminderPlanner.swift in Sources */,
 			);
