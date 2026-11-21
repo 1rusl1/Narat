@@ -38,6 +38,14 @@ struct CatalogueSDKSnapshot: Sendable, Equatable {
     fileprivate let epoch: UInt64
 }
 
+/// Transient explicit UI request, bound to the original connection, SDK epoch and locale.
+struct CatalogueCareReadIntent: Equatable {
+    let id = UUID()
+    fileprivate let connection: ObjectIdentifier
+    fileprivate let expected: CatalogueSDKSnapshot
+    fileprivate let locale: String
+}
+
 /// Evidence for consumers that must distinguish HOLD from definite local sign-out.
 enum CatalogueAuthClassification: Sendable, Equatable {
     case unresolved
@@ -115,6 +123,29 @@ final class CatalogueConnection {
     let syncEngine: SyncEngine?
     let repository: CollectionRepository?
     let unavailable: CatalogueConnectionUnavailable?
+    private(set) var explicitCareReadIntent: CatalogueCareReadIntent?
+
+    /// Call only from explicit settings/hour confirmation/consent Retry actions.
+    @discardableResult
+    func publishExplicitCareRead(
+        expected: CatalogueSDKSnapshot, locale: String, isLocaleCurrent: () -> Bool
+    ) -> Bool {
+        guard !Task.isCancelled, isLocaleCurrent(),
+              authClassification == .permanent(expected) else { return false }
+        explicitCareReadIntent = CatalogueCareReadIntent(
+            connection: ObjectIdentifier(self), expected: expected, locale: locale)
+        return true
+    }
+
+    /// Root consumes once before requesting its existing external coalescer pass.
+    func consumeExplicitCareRead(_ intent: CatalogueCareReadIntent, locale: String) -> Bool {
+        guard intent.connection == ObjectIdentifier(self),
+              explicitCareReadIntent == intent else { return false }
+        explicitCareReadIntent = nil
+        return !Task.isCancelled && intent.locale == locale
+            && authClassification == .permanent(intent.expected)
+    }
+
     private var observedSnapshot: CatalogueSDKSnapshot?
     private var observedNilEpoch: UInt64?
     private(set) var hasResolvedAuth = false
@@ -860,6 +891,10 @@ struct CatalogueCollectionView: View {
                     ToolbarItem(placement: .primaryAction) {
                         Button(polish ? "Ustawienia konta" : "Account settings") {
                             accountSettingsScope = scope
+                            if careReminder != nil {
+                                connection.publishExplicitCareRead(expected: scope,
+                                    locale: polish ? "pl" : "en", isLocaleCurrent: careReminderLocaleIsCurrent)
+                            }
                         }
                         .accessibilityIdentifier("collection.settings.open")
                     }
@@ -884,7 +919,8 @@ struct CatalogueCollectionView: View {
                        scope == connection.snapshot, !scope.isAnonymous {
                         ScrollView {
                             VStack {
-                                ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
+                                ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish,
+                                    isLocaleCurrent: careReminder == nil ? { false } : careReminderLocaleIsCurrent)
                                 if let careReminder {
                                     ReminderConsentHost(
                                         lifecycle: careReminder, connection: connection,
@@ -1053,6 +1089,7 @@ private struct ProfileReminderHourSettings: View {
     let connection: CatalogueConnection
     let expected: CatalogueSDKSnapshot
     let polish: Bool
+    let isLocaleCurrent: () -> Bool
     @State private var canonicalHour: Int?
     @State private var selectedHour = 9
     @State private var pending: ProfileReminderHourCommand?
@@ -1176,6 +1213,8 @@ private struct ProfileReminderHourSettings: View {
                 pending = nil
                 canonicalHour = hour
                 selectedHour = hour
+                connection.publishExplicitCareRead(expected: expected, locale: polish ? "pl" : "en",
+                    isLocaleCurrent: isLocaleCurrent)
             case .pending:
                 break
             case .rejected, .unconfirmed:

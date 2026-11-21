@@ -2854,4 +2854,116 @@ final class CatalogueConnectionTests: XCTestCase {
         XCTAssertNil(failedDisk.apiClient)
         XCTAssertNil(failedDisk.repository)
     }
+
+    func testExplicitCareReadIsOneShotScopedAndPassiveCacheReadsEmitNothing() async throws {
+        let h = try Harness(), foreign = try Harness()
+        defer { h.close(); foreign.close() }
+        // Cache APIs require permanent JWT claims as well as the real SDK binding.
+        let payload = try json(["sub": owner.uuidString, "is_anonymous": false]).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        try auth(h, owner: owner, token: "fixture." + payload + ".signature")
+        try await h.signIn()
+        let original = try await h.connection.sessionSnapshot()
+        let lease = try await h.connection.collectionLease(expected: original)
+        let repository = try XCTUnwrap(h.connection.repository)
+        _ = try await repository.cachedCareOverview(context: lease)
+        _ = try await repository.pendingProfileReminderHour(context: lease)
+        XCTAssertEqual(h.connection.authClassification, .permanent(original))
+        XCTAssertNil(h.connection.explicitCareReadIntent)
+        let requests = h.fixture.captured.count
+        var currentLocale = "en"
+        let retainedLocale = {
+            h.connection.publishExplicitCareRead(expected: original, locale: "en",
+                isLocaleCurrent: { currentLocale == "en" })
+        }
+        XCTAssertTrue(retainedLocale())
+        let oldLocale = try XCTUnwrap(h.connection.explicitCareReadIntent)
+        currentLocale = "pl"
+        XCTAssertFalse(retainedLocale())
+        XCTAssertFalse(h.connection.consumeExplicitCareRead(oldLocale, locale: currentLocale))
+        XCTAssertNil(h.connection.explicitCareReadIntent)
+        XCTAssertFalse(h.connection.publishExplicitCareRead(expected: original, locale: "en", isLocaleCurrent: { false }))
+        XCTAssertNil(h.connection.explicitCareReadIntent)
+        XCTAssertTrue(h.connection.publishExplicitCareRead(expected: original, locale: "en", isLocaleCurrent: { true }))
+        let first = try XCTUnwrap(h.connection.explicitCareReadIntent)
+        XCTAssertFalse(foreign.connection.consumeExplicitCareRead(first, locale: "en"))
+        XCTAssertTrue(h.connection.consumeExplicitCareRead(first, locale: "en"))
+        XCTAssertNil(h.connection.explicitCareReadIntent)
+        XCTAssertFalse(h.connection.consumeExplicitCareRead(first, locale: "en"))
+        XCTAssertTrue(h.connection.publishExplicitCareRead(expected: original, locale: "en", isLocaleCurrent: { true }))
+        let second = try XCTUnwrap(h.connection.explicitCareReadIntent)
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertFalse(h.connection.consumeExplicitCareRead(first, locale: "en"))
+        XCTAssertFalse(h.connection.consumeExplicitCareRead(second, locale: "pl"))
+        XCTAssertFalse(h.connection.consumeExplicitCareRead(second, locale: "en"))
+        XCTAssertTrue(h.connection.publishExplicitCareRead(expected: original, locale: "pl", isLocaleCurrent: { true }))
+        let third = try XCTUnwrap(h.connection.explicitCareReadIntent)
+        XCTAssertNotEqual(second.id, third.id)
+        XCTAssertTrue(h.connection.consumeExplicitCareRead(third, locale: "pl"))
+        XCTAssertEqual(h.fixture.captured.count, requests)
+        assertClosed(h)
+        assertClosed(foreign)
+    }
+
+    func testExplicitCareReadRejectsRetainedPublicationAndConsumptionAfterSDKEpochChanges() async throws {
+        // Owner switch, same-token refresh, and same-token A-B-A.
+        for mode in 0..<3 {
+            let h = try Harness()
+            defer { h.close() }
+            try auth(h, owner: owner)
+            try await h.signIn()
+            let original = try await h.connection.sessionSnapshot()
+            let retained = {
+                h.connection.publishExplicitCareRead(expected: original, locale: "en", isLocaleCurrent: { true })
+            }
+            XCTAssertTrue(retained())
+            let emitted = try XCTUnwrap(h.connection.explicitCareReadIntent)
+            if mode == 1 {
+                try auth(h, owner: owner, refresh: true)
+                _ = try await h.client.auth.refreshSession()
+            } else {
+                try auth(h, owner: other, token: "fixture-b")
+                try await h.signIn()
+                if mode == 2 {
+                    try auth(h, owner: owner)
+                    try await h.signIn()
+                }
+            }
+            // Callback-side epoch invalidation protects both gates before rebinding.
+            XCTAssertFalse(retained())
+            XCTAssertFalse(h.connection.consumeExplicitCareRead(emitted, locale: "en"))
+            let current = try await h.connection.sessionSnapshot()
+            XCTAssertNotEqual(current, original)
+            XCTAssertFalse(retained())
+            XCTAssertNil(h.connection.explicitCareReadIntent)
+            XCTAssertTrue(h.connection.publishExplicitCareRead(expected: current, locale: "en", isLocaleCurrent: { true }))
+            let fresh = try XCTUnwrap(h.connection.explicitCareReadIntent)
+            XCTAssertFalse(h.connection.consumeExplicitCareRead(emitted, locale: "en"))
+            XCTAssertTrue(h.connection.consumeExplicitCareRead(fresh, locale: "en"))
+            assertClosed(h)
+        }
+    }
+
+    func testExplicitCareReadRejectsAnonymousAndUnresolvedSDKWithoutNetwork() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        try auth(h, owner: owner, anonymous: true)
+        try await h.signIn()
+        let anonymous = try await h.connection.sessionSnapshot()
+        XCTAssertFalse(h.connection.publishExplicitCareRead(expected: anonymous, locale: "en", isLocaleCurrent: { true }))
+        XCTAssertNil(h.connection.explicitCareReadIntent)
+        try auth(h, owner: owner, anonymous: true, refresh: true)
+        _ = try await h.client.auth.refreshSession()
+        XCTAssertFalse(h.connection.publishExplicitCareRead(expected: anonymous, locale: "en", isLocaleCurrent: { true }))
+        XCTAssertNil(h.connection.explicitCareReadIntent)
+        let unresolved = try Harness()
+        defer { unresolved.close() }
+        XCTAssertEqual(unresolved.connection.authClassification, .unresolved)
+        XCTAssertFalse(unresolved.connection.publishExplicitCareRead(expected: anonymous, locale: "en", isLocaleCurrent: { true }))
+        XCTAssertNil(unresolved.connection.explicitCareReadIntent)
+        XCTAssertTrue(unresolved.fixture.captured.isEmpty)
+        assertClosed(unresolved)
+        assertClosed(h)
+    }
 }

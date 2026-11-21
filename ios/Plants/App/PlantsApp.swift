@@ -427,6 +427,12 @@ struct RootContainerView: View {
             analysisModel.installAnalysisService(nil)
             analysisModel.router.flowState = AddFlowState()
         }
+        .onChange(of: catalogue?.explicitCareReadIntent?.id) { _, _ in
+            guard scenePhase == .active, !usesLegacyWelcome, !isolatesCareReminders,
+                  let connection = catalogue, let intent = connection.explicitCareReadIntent,
+                  connection.consumeExplicitCareRead(intent, locale: languageStore.currentLocale.rawValue) else { return }
+            careReconnectRevision &+= 1
+        }
         .onChange(of: analysisModel.router.flowState.currentStep) { previous, current in
             guard previous != .selectIntent, current == .selectIntent,
                   scenePhase == .active, !usesLegacyWelcome,

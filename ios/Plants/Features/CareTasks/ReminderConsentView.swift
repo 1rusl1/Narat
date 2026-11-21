@@ -90,7 +90,12 @@ struct ReminderConsentHost: View {
 #endif
                 if let binding = lifecycle.consentBinding(
                     expectedOwnerId: expected.session.userId, locale: polish ? "pl" : "en") {
-                    ReminderConsentView(lifecycle: lifecycle, binding: binding, polish: polish)
+                    ReminderConsentView(lifecycle: lifecycle, binding: binding, polish: polish,
+                        explicitRetry: {
+                            guard lifecycle.isCurrent(binding: binding) else { return }
+                            connection.publishExplicitCareRead(expected: expected,
+                                locale: polish ? "pl" : "en", isLocaleCurrent: isLocaleCurrent)
+                        })
                 } else {
                     Text(polish ? "Odczytywanie stanu…" : "Reading reminder state…")
                         .accessibilityIdentifier("care.reminders.loading")
@@ -105,6 +110,7 @@ struct ReminderConsentView: View {
     let binding: CareReminderLifecycle.ConsentBinding
     let polish: Bool
     var compact = false
+    var explicitRetry: () -> Void = {}
     @Environment(\.openURL) private var openURL
 #if DEBUG
     @Environment(\.reminderConsentFixture) private var fixture
@@ -162,6 +168,8 @@ struct ReminderConsentView: View {
                 .accessibilityIdentifier("care.reminders.allow")
             }
             Button(polish ? "Sprawdź status / ponów" : "Check status / retry") {
+                guard lifecycle.isCurrent(binding: binding) else { return }
+                explicitRetry()
 #if DEBUG
                 if let fixture, lifecycle.isCurrent(binding: binding),
                    fixture.runtime.core === lifecycle,
