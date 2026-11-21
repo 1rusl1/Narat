@@ -1,5 +1,36 @@
 # Narat — текущий статус и передача работы
 
+## M2a принят: точный post-save record/undo ACK; подготовлен UI completion — 21 ноября 2026
+
+Принят/pushed `1769481af801327cb03ff3ad55f639cff94d73ea`. Три файла: SyncEngine.swift,
+CollectionRepository.swift и CollectionWireTests.swift. Новый
+submitManualWateringAcceptance возвращает typed target outcome только из exact FULL-envelope
+DrainReport после receipt/canonical finish; Bool compatibility делегирует этот результат.
+Прежние create-confirmation/enqueue/original lease guards сохранены, review ID проходит
+через тот же generic ordered drain. Ни нового onlyOperation пути, ни очереди/схемы нет.
+
+Проверки PASS: 460 Swift (457 XCTest), missing0,
+build/welcome 161.653с;149 automation 46.09с;
+diff 0.049с;8 UI+strict fake OS/server ledger
+601.109с (8/8,0skip);MCP 30.616с.
+Developer 308.882+74.088с; high Review 122.483с и QA
+177.874с semanticPASS. Первый FAIL сохранён: ios-tests 165.476с;
+четыре assertions одного НОВОГО full-envelope test, не ошибка старых assertions.
+В новом fixture receipt/delta получили later09:10 после initial09:00; исправлены только четыре
+новые строки входных данных, production и assertions при repair не менялись.
+Старый CollectionWireTests prefix byte-equal eba9cec, новые тесты только добавлены.
+Это local/fixture proof; новая ordinary Scheduler/System доставка ещё не доказана.
+
+Подготовлен M2b (шесть existing write files, PBX0): actual ACK witness из Model,
+исходные immutable SDK/lease и captured UI locale, затем explicit completion после
+optional canonical details read — при успехе ИЛИ ошибке чтения. Passive restored.saved,
+queue absence, rejected/pending/cancel/stale не считаются mutation proof. Нужна реальная
+регрессия late fullread→settlement→fresh coherent cache/eligible plan. Root guard языка
+передаётся через обычный CatalogueView; старые/analysis интеграции default-inactive.
+Далее wholeB old/new UI+metadata/PL/Today→delegate/currentOccurrences→ordinary SDK/System
+collection-only/delivery/tap→final signed source. T075/T077/T080/T098 открыты;
+technical only, root user3 не тронуты, hard50/soft48, reset запрещён.
+
 ## M1 принят: события коллекции; следующий срез — точный post-save ACK — 21 ноября 2026
 
 Принят и отправлен `caede0b0f880d86b067861818d681872c3c60f3f`. Изменены GuestCatalogueView.swift,

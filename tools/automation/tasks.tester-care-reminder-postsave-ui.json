@@ -1,0 +1,123 @@
+{
+  "tasks": [
+    {
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "id": "tester-care-reminder-postsave-ui",
+      "description": "Publish one bounded original-scope completion after actual post-save ACK and optional canonical read settlement.",
+      "files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-context.md",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-accessibility-context.md",
+        "tools/automation/tasks.tester-care-reminder-accessibility.json",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "docs/validation/automation/tasks/tester-care-reminder-collection-events-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-receipt-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-ui-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "Narrow M2b sixexistingfiles only, target <=350-400lines incl compact meaningful tests. Existing files/scaffolds ALREADY EXIST: generate actual unifieddiff PROGRAMMATICALLY with difflib/equivalent; no /dev/null/guessed hunks. No PBX/newfiles/Core/Runtime/schema/queue/newHTTPclient/Authobserver/AI-content expansion.",
+        "Use accepted submitManualWateringAcceptance exact outcome and actual active saveCatalogueCreate.saved confirmation. No mutation proof from passive initializer/coldsaved/card/equality/queueempty or UI.ready; no onlyOperation shortcut. Preserve original create confirmation/enqueue/reviewingWateringOperation/generic ordering, oldpublicdefaults/assertions.",
+        "Capture original UI locale at operation entry (save/record/undo/retry/native continuation), immutable original Model lease/SDKepoch plus captured current Rootlanguage guard. APIclientLocale/currentViewpolish afterawait or owner UUID alone not authority. Ordinary CatalogueView->SaveView scoped bridge; legacy/analysis defaultinactive beforepermanent requirement. SDK ABA/tokenrefresh/lateLocale/pending/reject/cancel/restore no current-scope event.",
+        "Capture positive ACK witness immediately; publish bounded explicit completion AFTER optional canonical fullread settles success OR failure under originalguards, using existing connection/coalescer. No canonical/outbox/idle->HTTP/TTL/polling. Actual production helper must be tested with ACK->independentearlyread->latefullread/failure and final fresh aligned cache+eligible plan, not just witness Bool.",
+        "Samefixedmodels900/budgets/hard50soft48/noreset. Old460 assertions and unchanged8UI/gate hashes. FullSwift/build/welcome/149/diff/8UI+strictledgers/MCP/highReviewQA. WholeB/metadata/legacyUI/routing/System live/deliverytap/finalsigning still required, technical only/parentsopen."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "PS1",
+          "description": "Actual create/record/undo accepted proof authorizes guarded completion even if optional details fail; passive restored saved, queue disappearance, rejected/pending/cancelled do not. Existing manual ordering and typed ACK guards remain.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "PS2",
+          "description": "Original UI locale and immutable SDK/model lease guard every event, including native internal save; stale same-owner ABA/token refresh/locale callback cannot publish into replacement scope. Legacy inactive integrations remain unaffected.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "PS3",
+          "description": "Production finally/completion path survives late optional canonical fullread success or failure: deterministic realStore/Repository test proves eventual fresh coherent cache plus eligible shared plan after an independent early read, not just witness count. No canonical-to-HTTP loop.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "UI1",
+          "description": "All8 exact named rendered consent cases pass with strict synthetic OS/server ledgers, snapshots/coldpref/SDK readiness, screenshots and no missing/skipped tests.",
+          "mode": "fixture",
+          "checks": [
+            "tester-consent-ui"
+          ]
+        },
+        {
+          "id": "UI2",
+          "description": "FullSwift/build/welcome and149/MCP/diff regressions pass; highReviewQA checks real production UI paths and no weakened assertions.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "UI3",
+          "description": "149 automation regression tests pass.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-ui-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-receipt.md",
+        "docs/validation/automation/tasks/tester-care-reminder-collection-events.md"
+      ]
+    }
+  ]
+}
