@@ -1485,6 +1485,390 @@ final class CatalogueSaveUITests: XCTestCase {
         element.tap()
     }
 
+
+    // Dedicated consent fixtures exercise the rendered production controls and injected Core.
+    @MainActor func testReminderEligibleConsentFromTodaySurvivesColdAndOptOut() {
+        let run = reminderRun("eligible")
+        defer { run.app.terminate() }
+        launch(run)
+        reminderExpandCompact(run)
+        reminderPreference(run, false)
+        reminderText(run, "care.reminders.status", "Reminders are off for this account.")
+        reminderSetPreference(run, true)
+        reminderOpenSettings(run)
+        reminderSnapshot(run, "before-allow")
+        reminderTap(run, "collection.settings.close")
+        reminderTap(run, "collection.back")
+        reminderExpandCompact(run)
+        reminderPreference(run, true)
+        reminderAllow(run)
+        reminderConfirmed(run)
+        screenshot(run, "compact-confirmed")
+        // Snapshot controls live in settings; opening it may legitimately reconcile the plan.
+        reminderOpenSettings(run)
+        reminderConfirmed(run)
+        reminderSnapshot(run, "confirmed")
+        reminderTap(run, "collection.settings.close")
+        reminderTap(run, "collection.back")
+        let previous = todayElement(run, "today.lastChecked").value as? String ?? ""
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        XCTAssertNotNil(formatter.date(from: previous))
+        restart(run)
+        reminderWait("Fresh cold-launch source") {
+            let checked = self.todayElement(run, "today.lastChecked")
+            guard checked.exists, let value = checked.value as? String else { return false }
+            return formatter.date(from: value) != nil && value != previous
+        }
+        reminderOpenSettings(run)
+        reminderPreference(run, true)
+        reminderConfirmed(run)
+        screenshot(run, "cold-opted-in")
+        reminderSetPreference(run, false)
+        reminderOff(run)
+        reminderSnapshot(run, "verified-off")
+        restart(run)
+        reminderOpenSettings(run)
+        reminderPreference(run, false)
+        reminderOff(run)
+        screenshot(run, "cold-opted-out")
+    }
+
+    @MainActor func testReminderOneReadLagRetryDoesNotAddOrPromptAgain() {
+        let run = reminderRun("one-readlag")
+        defer { run.app.terminate() }
+        reminderBeginAllow(run)
+        reminderConfirmed(run)
+        reminderPresent(run, "care.reminders.readback")
+        reminderSnapshot(run, "lag-confirmed-with-warning")
+        reminderTap(run, "care.reminders.retry")
+        reminderConfirmed(run)
+        reminderAbsent(run, "care.reminders.readback")
+        reminderSnapshot(run, "retry-confirmed")
+    }
+
+    @MainActor func testReminderTwoReadLagNeedsExplicitStatusRetry() {
+        let run = reminderRun("two-readlag")
+        defer { run.app.terminate() }
+        reminderBeginAllow(run)
+        reminderText(run, "care.reminders.status", "No pending reminders confirmed.")
+        reminderAbsent(run, "care.reminders.confirmed")
+        reminderSnapshot(run, "unconfirmed")
+        reminderMarkedAction(run, "care.fixture.authorized")
+        reminderText(run, "care.reminders.status", "No pending reminders confirmed.")
+        reminderAbsent(run, "care.reminders.confirmed")
+        reminderSnapshot(run, "authorized-without-retry")
+        reminderTap(run, "care.reminders.retry")
+        reminderConfirmed(run)
+        reminderSnapshot(run, "first-status-retry")
+        reminderTap(run, "care.reminders.retry")
+        reminderConfirmed(run)
+        reminderSnapshot(run, "second-status-retry")
+    }
+
+    @MainActor func testReminderDeniedKeepsManualJournalAvailable() {
+        let run = reminderRun("denied")
+        defer { run.app.terminate() }
+        launch(run)
+        reminderOpenSettings(run)
+        reminderPreference(run, false)
+        reminderSetPreference(run, true)
+        reminderText(run, "care.reminders.status", "Notifications are denied in iOS.")
+        reminderPresent(run, "care.reminders.settings")
+        reminderAbsent(run, "care.reminders.allow")
+        reminderAbsent(run, "care.reminders.confirmed")
+        reminderSnapshot(run, "denied")
+        reminderTap(run, "collection.settings.close")
+        reminderTap(run, "collection.back")
+        let journals = run.app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "today.plant."))
+        reminderWait("Manual journal entry point") { journals.count > 0 }
+        let journal = journals.firstMatch
+        XCTAssertTrue(journal.label.contains("card and journal"))
+        reminderTap(run, journal.identifier)
+        let watering = reminderReach(run, "collection.watering.record")
+        XCTAssertEqual(watering.label, "Record watering")
+        enabled(watering)
+        screenshot(run, "manual-journal-available")
+    }
+
+    @MainActor func testReminderNoScheduleNeverDefersPermissionPrompt() {
+        let run = reminderRun("noSchedule")
+        defer { run.app.terminate() }
+        launch(run)
+        reminderOpenSettings(run)
+        reminderPreference(run, false)
+        reminderSetPreference(run, true)
+        reminderText(run, "care.reminders.status",
+            "No eligible future tasks. This preference will not automatically prompt for iOS permission.")
+        reminderAbsent(run, "care.reminders.allow")
+        reminderSnapshot(run, "no-schedule")
+        reminderTap(run, "care.fixture.restore")
+        reminderPresent(run, "care.reminders.allow")
+        reminderPreference(run, true)
+        reminderAbsent(run, "care.reminders.confirmed")
+        reminderSnapshot(run, "restored-before-explicit-allow")
+        reminderAllow(run)
+        reminderConfirmed(run)
+        reminderSnapshot(run, "explicit-allow-confirmed")
+    }
+
+    @MainActor func testReminderFailedOptOutWaitsForVerifiedCleanup() {
+        let run = reminderRun("failure")
+        defer { run.app.terminate() }
+        reminderBeginAllow(run)
+        reminderText(run, "care.reminders.status", "Couldn’t confirm reminders. Retry the check.")
+        reminderAbsent(run, "care.reminders.confirmed")
+        reminderSnapshot(run, "add-failed")
+        reminderMarkedAction(run, "care.fixture.failInventory")
+        reminderSetPreference(run, false)
+        reminderStopping(run)
+        reminderSnapshot(run, "cleanup-unverified")
+        reminderMarkedAction(run, "care.fixture.clearFailure")
+        reminderStopping(run)
+        reminderSnapshot(run, "cleared-without-retry")
+        reminderTap(run, "care.reminders.retry")
+        reminderOff(run)
+        reminderSnapshot(run, "cleanup-verified")
+    }
+
+    @MainActor func testReminderReadinessPublishesInOpenSettings() {
+        let run = reminderRun("readiness")
+        defer { run.app.terminate() }
+        launch(run)
+        reminderOpenSettings(run)
+        reminderText(run, "care.reminders.loading", "Reading reminder state…")
+        reminderAbsent(run, "care.reminders.optIn")
+        reminderSnapshot(run, "before-core-binding")
+        reminderTap(run, "care.fixture.ready")
+        reminderPreference(run, false)
+        reminderOff(run)
+        reminderSnapshot(run, "ready-without-prompt")
+        reminderSetPreference(run, true)
+        reminderAllow(run)
+        reminderConfirmed(run)
+        reminderSnapshot(run, "ready-confirmed")
+    }
+
+    @MainActor func testReminderConfirmedHourReplansInsideSettings() {
+        let run = reminderRun("hour")
+        defer { run.app.terminate() }
+        reminderBeginAllow(run)
+        reminderText(run, "profile.hour.synced", "09:00")
+        reminderConfirmed(run)
+        reminderSnapshot(run, "hour-nine-confirmed")
+        _ = reminderReach(run, "profile.hour.picker")
+        let picker = run.app.pickerWheels.firstMatch
+        enabled(picker)
+        picker.adjust(toPickerWheelValue: "23:00")
+        reminderWait("Selected hour 23") { picker.value as? String == "23:00" }
+        reminderTap(run, "profile.hour.save")
+        reminderText(run, "profile.hour.pending", "Pending: 23:00")
+        reminderAbsent(run, "profile.hour.synced")
+        reminderAbsent(run, "profile.hour.save")
+        screenshot(run, "hour-lost-reply")
+        reminderTap(run, "profile.hour.retry")
+        reminderText(run, "profile.hour.synced", "23:00")
+        reminderAbsent(run, "profile.hour.pending")
+        reminderAbsent(run, "profile.hour.retry")
+        reminderConfirmed(run)
+        XCTAssertTrue(run.app.buttons["collection.settings.close"].isHittable)
+        reminderSnapshot(run, "hour-twenty-three-confirmed-same-sheet")
+    }
+
+    @MainActor
+    private func reminderRun(_ mode: String) -> Run {
+        let run = Run(mode, .en)
+        run.app.launchArguments = [
+            "--care-reminder-fixture", mode, "--care-reminder-namespace", run.namespace,
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+        ]
+        return run
+    }
+
+    @MainActor
+    private func reminderWait(_ message: String, _ condition: @escaping () -> Bool,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in condition() }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 15), .completed,
+                       message, file: file, line: line)
+    }
+
+    @MainActor
+    private func reminderScope(_ run: Run, _ identifier: String) -> XCUIElement {
+        // The compact consent remains behind the account sheet. Never select that copy.
+        if run.app.buttons["collection.settings.close"].exists,
+           identifier != "collection.settings.close" {
+            let fixtureScroll = run.app.scrollViews
+                .containing(.button, identifier: "care.fixture.snapshot").firstMatch
+            if fixtureScroll.exists { return fixtureScroll }
+            // Offscreen children may not yet be in the accessibility tree.
+            // Use only the visible sheet's scroll view while discovering them.
+            return run.app.scrollViews.allElementsBoundByIndex.first(where: { $0.isHittable })
+                ?? run.app.scrollViews.firstMatch
+        }
+        return run.app
+    }
+
+    @MainActor
+    private func reminderElement(_ run: Run, _ identifier: String) -> XCUIElement {
+        let query = reminderScope(run, identifier).descendants(matching: .any)
+            .matching(identifier: identifier)
+        return query.allElementsBoundByIndex.first(where: { $0.isHittable }) ?? query.firstMatch
+    }
+
+    @MainActor
+    @discardableResult
+    private func reminderReach(_ run: Run, _ identifier: String) -> XCUIElement {
+        // Discover offscreen accessibility elements by scrolling before waiting for existence.
+        // Search both directions in the current scroll container, with a hard bound.
+        for up in [false, true] {
+            for _ in 0..<(up ? 8 : 4) {
+                let element = reminderElement(run, identifier)
+                if element.exists && element.isHittable { return element }
+                let scope = reminderScope(run, identifier)
+                if up { scope.swipeUp() } else { scope.swipeDown() }
+            }
+        }
+        let element = reminderElement(run, identifier)
+        if !element.exists || !element.isHittable {
+            screenshot(run, "unreachable-" + identifier)
+            let tree = XCTAttachment(string: reminderScope(run, identifier).debugDescription)
+            tree.name = "consent-current-view-" + identifier
+            tree.lifetime = .keepAlways
+            add(tree)
+        }
+        enabled(element)
+        return element
+    }
+
+    @MainActor
+    private func reminderTap(_ run: Run, _ identifier: String) {
+        let element = reminderReach(run, identifier)
+        enabled(element)
+        element.tap()
+    }
+
+    @MainActor
+    private func reminderPresent(_ run: Run, _ identifier: String) {
+        _ = reminderReach(run, identifier)
+    }
+
+    @MainActor
+    private func reminderAbsent(_ run: Run, _ identifier: String) {
+        reminderWait("Absent in current view: " + identifier) {
+            !self.reminderElement(run, identifier).exists
+        }
+    }
+
+    @MainActor
+    private func reminderText(_ run: Run, _ identifier: String, _ text: String) {
+        _ = reminderReach(run, identifier)
+        reminderWait(identifier + " = " + text) {
+            self.reminderElement(run, identifier).label == text
+        }
+    }
+
+    @MainActor
+    private func reminderPreference(_ run: Run, _ on: Bool) {
+        _ = reminderReach(run, "care.reminders.optIn")
+        reminderWait("Consent preference " + String(on)) {
+            self.reminderElement(run, "care.reminders.optIn").value as? String == (on ? "1" : "0")
+        }
+    }
+
+    @MainActor
+    private func reminderSetPreference(_ run: Run, _ on: Bool) {
+        reminderPreference(run, !on)
+        reminderTap(run, "care.reminders.optIn")
+        reminderPreference(run, on)
+    }
+
+    @MainActor
+    private func reminderOpenSettings(_ run: Run) {
+        reminderTap(run, "collection.open")
+        reminderTap(run, "collection.settings.open")
+        enabled(run.app.buttons["collection.settings.close"])
+    }
+
+    @MainActor
+    private func reminderExpandCompact(_ run: Run) {
+        reminderWait("Today source settled") { self.todayElement(run, "today.lastChecked").exists }
+        if !reminderElement(run, "care.reminders.optIn").exists {
+            let disclosure = run.app.buttons.matching(NSPredicate(format: "label == %@", "Care reminders")).firstMatch
+            enabled(disclosure)
+            disclosure.tap()
+        }
+        reminderPresent(run, "care.reminders.optIn")
+    }
+
+    @MainActor
+    private func reminderBeginAllow(_ run: Run) {
+        launch(run)
+        reminderOpenSettings(run)
+        reminderPreference(run, false)
+        reminderSetPreference(run, true)
+        reminderAllow(run)
+    }
+
+    @MainActor
+    private func reminderAllow(_ run: Run) {
+        let allow = reminderReach(run, "care.reminders.allow")
+        XCTAssertEqual(allow.label, "Allow notifications")
+        enabled(allow)
+        allow.tap()
+    }
+
+    @MainActor
+    private func reminderConfirmed(_ run: Run) {
+        reminderText(run, "care.reminders.status", "Pending iOS notifications confirmed.")
+        reminderText(run, "care.reminders.confirmed", "Confirmed pending: 2")
+    }
+
+    @MainActor
+    private func reminderOff(_ run: Run) {
+        reminderPreference(run, false)
+        reminderText(run, "care.reminders.status", "Reminders are off for this account.")
+        reminderAbsent(run, "care.reminders.readback")
+        reminderAbsent(run, "care.reminders.confirmed")
+    }
+
+    @MainActor
+    private func reminderStopping(_ run: Run) {
+        reminderPreference(run, false)
+        reminderText(run, "care.reminders.status",
+            "Preference is off. iOS notification cleanup is not confirmed. Retry the check.")
+        reminderPresent(run, "care.reminders.readback")
+        reminderPresent(run, "care.reminders.retry")
+        reminderAbsent(run, "care.reminders.confirmed")
+    }
+
+    @MainActor
+    private func reminderMarker(_ run: Run) -> Int {
+        let changed = reminderElement(run, "care.fixture.changed")
+        guard changed.exists else { return 0 }
+        let label = changed.label
+        return Int(label.replacingOccurrences(of: "Changed: ", with: "")) ?? 0
+    }
+
+    @MainActor
+    private func reminderMarkedAction(_ run: Run, _ identifier: String) {
+        let previous = reminderMarker(run)
+        reminderTap(run, identifier)
+        _ = reminderReach(run, "care.fixture.changed")
+        reminderWait("Persisted fixture ACK advances") { self.reminderMarker(run) > previous }
+    }
+
+    @MainActor
+    private func reminderSnapshot(_ run: Run, _ phase: String) {
+        reminderMarkedAction(run, "care.fixture.snapshot")
+        let status = reminderElement(run, "care.reminders.status")
+        if status.exists { reminderPresent(run, "care.reminders.status") }
+        else { reminderPresent(run, "care.reminders.loading") }
+        screenshot(run, phase)
+    }
+
     private enum Language: String {
         case en, pl
         func text(_ english: String, _ polish: String) -> String { self == .pl ? polish : english }

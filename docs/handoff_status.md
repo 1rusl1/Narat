@@ -1,5 +1,30 @@
 # Narat — текущий статус и передача работы
 
+## Named8 UI ещё не принято: сохранён BLOCKED checkpoint — 21 ноября 2026
+
+Run tester-care-reminder-rendered-ui-20261121-01 завершился BLOCKED. Developer1
+353.957с добавил8 UI tests/helpers (+371/-0), static Review119.225с PASS, Swift452/
+build/welcome118.592с, automation14946.234с, MCP22.920с, diff0.020с PASS.
+Реальный первый named8 gate FAIL274.316с:8FAIL/0PASS/0skip, все timeout на
+care.reminders.optIn; ledger acceptance такжеFAIL. Видео nonreadiness показывает
+видимые Toggle/Off/Retry, поэтому отсутствие Corebinding НЕ доказано. AX/scroll
+причина ещё не установлена. Evidence q-07af3700a747d4087e863b39 сохранён.
+
+Developer2 180.425с исправил только discovery/scroll до exists-wait, добавил failure
+AX/screenshot attachments; старые assertions и8 сценариев не ослаблялись. Current
+UITest diff +384/-0, production не менялся. Swift452111.530с/14949.355с/diff0.021с
+PASS. Reviewer2 answer semantic BLOCKED140.461с (protocol call successful):
+статических дефектов нет, UI1 не подтверждён повторным прогоном. Второго UI/QA
+ещё НЕ было; прошлые verdicts/FAIL не переписаны.
+
+Сохраняется явно НЕПРИНЯТЫЙ candidate. Следующий шаг — fresh read-only acceptance
+base2187419 с Developer0/provenanceDev1+Dev2, прежними моделями/900/бюджетами.
+Только новый consent UI gate будет pre-review, чтобы получить actual8+AX доReview;
+старые checks/stages не менять. Если найдётся product AX/Host bug — отдельный
+source repair, не обход ID/ledger. После8 нужны exact edit/delete/postsave ACK hooks
+и wholeB/старые13care/Today/PL, затем routing/System delivery/final signing.
+Parent tasks открыты, root user3/PBX не тронуты; hard50soft48/noreset/technicalonly.
+
 ## Hour fixture принят; подготовлен реальный named8 UI — 21 ноября 2026
 
 Принят/pushed 8544c26f2ad31200692a7281f010cfbd22dc5969: 452 Swift
