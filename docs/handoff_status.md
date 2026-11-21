@@ -1,5 +1,31 @@
 # Narat — текущий статус и передача работы
 
+## Hour fixture принят; подготовлен реальный named8 UI — 21 ноября 2026
+
+Принят/pushed 8544c26f2ad31200692a7281f010cfbd22dc5969: 452 Swift
+(449 XCTest +3 SwiftTesting), build/welcome 138.339с, missing0; automation149
+45.897с, MCP23.884с, diff0.040с — PASS. Review84.892с/QA102.383с PASS;
+Developer415.571+70.136с. Первый Swift FAIL159.847с сохранён: единственная новая
+raw-probe при смене fixture namespace сохраняла старый служебный заголовок;
+исправлен только input, строгий отказ/zero commits сохранены. Old449 prefix byte-equal.
+Пять Swift: hour fixture разрешает только exact profile.update/idempotent receipt,
+me/sync/overview используют один canonical hour; OS-status Retry при aligned data
+остаётся локальным, care-data invalidation может будить existing external coalescer;
+DEBUG Snapshot записывает лишь stored counters, не вызывает Core/OS API.
+
+Подготовлены8 точных XCUITest сценариев в existing CatalogueSaveUITests (пока код
+не реализован), manifest/context. Новый ignored config tester-care-consent-ui.config.json
+копирует все прежние routes/900/budgets/checks и добавляет только trusted named8 gate
+под shared wrapper. Runner /private/tmp/narat-tester-consent-ui-gate.py: py_compile/help
+и35 synthetic selftest groups PASS (это проверка gate, не AppUI proof). Gate требует
+8named/count/skips0/attachments,8fresh fake/server ledgers, exact profile-only hour,
+no overlapping add/attempt reuse, snapshots noGET/no2ndadd/prompt для local Retry.
+Следующий шаг Developer→Swift/149/MCP/diff/actual8UI→ReviewQA, затем wholeB со
+всеми прежними UI regression gates. Дальше routing/currentOccurrences и ordinary
+System/SDK delivery/tap/final signing. Ничего из этого ещё не объявлено готовым.
+PBX0, root user3 не тронуты; parent tasks открыты. Hard50/soft48, reset запрещён,
+только техническая приёмка, внешняя передача отложена.
+
 ## Care-ACK B принят; подготовлен hour/Retry fixture — 21 ноября 2026
 
 Принят/pushed c85652343b9592928b2e7291b00a7e1529c78d24: 449 Swift
