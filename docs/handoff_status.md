@@ -1,5 +1,25 @@
 # Narat — текущий статус и передача работы
 
+## Dataflow A принят; подготовлен care-ACK B — 21 ноября 2026
+
+Принят/pushed 20ec8baace2581c55a3c153da7e89e70d8eaf19d: 445 Swift
+(442 XCTest +3 SwiftTesting), build/welcome 120.896с, missing0; automation149
+50.165с, MCP27.510с, diff0.045с — PASS. Review85.249с/QA125.207с PASS.
+Developer272.296+72.759с; первый FAIL150.026с сохранён: новый тест использовал
+неподходящий fixture token; исправлен только его JWT input. Прежние assertions
+сохранены побайтно. Четыре Swift: явный one-shot SDK epoch/owner/connection/locale
+intent для settings-open, confirmed profile hour и explicit consent Retry передаётся
+в существующий Root coalescer. Core остаётся cache-only.
+
+Подготовлен отдельный care-ACK B manifest/context (Guest/Repository/Engine/Unit,
+без PBX): подтверждённые действия ухода в открытой карточке должны обновлять
+overview без dismiss. Legacy correction/undo требуют точного accepted-operation
+результата того же ordered drain; queue disappearance не является ACK. Следующий
+шаг Developer→Swift/149/MCP/diff→ReviewQA, затем strict hour fixture и 8 rendered
+сценариев/wholeB. Current local/fixture proof не заменяет System/ordinary SDK live.
+Новые родительские checkbox не закрывались; root user3 не тронуты. Бюджет hard50,
+soft48, reset запрещён; техническая приёмка без внешней передачи.
+
 ## B2b1 принят; подготовлен dataflow A — 21 ноября 2026
 
 Принят/pushed 2854b0ee830e5473b6d28fb056fcb3a0a00db228: 442 Swift

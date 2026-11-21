@@ -1,0 +1,77 @@
+{
+  "tasks": [
+    {
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "id": "tester-care-reminder-care-ack",
+      "description": "Wake existing bounded Root overview pass from exact confirmed care UI outcomes, preserving ordered drain and all receipt guards.",
+      "files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "ios/Plants/Data/Local/LocalStore.swift"
+      ],
+      "write_files": [
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "SMALL dataflow B only. Read full context/current source. Existing files ALREADY EXIST, generate unified diff programmatically from actual bytes (difflib/equivalent), no /dev/null or guessed headers. Only4writefiles/noPBX/newframework/schema/Core/backend/OS changes. Target250-350lines including meaningful tests.",
+        "Exact target operation accepted receipt/canonical-validation result from SAME generic ordered drain; preserve existing Int APIs/counters/order/UUIDs/predecessor/deletion/CAS/lease guards and automatic semantics. No actor-global receipt cache/new durable queue. Do not use onlyOperation shortcut, queue disappearance/count>0/unrelated commit/correction.ready/preexisting enabledAt is not ACK.",
+        "Reuse A explicit scoped read intent only at positive typed record/recovery/routine/firstaid/refresh/basic/correction-undo UI seams. Original SDK epoch+locale guarded after await, event before optional view reread when positively confirmed. No passive loadHistory/canonical/outbox/idle-to-network feedback. Pending/rejected/unconfirmed/cancel/stale does not emit; old legacy fixture guards unchanged.",
+        "Append compact meaningful receipt/ordering/rejection/lostACK/canonicalFailure/ownerABA tests reusing existing helpers. Existing445 assertions unchanged. FullSwift/149/MCP/diff/highReviewQA. Named8/hourmode/wholeB/realSystem proof remains next, no parent closure. Models900/budgets unchanged, hard50soft48/noreset."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ACK1",
+          "description": "Exact operation receipt-derived care outcomes and preserved ordering tested with fullSwift/build/welcome/diff, all445 old assertions unchanged.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "ACK2",
+          "description": "MCP/highReviewQA verify explicit UI events only after positive proof, no passive HTTP/new sync loops or fixture System leak.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "ACK3",
+          "description": "149 automation regression checks pass; rendered8/wholeB still open.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md"
+      ]
+    }
+  ]
+}
