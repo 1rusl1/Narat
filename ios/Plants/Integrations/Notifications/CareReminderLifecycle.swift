@@ -14,7 +14,15 @@ final class CareReminderLifecycle: ObservableObject {
         var readCache: (() async throws -> CareOverviewViewState)? = nil
     }
 
+    /// Immutable authority captured when the consent controls are presented.
+    struct ConsentBinding: Equatable {
+        fileprivate let scopeId: UUID
+        let ownerId: UUID
+        let locale: String
+    }
+
     private final class Scope {
+        let id = UUID()
         let context: Context
         init(_ context: Context) { self.context = context }
     }
@@ -161,6 +169,19 @@ final class CareReminderLifecycle: ObservableObject {
         return valid(scope)
     }
 
+    func consentBinding(expectedOwnerId: UUID, locale: String) -> ConsentBinding? {
+        guard let scope, scope.context.lease.ownerId == expectedOwnerId,
+              scope.context.locale == locale, valid(scope) else { return nil }
+        return ConsentBinding(scopeId: scope.id, ownerId: expectedOwnerId, locale: locale)
+    }
+
+    func isCurrent(binding: ConsentBinding) -> Bool {
+        guard let scope, scope.id == binding.scopeId,
+              scope.context.lease.ownerId == binding.ownerId,
+              scope.context.locale == binding.locale else { return false }
+        return valid(scope)
+    }
+
     func eligibleCandidateCount(expectedOwnerId: UUID) -> Int {
         guard isCurrent(ownerId: expectedOwnerId), let scope, readTask == nil,
               !readFailed else { return 0 }
@@ -173,13 +194,13 @@ final class CareReminderLifecycle: ObservableObject {
         active && eligibleCandidateCount(expectedOwnerId: expectedOwnerId) > 0
     }
 
-    func consentStatus(expectedOwnerId: UUID) -> ReminderConsentStatus {
+    func consentStatus(binding: ConsentBinding) -> ReminderConsentStatus {
         ReminderConsentStatus(
-            current: isCurrent(ownerId: expectedOwnerId)
-                && (state == nil || state?.ownerId == expectedOwnerId),
+            current: isCurrent(binding: binding)
+                && (state == nil || state?.ownerId == binding.ownerId),
             reading: readTask != nil, active: active, optedIn: optedIn,
             readFailed: readFailed, state: state,
-            eligibleCount: eligibleCandidateCount(expectedOwnerId: expectedOwnerId),
+            eligibleCount: eligibleCandidateCount(expectedOwnerId: binding.ownerId),
             authorization: authorization, requestingPermission: requestingPermission,
             result: result, now: clock())
     }
@@ -188,15 +209,15 @@ final class CareReminderLifecycle: ObservableObject {
         case setOptedIn(Bool), allow, checkStatus
     }
 
-    func performConsentAction(_ action: ConsentAction, expectedOwnerId: UUID) {
-        guard isCurrent(ownerId: expectedOwnerId) else { return }
+    func performConsentAction(_ action: ConsentAction, binding: ConsentBinding) {
+        guard isCurrent(binding: binding) else { return }
         switch action {
         case .setOptedIn(let value):
             // Preference only: neither now nor on later eligibility does this create prompt intent.
             setOptedIn(value)
         case .allow:
             guard active, optedIn,
-                  eligibleCandidateCount(expectedOwnerId: expectedOwnerId) > 0 else { return }
+                  eligibleCandidateCount(expectedOwnerId: binding.ownerId) > 0 else { return }
             requestEligiblePermission()
         case .checkStatus:
             retry()

@@ -884,9 +884,11 @@ struct CatalogueCollectionView: View {
                         ScrollView {
                             VStack {
                                 ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish)
-                                if let careReminder {
+                                if let careReminder,
+                                   let binding = careReminder.consentBinding(
+                                    expectedOwnerId: scope.session.userId, locale: polish ? "pl" : "en") {
                                     ReminderConsentView(lifecycle: careReminder,
-                                                        expectedOwnerId: scope.session.userId, polish: polish)
+                                                        binding: binding, polish: polish)
                                 }
                                 AccountSignOutSettings(connection: connection, expected: scope, polish: polish)
                             }

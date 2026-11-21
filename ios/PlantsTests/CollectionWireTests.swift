@@ -13280,22 +13280,23 @@ extension CollectionWireTests {
         core.setSceneActive(true)
         core.accept(lifecycleContext(store, api, lease))
         await core.waitUntilIdle()
-        XCTAssertEqual(core.consentStatus(expectedOwnerId: syncOwner).phase, .off)
-        core.performConsentAction(.setOptedIn(true), expectedOwnerId: syncOwner)
+        let binding = try XCTUnwrap(core.consentBinding(expectedOwnerId: syncOwner, locale: "pl"))
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .off)
+        core.performConsentAction(.setOptedIn(true), binding: binding)
         await core.waitUntilIdle()
         api.syncAuthority.bind(try profileSession(ownerId: otherSyncOwner))
         let revision = core.revision
         let actions: [CareReminderLifecycle.ConsentAction] = [.setOptedIn(false), .allow, .checkStatus]
         for action in actions {
-            core.performConsentAction(action, expectedOwnerId: syncOwner)
+            core.performConsentAction(action, binding: binding)
         }
         XCTAssertEqual(core.revision, revision)
         XCTAssertTrue(defaults.bool(forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner)))
-        XCTAssertEqual(core.consentStatus(expectedOwnerId: syncOwner).phase, .unavailable)
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .unavailable)
         let b = try api.syncAuthority.capture(ownerId: otherSyncOwner)
         core.accept(lifecycleContext(store, api, b))
         await core.waitUntilIdle()
-        core.performConsentAction(.setOptedIn(true), expectedOwnerId: syncOwner)
+        core.performConsentAction(.setOptedIn(true), binding: binding)
         XCTAssertFalse(core.optedIn)
         XCTAssertFalse(defaults.bool(forKey: CareReminderLifecycle.preferenceKey(ownerId: otherSyncOwner)))
         XCTAssertEqual(fake.permissionRequests, 0)
@@ -13317,8 +13318,9 @@ extension CollectionWireTests {
         core.setSceneActive(true)
         core.accept(lifecycleContext(store, api, lease))
         await core.waitUntilIdle()
-        core.performConsentAction(.setOptedIn(true), expectedOwnerId: syncOwner)
-        core.performConsentAction(.allow, expectedOwnerId: syncOwner)
+        let binding = try XCTUnwrap(core.consentBinding(expectedOwnerId: syncOwner, locale: "pl"))
+        core.performConsentAction(.setOptedIn(true), binding: binding)
+        core.performConsentAction(.allow, binding: binding)
         await core.waitUntilIdle()
         XCTAssertFalse(core.offersConsent(expectedOwnerId: syncOwner))
         XCTAssertEqual(fake.permissionRequests, 0)
@@ -13326,17 +13328,109 @@ extension CollectionWireTests {
         core.cachePublicationOrTimeChanged()
         await core.waitUntilIdle()
         XCTAssertTrue(core.offersConsent(expectedOwnerId: syncOwner))
-        XCTAssertTrue(core.consentStatus(expectedOwnerId: syncOwner).canAllow)
+        XCTAssertTrue(core.consentStatus(binding: binding).canAllow)
         core.setSceneActive(false)
         core.setSceneActive(true)
-        core.performConsentAction(.checkStatus, expectedOwnerId: syncOwner)
+        core.performConsentAction(.checkStatus, binding: binding)
         await core.waitUntilIdle()
         XCTAssertEqual(fake.permissionRequests, 0)
-        core.performConsentAction(.allow, expectedOwnerId: syncOwner)
+        core.performConsentAction(.allow, binding: binding)
         await core.waitUntilIdle()
         XCTAssertEqual(fake.permissionRequests, 1)
-        XCTAssertEqual(core.consentStatus(expectedOwnerId: syncOwner).phase, .unconfirmed)
+        XCTAssertEqual(core.consentStatus(binding: binding).phase, .unconfirmed)
         core.logout()
         await core.waitUntilIdle()
+    }
+
+    @MainActor
+    func testConsentFrozenBindingRejectsReplacementSDKLocaleAndABA() async throws {
+        for transition in ["context", "sdk", "locale", "aba"] {
+            let (url, store, api, lease, _) = try await overviewRepositoryFixture(CatalogueTransport([]))
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            try await lifecycleCache(store, api, lease, rows: [reminderRow(serverPlantId)])
+            let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+            let fake = FakeCareReminderNotifications()
+            fake.authorizationValue = .notDetermined
+            let state = CareOverviewViewState(local: local, now: fake.now, origin: .cache)
+            let suite = UUID().uuidString
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+                clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+            core.setSceneActive(true)
+            core.accept(lifecycleContext(store, api, lease, reader: { state }))
+            await core.waitUntilIdle()
+            let original = try XCTUnwrap(core.consentBinding(expectedOwnerId: syncOwner, locale: "pl"))
+            // These closures model actions retained by the original presentation.
+            let oldToggle: (Bool) -> Void = { core.performConsentAction(.setOptedIn($0), binding: original) }
+            let oldAllow = { core.performConsentAction(.allow, binding: original) }
+            let oldRetry = { core.performConsentAction(.checkStatus, binding: original) }
+            var nextLease = lease
+            if transition == "sdk" || transition == "aba" {
+                if transition == "aba" {
+                    core.logout()
+                    api.syncAuthority.bind(try profileSession(ownerId: otherSyncOwner))
+                    let b = try api.syncAuthority.capture(ownerId: otherSyncOwner)
+                    core.accept(lifecycleContext(store, api, b))
+                    await core.waitUntilIdle()
+                }
+                api.syncAuthority.bind(try profileSession())
+                nextLease = try api.syncAuthority.capture(ownerId: syncOwner)
+            }
+            let locale = transition == "locale" ? "en" : "pl"
+            let nextState: CareOverviewViewState
+            if locale != original.locale {
+                var page = overviewPage([reminderRow(serverPlantId)])
+                page["verified_access_until"] = NSNull()
+                let token = try await store.beginCareOverviewRead(
+                    locale: locale, context: nextLease, authority: api.syncAuthority)
+                let localized = try await store.finishCareOverviewRead(
+                    token, snapshot: overviewSnapshot([page]), authority: api.syncAuthority)
+                nextState = CareOverviewViewState(local: localized, now: fake.now, origin: .cache)
+            } else {
+                nextState = state
+            }
+            core.accept(lifecycleContext(store, api, nextLease, locale: locale, reader: { nextState }))
+            await core.waitUntilIdle()
+            let fresh = try XCTUnwrap(core.consentBinding(expectedOwnerId: syncOwner, locale: locale))
+            XCTAssertNotEqual(original, fresh, transition)
+            XCTAssertFalse(core.isCurrent(binding: original), transition)
+            XCTAssertEqual(core.consentStatus(binding: original).phase, .unavailable, transition)
+            XCTAssertNil(core.consentBinding(expectedOwnerId: syncOwner, locale: locale == "pl" ? "en" : "pl"))
+            for enabled in [false, true] {
+                core.performConsentAction(.setOptedIn(enabled), binding: fresh)
+                await core.waitUntilIdle()
+                XCTAssertEqual(core.optedIn, enabled, transition)
+                let revision = core.revision
+                let preferences = NSDictionary(dictionary: defaults.persistentDomain(forName: suite) ?? [:])
+                let permissions = fake.permissionRequests
+                let adds = fake.adds.count
+                let reads = fake.inventoryReads
+                let removals = fake.removed
+                oldToggle(!enabled)
+                oldAllow()
+                oldRetry()
+                await core.waitUntilIdle()
+                XCTAssertEqual(core.revision, revision, transition)
+                XCTAssertEqual(core.optedIn, enabled, transition)
+                XCTAssertEqual(NSDictionary(dictionary: defaults.persistentDomain(forName: suite) ?? [:]),
+                               preferences, transition)
+                XCTAssertEqual(fake.permissionRequests, permissions, transition)
+                XCTAssertEqual(fake.adds.count, adds, transition)
+                XCTAssertEqual(fake.inventoryReads, reads, transition)
+                XCTAssertEqual(fake.removed, removals, transition)
+            }
+            XCTAssertTrue(core.consentStatus(binding: fresh).canAllow, transition)
+            let revision = core.revision
+            core.performConsentAction(.checkStatus, binding: fresh)
+            await core.waitUntilIdle()
+            XCTAssertGreaterThan(core.revision, revision, transition)
+            core.performConsentAction(.allow, binding: fresh)
+            await core.waitUntilIdle()
+            XCTAssertEqual(fake.permissionRequests, 1, transition)
+            XCTAssertEqual(core.consentStatus(binding: fresh).phase, .unconfirmed, transition)
+            core.logout()
+            await core.waitUntilIdle()
+        }
     }
 }

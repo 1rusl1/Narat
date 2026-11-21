@@ -288,10 +288,11 @@ struct RootContainerView: View {
                         )
                         if let ownerId = consentOwnerId,
                            todayContext.map({ isTodayCurrent($0) && !todayFenced }) == true,
-                           !todayUnavailable, careReminder.offersConsent(expectedOwnerId: ownerId) {
-                            ReminderConsentView(lifecycle: careReminder, expectedOwnerId: ownerId,
+                           !todayUnavailable, careReminder.offersConsent(expectedOwnerId: ownerId),
+                           let binding = careReminder.consentBinding(
+                            expectedOwnerId: ownerId, locale: isPolish ? "pl" : "en") {
+                            ReminderConsentView(lifecycle: careReminder, binding: binding,
                                                 polish: isPolish, compact: true)
-                                .id(ownerId)
                         }
                     } else {
                         PlantHomeView(

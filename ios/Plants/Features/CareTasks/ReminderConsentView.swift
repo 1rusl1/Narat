@@ -61,13 +61,13 @@ struct ReminderConsentStatus: Equatable {
 
 struct ReminderConsentView: View {
     @ObservedObject var lifecycle: CareReminderLifecycle
-    let expectedOwnerId: UUID
+    let binding: CareReminderLifecycle.ConsentBinding
     let polish: Bool
     var compact = false
     @Environment(\.openURL) private var openURL
 
     private var status: ReminderConsentStatus {
-        lifecycle.consentStatus(expectedOwnerId: expectedOwnerId)
+        lifecycle.consentStatus(binding: binding)
     }
 
     var body: some View {
@@ -86,10 +86,10 @@ struct ReminderConsentView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(polish ? "Przypomnienia o pielęgnacji" : "Care reminders", isOn: Binding(
-                get: { lifecycle.isCurrent(ownerId: expectedOwnerId) && lifecycle.optedIn },
-                set: { lifecycle.performConsentAction(.setOptedIn($0), expectedOwnerId: expectedOwnerId) }
+                get: { lifecycle.isCurrent(binding: binding) && lifecycle.optedIn },
+                set: { lifecycle.performConsentAction(.setOptedIn($0), binding: binding) }
             ))
-            .disabled(!lifecycle.isCurrent(ownerId: expectedOwnerId))
+            .disabled(!lifecycle.isCurrent(binding: binding))
             .accessibilityIdentifier("care.reminders.optIn")
             Text(message(status.phase))
                 .accessibilityIdentifier("care.reminders.status")
@@ -110,18 +110,18 @@ struct ReminderConsentView: View {
             }
             if status.canAllow {
                 Button(polish ? "Zezwól na powiadomienia" : "Allow notifications") {
-                    lifecycle.performConsentAction(.allow, expectedOwnerId: expectedOwnerId)
+                    lifecycle.performConsentAction(.allow, binding: binding)
                 }
                 .accessibilityIdentifier("care.reminders.allow")
             }
             Button(polish ? "Sprawdź status / ponów" : "Check status / retry") {
-                lifecycle.performConsentAction(.checkStatus, expectedOwnerId: expectedOwnerId)
+                lifecycle.performConsentAction(.checkStatus, binding: binding)
             }
-            .disabled(!lifecycle.isCurrent(ownerId: expectedOwnerId) || lifecycle.requestingPermission)
+            .disabled(!lifecycle.isCurrent(binding: binding) || lifecycle.requestingPermission)
             .accessibilityIdentifier("care.reminders.retry")
             if status.phase == .denied || (status.readbackWarning && lifecycle.authorization == .denied) {
                 Button(polish ? "Ustawienia iOS" : "iOS Settings") {
-                    guard lifecycle.isCurrent(ownerId: expectedOwnerId),
+                    guard lifecycle.isCurrent(binding: binding),
                           let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     openURL(url)
                 }
