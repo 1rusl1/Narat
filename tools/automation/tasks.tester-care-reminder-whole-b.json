@@ -1,0 +1,140 @@
+{
+  "tasks": [
+    {
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "id": "tester-care-reminder-whole-b",
+      "description": "Accept complete consent/runtime/dataflow UNION with all prior care/Today/metadata and new rendered consent regressions.",
+      "files": [
+        "docs/handoff_status.md",
+        "docs/validation/automation/tasks/tester-care-reminder-accessibility-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-accessibility.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-bootstrap.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-care-ack.md",
+        "docs/validation/automation/tasks/tester-care-reminder-collection-events-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-collection-events.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-controls.md",
+        "docs/validation/automation/tasks/tester-care-reminder-fixture-foundation-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-fixture-foundation.md",
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-hour-fixture.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-receipt-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-receipt.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-ui-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-ui.md",
+        "docs/validation/automation/tasks/tester-care-reminder-presentation-evidence-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-presentation-evidence-stopped.md",
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-acceptance-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-rendered-ui-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-acceptance-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-acceptance.md",
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-bridge-blocked.md",
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-bridge-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent.md",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Sync/SyncEngine.swift",
+        "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveModel.swift",
+        "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/PlantsTests/CatalogueConnectionTests.swift",
+        "ios/PlantsTests/CatalogueSaveModelTests.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "ios/PlantsUITests/PlantsUITests.swift",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "tools/automation/tasks.tester-care-reminder-accessibility.json",
+        "tools/automation/tasks.tester-care-reminder-bootstrap.json",
+        "tools/automation/tasks.tester-care-reminder-care-ack.json",
+        "tools/automation/tasks.tester-care-reminder-collection-events.json",
+        "tools/automation/tasks.tester-care-reminder-consent-controls.json",
+        "tools/automation/tasks.tester-care-reminder-fixture-foundation.json",
+        "tools/automation/tasks.tester-care-reminder-hour-fixture.json",
+        "tools/automation/tasks.tester-care-reminder-postsave-receipt.json",
+        "tools/automation/tasks.tester-care-reminder-postsave-ui.json",
+        "tools/automation/tasks.tester-care-reminder-presentation-evidence.json",
+        "tools/automation/tasks.tester-care-reminder-rendered-ui-acceptance.json",
+        "tools/automation/tasks.tester-care-reminder-rendered-ui.json",
+        "tools/automation/tasks.tester-care-reminder-saved-card-acceptance.json",
+        "tools/automation/tasks.tester-care-reminder-saved-card-bridge.json",
+        "tools/automation/tasks.tester-care-reminder-ui-read-intent.json",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-whole-b-context.md",
+        "tools/automation/tasks.tester-care-reminder-whole-b.json"
+      ],
+      "write_files": [],
+      "constraints": [
+        "READ ONLY wholecandidatebase80e, Developer0 with real accepted-source provenance. Inspect fullunion notonlylastslice; no source/test/gate weakening. Same models900/budgets hard50soft48/noreset. All original checks/stages preserved plus explicit7metadata regression unitgate.",
+        "WholeB consent/dataflow originalSDK+locale/currentreadguards; exactreceipts notqueueempty/passiverestore; final optionalread settlement fresh plan. No canonical observer->HTTP, no newdatecalculation/content/queue/Auth/worker/SQL mutations.",
+        "Actual8+strictledgers and old13care/Today/PL/metadata/fullSwift149MCP allrequired. Fixture/local only, ordinarycurrentSource System SDK deliverytap/collection-only remainsseparate; parent tasks open/technicalonly."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "WB1",
+          "description": "All eight rendered consent cases and strict fake OS/server ledgers pass count8/skips0 with immutable tests/gate; UItruth, readiness, oldbinding, statuslag, localRetry and hourconfirmed plan hold.",
+          "mode": "fixture",
+          "checks": [
+            "tester-consent-ui"
+          ]
+        },
+        {
+          "id": "WB2",
+          "description": "All original care13+ledger, Today navigation/offline/source/error/readonly, Polish pending read all7existing metadata rename/conditions/deletion and4result-save presentation UI regressions pass no skips/missing; resultcasesrenderonly, oldfixturesisolatedfromSystem.",
+          "mode": "fixture",
+          "checks": [
+            "tester-care-ui",
+            "tester-today-ui",
+            "tester-care-pl-ui",
+            "tester-metadata-ui",
+            "tester-result-save-ui"
+          ]
+        },
+        {
+          "id": "WB3",
+          "description": "FullSwift/source coverage/build/welcome/MCP/diff pass, no missing/skipped tests. Exact original lease/locale guarded completion, receipt and late optionalfullread settlement prove eventual coherentfresh cache/eligible plan without implicit HTTP loop.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "WB4",
+          "description": "149 automation regressions pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-whole-b-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-acceptance-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-saved-card-bridge-blocked.md",
+        "docs/validation/automation/tasks/tester-care-reminder-presentation-evidence-stopped.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-ui.md",
+        "docs/validation/automation/tasks/tester-care-reminder-postsave-receipt.md",
+        "docs/validation/automation/tasks/tester-care-reminder-collection-events.md",
+        "docs/validation/automation/tasks/tester-care-reminder-accessibility.md"
+      ],
+      "candidate_base": "80eaa98b3578a5600c728403d86e26015beca3ac"
+    }
+  ]
+}
