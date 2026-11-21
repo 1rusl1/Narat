@@ -1,5 +1,23 @@
 # Narat — текущий статус и передача работы
 
+## B2b1 принят; подготовлен dataflow A — 21 ноября 2026
+
+Принят/pushed 2854b0ee830e5473b6d28fb056fcb3a0a00db228: 442 Swift
+(439 XCTest +3 SwiftTesting), build/welcome 169.755с, missing0; automation149
+54.132с, MCP30.522с, diff0.049с — PASS. Developer530.832с,
+Review122.736с/QA118.556с PASS. Опция off теперь отдельно от подтверждённого
+OS cleanup; DEBUG controls/evidence доступны только matched fake/Core.
+Это local/fixture приёмка; новых rendered/System/ordinary-live доказательств нет.
+
+Обязательный gap wholeB: collection full refresh инвалидирует overview, но
+settings-open/hour ACK не будят внешний refresh до закрытия коллекции.
+Подготовлен отдельный узкий manifest/context dataflow A: explicit original-scoped
+settings/hour/Retry intent → существующий Root coalescer. Core остаётся cache-only.
+Следующий шаг Developer→Swift/149/MCP/diff→ReviewQA. Затем dataflow B по реальным
+confirmed-care seams, strict hour fixture и 8 named rendered cases/wholeB.
+Новые PBX refs отсутствуют; protected root user3 не тронуты. Parent tasks открыты.
+Actual usage7/93, hard50/soft48, reset запрещён; только техническая приёмка.
+
 ## B2a strict bootstrap принят; подготовлен B2b1 UI truth/controls — 21 ноября 2026
 
 Принят/pushed f7ee8db43fa40f1f97c233ce25e88b548e30c87c:439Swift/build/welcome

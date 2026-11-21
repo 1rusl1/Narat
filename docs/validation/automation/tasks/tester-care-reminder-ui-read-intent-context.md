@@ -1,0 +1,18 @@
+# B2b dataflow A: explicit settings/hour/Retry read intent
+
+Baseline: accepted 2854b0ee830e5473b6d28fb056fcb3a0a00db228. No PBX changes.
+
+## Confirmed gap
+CatalogueCollectionView.load calls collectionCards -> performFullRefresh. Canonical publish rotates derived overview generation. Opening Account settings only presents sheet, Core reads cache only; Allow can stay unavailable until collection dismissal. Successful profile-hour ACK similarly invalidates overview, while sheet remains open. Core must stay network-free.
+
+## Narrow implementation
+Add ONE transient typed explicit UI read intent to existing CatalogueConnection (nonreused nonce, captured CatalogueSDKSnapshot including epoch, locale). It is in-memory only, no persistence/logging of tokens. Capture original expected snapshot and locale from existing UI scope. Publication checks original permanent SDK/currentness; consumption also verifies same connection/current SDK epoch and current locale. Prefer tiny callable validation seam for meaningful real SDK Harness regressions. Root observes this explicit event and increments existing careReconnectRevision, using existing external coalescer; no new client/read loops or canonical/outbox observer HTTP. Only active current nonlegacy scope, preserve dedicated paired fixture exception and old fixture isolation.
+
+Emit ONLY from explicit Account settings open, successful typed ProfileReminderHourOutcome.confirmed after existing original guards, and explicit consent Check status/retry through a captured guarded Host callback (also require immutable Core consentBinding current before callback). Core retry remains local; the Root request is the one authorized bounded external pass. Stale retained callbacks cannot read a replacement owner/epoch/locale. Never emit from profile load, passive pending read, publication/canonical/outbox stream, or rejected/pending/unconfirmed command outcomes. Do not trigger on Allow/toggle or automatically defer permission. Existing final refresh can perform <=2 overview GETs +1 alignment per repository operation, never claim exactly1 physical GET.
+
+## Scope and tests
+Write only App/PlantsApp.swift, Features/Catalogue/GuestCatalogueView.swift, Features/CareTasks/ReminderConsentView.swift, PlantsTests/CatalogueConnectionTests.swift. Existing files/scaffolds ALREADY EXIST: generate unified diff programmatically from actual worktree bytes (difflib/equivalent), do not guess @@ headers or use /dev/null. Around150-220 added lines, no backend/Core/Runtime/Planner/Scheduler/PBX/schema changes.
+Meaningful deterministic real SDK Harness tests: valid explicit original event accepted once/nonreused subsequent nonce; captured old snapshot rejected after owner switch, same-token epoch refresh and A-B-A; locale mismatch rejected at consumption; anonymous/unresolved rejected. Passive canonical/cache reads do not publish events. Keep all existing442 Swift assertions unchanged. Test emitted/consumed intent distinction, not just constructor equality. Old425 CollectionWireTests baseline remains byte unchanged in this slice.
+
+## Acceptance boundary
+FullSwift/build/welcome,149automation,MCP,diff,highReviewQA. This narrowly accepts event plumbing; rendered settings-open/future Allow and hour ACK/new plan proof still required. Next dataflow B wires confirmed-care UI seams based on canonical proof, not queue disappearance; then strict dedicated hour mode +8 rendered UI cases + full wholeB from80eaa98. No care facts/OS permissions/backend writes now. Full parent tasks remain open. Models/routes/budgets900 unchanged; usage7/93, hard50soft48,noreset. Technical acceptance only.
