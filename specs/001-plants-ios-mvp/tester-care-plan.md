@@ -10,7 +10,7 @@
 [Поиск источников](../../docs/validation/care-data-sources-2026-11-19.md)
 ведётся отдельно и не блокирует эту очередь.
 
-## Текущая граница технической приёмки — 20 ноября 2026
+## Текущая граница технической приёмки — 21 ноября 2026
 
 Сейчас выполняется техническая приёмка. Внешняя передача/TestFlight отложены;
 физическая матрица ниже остаётся открытой. Рекомендации и покупки отложены.
@@ -27,13 +27,19 @@ Factory/System adapter add→pending→trusted route→точное удален
 [Архив](../../docs/validation/tester-iphone-signing-root-2026-11-20.md),
 [OS roundtrip](../../docs/validation/tester-reminder-system-roundtrip-2026-11-20.md).
 
-Следующий пакет: ReminderConsentView и привязка к текущему владельцу,
-добровольное включение/выключение и явный permission только при применимой
-задаче. UI должен различать подтверждённые pending и временно старый
-authorization; failed=false при0pending не означает готовое напоминание.
-Переиспользовать существующий profile hour. Затем delegate/актуальный route,
-полный Scheduler+Store/real OS и новая итоговая подписанная сборка. Сборка2
-промежуточная, полные задачи не закрываются.
+Consent A7bdf4c принят: view/current-owner binding/status,431 Swift,149
+automation,MCP,care13,Today6,PL и Review/QA. Исходные callbacks связаны со
+ScopeUUID/owner/locale, observed host ждёт исходную SDK-сессию. Это реализация
+и старые UI-регрессии; новый rendered consent ещё не доказан. Следующий пакет:
+B1 fake foundation → B2 injection до runtime и UI-сценарии (в том числе
+settings открыт до готовности binding). Затем delegate/current occurrence
+route, полный Scheduler/Store/System и новая итоговая подписанная сборка.
+
+[Свежий read-only backend preflight](../../docs/validation/tester-care-readonly-preflight-2026-11-21.md)
+подтвердил доступ/интервал7/час9 и сохранность исходных данных без domain writes.
+Local outbox и OS consent/pending проверяются отдельно до будущего live intent.
+Сборка2 изfe0b99e не включает новый consent A; она промежуточная.
+Полные задачи и физическая матрица остаются открытыми.
 
 ## Цель и границы
 

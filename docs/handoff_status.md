@@ -1,5 +1,28 @@
 # Narat — текущий статус и передача работы
 
+## Root интегрировал Consent A; живой backend проверен только на чтение — 21 ноября 2026
+
+Whole A7bdf4c / doc03e17b6 объединены. 431 Swift,149 automation,MCP,
+PL replay,care13,Today6 и Review/QA прошли; режим local/fixtures, новый
+rendered consent ещё B. Исходные три пользовательских файла сохранены по
+manifest53ab556 (SHA unchanged), index пуст. Код в этом doc-шаге не менялся.
+
+Отдельный normal-auth READ_ONLY_PREFLIGHT_PASS на существующем тестовом
+владельце: active plant1,6 VOID entries/6 reversals (entry_id join),
+Ficus tombstone сохранён, profilehour09:00, опубликованный soil-check7дней,
+automation_allowed=true/Free deadline=null. Canonical rows и профиль
+до/после совпали, domain writes0. Local outbox/consent/OS state не проверены;
+готовность исполнения доставки этим не установлена.
+[Живой preflight](validation/tester-care-readonly-preflight-2026-11-21.md).
+
+Обновлены handoff/tester-care-plan/tasks, добавлены sanitised MD/JSON.
+JSON/ссылки/secret guards/diff/сохранность user files проверены; Xcode/UI
+ради документов не повторяли. После commit/push lane FF этот коммит и
+переходит к B1 unwired fake foundation → B2 early injection/rendered UI,
+включая settings-before-binding barrier. Затем delegate/route и полный
+реальный Scheduler/Store/System сценарий. T080 и полные родительские задачи
+открыты. Счётчик4% used/96% remaining; hard50/soft48, reset0 и запрещён.
+
 ## Consent A принят целиком; новый UI-сценарий проверяем в B — 21 ноября 2026
 
 Принят и отправлен `7bdf4c229ef43204c6527a38cfd992c4b11e102a`, run
