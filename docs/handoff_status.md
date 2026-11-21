@@ -21,6 +21,10 @@ unique leaf paths/hash/no symlink/traversal/missing/foreign-case substitution.
 1positive+19negative validator cases incl historicalempty rejection и реальный старыйPNG1206x2622
 PASS — это gate validation, не новое AppUI proof. Прежние8UI/gate hashes неизменны.
 
+UI-helper checkpoint fd2e69d сохранён/pushed, по-прежнему непринятый.
+Подготовлен formal read-only manifest tester-care-reminder-saved-card-acceptance:
+полная база c59091e, все delta paths, Developer0 и provenance actual UI Developer51.995с.
+
 Следующий шаг — fresh formal read-only UNION candidate_basec590: все6M2capp/test paths+
 UIhelper, полныеSwift/149/8consent+ledgers/4per-testPNG/MCP/diff/highReviewQA, Developer0
 с provenance реальных прошлых Developer. Никакого исправленного старого verdict/фальшивогоPASS.
