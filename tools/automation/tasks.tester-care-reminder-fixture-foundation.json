@@ -1,0 +1,73 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-fixture-foundation",
+      "description": "Build unused stable runtime and dedicated fake foundation; default-block new fixture flags until B2 validated early injection/rendered UI.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-fixture-foundation-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants/App/PlantsApp.swift"
+      ],
+      "constraints": [
+        "B1Root exception ONLY: default-block any --care-reminder* prefix in existingisolation and earliestDEBUGbootstrap beforestaging/ordinaryfallback. All newfamilyflags intentionallystartupFailed/HOLD until B2, preventing accidentalSystem/SDKstartup whileunwired. No other Root/UI/runtime wiring in B1. ExistingCoreownedRoot stays unchanged. This explicit exception overrides the later noRootwire wording, not its other constraints.",
+        "Read foundationcontext. B1unusedcomponents only; DO NOT wireRoot/Host/UI yet. SameCore/lifecycle acrossfutureRoot auth/cache/clock/scene/consent. Small ObservableObjectruntime with weak publisherforwarding from acceptedCore so computedCore at futureRoot redraws; no plainState fakeCore. Constructor inert. No secondCore/worker/globalmutableoverride. Production factory preserves unchanged System+standarddefaults+Date/currentTZ, no automaticpermission/network. Components maycreate .invalid SDKfixture context only via explicitvalidatedDEBUG method, never constructor.",
+        "Strictdedicated DEBUG --care-reminder-fixture mode +--care-reminder-namespace UUID parsebeforeanySystem/SDKbootstrap. Rejectunknownprefix/mixedoldcatalogue/today/staging/duplicates/invalidnamespace/modefailclosed, noordinaryfallback. Invalidmodeinert non-Systembehavior. NoRootguardchanges in B1, futureB2mustcheckinvalidbeforestagingbranch and dedicatedcontextnamespace/scenario/connectionmatch before runtimeallow. Release contains noFake/fixturescontrols.",
+        "ReuseCatalogueUIFixtures existingtodayFuture andtodayNoSchedule/sharedcardprojection/JWT/namespaceStore, notnewcalendar/dates. todayFuture hasTWOeligible futureoccurrences among3plants; sharedserver todayClockSeed/anchor attachedBEFOREfutureCoreaccept, no recalc Dateperlaunch. NoSchedulearrivalpreferfuturewithdrawn\u2192existingresumeToday, persistrestoredflag so coldnotrewind. Exposecompactexplicitfactory/contextmatching/readinessbarrier APIs forB2 withoutstartingRootcallbacks. OriginalCore/Planner/Scheduler/Store/receiptpolicy fixed.",
+        "Dedicatedfake implements existing Notificationsprotocol only, neverUNcenter. Namespace/mode/owner-bound persistedfakeinventory/clock/auth/prompt/add/removeidentity/attempt/fire/otherPending1 evidence; corruptionfailclosed notsilentempty. Modes eligible,one-readlag,two-readlag,denied,noSchedule,failure,readiness; keep small. ExplicitfakeOSstatuschange alone mustnot callCore; retry doesread. No auto prompt atnoSchedule/laterarrival. Dedicatedserver optionalreadonlyguard logs/rejects every /commands (counter0expected), preserving oldfamily behavior. SDKauth/read counts separate, no domainwrites/provider/SQL/Admin/AI.",
+        "Cancellation-aware deterministicreadybarrier for futureRoot BEFORECoreaccept; ordinaryimmediate, validfixture explicitrelease only, no polling/sleep. B2placescontrolsinsidesheet via DEBUGscopedinjection so modal doesnotblockrelease. Do not addUX/controlview inB1, no newApp/Host/Root/Trial/profilehour edits. ExactnewPBXrefs preppedcontroller, no DeveloperPBX edits.",
+        "Add4-5compactmeaningfulUnitgroups usingexistingfake/realStorehelpers: strictlaunchparser/failclosed; stableCore/publisherforwarding; namespacefakeledger/coldidentity/cleanupotherpreservation; readybarrier/cancelifmeaningful. Existing431Unitprefix/assertionsunchanged, no Systemcalls/sleep/mirrorimplementation. FullSwift/build/welcome,diff,MCP/highReviewQA; UNUSEDfoundation notproductready. B2actualRoot/Host/newUI plusfreshfullunionold13+ledger/Today6+8readonly/PL/149/newUI mandatory beforeConsentreadiness. Hard50/soft48/noreset,sameroutes900/budgets,technicalonly/parentcheckboxopen.",
+        "Actual A whole7bdf4c accepted beforeB1, parent80eaa98docs FF. Read sourceFoundationcontext with exactA APIs; current431tests oldprefix preserved. Keepnewcodecompact~500lines acrossruntime/fake/server/unit plus4-lineRootdefaultblock; no PBX/extra file/model changes."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "FIXTURE1",
+          "description": "New strict fake/runtime regressions and all431oldtests build/welcome pass unchanged, no production behavior wiring.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "FIXTURE2",
+          "description": "MCP/highReviewQA confirm unused inert singleCore/runtime foundation, strictfailclosed/noSystemdomainwrites, no Root/UI readiness claim.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "FIXTURE3",
+          "description": "Existing149 automation tests pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-fixture-foundation-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-whole.md"
+      ]
+    }
+  ]
+}

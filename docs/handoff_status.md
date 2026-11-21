@@ -1,5 +1,21 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен B1: пока не подключённые runtime/fake-компоненты — 21 ноября 2026
+
+Parent80eaa98 FF принят, source равен принятому A7bdf4c. Созданы только два
+scaffold-файла CareReminderRuntime.swift/ReminderConsentFixtures.swift и8PBXrefs,
+manifest/context B1. Реализация ещё не начата. B1 — стабильный единый Core,
+строгий dedicated launch parser, namespace fake ledger/clock/barrier, optional
+read-only guard fixture server и компактные Unit. Root пока НЕ подключается;
+разрешён лишь fail-closed блок новых --care-reminder* флагов до B2, чтобы они
+не запускали обычный System/SDK fallback. Старые fixtures остаются изолированы.
+
+Следующий шаг: передать prepSHA/refs родителю, затем Developer→полныйSwift/
+149/MCP/diff→ReviewQA. B2 — early single-runtime injection, rendered consent и
+settings-before-binding barrier, полная UI-регрессия; это ещё не проверено.
+Actual usage4/96, hard50/soft48, reset0; внешняя передача/parentcheckbox открыты.
+Никаких новых дат, backend, покупок, рекомендаций, delegate или care writes.
+
 ## Root интегрировал Consent A; живой backend проверен только на чтение — 21 ноября 2026
 
 Whole A7bdf4c / doc03e17b6 объединены. 431 Swift,149 automation,MCP,
