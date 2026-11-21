@@ -262,25 +262,51 @@ public actor SyncEngine {
         return .confirmed(hour: hour)
     }
 
+    /// Transient proof from this ordered pass, never inferred from queue state.
+    private struct DrainReport {
+        var count = 0
+        var accepted = false
+    }
+
+    func flushCareOperation(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> Bool {
+        try apiClient.syncAuthority.withBoundValid(context) {}
+        let report = try await drainOutbox(for: context.ownerId, context: context, tracking: command)
+        try Task.checkCancellation()
+        return try apiClient.syncAuthority.withBoundValid(context) { report.accepted }
+    }
+
     private func flushOutbox(
         for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil,
         careOnly: Bool = false, reviewingWateringOperation: UUID? = nil
     ) async throws -> Int {
+        try await drainOutbox(
+            for: ownerId, context: context, commandName: commandName, onlyOperation: onlyOperation,
+            careOnly: careOnly, reviewingWateringOperation: reviewingWateringOperation
+        ).count
+    }
+
+    private func drainOutbox(
+        for ownerId: UUID, context: SyncSessionLease, commandName: String? = nil, onlyOperation: UUID? = nil,
+        careOnly: Bool = false, reviewingWateringOperation: UUID? = nil,
+        tracking: CommandEnvelopeDTO? = nil
+    ) async throws -> DrainReport {
         guard ownerId == context.ownerId else { throw SyncWireValidationError.invalidSession }
         try await apiClient.validateSyncContext(context)
         // Actor reentrancy must not dispatch a second copy of this owner's snapshot.
         guard drainingOwners.insert(ownerId).inserted else {
             if careOnly { throw CareDrainFailure.busy }
-            return 0
+            return DrainReport()
         }
         defer { releaseOutboxOwner(ownerId) }
         let pending = try await store.pendingOutboxEntries(for: ownerId)
         try await apiClient.validateSyncContext(context)
-        guard !pending.isEmpty else { return 0 }
+        guard !pending.isEmpty else { return DrainReport() }
 
         var blockedPlantIds = Set<UUID>()
         var GlobalChainBlocked = false
-        var committedCount = 0
+        var report = DrainReport()
         let deletingPlants = Set(pending.compactMap { entry in
             entry.commandName == PlantDeleteReceipt.commandName ? entry.plantId : nil
         })
@@ -325,7 +351,7 @@ public actor SyncEngine {
                 }
                 switch try await sendProfileReminderHour(command, context: context) {
                 case .confirmed:
-                    committedCount += 1
+                    report.count += 1
                 case .pending, .unconfirmed:
                     GlobalChainBlocked = true
                 case .rejected:
@@ -587,10 +613,11 @@ public actor SyncEngine {
                     operationId: entry.operationId, context: context, authority: apiClient.syncAuthority
                 )
             }
-            committedCount += 1
+            report.count += 1
+            if entry.envelope == tracking { report.accepted = true }
         }
 
-        return committedCount
+        return report
     }
 
     private func prepareFirstAidObservationPhoto(

@@ -125,7 +125,7 @@ final class CatalogueConnection {
     let unavailable: CatalogueConnectionUnavailable?
     private(set) var explicitCareReadIntent: CatalogueCareReadIntent?
 
-    /// Call only from explicit settings/hour confirmation/consent Retry actions.
+    /// Call only from explicit UI actions with original scope and positive command proof where required.
     @discardableResult
     func publishExplicitCareRead(
         expected: CatalogueSDKSnapshot, locale: String, isLocaleCurrent: () -> Bool
@@ -853,6 +853,7 @@ struct CatalogueCollectionView: View {
                     } else {
                         CatalogueCollectionCardView(
                             connection: connection, card: selected.card, expected: selected.scope, polish: polish,
+                            isLocaleCurrent: careReminder == nil ? { false } : careReminderLocaleIsCurrent,
                             startRepeatDiagnosis: repeatDiagnosis.map { entry in
                                 { repeatModel = entry.makeModel(selected.card, selected.scope) }
                             },
@@ -1275,6 +1276,7 @@ private struct CatalogueCollectionCardView: View {
     let card: CatalogueCardSummary
     let expected: CatalogueSDKSnapshot
     let polish: Bool
+    var isLocaleCurrent: () -> Bool = { false }
     var startRepeatDiagnosis: (() -> Void)? = nil
     let onRenamed: (CatalogueCardSummary) -> Void
     let onDeleted: () -> Void
@@ -2018,6 +2020,14 @@ private struct CatalogueCollectionCardView: View {
         firstAidFailed = false
     }
 
+    private func publishConfirmedCareRead(_ lease: SyncSessionLease) throws {
+        try Task.checkCancellation()
+        guard connection.snapshot == expected, let api = connection.apiClient else { return }
+        try api.syncAuthority.withPermanentBoundValid(lease) {}
+        connection.publishExplicitCareRead(expected: expected, locale: polish ? "pl" : "en",
+                                           isLocaleCurrent: isLocaleCurrent)
+    }
+
     private func writeFirstAid(_ write: FirstAidWrite) async {
         guard !savingFirstAid, let repository = connection.repository else { return }
         savingFirstAid = true
@@ -2057,6 +2067,7 @@ private struct CatalogueCollectionCardView: View {
                 try await loadFirstAidJournal(repository, lease: lease)
                 return
             }
+            if case .confirmed = outcome { try publishConfirmedCareRead(lease) }
             try await loadFirstAidJournal(repository, lease: lease)
             if case .rejected = outcome { firstAidFailed = true }
         } catch {
@@ -2113,6 +2124,7 @@ private struct CatalogueCollectionCardView: View {
                 try Task.checkCancellation()
                 try api.syncAuthority.withPermanentBoundValid(lease) {}
                 guard connection.snapshot == expected, uncertainWateringCommand == original else { return }
+                if outcome == .confirmed { try publishConfirmedCareRead(lease) }
                 if outcome == .confirmed || outcome == .rejected {
                     uncertainWateringCommand = nil
                     wateringRecordNeedsReview = false
@@ -2128,7 +2140,13 @@ private struct CatalogueCollectionCardView: View {
                 try Task.checkCancellation()
                 try api.syncAuthority.withPermanentBoundValid(lease) {}
                 guard connection.snapshot == expected, uncertainWateringCommand == original else { return }
-                // Positive typed proof can confirm; even a complete negative window retains the original intent.
+                // Probe the original fact before optional view reads; a negative window is not proof.
+                if let store = connection.store,
+                   try await store.confirmedWateringRecord(original, context: lease, authority: api.syncAuthority) != nil,
+                   try await repository.pendingManualWatering(plantId: card.id, context: lease) == nil,
+                   try await repository.pendingPlantEdit(plantId: card.id, context: lease) == nil {
+                    try publishConfirmedCareRead(lease)
+                }
                 try await loadHistory(repository, lease: lease)
                 if wateringRecordOutcome == .confirmed { adviceRequest += 1 }
             }
@@ -2250,6 +2268,7 @@ private struct CatalogueCollectionCardView: View {
             case .pending:
                 correction = .recordPending(command)
             case .confirmed:
+                try publishConfirmedCareRead(lease)
                 uncertainWateringCommand = nil
                 wateringRecordNeedsReview = false
                 try await loadHistory(repository, lease: lease)
@@ -2546,6 +2565,7 @@ private struct CatalogueCollectionCardView: View {
             switch outcome {
             case .pending: break
             case .confirmed:
+                try publishConfirmedCareRead(lease)
                 pendingRoutineUndo = nil
                 routineUndoConfirmed = true
                 adviceRequest += 1
@@ -2618,6 +2638,7 @@ private struct CatalogueCollectionCardView: View {
             switch outcome {
             case .pending: break
             case .confirmed:
+                try publishConfirmedCareRead(lease)
                 pendingRoutine = nil
                 routineConfirmed = true
                 adviceRequest += 1
@@ -2678,7 +2699,8 @@ private struct CatalogueCollectionCardView: View {
         defer { enablingBasicCare = false }
         do {
             let lease = try await connection.collectionLease(expected: expected)
-            try await repository.enableBasicCare(plantId: card.id, context: lease)
+            let outcome = try await repository.enableBasicCare(plantId: card.id, context: lease)
+            if outcome == .confirmed { try publishConfirmedCareRead(lease) }
             let state = try await repository.basicCareEnableState(plantId: card.id, context: lease)
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             basicCareEnabled = state.enabled
@@ -2756,6 +2778,7 @@ private struct CatalogueCollectionCardView: View {
             guard !Task.isCancelled, connection.snapshot == expected else { return }
             switch outcome {
             case .confirmed:
+                try publishConfirmedCareRead(lease)
                 pendingAdviceRefresh = nil
                 adviceRequest += 1
                 adviceRefreshRead = adviceRequest
@@ -2876,7 +2899,8 @@ private struct CatalogueCollectionCardView: View {
         correction = .saving
         do {
             let lease = try await connection.collectionLease(expected: expected)
-            try await repository.retryWateringEdit(command, context: lease)
+            let outcome = try await repository.retryWateringEdit(command, context: lease)
+            if outcome == .confirmed { try publishConfirmedCareRead(lease) }
             try await loadHistory(repository, lease: lease)
             if correction == .ready { adviceRequest += 1 }
         } catch {

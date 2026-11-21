@@ -819,11 +819,16 @@ public struct CollectionRepository: Sendable {
         }
     }
 
-    func enableBasicCare(plantId: UUID, context: SyncSessionLease) async throws {
+    @discardableResult
+    func enableBasicCare(plantId: UUID, context: SyncSessionLease) async throws -> CareOperationOutcome {
         let command = try await store.enqueueBasicCareEnable(
             plantId: plantId, context: context, authority: apiClient.syncAuthority
         )
-        try await syncEngine.flushPlantCommand(command, context: context)
+        let accepted = try await syncEngine.flushPlantCommand(command, context: context) == 1
+        try Task.checkCancellation()
+        return try apiClient.syncAuthority.withBoundValid(context) {
+            accepted ? .confirmed : .unconfirmed
+        }
     }
 
     func pendingProfileReminderHour(context: SyncSessionLease) async throws -> ProfileReminderHourCommand? {
@@ -1039,16 +1044,18 @@ public struct CollectionRepository: Sendable {
         try await retryWateringEdit(command, context: context)
     }
 
-    func retryWateringEdit(_ command: CommandEnvelopeDTO, context: SyncSessionLease) async throws {
+    @discardableResult
+    func retryWateringEdit(
+        _ command: CommandEnvelopeDTO, context: SyncSessionLease
+    ) async throws -> CareOperationOutcome {
         if ManualWateringAction(envelope: command) == .record {
-            _ = try await retrySavedPlantWatering(command, context: context)
-            return
+            return try await retrySavedPlantWatering(command, context: context) == .confirmed ? .confirmed : .unconfirmed
         }
         guard let plantId = command.plantId,
               command.commandName == ManualWateringAction.correctionCommand
                 || command.commandName == ManualWateringAction.undoCommand,
-              try await pendingManualWatering(plantId: plantId, context: context) == command else { return }
-        _ = try await syncEngine.flushOutbox(context: context)
+              try await pendingManualWatering(plantId: plantId, context: context) == command else { return .unconfirmed }
+        return try await syncEngine.flushCareOperation(command, context: context) ? .confirmed : .unconfirmed
     }
 
     /// The typed receipt must be validated by the existing outbox drain before the queue item disappears.
@@ -1345,4 +1352,9 @@ public struct CollectionRepository: Sendable {
             )
         }
     }
+}
+
+/// Positive proof of this operation; absence of proof is not a terminal rejection.
+enum CareOperationOutcome: Sendable, Equatable {
+    case confirmed, unconfirmed
 }

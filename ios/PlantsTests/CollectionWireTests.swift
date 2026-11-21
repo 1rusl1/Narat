@@ -13912,3 +13912,181 @@ extension CollectionWireTests {
     }
 }
 #endif
+
+extension CollectionWireTests {
+    /// A real manual fact plus already enabled care: neither proves a subsequent command.
+    private func careAckPage(entry: UUID, state: String = "active",
+                             reversal: UUID? = nil, operation: UUID? = nil, corrected: Bool = false, at: String? = nil) throws -> String {
+        var page = syncObject()
+        page["until"] = at ?? syncUntil
+        page["next_since"] = at ?? syncUntil
+        var plant = syncChange(at, id: serverPlantId.uuidString)
+        plant["data"] = ["id": serverPlantId.uuidString, "revision": 1, "care_revision": 1]
+        var fact = syncChange(at, id: entry.uuidString, entity: "care_entries")
+        fact["data"] = ["id": entry.uuidString, "plant_id": serverPlantId.uuidString,
+            "state": state, "action_code": "water", "timezone": "Europe/Moscow",
+            "occurred_at": corrected ? "2026-11-02T08:30:00+03:00" : "2026-11-03T08:30:00+03:00",
+            "occurred_local_date": corrected ? "2026-11-02" : "2026-11-03"]
+        var membership = syncChange(at, id: serverPlantId.uuidString, entity: "basic_care_memberships")
+        membership["data"] = ["plant_id": serverPlantId.uuidString, "enabled": true, "enabled_at": syncUntil]
+        var changes = [plant, fact, membership]
+        if let reversal, let operation {
+            var row = syncChange(at, id: reversal.uuidString, entity: "care_reversals")
+            row["data"] = ["id": reversal.uuidString, "entry_id": entry.uuidString,
+                           "operation_id": operation.uuidString]
+            changes.append(row)
+        }
+        page["changes"] = changes.sorted { ($0["entity_type"] as! String) < ($1["entity_type"] as! String) }
+        return try syncJSON(page)
+    }
+
+    @MainActor
+    func testCareEditExactProofSurvivesLostAckAndCanonicalFailure() async throws {
+        for undo in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let entry = UUID(), reversal = UUID()
+            let action: ManualWateringAction = undo ? .undo(entry) : .correctDate(
+                entryId: entry, occurredAt: "2026-11-02T08:30:00+03:00", timezone: "Europe/Moscow")
+            let command = try action.envelope(plantId: serverPlantId)
+            let later = "2026-11-03T09:10:00Z"
+            var acceptedReceipt = manualWateringReceipt(
+                entryId: entry, state: undo ? "voided" : "active", reversalId: undo ? reversal : nil)
+            acceptedReceipt["watermark"] = later
+            let receipt = try syncJSON(acceptedReceipt)
+            let transport = CatalogueTransport([
+                .http(200, try careAckPage(entry: entry)), .network,
+                .http(200, receipt), .network,
+                .http(200, receipt), .http(200, try careAckPage(entry: entry,
+                    state: undo ? "voided" : "active", reversal: undo ? reversal : nil,
+                    operation: command.operationId, corrected: true, at: later))
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            var store = LocalStore(modelContainer: try diskContainer(url))
+            _ = try await SyncEngine(store: store, apiClient: api).pullDelta(for: syncOwner)
+            try await store.enqueueManualWatering(command, context: lease, authority: api.syncAuthority)
+            for _ in 0..<2 {
+                // New engine/container on each attempt: proof cannot be an actor-global cache.
+                store = LocalStore(modelContainer: try diskContainer(url))
+                let repo = CollectionRepository(store: store, apiClient: api,
+                    syncEngine: SyncEngine(store: store, apiClient: api))
+                let outcome = try await repo.retryWateringEdit(command, context: lease)
+                XCTAssertEqual(outcome, .unconfirmed)
+                let pending = try await repo.pendingManualWatering(plantId: serverPlantId, context: lease)
+                XCTAssertEqual(pending, command)
+            }
+            let repo = CollectionRepository(store: store, apiClient: api,
+                syncEngine: SyncEngine(store: store, apiClient: api))
+            let confirmed = try await repo.retryWateringEdit(command, context: lease)
+            XCTAssertEqual(confirmed, .confirmed)
+            let history = try await repo.collectionWateringHistory(plantId: serverPlantId, context: lease)
+            XCTAssertEqual(history.map(\.occurredLocalDate), ["2026-11-02"])
+            let again = try await repo.retryWateringEdit(command, context: lease)
+            XCTAssertEqual(again, .unconfirmed, "An absent operation is not a fresh ACK")
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "POST", "POST", "GET", "POST", "GET"])
+            let posts = requests.filter { $0.httpMethod == "POST" }
+            XCTAssertEqual(posts.count, 3)
+            XCTAssertTrue(posts.allSatisfy { $0.httpBody == posts.first?.httpBody })
+            XCTAssertTrue(posts.allSatisfy {
+                $0.value(forHTTPHeaderField: "X-Operation-Id") == command.operationId.uuidString.lowercased()
+            })
+        }
+    }
+
+    @MainActor
+    func testCareEditTracksTargetInsteadOfPredecessorCountOrRejectedDequeue() async throws {
+        for predecessorAccepted in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let entry = UUID()
+            let rejected = try syncJSON(["error": [
+                "code": "CONFLICT", "message": "Fixture rejection", "retryable": false]])
+            let enabled = try syncJSON(["plant_id": serverPlantId.uuidString,
+                                        "enabled": true, "enabled_at": syncUntil] as [String: Any])
+            let page = try careAckPage(entry: entry)
+            let replies: [CatalogueTransport.Reply] = predecessorAccepted
+                ? [.http(200, page), .http(200, enabled), .http(200, try careReconcilePage(syncUntil)),
+                   .http(409, rejected), .http(200, try careReconcilePage(syncUntil))]
+                : [.http(200, page), .network]
+            let transport = CatalogueTransport(replies)
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            let engine = SyncEngine(store: store, apiClient: api)
+            _ = try await engine.pullDelta(for: syncOwner)
+            let predecessor = try await store.enqueueBasicCareEnable(
+                plantId: serverPlantId, context: lease, authority: api.syncAuthority)
+            let command = try ManualWateringAction.undo(entry).envelope(plantId: serverPlantId)
+            try await store.enqueueCollectionWateringUndo(command, context: lease, authority: api.syncAuthority)
+            let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+            let outcome = try await repo.retryWateringEdit(command, context: lease)
+            XCTAssertEqual(outcome, .unconfirmed)
+            let pending = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(pending.map(\.operationId),
+                           predecessorAccepted ? [] : [predecessor.operationId, command.operationId])
+            let posts = await transport.capturedRequests().filter { $0.httpMethod == "POST" }
+            let sent = try posts.map { try JSONDecoder().decode(CommandEnvelopeDTO.self, from: XCTUnwrap($0.httpBody)) }
+            XCTAssertEqual(sent, predecessorAccepted ? [predecessor, command] : [predecessor])
+        }
+    }
+
+    @MainActor
+    func testCareBasicEnableDoesNotConfirmPreexistingMembershipAfterRejection() async throws {
+        let url = try diskURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rejection = try syncJSON(["error": [
+            "code": "FORBIDDEN", "message": "Fixture rejection", "retryable": false]])
+        let transport = CatalogueTransport([.http(200, try careAckPage(entry: UUID())), .http(403, rejection)])
+        let api = client(transport)
+        await api.bindSyncSession(syncSession)
+        let lease = try await api.captureSyncContext(ownerId: syncOwner)
+        let store = LocalStore(modelContainer: try diskContainer(url))
+        let engine = SyncEngine(store: store, apiClient: api)
+        _ = try await engine.pullDelta(for: syncOwner)
+        let repo = CollectionRepository(store: store, apiClient: api, syncEngine: engine)
+        let outcome = try await repo.enableBasicCare(plantId: serverPlantId, context: lease)
+        XCTAssertEqual(outcome, .unconfirmed)
+        let state = try await repo.basicCareEnableState(plantId: serverPlantId, context: lease)
+        XCTAssertTrue(state.enabled)
+        XCTAssertFalse(state.pending)
+    }
+
+    @MainActor
+    func testCareEditReceiptCannotConfirmAcrossOwnerSwitchOrABA() async throws {
+        for returnToOriginal in [false, true] {
+            let url = try diskURL()
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            let entry = UUID()
+            let seedAPI = client(CatalogueTransport([.http(200, try careAckPage(entry: entry))]))
+            await seedAPI.bindSyncSession(syncSession)
+            let store = LocalStore(modelContainer: try diskContainer(url))
+            _ = try await SyncEngine(store: store, apiClient: seedAPI).pullDelta(for: syncOwner)
+            let command = try ManualWateringAction.correctDate(entryId: entry,
+                occurredAt: "2026-11-02T08:30:00+03:00", timezone: "Europe/Moscow").envelope(plantId: serverPlantId)
+            let transport = SuspendedCollectionTransport(try syncJSON(manualWateringReceipt(entryId: entry, state: "active")))
+            let api = client(transport)
+            await api.bindSyncSession(syncSession)
+            let lease = try await api.captureSyncContext(ownerId: syncOwner)
+            try await store.enqueueManualWatering(command, context: lease, authority: api.syncAuthority)
+            let before = try await store.pendingOutboxEntries(for: syncOwner)
+            let repo = CollectionRepository(store: store, apiClient: api,
+                syncEngine: SyncEngine(store: store, apiClient: api))
+            let attempt = Task { try await repo.retryWateringEdit(command, context: lease) }
+            await transport.waitForRequest()
+            await api.bindSyncSession(NativeAuthSession(userId: otherSyncOwner,
+                accessToken: "owner-b-token", expiresAt: .distantFuture))
+            if returnToOriginal { await api.bindSyncSession(syncSession) }
+            await transport.resume()
+            do {
+                _ = try await attempt.value
+                XCTFail("Stale receipt must not produce positive care proof")
+            } catch SyncWireValidationError.invalidSession {}
+            let after = try await store.pendingOutboxEntries(for: syncOwner)
+            XCTAssertEqual(after, before)
+        }
+    }
+}
