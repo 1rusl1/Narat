@@ -1,5 +1,14 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен Whole04 после test-only compile repair — 22 ноября 2026
+
+Source2ca539c UNACCEPTED/pushed: actualfixtureDev192.560с плюс controller1char
+optional-chain вНОВОМassertion, expectedday nonnil/nilfails. Production/UI/oldasserts/gates0changes.
+Freshread-only fullbase80e/all74paths/all10gates/highReviewQA, Developer0 среальнойисторией.
+467 ожидаются, НЕpassed. Whole01/02/03rawFAILs иSTOP сохранены; D1 НЕдопущен.
+Следующий шаг — Whole04 полныеSwift149/8/7/4/MCP/PL/13/Today6/ReviewQA.
+Hard50soft48/noreset; parenttasksopen/Root624доacceptance.
+
 ## Whole03 остановлен на compile нового теста; точечный mechanical repair — 22 ноября 2026
 
 Whole03 tester-care-reminder-whole-b-20261121-03 BLOCKED/checks/Review0/QA0.

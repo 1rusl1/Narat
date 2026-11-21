@@ -37,6 +37,7 @@
         "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent-context.md",
         "docs/validation/automation/tasks/tester-care-reminder-ui-read-intent.md",
         "docs/validation/automation/tasks/tester-care-reminder-whole-b-context.md",
+        "docs/validation/automation/tasks/tester-care-today-local-day-compile-repair.md",
         "docs/validation/automation/tasks/tester-care-today-local-day-fixture-context.md",
         "docs/validation/automation/tasks/tester-care-today-local-day-fixture-stopped.md",
         "ios/Plants.xcodeproj/project.pbxproj",
@@ -86,7 +87,7 @@
         "READ ONLY wholecandidatebase80e, Developer0 with real accepted-source provenance. Inspect fullunion notonlylastslice; no source/test/gate weakening. Same models900/budgets hard50soft48/noreset. All original checks/stages preserved plus explicit7metadata regression unitgate.",
         "WholeB consent/dataflow originalSDK+locale/currentreadguards; exactreceipts notqueueempty/passiverestore; final optionalread settlement fresh plan. No canonical observer->HTTP, no newdatecalculation/content/queue/Auth/worker/SQL mutations.",
         "Actual8+strictledgers and old13care/Today/PL/metadata/fullSwift149MCP allrequired. Fixture/local only, ordinarycurrentSource System SDK deliverytap/collection-only remainsseparate; parent tasks open/technicalonly.",
-        "Whole03 includesactualDeveloper192.560s localdayfixturefix andUNACCEPTEDSTOPprovenance. OrdinaryTodaylocalseed/dedicatedUTCunchanged, expected467old465+2; preservealloldassertions/UI/gates, actualyearboundary/reopen/cardoverviewtestrequired. Whole01bundleFAIL+Whole02TodayFAIL/QA0 historicalretained; nooverallPASSuntilall10gates/fullReviewQA."
+        "Whole04 includesactualDeveloper192.560s/UNACCEPTEDSTOP forlocaldayfixture + controller EXACT1char optionalchain compilefix inNEWtest, nofakeDev. Ordinarylocalseed/dedicatedUTC unchanged, expected467(old465+2), exactoldassertions/UI/gates preserved. Whole01bundle/02Today/03compile FAILs remain; nooverallPASSuntilall10gates/fullReviewQA."
       ],
       "acceptance_criteria": [
         {
@@ -129,7 +130,7 @@
         },
         {
           "id": "WB5",
-          "description": "Actual fixture localday atUTCyear/dayboundaries matchesView ordinarycalendar; dedicatedconsentUTC and persistedsourcecard/overview/UTCclock remain. Two fixedactualinit/reopen regressions andunchangedToday6 pass, allold465assertions preserved exceptonejustifiedsetup timezone input.",
+          "description": "Actual localdayfixture atUTCyear/dayboundaries matchesordinaryViewcalendar; dedicatedconsentUTC and persistedsourcecard/overview/clock remain. Two fixedactualinit/reopen regressions andunchangedToday6 pass, old465assertions intact exceptjustifiedsetup timezoneinput; newoptionalassert stillrequiresnonnull exactday.",
           "mode": "local",
           "checks": [
             "ios-tests",
@@ -147,7 +148,8 @@
         "docs/validation/automation/tasks/tester-care-reminder-collection-events.md",
         "docs/validation/automation/tasks/tester-care-reminder-accessibility.md",
         "docs/validation/automation/tasks/tester-care-today-local-day-fixture-context.md",
-        "docs/validation/automation/tasks/tester-care-today-local-day-fixture-stopped.md"
+        "docs/validation/automation/tasks/tester-care-today-local-day-fixture-stopped.md",
+        "docs/validation/automation/tasks/tester-care-today-local-day-compile-repair.md"
       ],
       "candidate_base": "80eaa98b3578a5600c728403d86e26015beca3ac"
     }

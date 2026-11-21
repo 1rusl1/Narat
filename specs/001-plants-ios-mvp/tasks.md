@@ -593,3 +593,5 @@
 - FreshWhole03 prepared base80e/all73readpaths/Developer0 actualpriorfixtureDev192.560provenance, expected467/full10gates/highReviewQA mandatory. Source60891ab unaccepted; oldWhole01/02 FAILs retained, D1 notadmitted, noUI/gate/oldassertweakening.
 
 - Whole03 pretestcompileFAIL24.575s retained: NEWoptionalcard access line11401. Controller EXACT1char card?.nextCheck?.dueOn, nonnil expectedday unchanged/nilfails; production/UI/oldassert/gates0changes. NotfakeDeveloperPASS; actualDev192.560/STOP retained. Sourceunaccepted, freshWhole04base80e all10gates/highReviewQA next, expected467notrun/noD1.
+
+- Whole04 prepared fullbase80e/all74paths/all10gates/highReviewQA, Developer0 actualfixtureDev192.560+controllernewtest1char mechanicalprovenance. Expected467notrun, oldWhole01/02/03FAIL/STOP retained, noD1untilaccepted. Production/UI/oldassertions/gates unchanged.
