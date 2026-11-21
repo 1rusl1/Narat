@@ -1,0 +1,58 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-consent-host",
+      "description": "Mount an observed consent readiness host under the original account SDK scope, preserving immutable callback binding; A whole union and B rendered barrier follow.",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderScheduler.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Features/Today/TodayHomeView.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-permission-readback.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-host-context.md"
+      ],
+      "write_files": [
+        "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift"
+      ],
+      "constraints": [
+        "TINYreadiness/observationrepair only ~30-60productionlines in three existingSwiftfiles. Readhostcontext. No Core/Scheduler/Store/planner/receipt/profilehour/Trial/unit/PBX/newfile changes. Acceptedtokenbindingimmutable API fixed. Do not weaken old425+6 assertions. No newfixture in this smallrepair; B rendersbarrier later.",
+        "Known finding: CatalogueCollectionView has plainoptionalCore, reads consentBinding in body before an ObservedObjectchild mounts. Initialnil can keepsectionabsent afterCoreaccept. Always mount a small @ObservedObjecthost once ordinaryoriginalpermanentSDKknown; host observes Core, checks capturedoriginalSDKsnapshot+locale guard, then passes immutable currentbinding INTO actualConsentView. Do not put latesttoken getter inside oldaction or status. Empty/loading host honest and inert, no onAppear retry/prompt/network.",
+        "Root currently passes Core only when consentOwnerId alreadyready. For accountcollection pass the SAME Core under existing ordinarypermanentSDK+alloldfixtureguard, independentof Core readiness; this must not start work (existing runtime auth mapping remains soleinitializer). Preserve Today eligibility/currentbinding path and oldfixturesnil/inert. Host checks original accountSDKscope, rejects token/locale/ABA stalecontexts; acceptedCoretoken guards everyaction unchanged.",
+        "No extra observersofSDK/HTTP/sync/calendar/queue/OS/prompt/recommendations/AI/purchase/delegate/routes. Scope limited3Swift. FullSwift431/build/welcome+diff/MCP+highReviewQA narrowonly; then freshwholeAfrom53ab ALL7gates, B dedicatedfakeUI openaccountsettings-beforebinding\u2192release\u2192sectionwithoutreopen mandatory. A/productparentcheckboxnotclosed here. Hard50/soft48/noreset, same models900/budgets."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "HOST1",
+          "description": "Full Swift/build/welcome and diff confirm narrow observedhost with no Core policy changes; immutablebinding actions preserved.",
+          "mode": "local",
+          "checks": [
+            "diff-check",
+            "ios-tests"
+          ]
+        },
+        {
+          "id": "HOST2",
+          "description": "MCP/highReviewQA confirm originalSDK/locale guarded host readiness and oldfixturesinert; B actual renderedbarrier still required.",
+          "mode": "local",
+          "checks": [
+            "simulator-smoke"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-consent-host-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-consent-binding.md"
+      ]
+    }
+  ]
+}

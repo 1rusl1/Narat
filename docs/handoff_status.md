@@ -1,5 +1,22 @@
 # Narat — текущий статус и передача работы
 
+## Исходный consent-binding принят; нужен наблюдаемый host — 21 ноября 2026
+
+Принят/pushed узкий0e1ac33202a59f2292d182c96beabd81364f8dee:431Swift/build/
+welcome149.138с,MCP28.883с,diff0.046с,Review97.438с/QA112.903с PASS.
+Dev223.871+70.973с. ImmutableScopeUUID+owner+locale binding хранитсявView;
+действия/статус сверяютсясactualScope/originallease, owner-only mutator удалён.
+Frozencontext/sdk/locale/ABA callbacks no-op; old425побайтно сохранены.
+НоваяfixtureFAIL164.912с сохранена; исправлен толькоalignedENtestcache.
+
+WholeAещёНЕпринят. Второйconfirmedstaticgap: plainoptionalCore вGuest читает
+bindingnilдоObservedObjectchild; секцияможетнепоявитьсяпослеготовностибезreopen.
+Root такжепередаётCoreтолькопослеCore-readiness. Подготовленtiny3filehostrepair:
+always-mountedobservedhostподoriginalSDK/localeguard, immutableactionbinding
+сохранён; Core/Unit/PBX/protocolsне менять. ДалееfreshwholeAfrom53aball7gates/
+ReviewQA; Bобязательныйrenderedbarriercase. Lastactualusage2/98,hard50/soft48,
+reset0; parentcheckboxopen, actualOS/fullConsentUIещёнепроверены.
+
 ## Consent A не принят: обязательный guard исходной сессии — 21 ноября 2026
 
 Run tester-care-reminder-consent-20261121-01 сохранён WAITING/exit130: Dev1
