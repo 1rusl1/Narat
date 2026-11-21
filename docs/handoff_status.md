@@ -1,5 +1,25 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен D2A: ранний типизированный мост уведомлений — 22 ноября 2026
+
+D1 принят59bd456, finaldocs f7b222a/pushed. Подготовлены scaffold
+CareReminderNotificationBridge.swift, context/manifest и4PBXrefs, без реализации/регистрации.
+Build41AFDD0CF4DCF548DA0179C9/ref9BABACF1973312565DA13D46; plutil/diff/validatePASS.
+Root original3userfiles не тронуты, parentpreservationbaseline1916 сохранён.
+
+Следующий actualDeveloper — ровно Bridge+CollectionWireTests: общий alwayscompiled
+Debug/Release no-System policy дляold/new/malformedfixturefamilies, boundedtypedmemoryinbox
+доRoot и inertNSObjectUNcallbacks. Parseнаnative stack, толькоSendableeventпослеhop,
+completion1сразу/syncнакаждойветке; актуальныйSDKcompletion@Sendable, noTaskcapture—
+нашlifetimecontract. Foregroundoptions=[]/eventdistinct, defaulttaponly; безSDK/Auth/HTTP/
+care/permission/scheduling/center.current/App/Rootchanges. Старые471tests/assertions сохраняются.
+
+Freshusage23/77 ordinaryAllowed; модели/900/routes прежние, hard50soft48/resetзапрещён.
+D2Aпроверки fullSwift/build/welcome149/diff/MCP/highReviewQA. D2B — earlystrongAppdelegate
+registration/SAMEchannel-runtime+actualRelease/legacy; D3 — scopedone-shotcanonicaltarget/
+foregroundlocalcacheonly, затемordinarySystemSDKdeliverytap/cleanup/finalsignedartifact.
+Нативнаярегистрация/реальнаядоставка НЕготовы наличиемscaffold; parenttasksopen, technicalonly.
+
 ## D1 проверка актуальности маршрута уведомления принята — 22 ноября 2026
 
 Принят/pushed `59bd4563db8e7142794a8caaada4a1cfc3ca4860`. Два изменённых файла: CareReminderRouting.swift и CollectionWireTests.swift,

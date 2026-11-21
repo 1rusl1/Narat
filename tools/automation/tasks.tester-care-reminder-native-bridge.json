@@ -1,0 +1,81 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-native-bridge",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "description": "Add shared early System launch isolation, bounded typed pre-Root inbox and inert native UN callback adapter; no registration or Root wiring.",
+      "files": [
+        "ios/Plants/Integrations/Notifications/CareReminderNotificationBridge.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-native-bridge-context.md",
+        "tools/automation/tasks.tester-care-reminder-native-bridge.json",
+        "ios/Plants/Integrations/Notifications/CareReminderNotifications.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRouting.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderPlanner.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-routing-eligibility.md",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "ios/Plants/Integrations/Notifications/CareReminderNotificationBridge.swift",
+        "ios/PlantsTests/CollectionWireTests.swift"
+      ],
+      "constraints": [
+        "D2A TWOexistingfilesonly compact<=350-400newlinesincltests. Newfileexists/scaffold; generateactualprogrammaticdifflib fromlane bytes,no/dev/null/guessedhunks/parentRootreads. PBXmechanical4refsreadonly. NoApp/Root/Bootstrap/Runtime/Core/Factory/Planner/SDK/Auth/HTTP/Store/sync/permission/scheduling/UI/globalclockchanges. NOUNcenter.current/acquisition/registration anywhere; inertconstructor. SameSolmedium/Astrahigh900/hard50soft48/noreset.",
+        "SharedpureSystemisolationpolicy ALWAYScompiledDebugRelease: blockALLcatalogue/today/staging/care-reminder/result-save-presentation familiesincludingmalformed/partial/mixed beforefutureCenter; strictcarefixtureparserstillseparatevalidatedauthority. TypedboundedMainActorinbox onependingtap+boundedrecentdedup; stableintentID ondependentduplicate; staleconsume cannotclearnewer; foregrounddistinct; no persistentqueue/unboundedstate/TTL/poll.",
+        "ActualSDK26.5 protocolcallbackscompilerwitness; completion@Sendable(notnonSendable), synchronousexactlyonce promptlyourlifetimepolicy. ParseUNuserInfooncallbackstack viaexistingFactory, crosstaskONLYtypedSendableevent; noUNobjects/completion/selfmutablecapture/assumeIsolated oruncheckednativeescape. Defaulttaponly, malformed/Trial/custom/dismiss noevent; foreignclaimedowneruntrustedtransportD3filters. willPresent options=[] explicit, foregroundeventno nav/HTTP/care/prompt. StrongAppdelegate/earlyregistration belongsD2B NOTclaimedhere.",
+        "MeaningfulfixedpolicyMatrix/completion1allbranches+heldsink/noRootwait/coldretention/duplicatependingconsumed/staleconsume/newer/latestbounded/foregrounddistinct tests. Preserveold471methods/assertions/helperdefaults; directentryhelperactualprotocolwitness maybedrivenfactorymetadata withoutfabricatingUNNotificationResponse orcallingcenter. FullSwift149/diff/MCP/highReviewQA; unitlocalonly actualOS/coldRoot/ReleasebootstrapstillD2B/D3."
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "NB1",
+          "description": "Sharedalwayscompiledearlypolicy deniesallold/new/malformed/mixedfixturefamilies beforeSystem andboundedtypedmemoryinbox retainsearlytap, dedupeswithoutrebinding, rejectsstaleconsume/foregroundnavigation; no runtime effects.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "NB2",
+          "description": "ActualSDKnativecallbackwitness compiles, parsesbeforeactorhop, onlytypedSendablehandoff; nativecompletionexactly1 synchronousallbranches, heldasynchronoussinknotblockingcompletion, Defaulttapvsfore/Trial/custom/malformed correct. NoCenter/registration/permission/schedulingcalls.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "NB3",
+          "description": "FullSwift/sourcecoverage/build/welcome/MCP with471baselinepreserved andhighReviewQA pass; D2Bstrongregistration/samepair/Release+legacy/D3SDKrouting/Systemlive boundariesremainexplicit.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "simulator-smoke",
+            "diff-check"
+          ]
+        },
+        {
+          "id": "NB4",
+          "description": "149automation regressions pass unchanged.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-native-bridge-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-routing-eligibility.md"
+      ]
+    }
+  ]
+}
