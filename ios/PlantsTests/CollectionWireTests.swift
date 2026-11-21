@@ -15038,3 +15038,208 @@ extension CollectionWireTests {
         }
     }
 }
+
+// Test-only synchronized completion recorder; native objects never escape into Tasks.
+private final class NativeBridgeCompletionProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private var nonemptyOptions = 0
+    func record(_ options: UNNotificationPresentationOptions = []) {
+        lock.lock()
+        defer { lock.unlock() }
+        calls += 1
+        if !options.isEmpty { nonemptyOptions += 1 }
+    }
+    var snapshot: [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return [calls, nonemptyOptions]
+    }
+}
+
+extension CollectionWireTests {
+    func testNativeBridgeEarlyPolicyFixedMatrix() {
+        for arguments in [[], ["Plants"], ["-AppleLanguages", "(en)", "-AppleLocale", "pl_PL"],
+                          ["--ordinary", "value"]] {
+            XCTAssertTrue(CareReminderSystemLaunchPolicy.allowsSystem(arguments: arguments))
+        }
+        let blocked = ["--catalogue", "--catalogue-fixture", "--catalogue-namespace",
+            "--catalogue-malformed=x", "--today", "--today-fixture", "--today-namespace",
+            "--today-broken", "--narat-staging", "--narat-staging-invalid",
+            "--care-reminder", "--care-reminder-fixture", "--care-reminder-namespace",
+            "--care-reminder-unknown=x", "--result-save-presentation",
+            "--result-save-presentation-invalid"]
+        for flag in blocked {
+            XCTAssertFalse(CareReminderSystemLaunchPolicy.allowsSystem(arguments: ["Plants", flag]), flag)
+            XCTAssertFalse(CareReminderSystemLaunchPolicy.allowsSystem(
+                arguments: ["-AppleLocale", "en_US", flag, "--care-reminder-fixture", "eligible"]), flag)
+        }
+    }
+
+    @MainActor
+    func testNativeInboxColdRetentionDuplicatesAndStaleConsume() throws {
+        let inbox = CareReminderNotificationInbox()
+        let route = try routingPayload(receiptCandidate())
+        inbox.receive(.tap(route))
+        let first = try XCTUnwrap(inbox.pendingTap)
+        XCTAssertEqual(first.route, route)
+        // A duplicate must not rebind payload or remint the intent.
+        let altered = CareReminderNotificationRoute(candidate: try receiptCandidate(locale: "en"),
+                                                     attemptId: route.attemptId)
+        inbox.receive(.tap(altered))
+        XCTAssertEqual(inbox.pendingTap, first)
+        inbox.receive(.foreground(altered))
+        XCTAssertEqual(inbox.pendingTap, first)
+        XCTAssertEqual(inbox.latestForeground, altered)
+        inbox.consume(intentID: first.id)
+        inbox.receive(.tap(route))
+        XCTAssertNil(inbox.pendingTap)
+        let newer = CareReminderNotificationRoute(candidate: route.candidate, attemptId: otherSyncOwner)
+        inbox.receive(.tap(newer))
+        let second = try XCTUnwrap(inbox.pendingTap)
+        XCTAssertNotEqual(second.id, first.id)
+        inbox.consume(intentID: first.id)
+        inbox.receive(.tap(route))
+        XCTAssertEqual(inbox.pendingTap, second)
+        inbox.consume(intentID: second.id)
+        inbox.receive(.tap(newer))
+        XCTAssertNil(inbox.pendingTap)
+    }
+
+    @MainActor
+    func testNativeInboxLatestAndFixedMemoryBound() throws {
+        let inbox = CareReminderNotificationInbox()
+        let route = try routingPayload(receiptCandidate())
+        var last = route
+        for index in 1...128 {
+            let attempt = try XCTUnwrap(UUID(uuidString:
+                String(format: "00000000-0000-0000-0000-%012d", index)))
+            last = .init(candidate: route.candidate, attemptId: attempt)
+            inbox.receive(.tap(last))
+            inbox.receive(.foreground(last))
+            XCTAssertLessThanOrEqual(inbox.recentCount, 64)
+        }
+        XCTAssertEqual(inbox.recentCount, 64)
+        XCTAssertEqual(inbox.pendingTap?.route, last)
+        XCTAssertEqual(inbox.latestForeground, last)
+        let pending = try XCTUnwrap(inbox.pendingTap)
+        inbox.receive(.tap(last))
+        XCTAssertEqual(inbox.pendingTap, pending)
+        inbox.consume(intentID: pending.id)
+        inbox.receive(.foreground(route))
+        inbox.receive(.tap(last))
+        XCTAssertNil(inbox.pendingTap)
+        XCTAssertEqual(inbox.latestForeground, route)
+    }
+
+    func testNativeBridgeImplementsBothOptionalSDKSelectors() {
+        let adapter = CareReminderNotificationBridge(arguments: []) { _ in }
+        let witness: any UNUserNotificationCenterDelegate = adapter
+        XCTAssertTrue(witness.responds(to: #selector(UNUserNotificationCenterDelegate
+            .userNotificationCenter(_:didReceive:withCompletionHandler:))))
+        XCTAssertTrue(witness.responds(to: #selector(UNUserNotificationCenterDelegate
+            .userNotificationCenter(_:willPresent:withCompletionHandler:))))
+    }
+
+    @MainActor
+    func testNativeBridgeRejectedCallbacksCompleteOnceSynchronously() async throws {
+        let request = try notificationRequest(receiptCandidate())
+        let unexpected = XCTestExpectation(description: "No rejected transport")
+        unexpected.isInverted = true
+        let adapter = CareReminderNotificationBridge(arguments: []) { _ in unexpected.fulfill() }
+        for action in [UNNotificationDismissActionIdentifier, "custom"] {
+            let probe = NativeBridgeCompletionProbe()
+            adapter.receive(identifier: request.identifier, actionIdentifier: action,
+                userInfo: request.content.userInfo) { probe.record() }
+            XCTAssertEqual(probe.snapshot, [1, 0])
+        }
+        let invalid: [(String, [AnyHashable: Any])] = [
+            ("narat.trial.fixture", request.content.userInfo), ("unrelated", [:]),
+            (request.identifier, [:]), (request.identifier, ["narat.care.version": 1])]
+        for (identifier, metadata) in invalid {
+            let tap = NativeBridgeCompletionProbe(), foreground = NativeBridgeCompletionProbe()
+            adapter.receive(identifier: identifier, actionIdentifier: UNNotificationDefaultActionIdentifier,
+                userInfo: metadata) { tap.record() }
+            adapter.present(identifier: identifier, userInfo: metadata) { foreground.record($0) }
+            XCTAssertEqual(tap.snapshot, [1, 0])
+            XCTAssertEqual(foreground.snapshot, [1, 0])
+        }
+        for flag in ["--catalogue", "--today-broken", "--narat-staging", "--care-reminder",
+                     "--result-save-presentation"] {
+            let isolated = CareReminderNotificationBridge(arguments: [flag]) { _ in unexpected.fulfill() }
+            let tap = NativeBridgeCompletionProbe(), foreground = NativeBridgeCompletionProbe()
+            isolated.receive(identifier: request.identifier,
+                actionIdentifier: UNNotificationDefaultActionIdentifier,
+                userInfo: request.content.userInfo) { tap.record() }
+            isolated.present(identifier: request.identifier,
+                userInfo: request.content.userInfo) { foreground.record($0) }
+            XCTAssertEqual(tap.snapshot, [1, 0])
+            XCTAssertEqual(foreground.snapshot, [1, 0])
+        }
+        let result = await XCTWaiter.fulfillment(of: [unexpected], timeout: 0.05)
+        XCTAssertEqual(result, .completed)
+    }
+
+    @MainActor
+    func testNativeBridgeHeldSinkDoesNotDelayCompletionAndRetainsTypedEvents() async throws {
+        // Fixed historical fire: transport has no expiry/owner authority.
+        let request = try CareReminderNotificationFactory.request(
+            .init(candidate: receiptCandidate(due: "2026-11-19", owner: otherSyncOwner),
+                  attemptId: operationId),
+            now: SQLTimestamp.date(from: "2026-11-18T00:00:00Z")!)
+        let route = try XCTUnwrap(CareReminderNotificationFactory.parse(
+            identifier: request.identifier, userInfo: request.content.userInfo))
+        let inbox = CareReminderNotificationInbox()
+        let barrier = CareReminderReadiness(held: true)
+        let entered = XCTestExpectation(description: "Both typed sinks held")
+        let delivered = XCTestExpectation(description: "Both typed sinks delivered")
+        entered.expectedFulfillmentCount = 2
+        delivered.expectedFulfillmentCount = 2
+        entered.assertForOverFulfill = true
+        delivered.assertForOverFulfill = true
+        let adapter = CareReminderNotificationBridge(arguments: []) { event in
+            entered.fulfill()
+            try? await barrier.wait()
+            await inbox.receive(event)
+            delivered.fulfill()
+        }
+        let tap = NativeBridgeCompletionProbe(), foreground = NativeBridgeCompletionProbe()
+        adapter.receive(identifier: request.identifier, actionIdentifier: UNNotificationDefaultActionIdentifier,
+            userInfo: request.content.userInfo) { tap.record() }
+        adapter.present(identifier: request.identifier, userInfo: request.content.userInfo) { foreground.record($0) }
+        XCTAssertEqual(tap.snapshot, [1, 0])
+        XCTAssertEqual(foreground.snapshot, [1, 0])
+        XCTAssertNil(inbox.pendingTap)
+        let started = await XCTWaiter.fulfillment(of: [entered], timeout: 1)
+        XCTAssertEqual(started, .completed)
+        XCTAssertNil(inbox.pendingTap)
+        barrier.release()
+        let finished = await XCTWaiter.fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(finished, .completed)
+        XCTAssertEqual(inbox.pendingTap?.route, route)
+        XCTAssertEqual(inbox.latestForeground, route)
+        XCTAssertEqual(tap.snapshot, [1, 0])
+        XCTAssertEqual(foreground.snapshot, [1, 0])
+    }
+
+    @MainActor
+    func testNativeBridgeForegroundAloneNeverCreatesNavigationIntent() async throws {
+        let request = try notificationRequest(receiptCandidate())
+        let route = try XCTUnwrap(CareReminderNotificationFactory.parse(
+            identifier: request.identifier, userInfo: request.content.userInfo))
+        let inbox = CareReminderNotificationInbox()
+        let delivered = XCTestExpectation(description: "Foreground transport only")
+        let adapter = CareReminderNotificationBridge(arguments: []) { event in
+            await inbox.receive(event)
+            delivered.fulfill()
+        }
+        let probe = NativeBridgeCompletionProbe()
+        adapter.present(identifier: request.identifier, userInfo: request.content.userInfo) { probe.record($0) }
+        XCTAssertEqual(probe.snapshot, [1, 0])
+        let result = await XCTWaiter.fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(result, .completed)
+        XCTAssertNil(inbox.pendingTap)
+        XCTAssertEqual(inbox.latestForeground, route)
+        XCTAssertEqual(inbox.recentCount, 0)
+    }
+}
