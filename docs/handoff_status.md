@@ -2,7 +2,7 @@
 
 ## Общее наблюдаемое покрытие: исправлен только ID запуска
 
-ObservedWHOLE01 остановлен engine до проверок/моделей: прежний taskID уже имеет durable rawWhole02 report. Старый отчёт сохранён; новый taskID root-observed-whole и freshWHOLE02, source7files/basecc/checks/models неизменны. Это не semantic/compileFAIL; общий кандидат ещё НЕпринят.
+ObservedWHOLE01 остановлен engine до проверок/моделей: прежний taskID уже имеет durable rawWhole02 report. Старый отчёт сохранён; новый taskID root-observed-whole и freshWHOLE02, source7files/basecc/checks/models неизменны. Это не semantic/compileFAIL; общий кандидат ещё НЕпринят. Следующий preflight выявил недостающий существующий auto-report в readfiles: добавлен только readpath, source/отчёт неизменны; freshWHOLE03 после проверки полного списка paths.
 
 ## Актуальный статус — наблюдаемый nonfirst, 22 ноября 2026
 

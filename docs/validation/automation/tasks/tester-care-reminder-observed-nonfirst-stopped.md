@@ -9,3 +9,5 @@ Whole02 rawCOMPLETED all10+Reviewer224.850/QA236.704PASS retained unchanged, ind
 Далее freshWHOLE7sourceunion candidate_basecc74041ca36810434d60be9cb9b841f0bb7eeae1, all10checks/highReviewQA, strictV4 actual3named/3namespaces/initialPNG+JSON+targetPNG+observednonfirst/no skips. V4SHA256 29736c142d1ae319347b01ab051face67545bb2c2eeb3e5d461cbcf06de2dd5b, pycompile+7pureparserchecksPASS only; actualnew3UI NOTRUN. Root stayscc74041/PBXdelta0/user3untouched. OrdinarySDKSystem deliverytap/knowncleanup/finalPersonal pending, hard50soft48/noreset.
 
 ObservedWHOLE01 attempt: BLOCKED доchecks/models (existingdurablereport/taskIDcollision). Rawignoredstate preserved. НовыйtaskID tester-care-reminder-root-observed-whole +freshObservedWHOLE02; никаких измененийsource/гейтов/models.
+
+ObservedWHOLE02 preflight BLOCKED доchecks/models: readfiles missing existing auto rawWhole02 report docs/validation/automation/tasks/tester-care-reminder-root-whole.md. Добавлен только этот readpath, отчёт/source unchanged. Перед freshWHOLE03 actual diffpaths(basecc→HEAD) subsetmanifest.files asserted.
