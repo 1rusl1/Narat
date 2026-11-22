@@ -627,3 +627,5 @@
 - D3B WHOLE01 BLOCKED до Review/QA: V2auth0 против SDKsetup1, actual2UI+PNG/8consent/494Swift PASS не wholePASS. ControllerV3 exact1/bootstrap/noextraauth; fresh10gates/highReviewQA обязательны, родительские checkbox не закрывать.
 
 - Whole02 rawterminal preserved; controller NOT_ACCEPTED_FOR_NONFIRST_COVERAGE: exacttarget synthetic proved, actualfirstlist relation notproved. New narrow DEBUGfixture+thirdUI observedmapping thenfreshwhole7union required; parentT075/T077/T080/T098 remainopen.
+
+- Observednonfirst actualDeveloper136.692 candidate2files86+/1-, UIinsert-only and routing-onlytimestamp<=until; safeSTOP130beforeXcode/diff0.024only. FreshWHOLE7unionV4actual3tests+PNGJSONmapping/all10/highReviewQA mandatory; no parentcheckbox closure/ordinarySystemproof yet.

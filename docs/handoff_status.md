@@ -1,5 +1,14 @@
 # Narat — текущий статус и передача работы
 
+## Актуальный статус — наблюдаемый nonfirst, 22 ноября 2026
+
+- **Реализовано в кандидате:** routing-only порядок timestamp -2/-1/0 и отдельный3й UI-тест фактического firstID→другая карточка. Старые UI-методы побайтно сохранены.
+- **Реально выполнено:** actualDeveloper136.692с, diff0.024PASS; безопасный STOP130 доXcode. Это НЕ полная приёмка. Whole02 raw10/ReviewQA PASS сохранён отдельно от controller NONFIRST coverageblock.
+- **Ещё не проверено:** новые3UI/strictV4 и общая7fileunion, обычная System delivery/tap, finalPersonal/dSYM.
+- **Следующий шаг:** fresh read-onlyWHOLE7candidate_basecc/all10/highReviewQA; затем ordinarySimlive/knowncleanup и Root finalsigning. Без новых userподтверждений/hard50soft48/noreset.
+
+## История этапов
+
 ## Актуальный статус — пробел доказательства nonfirst, 22 ноября 2026
 
 - Реализованы exacttarget/modal/one-shot/per-event foreground; фактические Whole02 проверки/roles сохранены в [отчёте](validation/automation/tasks/tester-care-reminder-root-whole-controller-coverage-02.md).

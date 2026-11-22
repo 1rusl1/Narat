@@ -428,7 +428,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             }
             ledger.plants = (0..<scenario.initialCount).map { index in
                 Plant(owner: owner, id: UUID(), species: "fixture_fern", name: "Fixture \(index + 1)",
-                      timestamp: Self.time(0))
+                      timestamp: Self.time(reminderMode == ReminderConsentFixtureMode.routing.rawValue ? index - 2 : 0))
             }
             try JSONEncoder().encode(ledger).write(to: file, options: .atomic)
         }

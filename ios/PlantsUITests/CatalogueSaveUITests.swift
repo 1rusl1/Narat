@@ -1732,6 +1732,91 @@ final class CatalogueSaveUITests: XCTestCase {
         notificationImage(run, "notification-foreground-settings_")
     }
 
+    @MainActor func testNotificationTapUsesObservedNonFirstCollectionPlant() throws {
+        let run = reminderRun("routing")
+        defer { run.app.terminate() }
+        launch(run)
+        tap(run, "collection.open", "My plants")
+        reminderWait("Collection toolbar ready before observing rows") {
+            let settings = run.app.buttons["collection.settings.open"]
+            return settings.exists && settings.isHittable
+        }
+        let collectionRows = run.app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "collection.plant."))
+        reminderWait("Three visible collection rows") {
+            collectionRows.allElementsBoundByIndex.filter { $0.isHittable }.count == 3
+        }
+        let rows = collectionRows.allElementsBoundByIndex.filter { $0.isHittable }.map {
+            (identifier: $0.identifier, label: $0.label, minY: Double($0.frame.minY))
+        }.sorted { $0.minY < $1.minY }
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(Set(rows.map { $0.identifier }).count, 3)
+        XCTAssertEqual(Set(rows.map { $0.label }).count, 3)
+        for row in rows {
+            XCTAssertNotNil(UUID(uuidString: String(row.identifier.dropFirst("collection.plant.".count))))
+            XCTAssertFalse(row.label.isEmpty)
+            XCTAssertTrue(row.minY.isFinite)
+        }
+        for index in 1..<rows.count {
+            XCTAssertLessThan(rows[index - 1].minY, rows[index].minY)
+        }
+        let firstRow = try XCTUnwrap(rows.first)
+        let firstIdentifier = firstRow.identifier
+        let firstLabel = firstRow.label
+        notificationImage(run, "notification-observed-initial-list_")
+
+        tap(run, "collection.settings.open")
+        enabled(run.app.buttons["collection.settings.close"])
+        reminderPreference(run, false)
+        reminderSetPreference(run, true)
+        reminderAllow(run)
+        reminderConfirmed(run)
+        let button = reminderReach(run, "care.fixture.notificationTap")
+        let selectedName = try XCTUnwrap(button.value as? String)
+        XCTAssertFalse(selectedName.isEmpty)
+        let selectedRows = rows.filter { $0.label == selectedName }
+        XCTAssertEqual(selectedRows.count, 1)
+        let selectedRow = try XCTUnwrap(selectedRows.first)
+        let selectedIdentifier = selectedRow.identifier
+        XCTAssertNotEqual(selectedIdentifier, firstIdentifier)
+        XCTAssertNotEqual(selectedName, firstLabel)
+        let mapping: [String: Any] = [
+            "version": 1, "namespace": run.namespace,
+            "rows": rows.map { row -> [String: Any] in
+                ["identifier": row.identifier, "label": row.label, "minY": row.minY]
+            },
+            "firstIdentifier": firstIdentifier, "selectedIdentifier": selectedIdentifier,
+            "selectedPlantName": selectedName
+        ]
+        let attachment = XCTAttachment(
+            data: try JSONSerialization.data(withJSONObject: mapping, options: [.sortedKeys]),
+            uniformTypeIdentifier: "public.json")
+        attachment.name = "notification-observed-list-mapping_" + run.namespace
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        XCTAssertTrue(run.app.buttons["collection.settings.close"].exists)
+        button.tap()
+        reminderWait("Exact observed notification card") {
+            run.app.staticTexts["catalogue.saved.name"].exists
+                && run.app.staticTexts["catalogue.saved.name"].label == selectedName
+        }
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, selectedName)
+        XCTAssertFalse(run.app.buttons["collection.settings.close"].exists)
+        reminderPresent(run, "collection.rename.open")
+        reminderPresent(run, "collection.light.open")
+        notificationImage(run, "notification-observed-route-card_")
+        reminderTap(run, "collection.back")
+        reminderPresent(run, "collection.settings.open")
+        reminderTap(run, "collection.back")
+        reminderOpenSettings(run)
+        reminderSnapshot(run, "before-duplicate-tap")
+        reminderMarkedAction(run, "care.fixture.notificationTap")
+        reminderPresent(run, "collection.settings.close")
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        reminderSnapshot(run, "after-duplicate-tap")
+    }
+
     @MainActor
     private func notificationImage(_ run: Run, _ prefix: String) {
         let attachment = XCTAttachment(screenshot: run.app.screenshot())
