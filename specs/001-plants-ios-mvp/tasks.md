@@ -611,3 +611,7 @@
 - D2B f12adfc accepted: synchronous strong early delegate, shared Debug/Release guard before center, same Inbox/runtime to Root. Actual482Swift/Release/149/diff/MCP/8consent+13care+Today6+4result/highReviewQA PASS. Tests use fake installer, not actual OS delivery. D3 routing/ordinarySystemSchedulerSDK tap/finalsigning and parenttasks remainopen; hard50/noreset.
 
 - D3A prep only: properTapCoordinator scaffold/4refs/context/manifest; Developer2files next, noRoot/OS/UI/network effects. Preserve482 and fullSwift/149/diff/MCP/highReviewQA; D3B/finalSystem/signedsource pending.
+
+- D3A 362ba8b accepted: original connection/SDKsnapshot/locale binding beforeawait, noA2 rebind, read/intent fences, freshclock deadline and presentation-safe exactconsume.489Swift/149/diff/MCP/highReviewQA actualPASS; genericinjectedepoch unitonly/noRootSDK/nativeproof. D3B/ordinarySystemdeliverytap/finalsigning and parenttasks remainopen; hard50/noreset.
+
+- D3B prep only: Root+tinyCoreclock/newdedicatedroutingfixture/Unit/UI sixfilemanifest, new2strictPNG+ledgergate, PBXdelta0. Actualimplementation/full10checks/ReviewQA then ordinarySystemdeliverytap/finalsigning pending. No native-ready claim; hard50/noreset.
