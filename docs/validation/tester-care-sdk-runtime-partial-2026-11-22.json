@@ -1,0 +1,87 @@
+{
+  "status": "PARTIAL_UI_PAUSED_NOT_SYSTEM_DELIVERY_ACCEPTANCE",
+  "date": "2026-11-22",
+  "source_sha": "1371ae02354555d51e3b53ad4a5140e27e21b168",
+  "application_source_changed": false,
+  "technical_artifact": {
+    "personal_version": "0.1.0 (3)",
+    "dsym_ready": true,
+    "physical_install_or_ui_proven": false
+  },
+  "live_scope": "ordinary signed Simulator Release, existing permanent SDK session, dedicated test plant; no password/API client/auth-token extraction",
+  "canonical_authority": "App-synced sealed replica, NOT independent server GET",
+  "actual_live_checks": {
+    "both_root_baseline_native_and_return_settings_visual_admissions": true,
+    "baseline_production_steady_off_after_one_retry": true,
+    "one_new_manual_water_confirmed": true,
+    "last_replica_canonical_rows": 23,
+    "preexisting_canonical_rows_preserved": 22,
+    "last_replica_outbox_count": 0,
+    "last_replica_overview_aligned": true,
+    "observed_profile_hour": 22,
+    "profile_hour_requested_before_inertia": 21,
+    "observed22_reconciliation_not21_pass": true,
+    "root_cua_selected_owned_simulator_and_exact_card": true,
+    "root_card_observed_next_due": "2026-11-29"
+  },
+  "actual_domain_intents": {
+    "new_manual_watering": 1,
+    "temporary_profile_hour_save": 1,
+    "date_correction_save": 0,
+    "known_water_undo": 0,
+    "restore_original_hour_save": 0,
+    "consent_enable": 0,
+    "reminder_arm": 0,
+    "native_notification_tap": 0
+  },
+  "current_test_data": {
+    "known_water_state": "active",
+    "actual_water_local_date": "2026-11-22",
+    "planned_correction_date_not_applied": "2026-11-15",
+    "current_confirmed_profile_hour": 22,
+    "original_profile_hour_to_restore": 9,
+    "cleanup_complete": false
+  },
+  "checkpoint": {
+    "phase": "HOUR_CONFIRMED",
+    "sha256": "d5f357c367001dc163caa42cd476ba244d56d326d9dac98fd817ca1a18599e94",
+    "steps": [
+      "record",
+      "observed-hour-reconciliation"
+    ],
+    "inflight": null,
+    "has_g1": false
+  },
+  "instrumentation_checks_only": {
+    "sdk_operator_pure_checks": 51,
+    "hour_reconciliation_pure_checks": 24,
+    "correct_opener_pure_checks": 12,
+    "sealed_reader_checks_root": 10,
+    "not_app_or_delivery_acceptance": true
+  },
+  "stop": {
+    "root_observed_local_time": "21:49 Europe/Moscow",
+    "cause": "native CUA reported Mac locked again after user said unlocked; clarification pending",
+    "root_cua_resource_wrapper_exit_code": 0,
+    "root_resource_released": true,
+    "child_ui_actions": 0,
+    "window_22_margin_missed_before_arm": true,
+    "safety_margins_35_and_30_minutes_unchanged": true,
+    "system_delivery_failure_claimed": false
+  },
+  "limitations": [
+    "No date correction applied; actual next due remains Nov29, not planned Nov22",
+    "No G1/G2, closed-app delivery or native tap proved",
+    "Native AX tree exposed App underlay; native empty-screen evidence is explicit Root visual, not exported OS payload",
+    "Known active water and temporary hour22 remain; no rollback/full digest equality",
+    "Physical UI, external distribution and full MVP open"
+  ],
+  "next": "After observed UI unlock and actual calendar/current-state grounding, compute a NEW future full hour from the actual clock with at least45 minutes margin. Any change from known22 is a NEW explicit Save after stable wheel and fresh canonical read, never replay of old Save. Keep original restore hour9; do not relax35/30 minute gates or alter clock. Complete the agreed delivery cycle if eligible, then undo ONLY known new water and restore9. Otherwise exact known cleanup remains required.",
+  "parent_tasks_open": [
+    "T075",
+    "T077",
+    "T080",
+    "T098"
+  ],
+  "git_delivery": "lane commit for Root review; Root fast-forward/push follows review"
+}

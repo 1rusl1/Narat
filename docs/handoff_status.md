@@ -1,11 +1,11 @@
 # Narat — текущий статус и передача работы
 
-## Актуальный технический срез — 22 ноября 2026
+## Актуальный технический срез — частичная живая проверка, 22 ноября 2026
 
-- **Принято:** исходники `1371ae0`; 494 Swift, 149 automation, Release/MCP, UI (8 + 3 + 4 + 13 + 6), Review/QA — PASS. Сохранён [Personal 0.1.0 (3) и dSYM](validation/tester-care-personal-checkpoint-2026-11-22.md); установка на телефон не выполнялась.
-- **Новая живая проверка:** [существующая SDK-сессия восстановилась без файла пароля](validation/tester-care-existing-sdk-probe-2026-11-22.md). Ordinary signed Simulator Release → точная известная карточка → Account settings/off → Today — PASS. Свежая canonical publication и aligned EN generation, все 22 canonical rows и decoded profile сохранены, outbox 0 → 0. Внешний API-клиент, чтение auth storage и изменения данных — 0.
-- **Ещё открыто:** native baseline и реальная System-доставка/tap при закрытом приложении. Today PNG/AX прочитаны; Application/Window не экспортируются, `today.root` даёт рамку 402×874. Compact footer пока законно отсутствует без eligible задачи; его фактическая строка не проверена. Physical, внешняя передача, полный MVP и родительские T075/T077/T080/T098 открыты.
-- **Следующий шаг:** review Store-based оператора на восстановленной SDK-сессии, затем native PNG/AX и рамка footer до полива; согласованный one-known-water/hour цикл G1 → прямой G2 → закрытое приложение → доставка/одно нажатие → точное восстановление → final Personal/dSYM. Файл пароля не нужен для этого пути. Новая разработка приложения не требуется; soft48/hard50, сброс запрещён.
+- **Принято и сохранено:** приложение `1371ae0`, прежняя полная проверка 494 Swift/149 automation/Release/MCP/UI/Review/QA; [Personal 0.1.0 (3) и dSYM готовы](validation/tester-care-personal-checkpoint-2026-11-22.md). Код приложения не менялся, physical UI/внешняя передача открыты.
+- **Реально выполнено:** [SDK runtime partial](validation/tester-care-sdk-runtime-partial-2026-11-22.md): существующая SDK-сессия без файла пароля; две Root baseline visual-проверки; один новый полив и один Save часа, фактически 22 вместо ожидаемого 21. Час 22 согласован без повторного Save. Последняя SDK replica — 23 rows/22 прежние сохранены/outbox 0/aligned; это не independent server GET. Карточка показывает воду 22 ноября и due 29 ноября.
+- **Пауза и остаток:** CUA сообщает Mac locked, Root ждёт уточнение. CP `HOUR_CONFIRMED`, inflight nil. Известный полив **активен**, час **22 вместо исходного 9**; cleanup не выполнен. Correction Save/consent/arm/tap — 0. Окно 22:00 пропущено до arm без изменения порогов; System-доставку не ставили и её провал не заявляется.
+- **Следующий шаг:** после фактического unlock — текущий экран/календарь; новый будущий целый час по фактическим часам с запасом ≥45 минут, только как новый явный Save с известного 22 со stable picker и свежим canonical read. Затем согласованный цикл и точная очистка либо только очистка known entry + восстановление 09:00. T075/T077/T080/T098 и полный MVP открыты; soft48/hard50, сброс запрещён. Root review/fast-forward/push этого частичного среза — следующий Git-шаг.
 
 ## История этапов
 
