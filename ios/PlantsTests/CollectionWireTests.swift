@@ -15386,3 +15386,322 @@ extension CollectionWireTests {
         XCTAssertEqual(probe.installs, 1)
     }
 }
+
+
+// D3A fixtures contain no SDK acquisition, OS work, transport or navigation.
+private struct TapSDKFixture: Equatable {
+    let epoch: Int
+}
+
+@MainActor
+private final class TapCacheGate {
+    let entered = CareReminderReadiness(held: true)
+    private var continuation: CheckedContinuation<Void, Never>?
+    func wait() async {
+        await withCheckedContinuation {
+            continuation = $0
+            entered.release()
+        }
+    }
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+extension CollectionWireTests {
+    private typealias TapCoordinator = CareReminderTapCoordinator<TapSDKFixture>
+
+    @MainActor
+    private func tapSource(_ connection: NSObject, epoch: Int = 1, owner: UUID? = nil,
+                           locale: String = "pl", current: @escaping @MainActor () -> Bool = { true },
+                           read: @escaping @MainActor () async throws -> CareOverviewViewState?)
+        -> TapCoordinator.Source {
+        .init(connection: ObjectIdentifier(connection), ownerId: owner ?? syncOwner,
+              snapshot: .init(epoch: epoch), locale: locale, isCurrent: current, readCache: read)
+    }
+
+    @MainActor
+    private func tapIntent(_ inbox: CareReminderNotificationInbox,
+                           _ route: CareReminderNotificationRoute) throws -> CareReminderNotificationInbox.Intent {
+        inbox.receive(.tap(.init(candidate: route.candidate, attemptId: UUID())))
+        return try XCTUnwrap(inbox.pendingTap)
+    }
+
+    @MainActor
+    func testTapBindingUnresolvedAndTerminalScopesBeforeAnyRead() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)])
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        let inbox = CareReminderNotificationInbox()
+        let coordinator = TapCoordinator(inbox: inbox,
+            clock: { SQLTimestamp.date(from: "2026-11-27T12:00:00Z")! },
+            timeZone: { TimeZone(secondsFromGMT: 0)! })
+        let connection = NSObject()
+        var reads = 0
+        let source = tapSource(connection) { reads += 1; return state }
+        let intent = try tapIntent(inbox, route)
+        let held = await coordinator.resolve(intent, scope: .unresolved)
+        XCTAssertEqual(held?.decision, .hold)
+        XCTAssertNil(held?.source)
+        XCTAssertEqual(reads, 0)
+        let resolvedValue = await coordinator.resolve(intent, scope: .permanent(source))
+        let resolved = try XCTUnwrap(resolvedValue)
+        XCTAssertEqual(resolved.decision, .open(plantId: serverPlantId))
+        XCTAssertEqual(reads, 1)
+        XCTAssertNil(coordinator.consumeOpen(resolved, scope: .permanent(source), presentationAvailable: false))
+        XCTAssertEqual(inbox.pendingTap, intent)
+        let target = coordinator.consumeOpen(resolved, scope: .permanent(source), presentationAvailable: true)
+        XCTAssertEqual(target?.source.snapshot, source.snapshot)
+        XCTAssertEqual(target?.source.connection, ObjectIdentifier(connection))
+        XCTAssertEqual(target?.intent, intent)
+        XCTAssertEqual(target?.plantId, serverPlantId)
+        XCTAssertNil(coordinator.consumeOpen(resolved, scope: .permanent(source), presentationAvailable: true))
+        let consumed = await coordinator.resolve(intent, scope: .permanent(source))
+        XCTAssertNil(consumed)
+        inbox.receive(.tap(intent.route))
+        XCTAssertNil(inbox.pendingTap)
+
+        let wrong = tapSource(connection, owner: otherSyncOwner) { reads += 100; return state }
+        let anonymous: TapCoordinator.Scope = .anonymous
+        for scope in [TapCoordinator.Scope.signedOut, anonymous, .permanent(wrong)] {
+            let rejected = try tapIntent(inbox, route)
+            let dropped = await coordinator.resolve(rejected, scope: scope)
+            XCTAssertEqual(dropped?.decision, .drop)
+            let retry = await coordinator.resolve(rejected, scope: .permanent(source))
+            XCTAssertEqual(retry?.decision, .drop)
+        }
+        XCTAssertEqual(reads, 1)
+    }
+
+    @MainActor
+    func testTapHeldOriginalScopeInvalidationCannotRebindSameIntent() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)])
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        for mode in ["logout", "epoch", "connection", "locale", "detached"] {
+            let inbox = CareReminderNotificationInbox()
+            let coordinator = TapCoordinator(inbox: inbox,
+                clock: { SQLTimestamp.date(from: "2026-11-27T12:00:00Z")! },
+                timeZone: { TimeZone(secondsFromGMT: 0)! })
+            let a1 = NSObject(), a2 = NSObject()
+            let gate = TapCacheGate()
+            var valid = true
+            var reads = 0
+            let original = tapSource(a1, current: { valid }) {
+                reads += 1
+                await gate.wait()
+                return state
+            }
+            let intent = try tapIntent(inbox, route)
+            let task = Task { await coordinator.resolve(intent, scope: .permanent(original)) }
+            try await gate.entered.wait()
+            XCTAssertEqual(reads, 1)
+            if mode != "detached" { valid = false }
+            let replacement = tapSource(mode == "connection" || mode == "detached" ? a2 : a1,
+                epoch: mode == "epoch" ? 2 : 1, locale: mode == "locale" ? "en" : "pl") {
+                    reads += 100
+                    return state
+                }
+            let nextScope: TapCoordinator.Scope = mode == "logout" ? .unresolved : .permanent(replacement)
+            let invalidated = await coordinator.resolve(intent, scope: nextScope)
+            XCTAssertEqual(invalidated?.decision, .drop, mode)
+            gate.release()
+            let late = await task.value
+            XCTAssertNil(late, mode)
+            let retry = await coordinator.resolve(intent, scope: .permanent(replacement))
+            XCTAssertEqual(retry?.decision, .drop, mode)
+            XCTAssertEqual(reads, 1, mode)
+            // A fresh intent can bind the aligned A2 scope, independently of the rejected one.
+            let fresh = try tapIntent(inbox, route)
+            let aligned = tapSource(a2) { reads += 1; return state }
+            let positiveValue = await coordinator.resolve(fresh, scope: .permanent(aligned))
+            let positive = try XCTUnwrap(positiveValue)
+            XCTAssertNotNil(coordinator.consumeOpen(positive, scope: .permanent(aligned), presentationAvailable: true))
+            XCTAssertEqual(reads, 2, mode)
+        }
+    }
+
+    @MainActor
+    func testTapLateScopeClosureAndCancellationPreserveOriginalReader() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)])
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        for mode in ["cancel", "cancelInvalid", "lateInvalid", "error"] {
+            let inbox = CareReminderNotificationInbox()
+            let coordinator = TapCoordinator(inbox: inbox,
+                clock: { SQLTimestamp.date(from: "2026-11-27T12:00:00Z")! },
+                timeZone: { TimeZone(secondsFromGMT: 0)! })
+            let connection = NSObject(), gate = TapCacheGate()
+            var valid = true
+            var reads = 0
+            var replacementReads = 0
+            let original = tapSource(connection, current: { valid }) {
+                reads += 1
+                if reads == 1 {
+                    await gate.wait()
+                    if mode == "error" { throw URLError(.cannotLoadFromNetwork) }
+                }
+                return state
+            }
+            let intent = try tapIntent(inbox, route)
+            let task = Task { await coordinator.resolve(intent, scope: .permanent(original)) }
+            try await gate.entered.wait()
+            if mode.hasPrefix("cancel") { task.cancel() }
+            if mode == "cancelInvalid" || mode == "lateInvalid" { valid = false }
+            gate.release()
+            let first = await task.value
+            XCTAssertEqual(first?.decision, valid ? .hold : .drop, mode)
+            let replacement = tapSource(connection) { replacementReads += 1; return nil }
+            let retry = await coordinator.resolve(intent, scope: .permanent(replacement))
+            XCTAssertEqual(retry?.decision, valid ? .open(plantId: serverPlantId) : .drop, mode)
+            XCTAssertEqual(reads, valid ? 2 : 1, mode)
+            XCTAssertEqual(replacementReads, 0, mode)
+        }
+    }
+
+    @MainActor
+    func testTapReadRevisionAndIntentDisplacementFenceLateCompletions() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)])
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        for newerIntent in [false, true] {
+            let inbox = CareReminderNotificationInbox()
+            let coordinator = TapCoordinator(inbox: inbox,
+                clock: { SQLTimestamp.date(from: "2026-11-27T12:00:00Z")! },
+                timeZone: { TimeZone(secondsFromGMT: 0)! })
+            let connection = NSObject(), gate = TapCacheGate()
+            var reads = 0
+            let source = tapSource(connection) {
+                reads += 1
+                if reads == 1 { await gate.wait() }
+                return state
+            }
+            let old = try tapIntent(inbox, route)
+            let task = Task { await coordinator.resolve(old, scope: .permanent(source)) }
+            try await gate.entered.wait()
+            let current = newerIntent ? try tapIntent(inbox, route) : old
+            let resolvedValue = await coordinator.resolve(current, scope: .permanent(source))
+            let resolved = try XCTUnwrap(resolvedValue)
+            gate.release()
+            let late = await task.value
+            XCTAssertNil(late)
+            if newerIntent {
+                inbox.consume(intentID: old.id)
+                XCTAssertEqual(inbox.pendingTap, current)
+            }
+            XCTAssertEqual(reads, 2)
+            XCTAssertNotNil(coordinator.consumeOpen(resolved, scope: .permanent(source), presentationAvailable: true))
+            XCTAssertNil(coordinator.consumeOpen(resolved, scope: .permanent(source), presentationAvailable: true))
+        }
+    }
+
+    @MainActor
+    func testTapFreshClockAfterHeldCacheAndAtFinalPresentation() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let deadline = SQLTimestamp.date(from: "2026-11-27T13:00:00Z")!
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)],
+                                      deadline: "2026-11-27T13:00:00Z")
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        for offset in [-1.0, 0.0, 1.0] {
+            var now = deadline.addingTimeInterval(-3600)
+            let inbox = CareReminderNotificationInbox()
+            let coordinator = TapCoordinator(inbox: inbox, clock: { now },
+                timeZone: { TimeZone(secondsFromGMT: 0)! })
+            let connection = NSObject(), gate = TapCacheGate()
+            let source = tapSource(connection) { await gate.wait(); return state }
+            let intent = try tapIntent(inbox, route)
+            let task = Task { await coordinator.resolve(intent, scope: .permanent(source)) }
+            try await gate.entered.wait()
+            now = deadline.addingTimeInterval(offset)
+            gate.release()
+            let resultValue = await task.value
+            let result = try XCTUnwrap(resultValue)
+            XCTAssertEqual(result.decision, offset < 0 ? .open(plantId: serverPlantId) : .drop)
+            if offset < 0 {
+                XCTAssertNil(coordinator.consumeOpen(result, scope: .permanent(source), presentationAvailable: false))
+                now = deadline
+            }
+            XCTAssertNil(coordinator.consumeOpen(result, scope: .permanent(source), presentationAvailable: true))
+            XCTAssertEqual(inbox.pendingTap, intent)
+        }
+    }
+
+    @MainActor
+    func testTapCacheOnlyD1FirstAidSourceDueDenialAndMissingAuthority() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let rows = [reminderRow(serverPlantId, controls: [reminderControl(1)])]
+        let state = try reminderState(local, rows: rows)
+        let candidate = try XCTUnwrap(reminderPlan(state).candidates.first {
+            if case .firstAid = $0.occurrence { return true }; return false
+        })
+        let route = try routingPayload(candidate)
+        let moved = try reminderState(local, rows: [
+            reminderRow(serverPlantId, controls: [reminderControl(1, due: "2026-11-26")])])
+        let denied = try reminderState(local, rows: rows, mode: "denied")
+        let cases: [(CareOverviewViewState?, CareReminderRouting.Decision)] = [
+            (nil, .hold), (state, .open(plantId: serverPlantId)), (moved, .drop), (denied, .drop)
+        ]
+        for (cache, expected) in cases {
+            let inbox = CareReminderNotificationInbox()
+            let coordinator = TapCoordinator(inbox: inbox,
+                clock: { SQLTimestamp.date(from: "2026-11-27T12:00:00Z")! },
+                timeZone: { TimeZone(secondsFromGMT: 0)! })
+            let connection = NSObject()
+            let source = tapSource(connection) { cache }
+            let intent = try tapIntent(inbox, route)
+            let result = await coordinator.resolve(intent, scope: .permanent(source))
+            XCTAssertEqual(result?.decision, expected)
+            XCTAssertEqual(result?.source?.snapshot, source.snapshot)
+        }
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testTapPresentationHoldKeepsBindingAndFinalGuardRejectsStaleProof() async throws {
+        let (url, _, _, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)])
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        for invalidate in [false, true] {
+            let inbox = CareReminderNotificationInbox()
+            let coordinator = TapCoordinator(inbox: inbox,
+                clock: { SQLTimestamp.date(from: "2026-11-27T12:00:00Z")! },
+                timeZone: { TimeZone(secondsFromGMT: 0)! })
+            let connection = NSObject()
+            var valid = true
+            var cache: CareOverviewViewState?
+            var reads = 0
+            let source = tapSource(connection, current: { valid }) { reads += 1; return cache }
+            let old = try tapIntent(inbox, route)
+            let missing = await coordinator.resolve(old, scope: .permanent(source))
+            XCTAssertEqual(missing?.decision, .hold)
+            cache = state
+            let value = await coordinator.resolve(old, scope: .permanent(source))
+            let proof = try XCTUnwrap(value)
+            XCTAssertEqual(reads, 2)
+            XCTAssertNil(coordinator.consumeOpen(proof, scope: .permanent(source), presentationAvailable: false))
+            if invalidate {
+                valid = false
+                XCTAssertNil(coordinator.consumeOpen(proof, scope: .unresolved, presentationAvailable: false))
+                let dropped = await coordinator.resolve(old, scope: .unresolved)
+                XCTAssertEqual(dropped?.decision, .drop)
+                XCTAssertEqual(reads, 2)
+            } else {
+                let newer = try tapIntent(inbox, route)
+                XCTAssertNil(coordinator.consumeOpen(proof, scope: .permanent(source), presentationAvailable: true))
+                XCTAssertEqual(inbox.pendingTap, newer)
+                let currentValue = await coordinator.resolve(newer, scope: .permanent(source))
+                let current = try XCTUnwrap(currentValue)
+                XCTAssertNotNil(coordinator.consumeOpen(current, scope: .permanent(source), presentationAvailable: true))
+            }
+        }
+    }
+}
