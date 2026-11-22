@@ -1,0 +1,40 @@
+{
+  "status": "STOP_BEFORE_AUTH",
+  "source_sha": "1371ae02354555d51e3b53ad4a5140e27e21b168",
+  "scope": "ordinary signed Simulator archive + preflight; no runtime live acceptance",
+  "simulator_build": {
+    "process_exit_code": 0,
+    "configuration": "ordinary Release",
+    "signed": true,
+    "strict_codesign": true,
+    "fixture_sentinels_excluded": 14,
+    "expected_backend": true,
+    "public_client_key_verified": true,
+    "binary_sha256": "fc61a36167bdbcf864282aa90241cf89c188e74e73f11abbcc22eb2b509f20e7",
+    "frozen_worktree_clean": true,
+    "owned_derived_intermediates_removed": true
+  },
+  "failure": {
+    "type": "FileNotFoundError",
+    "stage": "existing protected credential-provider stat before /auth/v1/token request",
+    "provider_basename": "narat-first-human-beta-login.json"
+  },
+  "actual_counts": {
+    "network_requests": 0,
+    "auth_requests": 0,
+    "app_install": 0,
+    "app_ui": 0,
+    "domain_care_writes": 0,
+    "runtime_checkpoint_created": 0
+  },
+  "cleanup_required": false,
+  "resource": "builder exited0/released; baseline exited1/released; readonly diagnostic exited0/released; no child runtime job remains",
+  "not_verified": [
+    "ordinary App SDK login/baseline",
+    "actual Today Application/Window/footer schema",
+    "native-center baseline screenshot/marker",
+    "System Scheduler delivery while App closed and native tap",
+    "physical UI/external distribution"
+  ],
+  "next": "Wait for path of approved existing protected provider; after Root checkpoint build releases resource, validate provider privately and resume baseline only. Root visual PNG+AX and actual Window/footer guard check BEFORE record/water. Then agreed one known care/hour cycle with reviewed cleanup. No App source or WHOLE rerun."
+}
