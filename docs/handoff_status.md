@@ -1,5 +1,38 @@
 # Narat — текущий статус и передача работы
 
+## Подготовлен D3A: неизменяемая привязка tap к исходной scope — 22 ноября 2026
+
+D2B принят f12adfc, все9gates/ReviewQA PASS. Подготовлены только scaffold
+CareReminderTapCoordinator.swift +4PBXrefs buildA7165BB4E8C4409EE84841F0/ref8B757C668200433C124DD2AD, context/manifest.
+Actual Developer ровно coordinator+WireTests: bind original SDK/locale до await, не rebind A2,
+HOLD/cancel/late read/displaced intent fences, cache-only reuse D1. Root/OS/UI/HTTP effects0.
+Baseline482 сохраняется; fullSwift/build/welcome149/diff/MCP/highReviewQA обязательны.
+Далее D3B Root one-shot canonical target/foreground local-only +actual Release/legacy/routingUI;
+затем ordinary System/SDK closed-app deliverytap/cleanup/latest signed artifact. Parenttasksopen.
+Hard50soft48/noreset; Root original3 не тронуты. Scaffold не считается реализацией.
+
+## D2B ранняя native регистрация принята — 22 ноября 2026
+
+Принят f12adfce93ea524af98cbbd58ff3ce5feb054281. CareReminderAppDelegate.swift, PlantsApp.swift и CollectionWireTests.swift:
+192+/12-. Инертный AppDelegate владеет единственным Inbox и strong Bridge, синхронно
+назначает weak UN delegate до didFinish return только после общего launch-policy.
+Обе ветки App передают тот же Inbox вместе с существующим выбранным runtime; Root
+сохраняет validated dedicated-fake exemption и общий guard также в Release. Старый
+fixture unit адаптирован только к обязательному новому initializer и усилен проверками;
+старые assertions/helper defaults не ослаблены, четыре новых launch/lifetime/cold теста.
+
+Фактические PASS:482 Swift (479XCTest+3/missing0), diff-check 0.049с, automation-tests 43.914с, care-release-compile 99.345с, ios-tests 156.106с, tester-consent-ui 588.922с, tester-result-save-ui 59.093с, simulator-smoke 23.584с, tester-care-ui 495.104с, tester-today-ui 199.88с.
+developer 201.789с, reviewer 98.107с, qa 147.501с; protocol+semantic PASS/findings0.
+Release — actual compiler witness без backend/Google/sign/install/launch, НЕ ordinary SDK/live.
+Старые13care/Today6/4ENPLrender и новые8consent выполнены с неизменёнными assertions/
+strict ledgers. Inert/fake installer tests не равны actual OS launch/callback delivery.
+
+Маршрут пока только удерживается Inbox: D3 immutable original SDK/lease/locale binding,
+currentOccurrences/sourceDue/canonical target/one-shot и scoped foreground local read
+ещё не подключены. Затем обязательны actual ordinary System/Scheduler/SDK closed-app
+доставка+tap/known cleanup и latest signed artifact. ParentT075/T077/T080/T098 открыты;
+technical only/physical+external отложены; hard50soft48/noreset. Root user3 не тронуты.
+
 ## Подготовлен D2B: ранняя регистрация native delegate — 22 ноября 2026
 
 D2A принят eaaef440; scaffold CareReminderAppDelegate.swift +4PBXrefs

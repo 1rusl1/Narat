@@ -607,3 +607,7 @@
 - D2A eaaef440 accepted: shared early isolation, bounded typed inbox and inert UN adapter, both optional selectors/compiler witness. 478Swift/149/diff/MCP/highReviewQA actualPASS. No center/registration/SDK navigation/System proof; D2B/D3/ordinary delivery+tap/finalsigning and parentT075/T077/T080/T098 remain open. Hard50soft48/noreset.
 
 - D2B prep only: AppDelegate scaffold/4refs +manifest/context/Release gate, no registration implementation yet. ThreefileDeveloper then fullSwift/Release/affected8+13+6+4/MCP/149/highReviewQA. Parenttasks stayopen; D3/ordinarySystem/finalsigning pending.
+
+- D2B f12adfc accepted: synchronous strong early delegate, shared Debug/Release guard before center, same Inbox/runtime to Root. Actual482Swift/Release/149/diff/MCP/8consent+13care+Today6+4result/highReviewQA PASS. Tests use fake installer, not actual OS delivery. D3 routing/ordinarySystemSchedulerSDK tap/finalsigning and parenttasks remainopen; hard50/noreset.
+
+- D3A prep only: properTapCoordinator scaffold/4refs/context/manifest; Developer2files next, noRoot/OS/UI/network effects. Preserve482 and fullSwift/149/diff/MCP/highReviewQA; D3B/finalSystem/signedsource pending.
