@@ -1,0 +1,74 @@
+{
+  "status": "PERMANENT_SDK_RESTORED_READ_ONLY_PASS",
+  "source_sha": "1371ae02354555d51e3b53ad4a5140e27e21b168",
+  "scope": "ordinary signed Simulator Release; existing SDK session; no password/API client/auth-storage extraction",
+  "probe_exit_code": 0,
+  "today_capture_exit_code": 0,
+  "resource_released": true,
+  "checks": {
+    "prelaunch_all_owner_outbox": 0,
+    "postread_all_owner_outbox": 0,
+    "same_known_owner": true,
+    "exact_known_card_opened": true,
+    "permanent_account_settings_opened": true,
+    "new_canonical_checkpoint_publication": true,
+    "new_aligned_en_overview_generation": true,
+    "all_22_canonical_rows_unchanged": true,
+    "decoded_profile_unchanged": true,
+    "reminders_off_ui": true,
+    "today_screenshot_visually_reviewed": true
+  },
+  "counts": {
+    "app_install": 1,
+    "ordinary_sdk_launch": 1,
+    "password_login_calls": 0,
+    "external_api_client_calls": 0,
+    "auth_storage_reads": 0,
+    "new_account_intents": 0,
+    "domain_mutation_intents": 0,
+    "consent_changes": 0,
+    "permission_requests": 0,
+    "arm_intents": 0
+  },
+  "observed_today": {
+    "screenshot_pixels": [
+      1206,
+      2622
+    ],
+    "today_root_ax_rect": {
+      "x": 0,
+      "y": 0,
+      "width": 402,
+      "height": 874
+    },
+    "application_window_rows": 0,
+    "footer_visible": false,
+    "footer_reason": "NoSchedule + opted-out does not offer consent; source audit only",
+    "mobile_dump_data_keys": [
+      "elements"
+    ]
+  },
+  "not_proven": [
+    "native Notification Center baseline",
+    "compact footer actual row/hit point",
+    "System delivery with App closed",
+    "native notification tap",
+    "physical UI/external distribution"
+  ],
+  "private_artifact_sha256": {
+    "result.json": "2668163e83957b8a4ea67d3feded48ae2a372d403edd7ed4d378f722b4780849",
+    "canonical-preservation.json": "77ffcf06ac259ce9a039f7c16f6ba84e2303cd1453e82483c48b32b43639cbe8",
+    "startup.json": "6f9f7d9484aa2a13bbbf9556e713d1a8b10d9ac8bd3ba7190237a291cabb4355",
+    "startup.png": "5a9ed4a215c9afa9af037e23cbfd2a51755a2ee18034563e3dd9f5723cb0aebd",
+    "exact-card.json": "8a4c4d3e71e37306b8bfb42f0f5414fdbaa0ff48022605b859eca45f41d93250",
+    "exact-card.png": "1526f295e7f23e47bfc0d4d3a644b1d885c481a89caa62be29e0bdfb58951cfd",
+    "settings.json": "64c3d3adb947fe651a6627704612e127e711b46a3d73babb13eed671404f6ee1",
+    "settings.png": "0fde13badd32ee62b98b2ed3ca71278ac67602807419087e10cf8d55ba95be17",
+    "today-observed.json": "a98b446f6bafc3f01c172b570e60d4c00eb83723d9882c43aa87245f9093f605",
+    "today-observed.png": "3e963284954fc79416236c70f39c1640b085e4e6ac8eb18e09138dfa7622815d",
+    "today-raw-dump.json": "c1db21e6fb31b64ad64e2463c25d53895eda81b9d6a70d333fcd68f8d7d39562",
+    "settings-returned.json": "ea6177d2ec542a42278d30cd973493755d69de1fa2b5c981177fd4e481b6d64c",
+    "settings-returned.png": "441a4af1825e2fc7197894a6f62a7a9654b6f2470ffdc1082b56e62eaa72ec53"
+  },
+  "next": "Use existing SDK session for a separately reviewed Store-based live operator; baseline native PNG+AX and footer bounds adaptation before the agreed one-known-water cycle. No new App source changes or password file required."
+}
