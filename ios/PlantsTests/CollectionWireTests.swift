@@ -2,6 +2,7 @@ import XCTest
 import Combine
 import SwiftData
 import UserNotifications
+import UIKit
 @testable import Plants
 
 extension CollectionWireTests {
@@ -13903,9 +13904,10 @@ extension CollectionWireTests {
         for mode in [ReminderConsentFixtureMode.eligible, .readiness, .noSchedule] {
             var calls = 0
             var made: ReminderConsentFixture?
-            let bootstrap = CareReminderBootstrap(arguments: [
+            let arguments = [
                 "--care-reminder-fixture", mode.rawValue,
-                "--care-reminder-namespace", UUID().uuidString],
+                "--care-reminder-namespace", UUID().uuidString]
+            let bootstrap = CareReminderBootstrap(arguments: arguments,
                 productionFactory: { fatalError("Dedicated launch must never construct System") },
                 fixtureFactory: { configuration in
                     calls += 1
@@ -13923,8 +13925,14 @@ extension CollectionWireTests {
             XCTAssertTrue(published.runtime === fixture.runtime)
             XCTAssertTrue(published.runtime.core === fixture.runtime.core)
             XCTAssertTrue(published.matches(context: fixture.context, connection: fixture.context.connection))
+            let registration = NativeRegistrationProbe()
+            let appDelegate = CareReminderAppDelegate(arguments: arguments) { registration.install($0) }
+            XCTAssertTrue(appDelegate.application(UIApplication.shared, didFinishLaunchingWithOptions: nil))
+            XCTAssertEqual(registration.installs, 0)
             let root = RootContainerView(languageStore: LanguageStore(), analysisModel: AnalysisFlowModel(),
-                careReminderRuntime: published.runtime, preloadedReminderFixture: published)
+                careReminderRuntime: published.runtime, careReminderInbox: appDelegate.inbox,
+                preloadedReminderFixture: published)
+            XCTAssertTrue(root.careReminderInbox === appDelegate.inbox)
             XCTAssertTrue(root.careReminderRuntime === fixture.runtime)
             XCTAssertTrue(root.preloadedReminderFixture === fixture)
             XCTAssertNil(fixture.runtime.core.state)
@@ -15241,5 +15249,140 @@ extension CollectionWireTests {
         XCTAssertNil(inbox.pendingTap)
         XCTAssertEqual(inbox.latestForeground, route)
         XCTAssertEqual(inbox.recentCount, 0)
+    }
+}
+
+@MainActor
+private final class NativeRegistrationProbe {
+    // Models UNUserNotificationCenter's weak delegate without acquiring the center.
+    weak var delegate: CareReminderNotificationBridge?
+    var installs = 0
+    func install(_ bridge: CareReminderNotificationBridge) {
+        installs += 1
+        delegate = bridge
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testNativeLaunchConstructorIsInertAndOptionalSelectorInstallsSynchronouslyOnce() throws {
+        let probe = NativeRegistrationProbe()
+        var owner: CareReminderAppDelegate? = .init(arguments: ["Plants"]) { probe.install($0) }
+        weak var weakInbox = owner?.inbox
+        XCTAssertNotNil(weakInbox)
+        XCTAssertNil(owner?.bridge)
+        XCTAssertNil(probe.delegate)
+        XCTAssertEqual(probe.installs, 0)
+        let selector = #selector(UIApplicationDelegate.application(_:didFinishLaunchingWithOptions:))
+        XCTAssertTrue(try XCTUnwrap(owner).responds(to: selector))
+        // Calls the real witness, with a lazy fake installer; no real UN center is used.
+        XCTAssertTrue(try XCTUnwrap(owner).application(UIApplication.shared,
+            didFinishLaunchingWithOptions: nil))
+        XCTAssertEqual(probe.installs, 1)
+        XCTAssertTrue(probe.delegate === owner?.bridge)
+        weak var installed = probe.delegate
+        XCTAssertNotNil(installed)
+        XCTAssertTrue(try XCTUnwrap(owner).application(UIApplication.shared,
+            didFinishLaunchingWithOptions: [:]))
+        XCTAssertEqual(probe.installs, 1)
+        XCTAssertTrue(installed === probe.delegate)
+        XCTAssertTrue(weakInbox === owner?.inbox)
+        owner = nil
+        XCTAssertNil(installed)
+        XCTAssertNil(probe.delegate)
+        XCTAssertNil(weakInbox)
+    }
+
+    @MainActor
+    func testNativeLaunchBlockedMatrixNeverInvokesLazyAcquisition() {
+        let flags = ["--catalogue", "--catalogue-fixture", "--catalogue-namespace",
+            "--catalogue-malformed=x", "--today", "--today-fixture", "--today-namespace",
+            "--today-broken", "--narat-staging", "--narat-staging-invalid",
+            "--care-reminder", "--care-reminder-fixture", "--care-reminder-namespace",
+            "--care-reminder-unknown=x", "--result-save-presentation",
+            "--result-save-presentation-invalid"]
+        for flag in flags {
+            for arguments in [["Plants", flag],
+                ["Plants", "--care-reminder-fixture", "eligible", flag, "--today-broken"]] {
+                let probe = NativeRegistrationProbe()
+                let owner = CareReminderAppDelegate(arguments: arguments) { probe.install($0) }
+                let inbox = owner.inbox
+                for _ in 0..<2 {
+                    XCTAssertTrue(owner.application(UIApplication.shared,
+                        didFinishLaunchingWithOptions: nil), arguments.description)
+                }
+                // All System acquisition is inside the uncalled installer.
+                XCTAssertEqual(probe.installs, 0, arguments.description)
+                XCTAssertNil(probe.delegate)
+                XCTAssertNil(owner.bridge)
+                XCTAssertTrue(owner.inbox === inbox)
+                XCTAssertNil(inbox.pendingTap)
+                XCTAssertNil(inbox.latestForeground)
+            }
+        }
+    }
+
+    @MainActor
+    func testNativeLaunchColdTapReachesPrecreatedInboxThenSameRootAndRuntime() async throws {
+        let probe = NativeRegistrationProbe()
+        let owner = CareReminderAppDelegate(arguments: []) { probe.install($0) }
+        let inbox = owner.inbox
+        let request = try notificationRequest(receiptCandidate())
+        let route = try XCTUnwrap(CareReminderNotificationFactory.parse(
+            identifier: request.identifier, userInfo: request.content.userInfo))
+        XCTAssertTrue(owner.application(UIApplication.shared, didFinishLaunchingWithOptions: nil))
+        let delivered = XCTestExpectation(description: "Cold tap retained before Root or SDK")
+        let observation = inbox.$pendingTap.compactMap { $0 }.first().sink { _ in delivered.fulfill() }
+        defer { observation.cancel() }
+        let completion = NativeBridgeCompletionProbe()
+        try XCTUnwrap(probe.delegate).receive(identifier: request.identifier,
+            actionIdentifier: UNNotificationDefaultActionIdentifier,
+            userInfo: request.content.userInfo) { completion.record() }
+        XCTAssertEqual(completion.snapshot, [1, 0])
+        let result = await XCTWaiter.fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(result, .completed)
+        let intent = try XCTUnwrap(inbox.pendingTap)
+        XCTAssertEqual(intent.route, route)
+        XCTAssertNil(inbox.latestForeground)
+
+        let notifications = FakeCareReminderNotifications()
+        let runtime = CareReminderRuntime(core: .init(
+            notifications: notifications, defaults: .standard,
+            clock: { Date() }, timeZone: { TimeZone.current }))
+        let root = RootContainerView(languageStore: LanguageStore(), analysisModel: AnalysisFlowModel(),
+            careReminderRuntime: runtime, careReminderInbox: owner.inbox)
+        XCTAssertTrue(root.careReminderRuntime === runtime)
+        XCTAssertTrue(root.careReminderInbox === inbox)
+        XCTAssertEqual(root.careReminderInbox.pendingTap, intent)
+        XCTAssertNil(runtime.core.state)
+        XCTAssertEqual(notifications.permissionRequests, 0)
+        XCTAssertEqual(notifications.inventoryReads, 0)
+        XCTAssertTrue(notifications.adds.isEmpty)
+        XCTAssertTrue(notifications.removed.isEmpty)
+        XCTAssertEqual(completion.snapshot, [1, 0])
+    }
+
+    @MainActor
+    func testNativeLaunchForegroundRemainsTransportWithoutTapOrRuntimeEffects() async throws {
+        let probe = NativeRegistrationProbe()
+        let owner = CareReminderAppDelegate(arguments: []) { probe.install($0) }
+        let request = try notificationRequest(receiptCandidate())
+        let route = try XCTUnwrap(CareReminderNotificationFactory.parse(
+            identifier: request.identifier, userInfo: request.content.userInfo))
+        XCTAssertTrue(owner.application(UIApplication.shared, didFinishLaunchingWithOptions: nil))
+        let delivered = XCTestExpectation(description: "Foreground is transport only")
+        let observation = owner.inbox.$latestForeground.compactMap { $0 }.first()
+            .sink { _ in delivered.fulfill() }
+        defer { observation.cancel() }
+        let completion = NativeBridgeCompletionProbe()
+        try XCTUnwrap(probe.delegate).present(identifier: request.identifier,
+            userInfo: request.content.userInfo) { completion.record($0) }
+        XCTAssertEqual(completion.snapshot, [1, 0])
+        let result = await XCTWaiter.fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(result, .completed)
+        XCTAssertEqual(owner.inbox.latestForeground, route)
+        XCTAssertNil(owner.inbox.pendingTap)
+        XCTAssertEqual(owner.inbox.recentCount, 0)
+        XCTAssertEqual(probe.installs, 1)
     }
 }

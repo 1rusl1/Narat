@@ -8,6 +8,7 @@ import UIKit
 struct PlantsApp: App {
     @State private var languageStore = LanguageStore()
     @State private var analysisModel = AnalysisFlowModel()
+    @UIApplicationDelegateAdaptor(CareReminderAppDelegate.self) private var appDelegate
     @StateObject private var reminderBootstrap = CareReminderBootstrap()
 
     var body: some Scene {
@@ -20,11 +21,13 @@ struct PlantsApp: App {
                     Text("Unable to start.")
                 case .ordinary(let runtime):
                     RootContainerView(languageStore: languageStore,
-                                      analysisModel: analysisModel, careReminderRuntime: runtime)
+                                      analysisModel: analysisModel, careReminderRuntime: runtime,
+                                      careReminderInbox: appDelegate.inbox)
 #if DEBUG
                 case .fixture(let fixture):
                     RootContainerView(languageStore: languageStore,
                                       analysisModel: analysisModel, careReminderRuntime: fixture.runtime,
+                                      careReminderInbox: appDelegate.inbox,
                                       preloadedReminderFixture: fixture)
                         .environment(\.reminderConsentFixture, fixture)
 #endif
@@ -117,6 +120,7 @@ struct RootContainerView: View {
 
     @State private var catalogue: CatalogueConnection?
     @ObservedObject var careReminderRuntime: CareReminderRuntime
+    @ObservedObject var careReminderInbox: CareReminderNotificationInbox
     private var careReminder: CareReminderLifecycle { careReminderRuntime.core }
     @State private var careReminderContext: CareReminderLifecycle.Context?
     @State private var careReminderClockRevision: UInt64 = 0
@@ -204,14 +208,10 @@ struct RootContainerView: View {
            configuration == fixture.configuration, fixture.runtime === careReminderRuntime,
            let fixtureContext, let catalogue,
            fixture.matches(context: fixtureContext, connection: catalogue) { return false }
-        return fixtureContext != nil || ProcessInfo.processInfo.arguments.contains {
-            $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
-                || $0.hasPrefix("--today-fixture") || $0.hasPrefix("--narat-staging-")
-                || $0.hasPrefix("--care-reminder")
-        }
-#else
-        false
+        if fixtureContext != nil { return true }
 #endif
+        return !CareReminderSystemLaunchPolicy.allowsSystem(
+            arguments: ProcessInfo.processInfo.arguments)
     }
 
     private var accountConsentLifecycle: CareReminderLifecycle? {
