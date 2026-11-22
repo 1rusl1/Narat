@@ -19,10 +19,11 @@
     "last_replica_outbox_count": 0,
     "last_replica_overview_aligned": true,
     "observed_profile_hour": 22,
-    "profile_hour_requested_before_inertia": 21,
     "observed22_reconciliation_not21_pass": true,
     "root_cua_selected_owned_simulator_and_exact_card": true,
-    "root_card_observed_next_due": "2026-11-29"
+    "root_card_observed_next_due": "2026-11-29",
+    "intended_profile_hour": 21,
+    "cause_unresolved": true
   },
   "actual_domain_intents": {
     "new_manual_watering": 1,
