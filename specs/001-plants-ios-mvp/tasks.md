@@ -629,3 +629,5 @@
 - Whole02 rawterminal preserved; controller NOT_ACCEPTED_FOR_NONFIRST_COVERAGE: exacttarget synthetic proved, actualfirstlist relation notproved. New narrow DEBUGfixture+thirdUI observedmapping thenfreshwhole7union required; parentT075/T077/T080/T098 remainopen.
 
 - Observednonfirst actualDeveloper136.692 candidate2files86+/1-, UIinsert-only and routing-onlytimestamp<=until; safeSTOP130beforeXcode/diff0.024only. FreshWHOLE7unionV4actual3tests+PNGJSONmapping/all10/highReviewQA mandatory; no parentcheckbox closure/ordinarySystemproof yet.
+
+- ObservedWHOLE03 BLOCKED real old8 7/8 nativehitpoint exception, 494Swift/149/ReleasePASS; AXenabledtrue/framevalid/MP4read-onlyaudit, causeunresolved. ONEsamecandidatefreshWHOLE04, source/gates/assertsunchanged; new3/ordinarySystem/parentcheckboxesremainopen.

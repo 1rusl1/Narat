@@ -1,5 +1,9 @@
 # Narat — текущий статус и передача работы
 
+## Текущая точка — повтор без изменения кода
+
+ObservedWHOLE03:494Swift/149/Release PASS, old8 7PASS1FAIL (nativeXCTest isHittable/activationpoint). AX enabled=true/положительныйframe иMP4 показывают активнуювидимую кнопку; точнаяпричинанеустановлена. RawFAIL сохранён; new3/ReviewQA ещёнепроверены. Следующийшаг: ONE bounded freshWHOLE04 на техже7source/V4/всех10гейтах, безreset/reinstall/DD/измененияassertions. [Аудит](validation/automation/tasks/tester-care-reminder-root-observed-whole-denied-03.md).
+
 ## Общее наблюдаемое покрытие: исправлен только ID запуска
 
 ObservedWHOLE01 остановлен engine до проверок/моделей: прежний taskID уже имеет durable rawWhole02 report. Старый отчёт сохранён; новый taskID root-observed-whole и freshWHOLE02, source7files/basecc/checks/models неизменны. Это не semantic/compileFAIL; общий кандидат ещё НЕпринят. Следующий preflight выявил недостающий существующий auto-report в readfiles: добавлен только readpath, source/отчёт неизменны; freshWHOLE03 после проверки полного списка paths.
