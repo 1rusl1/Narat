@@ -1,5 +1,9 @@
 # Narat — текущий статус и передача работы
 
+## Общее наблюдаемое покрытие: исправлен только ID запуска
+
+ObservedWHOLE01 остановлен engine до проверок/моделей: прежний taskID уже имеет durable rawWhole02 report. Старый отчёт сохранён; новый taskID root-observed-whole и freshWHOLE02, source7files/basecc/checks/models неизменны. Это не semantic/compileFAIL; общий кандидат ещё НЕпринят.
+
 ## Актуальный статус — наблюдаемый nonfirst, 22 ноября 2026
 
 - **Реализовано в кандидате:** routing-only порядок timestamp -2/-1/0 и отдельный3й UI-тест фактического firstID→другая карточка. Старые UI-методы побайтно сохранены.

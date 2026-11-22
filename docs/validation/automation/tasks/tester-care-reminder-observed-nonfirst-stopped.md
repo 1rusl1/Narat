@@ -7,3 +7,5 @@ Actual controller safeSTOP130 after terminal/applied Developer in pure149automat
 Whole02 rawCOMPLETED all10+Reviewer224.850/QA236.704PASS retained unchanged, independent controller NOT_ACCEPTED_FOR_NONFIRST_COVERAGE. Source product defect not claimed; maxwireID vsupdatedAtties failed toprove actualcollectionfirst. Newsourcecandidate stillUNACCEPTED.
 
 Далее freshWHOLE7sourceunion candidate_basecc74041ca36810434d60be9cb9b841f0bb7eeae1, all10checks/highReviewQA, strictV4 actual3named/3namespaces/initialPNG+JSON+targetPNG+observednonfirst/no skips. V4SHA256 29736c142d1ae319347b01ab051face67545bb2c2eeb3e5d461cbcf06de2dd5b, pycompile+7pureparserchecksPASS only; actualnew3UI NOTRUN. Root stayscc74041/PBXdelta0/user3untouched. OrdinarySDKSystem deliverytap/knowncleanup/finalPersonal pending, hard50soft48/noreset.
+
+ObservedWHOLE01 attempt: BLOCKED доchecks/models (existingdurablereport/taskIDcollision). Rawignoredstate preserved. НовыйtaskID tester-care-reminder-root-observed-whole +freshObservedWHOLE02; никаких измененийsource/гейтов/models.
