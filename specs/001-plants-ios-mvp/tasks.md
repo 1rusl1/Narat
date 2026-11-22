@@ -625,3 +625,5 @@
 - WHOLE D3B read-onlyprep:6sourceunion/candidate_basecc/realDeveloperprovenance/Developer0, all10checks/highReviewQA mandatory; repairedSourceUNACCEPTEDuntilactualPASS. V2twoforeinventory/readinesshelper/ObservedControls/nameexact retained, oldFAILsnotrewritten. Parenttasks/Systemlive/finalsigningpending.
 
 - D3B WHOLE01 BLOCKED до Review/QA: V2auth0 против SDKsetup1, actual2UI+PNG/8consent/494Swift PASS не wholePASS. ControllerV3 exact1/bootstrap/noextraauth; fresh10gates/highReviewQA обязательны, родительские checkbox не закрывать.
+
+- Whole02 rawterminal preserved; controller NOT_ACCEPTED_FOR_NONFIRST_COVERAGE: exacttarget synthetic proved, actualfirstlist relation notproved. New narrow DEBUGfixture+thirdUI observedmapping thenfreshwhole7union required; parentT075/T077/T080/T098 remainopen.

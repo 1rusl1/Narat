@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## Актуальный статус — пробел доказательства nonfirst, 22 ноября 2026
+
+- Реализованы exacttarget/modal/one-shot/per-event foreground; фактические Whole02 проверки/roles сохранены в [отчёте](validation/automation/tasks/tester-care-reminder-root-whole-controller-coverage-02.md).
+- Controller NOT_ACCEPTED_FOR_NONFIRST_COVERAGE: настоящий порядок коллекции не был наблюдён, название теста не доказывает nonfirst. Это не утверждение product bug.
+- Следующий шаг: actual Developer только2 DEBUG/test файла, отдельный3й UIcase с actualfirstID/PNG/JSON mapping; затем freshWHOLE7union/all10/highReviewQA. Live и finalPersonal ещё open, user3 untouched/noPBX.
+
+## История этапов
+
 ## Whole D3B01 остановлен на ошибке trusted gate — 22 ноября 2026
 
 494 Swift/149automation/Release/8consent и фактические2routingUI+обаPNG PASS, но strictledger V2 ошибочно требовал auth0 при обязательном SDK setup signIn1. RawFAIL/BLOCKED143.736/Review0QA0 сохранён; source не принят. Контроллер V3 требует РОВНО1setupAuth/signup0, остальные проверки/source неизменны; fresh WHOLE02 все10gates/highReviewQA обязателен. Подробности tester-care-reminder-root-whole-blocked-01.md. Родительские задачи/Systemlive/finalsigning открыты.
