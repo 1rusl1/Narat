@@ -62,7 +62,7 @@
   },
   "stop": {
     "root_observed_local_time": "21:49 Europe/Moscow",
-    "cause": "native CUA reported Mac locked again after user said unlocked; clarification pending",
+    "cause": "User confirmed desktop and Simulator visible; CUA still refused Mac locked after JS session reset and fresh getApp. Actual macOS lock state not independently established.",
     "root_cua_resource_wrapper_exit_code": 0,
     "root_resource_released": true,
     "child_ui_actions": 0,
@@ -77,11 +77,34 @@
     "Known active water and temporary hour22 remain; no rollback/full digest equality",
     "Physical UI, external distribution and full MVP open"
   ],
-  "next": "After observed UI unlock and actual calendar/current-state grounding, compute a NEW future full hour from the actual clock with at least45 minutes margin. Any change from known22 is a NEW explicit Save after stable wheel and fresh canonical read, never replay of old Save. Keep original restore hour9; do not relax35/30 minute gates or alter clock. Complete the agreed delivery cycle if eligible, then undo ONLY known new water and restore9. Otherwise exact known cleanup remains required.",
+  "next": "Manually restart desktop Codex/ChatGPT and recheck CUA; proposed recovery is not verified. After access is observed, ground current screen/calendar and compute a NEW future full hour from actual clock with at least45 minutes margin. Change from known22 only via a NEW explicit Save with stable wheel/fresh canonical read; never replay old Save. Keep original restore9 and35/30 minute gates. Complete agreed delivery cycle and exact known cleanup, or exact cleanup only.",
   "parent_tasks_open": [
     "T075",
     "T077",
     "T080",
     "T098"
-  ]
+  ],
+  "resume_diagnostic": {
+    "user_confirmed_desktop_and_simulator_visible": true,
+    "cua_session_reset_and_fresh_app_connection": "same lock refusal",
+    "security_settings_or_permissions_changed": false,
+    "UI_actions": 0,
+    "domain_intents": 0,
+    "lease_released": true,
+    "IORegistry_initial_attempts": "read/parse failures retained",
+    "IORegistry_final_query": "completed, no session lock flag exposed; no lock-state inference",
+    "readonly_app_replica": {
+      "rows": 23,
+      "outbox": 0,
+      "aligned": true,
+      "known_water_state": "active",
+      "known_water_day": "2026-11-22",
+      "profile_hour": 22,
+      "prior_rows_preserved": true,
+      "original_checkpoint_unchanged": true,
+      "new_server_get": false
+    },
+    "reference": "https://learn.chatgpt.com/docs/computer-use",
+    "proposed_recovery": "Manual desktop client restart and CUA recheck; not yet verified"
+  }
 }
