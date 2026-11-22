@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import Supabase
 import Observation
 import Network
@@ -151,6 +152,12 @@ enum CareReminderRootRouting {
         guard isCurrent() else { return nil }
         try authority.withPermanentBoundValid(lease) {}
         return state
+    }
+
+    /// Each callback is an event, including identical payloads; attachment never replays one.
+    static func foregroundEvents(_ inbox: CareReminderNotificationInbox)
+        -> AnyPublisher<CareReminderNotificationRoute, Never> {
+        inbox.$latestForeground.dropFirst().compactMap { $0 }.eraseToAnyPublisher()
     }
 
     static func foreground(_ route: CareReminderNotificationRoute, ownerId: UUID,
@@ -523,8 +530,8 @@ struct RootContainerView: View {
                              active: scenePhase == .active)) {
             await routeReminderTap()
         }
-        .onChange(of: careReminderInbox.latestForeground) { _, route in
-            guard let route, !isolatesCareReminders, let connection = catalogue,
+        .onReceive(CareReminderRootRouting.foregroundEvents(careReminderInbox)) { route in
+            guard !isolatesCareReminders, let connection = catalogue,
                   case .permanent(let expected) = connection.authClassification else { return }
             CareReminderRootRouting.foreground(route, ownerId: expected.session.userId,
                 context: careReminderContext, isCurrent: {

@@ -15838,6 +15838,88 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testRootForegroundPublisherDeliversIdenticalEventsToActualLocalInventory() async throws {
+        let transport = CatalogueTransport([])
+        let (url, store, api, lease, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try await overviewCanonical(store, authority: api.syncAuthority, lease: lease,
+                                    ids: [serverPlantId])
+        try await lifecycleCache(store, api, lease, rows: [reminderRow(serverPlantId)])
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: CareReminderLifecycle.preferenceKey(ownerId: syncOwner))
+        let fake = FakeCareReminderNotifications()
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { fake.now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        var cacheReads = 0
+        let live = lifecycleContext(store, api, lease, reader: {
+            cacheReads += 1
+            return try await repo.cachedCareOverview(context: lease)
+        })
+        core.setSceneActive(true)
+        core.accept(live)
+        await core.waitUntilIdle()
+        let proposal = try XCTUnwrap(fake.adds.first)
+        let route = CareReminderNotificationRoute(candidate: proposal.candidate, attemptId: proposal.attemptId)
+        let inbox = CareReminderNotificationInbox()
+        inbox.receive(.foreground(route)) // Stored before attachment: never replay.
+        var context: CareReminderLifecycle.Context?
+        var owner = syncOwner
+        var current = true
+        var events = 0
+        let observation = CareReminderRootRouting.foregroundEvents(inbox).sink { event in
+            events += 1
+            CareReminderRootRouting.foreground(event, ownerId: owner, context: context,
+                isCurrent: { current }, publish: { core.cachePublicationOrTimeChanged() })
+        }
+        defer { observation.cancel() }
+        let initialCache = cacheReads, initialInventory = fake.inventoryReads
+        let initialAdds = fake.adds.count
+        await core.waitUntilIdle()
+        XCTAssertEqual(events, 0)
+        XCTAssertEqual(cacheReads, initialCache)
+        XCTAssertEqual(fake.inventoryReads, initialInventory)
+        inbox.receive(.foreground(route)) // Root has not obtained its context yet.
+        await core.waitUntilIdle()
+        XCTAssertEqual(events, 1)
+        XCTAssertEqual(cacheReads, initialCache)
+        XCTAssertEqual(fake.inventoryReads, initialInventory)
+        context = live
+        inbox.receive(.foreground(route)) // Same payload, now ready.
+        await core.waitUntilIdle()
+        XCTAssertEqual(events, 2)
+        XCTAssertGreaterThan(cacheReads, initialCache)
+        XCTAssertGreaterThan(fake.inventoryReads, initialInventory)
+        let firstCache = cacheReads, firstInventory = fake.inventoryReads
+        inbox.receive(.foreground(route)) // Sequential identical callback after completion.
+        await core.waitUntilIdle()
+        XCTAssertEqual(events, 3)
+        XCTAssertGreaterThan(cacheReads, firstCache)
+        XCTAssertGreaterThan(fake.inventoryReads, firstInventory)
+        let readyCache = cacheReads, readyInventory = fake.inventoryReads
+        owner = otherSyncOwner
+        inbox.receive(.foreground(route))
+        owner = syncOwner
+        current = false
+        inbox.receive(.foreground(route))
+        current = true
+        api.syncAuthority.bind(try profileSession()) // Original lease is no longer current.
+        inbox.receive(.foreground(route))
+        await core.waitUntilIdle()
+        XCTAssertEqual(events, 6)
+        XCTAssertEqual(cacheReads, readyCache)
+        XCTAssertEqual(fake.inventoryReads, readyInventory)
+        XCTAssertEqual(fake.adds.count, initialAdds)
+        XCTAssertEqual(fake.permissionRequests, 0)
+        XCTAssertNil(inbox.pendingTap)
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+        core.logout()
+        await core.waitUntilIdle()
+    }
+
+    @MainActor
     func testRootForegroundUsesScopedLocalHookWithoutTransportOrNavigation() async throws {
         let transport = CatalogueTransport([])
         let (url, store, api, lease, _) = try await overviewRepositoryFixture(transport)

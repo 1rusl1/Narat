@@ -1717,7 +1717,18 @@ final class CatalogueSaveUITests: XCTestCase {
         reminderPresent(run, "collection.settings.close")
         XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
         reminderAbsent(run, "care.reminders.allow")
+        reminderText(run, "care.reminders.status",
+            "No eligible future tasks. This preference will not automatically prompt for iOS permission.")
         reminderSnapshot(run, "after-foreground")
+        // The same actual wire is delivered only after the first zero-pending result.
+        reminderMarkedAction(run, "care.fixture.notificationForeground")
+        reminderText(run, "care.reminders.status",
+            "No eligible future tasks. This preference will not automatically prompt for iOS permission.")
+        reminderAbsent(run, "care.reminders.confirmed")
+        reminderPresent(run, "collection.settings.close")
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        reminderAbsent(run, "care.reminders.allow")
+        reminderSnapshot(run, "after-second-foreground")
         notificationImage(run, "notification-foreground-settings_")
     }
 
@@ -1841,6 +1852,10 @@ final class CatalogueSaveUITests: XCTestCase {
     @MainActor
     private func reminderOpenSettings(_ run: Run) {
         reminderTap(run, "collection.open")
+        reminderWait("Collection toolbar ready before settings search") {
+            let settings = run.app.buttons["collection.settings.open"]
+            return settings.exists && settings.isHittable
+        }
         reminderTap(run, "collection.settings.open")
         enabled(run.app.buttons["collection.settings.close"])
     }

@@ -15,7 +15,7 @@ extension EnvironmentValues {
 /// Captures the original host scope, even while readiness holds Core binding.
 struct ReminderConsentFixtureControls: View {
     let fixture: ReminderConsentFixture
-    let lifecycle: CareReminderLifecycle
+    @ObservedObject var lifecycle: CareReminderLifecycle
     let connection: CatalogueConnection
     let expected: CatalogueSDKSnapshot
     let isLocaleCurrent: () -> Bool

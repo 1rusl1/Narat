@@ -1,0 +1,76 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-root-whole",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "description": "Read-only full six-file Root notification UNION acceptance with real Developer provenance, all affected startup/UI/Release and strict duplicateforeground metadata regressions.",
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "docs/handoff_status.md",
+        "docs/validation/automation/tasks/tester-care-reminder-foreground-repair-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-root-routing-blocked-01.md",
+        "specs/001-plants-ios-mvp/tasks.md",
+        "tools/automation/tasks.tester-care-reminder-foreground-repair.json",
+        "docs/validation/automation/tasks/tester-care-reminder-root-whole-context.md",
+        "tools/automation/tasks.tester-care-reminder-root-whole.json",
+        "docs/validation/automation/tasks/tester-care-reminder-root-routing-context.md",
+        "tools/automation/tasks.tester-care-reminder-root-routing.json",
+        "ios/Plants/Integrations/Notifications/CareReminderTapCoordinator.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotificationBridge.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRouting.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/App/CareReminderAppDelegate.swift",
+        "ios/Plants/App/CareReminderBootstrap.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "ios/Plants/Data/Repositories/CollectionRepository.swift",
+        "ios/Plants/Data/Local/LocalStore.swift",
+        "ios/Plants.xcodeproj/project.pbxproj",
+        "docs/validation/automation/tasks/tester-care-reminder-foreground-repair-stopped.md"
+      ],
+      "write_files": [],
+      "candidate_base": "cc74041ca36810434d60be9cb9b841f0bb7eeae1",
+      "constraints": [
+        "# WHOLE D3B six-file acceptance, read-only candidate_base\n\nAccepted product base cc74041ca36810434d60be9cb9b841f0bb7eeae1. Current source includes UNACCEPTED original D3B + narrowrepair, no edits allowed; Developer0 is workflowmetadata, NOT claim no historicalauthor. ActualD3BDev1PASS618.651 implemented6files455+/4-; Dev2EMPTY100.666 andDev3EMPTY144.918 diagnosis only (notproductfix). NarrowactualDev1PASS226.648 applied4files107+/3-, safeSTOPpure149beforeXcode130/WAITINGproof anddiff0.046 only; NOactual repairedSwift/UI/ReviewQA yet. Preserve allraw/BLOCKED/checkpointprovenance. Six production/test union paths Root/Coretinyclock/DEBUGfixture+controls/Unit/UI. No PBX/backend/SDK/Auth/Store/Planner/Factory/Bridge/Bootstrap changes inthisunion; AppDelegateearlyguard acceptedD2B and genericTapCoord acceptedD3A remainread-onlydependencies.\n\nAudit COMPLETEgitdiff cc74041ca36810434d60be9cb9b841f0bb7eeae1, not just narrow107lines or lastcommit. Scope actualSDKSnapshot connection/epoch/locale beforeawait, SAMElease cacheonly capture read validation; currentOccurrences/sourceDue, freshSAMECoreclockaftercache andconsume; inactive definitiveauth invalidation; modalactualdismiss thenFRESHcache resolve, exactconsume+immediatesync canonicaloriginalsnapshot targetassignment; SDKepoch change removes oldtarget, nofallback/autocare. Single SAMEappDelegateInbox/runtime/Core beforeRoot, strict earlySystemisolation DebugRelease fromD2B stays. Nativecompletion alreadysync1 byBridge, no UNobjects crossedTask. Sourcevalid wrapper Task.isCancelled||isCurrent because snapshot/authClassification cancellation canlookunresolved: inspect ALL downstreamread/authority/consume cancellation guards and noSDK/ownerbypass, do not infer A2authority. Thiswasread-onlyauditfocusnotreportedprovenbug.\n\nCritical corrected forecontract: every valid callback event, INCLUDING identical route repeated afterfirstcompleted, gets currentowner/context scopedCorelocalcache/inventory. Production helper foregroundEvents($latestForeground.dropFirst/compactMap) reusedRoot/unit; no storedvalue attachreplay, no feedbackloop fromCorepub, noHTTP/reconcile/consent.checkStatus/prompt/nav. OldoriginalD3Bcontext line 'coalescedidenticalokay' explicitlySUPERSEDED. Newunit actualproductionpublisher+actualCore/Store/FakeOS checks oldstoredroute0replay, contextnil0read thenreadySAMEroute actualread, thenSAMEroute afterwaitUntilIdle readagain, wrongowner/stalelease noextraeffects, nohardcodedinternal read2/5/7. Noone mayreplacewithdirecthelpermirror or gate newevents away.\n\nDEBUG newstrict mode.routing only, sameFixtureCore and SAMERootInbox assigned BEFOREcontrols; existing8 modesunchanged. Lifecycle @ObservedObject inControls fixes computedAXpersonalName staleness afteractualFakeadds2; sourcecurrentSdk/locale guardsstay. Actualstoredwire/fakeadvance pastfire andFactoryparse thentypedInbox event, maxactualaddidentifier ensures targetnotfirstoftwoeligible/all3plants. OptionalroutingProbes actualkind/id/plant/sourceDay/attempt/eventCount, no newdates/diagnosis/domainwrites; noSystem/TCCcalls. Nativeproduction/source and syntheticUI proof mustremainseparate.\n\nRaw01 facts:493Swift/Release149diffPASS; firstconsent8 7PASS1FAIL589.981, sameSource repeatstrict8PASS587.578. MP4provesfirsttapopenedMyplantsload thenhelperSwipeDowndismissedwhiletoolbarloaded (frames6.2/6.6load7.2list7.8drag8.4Home); NOTlostinitialtap/productionnavbug. Oldhelpernowboundedreadinesswait BEFOREsearchswipes, all8oldtestbodies/assertions exactbytespreserved. UIfileSHA before d6c689c4cfa430f84aefbd6d4dbc38145ee372d4471f1c2dbb5ccbfecefcc0fd, after a576fa0a7f2fe4c4ac8360da8b72f86c9e9a60fe32364d90a24c5a5c4d380f47. OriginalunitfileonlyINSERT, no baselinehelper/assertchange.\n\nNew2rawfirst0testFAIL7.911 unknowndiscoverycause (built/installedbundlehash/ObjCselectorsmatch; don'tinventcause), secondunchangedSourceactually2executedFAIL106.648:fore1PASS,tap1FAILemptybutton.value BEFOREtap. LateststoredFakeledgerselectedname valid/adds2/prompt1/tapprobes0/carecommands0; observedControlsnowfixcandidate, mustproveactualUI, notassume. Allrawfailurespreserved. NoReview/QAeveraccepted01. ForeP1 foundbyparentcontroller regardlessoldctx/possibleRawPASS. Currentwholeisfreshfullacceptanceonly.\n\nALL10actualgates required unchangedmodels/routes/900/budgets:diff149/fullSwift build/welcome(allsourceXCTest+SwiftTesting count,no skips/missing)/actualRelease/new8consent strictledger/new2routingV2realPNG+strictledger/result4ENPL/MCP/care13+durableledger/Today6. Two exact UI names: testNotificationTapFromAccountSettingsOpensCurrentNonFirstPlantOnce andtestNotificationForegroundDeliveryRefreshesInventoryWithoutNavigation. PositivekeepAlwaysPNGexactcaseprefix notification-route-card_/notification-foreground-settings_, CRC/fullimage/uniquepercase/SameSim/URLschecked; empty/failure/othercaseimages neverPASS.\n\nNew2tapcase startsAccountsettingsstillopen, sourcepersonalName nonempty, native-typeevent afterfire->exactNONfirstcanonicalactivecard, no manualClose/listworkaround, Back/Close/duplicateEXACTsamewire no reopen/newaction. Forecase now2identical callbacks AFTERfirstcompleted read,3storedsnapshots beforepending2/after0/aftersecond0, inventorygrowth each, stableoverview/add/prompt fields throughout, noRetry/hour/Homehealing; settings staysvisible. V2gaterequires2foreprobes,oldv1rawgateunchanged. OtherTrialnamespace preserved/servercarecommands/auth0/commits0/tick0. Care/data/SDKfixture only, notordinarySDK/backend/Systemdelivery proof. ParentT075/T077/T080/T098 remainopen.\n\nAfterWHOLEQA only: ordinarysignedRelease+realSDK/System/Scheduler/Store G1confirmedpending→unmaskedMyplants/card NEWalignedgen+CURRENTARMED G2→DIRECTterminate(noSettings/Home)→actualclosedappdelivery→ONEtap exactcanonicalcard→knowncleanup(profilehourrestore/ownnewwaterVOID+reversal/optout). Localinspector RAW_SYNTAX_ONLY notSwiftDTO/Planner/OSproof; WALbackupSHMcanchange. FinalsignedPersonal/dSYMparent. Technicalonly/externalphysicaldeferred, hard50soft48/noreset. Read applicable contexts/spec/source rather than addingarchitecturelayers. No new modelroute/budget/backendscope.\n\nTrustedV2gate /private/tmp/narat-tester-notification-routing-ui-gate-v2.py SHA256 01c7d72be5e186edb4e949589cbac9cb47d8910cef02bc2190355f8ab402cfac syntaxonlyatprep, actualPASSpending. Existingold8/care13/Today6/result4gatesunchanged. NewUIhelperhashchange explicitabove.\n"
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "RW1",
+          "description": "Full6diff source correct originalSDK/lease/locale/snapshot/cancel/deadline, modal-safe freshcache and exactone-shotcanonicaltarget, sameinboxruntime/earlyisolation, per-eventfore scopedlocalnoHTTP/nav; repaired493baseline+new actualSwift/Release/MCP/diff/highReviewQA proveallpaths. Noedits/read-only.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "care-release-compile",
+            "diff-check",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "RW2",
+          "description": "Actual8consent/old13care/Today6/4ENPLresult/new2strictPNG+ledgerV2 and149allpassno skips/missing/substitution; twoidenticalfore actualinventory growth each/noGET/add/prompt, exactnonfirstmodalCard/duplicateBacksafe. Oldassertionspreserved, helperwaitexplicit, scopefixture/compileronly—notSystemdelivery.",
+          "mode": "fixture",
+          "checks": [
+            "tester-consent-ui",
+            "tester-notification-routing-ui",
+            "tester-result-save-ui",
+            "tester-care-ui",
+            "tester-today-ui",
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-root-whole-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-root-routing-blocked-01.md",
+        "docs/validation/automation/tasks/tester-care-reminder-foreground-repair-stopped.md"
+      ]
+    }
+  ]
+}
