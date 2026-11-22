@@ -1,5 +1,16 @@
 # Narat — текущий статус и передача работы
 
+## Актуальный статус технической приёмки — 22 ноября 2026
+
+- **Реализовано:** согласие на напоминания, обновление плана после подтверждённых UI-действий, ранний native delegate и SDK/owner/locale-safe переход в точную карточку.
+- **Проверено:** observedWHOLE —494Swift/149automation/Release/MCP/UI8+3+4+13+6/highReviewQA PASS; новый тест и независимый визуальный аудит подтверждают actualfirstlist→другое растение. Это fixtures/compile, [подробный отчёт](validation/automation/tasks/tester-care-reminder-root-observed-whole-accepted.md).
+- **Ещё не проверено:** ordinary realSDK/System закрытое приложение→доставка→tap на новом source и finalPersonal/dSYM; physical/external/fullMVP открыты.
+- **Следующий шаг:** child frozen accepted ordinary Release/ownedSimulator: baselinePNG+AX→knownUIwater/hour→G1→unmaskedG2→directterminate→real delivery/one tap→known cleanup/cold. Затем Root finalPersonal/dSYM. Hard50soft48/noreset, без очередных подтверждений пользователя.
+
+## История этапов
+
+Ниже сохранены исторические статусы, FAIL и ограничения; актуален верхний блок и последний observedWHOLE report.
+
 ## Текущая точка — повтор без изменения кода
 
 ObservedWHOLE03:494Swift/149/Release PASS, old8 7PASS1FAIL (nativeXCTest isHittable/activationpoint). AX enabled=true/положительныйframe иMP4 показывают активнуювидимую кнопку; точнаяпричинанеустановлена. RawFAIL сохранён; new3/ReviewQA ещёнепроверены. Следующийшаг: ONE bounded freshWHOLE04 на техже7source/V4/всех10гейтах, безreset/reinstall/DD/измененияassertions. [Аудит](validation/automation/tasks/tester-care-reminder-root-observed-whole-denied-03.md).

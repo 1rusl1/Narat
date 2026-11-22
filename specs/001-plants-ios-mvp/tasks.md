@@ -631,3 +631,5 @@
 - Observednonfirst actualDeveloper136.692 candidate2files86+/1-, UIinsert-only and routing-onlytimestamp<=until; safeSTOP130beforeXcode/diff0.024only. FreshWHOLE7unionV4actual3tests+PNGJSONmapping/all10/highReviewQA mandatory; no parentcheckbox closure/ordinarySystemproof yet.
 
 - ObservedWHOLE03 BLOCKED real old8 7/8 nativehitpoint exception, 494Swift/149/ReleasePASS; AXenabledtrue/framevalid/MP4read-onlyaudit, causeunresolved. ONEsamecandidatefreshWHOLE04, source/gates/assertsunchanged; new3/ordinarySystem/parentcheckboxesremainopen.
+
+- 22 ноября observedRootWHOLE accepted:7sourceunion/494Swift149ReleaseMCP/UI8+3+4+13+6/highReviewQA PASS. Actualinitiallist firstID/PNG+JSON→different target proved, oldexacttarget proof distinguished; oldFAILs/guards retained. OrdinarySDKSystemclosedappdelivery/tap/knowncleanup/finalPersonal/physicalexternal stillopen, parentcheckboxesnotclosed. [Отчёт](../../docs/validation/automation/tasks/tester-care-reminder-root-observed-whole-accepted.md).

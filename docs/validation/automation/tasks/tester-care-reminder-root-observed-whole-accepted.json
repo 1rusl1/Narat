@@ -1,0 +1,102 @@
+{
+  "status": "PASS",
+  "run": "tester-care-reminder-root-observed-whole-20261122-04",
+  "task_id": "tester-care-reminder-root-observed-whole",
+  "candidate": "34970a552954164ec95b4b003571192aa0703f11",
+  "base": "cc74041ca36810434d60be9cb9b841f0bb7eeae1",
+  "scope": "actual synthetic UI/transport/compiler/MCP only; ordinarySDKSystemlive pending",
+  "historical_developer_seconds": [
+    618.651,
+    226.648,
+    136.692
+  ],
+  "current_developer_calls": 0,
+  "checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "elapsed_seconds": 0.024
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "elapsed_seconds": 42.737
+    },
+    {
+      "name": "care-release-compile",
+      "status": "PASS",
+      "elapsed_seconds": 68.952
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "elapsed_seconds": 124.692
+    },
+    {
+      "name": "tester-consent-ui",
+      "status": "PASS",
+      "elapsed_seconds": 596.643
+    },
+    {
+      "name": "tester-notification-routing-ui",
+      "status": "PASS",
+      "elapsed_seconds": 212.822
+    },
+    {
+      "name": "tester-result-save-ui",
+      "status": "PASS",
+      "elapsed_seconds": 58.483
+    },
+    {
+      "name": "simulator-smoke",
+      "status": "PASS",
+      "elapsed_seconds": 24.144
+    },
+    {
+      "name": "tester-care-ui",
+      "status": "PASS",
+      "elapsed_seconds": 495.633
+    },
+    {
+      "name": "tester-today-ui",
+      "status": "PASS",
+      "elapsed_seconds": 199.481
+    }
+  ],
+  "roles": [
+    {
+      "role": "reviewer",
+      "status": "PASS",
+      "semantic_status": "PASS",
+      "findings": 0,
+      "elapsed_seconds": 208.622
+    },
+    {
+      "role": "qa",
+      "status": "PASS",
+      "semantic_status": "PASS",
+      "findings": 0,
+      "elapsed_seconds": 209.996
+    }
+  ],
+  "source_paths": [
+    "ios/Plants/App/PlantsApp.swift",
+    "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+    "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+    "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+    "ios/PlantsTests/CollectionWireTests.swift",
+    "ios/PlantsUITests/CatalogueSaveUITests.swift"
+  ],
+  "observed_nonfirst": {
+    "executed_tests": 3,
+    "fresh_namespaces": 3,
+    "actual_visible_rows": 3,
+    "first_label": "Fixture 3",
+    "target_label": "Fixture 1",
+    "target_not_first": true,
+    "initial_png_sha256": "86877c78c68d38bb33df98b177f6fabf8ef747321a331d93d8b4afb7b48b0971",
+    "mapping_sha256": "e5efc95523bbe9ba1b68d64cc3e0321517e89a97bd75e8d891ae2742712c571c"
+  },
+  "parent_tasks_open": true
+}
