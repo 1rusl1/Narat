@@ -1,5 +1,9 @@
 # Narat — текущий статус и передача работы
 
+## Whole D3B01 остановлен на ошибке trusted gate — 22 ноября 2026
+
+494 Swift/149automation/Release/8consent и фактические2routingUI+обаPNG PASS, но strictledger V2 ошибочно требовал auth0 при обязательном SDK setup signIn1. RawFAIL/BLOCKED143.736/Review0QA0 сохранён; source не принят. Контроллер V3 требует РОВНО1setupAuth/signup0, остальные проверки/source неизменны; fresh WHOLE02 все10gates/highReviewQA обязателен. Подробности tester-care-reminder-root-whole-blocked-01.md. Родительские задачи/Systemlive/finalsigning открыты.
+
 ## Подготовлена общая приёмка WHOLE D3B — 22 ноября 2026
 
 READ-ONLY candidate_base cc74041, все6source paths, Developer0 с реальной provenance

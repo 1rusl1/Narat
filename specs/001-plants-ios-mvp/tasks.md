@@ -623,3 +623,5 @@
 - NarrowD3Bforeground actualDev226.648 PASS/applied4files107+/3-, per-event/ObservedControls/oldhelper readiness/newunit+strongerforeUI. SafeSTOPpure149beforeXcode130/WAITING, NOacceptance; old493Unitlinesinsert-only/old8methodsbyteeq, UIhelperhashchangeexplicit. NextWHOLE6readOnlybasecc/all10gates/highReviewQA Developer0realprovenance; parenttasks/Systemdelivery/finalsigningopen.
 
 - WHOLE D3B read-onlyprep:6sourceunion/candidate_basecc/realDeveloperprovenance/Developer0, all10checks/highReviewQA mandatory; repairedSourceUNACCEPTEDuntilactualPASS. V2twoforeinventory/readinesshelper/ObservedControls/nameexact retained, oldFAILsnotrewritten. Parenttasks/Systemlive/finalsigningpending.
+
+- D3B WHOLE01 BLOCKED до Review/QA: V2auth0 против SDKsetup1, actual2UI+PNG/8consent/494Swift PASS не wholePASS. ControllerV3 exact1/bootstrap/noextraauth; fresh10gates/highReviewQA обязательны, родительские checkbox не закрывать.
