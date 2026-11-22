@@ -31,6 +31,15 @@ struct ReminderConsentFixtureControls: View {
     var body: some View {
         if current {
             VStack {
+                if fixture.configuration.mode == .routing {
+                    Button("Deliver fake notification tap") { perform { try fixture.deliverRouting(kind: "tap") } }
+                        .accessibilityIdentifier("care.fixture.notificationTap")
+                        .accessibilityValue(fixture.routingPlantName)
+                    Button("Deliver fake foreground notification") {
+                        perform { try fixture.deliverRouting(kind: "foreground") }
+                    }
+                    .accessibilityIdentifier("care.fixture.notificationForeground")
+                }
                 if fixture.configuration.mode == .readiness {
                     Button("Release readiness") { perform { fixture.runtime.readiness.release() } }
                         .accessibilityIdentifier("care.fixture.ready")
@@ -56,7 +65,8 @@ struct ReminderConsentFixtureControls: View {
         guard current else { return }
         do {
             try action()
-            evidence = "Changed: " + String(fixture.notifications.ledger.markers?.count ?? 0)
+            evidence = "Changed: " + String((fixture.notifications.ledger.markers?.count ?? 0)
+                + (fixture.notifications.ledger.routingProbes?.count ?? 0))
         } catch { evidence = "Fixture change failed" }
     }
 }

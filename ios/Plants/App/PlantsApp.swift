@@ -106,6 +106,63 @@ final class CareLifecycleCoordinator {
     }
 }
 
+/// Shared by Root and regression tests; this reader never establishes an SDK session.
+@MainActor
+enum CareReminderRootRouting {
+    typealias Coordinator = CareReminderTapCoordinator<CatalogueSDKSnapshot>
+
+    static func current(connection: CatalogueConnection, snapshot: CatalogueSDKSnapshot,
+                        locale: SupportedLocale, runtime: CareReminderRuntime,
+                        currentConnection: CatalogueConnection?, currentLocale: SupportedLocale,
+                        currentRuntime: CareReminderRuntime) -> Bool {
+        currentConnection === connection && currentRuntime === runtime
+            && currentLocale == locale && connection.authClassification == .permanent(snapshot)
+    }
+
+    static func source(connection: CatalogueConnection, snapshot: CatalogueSDKSnapshot,
+                       locale: String, isCurrent: @escaping @MainActor () -> Bool) -> Coordinator.Source {
+        let authority = connection.apiClient?.syncAuthority
+        let repository = connection.repository
+        // SDK's read-only classification includes cancellation. Cancellation is HOLD,
+        // not proof of logout; a replacement Root task checks the original scope again.
+        let valid: @MainActor () -> Bool = { Task.isCancelled || isCurrent() }
+        return .init(connection: ObjectIdentifier(connection), ownerId: snapshot.session.userId,
+                     snapshot: snapshot, locale: locale, isCurrent: valid, readCache: {
+            try await read(ownerId: snapshot.session.userId, authority: authority,
+                           isCurrent: valid) { lease in
+                guard let repository else { return nil }
+                return try await repository.cachedCareOverview(context: lease)
+            }
+        })
+    }
+
+    static func read(ownerId: UUID, authority: SyncSessionAuthority?,
+                     isCurrent: @MainActor () -> Bool,
+                     cache: @MainActor (SyncSessionLease) async throws -> CareOverviewViewState?)
+        async throws -> CareOverviewViewState? {
+        try Task.checkCancellation()
+        guard isCurrent(), let authority else { return nil }
+        let lease: SyncSessionLease
+        do {
+            lease = try authority.capture(ownerId: ownerId)
+            try authority.withPermanentBoundValid(lease) {}
+        } catch { return nil }
+        let state = try await cache(lease)
+        guard isCurrent() else { return nil }
+        try authority.withPermanentBoundValid(lease) {}
+        return state
+    }
+
+    static func foreground(_ route: CareReminderNotificationRoute, ownerId: UUID,
+                           context: CareReminderLifecycle.Context?,
+                           isCurrent: () -> Bool, publish: () -> Void) {
+        guard route.candidate.ownerId == ownerId, isCurrent(),
+              let context, context.lease.ownerId == ownerId, context.isCurrent(),
+              (try? context.authority.withPermanentBoundValid(context.lease) {}) != nil else { return }
+        publish()
+    }
+}
+
 struct RootContainerView: View {
     private struct TrialReminderRead: Equatable {
         let snapshot: CatalogueSDKSnapshot?
@@ -124,6 +181,16 @@ struct RootContainerView: View {
     private var careReminder: CareReminderLifecycle { careReminderRuntime.core }
     @State private var careReminderContext: CareReminderLifecycle.Context?
     @State private var careReminderClockRevision: UInt64 = 0
+    @State private var tapCoordinator: CareReminderRootRouting.Coordinator?
+    @State private var routingDismissal = false
+    @State private var routingRevision: UInt64 = 0
+    private struct RoutingRead: Equatable {
+        let intent: UUID?
+        let auth: CareReminderRead
+        let revision: UInt64
+        let modalRevision: UInt64
+        let active: Bool
+    }
     private struct CareReminderRead: Equatable {
         let connection: ObjectIdentifier?
         let auth: CatalogueAuthClassification
@@ -417,6 +484,9 @@ struct RootContainerView: View {
             }
         }
         .onChange(of: catalogue?.snapshot) { previous, current in
+            if let target = collectionPresentation?.target, target.snapshot != current {
+                collectionPresentation = nil
+            }
             if let context = todayContext, context.snapshot != current { clearToday() }
             guard let previous, !previous.isAnonymous,
                   previous.session.userId != current?.session.userId else { return }
@@ -448,6 +518,21 @@ struct RootContainerView: View {
         .task { await prepareCatalogue() }
         .task(id: reminderRead) { await observeTrialReminder(reminderRead) }
         .task(id: careReminderRead) { await observeCareReminder(careReminderRead) }
+        .task(id: RoutingRead(intent: careReminderInbox.pendingTap?.id, auth: careReminderRead,
+                             revision: careReminder.revision, modalRevision: routingRevision,
+                             active: scenePhase == .active)) {
+            await routeReminderTap()
+        }
+        .onChange(of: careReminderInbox.latestForeground) { _, route in
+            guard let route, !isolatesCareReminders, let connection = catalogue,
+                  case .permanent(let expected) = connection.authClassification else { return }
+            CareReminderRootRouting.foreground(route, ownerId: expected.session.userId,
+                context: careReminderContext, isCurrent: {
+                    !isolatesCareReminders && catalogue === connection
+                        && connection.authClassification == .permanent(expected)
+                        && careReminderContext?.locale == languageStore.currentLocale.rawValue
+                }, publish: { careReminderCachePublished() })
+        }
         .task(id: CareReminderClockRead(auth: careReminderRead, deadline: careReminder.state?.verifiedAccessUntil,
                                        revision: careReminderClockRevision)) {
             await observeCareReminderClock()
@@ -483,7 +568,10 @@ struct RootContainerView: View {
             #endif
         }
         .sheet(item: $collectionPresentation, onDismiss: {
-            if !usesLegacyWelcome { careReconnectRevision &+= 1 }
+            let wasRouting = routingDismissal
+            routingDismissal = false
+            routingRevision &+= 1
+            if !usesLegacyWelcome && !wasRouting { careReconnectRevision &+= 1 }
         }) { presentation in
             if let catalogue {
                 CatalogueCollectionView(
@@ -499,6 +587,7 @@ struct RootContainerView: View {
             }
         }
         .sheet(item: $accountDestination, onDismiss: {
+            routingRevision &+= 1
             if collectionAfterSignIn {
                 collectionAfterSignIn = false
                 collectionPresentation = CollectionPresentation()
@@ -524,7 +613,10 @@ struct RootContainerView: View {
             }
         }
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-        .sheet(item: $stagingAccount, onDismiss: showPendingGuestTransfer) { account in
+        .sheet(item: $stagingAccount, onDismiss: {
+            routingRevision &+= 1
+            showPendingGuestTransfer()
+        }) { account in
             AccountSignInView(
                 connection: account.connection, staging: true,
                 cancel: account.guestTransfer ? { stagingAccount = nil } : nil
@@ -532,6 +624,7 @@ struct RootContainerView: View {
         }
 #endif
         .sheet(isPresented: $showingGuestTransfer, onDismiss: {
+            routingRevision &+= 1
             if openClaimCollection {
                 openClaimCollection = false
                 collectionPresentation = CollectionPresentation()
@@ -563,6 +656,59 @@ struct RootContainerView: View {
            !showingGuestTransfer {
             Button("Finish saving your plant") { showingGuestTransfer = true }
                 .accessibilityIdentifier("staging.guest.claim.resume")
+        }
+    }
+
+    private var reminderRoutingScope: CareReminderRootRouting.Coordinator.Scope {
+        guard !isolatesCareReminders, let connection = catalogue else { return .unresolved }
+        switch connection.authClassification {
+        case .unresolved: return .unresolved
+        case .signedOut: return .signedOut
+        case .anonymous: return .anonymous
+        case .permanent(let expected):
+            let locale = languageStore.currentLocale
+            let runtime = careReminderRuntime
+            return .permanent(CareReminderRootRouting.source(
+                connection: connection, snapshot: expected, locale: locale.rawValue, isCurrent: {
+                    !isolatesCareReminders && CareReminderRootRouting.current(
+                        connection: connection, snapshot: expected, locale: locale, runtime: runtime,
+                        currentConnection: catalogue, currentLocale: languageStore.currentLocale,
+                        currentRuntime: careReminderRuntime)
+                }))
+        }
+    }
+
+    private func routeReminderTap() async {
+        guard let intent = careReminderInbox.pendingTap else { return }
+        if tapCoordinator == nil {
+            let core = careReminder
+            tapCoordinator = .init(inbox: careReminderInbox, clock: { core.currentDate },
+                                   timeZone: { core.currentTimeZone })
+        }
+        guard let coordinator = tapCoordinator else { return }
+        // Scope is pinned synchronously, before the first cache suspension.
+        let scope = reminderRoutingScope
+        guard let resolution = await coordinator.resolve(intent, scope: scope) else { return }
+        if resolution.decision == .drop {
+            careReminderInbox.consume(intentID: intent.id)
+            return
+        }
+        guard !Task.isCancelled, scenePhase == .active,
+              case .open = resolution.decision else { return }
+        // Settings is nested inside this sheet. Wait for its actual outer dismissal.
+        if collectionPresentation != nil {
+            routingDismissal = true
+            collectionPresentation = nil
+            return
+        }
+        guard !routingDismissal, accountDestination == nil, !showingGuestTransfer else { return }
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
+        guard stagingAccount == nil else { return }
+#endif
+        if let target = coordinator.consumeOpen(resolution, scope: reminderRoutingScope,
+                                                 presentationAvailable: true) {
+            collectionPresentation = CollectionPresentation(
+                target: CataloguePlantTarget(plantId: target.plantId, snapshot: target.source.snapshot))
         }
     }
 
@@ -1028,6 +1174,7 @@ struct RootContainerView: View {
                 startupFailed = true
                 return
             }
+            fixture.notificationInbox = careReminderInbox
             fixtureContext = fixture.context
             catalogue = connection
         } else if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--care-reminder") }) {

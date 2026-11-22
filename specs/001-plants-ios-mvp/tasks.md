@@ -615,3 +615,7 @@
 - D3A 362ba8b accepted: original connection/SDKsnapshot/locale binding beforeawait, noA2 rebind, read/intent fences, freshclock deadline and presentation-safe exactconsume.489Swift/149/diff/MCP/highReviewQA actualPASS; genericinjectedepoch unitonly/noRootSDK/nativeproof. D3B/ordinarySystemdeliverytap/finalsigning and parenttasks remainopen; hard50/noreset.
 
 - D3B prep only: Root+tinyCoreclock/newdedicatedroutingfixture/Unit/UI sixfilemanifest, new2strictPNG+ledgergate, PBXdelta0. Actualimplementation/full10checks/ReviewQA then ordinarySystemdeliverytap/finalsigning pending. No native-ready claim; hard50/noreset.
+
+- D3B01 BLOCKED, unaccepted6files455+/4-; Dev1impl618.651/Dev2empty100.666/Dev3empty144.918, ReviewQA0.493Swift/Release/149/diffPASS; consent8first7/8FAIL thensameSource8/8strictPASS. Video proves helper swipedloadingcollectionclosed, notlosttap. New2first0testsFAIL; repeats2executed forePASS/tapemptyvalue-beforeclickFAIL, storednamevalid. Mandatory per-eventforepublisher+actualmetadataobservation+helperreadiness repair andwhole6union10checks pending. Parenttasks/Systemdelivery/finalsigning remainopen, hard50/noreset.
+
+- D3Bforeground repair prep only:4existingfiles per-event/metadata-observed/helperreadiness, actualDeveloper next thensafeSTOP beforeXcode andwhole6read-onlycandidate_basecc/all10checksReviewQA. Current6sourcecandidateUNACCEPTED, Rootmustnotmergeuntilwhole.

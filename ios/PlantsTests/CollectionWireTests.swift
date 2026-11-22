@@ -15705,3 +15705,200 @@ extension CollectionWireTests {
         }
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+extension CollectionWireTests {
+    @MainActor
+    func testRootCacheReaderRequiresBoundAuthorityAndSameLeaseAfterAwait() async throws {
+        let transport = CatalogueTransport([])
+        let (url, _, api, _, repo) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var calls = 0
+        for authority in [nil, SyncSessionAuthority()] {
+            let value = try await CareReminderRootRouting.read(ownerId: syncOwner,
+                authority: authority, isCurrent: { true }) { _ in calls += 1; return nil }
+            XCTAssertNil(value)
+        }
+        XCTAssertEqual(calls, 0)
+        for change in ["locale", "connection", "runtime", "aba"] {
+            var current = true
+            api.syncAuthority.bind(try profileSession())
+            let original = try api.syncAuthority.capture(ownerId: syncOwner)
+            let gate = TapCacheGate()
+            let task = Task { @MainActor in
+                try await CareReminderRootRouting.read(ownerId: syncOwner,
+                    authority: api.syncAuthority, isCurrent: { current }) { captured in
+                    XCTAssertEqual(captured.generation, original.generation)
+                    XCTAssertEqual(captured.session, original.session)
+                    await gate.wait()
+                    return try await repo.cachedCareOverview(context: captured)
+                }
+            }
+            try await gate.entered.wait()
+            if change == "aba" {
+                api.syncAuthority.bind(try profileSession(ownerId: otherSyncOwner))
+                api.syncAuthority.bind(try profileSession())
+            } else { current = false }
+            gate.release()
+            do {
+                let value = try await task.value
+                XCTAssertNil(value)
+                XCTAssertNotEqual(change, "aba")
+            } catch { XCTAssertEqual(change, "aba") }
+        }
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    @MainActor
+    func testRootSDKSourceModalDismissRereadsAndInactiveEpochDropsOriginal() async throws {
+        let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .todayFuture)
+        defer { try? h.cleanup() }
+        let connection = try XCTUnwrap(h.connection)
+        let snapshot = try await connection.sessionSnapshot()
+        let lease = try await connection.collectionLease(expected: snapshot)
+        let repository = try XCTUnwrap(connection.repository)
+        let authority = try XCTUnwrap(connection.apiClient?.syncAuthority)
+        let store = try XCTUnwrap(connection.store)
+        let state = try await repository.refreshCareOverview(locale: .en, context: lease)
+        let seed = try XCTUnwrap(h.server.snapshot.todayClockSeed.flatMap(SQLTimestamp.date(from:)))
+        let zone = TimeZone(secondsFromGMT: 0)!
+        let candidate = try XCTUnwrap(CareReminderPlan(expectedOwnerId: lease.ownerId, state: state,
+            optedIn: true, authorization: .authorized, now: seed, timeZone: zone, locale: "en")
+            .candidates.last)
+        let fake = FakeCareReminderNotifications()
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var now = candidate.absoluteFireDate
+        var currentZone = zone
+        let core = CareReminderLifecycle(notifications: fake, defaults: defaults,
+            clock: { now }, timeZone: { currentZone })
+        let runtime = CareReminderRuntime(core: core)
+        var currentConnection: CatalogueConnection? = connection
+        var locale = SupportedLocale.en
+        let source = CareReminderRootRouting.source(connection: connection, snapshot: snapshot,
+            locale: "en", isCurrent: {
+                CareReminderRootRouting.current(connection: connection, snapshot: snapshot,
+                    locale: .en, runtime: runtime, currentConnection: currentConnection,
+                    currentLocale: locale, currentRuntime: runtime)
+            })
+        XCTAssertEqual(source.snapshot, snapshot)
+        XCTAssertEqual(source.connection, ObjectIdentifier(connection))
+        locale = .pl
+        XCTAssertFalse(source.isCurrent())
+        locale = .en
+        currentConnection = nil
+        XCTAssertFalse(source.isCurrent())
+        currentConnection = connection
+        XCTAssertTrue(source.isCurrent())
+        XCTAssertFalse(CareReminderRootRouting.current(connection: connection, snapshot: snapshot,
+            locale: .en, runtime: runtime, currentConnection: connection, currentLocale: .en,
+            currentRuntime: CareReminderRuntime(core: core)))
+        let inbox = CareReminderNotificationInbox()
+        let coordinator = CareReminderRootRouting.Coordinator(inbox: inbox,
+            clock: { core.currentDate }, timeZone: { core.currentTimeZone })
+        let route = CareReminderNotificationRoute(candidate: candidate, attemptId: UUID())
+        inbox.receive(.tap(route))
+        let intent = try XCTUnwrap(inbox.pendingTap)
+        let firstValue = await coordinator.resolve(intent, scope: .permanent(source))
+        let first = try XCTUnwrap(firstValue)
+        XCTAssertEqual(first.decision, .open(plantId: candidate.plantId))
+        XCTAssertNil(coordinator.consumeOpen(first, scope: .permanent(source), presentationAvailable: false))
+        XCTAssertEqual(inbox.pendingTap, intent)
+        // Actual cache changes while the outer modal dismisses; never retain the first proof.
+        let token = try await store.beginCareOverviewRead(locale: "en", context: lease, authority: authority)
+        try await store.invalidateCareOverviewRead(token, reason: .canonicalRevalidation, authority: authority)
+        let freshValue = await coordinator.resolve(intent, scope: .permanent(source))
+        let fresh = try XCTUnwrap(freshValue)
+        XCTAssertEqual(fresh.decision, .hold)
+        XCTAssertNil(coordinator.consumeOpen(fresh, scope: .permanent(source), presentationAvailable: true))
+        XCTAssertEqual(inbox.pendingTap, intent)
+        now = now.addingTimeInterval(60)
+        currentZone = TimeZone(secondsFromGMT: 3600)!
+        XCTAssertEqual(core.currentDate, now)
+        XCTAssertEqual(core.currentTimeZone, currentZone)
+        try await connection.signOutAccount(expected: snapshot)
+        let logout = await coordinator.resolve(intent, scope: .signedOut)
+        XCTAssertEqual(logout?.decision, .drop) // No active-scene prerequisite.
+        let client = try XCTUnwrap(connection.client)
+        _ = try await client.auth.signIn(email: "fixture@" + h.namespace + ".invalid",
+                                         password: "fixture-only-password")
+        let replacement = try await connection.sessionSnapshot()
+        XCTAssertEqual(replacement.session.userId, snapshot.session.userId)
+        XCTAssertNotEqual(replacement, snapshot)
+        XCTAssertFalse(source.isCurrent())
+        let aba = await coordinator.resolve(intent, scope: .permanent(
+            CareReminderRootRouting.source(connection: connection, snapshot: replacement,
+                locale: "en", isCurrent: { true })))
+        XCTAssertEqual(aba?.decision, .drop)
+        XCTAssertEqual(inbox.pendingTap, intent)
+        inbox.consume(intentID: intent.id)
+        XCTAssertNil(inbox.pendingTap)
+    }
+
+    @MainActor
+    func testRootForegroundUsesScopedLocalHookWithoutTransportOrNavigation() async throws {
+        let transport = CatalogueTransport([])
+        let (url, store, api, lease, _) = try await overviewRepositoryFixture(transport)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let local = try await store.readCareOverviewPresentation(context: lease, authority: api.syncAuthority)
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)])
+        let route = try routingPayload(try XCTUnwrap(reminderPlan(state).candidates.first))
+        let context = lifecycleContext(store, api, lease)
+        let inbox = CareReminderNotificationInbox()
+        var publications = 0
+        let publish = { publications += 1 }
+        CareReminderRootRouting.foreground(route, ownerId: otherSyncOwner, context: context,
+                                           isCurrent: { true }, publish: publish)
+        CareReminderRootRouting.foreground(route, ownerId: syncOwner, context: context,
+                                           isCurrent: { false }, publish: publish)
+        CareReminderRootRouting.foreground(route, ownerId: syncOwner, context: nil,
+                                           isCurrent: { true }, publish: publish)
+        XCTAssertEqual(publications, 0)
+        CareReminderRootRouting.foreground(route, ownerId: syncOwner, context: context,
+                                           isCurrent: { true }, publish: publish)
+        XCTAssertEqual(publications, 1)
+        api.syncAuthority.bind(try profileSession())
+        CareReminderRootRouting.foreground(route, ownerId: syncOwner, context: context,
+                                           isCurrent: { true }, publish: publish)
+        XCTAssertEqual(publications, 1)
+        XCTAssertNil(inbox.pendingTap)
+        let requests = await transport.capturedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+    @MainActor
+    func testRootReadUsesInjectedClockAfterSuspensionAtAccessDeadline() async throws {
+        let (url, _, authority, _, local) = try await reminderFixture()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let deadline = SQLTimestamp.date(from: "2026-11-28T00:00:00Z")!
+        let state = try reminderState(local, rows: [reminderRow(serverPlantId)],
+                                      deadline: "2026-11-28T00:00:00Z")
+        let candidate = try XCTUnwrap(reminderPlan(state).candidates.first)
+        var now = candidate.absoluteFireDate
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let core = CareReminderLifecycle(notifications: FakeCareReminderNotifications(),
+            defaults: defaults, clock: { now }, timeZone: { TimeZone(secondsFromGMT: 0)! })
+        let inbox = CareReminderNotificationInbox()
+        let coordinator = TapCoordinator(inbox: inbox, clock: { core.currentDate },
+                                         timeZone: { core.currentTimeZone })
+        let gate = TapCacheGate()
+        let source = tapSource(NSObject()) {
+            try await CareReminderRootRouting.read(ownerId: self.syncOwner, authority: authority,
+                isCurrent: { true }) { _ in await gate.wait(); return state }
+        }
+        let intent = try tapIntent(inbox, routingPayload(candidate))
+        let task = Task { await coordinator.resolve(intent, scope: .permanent(source)) }
+        try await gate.entered.wait()
+        now = deadline
+        gate.release()
+        let result = await task.value
+        XCTAssertEqual(result?.decision, .drop)
+        XCTAssertEqual(core.currentDate, deadline)
+        XCTAssertEqual(inbox.pendingTap, intent)
+    }
+
+}
+#endif

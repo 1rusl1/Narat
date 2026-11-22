@@ -3,7 +3,7 @@ import Foundation
 
 enum ReminderConsentFixtureMode: String, Codable, CaseIterable {
     case eligible, oneReadLag = "one-readlag", twoReadLag = "two-readlag"
-    case denied, noSchedule = "noSchedule", failure, readiness, hour
+    case denied, noSchedule = "noSchedule", failure, readiness, hour, routing
 }
 
 enum ReminderConsentLaunch: Equatable {
@@ -66,6 +66,14 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         var promptCount: Int? = nil
         var pendingCount: Int? = nil
     }
+    struct RoutingProbe: Codable {
+        let kind: String
+        let identifier: String
+        let plantId: UUID
+        let sourceYMD: String
+        let attemptId: UUID
+        let eventCount: Int
+    }
     struct Ledger: Codable {
         let version: Int
         let namespace: UUID
@@ -91,6 +99,7 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         var initialDelivered: [Wire]?
         var events: [Event]?
         var markers: [Marker]?
+        var routingProbes: [RoutingProbe]?
     }
     private let file: URL
     private(set) var ledger: Ledger
@@ -310,6 +319,23 @@ final class ReminderConsentNotifications: CareReminderNotifications {
         try save(next)
     }
 
+    func routingDelivery(kind: String) throws -> CareReminderNotificationRoute {
+        guard ledger.mode == .routing, ["tap", "foreground"].contains(kind),
+              let selected = ledger.adds.max(by: { $0.identifier < $1.identifier }),
+              let original = selected.route else { throw Fault.scope }
+        try advance(to: max(now, original.candidate.absoluteFireDate))
+        guard let wire = ledger.events?.filter({ $0.kind == .deliver }).flatMap(\.wires)
+            .first(where: { $0.identifier == selected.identifier }),
+              let route = wire.route, route == original else { throw Fault.corrupt }
+        var next = ledger
+        if next.routingProbes == nil { next.routingProbes = [] }
+        next.routingProbes?.append(.init(kind: kind, identifier: wire.identifier,
+            plantId: route.candidate.plantId, sourceYMD: route.candidate.sourceDueYMD,
+            attemptId: route.attemptId, eventCount: next.events?.count ?? 0))
+        try save(next)
+        return route
+    }
+
     func advance(to date: Date) throws {
         guard date >= now, date.timeIntervalSince1970.isFinite else { throw Fault.scope }
         var next = ledger; next.now = date
@@ -331,6 +357,21 @@ final class ReminderConsentFixture {
     let context: CatalogueUIFixtureContext
     let notifications: ReminderConsentNotifications
     let runtime: CareReminderRuntime
+    var notificationInbox: CareReminderNotificationInbox?
+
+    var routingPlantName: String {
+        guard let route = notifications.ledger.adds.max(by: { $0.identifier < $1.identifier })?.route
+        else { return "" }
+        return context.server.snapshot.plants.first { $0.id == route.candidate.plantId }?.name ?? ""
+    }
+
+    func deliverRouting(kind: String) throws {
+        guard configuration.mode == .routing, let notificationInbox else {
+            throw ReminderConsentNotifications.Fault.scope
+        }
+        let route = try notifications.routingDelivery(kind: kind)
+        notificationInbox.receive(kind == "tap" ? .tap(route) : .foreground(route))
+    }
 
     private init(_ configuration: ReminderConsentLaunch.Configuration,
                  context: CatalogueUIFixtureContext, notifications: ReminderConsentNotifications,

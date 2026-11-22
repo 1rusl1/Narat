@@ -1676,6 +1676,59 @@ final class CatalogueSaveUITests: XCTestCase {
         reminderSnapshot(run, "hour-twenty-three-confirmed-same-sheet")
     }
 
+    @MainActor func testNotificationTapFromAccountSettingsOpensCurrentNonFirstPlantOnce() {
+        let run = reminderRun("routing")
+        defer { run.app.terminate() }
+        reminderBeginAllow(run)
+        reminderConfirmed(run)
+        let button = reminderReach(run, "care.fixture.notificationTap")
+        let name = button.value as? String ?? ""
+        XCTAssertFalse(name.isEmpty)
+        XCTAssertTrue(run.app.buttons["collection.settings.close"].exists)
+        button.tap()
+        reminderWait("Exact notification card") {
+            run.app.staticTexts["catalogue.saved.name"].exists
+                && run.app.staticTexts["catalogue.saved.name"].label == name
+        }
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, name)
+        XCTAssertFalse(run.app.buttons["collection.settings.close"].exists)
+        reminderPresent(run, "collection.rename.open")
+        reminderPresent(run, "collection.light.open")
+        notificationImage(run, "notification-route-card_")
+        reminderTap(run, "collection.back")
+        reminderPresent(run, "collection.settings.open")
+        reminderTap(run, "collection.back")
+        reminderOpenSettings(run)
+        reminderSnapshot(run, "before-duplicate-tap")
+        reminderMarkedAction(run, "care.fixture.notificationTap")
+        reminderPresent(run, "collection.settings.close")
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        reminderSnapshot(run, "after-duplicate-tap")
+    }
+
+    @MainActor func testNotificationForegroundDeliveryRefreshesInventoryWithoutNavigation() {
+        let run = reminderRun("routing")
+        defer { run.app.terminate() }
+        reminderBeginAllow(run)
+        reminderConfirmed(run)
+        reminderSnapshot(run, "before-foreground")
+        reminderMarkedAction(run, "care.fixture.notificationForeground")
+        reminderAbsent(run, "care.reminders.confirmed")
+        reminderPresent(run, "collection.settings.close")
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        reminderAbsent(run, "care.reminders.allow")
+        reminderSnapshot(run, "after-foreground")
+        notificationImage(run, "notification-foreground-settings_")
+    }
+
+    @MainActor
+    private func notificationImage(_ run: Run, _ prefix: String) {
+        let attachment = XCTAttachment(screenshot: run.app.screenshot())
+        attachment.name = prefix + run.namespace
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor
     private func reminderRun(_ mode: String) -> Run {
         let run = Run(mode, .en)

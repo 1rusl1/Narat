@@ -1,0 +1,63 @@
+{
+  "tasks": [
+    {
+      "id": "tester-care-reminder-foreground-repair",
+      "risk": "high",
+      "complexity": "medium",
+      "depends_on": [],
+      "description": "Repair actual foreground publisher duplicate delivery, DEBUG metadata observation and grounded UI-helper readiness; preserve blocked full candidate, final acceptance deferred to read-only whole union.",
+      "files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift",
+        "docs/validation/automation/tasks/tester-care-reminder-foreground-repair-context.md",
+        "tools/automation/tasks.tester-care-reminder-foreground-repair.json",
+        "docs/validation/automation/tasks/tester-care-reminder-root-routing-blocked-01.md",
+        "docs/validation/automation/tasks/tester-care-reminder-root-routing-context.md",
+        "ios/Plants/Integrations/Notifications/CareReminderTapCoordinator.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderLifecycle.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderRuntime.swift",
+        "ios/Plants/Integrations/Notifications/CareReminderNotificationBridge.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtures.swift",
+        "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+        "ios/Plants/Data/Remote/PlantsAPIClient.swift",
+        "docs/handoff_status.md",
+        "specs/001-plants-ios-mvp/tasks.md"
+      ],
+      "write_files": [
+        "ios/Plants/App/PlantsApp.swift",
+        "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+        "ios/PlantsTests/CollectionWireTests.swift",
+        "ios/PlantsUITests/CatalogueSaveUITests.swift"
+      ],
+      "constraints": [
+        "# D3B bounded repair from UNACCEPTED six-file candidate\n\nOldrun01 BLOCKED and allraws retained; accepted product base cc74041. Current HEAD checkpoint includes UNACCEPTED six-file D3B candidate, NOT new acceptedbaseline. Actual Dev1 implemented455+/4-618.651; Dev2/3 EMPTYpatch diagnosis only100.666/144.918. 493Swift/Release149diffPASS; consent8firstNoScheduleFAIL thensameSourcestrictPASS; new2first0unknowndiscoveryFAIL then2actual forePASS/tapnameemptyBEFOREclickFAIL. NoReview/QA. Read blockedreport for exactevidence, don't erase oldFAIL or claimsourcefix fromemptyreply.\n\nWrite EXACTLY FOUR existing files PlantsApp.swift, ReminderConsentFixtureControls.swift, CollectionWireTests.swift, CatalogueSaveUITests.swift. No Core/Fixtureledger/Bridge/Inbox/Bootstrap/Runtime/SDK/Auth/API/Store/Planner/Factory/PBX/schema/date/content/permission policy changes. Target <=150 changedaddedlines. Preserve ALL493 baseline assertions/testmethods and old8test BODIES; old helper has ONE explicitly authorized readiness fix below. New2 bodies may gain actualidenticalevent coverage without weakening existing name/card/source/dedup/assertions. FilesALREADYEXIST, actual programmatic difflib, no guessed contexts/devnull/parentRoot reads. Fixed Solmedium/Astrahigh900/budgets, hard50soft48/noreset.\n\n1 BLOCKER per-event foreground: Root currently .onChange(of:inbox.latestForeground) comparesRoute Equatable, drops same payload repeated. Firstcallback contextnil then same afterready mustnotvanish; two readycallbacks same payload each needlocalinventory wake. Replace by actual production per-event publisher (.onReceive inbox.$latestForeground.dropFirst()) or equivalent tiny existing-file helper. Drop current storedvalue on attach, no replay/feedbackloop. Prefer tiny CareReminderRootRouting.foregroundEvents(inbox) used by BOTH actual Root and tests so tests exercise SAMEpublisher, not mirror expression/directforehelperonly. MainActor inbox is soleproducer, onlytypedSendableRoute; no new observer/framework/queue/tokenprotocol/auth/HTTP. Existing current-owner/context/lease/locale guards and scoped Corelocalhook retained. Never consent.checkStatus orcareReconnectRevision/reconcile/prompt/nav. Oldformalcontext 'coalesced repeatedidenticalokay' explicitlySUPERSEDED; Core may coalesce in-flightwork but sequential callbacks afterfirstcompleted eachmustwork.\n\nMeaningful new compact unit test productionpublisher+actualCore/FakeOS/realStore authority: storedroute beforeattach causes0replay; firsteventcontextnil0read then ready SAMEevent callsactualCorelocal cache/inventory; separatelytwoidentical readycallbacks with waitCore.waitUntilIdle afterfirst, capture inventorycounter and requiregrowth againaftersecond. Actualpublish onlyvalidcurrentSDKowner/context; wrongowner no effects. No hardcoded internal total2/5/7 reads; before/after counters, noHTTP/add/prompt/nav. Keep existing tests (oldRoot directhelperunit remains useful but insufficient). Preserve currentDate/currentTimeZone SAMEinjectedclock and allSourceScope/cancellation/deadline guards.\n\n2 DEBUG metadata observation: FixtureControls lifecycle is plainlet; fixture.notifications.ledger is nonobservable. At first render noadds ->routingPlantName empty; Allow laterconfirms2 but childmetadata AX value canstayinitial. Tap failed exactnameassert BEFOREclick while storedactualwire hasnonnullFixturepersonalName,probes0. Make existing FixtureControls observe SAME Core/lifecycle (@ObservedObject var lifecycle or equivalent stableobserved bridge); no secondfake/inbox/System, no forcingRetry/snapshot as a workaround, no replacingnameassert with guessedplant. AX buttonvalue must update from actualselectedwire afterworkeradds2. Newbuttons remainONLY.routing mode, old8layout unchanged, sourceSDK/locale/contextguard retained.\n\n3 grounded oldhelper readiness: video oldNoSchedule initialtap DIDopenMyplants loading6.2/6.6s, list+Accountsettings7.2, helperSwipeDown at6.62/8.30 dismissedby7.8/8.4. Add ONLY bounded wait in reminderOpenSettings for actualcollection/settings toolbar readiness BEFORE reminderReach/searchswipes. Preserve old8 bodies/expectedstatements/gate; do not blindrepeatedtaps or weakenisHittable/exactstatus. No productionnavfix, the app sheet opened. SourceUIfile hash changes mustbeexplicit inprovenance; oldrawfailurestays.\n\n4 NEWforeUI method testNotificationForegroundDeliveryRefreshesInventoryWithoutNavigation: keepall existing checks, add secondIDENTICAL foreground delivery after FIRST inventory result0 isshown and storedsnapshot taken. Sequence3snapshots before(pending2)/afterfirst0/aftersecond0; second actualinventoryread >first, overviewReads/adds/promptCounts stable throughout. Samewire/sourceDay/attempt, no Retry/hourflip/Home/SDK/network toheal. Keep2nd UI exactmodalnonfirsttap/name/card/dedup assertions. KeepAlways positive PNG prefixes unchanged, exact2 tests stillrequired. Existing routingDelivery(kind) chooses storedmaxactualadd and recordedpreviousdeliver wire, repeatingkind safelyproducesidenticalroute; no ledger schema change needed. Old activev1gate unchanged; WHOLEunion will use stricter v2 new2gate requiring2foreprobes/3snapshots andinventorygrowth each.\n\nController plan after REAL terminalDeveloper patch/applied: safeSTOP narrowrun in pure149automation BEFORE any Xcode/Sim/checks; preserve statusWAITING/UNACCEPTED_STOPPED/rawpatch/provenance, notfakeacceptance. No need Developer to launch checks manually; actual whole6filecandidate_base cc74041 read-only thenALL10checks/ReviewQA (Release/fullSwift149MCP/old8/new2v2/care13/Today6/result4). Narrowrun's omittedchecks are notPASS. Actualunit/newUI/production readiness notclaimed untilwholegates. Technicalonly; parentSystem/Scheduler/SDKclosedappdeliverytap/cleanup/latest signedartifact stillmandatory; noreset.\n\nController futurev2gate /private/tmp/narat-tester-notification-routing-ui-gate-v2.py SHA256 01c7d72be5e186edb4e949589cbac9cb47d8910cef02bc2190355f8ab402cfac, syntaxPASS only. Oldv1 gateimmutable andraw01kept.\n"
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "FR1",
+          "description": "Productionper-eventpublisher noattachreplay handlessequentialidenticalevents undercurrentowner guard throughactualCoreinventory, contextnilreadycase tested,noHTTP/nav/add/prompt. DEBUG metadata reactivewithoutweakeningexactname; oldhelper readiness beforeloading-swipes, all493assertions andold8bodiespreserved. Actualfinalwholeunion acceptance stillrequired.",
+          "mode": "local",
+          "checks": [
+            "ios-tests",
+            "diff-check",
+            "simulator-smoke"
+          ]
+        },
+        {
+          "id": "FR2",
+          "description": "149automation regressions unchanged. Controller maysafeSTOP afterappliedrealDeveloper inpure149 beforeXcode; omittedchecksnotPASS; actualread-onlywhole6union10checks/ReviewQA mandatorylater.",
+          "mode": "fixture",
+          "checks": [
+            "automation-tests"
+          ]
+        }
+      ],
+      "evidence_files": [
+        "docs/validation/automation/tasks/tester-care-reminder-foreground-repair-context.md",
+        "docs/validation/automation/tasks/tester-care-reminder-root-routing-blocked-01.md"
+      ]
+    }
+  ]
+}

@@ -36,6 +36,9 @@ final class CareReminderLifecycle: ObservableObject {
     var authorization: CareReminderPlan.Authorization? { worker.authorization }
     var requestingPermission: Bool { worker.requestingPermission }
 
+    var currentDate: Date { clock() }
+    var currentTimeZone: TimeZone { timeZone() }
+
     private let defaults: UserDefaults
     private let clock: () -> Date
     private let timeZone: () -> TimeZone
