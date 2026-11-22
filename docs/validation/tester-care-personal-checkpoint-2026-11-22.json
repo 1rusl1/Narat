@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-22",
+  "status": "TECHNICAL_CHECKPOINT_BUILD_PASS_LIVE_PREFLIGHT_OPEN",
+  "source_commit": "1371ae02354555d51e3b53ad4a5140e27e21b168",
+  "version": "0.1.0",
+  "build": "3",
+  "configuration": "ordinary Personal (release)",
+  "artifact": "build/technical-checkpoint-0.1.0-3/Plants.app",
+  "dsym": "build/technical-checkpoint-0.1.0-3/Plants.app.dSYM",
+  "metadata": "build/technical-checkpoint-0.1.0-3/build.json",
+  "artifacts_git_ignored": true,
+  "binary_sha256": "32323156910478104d1d05afd0179add2a140cc00cc50c77c736ddeb924a76d2",
+  "binary_uuids": [
+    [
+      "AF314E0F-7882-381A-BEAD-8C53B6FD6263",
+      "arm64"
+    ]
+  ],
+  "actual_checks": {
+    "frozen_source_clean": true,
+    "generic_iphoneos_personal_build": true,
+    "cached_profile_device_allowed": true,
+    "profile_expires_at_utc": "2026-11-24T16:19:31+00:00",
+    "expected_backend": true,
+    "public_client_key_verified": true,
+    "debug_implementation_sentinels_excluded": 14,
+    "codesign_deep_strict_original_and_retained_copy_host": true,
+    "retained_copy_binary_sha_matches": true,
+    "retained_dsym_uuid_matches": true,
+    "owned_derived_data_removed": true,
+    "portal_updates": false,
+    "personal_apple_sign_in_enabled": false
+  },
+  "fixture_checks_separate": {
+    "report": "automation/tasks/tester-care-reminder-root-observed-whole-accepted.md",
+    "swift": 494,
+    "automation": 149,
+    "consent_ui": 8,
+    "routing_ui": 3,
+    "result_presentation_ui": 4,
+    "care_ui": 13,
+    "today_ui": 6,
+    "review": "PASS",
+    "qa": "PASS",
+    "scope": "fixtures/compile/fake notifications; not ordinary SDK/System delivery"
+  },
+  "preflight": {
+    "report": "tester-care-runtime-preflight-stop-2026-11-22.md",
+    "cause": "existing protected test-login file missing at stat before Auth",
+    "network_requests": 0,
+    "auth_requests": 0,
+    "app_install": 0,
+    "app_ui": 0,
+    "domain_writes": 0,
+    "cleanup_required": false
+  },
+  "not_verified": [
+    "ordinary SDK/System closed-app delivery and native tap",
+    "actual Today Window/footer schema and native baseline PNG/AX",
+    "physical install/UI/notification delivery",
+    "external tester distribution/full MVP"
+  ],
+  "next_step": "Receive existing protected login-file path; run baseline/off/outbox + actual native/Today PNG/AX before any care write; then G1/G2/direct close/real delivery/tap/known cleanup. Purchases/recommendation expansion deferred."
+}
