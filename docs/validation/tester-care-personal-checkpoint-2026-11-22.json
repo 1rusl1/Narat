@@ -29,7 +29,8 @@
     "retained_dsym_uuid_matches": true,
     "owned_derived_data_removed": true,
     "portal_updates": false,
-    "personal_apple_sign_in_enabled": false
+    "personal_apple_sign_in_enabled": false,
+    "retained_simulator_copy_codesign_and_sha": true
   },
   "fixture_checks_separate": {
     "report": "automation/tasks/tester-care-reminder-root-observed-whole-accepted.md",
@@ -60,5 +61,13 @@
     "physical install/UI/notification delivery",
     "external tester distribution/full MVP"
   ],
-  "next_step": "Receive existing protected login-file path; run baseline/off/outbox + actual native/Today PNG/AX before any care write; then G1/G2/direct close/real delivery/tap/known cleanup. Purchases/recommendation expansion deferred."
+  "next_step": "Receive existing protected login-file path; run baseline/off/outbox + actual native/Today PNG/AX before any care write; then G1/G2/direct close/real delivery/tap/known cleanup. Purchases/recommendation expansion deferred.",
+  "retained_ordinary_simulator_archive": "build/technical-checkpoint-0.1.0-3/Simulator-Release/Plants.app",
+  "retained_acceptance_evidence": {
+    "directory": "build/technical-checkpoint-0.1.0-3/acceptance-evidence",
+    "files": 18,
+    "byte_identical_to_existing_raw_fixture_artifacts": true,
+    "credentials_or_local_configs_copied": false,
+    "manifest": "build/technical-checkpoint-0.1.0-3/acceptance-evidence/retention-manifest.json"
+  }
 }

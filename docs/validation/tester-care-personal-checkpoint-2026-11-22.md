@@ -15,6 +15,8 @@
 
 Архив и dSYM сохранены локально в игнорируемой Git папке `build/technical-checkpoint-0.1.0-3/`; бинарники и локальная конфигурация в коммит не входят. [Машиночитаемый отчёт](tester-care-personal-checkpoint-2026-11-22.json).
 
+Рядом сохранён обычный Simulator Release (`Simulator-Release/Plants.app`): SHA-256 копии совпал, подпись проверена на хосте. В `acceptance-evidence/` сохранены 18 исходных файлов fixture-приёмки с побайтным совпадением и SHA-256 manifest: state, ответы Review/QA, routing summary/PNG/JSON. Credentials и локальные конфигурации в этот набор не копировались; это сохранение прежних доказательств, а не новый живой прогон.
+
 [Отдельная fixture-приёмка](automation/tasks/tester-care-reminder-root-observed-whole-accepted.md): 494 Swift, 149 automation, Release/MCP, UI 8 + 3 + 4 + 13 + 6, Review/QA — PASS. Проверены actual UI-порядок списка, переход к другому растению и повторные события с fake OS.
 
 [Живой preflight остановлен](tester-care-runtime-preflight-stop-2026-11-22.md): файл входа отсутствует; ошибка `stat` возникла до Auth. Сеть, установка, App UI и изменения данных — 0; восстановление данных не требуется. Архив не устанавливался, физические UI/доставка и внешняя передача не проверялись.
