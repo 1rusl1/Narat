@@ -4,6 +4,8 @@
 
 ## Порядок и приёмка
 
+- **Актуально23ноября:** privatea6a2dfa, actualDev182/9styles+2helpers, full508/149/Release/proof PASS; routing2PASS1FAIL status-offscreen-beforeforeground, controlledstop130/ReviewQA0. Следующий bounded пакет3files: finalcardhierarchy/Root3styles/adaptivehelper+exactTapinsertion,15fresh/full23ReviewQA/44PNG; ещё не применён/не принят. Все parent/QG7checkbox открыты.
+
 - **23 ноября, общий кандидат:** private3c40668 (B+Quiet Garden+3capturemethods), полный23sourceunion отacceptedAae49. Запущен fresh13-check whole: прежние11+ordinaryPL/accessibility2+44PNG+highReviewQA. Отдельный B не принят (routingnative2/3FAIL сохранён), QGcompile249.36с и targetedSDK2/3PNG PASS отдельно. Пользовательская готовность/visualQA/подписанная новая сборка пока не приняты, checkbox не закрываются.
 
 - **23 ноября: дополнительный дизайн-этап владельца.** Все существующие экраны оформить в Quiet Garden: [план QG1–QG7](../../docs/quiet-garden-rollout-2026-11-23.md). Аудит завершён, реализация/визуальная приёмка не начаты; это отдельные срезы существующих UI-задач, без закрытия родительских ID и без новых покупок/рекомендаций. Сначала принять текущий технический B, затем QG1 и последовательное покрытие экранов/состояний.
