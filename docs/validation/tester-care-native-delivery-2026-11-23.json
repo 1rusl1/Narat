@@ -1,0 +1,62 @@
+{
+  "date": "2026-11-23",
+  "accepted_app_sha": "1371ae02354555d51e3b53ad4a5140e27e21b168",
+  "result": "SCOPED_PASS_DELIVERY_CLEANUP_COLD_NATIVE_CENTER_UNVERIFIED",
+  "full_cycle": false,
+  "platform": "ordinary signed Simulator iOS26.3",
+  "credentials": "existing SDK session; no password file/account creation/token read",
+  "live": {
+    "g1_today_pending": 1,
+    "g2_unmasked_new_aligned_generation": true,
+    "closed_before_fire": true,
+    "actual_native_delivery_observed_msk": "10:00:11",
+    "actual_native_tap_msk": "10:00:35",
+    "actual_native_taps": 1,
+    "native_allow_taps": 1,
+    "exact_card_opened": true,
+    "canonical_unchanged_by_tap": true
+  },
+  "cleanup": {
+    "baseline_rows": 22,
+    "final_rows": 24,
+    "old_rows_preserved": true,
+    "known_water_voided": true,
+    "exactly_one_joined_reversal": true,
+    "profile_hour_restored": 9,
+    "consent_off": true,
+    "no_schedule": true,
+    "no_current_armed": true,
+    "outbox": 0,
+    "overview_aligned": true,
+    "cold_process": {
+      "pre_pid": 38854,
+      "root_reported_terminate_exit": 0,
+      "root_reported_launched_pid": 41026,
+      "current_pid_before_read": 41026,
+      "current_pid_after_read": 41026,
+      "intermediate_absent_pid": "NOT_CAPTURED"
+    }
+  },
+  "readback_scope": "App-synced sealed replica, NOT independent server GET",
+  "native_visual": {
+    "surface": "LOCK_SCREEN_EMPTY",
+    "notification_center": "NOT_VERIFIED"
+  },
+  "checks": {
+    "observer_synthetic": 38,
+    "scoped_cold_guard_synthetic": 13,
+    "actual_scoped_cold_readback": "PASS",
+    "app_suites_rerun": false,
+    "source_unchanged": true
+  },
+  "limitations": [
+    "No full Notification Center visual verification",
+    "Intermediate absent PID not captured; Root terminate exit0+launch PID+current different PID used",
+    "No raw UN inventory/payload export",
+    "Simulator only; physical/external/full MVP open",
+    "Historical bounded-precision CUA event preserved; current state reread now, no fresh UI fabricated",
+    "Transient false sign-in UI observed; reachable source candidate, runtime cause not established; fix pending",
+    "Physical/external/full MVP not accepted"
+  ],
+  "next_step": "Reproduce and repair false-login on refresh, preserving original owner/epoch/ABA guards; affected acceptance before readiness claim"
+}
