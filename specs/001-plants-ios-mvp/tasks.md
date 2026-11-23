@@ -4,6 +4,8 @@
 
 ## Порядок и приёмка
 
+- **23 ноября, общий кандидат:** private3c40668 (B+Quiet Garden+3capturemethods), полный23sourceunion отacceptedAae49. Запущен fresh13-check whole: прежние11+ordinaryPL/accessibility2+44PNG+highReviewQA. Отдельный B не принят (routingnative2/3FAIL сохранён), QGcompile249.36с и targetedSDK2/3PNG PASS отдельно. Пользовательская готовность/visualQA/подписанная новая сборка пока не приняты, checkbox не закрываются.
+
 - **23 ноября: дополнительный дизайн-этап владельца.** Все существующие экраны оформить в Quiet Garden: [план QG1–QG7](../../docs/quiet-garden-rollout-2026-11-23.md). Аудит завершён, реализация/визуальная приёмка не начаты; это отдельные срезы существующих UI-задач, без закрытия родительских ID и без новых покупок/рекомендаций. Сначала принять текущий технический B, затем QG1 и последовательное покрытие экранов/состояний.
 - **Текущий B не принят:**508Swift/149automation/Release/build/welcome/8consentUI PASS на fixtures; routing дважды2/3 с native XCTest rename activation failure после открытия точной карточки. Новые2SDKUI и общий ReviewQA ещё не выполнены. Нужен bounded readiness-helper repair, затем затронутые gates и полная приёмка; T075/T077/T080/T098 остаются открыты. Живая доставка1371 не переносится на новый B автоматически.
 - **Продолжение23ноября:** helper Developer82.646с применён в двух функциях, вне них UITest-source побайтово сохранён; fresh11checks/ReviewQA ещё идут. QG1–QG6 готовятся в отдельной private-копии, без изменения текущего B. [Инструкция передачи](../../docs/tester-handoff.md) подготовлена, но новая сборка/визуальная приёмка ещё не завершены. Parent IDs не закрыты.

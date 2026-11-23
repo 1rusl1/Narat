@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## Общая техническая и визуальная проверка — 23 ноября 2026
+
+- **Кандидат реализован, не принят:** private `3c40668ab16db4e8720f519bbc574efd1d58e943`, `/private/tmp/narat-quiet-garden-20261123`. Общий B+Quiet Garden:12Swift+11colorJSON,3insert-onlycapturetests. Root production покаacceptedAae49; user3PBX/xcstrings сохранены отдельно. Покупки/расширение рекомендаций отложены.
+- **Реально проверено до общего прогона:** дизайн Release249.36с PASS/static88async+IDs/guards; targetedSDKopening2/2 PASS66.5с+3PNG/strictledgers, Root фактически просмотрел все3. Всё это fixtures/compile; не live. Bstandalone после helper82.646с:508Swift/149/Release/build/welcome/8consent PASS, routing2/3FAIL nativehitpoint→stop130. Причина не установлена;44pt не объявляются исправлением до результата.
+- **Сейчас выполняется:** read-only `tester-care-quiet-garden-combined-whole-20261123-01` наexact3c40668/baseae49. Все11fresh+ordinaryPL/accessibility2+visual7cases×lightdark=44PNG, затем high независимые Review/QA всего23sourceunion. Прежние сценарии/assertions сохранены. Developer0 с реальной provenance, без fakePASS/reuse/WIPpush. Новые gateguards29+7 pure PASS отдельно; captureUI пока не выполнен.
+- **Этот документальный этап:** актуализированы handoff, tasks, план дизайна и инструкция. Git diff/ссылки/SHAuser3 проверяются; новых app/live запусков в Root нет. Кандидат и предыдущие FAIL сохранены приватными коммитами, в origin пока отправляется документация.
+- **Следующий шаг:** окончание13checks→фактический просмотр44PNG/Rootreport→safe landing проверенных23sourcebytes безWIPancestor→commit/push→обычный подписанный technical checkpoint/dSYM. Если routingFAIL повторится — артефакты/выяснение причины, без слепого повтора. Personal0.1.0(3) пока прежняя; finalbuild/physical/external/VoiceOver/fullMVP и T075/T077/T080/T098 открыты. Usage44%, soft48/hard50, без сброса.
+
 ## Актуальный срез: технический B и дизайн — 23 ноября 2026
 
 - **Новое поручение:** фирменный Quiet Garden для всех существующих экранов. Основа найдена в design-concept/EN/PL и текущем flow; полного актуального комплекта макетов нет. Выполнен аудит семи SwiftUI-групп/около25 семейств экранов. [План QG1–QG7](quiet-garden-rollout-2026-11-23.md); реализация дизайна ещё не начата, прежние1–2ч её не включают.
