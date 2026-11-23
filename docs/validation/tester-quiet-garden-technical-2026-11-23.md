@@ -41,7 +41,7 @@ Root фактически просмотрел все44 текущих PNG че�
 
 - Приёмка техническая: локальные/fixture-сценарии и представительные снимки; новая живая/физическая/внешняя приёмка не проведена.
 - Полная QG7-матрица всех состояний, VoiceOver, клавиатуры, узкого экрана и TodayXXXL остаётся открытой.
-- Новые обычные подписанные сборки0.1.0(4) создаются следующим этапом; Personal3/source1371 — отдельные исторические доказательства.
+- Обычные подписанные сборки0.1.0(4) созданы; Personal3/source1371 остаются отдельными историческими доказательствами.
 - Покупки и расширение рекомендаций отложены; T075/T077/T080/T098 и полныйMVP не закрываются.
 
-Следующий шаг: точное staged/postcommit iOS-tree equality, code commit/push, чистый checkout этого Root commit, обычные подписанные Simulator/Personal0.1.0(4), App/dSYM UUID+подписи+19DEBUG-exclusion, пакет и инструкция. Установку/новую native delivery/AI ради этого этапа не выполняли. [Машинные результаты и44SHA](tester-quiet-garden-technical-2026-11-23.json).
+Staged и postcommit iOS-tree equality реально подтверждены. Код f1abe59 отправлен в origin; обычные Simulator/Personal0.1.0(4), подписи/dSYM/19DEBUG-exclusion и пакет созданы. Выполнен отдельный Home-only sanity обычной Release без care/AI/login действий. [Артефакты и ограничения](tester-quiet-garden-checkpoint-2026-11-23.md), [машинные14/44SHA](tester-quiet-garden-technical-2026-11-23.json).

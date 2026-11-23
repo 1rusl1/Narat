@@ -1,0 +1,96 @@
+{
+  "status": "TECHNICAL_PACKAGE_READY_WITH_LIMITS",
+  "version": "0.1.0",
+  "build": "4",
+  "root_code_commit": "f1abe59c9bc3bf2329b51f73330aa86738ff7f06",
+  "candidate_commit": "a131e57d45fc0c597cba6a03ae4aaf7d4c6def51",
+  "candidate_fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+  "ios_tree": "bcee2aea03537bce09138d5bcaf095b273c8a787",
+  "root_committed_ios_tree_equals_candidate": true,
+  "root_code_commit_pushed": true,
+  "local_package": "build/technical-checkpoint-0.1.0-4",
+  "package_manifest_sha256": "a9b73a0ded4c5dedbbcc0de0043d30af3bbc35046c653f8234e082fab370faa1",
+  "readme_sha256": "f8fe8fe85db8fda4f9c4a4138cbae27190e4d571ecf33e80954df53686e3137e",
+  "simulator": {
+    "bundle": "app.narat.plants",
+    "version": "0.1.0",
+    "build": "4",
+    "commit": "f1abe59c9bc3bf2329b51f73330aa86738ff7f06",
+    "binary_sha256": "7a54e28c63ce9e0fd790f42f532bf55c3acdc00582472ebc7eda563c6d0d485a",
+    "ordinary_no_debug_dylib": true,
+    "host_signature_original_and_copy": true,
+    "binary_uuids": [
+      [
+        "01EE7E74-CA59-3388-A4B9-4DB7840556D2",
+        "arm64"
+      ],
+      [
+        "74D66A29-EE80-3054-88A3-07AF73168DF3",
+        "x86_64"
+      ]
+    ],
+    "dsym_uuid_match": true,
+    "app": "signed-simulator/Plants.app",
+    "dsym": "signed-simulator/Plants.app.dSYM"
+  },
+  "personal": {
+    "bundle": "app.narat.plants.personal",
+    "version": "0.1.0",
+    "build": "4",
+    "commit": "f1abe59c9bc3bf2329b51f73330aa86738ff7f06",
+    "binary_sha256": "a5be00b1d136b8d5b370cfd8d0a454abfb3c7b6003446501dd4e69a4344d6b12",
+    "ordinary_no_debug_dylib": true,
+    "host_signature_original_and_copy": true,
+    "binary_uuids": [
+      [
+        "0D2E8253-6DE5-386B-A7CA-186DE5ED6529",
+        "arm64"
+      ]
+    ],
+    "dsym_uuid_match": true,
+    "app": "signed-personal/Plants.app",
+    "dsym": "signed-personal/Plants.app.dSYM",
+    "embedded_profile_expires_at": "2026-11-24T16:19:31+00:00",
+    "apple_sign_in_enabled": false,
+    "physical_install_or_ui_verified": false
+  },
+  "minimum_os": "17.0",
+  "build_sdk": "26.5",
+  "simulator_architectures": [
+    "arm64",
+    "x86_64"
+  ],
+  "debug_implementation_sentinels_absent": 19,
+  "expected_backend_and_public_client_key_verified": true,
+  "simulator_archive": {
+    "file": "Narat-0.1.0-4-Simulator.zip",
+    "sha256": "be429c3dc524e320b06d834b2a3355214ed68ebd32b1c8cde5f1f146d72c4918",
+    "main_binary_sha_verified_inside_zip": true
+  },
+  "ordinary_simulator_home_sanity": {
+    "status": "ORDINARY_RELEASE_HOME_SANITY_PASS_NOT_LIVE_CYCLE",
+    "root_viewed": true,
+    "file": "ordinary-release-home.png",
+    "sha256": "dc11167cc935c1b78e74cfae4cbd46d3e3b6537d302cc5c8c1b489699f88bb64",
+    "proof": "ordinary-release-home-proof.json",
+    "proof_sha256": "365e7de807c1e84eadae477a015e95f438ab1fd3cd7609cda1e4fb2cb3e2fe8e",
+    "new_live_care_cycle_verified": false
+  },
+  "ordinary_home_scope": "Native install/launch+PID/hash+initialSDKrestore/settledHomePNG actuallyviewed. No taps/login/care/AI/permissionactions; not newfull liveintegration.",
+  "functional_acceptance": "14actualfreshPASS/Reviewer195.604PASS/QA263.734PASS/currentRootVIEW44/SHA44",
+  "images_count": 44,
+  "original_user3_preserved_and_unstaged": true,
+  "credentials_localconfigs_userdatabases_included": false,
+  "old_checkpoint3_preserved": true,
+  "physical_install_or_ui_verified": false,
+  "new_native_delivery_or_live_care_cycle_verified": false,
+  "limits": [
+    "Техническая приёмка:14 наборов/Review/QA и44просмотренных EN/PL/light/dark снимка на тестовых данных; это не новая полная живая приёмка.",
+    "Физическая установка и внешний тестировщик этой сборки ещё не проверены. Personal разрешён только прежнему устройству, профиль до24.11.2026 19:19МСК; AppleSignIn в Personal отключён.",
+    "ПолнаяQG7/TodayXXXL/VoiceOver/клавиатура/узкий экран и все состояния25семейств ещё не проверены.",
+    "Покупки и расширение рекомендаций отложены; полныйMVP иT075/T077/T080/T098 остаются открытыми.",
+    "Пароли, локальные конфигурации и пользовательские базы в пакет не включены. Для приватных растений нужен обычный вход."
+  ],
+  "no_reset": true,
+  "recorded_at": "2026-11-23T19:11:54.449007+00:00"
+}

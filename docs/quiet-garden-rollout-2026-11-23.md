@@ -49,4 +49,4 @@ a131e57 технически принят: все14 actual PASS, независ�
 
 Инвентаризация выявила семь основных SwiftUI-групп и около 25 семейств экранов/состояний. Оформление внедрено в изолированном кандидате, Release compile и static инварианты PASS. Нативная визуальная приёмка ещё не завершена; Root production до принятия не заменён.
 
-Следующий шаг: exact24 Root landing/completeiosTree equality → codecommit/push → обычные подписанные technical4 из чистого Root commit → App/dSYM/подписи/DEBUG-exclusion → пакет. FullQG7/TodayXXXL/physical/VoiceOver/keyboard/narrow/external открыты; оставить30%, без сброса. Старый кэш сохранён, удалений0.
+Код f1abe59 отправлен вorigin сcompleteiOS-tree equality. Обычные подписанные technical4/подписи/App-dSYM/19DEBUG-exclusion/пакет и Home-only sanity Release выполнены;[инструкция](../build/technical-checkpoint-0.1.0-4/README.md),[отчёт](validation/tester-quiet-garden-checkpoint-2026-11-23.md). Следующий шаг — техническая приёмка обычного Simulator-пакета. FullQG7/TodayXXXL/physical/VoiceOver/keyboard/narrow/external/newlive открыты; оставить30%, без сброса. Старый кэш сохранён, удалений0.

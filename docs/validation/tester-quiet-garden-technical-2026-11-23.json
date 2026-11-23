@@ -701,14 +701,18 @@
   ],
   "postterminal_doc_note": "Engine generated these reports after model QA. Root exports only exact committed24 iOS bytes; no private WIP ancestry or generatedhandoff is copied.",
   "original_user3_preserved_and_unstaged": true,
-  "signed4": "PENDING_BUILD",
+  "signed4": "PASS_BOTH_ORDINARY_SIGNATURE_DSYM_19DEBUG_EXCLUSION_PACKAGE_HOME_ONLY_SANITY",
   "limits": [
     "Приёмка техническая: локальные/fixture-сценарии и представительные снимки; новая живая/физическая/внешняя приёмка не проведена.",
     "Полная QG7-матрица всех состояний, VoiceOver, клавиатуры, узкого экрана и TodayXXXL остаётся открытой.",
-    "Новые обычные подписанные сборки0.1.0(4) создаются следующим этапом; Personal3/source1371 — отдельные исторические доказательства.",
-    "Покупки и расширение рекомендаций отложены; T075/T077/T080/T098 и полныйMVP не закрываются."
+    "Покупки и расширение рекомендаций отложены; T075/T077/T080/T098 и полныйMVP не закрываются.",
+    "Обычные signedSimulator/Personal4 созданы; новая физическая/внешняя/live-care приёмка отдельно."
   ],
   "no_reset": true,
   "recorded_at": "2026-11-23T18:58:43.945164+00:00",
-  "root_staged_ios_tree": "bcee2aea03537bce09138d5bcaf095b273c8a787"
+  "root_staged_ios_tree": "bcee2aea03537bce09138d5bcaf095b273c8a787",
+  "root_code_commit": "f1abe59c9bc3bf2329b51f73330aa86738ff7f06",
+  "root_code_commit_pushed": true,
+  "root_committed_ios_tree_verified": true,
+  "artifact_report": "tester-quiet-garden-checkpoint-2026-11-23.json"
 }
