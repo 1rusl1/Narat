@@ -1,5 +1,16 @@
 # Narat — текущий статус и передача работы
 
+## Актуально: Review PASS, исправляется metadata guard MCP — 23 ноября 2026
+
+- **Source unchanged:** private clean `d32594a85c4ce6f80ac22c5f2d3d539391ce2a22`, FP `7703a30330d2f5e860526d3e06765987b0158e257c5021f905bbc3c58d1f1892`, 24 iOS-файла/36 путей от A. Root production пока принятый A; исходные3 пользовательских PBX/xcstrings сохранены.
+- **Реально PASS на d325:** все9 pre-review проверок заново: diff0.023,149automation46.003,Release77.707,508Swift/build/welcome143.330,focused1 224.113,routing3 618.718,SDK2 54.229,strict consent8 1626.299,result4 69.941. Новый helper реально скомпилирован (новый UItest SHA/новый deadline literal/старые два отсутствуют); app4 при этом точно равен fa38. Полный независимый high Review — **PASS263.570, findings0**. Это не заменяет оставшуюся QA/визуальную приёмку.
+- **Фактическая остановка:** первый QA-gate MCP FAIL0.934 до запуска серверов/stop/launch/UI. Аудит показал только mode: cached `Plants.debug.dylib`0755 → установленный0644; SHA и размер всех4 app-файлов совпадают точно, остальные3 mode также совпадают. Cached9/SHA/modes/sourceFP неизменны. Raw сохранены; controller31523/session70204 terminal exit1/BLOCKED/inflightnil. MCP UI,care13,ordinary2,visual44,Today6 ещё не пройдены.
+- **Точный следующий шаг:** отдельная private копия metadata guard допускает только наблюдённую пару mode755/644 для `Plants.debug.dylib`; SHA/size всех4, mode остальных3 и всехcached9, installed-before/after остаются строгими. Никакого chmod/reinstall/изменения приложения/тестов. Positive observed pair и negative wrongmode/SHA/size проверки, Root review; затем source-bound валидация сохранённых9 actual PASS+старого Review и5 оставшихся actual gates, новый независимый whole-24 Review/QA и Root44. Валидация старых результатов не называется повторным fresh execution. Все исходные READY/raw/pins сохраняются.
+- **Ресурсы/ограничения:** последнее использование52%, остаётся48%; hard70/soft68, без сброса. Свободно6.78GiB, удалений0; исходный отказ auto-review на очистку old intermediates сохранён, продолжаем безопасно без неё. Основные44 PNG/новые signed артефакты ещё отсутствуют. Дополнительные7+27 EN/light снимков просмотрены отдельно; их app4 byte-match подтверждён, но это не полныйQG7. Parent T075/T077/T080/T098, physical/external/VO/клавиатура/узкий экран/fullMVP открыты; покупки/расширение рекомендаций отложены. Старые live1371/Personal3 отдельно.
+- **После общей приёмки:** exact24 safe landing с равенством полного iOS Git tree → commit/push → чистый checkout принятого Root commit → ordinary Simulator/Personal4+dSYM → package/инструкция. Подготовленный private packager только AST-проверен, не запускался; build/technical-checkpoint-0.1.0-4 не создан. Текущий документальный этап меняет4 документа, проверяет diff/сохранностьuser3; App/live/новых подписанных сборок он не запускает.
+
+## История нового прогона до metadata FAIL
+
 ## Новый полный прогон — 23 ноября 2026
 
 - **Текущий кандидат:** clean private `d32594a85c4ce6f80ac22c5f2d3d539391ce2a22`, source fingerprint `7703a30330d2f5e860526d3e06765987b0158e257c5021f905bbc3c58d1f1892`. Тот же полный объём 24 iOS-файла / 36 путей от принятого A. Root production пока A; первоначальные три пользовательских PBX/xcstrings сохранены.
