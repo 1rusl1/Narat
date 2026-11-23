@@ -2438,6 +2438,241 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
+    /// Expiry is delivered by the real fixture SDK, without a production clock override.
+    private func expiredOpeningSession(_ h: Harness) async throws -> (CatalogueSDKSnapshot, CatalogueSaveModel) {
+        await h.ready()
+        try auth(h, owner: owner)
+        try await h.signIn()
+        let old = try await h.connection.sessionSnapshot()
+        let model = try await h.connection.makeModel(
+            input: input, flowId: UUID(), operationId: UUID(), expected: old)
+        try auth(h, owner: owner, expired: true)
+        try await h.signIn()
+        return (old, model)
+    }
+
+    private func assertOpeningReadOnly(_ h: Harness, refreshes: Int) {
+        XCTAssertEqual(h.fixture.captured.filter { $0.url?.query == "grant_type=refresh_token" }.count, refreshes)
+        XCTAssertFalse(h.fixture.captured.contains {
+            $0.url?.path == "/auth/v1/signup" || $0.url?.path.contains("/plants-api/") == true
+        })
+        assertClosed(h)
+    }
+
+    func testCollectionOpeningRefreshInsideProductionReadKeepsOldSnapshotsAndModelsRevoked() async throws {
+        for sameToken in [false, true] {
+            let h = try Harness(emitLocalSessionAsInitialSession: false)
+            defer { h.close() }
+            let (old, model) = try await expiredOpeningSession(h)
+            try auth(h, owner: owner, token: sameToken ? "fixture-a" : "fixture-renewed",
+                     suspend: true, refresh: true)
+            let opening = Task { await h.connection.collectionOpeningSnapshot() }
+            try await waitForSuspension(h.fixture)
+            h.fixture.release()
+            guard case let .permanent(current) = await opening.value else {
+                XCTFail("The exact production read must recover its own refresh"); continue
+            }
+            XCTAssertEqual(current.session.userId, owner)
+            XCTAssertEqual(current.session.accessToken, sameToken ? "fixture-a" : "fixture-renewed")
+            if sameToken { XCTAssertEqual(current.session, old.session) }
+            XCTAssertNotEqual(current, old)
+            XCTAssertEqual(h.connection.snapshot, current)
+            _ = try await h.connection.collectionLease(expected: current)
+            do {
+                _ = try await h.connection.collectionLease(expected: old)
+                XCTFail("Old strict snapshot must stay invalid")
+            } catch { XCTAssertEqual(error as? CatalogueSaveUnavailable, .sessionChanged) }
+            assertRedacted(model)
+            assertOpeningReadOnly(h, refreshes: 1)
+        }
+    }
+
+    func testCollectionOpeningHeldReadRejectsOwnerRefreshABAAndEqualFieldRelogin() async throws {
+        for mode in 0..<7 {
+            let h = try Harness(emitLocalSessionAsInitialSession: false)
+            defer { h.close() }
+            _ = try await expiredOpeningSession(h)
+            let original = try XCTUnwrap(h.client.auth.currentSession)
+            // ABA cases isolate ancestry with a nonterminal response. Terminal cases
+            // prove that sessionMissing must not attribute an explicit signOut to this read.
+            let code = mode == 5 ? "refresh_token_not_found"
+                : mode == 6 ? "session_expired" : "validation_failed"
+            h.fixture.append(.init(method: "POST", path: "/auth/v1/token",
+                data: try json(["code": code, "error_code": code, "message": "Fixture rejected"]),
+                status: mode >= 5 ? 400 : 422, suspend: true, query: "grant_type=refresh_token"))
+            let opening = Task { await h.connection.collectionOpeningSnapshot() }
+            try await waitForSuspension(h.fixture)
+            if mode == 0 {
+                try auth(h, owner: other, token: "fixture-b")
+                try await h.signIn()
+            } else if mode == 1 {
+                try auth(h, owner: other, token: "fixture-b", refresh: true)
+                _ = try await h.client.auth.refreshSession(refreshToken: "independent-b")
+                try auth(h, owner: owner, expired: true, refresh: true)
+                _ = try await h.client.auth.refreshSession()
+            } else {
+                if mode != 3 {
+                    h.fixture.append(.init(method: "POST", path: "/auth/v1/logout",
+                                          data: Data(), query: "scope=local"))
+                    try await h.client.auth.signOut(scope: .local)
+                }
+                if mode < 4 {
+                    try auth(h, owner: owner, expired: true)
+                    try await h.signIn()
+                }
+            }
+            let replacement = h.client.auth.currentSession
+            if (1...3).contains(mode) { XCTAssertEqual(replacement, original) }
+            h.fixture.release()
+            guard case .superseded = await opening.value else {
+                XCTFail("Every disruptive event must retire the original request"); continue
+            }
+            XCTAssertEqual(h.client.auth.currentSession, replacement)
+            if mode >= 4 {
+                XCTAssertNil(replacement)
+                guard case .loginRequired = await h.connection.collectionOpeningSnapshot() else {
+                    XCTFail("A new explicit request must recognize the completed signOut"); continue
+                }
+            }
+            assertOpeningReadOnly(h, refreshes: mode == 1 ? 3 : 1)
+        }
+    }
+
+    func testCollectionOpeningCancellationAndCallerRequestLocaleFencesCannotPresentOrRetarget() async throws {
+        for mode in 0..<4 {
+            let h = try Harness(emitLocalSessionAsInitialSession: false)
+            defer { h.close() }
+            _ = try await expiredOpeningSession(h)
+            try auth(h, owner: owner, token: "fixture-renewed", suspend: true, refresh: true)
+            var currentRequest = true
+            let opening = Task {
+                await h.connection.collectionOpeningSnapshot(isRequestCurrent: { currentRequest })
+            }
+            try await waitForSuspension(h.fixture)
+            if mode == 0 { opening.cancel() } else { currentRequest = false }
+            if mode == 2 { try await h.connection.updateClientLocale("en") }
+            var replacement: Session?
+            if mode == 3 {
+                try auth(h, owner: other, token: "fixture-b")
+                try await h.signIn()
+                replacement = h.client.auth.currentSession
+                guard case let .permanent(new) = await h.connection.collectionOpeningSnapshot() else {
+                    XCTFail("Replacement request must remain usable"); continue
+                }
+                XCTAssertEqual(new.session.userId, other)
+            }
+            h.fixture.release()
+            guard case .superseded = await opening.value else {
+                XCTFail("Cancelled/replaced requests must never return collection or login"); continue
+            }
+            if mode == 3 { XCTAssertEqual(h.client.auth.currentSession, replacement) }
+            guard case .permanent = await h.connection.collectionOpeningSnapshot() else {
+                XCTFail("A later explicit request must remain usable"); continue
+            }
+            assertOpeningReadOnly(h, refreshes: 1)
+        }
+    }
+
+    func testCollectionOpeningTransportFailureIsUnavailableAndNextExplicitRequestCanRecover() async throws {
+        let h = try Harness(emitLocalSessionAsInitialSession: false)
+        defer { h.close() }
+        _ = try await expiredOpeningSession(h)
+        let original = h.client.auth.currentSession
+        for held in [true, false] {
+            // Pinned SDK HTTP transport retries this failed POST once.
+            h.fixture.append(.init(method: "POST", path: "/auth/v1/token", data: Data(),
+                suspend: held, query: "grant_type=refresh_token", failure: .notConnectedToInternet))
+        }
+        let opening = Task { await h.connection.collectionOpeningSnapshot() }
+        try await waitForSuspension(h.fixture)
+        h.fixture.release()
+        guard case .temporarilyUnavailable = await opening.value else {
+            return XCTFail("Transport failure is not evidence of missing credentials")
+        }
+        XCTAssertEqual(h.client.auth.currentSession, original)
+        try auth(h, owner: owner, token: "fixture-recovered", refresh: true)
+        guard case let .permanent(current) = await h.connection.collectionOpeningSnapshot() else {
+            return XCTFail("Only a new explicit request retries the failed read")
+        }
+        XCTAssertEqual(current.session.accessToken, "fixture-recovered")
+        assertOpeningReadOnly(h, refreshes: 3)
+    }
+
+    func testCollectionOpeningMissingAnonymousAndTerminalCleanupRequireLoginWithoutRecoveryLoops() async throws {
+        for mode in 0..<4 {
+            let h = try Harness(emitLocalSessionAsInitialSession: false)
+            defer { h.close() }
+            await h.ready()
+            if mode == 1 {
+                try auth(h, owner: owner, anonymous: true)
+                try await h.signIn()
+            } else if mode >= 2 {
+                try auth(h, owner: owner, expired: true)
+                try await h.signIn()
+                let code = mode == 2 ? "refresh_token_not_found" : "session_expired"
+                h.fixture.append(.init(method: "POST", path: "/auth/v1/token",
+                    data: try json(["code": code, "error_code": code, "message": "Fixture rejected"]),
+                    status: 400, query: "grant_type=refresh_token"))
+            }
+            if mode >= 2 {
+                guard case .superseded = await h.connection.collectionOpeningSnapshot() else {
+                    XCTFail("In-flight terminal cleanup must retire the original request"); continue
+                }
+                XCTAssertNil(h.client.auth.currentSession)
+            }
+            for _ in 0..<3 {
+                guard case .loginRequired = await h.connection.collectionOpeningSnapshot() else {
+                    XCTFail("A new explicit read of stable absence/anonymous state must require login"); continue
+                }
+            }
+            if mode >= 2 { XCTAssertNil(h.client.auth.currentSession) }
+            assertOpeningReadOnly(h, refreshes: mode >= 2 ? 1 : 0)
+        }
+    }
+
+    func testCollectionOpeningSeedsExpiredSDKIdentityAfterProductionInitialNilWithoutCacheProof() async throws {
+        let seed = try Harness(emitLocalSessionAsInitialSession: false)
+        defer { seed.close() }
+        _ = try await expiredOpeningSession(seed)
+        let persisted = try XCTUnwrap(seed.client.auth.currentSession)
+        let h = try Harness(storedSession: persisted, emitLocalSessionAsInitialSession: false) { fixture in
+            fixture.append(.init(method: "POST", path: "/auth/v1/token",
+                data: try json(["code": "validation_failed", "message": "Fixture rejected"]),
+                status: 422, suspend: true, query: "grant_type=refresh_token"))
+        }
+        defer { h.close() }
+        try await waitForSuspension(h.fixture)
+        var initial: Task<CatalogueCollectionOpeningOutcome, Never>?
+        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+            var announced = false
+            initial = Task {
+                await h.connection.collectionOpeningSnapshot(isRequestCurrent: {
+                    if !announced { announced = true; entered.resume() }
+                    return true
+                })
+            }
+        }
+        h.fixture.release()
+        let initialRead = try XCTUnwrap(initial)
+        guard case .superseded = await initialRead.value else {
+            return XCTFail("Initial nil during observer registration must retire the waiting request")
+        }
+        let scope = try await h.connection.accountScope() // Wait for the real initial observer, no refresh.
+        XCTAssertNil(scope.snapshot)
+        XCTAssertEqual(h.client.auth.currentSession, persisted)
+        XCTAssertEqual(h.connection.authClassification, .unresolved)
+        try auth(h, owner: owner, token: "fixture-established", suspend: true, refresh: true)
+        let opening = Task { await h.connection.collectionOpeningSnapshot() }
+        try await waitForSuspension(h.fixture)
+        h.fixture.release()
+        guard case let .permanent(current) = await opening.value else {
+            return XCTFail("Established expired SDK identity must survive a nonterminal initial nil")
+        }
+        XCTAssertEqual(current.session.userId, owner)
+        assertOpeningReadOnly(h, refreshes: 2)
+        assertOpeningReadOnly(seed, refreshes: 0)
+    }
+
     func testRealSDKRefreshInvalidatesOldModelAndSameOwnerRestoreKeepsExactOperation() async throws {
         let h = try Harness()
         defer { h.close() }

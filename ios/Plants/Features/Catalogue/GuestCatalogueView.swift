@@ -38,6 +38,14 @@ struct CatalogueSDKSnapshot: Sendable, Equatable {
     fileprivate let epoch: UInt64
 }
 
+/// Connection prerequisite only; Root supplies its request/locale fence at integration.
+enum CatalogueCollectionOpeningOutcome: Sendable {
+    case permanent(CatalogueSDKSnapshot)
+    case loginRequired
+    case temporarilyUnavailable
+    case superseded
+}
+
 /// Transient explicit UI request, bound to the original connection, SDK epoch and locale.
 struct CatalogueCareReadIntent: Equatable {
     let id = UUID()
@@ -67,6 +75,43 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
     private var hasEstablishedSession: Bool
     private var signedInEpoch: UInt64?
     private var signedOutProof = false
+    private var identity: Identity?
+    private var disruptiveEpoch: UInt64 = 0
+
+    struct Identity: Equatable, Sendable {
+        let owner: UUID
+        let anonymous: Bool
+        init(_ session: Session) {
+            owner = session.user.id
+            anonymous = session.user.isAnonymous
+        }
+    }
+
+    struct Ticket: Sendable {
+        let epoch: UInt64
+        let barrier: UInt64
+        let identity: Identity?
+    }
+
+    /// Called after observer registration, with SDK access completed outside the lock.
+    func ticket(at epoch: UInt64, identity current: Identity?) -> Ticket? {
+        lock.withLock {
+            guard value == epoch else { return nil }
+            // Production initialSession(nil) can leave an established expired session.
+            // Seed from that SDK session, never from an application cache or token equality.
+            if identity == nil { identity = current }
+            guard identity == current else { return nil }
+            return Ticket(epoch: epoch, barrier: disruptiveEpoch, identity: current)
+        }
+    }
+
+    func permits(_ ticket: Ticket, identity current: Identity?, at epoch: UInt64) -> Bool {
+        lock.withLock {
+            value == epoch && disruptiveEpoch == ticket.barrier
+                && identity == ticket.identity && current == ticket.identity
+                && (ticket.identity != nil || value == ticket.epoch)
+        }
+    }
 
     init(hasEstablishedSession: Bool = false) {
         self.hasEstablishedSession = hasEstablishedSession
@@ -91,8 +136,13 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
     func invalidate(
         _ authority: SyncSessionAuthority, session: Session? = nil, event: AuthChangeEvent? = nil
     ) -> UInt64 {
-        lock.withLock {
+        let current = session.map(Identity.init)
+        return lock.withLock {
             value &+= 1
+            if event != .tokenRefreshed || current == nil || current != identity {
+                disruptiveEpoch = value
+            }
+            identity = current
             signedInEpoch = event == .signedIn ? value : nil
             // Initial nil may follow terminal refresh cleanup. Only that empty initial
             // event may carry proof forward; any new identity/event retires it.
@@ -397,6 +447,85 @@ final class CatalogueConnection {
         observedSnapshot = expected
         try validate(expected)
         return expected
+    }
+
+    /// One explicit collection-opening read; base snapshots and model leases stay strict.
+    /// The caller's fence covers replacement/locale intent without changing SDK authority.
+    func collectionOpeningSnapshot(
+        isRequestCurrent: @MainActor () -> Bool = { true }
+    ) async -> CatalogueCollectionOpeningOutcome {
+        guard let client else { return .temporarilyUnavailable }
+        guard !Task.isCancelled, isRequestCurrent() else { return .superseded }
+        let epoch = sdkEpoch.read()
+        let identity = client.auth.currentSession.map(CatalogueSDKEpoch.Identity.init)
+        _ = await observer?.value
+        // Registration is not ancestry proof: never adopt an identity/event that arrived
+        // while this request waited for its observer to become ready.
+        guard !Task.isCancelled, isRequestCurrent(), sdkEpoch.read() == epoch,
+              client.auth.currentSession.map(CatalogueSDKEpoch.Identity.init) == identity else {
+            return .superseded
+        }
+        guard let ticket = sdkEpoch.ticket(at: epoch, identity: identity) else { return .superseded }
+
+        func ancestryIsCurrent() -> Bool {
+            let currentEpoch = sdkEpoch.read()
+            let current = client.auth.currentSession.map(CatalogueSDKEpoch.Identity.init)
+            return sdkEpoch.permits(ticket, identity: current, at: currentEpoch)
+        }
+        func requestIsCurrent() -> Bool { !Task.isCancelled && isRequestCurrent() }
+
+        func read() async throws -> CatalogueSDKSnapshot {
+            guard requestIsCurrent(), ancestryIsCurrent() else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            let readEpoch = sdkEpoch.read()
+            let session = try await client.auth.session
+            let expected = Self.snapshot(session, epoch: readEpoch)
+            try validate(expected)
+            guard requestIsCurrent(), ancestryIsCurrent() else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            try await bind(expected)
+            try validate(expected)
+            guard requestIsCurrent(), ancestryIsCurrent() else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            observedSnapshot = expected
+            return expected
+        }
+
+        do {
+            guard requestIsCurrent(), ancestryIsCurrent() else { return .superseded }
+            let current: CatalogueSDKSnapshot
+            do {
+                current = try await read()
+            } catch CatalogueSaveUnavailable.sessionChanged {
+                guard requestIsCurrent(), ancestryIsCurrent() else { return .superseded }
+                // Exactly one new strict read, only for proven refresh descendants.
+                guard ticket.identity != nil, sdkEpoch.read() != ticket.epoch else {
+                    return .temporarilyUnavailable
+                }
+                current = try await read()
+            }
+            guard requestIsCurrent(), ancestryIsCurrent() else { return .superseded }
+            try validate(current)
+            return current.isAnonymous ? .loginRequired : .permanent(current)
+        } catch {
+            // Every in-flight signOut breaks ancestry, including terminal refresh cleanup.
+            guard requestIsCurrent(), ancestryIsCurrent() else { return .superseded }
+            if case AuthError.sessionMissing = error {
+                let currentEpoch = sdkEpoch.read()
+                if ticket.identity == nil, currentEpoch == ticket.epoch,
+                   client.auth.currentSession == nil,
+                   (sdkEpoch.provesSignOut(at: currentEpoch)
+                    || sdkEpoch.allowsAnonymousSignup(at: currentEpoch)),
+                   client.auth.currentSession == nil, sdkEpoch.read() == currentEpoch {
+                    return .loginRequired
+                }
+            }
+            guard ancestryIsCurrent() else { return .superseded }
+            return .temporarilyUnavailable
+        }
     }
 
     /// Captures existing identity without creating a guest or writing application data.

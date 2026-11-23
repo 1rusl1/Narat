@@ -1,0 +1,120 @@
+{
+  "stage": "A connection-only collection-opening read",
+  "status": "VERIFIED_PUBLICATION_DISABLED",
+  "original_accepted_base": "1caab1aedc27a5922784598590611c4d3f495889",
+  "tested_source_sha256": {
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": "59d6adacfaaba5c74f382694240d7b925156c2a150b626ea427bf5cbc8ad2765",
+    "ios/PlantsTests/CatalogueConnectionTests.swift": "42d3ab024b8d98f8e1096de854d9a4f3cf3e022128f6fe0fe57cc55aa968dbd1"
+  },
+  "full_union_patch_sha256": "fa6eb95eb103c307a1e49a6892f502508aa8535e7258b2a5f41621f386373949",
+  "production_scope": [
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift"
+  ],
+  "test_scope": [
+    "ios/PlantsTests/CatalogueConnectionTests.swift"
+  ],
+  "root_ui_changed": false,
+  "no_tasklocal_or_cause_attribution": true,
+  "baseline_494_assertions_preserved": true,
+  "baseline_test_source_insert_only": true,
+  "checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "elapsed_seconds": 0.024
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "elapsed_seconds": 50.984
+    },
+    {
+      "name": "care-release-compile",
+      "status": "PASS",
+      "elapsed_seconds": 68.932
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "elapsed_seconds": 145.617
+    },
+    {
+      "name": "simulator-smoke",
+      "status": "PASS",
+      "elapsed_seconds": 33.235
+    }
+  ],
+  "swift": {
+    "total": 500,
+    "xctest_expected": 497,
+    "xctest_passed": 497,
+    "missing_methods": [],
+    "swift_testing": 3,
+    "mode": "isolated_sdk_fixture_and_compiler_not_live"
+  },
+  "automation_total": 149,
+  "roles": {
+    "developer": {
+      "semantic_status": "PASS",
+      "elapsed_seconds": 109.61,
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium"
+    },
+    "reviewer": {
+      "semantic_status": "PASS",
+      "elapsed_seconds": 116.633,
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "qa": {
+      "semantic_status": "PASS",
+      "elapsed_seconds": 141.915,
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    }
+  },
+  "provenance": {
+    "original_developer_seconds": 566.646,
+    "original_reviewer_seconds": 191.751,
+    "original_reviewer_semantic": "FAIL",
+    "rejected_tasklocal_developer_seconds": 173.243,
+    "run01": "orchestrator-tester-care-sdk-collection-read-20261123-01",
+    "run01_exit": 130,
+    "run01_status": "WAITING_CHECKS_UNACCEPTED_STOPPED",
+    "run01_rejected_candidate_published": false,
+    "conservative_run": "orchestrator-tester-care-sdk-collection-read-conservative-20261123-01",
+    "conservative_run_exit": 1,
+    "conservative_run_status": "WAITING_PUBLISH_INTENTIONALLY_DISABLED",
+    "conservative_qa_complete": true
+  },
+  "contract": [
+    "Same-identity tokenRefreshed ancestry permits one fresh strictly validated read.",
+    "Any in-flight signedOut invalidates the original request, including terminal cleanup; result superseded.",
+    "Only a NEW explicit stable missing/signedOut read returns loginRequired.",
+    "No automatic replacement user intent, signup, cause receipt, SDK pin/config change or new observer."
+  ],
+  "limitations": [
+    "Root My plants still uses its existing try? mapping until B; user-visible false-login scenario remains open.",
+    "The observed live transient login cause remains unknown; isolated regression proves a reachable source mechanism only.",
+    "Native delivery and cleanup proof on source1371 is separate and final Notification Center clear remained visually NOT_VERIFIED.",
+    "Personal0.1.0(3)/dSYM already exist for source1371; this A has no live deployment or distribution proof.",
+    "Unaccepted local TaskLocal ancestor must not be pushed; Root lands only verified full two-file bytes atop1ca."
+  ],
+  "next": "Root safe two-file landing and docs/push, then fresh usage and separately authorized B whole A+B union with actual Root/UI regression.",
+  "usage_policy": {
+    "last_verified_used_percent": 39,
+    "soft_stop_percent": 48,
+    "hard_stop_percent": 50,
+    "reset_authorized": false
+  },
+  "root_landing": {
+    "base": "1caab1aedc27a5922784598590611c4d3f495889",
+    "method": "accepted two-file union applied; local WIP ancestor excluded",
+    "verified_file_sha256": {
+      "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": "59d6adacfaaba5c74f382694240d7b925156c2a150b626ea427bf5cbc8ad2765",
+      "ios/PlantsTests/CatalogueConnectionTests.swift": "42d3ab024b8d98f8e1096de854d9a4f3cf3e022128f6fe0fe57cc55aa968dbd1"
+    },
+    "original_three_user_files_preserved": true,
+    "root_ui_still_pending": true
+  }
+}

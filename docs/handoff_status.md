@@ -1,10 +1,26 @@
 # Narat — текущий статус и передача работы
 
+## Актуальный срез A — 23 ноября 2026
+
+- **A проверен:** отдельный collection-opening API сохраняет строгие epoch/identity/ABA fences; in-flight signedOut→superseded, новый stablemissing read→login. Только Guest+ConnectionTests. [Отчёт](validation/tester-care-sdk-collection-read-2026-11-23.md).
+- **Реальные проверки:**500Swift/149automation/build/welcome/Release/MCP и highReview116.633с/highQA141.915с PASS полного A-union от1ca. Старые494 assertions сохранены. Исходные ReviewFAIL/отклонённыйTaskLocal/stop130 остаются ниже.
+- **Root landing:** проверенные2filebytes и отчёты перенесены поверх1ca с точным совпадением SHA256; локальный WIP-ancestor исключён. Final run WAITING/publish намеренно из-за publish disabled, не из-за ошибки проверки. Исходные три пользовательских iOS-файла сохранены.
+- **Ещё открыто:** Root/UI false-login доB, причина живого transientlogin неизвестна. Live1371 delivery+canonicalcleanup scopedPASS/centerNOTVERIFIED и Personal3/dSYM остаются отдельными доказательствами. Parent tasks не закрыты.
+- **Следующий шаг:** freshusage→B whole A+B с actualMyplants/UI на новой чистой ветке от Root; никаких неявных повторов пользовательского запроса. Последнийusage39, soft48/hard50/noreset.
+
+## История этапов
+
+## Текущий этап A — auth read, 23 ноября 2026
+
+- A ещё НЕ принят: Dev1 full500/149/Release PASS, Review1 FAIL ancestry при explicitlogout+terminalrefresh. Dev2 TaskLocal-вариант отклонён Root; raw/локальный checkpoint сохранены, stop130 на свободном ресурсе. [Отчёт](validation/automation/tasks/tester-care-sdk-collection-read-stopped-01.md).
+- Root/UI не изменены. Следующий шаг — bounded repair2files без cause-attribution: in-flight signedOut→superseded, новый stablemissing read→login; затем full A-union проверки/ReviewQA. Старые494 assertions сохраняются, B отдельно после принятияA.
+- Живая доставка/очистка source1371 и Personal3 остаются в предыдущем актуальном срезе ниже; новый A это fixture/compiler, не live. Soft48/hard50/noreset.
+
 ## Актуальный технический срез — 23 ноября 2026
 
 - **Живая доставка подтверждена:** обычный подписанный Simulator/source `1371ae0`, существующая SDK-сессия без пароля; G1 на «Сегодня» pending1 и G2 из точной карточки с новой генерацией/ARMED. Приложение закрыто до fire; реальное уведомление 10:00 МСК → одно нажатие → точная карточка, canonical данные при переходе не изменились. [Отчёт](validation/tester-care-native-delivery-2026-11-23.md).
 - **Очистка выполнена:** известный полив отменён, VOID+ровно одна связанная reversal; прежние 22 raw rows сохранены, всего24, outbox0/aligned, исходный профиль09:00 восстановлен, согласиеoff/noARMED/noSchedule. Cold новый PID41026 вместо38854; интерфейс снова off/09:00/noSchedule. Отдельная read-only сверка нового процесса PASS; 13 synthetic guards отдельно. Это App-synced replica, не independent server GET.
-- **Граница проверки:** пустой lock screen наблюдался, полная визуальная проверка Notification Center не выполнена — свайп CUA не действует. Frozen observer честно остаётся CLEANUP_CANONICAL_CONFIRMED, без фиктивного полного PASS. Исходные ограничения и FAIL сохранены. User display-awake до2ч разрешён и запущен05:51:36 UTC; выключить после завершения доступа, не продлевать за исходный срок.
+- **Граница проверки:** пустой lock screen наблюдался, полная визуальная проверка Notification Center не выполнена — свайп CUA не действует. Frozen observer честно остаётся CLEANUP_CANONICAL_CONFIRMED, без фиктивного полного PASS. Исходные ограничения и FAIL сохранены. User display-awake разрешён до2ч: запуск05:51:36 UTC, остановка07:30:35 UTC (10:30 МСК); продления и изменения настроек не было.
 - **Открытый UX-дефект:** до arm временно показан вход без Sign out; одна обычная перезагрузка восстановила SDK. Кандидат в source — refresh внутри snapshot + `try?`→login; причина живого события пока не доказана. Подготовлен узкий план воспроизведения/исправления с сохранением epoch/owner/ABA-защиты.
 - **Следующий шаг:** оркестратор false-login regression/repair и затронутая приёмка. Personal0.1.0(3)/dSYM из1371 сохранены, профиль до24 ноября19:19МСК. T075/T077/T080/T098, physical/external/fullMVP открыты; покупки/расширение рекомендаций отложены, soft48/hard50/noreset. Последний usage37%.
 
@@ -6517,9 +6533,9 @@ T148 остаётся на прежней остановке до запуска
 <!-- orchestrator:task-summary -->
 ## Task Summary
 
-tester-care-reminder-root-observed-whole: проверки и Review/QA пройдены; публикация фиксируется в state.
-Вызовы — reviewer 1, qa 1. Модели — 418.62 с, проверки — 1823.61 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
-Отчёт: [tester-care-reminder-root-observed-whole](validation/automation/tasks/tester-care-reminder-root-observed-whole.md).
+tester-care-sdk-collection-read-conservative: проверки и Review/QA пройдены; публикация фиксируется в state.
+Вызовы — developer 1, reviewer 1, qa 1. Модели — 368.16 с, проверки — 298.79 с. Повторы моделей — 0, тайм-ауты моделей — 0, тайм-ауты проверок — 0.
+Отчёт: [tester-care-sdk-collection-read-conservative](validation/automation/tasks/tester-care-sdk-collection-read-conservative.md).
 Продуктовые checkbox не менялись автоматически. Следующий шаг — следующая независимая задача manifest.
 <!-- /orchestrator:task-summary -->
 
