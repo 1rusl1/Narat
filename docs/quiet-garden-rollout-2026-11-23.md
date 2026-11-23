@@ -19,7 +19,7 @@
 
 ## Последовательность
 
-Кандидат f352573 прошёл технические наборы и полный Review, однако визуально не принят: все44 кадра просмотрены, P2 — иконка главной перекрывает подпись при AccessibilityXXXL. Фактический anchor — PlantHomeView.destination в PlantsApp.swift. Узкое исправление ограничит Image, сохранив размер текста/действия. Новый full14 переносит ordinary2/capture44 раньше длинных UI; Root production остаётся A. [Результаты](validation/tester-quiet-garden-visual-blocker-2026-11-23.md).
+Новый private a131e57 содержит узкое исправление двух Image Home/Today после реально обнаруженного P2 на44 снимках f352. Декоративная иконка ограничена24×24, текст сохраняет Dynamic Type. Exact2 inverse/parse/diff/SHA PASS — не UI-приёмка. Full14 запущен заново; ordinary2/capture44 перенесены раньше длинных UI через alias порядка исполнения, исходные проверки не ослаблены. Root production остаётся A. [Предыдущие44 и дефект](validation/tester-quiet-garden-visual-blocker-2026-11-23.md).
 
 | Этап | Экраны и результат | Статус |
 |---|---|---|
@@ -49,4 +49,4 @@
 
 Инвентаризация выявила семь основных SwiftUI-групп и около 25 семейств экранов/состояний. Оформление внедрено в изолированном кандидате, Release compile и static инварианты PASS. Нативная визуальная приёмка ещё не завершена; Root production до принятия не заменён.
 
-Следующий шаг: actual Developer одного Image → новый чистый candidate → все14 проверок с ранними ordinary2/visual44 → независимые Review/QA и просмотр44 → exact24 Root landing/fulliosTree equality → signed technical4. Прежние PASS не выдаются за новый прогон. FullQG7/physical/VoiceOver/external открыты; оставить30%, без сброса. Старый кэш сохранён, удалений0.
+Следующий шаг: actual current14 с ранними ordinary2/visual44 → просмотр новых44 → независимые Review/QA → exact24 Root landing/fulliosTree equality → signed technical4. Прежние PASS не выдаются за новый прогон. FullQG7/physical/VoiceOver/external открыты; оставить30%, без сброса. Старый кэш сохранён, удалений0.
