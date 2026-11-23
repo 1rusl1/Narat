@@ -1,0 +1,532 @@
+{
+  "status": "NOT_ACCEPTED_VISUAL_P2",
+  "candidate_commit": "f352573da0bd37c3e466317078dfc98ffddf14d8",
+  "source_fingerprint": "242a610b9ca721b8284a11d365ccb94186492155b7a6468049bde3432ea9378f",
+  "root_production": "ae49e13945e129beeac8a471129d35bbe308ce7d",
+  "run_id": "tester-care-qg-background-final-readonly-whole-20261123-01",
+  "recorded_checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "elapsed_seconds": 0.024
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "elapsed_seconds": 46.248
+    },
+    {
+      "name": "care-release-compile",
+      "status": "PASS",
+      "elapsed_seconds": 84.048
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "elapsed_seconds": 141.87
+    },
+    {
+      "name": "simulator-smoke",
+      "status": "PASS",
+      "elapsed_seconds": 23.196
+    },
+    {
+      "name": "tester-00-foreground-ui",
+      "status": "PASS",
+      "elapsed_seconds": 209.403
+    },
+    {
+      "name": "tester-00-notification-routing-ui",
+      "status": "PASS",
+      "elapsed_seconds": 574.692
+    },
+    {
+      "name": "tester-01-sdk-opening-ui",
+      "status": "PASS",
+      "elapsed_seconds": 55.179
+    },
+    {
+      "name": "tester-consent-ui",
+      "status": "PASS",
+      "elapsed_seconds": 1645.866
+    },
+    {
+      "name": "tester-result-save-ui",
+      "status": "PASS",
+      "elapsed_seconds": 66.277
+    },
+    {
+      "name": "tester-care-ui",
+      "status": "PASS",
+      "elapsed_seconds": 512.154
+    },
+    {
+      "name": "tester-qg-ordinary-ui",
+      "status": "PASS",
+      "elapsed_seconds": 51.493
+    },
+    {
+      "name": "tester-qg-visual-ui",
+      "status": "PASS",
+      "elapsed_seconds": 355.754
+    }
+  ],
+  "today6": {
+    "actual_raw_status": "PASS",
+    "executed": 6,
+    "failed": 0,
+    "engine_state": "INTENTIONALLY_INTERRUPTED_AFTER_RAW_TERMINAL",
+    "raw_run_id": "q-282208968e568cfd0593916d"
+  },
+  "reviewer": {
+    "status": "PASS",
+    "elapsed_seconds": 242.064,
+    "findings": 0,
+    "scope": "Full228687-character AE→f352 diff,36paths/24iOS; reviewonly"
+  },
+  "qa_role": {
+    "calls": 0,
+    "status": "NOT_RUN_KNOWN_VISUAL_BLOCKER"
+  },
+  "controller_exit": 130,
+  "resource_free": true,
+  "visual": {
+    "capture_status": "CAPTURE_PASS_INSPECTION_PENDING",
+    "actual_viewed": 44,
+    "root_viewed": 44,
+    "care_sources_independently_viewed_light": 22,
+    "verdict": "REPRESENTATIVE_VISUAL_BLOCKED",
+    "blockers": [
+      {
+        "id": "L01",
+        "priority": 2,
+        "images": [
+          "qg-actions-en-accessibility",
+          "qg-actions-pl-accessibility"
+        ],
+        "finding": "At native AccessibilityXXXL the books SF Symbol outgrows the fixed24pt layout slot, overlaps the catalogue label and extends beyond the action card leftedge. Root and care_sources independently observed; care_sources additionally viewed raw14/17.",
+        "appearances": [
+          "light",
+          "dark"
+        ],
+        "actual_source_anchor": "ios/Plants/App/PlantsApp.swift:PlantHomeView.destination",
+        "observed_icon_expression": "Image(systemName:systemImage).frame(width:24).accessibilityHidden(true)",
+        "repair_not_applied_yet": "Bound decorative actual Image via resizable.scaledToFit.frame(width24,height24), preserve Text DynamicType/IDs/actions/guards."
+      }
+    ],
+    "minor_findings": [
+      {
+        "priority": 3,
+        "finding": "Account settings heading repeats in navigation/header card; readable, not blocker."
+      }
+    ],
+    "images": [
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "f4fb6fd02dc3b38df9b2445df77abb5704b1f6b3081d61fdf6ab325b40f6854f",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "708e93b85c7a9e806b5f065ae3098f98225a9c22ec6b09413b0d99420bb99dad",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "8f87c4eddb53789a9fb072a28a427516434948aa95bb8462fd13f93c1cbd8ad5",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "20cfdba5752a45fb286edb425f33e235b73a74d7278bd1b457d27d295118dce7",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "22782a37281efd34a557ae9d78fcc01c0e56e699df00be10fd2df67e492fc1e4",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "a63a3df7a3feb1230e704ea2c24fd66f3f2fc0524aa6628f1a7c060073cea1b9",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "3b0fdd203cee668c9904259cf6c7833c3294b38a2f333e5cdb669551bb190eec",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "a37d3cd8700540501006ca189708aa1e16a75a3eee8d895d16d0316065609c64",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-diagnosis-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "82394ae8f5c6692fe8ad0f53b3a58ae578a2b83671feec3c37bf8977234e5341",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-diagnosis-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "8a96cc8cd6ef3bda3e43ea812c910c8422a2c0a31a9eb43c3baee39f5d4169a5",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-identification-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "a6eb78bb42caa1fbcce14f9e0eda2061b143cecd2921903c372c3fd68d8dd912",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-identification-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "5ba7b9ddef0e4161c4207564ecab317666e6325631304c3882f083c028e3da49",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "6c065716dd9cfa49bdefa8d4b1bbeb5f88758f96ef8a525fa451fdc6c8f06863",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-actions-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "e403bdec2ca3ae59e66bf2cdbaf0cab41ad83cad7c874031d3ae51b460e5afc4",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "5c68ca36ec7910e2fb52792a55221f76e04771ca89c724e6008747c738169d98",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "778a28cf231740e1993b8e0ae902ac2b877e473b3e3b90b621236136156a14ee",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-actions-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "4c7e966d832e79528c9d9727daa43735d20c34643de34e6c3498f2a11a0fd554",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "f8a4895166e9f5d48809dfae20a528309201eaabb29d2074ba6b90bb91b1f2ec",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "0b7f2b1197ba8a62f6a60203651f902cd69b657eb55b1ce2b5c57814818dd795",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "47fcb93e5fe10f123d4a542d81c00ef433ca776b939b4d8d6c00d650dc0d130e",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "09b9d8288c7f15f49e985bf6cf42907e3a66ba84d09fe985a1c45e8794882a99",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "d0349fe919fee87facdafcc428fd772f83b8fca163492dcc10b66e6a357cff8c",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "fd3c48f02f95bc942f68ecddd4eb123da0db36cb1bc7b769b499a0a8d9b1a491",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "7a9dc9c3877c4e75b1be22cea2d42ce86c92b4cf502098decbda107cb0fd2f33",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "9d2e719bfc0898af2d33890b6954e45181ad1a57d4b8a9944f70df9e056053bb",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "e7c5a61bbd354d6d66a82e42df5bb93e58399e1ee720befc63873147aa37a3e4",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "d2c686ddb9beadd39c7aa4bbdd88f269fd32011d529676a5210b4d60e78244dc",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "0e3a3e230be2cdcc40ca9e4bcdddf915dccbac49f6a8fdb118cc22bfa9c69f6f",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "e8ba9feb1cd2b3a9c0245f3fcda0561f7a1b2f6ebf8be3c0c6bfe097cb3d2d20",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "715210541a42a4ad7aa9e9e88e294960018c77d1965c7f1cf0be43ecc7465e70",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-diagnosis-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "5671a85b68b4e4fdf407fd30965d9525ed73bcfa4b83251910d407bc906aa01c",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-diagnosis-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "a43406b894919fa388a04c16ed755f44436520b1803583fc4d7614c60a63757a",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-identification-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "c1039f418e901ff7cf6c0032826a690414eacdf4d9dc2c6a9d0e58944a715a43",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-identification-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "796507e83e054f89c811a48707f5e07f477d303abff54a5b10887032349d14ce",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "50ec568522cb027c4fb084600ec79ece3a1f50e5658bc91d9b119b2065ce701c",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-actions-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "3b7c581f0dd4e9f725adec21e4c9d1fac7fb8d367a576befa4ae6569817a0a2f",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "0977ae96e60f9bdf1fb7cc43e66843768eaf03d83be9885e3038726ed3c00200",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "c9f4accd595a10510cf6036713f36dd0617f300ae597bb42bc282fe1955dc4eb",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-actions-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "ca98e0c9ddd3303512973f53170098af1ce3835ba4820782f12705e3bbc2727e",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "f5495f693d44d7d10205256906f4f956ec58bb116181c4edde71fe369b0b7eb5",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "64449bac0c4a44dd2e83d8b264f8aee2cdc0b6b073e91fd285227fad567f75f3",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "1af8ce75d115cd21aa9a3a36cfed0921e92b81a12e4137f10dcf401f0b87b761",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "dbe92bff3cdeacf8cd6671a563e4df8c7cf8379dbfec2ec32344cfffa6f67e74",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "5edd329a22b6118e46b25e6b0e83bb8df2c73ee18523ea89d824623b8900d826",
+        "viewed": true,
+        "reviewer": "/root"
+      }
+    ]
+  },
+  "next_step": "Actual CLI Developer: only decorative Image sizing in PlantHomeView.destination; then new frozen full14, ordinary2/visual44 early before long UI, independent Review/QA. No Root app landing until accepted.",
+  "limits": [
+    "Fixtures/compiler/native Simulator only; not new live or physical acceptance.",
+    "FullQG7,VoiceOver,keyboard,narrow screens,external acceptance and parentT075/T077/T080/T098 remain open.",
+    "New signed0.1.0(4) has not been built.",
+    "Purchases and recommendation expansion remain deferred."
+  ],
+  "source_and_original_user3_unchanged": true,
+  "no_reset": true,
+  "last_actual_usage_percent": 57
+}
