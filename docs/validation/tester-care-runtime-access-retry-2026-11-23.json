@@ -1,0 +1,81 @@
+{
+  "status": "UI_ACCESS_REBLOCKED_NO_NEW_DOMAIN_WRITES",
+  "date": "2026-11-23",
+  "app_source": "1371ae02354555d51e3b53ad4a5140e27e21b168",
+  "real_checks_root": {
+    "owned_simulator_initially_shutdown": true,
+    "preboot_sealed_rows": 23,
+    "preboot_outbox": 0,
+    "preboot_profile_hour": 22,
+    "known_active_water": 1,
+    "owned_device_boot_and_exact_bundle_launch": true,
+    "installed_binary_matches_accepted1371": true,
+    "ordinary_permanent_sdk_collection_and_exact_card_observed": true,
+    "native_cua_calendar_opened_then_cancelled_without_save": true,
+    "calendar_month_observed": "2026-11",
+    "calendar_selected_day_observed": 22,
+    "calendar_today_observed": 23,
+    "last_observed_synced_hour": 22,
+    "last_observed_unsaved_picker_draft": 9,
+    "last_observed_save_enabled": true,
+    "last_observed_consent_off": true
+  },
+  "new_actions_this_retry": {
+    "record_save": 0,
+    "profile_hour_save": 0,
+    "date_correction_save": 0,
+    "consent_enable": 0,
+    "reminder_arm": 0,
+    "native_tap": 0
+  },
+  "persistent_known_test_state": {
+    "water_state": "active",
+    "water_day": "2026-11-22",
+    "last_observed_card_next_due": "2026-11-29",
+    "profile_hour": 22,
+    "original_restore_hour": 9,
+    "cleanup_done": false
+  },
+  "checkpoint": {
+    "phase": "HOUR_CONFIRMED",
+    "sha256": "d5f357c367001dc163caa42cd476ba244d56d326d9dac98fd817ca1a18599e94",
+    "inflight": null,
+    "confirmed_steps": [
+      "record",
+      "observed-hour-reconciliation"
+    ]
+  },
+  "manual_observer": {
+    "reviewed": true,
+    "pure_checks": 38,
+    "started": false,
+    "live_pass": false,
+    "ui_injection_forbidden": true
+  },
+  "blocker": {
+    "cua_session_reset_after_inactivity": true,
+    "new_getApp_result": "Mac locked and automatic unlock could not unlock it",
+    "user_unlock_and_display_awake_question": "pending",
+    "caffeinate_d_s_t7200_permission": "pending, command NOT executed",
+    "root_resource_released": true,
+    "resource_exit_code": 0
+  },
+  "post_retry_canonical_comparison": {
+    "status": "PASS",
+    "canonical_rows": 23,
+    "outbox": 0,
+    "overview_aligned": true,
+    "profile_hour": 22,
+    "known_entry_state": "active",
+    "known_entry_day": "2026-11-22",
+    "all_prior_raw_rows_preserved": true,
+    "original_checkpoint_unchanged": true,
+    "UI_actions_this_read": 0,
+    "domain_intents": 0,
+    "scope": "App-synced replica, NOT independent server GET",
+    "summary_sha256": "b42ff601f62a316e90b15307587260438eb21e42586ade12e02f995411d0e3eb"
+  },
+  "canonical_scope": "App-synced sealed replica, NOT independent server GET",
+  "next": "Wait for actual user response/unlock. Reobserve correct owned Simulator/current settings/known entry; verify fresh canonical/no pending. Only then compute new future hour>=45min, prepare durable observer intent, Root CUA ONE Save; old9 draft is not a saved profile. Preserve45/35/30 gates/original9, no replay or newrecord. Otherwise exact known cleanup remains open.",
+  "artifact": "Personal0.1.0(3)+dSYM already ready; no physical/external/delivery acceptance"
+}
