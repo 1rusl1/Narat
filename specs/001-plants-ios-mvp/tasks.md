@@ -4,6 +4,8 @@
 
 ## Порядок и приёмка
 
+- **Последнее явное поручение23ноября:** можно продолжать при необходимости до30%остатка(hard70used/soft68), сброс запрещён. Исторические48/50ниже superseded. Activeprivatefa38/focusedforeground1PASS224.148; fullreadOnly14/24source/ReviewQA/44PNG ещёидут, parentcheckboxopen.
+
 - **Актуально23ноября:** privatea6a2dfa, actualDev182/9styles+2helpers, full508/149/Release/proof PASS; routing2PASS1FAIL status-offscreen-beforeforeground, controlledstop130/ReviewQA0. Следующий bounded пакет3files: finalcardhierarchy/Root3styles/adaptivehelper+exactTapinsertion,15fresh/full23ReviewQA/44PNG; ещё не применён/не принят. Все parent/QG7checkbox открыты.
 
 - **23 ноября, общий кандидат:** private3c40668 (B+Quiet Garden+3capturemethods), полный23sourceunion отacceptedAae49. Запущен fresh13-check whole: прежние11+ordinaryPL/accessibility2+44PNG+highReviewQA. Отдельный B не принят (routingnative2/3FAIL сохранён), QGcompile249.36с и targetedSDK2/3PNG PASS отдельно. Пользовательская готовность/visualQA/подписанная новая сборка пока не приняты, checkbox не закрываются.

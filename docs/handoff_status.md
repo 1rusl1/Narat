@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## Последнее поручение и лимит — 23 ноября 2026
+
+Пользователь разрешил при необходимости продолжать до30%остатка: hard70%использования, внутреннийsoft68%, reset запрещён. Исторические48/50ниже больше неактуальны; код/identity/raw активного прогона не менялись. Текущий cleanprivatefa38f6a, 24source/36paths, readOnly14freshchecks; DEBUGпанель изолирована отфирменногостиля и получила отдельныеsnapshotprobes. Наfa38 diff/149/Release/508Swift+build/welcome и focusedforeground1 PASS224.148с/strictledger; fullrouting3 идёт, ReviewQA/44visual/newSignedbuild ещёнеприняты. Rootproductionпо-прежнемуacceptedAae49, sourceuser3сохранены.
+
+Следующий шаг: закончить fullrouting3/SDK2/consent8/result4/MCP/care13/ordinary2/visual44/Today6, whole24 независимыеReviewQA, реальныйпросмотр44PNG и связанныйRootreport; затемsafeRootlandingбезWIPancestor/commitpush и signedtechnicalSimulator+Personal/dSYM. ПриактуальномFAIL — точныеартефакты/namespaceDEBUGprobe, безблиндповтора/waiver. ПолныйMVP/physical/external/VO/QG7целиком иT075/T077/T080/T098 остаютсяоткрыты; покупки/расширениерекомендацийотложены.
+
 ## Общая техническая и визуальная проверка — 23 ноября 2026
 
 - **Текущая точка:** private checkpoint `a6a2dfa45beefea0defc8f174c7a48eb6f2d9297` в `/private/tmp/narat-quiet-garden-20261123`, не принят/не отправлен в origin. Root production остаётся acceptedAae49; первоначальные3userPBX/xcstrings не включены. QG1–QG6 реализованы кандидатно, новые UI/сборка ещё не переданы.
