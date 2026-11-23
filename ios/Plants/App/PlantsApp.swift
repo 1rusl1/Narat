@@ -5,6 +5,79 @@ import Observation
 import Network
 import UIKit
 
+/// The ordinary My plants route and its held-SDK tests execute this same fence.
+@MainActor
+@Observable
+final class CollectionOpeningCoordinator {
+    struct Request {
+        let id = UUID()
+        let connection: ObjectIdentifier
+        let locale: SupportedLocale
+    }
+
+    private(set) var starting = false
+    private(set) var preparationSettled = false
+    private(set) var active: Request?
+    var busy: Bool { active != nil }
+
+    func beginPreparation() -> Bool {
+        guard !starting else { return false }
+        starting = true
+        return true
+    }
+
+    func finishPreparation() { preparationSettled = true }
+
+    func begin(
+        connection: CatalogueConnection, locale: SupportedLocale,
+        presentationAvailable: Bool = true
+    ) -> Request? {
+        guard preparationSettled, active == nil, presentationAvailable else { return nil }
+        let request = Request(connection: ObjectIdentifier(connection), locale: locale)
+        active = request
+        return request
+    }
+
+    /// A replaced connection retires intent; a transient nil snapshot does not.
+    func connectionReplaced() { active = nil }
+
+    /// Irrevocable retirement at Root's synchronous presentation boundary.
+    /// Dismissal never restores the old UUID, even if availability returns.
+    func presentationBegan() { active = nil }
+
+    func execute(
+        _ request: Request, connection: CatalogueConnection,
+        currentConnection: @MainActor () -> CatalogueConnection?,
+        currentLocale: @MainActor () -> SupportedLocale,
+        presentationAvailable: @MainActor () -> Bool = { true },
+        publish: @MainActor (CatalogueCollectionOpeningOutcome) -> Void
+    ) async {
+        defer {
+            // Locale can change while suspended. Only the UUID owns busy cleanup.
+            if active?.id == request.id { active = nil }
+        }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && active?.id == request.id
+                && request.connection == ObjectIdentifier(connection)
+                && currentConnection().map { ObjectIdentifier($0) } == request.connection
+                && currentLocale() == request.locale
+                && presentationAvailable()
+        }
+        guard isCurrent() else { return }
+        let outcome = await connection.collectionOpeningSnapshot(isRequestCurrent: isCurrent)
+        guard isCurrent() else { return }
+        switch outcome {
+        case .permanent(let snapshot):
+            guard connection.snapshot == snapshot, !snapshot.isAnonymous else { return }
+            publish(outcome)
+        case .loginRequired, .temporarilyUnavailable:
+            publish(outcome)
+        case .superseded:
+            break
+        }
+    }
+}
+
 @main
 struct PlantsApp: App {
     @State private var languageStore = LanguageStore()
@@ -189,7 +262,9 @@ struct RootContainerView: View {
     @State private var careReminderContext: CareReminderLifecycle.Context?
     @State private var careReminderClockRevision: UInt64 = 0
     @State private var tapCoordinator: CareReminderRootRouting.Coordinator?
-    @State private var routingDismissal = false
+    @State private var routingDismissal = false {
+        didSet { if routingDismissal { collectionOpening.presentationBegan() } }
+    }
     @State private var routingRevision: UInt64 = 0
     private struct RoutingRead: Equatable {
         let intent: UUID?
@@ -239,22 +314,35 @@ struct RootContainerView: View {
         var id: Self { self }
     }
 
-    @State private var collectionPresentation: CollectionPresentation?
-    @State private var accountDestination: AccountDestination?
+    @State private var collectionPresentation: CollectionPresentation? {
+        didSet { if collectionPresentation != nil { collectionOpening.presentationBegan() } }
+    }
+    @State private var accountDestination: AccountDestination? {
+        didSet { if accountDestination != nil { collectionOpening.presentationBegan() } }
+    }
     @State private var collectionAfterSignIn = false
-    @State private var opening: AccountDestination?
+    @State private var opening: AccountDestination? {
+        didSet { if opening != nil { collectionOpening.presentationBegan() } }
+    }
     @State private var analysisOwner: UUID?
     @State private var analysisCredential: String?
     @State private var guestPhotoClaim: GuestPhotoClaim?
     @State private var guestAccessFailed = false
-    @State private var showingGuestTransfer = false
+    @State private var showingGuestTransfer = false {
+        didSet { if showingGuestTransfer { collectionOpening.presentationBegan() } }
+    }
     @State private var openClaimCollection = false
     @State private var analysisAccessRepository = AnalysisAccessRepository()
-    @State private var starting = false
+    @State private var collectionOpening = CollectionOpeningCoordinator()
+    @State private var collectionOpeningFailed = false
     @State private var startupFailed = false
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
-    @State private var stagingAccount: StagingAccountPresentation?
-    @State private var stagingResume: CatalogueResumeSelection?
+    @State private var stagingAccount: StagingAccountPresentation? {
+        didSet { if stagingAccount != nil { collectionOpening.presentationBegan() } }
+    }
+    @State private var stagingResume: CatalogueResumeSelection? {
+        didSet { if stagingResume != nil { collectionOpening.presentationBegan() } }
+    }
     @State private var stagingResumeLocked = false
     @State private var stagingSpecies: PublishedSpeciesCard?
 #endif
@@ -333,6 +421,16 @@ struct RootContainerView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
                     .accessibilityIdentifier("welcome.language.picker")
+                    if let fixtureContext, fixtureContext.testsSDKOpening,
+                       collectionOpening.preparationSettled {
+                        Text("Ready").accessibilityIdentifier("sdk-opening.ready")
+                        Button("Arm expiry") {
+                            do { try fixtureContext.armOpeningExpiry(connection: catalogue) }
+                            catch { collectionOpeningFailed = true }
+                        }
+                        .disabled(collectionOpening.busy)
+                        .accessibilityIdentifier("sdk-opening.arm")
+                    }
                     if let fixtureContext, fixtureContext.testsToday {
                         HStack {
                             Button("Offline") { try? fixtureContext.changeTodayPhase(.offline) }
@@ -365,6 +463,15 @@ struct RootContainerView: View {
                             .accessibilityIdentifier("account.signOut.serverUnconfirmed")
                     }
                 }
+                if collectionOpeningFailed {
+                    Text(isPolish ? "Nie udało się otworzyć kolekcji. Spróbuj ponownie." : "Couldn’t open your collection. Try again.")
+                        .foregroundStyle(QuietGarden.secondaryText)
+                        .accessibilityIdentifier("collection.open.failed")
+                    Button(isPolish ? "Spróbuj ponownie" : "Try again") { open(.collection) }
+                        .buttonStyle(QuietGardenSecondaryButtonStyle())
+                        .disabled(collectionOpening.busy || !collectionOpening.preparationSettled)
+                        .accessibilityIdentifier("collection.open.retry")
+                }
                 switch analysisModel.router.flowState.currentStep {
                 case .selectIntent:
                     if usesLegacyWelcome {
@@ -373,7 +480,7 @@ struct RootContainerView: View {
                         TodayHomeView(
                             model: todayModel,
                             visible: todayContext.map { isTodayCurrent($0) && !todayFenced } ?? false,
-                            unavailable: todayUnavailable, polish: isPolish, busy: opening != nil,
+                            unavailable: todayUnavailable, polish: isPolish, busy: opening != nil || collectionOpening.busy || !collectionOpening.preparationSettled,
                             retry: { careReconnectRevision &+= 1 },
                             localBoundary: {
                                 careReminderCachePublished()
@@ -382,6 +489,7 @@ struct RootContainerView: View {
                             openPlant: openTodayPlant,
                             collection: { open(.collection) },
                             browse: {
+                                collectionOpening.presentationBegan()
                                 analysisModel.router.selectIntent(.care)
                                 analysisModel.router.selectCareMethod(.catalogue)
                             },
@@ -398,12 +506,13 @@ struct RootContainerView: View {
                     } else {
                         PlantHomeView(
                             polish: isPolish,
-                            busy: opening != nil,
+                            busy: opening != nil || collectionOpening.busy || !collectionOpening.preparationSettled,
                             unavailable: catalogue?.unavailable != nil || startupFailed,
                             guestAccessFailed: guestAccessFailed,
                             check: { open(.diagnosis) },
                             identify: { open(.identification) },
                             browse: {
+                                collectionOpening.presentationBegan()
                                 analysisModel.router.selectIntent(.care)
                                 analysisModel.router.selectCareMethod(.catalogue)
                             },
@@ -466,6 +575,7 @@ struct RootContainerView: View {
                         Button(isPolish ? "Wstecz" : "Back") {
                             closeCatalogue()
                         }
+                        .buttonStyle(QuietGardenSecondaryButtonStyle())
                         .accessibilityIdentifier("catalogue.back")
                     }
                 case .selectPhoto, .careQuestions:
@@ -490,6 +600,10 @@ struct RootContainerView: View {
                 if usesLegacyWelcome { guestSaveButtons }
             }
         }
+        .onChange(of: catalogue.map { ObjectIdentifier($0) }) { _, _ in
+            collectionOpening.connectionReplaced()
+        }
+        .qgScreen()
         .onChange(of: catalogue?.snapshot) { previous, current in
             if let target = collectionPresentation?.target, target.snapshot != current {
                 collectionPresentation = nil
@@ -656,12 +770,14 @@ struct RootContainerView: View {
                 }
             }
             .disabled(claim.busy)
+            .buttonStyle(QuietGardenSecondaryButtonStyle())
             .accessibilityIdentifier("staging.guest.draft.resume")
             if claim.failed { Text("Couldn’t prepare your plant. Try again.") }
         }
         if let claim = guestPhotoClaim, let scope = catalogue?.snapshot, claim.pending(for: scope),
            !showingGuestTransfer {
             Button("Finish saving your plant") { showingGuestTransfer = true }
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("staging.guest.claim.resume")
         }
     }
@@ -1069,9 +1185,60 @@ struct RootContainerView: View {
         activate(.collection, connection: connection, snapshot: expected)
     }
 
+    private var collectionOpeningAvailable: Bool {
+        guard collectionPresentation == nil, accountDestination == nil,
+              opening == nil, !showingGuestTransfer, !routingDismissal,
+              scenePhase == .active,
+              analysisModel.router.flowState.currentStep == .selectIntent else { return false }
+#if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
+        guard stagingAccount == nil, stagingResume == nil else { return false }
+#endif
+        return true
+    }
+
     private func open(_ destination: AccountDestination) {
         guard opening == nil, accountDestination == nil, let connection = catalogue,
               connection.apiClient != nil else { return }
+        if destination == .collection {
+            guard let request = collectionOpening.begin(
+                connection: connection, locale: languageStore.currentLocale,
+                presentationAvailable: collectionOpeningAvailable
+            ) else { return }
+            collectionOpeningFailed = false
+#if DEBUG
+            do { try fixtureContext?.beginOpening(request, connection: connection) }
+            catch {
+                collectionOpening.connectionReplaced()
+                collectionOpeningFailed = true
+                return
+            }
+#endif
+            Task { @MainActor in
+                await collectionOpening.execute(
+                    request, connection: connection,
+                    currentConnection: { catalogue },
+                    currentLocale: { languageStore.currentLocale },
+                    presentationAvailable: { collectionOpeningAvailable }
+                ) { outcome in
+                    guard collectionOpeningAvailable else { return }
+#if DEBUG
+                    do { try fixtureContext?.finishOpening(outcome, request: request, connection: connection) }
+                    catch { collectionOpeningFailed = true; return }
+#endif
+                    switch outcome {
+                    case .permanent(let snapshot):
+                        activate(.collection, connection: connection, snapshot: snapshot)
+                    case .loginRequired:
+                        accountDestination = .collection
+                    case .temporarilyUnavailable:
+                        collectionOpeningFailed = true
+                    case .superseded:
+                        break
+                    }
+                }
+            }
+            return
+        }
         opening = destination
         guestAccessFailed = false
         Task { @MainActor in
@@ -1140,6 +1307,7 @@ struct RootContainerView: View {
             collectionPresentation = CollectionPresentation()
             return
         }
+        collectionOpening.presentationBegan()
         installAnalysis(
             connection: connection, owner: snapshot.session.userId, identificationEnabled: true
         )
@@ -1170,8 +1338,15 @@ struct RootContainerView: View {
 
     @MainActor
     private func prepareCatalogue() async {
-        guard !starting else { return }
-        starting = true
+        guard collectionOpening.beginPreparation() else { return }
+        defer {
+            collectionOpening.finishPreparation()
+#if DEBUG
+            if let connection = catalogue {
+                try? fixtureContext?.openingPreparationSettled(connection: connection)
+            }
+#endif
+        }
 #if DEBUG
         if let fixture = preloadedReminderFixture {
             guard case .fixture(let configuration) = ReminderConsentLaunch.parse(ProcessInfo.processInfo.arguments),
@@ -1431,11 +1606,12 @@ struct RootContainerView: View {
             )
             .font(.body)
             .multilineTextAlignment(.center)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(QuietGarden.secondaryText)
             .accessibilityIdentifier("welcome.subtitle")
 
             VStack(spacing: 12) {
                 Button {
+                    collectionOpening.presentationBegan()
                     analysisModel.router.selectIntent(.problem)
                 } label: {
                     Text(
@@ -1445,10 +1621,11 @@ struct RootContainerView: View {
                     )
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(QuietGardenPrimaryButtonStyle())
                 .accessibilityIdentifier("welcome.intent.problem")
 
                 Button {
+                    collectionOpening.presentationBegan()
                     analysisModel.router.selectIntent(.care)
                 } label: {
                     Text(
@@ -1458,7 +1635,7 @@ struct RootContainerView: View {
                     )
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("welcome.intent.care")
             }
             .padding(.horizontal)
@@ -1484,7 +1661,7 @@ struct RootContainerView: View {
                 Text(isPolish ? "Rozpoznaj gatunek ze zdjęcia" : "Identify species from photo")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(QuietGardenPrimaryButtonStyle())
             .accessibilityIdentifier("care.method.scan")
 
             Button {
@@ -1493,7 +1670,7 @@ struct RootContainerView: View {
                 Text(isPolish ? "Wybierz gatunek z katalogu (bez zdjęcia)" : "Choose species from catalogue (no photo)")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(QuietGardenSecondaryButtonStyle())
             .accessibilityIdentifier("care.method.catalogue")
 
             Button {
@@ -1501,6 +1678,7 @@ struct RootContainerView: View {
             } label: {
                 Text(isPolish ? "Wstecz" : "Back")
             }
+            .buttonStyle(QuietGardenSecondaryButtonStyle())
             .accessibilityIdentifier("care.navigation.back")
         }
         .padding()
@@ -1949,6 +2127,9 @@ private struct GuestPhotoTransferView: View {
             Button("Close") { dismiss() }
         }
         .padding()
+        .buttonStyle(QuietGardenSecondaryButtonStyle())
+        .qgCard()
+        .qgScreen()
         .task { await claim.transfer() }
     }
 }
@@ -2009,7 +2190,8 @@ private struct AccountSignInView: View {
                     Text(staging ? "Could not sign in to the test stand. Check the test account."
                          : (isPolish ? "Nie udało się zalogować. Sprawdź adres e-mail i hasło, a następnie spróbuj ponownie."
                             : "Couldn’t sign in. Check your email and password and try again."))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(QuietGarden.danger)
+                        .qgNotice(.error)
                         .accessibilityIdentifier(staging ? "staging.signin.error" : "account.signin.error")
                 }
                 Button(signingIn ? (isPolish ? "Logowanie…" : "Signing in…")
@@ -2017,8 +2199,11 @@ private struct AccountSignInView: View {
                     signIn()
                 }
                 .disabled(busy || scope == nil || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                .buttonStyle(QuietGardenPrimaryButtonStyle())
                 .accessibilityIdentifier(staging ? "staging.signin" : "account.signin")
             }
+            .qgForm()
+            .buttonStyle(QuietGardenSecondaryButtonStyle())
             .navigationTitle(staging ? "Test account" : (isPolish ? "Zaloguj się do Narat" : "Sign in to Narat"))
             .toolbar {
                 if let cancel {
@@ -2097,14 +2282,14 @@ private struct PlantHomeView<GuestActions: View>: View {
     let collection: () -> Void
     @ViewBuilder let guestActions: () -> GuestActions
 
-    private let green = Color(red: 0.13, green: 0.33, blue: 0.22)
+    private var green: Color { QuietGarden.accent }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 headerLayout {
                     Text("Narat")
-                        .font(.system(.largeTitle, design: .serif).weight(.semibold))
+                        .font(.largeTitle.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("welcome.title")
                     if !dynamicTypeSize.isAccessibilitySize { Spacer() }
@@ -2114,7 +2299,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                             .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                             .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 44 : nil)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(QuietGardenSecondaryButtonStyle())
                     .accessibilityIdentifier("collection.open").disabled(unavailable)
                 }
 
@@ -2123,7 +2308,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                         .font(.system(size: 44, weight: .light))
                         .accessibilityHidden(true)
                     Text(polish ? "Jak się ma Twoja roślina?" : "How’s your plant doing?")
-                        .font(.system(.largeTitle, design: .serif).weight(.semibold))
+                        .font(.largeTitle.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
                         .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                     Text(polish ? "Dodaj zdjęcie, aby sprawdzić, czego może potrzebować Twoja roślina." : "Use a photo to see what your plant might need.")
@@ -2137,14 +2322,13 @@ private struct PlantHomeView<GuestActions: View>: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.white)
-                    .foregroundStyle(green)
+                    .buttonStyle(QuietGardenPrimaryButtonStyle(inverted: true))
+                    .foregroundStyle(QuietGarden.onAccent)
                     .accessibilityIdentifier("welcome.check").disabled(unavailable)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(QuietGarden.onAccent)
                 .padding(24)
-                .background(green, in: RoundedRectangle(cornerRadius: 28))
+                .background(green, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                 VStack(spacing: 0) {
                     destination(polish ? "Rozpoznaj roślinę" : "Identify a plant", systemImage: "viewfinder", id: "welcome.identify", action: identify)
@@ -2152,20 +2336,22 @@ private struct PlantHomeView<GuestActions: View>: View {
                     Divider().padding(.leading, 52)
                     destination(polish ? "Przeglądaj katalog" : "Browse catalogue", systemImage: "books.vertical", id: "welcome.catalogue", action: browse)
                 }
-                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+                .background(QuietGarden.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                 guestActions()
 
                 if unavailable {
                     Text(polish ? "Narat nie może się teraz połączyć. Sprawdź ustawienia połączenia aplikacji." : "Narat can’t connect right now. Check the app’s connection settings.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(QuietGarden.secondaryText)
+                        .qgNotice(.warning)
                         .accessibilityIdentifier("welcome.unavailable")
                 }
                 if guestAccessFailed {
                     Text(polish ? "Nie udało się rozpocząć analizy zdjęcia. Spróbuj ponownie." : "Couldn’t start photo analysis. Try again.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(QuietGarden.secondaryText)
+                        .qgNotice(.error)
                         .accessibilityIdentifier("welcome.guest.error")
                 }
                 if busy {
@@ -2173,10 +2359,10 @@ private struct PlantHomeView<GuestActions: View>: View {
                         .accessibilityIdentifier("welcome.opening")
                 }
             }
-            .padding(22)
+            .padding(20)
             .disabled(busy)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .qgScreen()
     }
 
     private var headerLayout: AnyLayout {
@@ -2189,14 +2375,16 @@ private struct PlantHomeView<GuestActions: View>: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
-                    .frame(width: 24)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 24, height: 24)
                     .accessibilityHidden(true)
                 Text(title).font(.body.weight(.medium))
                     .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(QuietGarden.secondaryText)
                     .accessibilityHidden(true)
             }
             .padding(16)

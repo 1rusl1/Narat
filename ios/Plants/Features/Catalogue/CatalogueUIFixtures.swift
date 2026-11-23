@@ -15,11 +15,11 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case profileReminderHour, accountSignOut
     case collectionWateringRecord, collectionWateringRecordRejected, collectionWateringMissingConditions, collectionWateringBackgroundFailure
 
-    case todayMixed, todayFuture, todayNoSchedule, todayEmpty, todayFirstFailure, todaySaved
+    case todayMixed, todayFuture, todayNoSchedule, todayEmpty, todayFirstFailure, todaySaved, todaySDKOpening
 
     var testsToday: Bool {
         switch self {
-        case .todayMixed, .todayFuture, .todayNoSchedule, .todayEmpty, .todayFirstFailure, .todaySaved: true
+        case .todayMixed, .todayFuture, .todayNoSchedule, .todayEmpty, .todayFirstFailure, .todaySaved, .todaySDKOpening: true
         default: false
         }
     }
@@ -121,12 +121,13 @@ enum CatalogueUIFixtures {
         options.httpCookieStorage = nil
         let http = URLSession(configuration: options)
         try CatalogueFixtureProtocol.registry.insert(server, name: name)
+        let authStorage = CatalogueFixtureAuthStorage(directory: directory, server: server)
         let client = SupabaseClient(
             supabaseURL: configuration.supabaseURL,
             supabaseKey: configuration.supabasePublishableKey,
             options: .init(
                 auth: .init(
-                    storage: CatalogueFixtureAuthStorage(directory: directory, server: server),
+                    storage: authStorage,
                     storageKey: "catalogue-fixture-session", autoRefreshToken: false,
                     emitLocalSessionAsInitialSession: true
                 ),
@@ -166,7 +167,7 @@ enum CatalogueUIFixtures {
         }
         let context = CatalogueUIFixtureContext(
             namespace: name, directory: directory, suite: suite, connection: connection,
-            http: http, server: server, identity: identity
+            http: http, server: server, identity: identity, openingAuthStorage: authStorage
         )
         do {
             // Reuse the SDK's file-backed session; never manufacture a model session.
@@ -222,13 +223,93 @@ final class CatalogueUIFixtureContext {
     let http: URLSession
     let server: CatalogueFixtureServer
     let identity: CatalogueFixtureIdentity
+    private let openingAuthStorage: CatalogueFixtureAuthStorage
+    private var openingReady = false
+    private var openingExpiryArmed = false
+
+    var testsSDKOpening: Bool { server.snapshot.scenario == .todaySDKOpening }
+
+    func openingPreparationSettled(connection: CatalogueConnection) throws {
+        guard testsSDKOpening else { return }
+        guard self.connection === connection else { throw CatalogueUIFixtureError.invalidRequest }
+        guard !openingReady else { return }
+        try server.recordOpening("ready")
+        openingReady = true
+    }
+
+    func armOpeningExpiry(connection: CatalogueConnection?) throws {
+        guard testsSDKOpening, openingReady, !openingExpiryArmed,
+              let connection, self.connection === connection,
+              let snapshot = connection.snapshot, !snapshot.isAnonymous,
+              snapshot.session.userId == server.snapshot.permanent else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        try server.recordOpening("expiry-armed")
+        openingExpiryArmed = true
+    }
+
+    func beginOpening(
+        _ request: CollectionOpeningCoordinator.Request, connection: CatalogueConnection
+    ) throws {
+        guard testsSDKOpening else { return }
+        guard openingReady, self.connection === connection,
+              request.connection == ObjectIdentifier(connection) else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        let owner = connection.snapshot?.session.userId
+        try server.recordOpening("read-start", requestId: request.id, ownerId: owner)
+        guard openingExpiryArmed else { return }
+        guard let owner, owner == server.snapshot.permanent,
+              connection.collectionOpeningLocalReadFixture == nil else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        openingExpiryArmed = false
+        connection.collectionOpeningLocalReadFixture = { [weak self, weak connection] in
+            guard let self, let connection, self.connection === connection else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            try self.openingAuthStorage.expireOpeningSession(owner: owner)
+            guard let injected = connection.client?.auth.currentSession,
+                  injected.user.id == owner, injected.isExpired else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            try self.server.recordOpening(
+                "expiry-consumed", requestId: request.id, ownerId: injected.user.id,
+                expired: injected.isExpired)
+        }
+    }
+
+    func finishOpening(
+        _ outcome: CatalogueCollectionOpeningOutcome,
+        request: CollectionOpeningCoordinator.Request, connection: CatalogueConnection
+    ) throws {
+        guard testsSDKOpening else { return }
+        guard self.connection === connection, request.connection == ObjectIdentifier(connection) else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        switch outcome {
+        case .permanent(let snapshot):
+            guard connection.snapshot == snapshot, !snapshot.isAnonymous,
+                  snapshot.session.userId == server.snapshot.permanent else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            try server.recordOpening("read-permanent", requestId: request.id,
+                                     ownerId: snapshot.session.userId)
+        case .loginRequired:
+            try server.recordOpening("read-login", requestId: request.id)
+        case .temporarilyUnavailable, .superseded:
+            break
+        }
+    }
 
     fileprivate init(
         namespace: String, directory: URL, suite: String, connection: CatalogueConnection,
-        http: URLSession, server: CatalogueFixtureServer, identity: CatalogueFixtureIdentity
+        http: URLSession, server: CatalogueFixtureServer, identity: CatalogueFixtureIdentity,
+        openingAuthStorage: CatalogueFixtureAuthStorage
     ) {
         self.namespace = namespace; self.directory = directory; self.suite = suite
         self.connection = connection; self.http = http; self.server = server; self.identity = identity
+        self.openingAuthStorage = openingAuthStorage
     }
 
     var supportsCareReconnect: Bool {
@@ -321,6 +402,23 @@ private final class CatalogueFixtureAuthStorage: AuthLocalStorage, @unchecked Se
             return value
         }
     }
+    /// Mutates only expiry in this isolated injected SDK's file-backed session.
+    func expireOpeningSession(owner: UUID) throws {
+        try lock.withLock {
+            guard server.snapshot.scenario == .todaySDKOpening else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            let value = try Data(contentsOf: file)
+            try validate("catalogue-fixture-session", value)
+            var session = try JSONDecoder().decode(Session.self, from: value)
+            guard session.user.id == owner, !session.isExpired else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            session.expiresAt = Date().addingTimeInterval(-60).timeIntervalSince1970
+            try JSONEncoder().encode(session).write(to: file, options: .atomic)
+        }
+    }
+
     func remove(key: String) throws {
         try lock.withLock {
             guard key == "catalogue-fixture-session" else { throw CatalogueUIFixtureError.invalidStorage }
@@ -351,6 +449,18 @@ final class CatalogueFixtureServer: @unchecked Sendable {
     }
     enum TodayPhase: String, Codable, Sendable { case normal, failOverview, offline, withdrawn }
 
+    struct OpeningProof: Codable, Sendable {
+        let version: Int
+        var events: [OpeningEvent]
+    }
+    struct OpeningEvent: Codable, Sendable {
+        let ordinal: Int
+        let name: String
+        let requestId: UUID?
+        let ownerId: UUID?
+        let expired: Bool?
+    }
+
     struct Ledger: Codable, Sendable {
         let scenario: CatalogueUIFixtureScenario
         let guest: UUID
@@ -379,6 +489,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var reminderAuthRequests: Int?
         var reminderReadRequests: Int?
         var reminderScheduleRestored: Bool?
+        var openingProof: OpeningProof?
     }
     struct Reply {
         let status: Int
@@ -478,6 +589,27 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         try JSONEncoder().encode(next).write(to: file, options: .atomic)
         ledger = next
     }
+    func recordOpening(
+        _ name: String, requestId: UUID? = nil, ownerId: UUID? = nil, expired: Bool? = nil
+    ) throws {
+        try lock.withLock {
+            try recordOpeningLocked(name, requestId: requestId, ownerId: ownerId, expired: expired)
+        }
+    }
+
+    /// Caller already owns the server lock; no await and no SDK/HTTP reads.
+    private func recordOpeningLocked(
+        _ name: String, requestId: UUID? = nil, ownerId: UUID? = nil, expired: Bool? = nil
+    ) throws {
+        guard ledger.scenario == .todaySDKOpening else { return }
+        var next = ledger
+        var proof = next.openingProof ?? OpeningProof(version: 1, events: [])
+        proof.events.append(OpeningEvent(ordinal: proof.events.count, name: name,
+                                        requestId: requestId, ownerId: ownerId, expired: expired))
+        next.openingProof = proof
+        try persist(next)
+    }
+
     func withdrawCareSource() throws {
         try lock.withLock {
             guard ledger.scenario == .careRecommendationRefresh else { throw CatalogueUIFixtureError.invalidRequest }
@@ -582,6 +714,10 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 throw URLError(.unsupportedURL)
             }
             capturedRequests.append(request)
+            if ledger.scenario == .todaySDKOpening, url.path.hasSuffix("/commands") {
+                try recordOpeningLocked("domain-command")
+                return try error(403, "fixture_read_only")
+            }
             if ledger.reminderMode != nil {
                 var next = ledger
                 if url.path.hasSuffix("/commands") {
@@ -631,6 +767,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         throw CatalogueUIFixtureError.invalidRequest
                     }
                     owner = ledger.permanent
+                    try recordOpeningLocked("auth-password")
                 case "id_token":
                     guard object["id_token"] as? String == "fixture-only-identity",
                           ["apple", "google"].contains(object["provider"] as? String ?? ""),
@@ -639,6 +776,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     }
                     owner = ledger.permanent
                 case "refresh_token":
+                    try recordOpeningLocked("auth-refresh-start")
                     guard let match = [ledger.guest, ledger.permanent].first(where: {
                         object["refresh_token"] as? String == "refresh-" + token($0) && !ledger.revoked.contains($0)
                     }) else { throw CatalogueUIFixtureError.invalidRequest }
@@ -646,7 +784,11 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 default: throw CatalogueUIFixtureError.invalidRequest
                 }
                 var next = ledger; next.revoked.remove(owner); try persist(next)
-                return try session(owner)
+                let reply = try session(owner)
+                if query[0].value == "refresh_token" {
+                    try recordOpeningLocked("auth-refresh-complete")
+                }
+                return reply
             }
             if method == "GET", url.path.hasPrefix("/functions/v1/plants-api/catalogue") {
                 let path = "/functions/v1/plants-api/catalogue"
@@ -775,6 +917,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             if method == "POST", url.path == "/auth/v1/logout",
                query.isEmpty || (query.count == 1 && query[0].name == "scope" && ["global", "local"].contains(query[0].value ?? "")) {
                 var next = ledger; next.revoked.insert(caller); try persist(next)
+                try recordOpeningLocked("auth-logout")
                 return Reply(status: 204, data: Data())
             }
             // UI fault injection: cached collection remains usable while advice/first-aid GETs fail.
@@ -804,6 +947,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 if let since, SQLTimestamp.microseconds(from: since) == nil {
                     throw CatalogueUIFixtureError.invalidRequest
                 }
+                try recordOpeningLocked("canonical-get")
                 let plants = ledger.plants.filter {
                     $0.owner == caller && (since == nil || SQLTimestamp.microseconds(from: $0.timestamp)! > SQLTimestamp.microseconds(from: since!)!)
                 }.sorted {

@@ -1,0 +1,714 @@
+{
+  "status": "ACCEPTED_FOR_TECHNICAL_TESTING_WITH_LIMITS",
+  "candidate_commit": "a131e57d45fc0c597cba6a03ae4aaf7d4c6def51",
+  "candidate_fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+  "comparative_base": "ae49e13945e129beeac8a471129d35bbe308ce7d",
+  "ios_tree": "bcee2aea03537bce09138d5bcaf095b273c8a787",
+  "root_code_commit_record": "Recorded after code commit in the signed technical checkpoint report",
+  "root_staged_ios_tree_verified": true,
+  "source_files": [
+    {
+      "path": "ios/Plants/App/LanguageStore.swift",
+      "sha256": "4161064baf363ee74d83de1e2f1d194eb39cb3768b3596a11c23a0390e1baf24"
+    },
+    {
+      "path": "ios/Plants/App/PlantsApp.swift",
+      "sha256": "c9f09e6f7854e77a57b23e23411a69b47504b39b67329a0af38d7551938f7c1b"
+    },
+    {
+      "path": "ios/Plants/Features/Analysis/CareQuestionsView.swift",
+      "sha256": "58d3765c7877114b0a8d6a4ad1babf6c91264ef67274e7257a3f0a1b87beff60"
+    },
+    {
+      "path": "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+      "sha256": "ee390554b774cfd977c326c9317c75f3e57941abd76d6193fc4e57803126b36c"
+    },
+    {
+      "path": "ios/Plants/Features/CareTasks/ReminderConsentFixtureControls.swift",
+      "sha256": "705be763f5208ad5fae393f413d485348c964710fbf665c6a452ff894bfe88a5"
+    },
+    {
+      "path": "ios/Plants/Features/CareTasks/ReminderConsentView.swift",
+      "sha256": "5027fe609ae4b4bd3e9fe1a63a495b97ae487ec097f9f8657f4d9a9cb6348dd5"
+    },
+    {
+      "path": "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+      "sha256": "4b11c347a6b0350d6f327b3b402072f8c79354c0ff52329538ee87730d16af15"
+    },
+    {
+      "path": "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+      "sha256": "750d7b03262921f7cf5747fa9219228a0dddd8ccdaba46f82e9fd901404832a1"
+    },
+    {
+      "path": "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+      "sha256": "7f8aac6005ecc1bd9c3573d41728c6f7eed0db35a14df7373aaba22551fde41b"
+    },
+    {
+      "path": "ios/Plants/Features/Today/TodayHomeView.swift",
+      "sha256": "22d28527220b3eac8556eebdc708b412061604d6770c1b2e4af98f5389eb3a8f"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/AccentColor.colorset/Contents.json",
+      "sha256": "8e9ae1851ff21a2b05712056e50f1173139b3a949469f164231bd471f6bcf149"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGAccent.colorset/Contents.json",
+      "sha256": "8e9ae1851ff21a2b05712056e50f1173139b3a949469f164231bd471f6bcf149"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGBackground.colorset/Contents.json",
+      "sha256": "04cb7b19d3725f214533963eafd55795b0e58a4d1ba2ca9e727db399116ac642"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGControlBorder.colorset/Contents.json",
+      "sha256": "768de6161b4824b70df590ab20b58b6cf62644221208e4203069d32ef473ea39"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGDanger.colorset/Contents.json",
+      "sha256": "a2c278c1449f847bbb13969e80ec5656b7550c1c0ad276c0a36430fc6ed309ad"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGOnAccent.colorset/Contents.json",
+      "sha256": "d22bc6e0f04da76c8335ce42048ed776a832cf73f2bc59a17bb9e43a6d0144dc"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGPrimaryText.colorset/Contents.json",
+      "sha256": "beba6b828a97d0988bd878c790c5d792c75e5c29f0bb0428d7265453dc4843b5"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGSecondaryText.colorset/Contents.json",
+      "sha256": "ef8f261f0260f7a343f9c9fdfa98cf954242d844dcb1e1e1bc2faf12592d96ef"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGSeparator.colorset/Contents.json",
+      "sha256": "1aa6f870adb3b90f6f5d706d00c29b0b536094aca36d203f96634d617a0eb9bb"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGSurface.colorset/Contents.json",
+      "sha256": "81b6713f2936371de277aa0896f7b9d77d894d1be7e2a746870e04ccd3480ec6"
+    },
+    {
+      "path": "ios/Plants/Resources/Assets.xcassets/QGWarning.colorset/Contents.json",
+      "sha256": "289bf7e7ecdd1e87176a48bdc607fbff6bf7d3d694f07cdc81afd51a564a2439"
+    },
+    {
+      "path": "ios/PlantsTests/CatalogueConnectionTests.swift",
+      "sha256": "15a89714b3ecb4acc7763500714e719389acd3af42fe37794888f9dc73475d16"
+    },
+    {
+      "path": "ios/PlantsUITests/CatalogueSaveUITests.swift",
+      "sha256": "cc5c9c615d1a0bd6eac588be9c2e5d8004cb85c325b948466b5d215da88b9bf5"
+    },
+    {
+      "path": "ios/PlantsUITests/PlantsUITests.swift",
+      "sha256": "3ccb86164d8af21e9b17240aa87772c6b9f01563f569bea0af7c0dffd82583cc"
+    }
+  ],
+  "source_counts": {
+    "app_target_swift": 10,
+    "production_UI_theme_swift": 8,
+    "DEBUG_fixture_swift": 2,
+    "test_swift": 3,
+    "color_json": 11,
+    "total_ios_paths": 24,
+    "all_candidate_paths": 36
+  },
+  "checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "mode": "local",
+      "elapsed_seconds": 0.024,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": null
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 46.402,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": null
+    },
+    {
+      "name": "care-release-compile",
+      "status": "PASS",
+      "mode": "local",
+      "elapsed_seconds": 82.988,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-21a7240b663cc69c556669f9"
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "mode": "local",
+      "elapsed_seconds": 137.558,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-13850ca5339ac2a0ac30db99"
+    },
+    {
+      "name": "simulator-smoke",
+      "status": "PASS",
+      "mode": "local",
+      "elapsed_seconds": 17.882,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-3bbdc58c78fc3e033d8971ac"
+    },
+    {
+      "name": "tester-00-00-qg-ordinary-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 48.872,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-97d7f06b2ec5e9599b58c4ea"
+    },
+    {
+      "name": "tester-00-01-qg-visual-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 356.197,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-4a6b8838524c977b6db02b05"
+    },
+    {
+      "name": "tester-00-foreground-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 207.354,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-409dc118d171bb0881da9198"
+    },
+    {
+      "name": "tester-00-notification-routing-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 574.148,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-6209589759426131dfbd28d7"
+    },
+    {
+      "name": "tester-01-sdk-opening-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 55.224,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-4eb05ddb34958bac3d4b1282"
+    },
+    {
+      "name": "tester-consent-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 1619.715,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-51024442ebe9ee41af2739b4"
+    },
+    {
+      "name": "tester-result-save-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 63.093,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-a4e110dbdb87e5681ddcaf01"
+    },
+    {
+      "name": "tester-care-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 514.892,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-2de9af97a57ac02690a576f2"
+    },
+    {
+      "name": "tester-today-ui",
+      "status": "PASS",
+      "mode": "fixture",
+      "elapsed_seconds": 207.978,
+      "fingerprint": "de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f",
+      "raw_run_id": "q-244b3361800216d57afab7e9"
+    }
+  ],
+  "all14_actual_fresh": true,
+  "swift": {
+    "passed": 508,
+    "expected_xctest_methods": 505,
+    "passed_xctest_methods": 505,
+    "missing_methods": [],
+    "mode": "local_fixture_transport_not_live"
+  },
+  "automation_passed": 149,
+  "roles": [
+    {
+      "agent": "reviewer",
+      "model": "gpt-6-astra",
+      "status": "PASS",
+      "elapsed_seconds": 195.604,
+      "routing_level": "high",
+      "reasoning_effort": "high"
+    },
+    {
+      "agent": "qa",
+      "model": "gpt-6-astra",
+      "status": "PASS",
+      "elapsed_seconds": 263.734,
+      "routing_level": "high",
+      "reasoning_effort": "high"
+    }
+  ],
+  "full_diff_read_characters": 229243,
+  "controller": {
+    "actual_exit": 1,
+    "wrapper_exit": 0,
+    "state": "WAITING",
+    "phase": "publish",
+    "reason": "Publication intentionally disabled; Root performs curated safe landing",
+    "inflight": null,
+    "failures": []
+  },
+  "execution_aliases": {
+    "tester-qg-ordinary-ui": "tester-00-00-qg-ordinary-ui",
+    "tester-qg-visual-ui": "tester-00-01-qg-visual-ui"
+  },
+  "visual": {
+    "verdict": "REPRESENTATIVE_PASS_WITH_LIMITS",
+    "report_sha256": "b2b41d8ff5b4ec019fdee2bc5a7258613766408632b1e4f9bac2146c1627c95f",
+    "root_actually_viewed": 44,
+    "independent_light_actually_viewed": 22,
+    "blockers": [],
+    "resolved_findings": [
+      {
+        "id": "L01",
+        "status": "RESOLVED_ACTUAL_CURRENT_VIEW",
+        "evidence": "Home EN/PL nativeAccessibilityXXXL actions now keep icons withinreservedslot/card and apartfromlabels in bothlight/dark. Light independently inspected raw14/17 bycare_sources.",
+        "source_changes": "Only2decorativeImageexpressions(Home/Today); actualTodayXXXLoverflow not separately captured."
+      }
+    ],
+    "minor_findings": [
+      {
+        "priority": 3,
+        "finding": "Accountsettings heading repeats in navigation andformcard; readable, no blocked action."
+      }
+    ],
+    "images": [
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "402f8958e28f53082d8da2c62ca3611b943ec1a8c40ef82f41844fc4b9d4fdfe",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "c0dddfde82691b6a460c977b287a1a5b18708b63000b026a3d6de81678ab7408",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "c537145c46fae321d9b531a0907bc87a5bf0ea24320a599461abcffa5c338741",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-en-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "5338af91780fa63b283d049f69474173b2e9685c1c1a97984472d924f8c8d32d",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "e238d0996f951a7740da5e889655b097b69cac97be6f0da89670565c82f24ee0",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "76a122452a3aad68ac8cafe4eeb17e5175694f2dfa863ecae609be665107d734",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "505e0e15b3478e76207b45cae749fbc57c0305390b785b597ae78148bcc83707",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "todayMixed-pl-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "7f6120b6e6091134672f422ff14ef56ec5bf739034944411d08e579ada2f743a",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-diagnosis-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "df2ceb718461149eb121fbdeae29c7f512ecbf12700b7cbc8a1eef4f492fb031",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-diagnosis-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "ba482e23867f01c2213f9d4a6677f60f1e97edbd3fc37f9a9d7339f253e31e7a",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-identification-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "46040ac1dc34f78a0d2510630ba1442282f93ec8008841b35f29f6b8d5f39347",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "result-save-identification-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "42458db87fedd7af3868e21380489e0601f0dfdc543ae7c7584ac50e92d76c5f",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "acf98c6dc477f627d71ee59ad49fc25dfdcc76f9bcd0c5fb3678971531d761a8",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-actions-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "e0a98f4975bb839bbdc6ae522d5f08427c233b1e6d6ab6612a172624aeb7cf5a",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "d0cbebb0f92a6ae98b28fcf68331f38d1a65d725c225f602c95856a5651b12f1",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "ad228483e09001da1b4be1b103aa1545aed0fb8ba2c1e8dc8b18767e92b6b2e4",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-actions-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "e48f7f5d1114d469118553eca0a20acd6474e25fb651f89b1c7515197a9956c7",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "97405419bb58002918d6cb6d35e08ab1c1470e8894e0ed17927adf13d5c3193c",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "1fff38ae7f794d80a23f9b6c54fdfd19d4435d12c429087405fa64fb11591d32",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "c3eb12e882be77388ff20399c395c6ddd5b97d0ef84ccdb0d04681418dcce909",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-home-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "5e73e4ba380bfca0493c00d07a908ecebd01674bef2b6cca61a39cc61e749142",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "light",
+        "name": "qg-catalogue-error-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "a3f4bec0916cea3a7f8d8137c73ab6213dd475b85834ac9a123fa2579b75afbf",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "9f9976c7759c9971e4cb50a4a535b4374af78dfe1efc665390156c2c2c990e12",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "8c26e3d97e2b7d874dffe83c96d090c828e03fbe5547f583e35cd3dc53bf7eb6",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "7d7cb0490b99803834ac3f5605dab46246c03ef154ca9f81189e189ea47dab1b",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-en-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "f670dc79d414d3983c14e68f44e9457d15956fea2ead6910e86299590efe465e",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-today",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "c788773a5b9a4b2f6503ef28c9bbd6f514bfece450aa35ae23f6f34ccecd1bff",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-collection",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "48c00a4e19d36eb50698f7280b40d39311b8d904f5c6619e831496ce61d499a3",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-card",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "9222bbfe3fee1b9b066ddbc024df74cab5c1ab0baaa1ff3ea9368fb9685b1e41",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "todayMixed-pl-qg-settings",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "b7f580641001bc08049ac2d2f338d544aa7aa8205571cac27b672c0ef45b7a42",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-diagnosis-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "e8143543113b06f2127b37b03efd283434934c3d3d04422323365e1ce97731d1",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-diagnosis-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "2507fd8da5b082e51f74a51adeb44a333298a08b90c9465ed024c2566c0d83bb",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-identification-en",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "4a45d785e95badb5e6f85822b709cb021f78bfc70b76509f3c3643a10806eea8",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "result-save-identification-pl",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "42fb7a3c14050d218b720083f81ac767ca5062402c35636393cfdc7155e70447",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "493e723423c623fa65d7007581a9926bad5ffb8f8268ee7fc0930e3f496c1616",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-actions-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "38bdabc34f72b097cae5268c2f0fbe14d80cb1c9b51b252b48a6a79730b1165f",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-en-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "13d1e916855a84c247790313083df868d097d4f42d5a2afe546bd8f5d6ec4028",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "5e95839b54cb92cd687dfd4826b7ac7f21335574f5f64bab88690d76ba07f579",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-actions-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "0399942c5c72950e9c99fa0fe2fac24de8381745f191d3f8c50596f993115ae6",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-pl-accessibility",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "f2cb3a08ecb129759d75fd4d0221d0fedcbeb7af58c3b582e28d26f5a5078995",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "0999083de1db1e3aae8879b6f0b8da02fcb2de4e22bc8e232b54b44446066628",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-en-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "313f6905c5225988263e23983330019544f4221c6aa70b57d67b28504a0a8f6c",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-home-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "d453f3cfaef9733015d75f47b70ffd8c710bd26316f3802ea2d0b36b6361df0d",
+        "viewed": true,
+        "reviewer": "/root"
+      },
+      {
+        "appearance": "dark",
+        "name": "qg-catalogue-error-pl-standard",
+        "width": 1206,
+        "height": 2622,
+        "sha256": "a0d0e1d5c4404cac29195db2cc755b4a0e5fbee77e875798808d18a85d6f1c7e",
+        "viewed": true,
+        "reviewer": "/root"
+      }
+    ]
+  },
+  "developer_provenance": {
+    "background_seconds": 51.67,
+    "home_icon_seconds": 41.068,
+    "today_icon_seconds": 31.773,
+    "format_only_scope_failure_seconds": 0.089,
+    "format_only_developer_seconds": 25.25,
+    "final_two_image_delta_vs_f352": "6plus/2minus/2files;22otheriOSfilesbyteidentical;actions/guards/IDs/assertions preserved"
+  },
+  "postterminal_private_doc_paths": [
+    "docs/handoff_status.md",
+    "docs/validation/automation/tasks/tester-care-qg-fixed-icons-final-readonly-whole.md"
+  ],
+  "postterminal_doc_note": "Engine generated these reports after model QA. Root exports only exact committed24 iOS bytes; no private WIP ancestry or generatedhandoff is copied.",
+  "original_user3_preserved_and_unstaged": true,
+  "signed4": "PENDING_BUILD",
+  "limits": [
+    "Приёмка техническая: локальные/fixture-сценарии и представительные снимки; новая живая/физическая/внешняя приёмка не проведена.",
+    "Полная QG7-матрица всех состояний, VoiceOver, клавиатуры, узкого экрана и TodayXXXL остаётся открытой.",
+    "Новые обычные подписанные сборки0.1.0(4) создаются следующим этапом; Personal3/source1371 — отдельные исторические доказательства.",
+    "Покупки и расширение рекомендаций отложены; T075/T077/T080/T098 и полныйMVP не закрываются."
+  ],
+  "no_reset": true,
+  "recorded_at": "2026-11-23T18:58:43.945164+00:00",
+  "root_staged_ios_tree": "bcee2aea03537bce09138d5bcaf095b273c8a787"
+}

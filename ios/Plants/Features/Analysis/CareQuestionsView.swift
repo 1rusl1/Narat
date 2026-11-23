@@ -153,6 +153,8 @@ private struct AnalysisQuotaGate<Content: View>: View {
                     .accessibilityIdentifier("analysis.access.loading")
             }
         }
+        .buttonStyle(QuietGardenSecondaryButtonStyle())
+        .qgCard(padding: 20)
         .task(id: read) {
             guard let snapshot = read.snapshot else {
                 _ = try? await source.connection.sessionSnapshot()
@@ -275,8 +277,9 @@ public struct CareQuestionsView: View {
                     questionStepSection
                 }
             }
-            .padding()
+            .padding(20)
         }
+        .qgScreen()
         .navigationTitle(isPolish ? "Pierwsza pomoc" : "First Help")
         .fullScreenCover(isPresented: $showingCamera, onDismiss: finishCameraSelection) {
             PlantCameraPicker { result in
@@ -338,11 +341,12 @@ public struct CareQuestionsView: View {
                 Text(isPolish
                      ? "Nie można odczytać zdjęcia. Wybierz inne."
                      : "Unable to read this photo. Choose another.")
+                    .qgNotice(.error)
                     .accessibilityIdentifier("photo.error")
             }
             if model.isReplacingQuestionPhoto {
                 Button(isPolish ? "Wstecz" : "Back") { model.navigateBack() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(QuietGardenSecondaryButtonStyle())
                     .accessibilityIdentifier("care.photo.replacement.back")
             } else {
                 AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
@@ -353,7 +357,7 @@ public struct CareQuestionsView: View {
     private var photoChoices: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button(isPolish ? "Zrób zdjęcie" : "Take photo", action: openCamera)
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .disabled(model.isPreparingPhoto || cameraPermissionTask != nil)
                 .accessibilityIdentifier("photo.select.camera")
             photoPicker
@@ -365,7 +369,7 @@ public struct CareQuestionsView: View {
         PhotosPicker(selection: $selectedPhoto, matching: .images) {
             Text(isPolish ? "Wybierz zdjęcie" : "Choose photo")
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(QuietGardenPrimaryButtonStyle())
         .accessibilityIdentifier("photo.select.gallery")
     }
 
@@ -438,7 +442,7 @@ public struct CareQuestionsView: View {
                 if model.preparedPhoto != nil {
                     Text(isPolish ? "Zdjęcie gotowe" : "Photo ready")
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(QuietGarden.accent)
                         .accessibilityIdentifier("care.photo.ready.badge")
                 }
             }
@@ -450,13 +454,14 @@ public struct CareQuestionsView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 160)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .accessibilityLabel(isPolish ? "Wybrane zdjęcie rośliny" : "Selected plant photo")
                         .accessibilityIdentifier("care.photo.preview")
                 }
                 Button(isPolish ? "Zmień zdjęcie" : "Replace photo") {
                     model.replaceQuestionPhoto()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityHint(isPolish
                     ? "Wybierz aparat lub galerię. Odpowiedzi zostaną zachowane."
                     : "Choose camera or gallery. Your answers will be kept.")
@@ -478,7 +483,7 @@ public struct CareQuestionsView: View {
                     Text(isPolish ? "Wstecz" : "Back")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("care.navigation.back")
 
                 Button {
@@ -491,11 +496,12 @@ public struct CareQuestionsView: View {
                     )
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(QuietGardenPrimaryButtonStyle())
                 .disabled(model.router.flowState.intent == .problem && model.preparedPhoto == nil)
                 .accessibilityIdentifier("care.navigation.next")
             }
         }
+        .qgCard(padding: 20)
     }
 
     private var lightingQuestionView: some View {
@@ -518,7 +524,7 @@ public struct CareQuestionsView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .tint(isSelected ? .accentColor : .primary)
                 .accessibilityIdentifier("care.light.option.\(level.rawValue)")
             }
@@ -546,7 +552,7 @@ public struct CareQuestionsView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .tint(isSelected ? .accentColor : .primary)
                 .accessibilityIdentifier("care.watering.option.\(habit.rawValue)")
             }
@@ -573,7 +579,7 @@ public struct CareQuestionsView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .tint(isSelected ? .accentColor : .primary)
                 .accessibilityIdentifier("care.drainage.option.\(answer.rawValue)")
             }

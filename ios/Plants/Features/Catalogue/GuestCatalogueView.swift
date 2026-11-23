@@ -161,6 +161,7 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
 @Observable
 final class CatalogueConnection {
     #if DEBUG
+    @ObservationIgnored var collectionOpeningLocalReadFixture: (() throws -> Void)?
     var routineFixtureNow: Date?
     @ObservationIgnored var reconcileFixtureReconnect: (() -> Void)?
     @ObservationIgnored var withdrawCareSourceFixture: (() throws -> Void)?
@@ -479,6 +480,11 @@ final class CatalogueConnection {
                 throw CatalogueSaveUnavailable.sessionChanged
             }
             let readEpoch = sdkEpoch.read()
+#if DEBUG
+            let fixtureRead = collectionOpeningLocalReadFixture
+            collectionOpeningLocalReadFixture = nil
+            try fixtureRead?()
+#endif
             let session = try await client.auth.session
             let expected = Self.snapshot(session, epoch: readEpoch)
             try validate(expected)
@@ -1018,19 +1024,24 @@ struct CatalogueCollectionView: View {
                     }
                 } else if read.session?.isAnonymous != false {
                     Text(polish ? "Zaloguj się, aby zobaczyć rośliny." : "Sign in to see your plants.")
+                        .qgNotice(.neutral)
                         .accessibilityIdentifier("collection.signInRequired")
                 } else if loading || loadedScope != read.session {
                     ProgressView()
                 } else if failed {
-                    VStack {
+                    VStack(alignment: .leading, spacing: 16) {
                         Text(polish ? "Nie udało się wczytać roślin." : "Couldn’t load your plants.")
+                            .qgNotice(.error)
                         Button(polish ? "Spróbuj ponownie" : "Try again") { attempt += 1 }
+                            .buttonStyle(QuietGardenSecondaryButtonStyle())
                     }
+                    .padding(20)
                 } else {
                     collectionList
                 }
             }
             .navigationTitle(polish ? "Moje rośliny" : "My plants")
+            .navigationBarTitleDisplayMode(currentSelection == nil ? .large : .inline)
             .toolbar {
                 if currentSelection == nil, let scope = loadedScope,
                    scope == connection.snapshot, !scope.isAnonymous {
@@ -1055,6 +1066,7 @@ struct CatalogueCollectionView: View {
                 }
             }
         }
+        .qgScreen()
         .sheet(isPresented: Binding(
             get: { accountSettingsScope != nil },
             set: { if !$0 { accountSettingsScope = nil } }
@@ -1064,7 +1076,7 @@ struct CatalogueCollectionView: View {
                     if let scope = accountSettingsScope,
                        scope == connection.snapshot, !scope.isAnonymous {
                         ScrollView {
-                            VStack {
+                            VStack(alignment: .leading, spacing: 24) {
                                 ProfileReminderHourSettings(connection: connection, expected: scope, polish: polish,
                                     isLocaleCurrent: careReminder == nil ? { false } : careReminderLocaleIsCurrent)
                                 if let careReminder {
@@ -1076,10 +1088,14 @@ struct CatalogueCollectionView: View {
                                 }
                                 AccountSignOutSettings(connection: connection, expected: scope, polish: polish)
                             }
+                            .padding(20)
+                            .buttonStyle(QuietGardenSecondaryButtonStyle())
                         }
+                        .qgScreen()
                         .id(scope.session.userId)
                     }
                 }
+                .qgScreen()
                 .navigationTitle(polish ? "Ustawienia konta" : "Account settings")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -1109,11 +1125,13 @@ struct CatalogueCollectionView: View {
             }
             if usingCachedCards {
                 Text(polish ? "Rośliny z ostatniej synchronizacji." : "Showing last synced plants.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(QuietGarden.secondaryText)
+                    .qgNotice(.neutral)
                     .accessibilityIdentifier("collection.cached")
             }
             if cards.isEmpty {
                 Text(polish ? "Nie masz jeszcze roślin." : "You haven’t saved any plants yet.")
+                    .qgNotice(.neutral)
                     .accessibilityIdentifier("collection.empty")
             } else {
                 List(cards) { card in
@@ -1121,10 +1139,25 @@ struct CatalogueCollectionView: View {
                         guard let scope = loadedScope, scope == connection.snapshot else { return }
                         selected = Selected(card: card, scope: scope)
                     } label: {
-                        Text(card.personalName ?? card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
+                        HStack(spacing: 16) {
+                            Image(systemName: "leaf.circle.fill")
+                                .font(.title).foregroundStyle(QuietGarden.accent)
+                                .frame(width: 44, height: 44).accessibilityHidden(true)
+                            Text(card.personalName ?? card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
+                                .font(.headline).foregroundStyle(QuietGarden.primaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right").font(.footnote)
+                                .foregroundStyle(QuietGarden.secondaryText).accessibilityHidden(true)
+                        }
+                        .padding(.vertical, 12).frame(minHeight: 44)
                     }
+                    .listRowBackground(QuietGarden.surface)
+                    .accessibilityLabel(card.personalName ?? card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
                     .accessibilityIdentifier("collection.plant." + card.id.uuidString.lowercased())
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -1214,6 +1247,7 @@ private struct AccountSignOutSettings: View {
                         .accessibilityIdentifier("account.signOut.failed")
                 }
             }
+            .qgCard(padding: 20)
             .alert(polish ? "Wylogować się?" : "Sign out?", isPresented: $confirming) {
                 Button(polish ? "Anuluj" : "Cancel", role: .cancel) {}
                     .accessibilityIdentifier("account.signOut.cancel")
@@ -1260,6 +1294,7 @@ private struct ProfileReminderHourSettings: View {
                     Text(polish ? "Godzina przypomnień" : "Reminder hour")
                     if let pending {
                         Text((polish ? "Oczekuje: " : "Pending: ") + hourText(pending.reminderHourLocal))
+                            .qgNotice(.warning)
                             .accessibilityIdentifier("profile.hour.pending")
                         Button(polish ? "Spróbuj ponownie" : "Try again") {
                             Task { await save(retrying: pending) }
@@ -1275,7 +1310,7 @@ private struct ProfileReminderHourSettings: View {
                             }
                         }
                         .pickerStyle(.wheel)
-                        .frame(height: 100)
+                        .frame(minHeight: 160)
                         .accessibilityIdentifier("profile.hour.picker")
                         .disabled(busy)
                         Button(polish ? "Zapisz" : "Save") {
@@ -1287,6 +1322,7 @@ private struct ProfileReminderHourSettings: View {
                     if busy { ProgressView() }
                     if failed {
                         Text(polish ? "Nie udało się potwierdzić godziny." : "Couldn’t confirm the hour.")
+                            .qgNotice(.error)
                             .accessibilityIdentifier("profile.hour.failed")
                         if pending == nil {
                             Button(polish ? "Wczytaj ponownie" : "Reload") {
@@ -1297,6 +1333,7 @@ private struct ProfileReminderHourSettings: View {
                         }
                     }
                 }
+                .qgCard(padding: 20)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
             }
@@ -1522,35 +1559,32 @@ private struct CatalogueCollectionCardView: View {
                 deletionStatus
             } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 24) {
                     Text(card.personalName ?? currentSpecies?.displayName ?? (polish ? "Roślina" : "Plant"))
-                        .font(.title)
+                        .font(.largeTitle.weight(.semibold))
                         .accessibilityIdentifier("catalogue.saved.name")
                     if let name = currentSpecies?.displayName ?? card.speciesSlug {
                         Text(name).accessibilityIdentifier("catalogue.saved.species")
                     }
+                    if let photo = card.mainPhotoId {
+                        CataloguePrivatePhotoView(connection: connection, expected: expected, subject: .plant(card.id), polish: polish)
+                            .id(photo)
+                    }
                     if polish, let conditions = currentConditions {
                         CatalogueSavedConditionsView(conditions: conditions, polish: polish)
                     }
-                    if !polish {
-                        renameControls
-                            .disabled(routineBusy || manualRecordBusy)
-                    }
                     if deletionFailed {
                         Text(polish ? "Nie udało się usunąć rośliny." : "Couldn’t delete this plant.")
+                            .qgNotice(.error)
                             .accessibilityIdentifier("collection.delete.failed")
                     }
                     firstAidJournal
                         .disabled(routineBusy || manualRecordBusy)
                     if let startRepeatDiagnosis {
                         Button("Check plant again", action: startRepeatDiagnosis)
-                            .buttonStyle(.bordered)
+                            .buttonStyle(QuietGardenSecondaryButtonStyle())
                             .disabled(manualRecordBusy)
                             .accessibilityIdentifier("collection.diagnosis.repeat")
-                    }
-                    if let photo = card.mainPhotoId {
-                        CataloguePrivatePhotoView(connection: connection, expected: expected, subject: .plant(card.id), polish: polish)
-                            .id(photo)
                     }
                     if let advice {
                         PlantCareRecommendationContent(
@@ -1625,16 +1659,21 @@ private struct CatalogueCollectionCardView: View {
                         }
                         analysisHistorySection
                     }
+                    if !polish {
+                        renameControls
+                            .disabled(routineBusy || manualRecordBusy)
+                    }
                     Button(polish ? "Usuń roślinę" : "Delete plant", role: .destructive) {
                         deleteConfirmation = true
                     }
                     .disabled(routineBusy || manualRecordBusy)
                     .accessibilityIdentifier("collection.delete")
                 }
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("catalogue.saved.card." + card.id.uuidString.lowercased())
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+                .padding(20)
             }
             .disabled(recoveringWateringRecord)
             .task(id: requestedSpecies) { await loadCardSpecies(requestedSpecies) }
@@ -1682,6 +1721,7 @@ private struct CatalogueCollectionCardView: View {
                       routineEntitlement?.verifiedAccessUntil == expiry else { return }
                 routineClock = max(Date(), expiry)
             }
+            .qgScreen()
             .alert("Undo this soil check?", isPresented: $showingRoutineUndo) {
                 Button("Undo soil check", role: .destructive) {
                     let entry = routineUndoSelection
@@ -1810,6 +1850,7 @@ private struct CatalogueCollectionCardView: View {
             } else if let pendingDeletion {
                 VStack(spacing: 12) {
                     Text(polish ? "Usunięcie oczekuje na synchronizację." : "Deletion pending sync.")
+                        .qgNotice(.warning)
                         .accessibilityIdentifier("collection.delete.pending")
                     Button(polish ? "Ponów usunięcie" : "Retry deletion") {
                         Task { await deletePlant(retry: pendingDeletion) }
@@ -1819,6 +1860,7 @@ private struct CatalogueCollectionCardView: View {
                 .padding()
             }
         }
+        .buttonStyle(QuietGardenSecondaryButtonStyle())
     }
 
     private func loadDeletion() async {
@@ -1869,58 +1911,63 @@ private struct CatalogueCollectionCardView: View {
 
     @ViewBuilder
     private var renameControls: some View {
-        if savingRename {
-            ProgressView("Saving plant edit…")
-        } else if let pendingRename, let edit = PlantEditCommand(pendingRename) {
-            let labels = switch edit.change {
-            case .name: ("Plant name pending sync.", "Retry name change")
-            case .taxon: ("Species change pending sync.", "Retry species change")
-            case .light: ("Light change pending sync.", "Retry light change")
-            case .drainage: ("Drainage change pending sync.", "Retry drainage change")
-            case .watering: ("Watering frequency pending sync.", "Retry watering frequency")
-            case .potType: ("Pot type pending sync.", "Retry pot type change")
+        VStack(alignment: .leading, spacing: 12) {
+            if savingRename {
+                ProgressView("Saving plant edit…")
+            } else if let pendingRename, let edit = PlantEditCommand(pendingRename) {
+                let labels = switch edit.change {
+                case .name: ("Plant name pending sync.", "Retry name change")
+                case .taxon: ("Species change pending sync.", "Retry species change")
+                case .light: ("Light change pending sync.", "Retry light change")
+                case .drainage: ("Drainage change pending sync.", "Retry drainage change")
+                case .watering: ("Watering frequency pending sync.", "Retry watering frequency")
+                case .potType: ("Pot type pending sync.", "Retry pot type change")
+                }
+                Text(labels.0)
+                    .qgNotice(.warning)
+                    .accessibilityIdentifier("collection.rename.pending")
+                Button(labels.1) { Task { await editPlant() } }
+                    .accessibilityIdentifier("collection.rename.retry")
+            } else if !loadingRename {
+                Button("Edit name") {
+                    nameInput = rejectedNameInput ?? card.personalName ?? ""
+                    editingName = true
+                }
+                .accessibilityIdentifier("collection.rename.open")
+                if let currentLight = currentConditions?.light {
+                    Text(currentLight.label).accessibilityIdentifier("collection.light.current")
+                }
+                Button("Edit light") { editingLight = true }
+                    .accessibilityIdentifier("collection.light.open")
+                if let drainage = currentConditions?.drainage {
+                    Text(drainage.label).accessibilityIdentifier("collection.drainage.current")
+                }
+                Button("Edit drainage") { editingDrainage = true }
+                    .accessibilityIdentifier("collection.drainage.open")
+                if let watering = currentConditions?.watering {
+                    Text(watering.label).accessibilityIdentifier("collection.watering.frequency.current")
+                }
+                Button("Edit watering frequency") { editingWatering = true }
+                    .accessibilityIdentifier("collection.watering.frequency.open")
+                if let potType = currentConditions?.potType {
+                    Text(potType.label).accessibilityIdentifier("collection.pot.type.current")
+                }
+                Button("Edit pot type") { editingPotType = true }
+                    .accessibilityIdentifier("collection.pot.type.open")
+                Button("Change species") { editingSpecies = true }
+                    .accessibilityIdentifier("collection.species.open")
             }
-            Text(labels.0)
-                .accessibilityIdentifier("collection.rename.pending")
-            Button(labels.1) { Task { await editPlant() } }
-                .accessibilityIdentifier("collection.rename.retry")
-        } else if !loadingRename {
-            Button("Edit name") {
-                nameInput = rejectedNameInput ?? card.personalName ?? ""
-                editingName = true
+            if detailsReadFailed {
+                Text("Some plant details are unavailable.")
+                    .accessibilityIdentifier("collection.details.unavailable")
             }
-            .accessibilityIdentifier("collection.rename.open")
-            if let currentLight = currentConditions?.light {
-                Text(currentLight.label).accessibilityIdentifier("collection.light.current")
+            if renameFailed {
+                Text("Couldn’t save the plant edit.")
+                    .qgNotice(.error)
+                    .accessibilityIdentifier("collection.rename.failed")
             }
-            Button("Edit light") { editingLight = true }
-                .accessibilityIdentifier("collection.light.open")
-            if let drainage = currentConditions?.drainage {
-                Text(drainage.label).accessibilityIdentifier("collection.drainage.current")
             }
-            Button("Edit drainage") { editingDrainage = true }
-                .accessibilityIdentifier("collection.drainage.open")
-            if let watering = currentConditions?.watering {
-                Text(watering.label).accessibilityIdentifier("collection.watering.frequency.current")
-            }
-            Button("Edit watering frequency") { editingWatering = true }
-                .accessibilityIdentifier("collection.watering.frequency.open")
-            if let potType = currentConditions?.potType {
-                Text(potType.label).accessibilityIdentifier("collection.pot.type.current")
-            }
-            Button("Edit pot type") { editingPotType = true }
-                .accessibilityIdentifier("collection.pot.type.open")
-            Button("Change species") { editingSpecies = true }
-                .accessibilityIdentifier("collection.species.open")
-        }
-        if detailsReadFailed {
-            Text("Some plant details are unavailable.")
-                .accessibilityIdentifier("collection.details.unavailable")
-        }
-        if renameFailed {
-            Text("Couldn’t save the plant edit.")
-                .accessibilityIdentifier("collection.rename.failed")
-        }
+            .qgCard()
     }
 
     private func loadCardSpecies(_ requested: SpeciesRead) async {
@@ -2035,7 +2082,7 @@ private struct CatalogueCollectionCardView: View {
     @ViewBuilder
     private var analysisHistorySection: some View {
         if !analysisHistory.isEmpty {
-            Text("Analysis history").font(.headline)
+            Text("Analysis history").qgSectionTitle()
             ForEach(analysisHistory) { item in
                 let title = switch item.mode {
                 case .identification: "Species identification"
@@ -2049,10 +2096,11 @@ private struct CatalogueCollectionCardView: View {
                     if item.previousConditions {
                         Text("Based on previous conditions")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(QuietGarden.secondaryText)
                             .accessibilityIdentifier("collection.analysis.previous." + item.id.uuidString.lowercased())
                     }
                 }
+                .qgCard(padding: 20)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("collection.analysis.history." + item.id.uuidString.lowercased())
             }
@@ -2095,7 +2143,7 @@ private struct CatalogueCollectionCardView: View {
                 if let date = SQLTimestamp.date(from: observation.observedAt) {
                     Text(date, format: .dateTime.month(.abbreviated).day().year().locale(locale.locale))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(QuietGarden.secondaryText)
                         .accessibilityIdentifier("catalogue.saved.firstAid.observation.date." + observation.id.uuidString.lowercased())
                 }
                 if let photoId = observation.photoId {
@@ -2109,6 +2157,7 @@ private struct CatalogueCollectionCardView: View {
                 ProgressView("Syncing first-aid journal…")
             } else if let pendingObservationPhoto {
                 Text("Observation photo couldn’t finish uploading.")
+                    .qgNotice(.warning)
                     .accessibilityIdentifier("collection.firstAid.photo.pending")
                 Button("Retry photo upload") { Task { await writeFirstAid(.retryObservationPhoto(pendingObservationPhoto)) } }
                     .accessibilityIdentifier("collection.firstAid.photo.retry")
@@ -2118,11 +2167,13 @@ private struct CatalogueCollectionCardView: View {
                 .accessibilityIdentifier("collection.firstAid.photo.discard")
             } else if let pendingObservation {
                 Text("Observation pending sync.")
+                    .qgNotice(.warning)
                     .accessibilityIdentifier("collection.firstAid.observe.pending")
                 Button("Retry observation") { Task { await writeFirstAid(.retryObservation(pendingObservation)) } }
                     .accessibilityIdentifier("collection.firstAid.observe.retry")
             } else if let pendingFirstAidUndo {
                 Text("Soil check undo pending sync.")
+                    .qgNotice(.warning)
                     .accessibilityIdentifier("collection.firstAid.undo.pending")
                 Button("Retry undo") { Task { await writeFirstAid(.retryUndo(pendingFirstAidUndo)) } }
                     .accessibilityIdentifier("collection.firstAid.undo.retry")
@@ -2315,70 +2366,79 @@ private struct CatalogueCollectionCardView: View {
 
     @ViewBuilder
     private var wateringRecordControls: some View {
-        Button("Record watering") { showingWateringRecord = true }
-            .disabled(!canRecordWatering)
-            .accessibilityIdentifier("collection.watering.record")
-        switch correction {
-        case .recordSaving:
-            ProgressView("Saving watering record…")
-                .accessibilityIdentifier("collection.watering.record.saving")
-        case let .recordPending(command):
-            if wateringRecordNeedsReview {
-                Text("Watering record needs review. Retry this record to resolve it.")
-                    .accessibilityIdentifier("collection.watering.record.failed")
-                    #if DEBUG
-                    .accessibilityValue(command.operationId.uuidString.lowercased())
-                    #endif
-            } else {
-                Text("Watering record pending sync.")
-                    .accessibilityIdentifier("collection.watering.record.pending")
-                    #if DEBUG
-                    .accessibilityValue(command.operationId.uuidString.lowercased())
-                    #endif
-            }
-            Button("Retry watering record") { Task { await retryWateringRecord(command) } }
-                .accessibilityIdentifier("collection.watering.record.retry")
-        default:
-            EmptyView()
-        }
-        if let wateringRecordOutcome {
-            switch wateringRecordOutcome {
-            case .confirmed:
-                Text("Watering recorded.")
-                    .accessibilityIdentifier("collection.watering.record.confirmed")
-            case .rejected:
-                Text("Watering record rejected. No watering was recorded. You can try a new record.")
-                    .accessibilityIdentifier("collection.watering.record.rejected")
-                    #if DEBUG
-                    .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
-                    #endif
-            case .unconfirmed:
-                Text("Watering could not be confirmed. Reload history or retry the original record.")
-                    .accessibilityIdentifier("collection.watering.record.unconfirmed")
-                    #if DEBUG
-                    .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
-                    #endif
-                Button("Reload care history") { Task { await recoverUnconfirmedWatering(retryOriginal: false) } }
-                    .disabled(!canRecoverUnconfirmedWatering)
-                    .accessibilityIdentifier("collection.watering.record.reload")
-                Button("Retry original watering") { Task { await recoverUnconfirmedWatering(retryOriginal: true) } }
-                    .disabled(!canRecoverUnconfirmedWatering)
-                    .accessibilityIdentifier("collection.watering.record.retryOriginal")
-                    #if DEBUG
-                    .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
-                    #endif
-            case .pending:
+        VStack(alignment: .leading, spacing: 12) {
+            Button("Record watering") { showingWateringRecord = true }
+                .disabled(!canRecordWatering)
+                .buttonStyle(QuietGardenPrimaryButtonStyle())
+                .accessibilityIdentifier("collection.watering.record")
+            switch correction {
+            case .recordSaving:
+                ProgressView("Saving watering record…")
+                    .accessibilityIdentifier("collection.watering.record.saving")
+            case let .recordPending(command):
+                if wateringRecordNeedsReview {
+                    Text("Watering record needs review. Retry this record to resolve it.")
+                        .qgNotice(.error)
+                        .accessibilityIdentifier("collection.watering.record.failed")
+                        #if DEBUG
+                        .accessibilityValue(command.operationId.uuidString.lowercased())
+                        #endif
+                } else {
+                    Text("Watering record pending sync.")
+                        .qgNotice(.warning)
+                        .accessibilityIdentifier("collection.watering.record.pending")
+                        #if DEBUG
+                        .accessibilityValue(command.operationId.uuidString.lowercased())
+                        #endif
+                }
+                Button("Retry watering record") { Task { await retryWateringRecord(command) } }
+                    .accessibilityIdentifier("collection.watering.record.retry")
+            default:
                 EmptyView()
             }
-        }
-        if recoveringWateringRecord {
-            ProgressView("Checking original watering…")
-                .accessibilityIdentifier("collection.watering.record.reloading")
-        }
-        if wateringRecordFailed && !wateringRecordNeedsReview {
-            Text("Couldn’t save or confirm the watering record.")
-                .accessibilityIdentifier("collection.watering.record.failed")
-        }
+            if let wateringRecordOutcome {
+                switch wateringRecordOutcome {
+                case .confirmed:
+                    Text("Watering recorded.")
+                        .qgNotice(.success)
+                        .accessibilityIdentifier("collection.watering.record.confirmed")
+                case .rejected:
+                    Text("Watering record rejected. No watering was recorded. You can try a new record.")
+                        .accessibilityIdentifier("collection.watering.record.rejected")
+                        #if DEBUG
+                        .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+                        #endif
+                case .unconfirmed:
+                    Text("Watering could not be confirmed. Reload history or retry the original record.")
+                        .qgNotice(.warning)
+                        .accessibilityIdentifier("collection.watering.record.unconfirmed")
+                        #if DEBUG
+                        .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+                        #endif
+                    Button("Reload care history") { Task { await recoverUnconfirmedWatering(retryOriginal: false) } }
+                        .disabled(!canRecoverUnconfirmedWatering)
+                        .accessibilityIdentifier("collection.watering.record.reload")
+                    Button("Retry original watering") { Task { await recoverUnconfirmedWatering(retryOriginal: true) } }
+                        .disabled(!canRecoverUnconfirmedWatering)
+                        .accessibilityIdentifier("collection.watering.record.retryOriginal")
+                        #if DEBUG
+                        .accessibilityValue(wateringRecordOperation?.uuidString.lowercased() ?? "")
+                        #endif
+                case .pending:
+                    EmptyView()
+                }
+            }
+            if recoveringWateringRecord {
+                ProgressView("Checking original watering…")
+                    .accessibilityIdentifier("collection.watering.record.reloading")
+            }
+            if wateringRecordFailed && !wateringRecordNeedsReview {
+                Text("Couldn’t save or confirm the watering record.")
+                    .qgNotice(.error)
+                    .accessibilityIdentifier("collection.watering.record.failed")
+            }
+            }
+            .qgCard()
     }
 
     @MainActor
@@ -2457,6 +2517,7 @@ private struct CatalogueCollectionCardView: View {
         case let .pending(command):
             let undo = command.commandName == ManualWateringAction.undoCommand
             Text(undo ? "Watering undo pending sync." : "Watering date pending sync.")
+                .qgNotice(.warning)
                 .accessibilityIdentifier("collection.watering.pending")
             Button(undo ? "Retry watering undo" : "Retry watering date") { Task { await retryCorrection() } }
                 .accessibilityIdentifier("collection.watering.retry")
@@ -2636,16 +2697,19 @@ private struct CatalogueCollectionCardView: View {
             ProgressView("Saving soil check…")
         } else if pendingRoutine != nil {
             Text("Soil check pending sync.")
+                .qgNotice(.warning)
                 .accessibilityIdentifier("collection.routine.pending")
             Button("Retry soil check") { Task { await completeRoutine() } }
                 .disabled(!routineWriteAvailable)
                 .accessibilityIdentifier("collection.routine.retry")
         } else if pendingRoutineUndo == nil, dueRoutine != nil, routineWriteAvailable {
             Button("Mark soil checked") { Task { await completeRoutine() } }
+                .buttonStyle(QuietGardenPrimaryButtonStyle())
                 .accessibilityIdentifier("collection.routine.complete")
         }
         if routineFailed {
             Text("Couldn’t confirm the soil check.")
+                .qgNotice(.error)
                 .accessibilityIdentifier("collection.routine.failed")
         }
         if routineConfirmed {
@@ -2656,7 +2720,7 @@ private struct CatalogueCollectionCardView: View {
 
     @ViewBuilder
     private var routineJournal: some View {
-        Text("Soil check history").font(.headline)
+        Text("Soil check history").qgSectionTitle()
         ForEach(routineHistory) { entry in
             Text(entry.occurredLocalDate + (entry.state == "voided" ? " · Undone" : " · Active"))
                 .accessibilityIdentifier("collection.routine.history." + entry.id.uuidString.lowercased())
@@ -2670,6 +2734,7 @@ private struct CatalogueCollectionCardView: View {
         }
         if pendingRoutineUndo != nil {
             Text("Soil check undo pending sync.")
+                .qgNotice(.warning)
                 .accessibilityIdentifier("collection.routine.undo.pending")
             Button("Retry soil check undo") { Task { await undoRoutine(nil) } }
                 .disabled(savingRoutine || !routineWriteAvailable)
@@ -2816,6 +2881,7 @@ private struct CatalogueCollectionCardView: View {
             ProgressView("Enabling basic care…")
         } else if basicCarePending {
             Text("Basic care is pending sync.")
+                .qgNotice(.warning)
                 .accessibilityIdentifier("collection.care.enable.pending")
             Button("Retry enabling basic care") { Task { await enableBasicCare() } }
                 .accessibilityIdentifier("collection.care.enable.retry")
@@ -2877,6 +2943,7 @@ private struct CatalogueCollectionCardView: View {
             ProgressView("Updating care recommendation…")
         } else if pendingAdviceRefresh != nil {
             Text("Care recommendation update pending.")
+                .qgNotice(.warning)
                 .accessibilityIdentifier("collection.care.refresh.pending")
             Button("Retry recommendation update") {
                 Task { await refreshAdvice() }
@@ -3101,6 +3168,7 @@ private struct FirstAidObservationActions: View {
                 .disabled(loading || failed || (selectedPhoto != nil && jpeg == nil))
                 .accessibilityIdentifier("collection.firstAid.observe." + controlId.uuidString.lowercased())
         }
+        .qgCard(padding: 20)
         .onChange(of: selectedPhoto) { _, item in
             jpeg = nil
             loading = item != nil
@@ -3186,6 +3254,7 @@ private struct WateringDateEditor: View {
                     .environment(\.timeZone, edit.timezone)
                     .accessibilityIdentifier("collection.watering.date")
             }
+            .qgForm()
             .navigationTitle("Correct watering date")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -3264,6 +3333,8 @@ struct GuestCatalogueView: View {
             Button(speciesPicker == nil ? (polish ? "Wstecz" : "Back") : "Cancel", action: back)
                 .accessibilityIdentifier("catalogue.back")
         }
+        .qgScreen()
+        .buttonStyle(QuietGardenSecondaryButtonStyle())
         .task { if speciesPicker == nil { await restoreSelection() } }
         .task(id: search) { await loadCatalogue(search) }
         .task(id: detail) { await loadSpecies(detail) }
@@ -3272,7 +3343,7 @@ struct GuestCatalogueView: View {
     @ViewBuilder
     private var searchResults: some View {
         TextField(polish ? "Szukaj gatunku" : "Search species", text: $query)
-            .textFieldStyle(.roundedBorder).padding(.horizontal)
+            .textFieldStyle(.roundedBorder).padding(.horizontal, 20).padding(.vertical, 8)
             .accessibilityIdentifier("catalogue.search")
         if loading {
             ProgressView()
@@ -3280,6 +3351,7 @@ struct GuestCatalogueView: View {
             catalogueError { searchAttempt += 1 }
         } else if cards.isEmpty {
             Text(polish ? "Brak wyników." : "No species found.")
+                .qgNotice()
                 .accessibilityIdentifier("catalogue.empty")
         } else {
             List {
@@ -3291,10 +3363,12 @@ struct GuestCatalogueView: View {
                         selection = card.id
                     } label: {
                         VStack(alignment: .leading) {
-                            Text(card.displayName)
-                            Text(card.scientificName).font(.caption)
+                            Text(card.displayName).font(.headline)
+                            Text(card.scientificName).font(.subheadline).foregroundStyle(QuietGarden.secondaryText)
                         }
                     }
+                    .padding(.vertical, 8)
+                    .listRowBackground(QuietGarden.surface)
                     .accessibilityIdentifier("catalogue.species." + card.id)
                     .disabled(speciesPicker?.isCurrent(card) == true)
                 }
@@ -3318,7 +3392,7 @@ struct GuestCatalogueView: View {
                     Text(card.scientificName).font(.subheadline)
                     speciesDetails(card)
                     Button("Confirm species change") { speciesPicker.select(card.taxonId) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(QuietGardenPrimaryButtonStyle())
                         .disabled(speciesPicker.isCurrent(card))
                         .accessibilityIdentifier("collection.species.confirm")
                 }
@@ -3353,6 +3427,7 @@ struct GuestCatalogueView: View {
         VStack {
             Text(polish ? "Nie udało się pobrać katalogu." : "Couldn’t load the catalogue.")
                 .accessibilityIdentifier("catalogue.error")
+                .qgNotice(.error)
             Button(polish ? "Spróbuj ponownie" : "Try again", action: retry)
                 .accessibilityIdentifier("catalogue.retry")
         }

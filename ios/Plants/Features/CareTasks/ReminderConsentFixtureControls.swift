@@ -1,4 +1,5 @@
 #if DEBUG
+import Foundation
 import SwiftUI
 
 private struct ReminderConsentFixtureKey: EnvironmentKey {
@@ -44,7 +45,14 @@ struct ReminderConsentFixtureControls: View {
                     Button("Release readiness") { perform { fixture.runtime.readiness.release() } }
                         .accessibilityIdentifier("care.fixture.ready")
                 }
-                Button("Snapshot fixture evidence") { perform { try fixture.snapshotEvidence() } }
+                Button("Snapshot fixture evidence") {
+                    recordSnapshotProbe("entry")
+                    perform {
+                        recordSnapshotProbe("accepted")
+                        try fixture.snapshotEvidence()
+                        recordSnapshotProbe("persisted")
+                    }
+                }
                     .accessibilityIdentifier("care.fixture.snapshot")
                 Button("Authorize fake OS") { perform { try fixture.notifications.setAuthorization(.authorized) } }
                     .accessibilityIdentifier("care.fixture.authorized")
@@ -58,7 +66,28 @@ struct ReminderConsentFixtureControls: View {
                 }
                 Text(evidence).accessibilityIdentifier("care.fixture.changed")
             }
+            .buttonStyle(.automatic)
         }
+    }
+
+    /// Synthetic namespace diagnostics only; never changes the receipt ledger or action result.
+    private func recordSnapshotProbe(_ stage: String) {
+        let file = fixture.context.directory.appendingPathComponent("fixture-snapshot-ui-probes.json")
+        var rows = (try? Data(contentsOf: file))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        rows.append([
+            "stage": stage, "uptime": ProcessInfo.processInfo.systemUptime,
+            "namespace": fixture.context.namespace, "current": current,
+            "permanentScopeCurrent": connection.authClassification == .permanent(expected),
+            "localeCurrent": isLocaleCurrent(), "runtimeCoreMatches": fixture.runtime.core === lifecycle,
+            "fixtureContextMatches": fixture.matches(context: fixture.context, connection: connection),
+            "ownerMatches": expected.session.userId == fixture.notifications.ledger.owner,
+            "markers": fixture.notifications.ledger.markers?.count ?? 0,
+            "routingProbes": fixture.notifications.ledger.routingProbes?.count ?? 0,
+            "evidence": evidence
+        ])
+        guard let data = try? JSONSerialization.data(withJSONObject: Array(rows.suffix(256))) else { return }
+        try? data.write(to: file, options: .atomic)
     }
 
     private func perform(_ action: () throws -> Void) {

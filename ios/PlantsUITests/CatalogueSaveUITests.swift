@@ -1381,6 +1381,62 @@ final class CatalogueSaveUITests: XCTestCase {
         assertTodayEntrypoints(run)
     }
 
+    @MainActor func testMyPlantsRefreshInsideReadOpensCurrentCollectionWithoutLogin() {
+        let run = Run("todaySDKOpening", .en, today: true)
+        defer { run.app.terminate() }
+        launch(run)
+        require(todayElement(run, "sdk-opening.ready"))
+        require(todayElement(run, "today.title"))
+        todayTap(run, "sdk-opening.arm")
+        todayTap(run, "collection.open")
+
+        let plant = run.app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label == %@",
+            "collection.plant.", "Fixture 1")).firstMatch
+        enabled(plant)
+        require(run.app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label == %@",
+            "collection.plant.", "Fixture 2")).firstMatch)
+        XCTAssertFalse(run.app.textFields["account.email"].exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        let plantId = String(plant.identifier.dropFirst("collection.plant.".count))
+        XCTAssertNotNil(UUID(uuidString: plantId))
+        notificationImage(run, "sdk-opening-list_")
+
+        plant.tap()
+        require(run.app.staticTexts["catalogue.saved.name"])
+        XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+        XCTAssertEqual(identity(run, "catalogue.saved.card."), "catalogue.saved.card." + plantId)
+        XCTAssertFalse(run.app.textFields["account.email"].exists)
+        notificationImage(run, "sdk-opening-card_")
+    }
+
+    @MainActor func testMyPlantsExplicitSignOutRequiresLoginWithoutReseeding() {
+        let run = Run("todaySDKOpening", .en, today: true)
+        defer { run.app.terminate() }
+        launch(run)
+        require(todayElement(run, "sdk-opening.ready"))
+        require(todayElement(run, "today.title"))
+        todayTap(run, "collection.open")
+        todayTap(run, "collection.settings.open")
+        todayTap(run, "account.signOut.open")
+        let confirm = run.app.alerts.buttons["account.signOut.confirm"].firstMatch
+        enabled(confirm)
+        confirm.tap()
+        require(todayElement(run, "account.signedOut"))
+        todayAbsent(run, "today.root")
+
+        // Same process, ordinary Home action: no launch, seed or fixture sign-in.
+        todayTap(run, "collection.open")
+        enabled(run.app.textFields["account.email"])
+        XCTAssertFalse(run.app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "collection.plant.")).firstMatch.exists)
+        XCTAssertFalse(run.app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@", "catalogue.saved.card.")).firstMatch.exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        notificationImage(run, "sdk-opening-login_")
+    }
+
     @MainActor func testTodayLocaleAndSignOutClearOldProjection() {
         let run = Run("todayMixed", .en, today: true)
         defer { run.app.terminate() }
@@ -1864,30 +1920,194 @@ final class CatalogueSaveUITests: XCTestCase {
     private func reminderElement(_ run: Run, _ identifier: String) -> XCUIElement {
         let query = reminderScope(run, identifier).descendants(matching: .any)
             .matching(identifier: identifier)
-        return query.allElementsBoundByIndex.first(where: { $0.isHittable }) ?? query.firstMatch
+        return query.firstMatch
     }
 
     @MainActor
     @discardableResult
     private func reminderReach(_ run: Run, _ identifier: String) -> XCUIElement {
-        // Discover offscreen accessibility elements by scrolling before waiting for existence.
-        // Search both directions in the current scroll container, with a hard bound.
-        for up in [false, true] {
-            for _ in 0..<(up ? 8 : 4) {
-                let element = reminderElement(run, identifier)
-                if element.exists && element.isHittable { return element }
-                let scope = reminderScope(run, identifier)
-                if up { scope.swipeUp() } else { scope.swipeDown() }
-            }
+        let scope = reminderScope(run, identifier)
+        let scopeType = scope.elementType
+        let scopeIdentifier = scope.identifier
+        let settingsWasOpen = run.app.buttons["collection.settings.close"].exists
+        let navigationBar = run.app.navigationBars.firstMatch
+        let hadNavigationBar = navigationBar.exists
+        let navigationIdentifier = hadNavigationBar ? navigationBar.identifier : nil
+
+        func sameScope() -> Bool {
+            guard run.app.buttons["collection.settings.close"].exists == settingsWasOpen,
+                  scope.exists else { return false }
+            let current = reminderScope(run, identifier)
+            guard current.exists, current.elementType == scopeType,
+                  current.identifier == scopeIdentifier else { return false }
+            let bar = run.app.navigationBars.firstMatch
+            return bar.exists == hadNavigationBar &&
+                (!hadNavigationBar || bar.identifier == navigationIdentifier)
         }
-        let element = reminderElement(run, identifier)
-        if !element.exists || !element.isHittable {
-            screenshot(run, "unreachable-" + identifier)
-            let tree = XCTAttachment(string: reminderScope(run, identifier).debugDescription)
-            tree.name = "consent-current-view-" + identifier
+
+        func validFrame(_ frame: CGRect) -> Bool {
+            !frame.isNull && !frame.isInfinite && !frame.isEmpty &&
+                frame.origin.x.isFinite && frame.origin.y.isFinite &&
+                frame.width.isFinite && frame.height.isFinite &&
+                frame.maxX.isFinite && frame.maxY.isFinite
+        }
+
+        var gestures = 0
+        var readinessDeadline: TimeInterval?
+        var nativeReady = false
+
+        func describe(_ elements: [XCUIElement]) -> String {
+            "count=\(elements.count) " + elements.map {
+                "type=\($0.elementType.rawValue) id=\($0.identifier) frame=\($0.frame)"
+            }.joined(separator: "; ")
+        }
+
+        func diagnose(_ reason: String) {
+            let chosen = reminderScope(run, identifier)
+            let scopedMatches = chosen.descendants(matching: .any)
+                .matching(identifier: identifier).allElementsBoundByIndex
+            let appMatches = run.app.descendants(matching: .any)
+                .matching(identifier: identifier).allElementsBoundByIndex
+            let bars = run.app.navigationBars.allElementsBoundByIndex
+            let frontBars = bars.filter {
+                $0.descendants(matching: .button).matching(identifier: "collection.settings.close").count > 0 ||
+                $0.descendants(matching: .button).matching(identifier: "collection.back").count > 0
+            }
+            let details = XCTAttachment(string: """
+                reason=\(reason) target=\(identifier) gestures=\(gestures)/12
+                readinessDeadline=\(String(describing: readinessDeadline))
+                originalScope type=\(scopeType.rawValue) id=\(scopeIdentifier) exists=\(scope.exists) frame=\(scope.frame)
+                chosenScope type=\(chosen.elementType.rawValue) id=\(chosen.identifier) exists=\(chosen.exists) frame=\(chosen.frame)
+                settingsWasOpen=\(settingsWasOpen) settingsOpen=\(run.app.buttons["collection.settings.close"].exists)
+                originalNavigation=\(String(describing: navigationIdentifier)) hadNavigationBar=\(hadNavigationBar)
+                windows: \(describe(run.app.windows.allElementsBoundByIndex)) appFrame=\(run.app.frame)
+                navigationBars: \(describe(bars))
+                frontNavigationBars: \(describe(frontBars))
+                chosenScopeMatches: \(describe(scopedMatches))
+                wholeAppMatches: \(describe(appMatches))
+                """)
+            details.name = "consent-geometry-" + reason + "-" + identifier
+            details.lifetime = .keepAlways
+            add(details)
+            screenshot(run, reason + "-" + identifier)
+            let tree = XCTAttachment(string: run.app.debugDescription)
+            tree.name = "consent-current-view-" + reason + "-" + identifier
             tree.lifetime = .keepAlways
             add(tree)
         }
+
+        // Discovery and repositioning share twelve gestures. Waits always refresh geometry.
+        while true {
+            guard sameScope() else {
+                diagnose("scope-changed")
+                XCTFail("Discovery left the original view: " + identifier)
+                break
+            }
+            let element = reminderElement(run, identifier)
+            let window = run.app.windows.firstMatch
+            let windowFrame = window.exists ? window.frame : run.app.frame
+            let scopeFrame = scope.frame
+            guard validFrame(windowFrame), validFrame(scopeFrame) else {
+                diagnose("invalid-viewport")
+                XCTFail("No finite current viewport: " + identifier)
+                break
+            }
+            let viewport = windowFrame.intersection(scopeFrame)
+            guard validFrame(viewport) else {
+                diagnose("invalid-viewport")
+                XCTFail("Current scope is outside the window: " + identifier)
+                break
+            }
+            let frame = element.exists ? element.frame : CGRect.null
+            let inside = validFrame(frame) && viewport.contains(frame)
+            guard sameScope() else {
+                diagnose("scope-changed")
+                XCTFail("Readiness left the original view: " + identifier)
+                break
+            }
+            let now = ProcessInfo.processInfo.systemUptime
+            if let deadline = readinessDeadline, now >= deadline, !nativeReady {
+                diagnose("native-readiness-timeout")
+                XCTFail("Native readiness timed out in current view: " + identifier)
+                break
+            }
+            if element.exists && !element.isEnabled {
+                // A disabled control is never scrolled and only gets exists/enabled probes.
+                nativeReady = false
+                if readinessDeadline == nil { readinessDeadline = now + 15 }
+                let deadline = readinessDeadline ?? now
+                let remaining = deadline - ProcessInfo.processInfo.systemUptime
+                guard remaining > 0 else {
+                    diagnose("disabled")
+                    XCTFail("Enabled readiness timed out in current view: " + identifier)
+                    break
+                }
+                let condition = NSPredicate(format: "exists == true AND enabled == true")
+                if condition.evaluate(with: element) { continue }
+                let ready = XCTNSPredicateExpectation(predicate: condition, object: element)
+                let result = XCTWaiter.wait(for: [ready], timeout: min(1, remaining))
+                guard result == .completed || result == .timedOut else {
+                    diagnose("enabled-waiter-failed")
+                    XCTAssertEqual(result, .completed, "Enabled in current view: " + identifier)
+                    break
+                }
+                continue
+            }
+            if inside {
+                if nativeReady {
+                    // The successful native probe is followed by fresh scope and viewport reads.
+                    enabled(element)
+                    return element
+                }
+                if readinessDeadline == nil {
+                    readinessDeadline = ProcessInfo.processInfo.systemUptime + 15
+                }
+                let remaining = (readinessDeadline ?? now) - ProcessInfo.processInfo.systemUptime
+                guard remaining > 0 else {
+                    diagnose("native-readiness-timeout")
+                    XCTFail("Native readiness timed out in current view: " + identifier)
+                    break
+                }
+                let condition = NSPredicate(format: "exists == true AND enabled == true AND hittable == true")
+                if condition.evaluate(with: element) {
+                    nativeReady = true
+                    continue
+                }
+                let ready = XCTNSPredicateExpectation(predicate: condition, object: element)
+                let result = XCTWaiter.wait(for: [ready], timeout: min(1, remaining))
+                guard result == .completed || result == .timedOut else {
+                    diagnose("native-waiter-failed")
+                    XCTAssertEqual(result, .completed, "Native readiness in current view: " + identifier)
+                    break
+                }
+                nativeReady = result == .completed
+                continue
+            }
+            nativeReady = false
+            if let deadline = readinessDeadline, ProcessInfo.processInfo.systemUptime >= deadline {
+                diagnose("native-readiness-timeout")
+                XCTFail("Native readiness timed out while repositioning: " + identifier)
+                break
+            }
+            guard gestures < 12 else {
+                diagnose("unreachable")
+                XCTFail("Not fully inside the current viewport: " + identifier)
+                break
+            }
+            if validFrame(frame), frame.maxY > viewport.maxY {
+                scope.swipeUp()
+            } else if validFrame(frame), frame.minY < viewport.minY {
+                scope.swipeDown()
+            } else if !validFrame(frame) {
+                if gestures < 8 { scope.swipeUp() } else { scope.swipeDown() }
+            } else {
+                diagnose("outside-horizontal-viewport")
+                XCTFail("Cannot reach with vertical scrolling: " + identifier)
+                break
+            }
+            gestures += 1
+        }
+        let element = reminderElement(run, identifier)
         enabled(element)
         return element
     }
@@ -2068,6 +2288,9 @@ final class CatalogueSaveUITests: XCTestCase {
 
     @MainActor
     private func tap(_ run: Run, _ identifier: String, _ label: String? = nil) {
+        if ["collection.rename.open", "collection.light.open", "collection.drainage.open", "collection.watering.frequency.open", "collection.pot.type.open", "collection.species.open"].contains(identifier) {
+            _ = reminderReach(run, identifier)
+        }
         let button = run.app.buttons[identifier]
         enabled(button)
         if let label { XCTAssertEqual(button.label, label) }
@@ -2464,4 +2687,35 @@ final class CatalogueSaveUITests: XCTestCase {
         XCTAssertFalse(run.app.buttons["catalogue.save.apple"].exists)
         XCTAssertFalse(run.app.buttons["catalogue.save.google"].exists)
     }
+
+    @MainActor
+    func testQuietGardenTodayCollectionCardAndSettingsVisuals() {
+        for language in [Language.en, .pl] {
+            let run = Run("todayMixed", language, today: true)
+            defer { run.app.terminate() }
+            launch(run)
+            require(todayElement(run, "today.lastChecked"))
+            XCTAssertEqual(todayTasks(run).count, 2)
+            screenshot(run, "qg-today")
+            todayTap(run, "collection.open")
+            require(todayElement(run, "collection.settings.open"))
+            let first = run.app.buttons.matching(NSPredicate(format: "label == %@", "Fixture 1")).firstMatch
+            enabled(first)
+            screenshot(run, "qg-collection")
+            first.tap()
+            let name = run.app.staticTexts["catalogue.saved.name"]
+            require(name)
+            XCTAssertEqual(name.label, "Fixture 1")
+            screenshot(run, "qg-card")
+            todayTap(run, "collection.back")
+            todayTap(run, "collection.settings.open")
+            require(todayElement(run, "profile.hour.synced"))
+            enabled(run.app.buttons["collection.settings.close"])
+            screenshot(run, "qg-settings")
+            todayTap(run, "collection.settings.close")
+            enabled(first)
+            XCTAssertFalse(name.exists)
+        }
+    }
+
 }

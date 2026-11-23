@@ -2459,6 +2459,353 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
+    private func preparedOpeningCoordinator() -> CollectionOpeningCoordinator {
+        let coordinator = CollectionOpeningCoordinator()
+        XCTAssertTrue(coordinator.beginPreparation())
+        coordinator.finishPreparation()
+        return coordinator
+    }
+
+    func testRootOpeningWaitsForActualInitialObserverPreparationAndDoesNotLoseFirstTap() async throws {
+        let seed = try Harness(emitLocalSessionAsInitialSession: false)
+        defer { seed.close() }
+        _ = try await expiredOpeningSession(seed)
+        let stored = try XCTUnwrap(seed.client.auth.currentSession)
+        let h = try Harness(storedSession: stored, emitLocalSessionAsInitialSession: false) { fixture in
+            fixture.append(.init(method: "POST", path: "/auth/v1/token",
+                data: try json(["code": "validation_failed", "message": "Fixture rejected"]),
+                status: 422, suspend: true, query: "grant_type=refresh_token"))
+        }
+        defer { h.close() }
+        // The SDK's own listener and the connection listener can share the held
+        // failure or perform separate initial reads. A successful next refresh
+        // makes every later startup read local, independent of that scheduling.
+        try auth(h, owner: owner, token: "fixture-ready", refresh: true)
+        let coordinator = CollectionOpeningCoordinator()
+        XCTAssertNil(coordinator.begin(connection: h.connection, locale: .en))
+        XCTAssertTrue(coordinator.beginPreparation())
+        let preparation = Task {
+            defer { coordinator.finishPreparation() }
+            _ = try? await h.connection.sessionSnapshot()
+        }
+        try await waitForSuspension(h.fixture)
+        XCTAssertFalse(coordinator.beginPreparation())
+        XCTAssertFalse(coordinator.preparationSettled)
+        XCTAssertNil(coordinator.active)
+        XCTAssertNil(coordinator.begin(connection: h.connection, locale: .en))
+        h.fixture.release()
+        await preparation.value
+        XCTAssertTrue(coordinator.preparationSettled)
+        XCTAssertTrue(coordinator.starting) // Never reset the single-attempt latch.
+        XCTAssertEqual(h.client.auth.currentSession?.user.id, owner)
+        XCTAssertFalse(h.client.auth.currentSession?.isExpired ?? true)
+        assertOpeningReadOnly(h, refreshes: 2)
+        let request = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+        var publications = 0
+        await coordinator.execute(request, connection: h.connection,
+            currentConnection: { h.connection }, currentLocale: { .en }) {
+            guard case .permanent(let snapshot) = $0 else { return XCTFail("First tap must open") }
+            XCTAssertEqual(snapshot.session.userId, self.owner)
+            publications += 1
+        }
+        XCTAssertEqual(publications, 1)
+        XCTAssertFalse(coordinator.busy)
+        assertOpeningReadOnly(h, refreshes: 2)
+    }
+
+    func testRootOpeningHeldSameOwnerRefreshKeepsOriginalRequestDespiteNilProjection() async throws {
+        for cancel in [false, true] {
+            let h = try Harness(emitLocalSessionAsInitialSession: false)
+            defer { h.close() }
+            _ = try await expiredOpeningSession(h)
+            try auth(h, owner: owner, token: "fixture-root-refreshed", suspend: true, refresh: true)
+            let coordinator = preparedOpeningCoordinator()
+            let request = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+            var publications = 0
+            let operation = Task {
+                await coordinator.execute(request, connection: h.connection,
+                    currentConnection: { h.connection }, currentLocale: { .en }) {
+                    guard case .permanent(let snapshot) = $0 else { return XCTFail("Refresh is not login") }
+                    XCTAssertEqual(snapshot.session.userId, self.owner)
+                    publications += 1
+                }
+            }
+            try await waitForSuspension(h.fixture)
+            XCTAssertNil(h.connection.snapshot)
+            XCTAssertEqual(coordinator.active?.id, request.id)
+            XCTAssertNil(coordinator.begin(connection: h.connection, locale: .en))
+            if cancel { operation.cancel() }
+            h.fixture.release()
+            await operation.value
+            XCTAssertEqual(publications, cancel ? 0 : 1)
+            XCTAssertFalse(coordinator.busy)
+            assertOpeningReadOnly(h, refreshes: 1)
+        }
+    }
+
+    func testRootOpeningNewPresentationRetiresHeldRefreshEvenAfterDismissal() async throws {
+        for dismiss in [false, true] {
+            let h = try Harness(emitLocalSessionAsInitialSession: false)
+            defer { h.close() }
+            _ = try await expiredOpeningSession(h)
+            try auth(h, owner: owner, token: "fixture-presentation", suspend: true, refresh: true)
+            let coordinator = preparedOpeningCoordinator()
+            var available = false
+            XCTAssertNil(coordinator.begin(connection: h.connection, locale: .en,
+                                           presentationAvailable: available))
+            // Even a request admitted earlier must check actual availability before SDK work.
+            let blocked = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+            await coordinator.execute(blocked, connection: h.connection,
+                currentConnection: { h.connection }, currentLocale: { .en },
+                presentationAvailable: { available }) { _ in XCTFail("Unavailable Root must not publish") }
+            XCTAssertFalse(coordinator.busy)
+            XCTAssertFalse(h.fixture.suspended)
+            available = true
+            let request = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en,
+                                                         presentationAvailable: available))
+            var publications = 0
+            var newerUI = "target"
+            let operation = Task {
+                await coordinator.execute(request, connection: h.connection,
+                    currentConnection: { h.connection }, currentLocale: { .en },
+                    presentationAvailable: { available }) { _ in
+                    publications += 1
+                    newerUI = "overwritten"
+                }
+            }
+            try await waitForSuspension(h.fixture)
+            available = false
+            coordinator.presentationBegan()
+            XCTAssertNil(coordinator.active)
+            XCTAssertFalse(coordinator.busy)
+            if dismiss { available = true; newerUI = "dismissed" }
+            h.fixture.release()
+            await operation.value
+            XCTAssertEqual(publications, 0)
+            XCTAssertEqual(newerUI, dismiss ? "dismissed" : "target")
+            XCTAssertNil(coordinator.active)
+            XCTAssertFalse(coordinator.busy)
+            let session = try XCTUnwrap(h.client.auth.currentSession)
+            XCTAssertEqual(session.user.id, owner)
+            XCTAssertFalse(session.isExpired)
+            XCTAssertEqual(session.accessToken, "fixture-presentation")
+            assertOpeningReadOnly(h, refreshes: 1)
+        }
+    }
+
+    func testRootOpeningRetiredCompletionCannotClearNewRequestPendingRealBind() async throws {
+        let h = try Harness(emitLocalSessionAsInitialSession: false)
+        defer { h.close() }
+        _ = try await expiredOpeningSession(h)
+        try auth(h, owner: owner, token: "fixture-presentation-next", suspend: true, refresh: true)
+        let coordinator = preparedOpeningCoordinator()
+        var available = true
+        let original = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+        var oldPublications = 0
+        let first = Task {
+            await coordinator.execute(original, connection: h.connection,
+                currentConnection: { h.connection }, currentLocale: { .en },
+                presentationAvailable: { available }) { _ in oldPublications += 1 }
+        }
+        try await waitForSuspension(h.fixture)
+        available = false
+        coordinator.presentationBegan()
+        available = true // New presentation was dismissed before the old callback.
+        let replacement = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en,
+                                                          presentationAvailable: available))
+        XCTAssertNotEqual(original.id, replacement.id)
+        let api = try XCTUnwrap(h.connection.apiClient)
+        let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+        let hold = Task.detached { await api.holdConnectionTest(started: started, release: release) }
+        defer { release.signal() }
+        XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
+        var newPublications = 0
+        var second: Task<Void, Never>?
+        await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+            second = Task {
+                entered.resume()
+                await coordinator.execute(replacement, connection: h.connection,
+                    currentConnection: { h.connection }, currentLocale: { .en },
+                    presentationAvailable: { available }) {
+                    guard case .permanent(let snapshot) = $0 else {
+                        return XCTFail("New manual intent must open the current collection")
+                    }
+                    XCTAssertEqual(snapshot.session.userId, self.owner)
+                    newPublications += 1
+                }
+            }
+        }
+        h.fixture.release()
+        await first.value
+        XCTAssertEqual(oldPublications, 0)
+        XCTAssertEqual(newPublications, 0)
+        XCTAssertEqual(coordinator.active?.id, replacement.id)
+        XCTAssertTrue(coordinator.busy)
+        let session = try XCTUnwrap(h.client.auth.currentSession)
+        XCTAssertEqual(session.user.id, owner)
+        XCTAssertFalse(session.isExpired)
+        XCTAssertEqual(session.accessToken, "fixture-presentation-next")
+        release.signal()
+        await hold.value
+        let next = try XCTUnwrap(second)
+        await next.value
+        XCTAssertEqual(newPublications, 1)
+        XCTAssertNil(coordinator.active)
+        XCTAssertFalse(coordinator.busy)
+        assertOpeningReadOnly(h, refreshes: 1)
+    }
+
+    func testRootOpeningLocaleChangeDiscardsHeldResultAndReleasesBusyForNewLocale() async throws {
+        let h = try Harness(emitLocalSessionAsInitialSession: false)
+        defer { h.close() }
+        _ = try await expiredOpeningSession(h)
+        try auth(h, owner: owner, token: "fixture-root-locale", suspend: true, refresh: true)
+        let coordinator = preparedOpeningCoordinator()
+        var locale: SupportedLocale = .pl
+        let request = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: locale))
+        var publications = 0
+        let operation = Task {
+            await coordinator.execute(request, connection: h.connection,
+                currentConnection: { h.connection }, currentLocale: { locale }) { _ in publications += 1 }
+        }
+        try await waitForSuspension(h.fixture)
+        locale = .en
+        try await h.connection.updateClientLocale("en")
+        h.fixture.release()
+        await operation.value
+        XCTAssertEqual(publications, 0)
+        XCTAssertFalse(coordinator.busy)
+        let next = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: locale))
+        XCTAssertNotEqual(next.id, request.id)
+        await coordinator.execute(next, connection: h.connection,
+            currentConnection: { h.connection }, currentLocale: { locale }) {
+            guard case .permanent = $0 else { return XCTFail("New locale must remain usable") }
+            publications += 1
+        }
+        XCTAssertEqual(publications, 1)
+        XCTAssertFalse(coordinator.busy)
+        assertOpeningReadOnly(h, refreshes: 1)
+    }
+
+    func testRootOpeningOldConnectionCompletionCannotClearNewHeldRequest() async throws {
+        let old = try Harness(emitLocalSessionAsInitialSession: false)
+        let newer = try Harness(emitLocalSessionAsInitialSession: false)
+        defer { old.close(); newer.close() }
+        _ = try await expiredOpeningSession(old)
+        _ = try await expiredOpeningSession(newer)
+        try auth(old, owner: owner, token: "fixture-root-old", suspend: true, refresh: true)
+        try auth(newer, owner: owner, token: "fixture-root-new", suspend: true, refresh: true)
+        let coordinator = preparedOpeningCoordinator()
+        var current: CatalogueConnection? = old.connection
+        let original = try XCTUnwrap(coordinator.begin(connection: old.connection, locale: .en))
+        var oldPublications = 0
+        let first = Task {
+            await coordinator.execute(original, connection: old.connection,
+                currentConnection: { current }, currentLocale: { .en }) { _ in oldPublications += 1 }
+        }
+        try await waitForSuspension(old.fixture)
+        current = newer.connection
+        coordinator.connectionReplaced()
+        let replacement = try XCTUnwrap(coordinator.begin(connection: newer.connection, locale: .en))
+        var newPublications = 0
+        let second = Task {
+            await coordinator.execute(replacement, connection: newer.connection,
+                currentConnection: { current }, currentLocale: { .en }) {
+                guard case .permanent = $0 else { return XCTFail("Replacement must open") }
+                newPublications += 1
+            }
+        }
+        try await waitForSuspension(newer.fixture)
+        old.fixture.release()
+        await first.value
+        XCTAssertEqual(oldPublications, 0)
+        XCTAssertEqual(coordinator.active?.id, replacement.id)
+        XCTAssertTrue(coordinator.busy)
+        newer.fixture.release()
+        await second.value
+        XCTAssertEqual(newPublications, 1)
+        XCTAssertFalse(coordinator.busy)
+        assertOpeningReadOnly(old, refreshes: 1)
+        assertOpeningReadOnly(newer, refreshes: 1)
+    }
+
+    func testRootOpeningSignOutAndEqualSessionABAHaveNoStaleCollectionOrLogin() async throws {
+        for relogin in [false, true] {
+            let h = try Harness(emitLocalSessionAsInitialSession: false)
+            defer { h.close() }
+            _ = try await expiredOpeningSession(h)
+            let original = h.client.auth.currentSession
+            h.fixture.append(.init(method: "POST", path: "/auth/v1/token",
+                data: try json(["code": "validation_failed", "message": "Fixture rejected"]),
+                status: 422, suspend: true, query: "grant_type=refresh_token"))
+            let coordinator = preparedOpeningCoordinator()
+            let request = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+            var publications = 0
+            let operation = Task {
+                await coordinator.execute(request, connection: h.connection,
+                    currentConnection: { h.connection }, currentLocale: { .en }) { _ in publications += 1 }
+            }
+            try await waitForSuspension(h.fixture)
+            h.fixture.append(.init(method: "POST", path: "/auth/v1/logout", data: Data(), query: "scope=local"))
+            try await h.client.auth.signOut(scope: .local)
+            if relogin {
+                try auth(h, owner: owner, expired: true)
+                try await h.signIn()
+                XCTAssertEqual(h.client.auth.currentSession, original)
+            }
+            h.fixture.release()
+            await operation.value
+            XCTAssertEqual(publications, 0)
+            XCTAssertFalse(coordinator.busy)
+            if !relogin {
+                let next = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+                await coordinator.execute(next, connection: h.connection,
+                    currentConnection: { h.connection }, currentLocale: { .en }) {
+                    guard case .loginRequired = $0 else { return XCTFail("New signed-out intent requires login") }
+                    publications += 1
+                }
+                XCTAssertEqual(publications, 1)
+            }
+            assertOpeningReadOnly(h, refreshes: 1)
+        }
+    }
+
+    func testRootOpeningTransportFailurePublishesUnavailableAndExplicitRetryRecovers() async throws {
+        let h = try Harness(emitLocalSessionAsInitialSession: false)
+        defer { h.close() }
+        _ = try await expiredOpeningSession(h)
+        for held in [true, false] {
+            h.fixture.append(.init(method: "POST", path: "/auth/v1/token", data: Data(),
+                suspend: held, query: "grant_type=refresh_token", failure: .notConnectedToInternet))
+        }
+        let coordinator = preparedOpeningCoordinator()
+        let request = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+        var failures = 0
+        let operation = Task {
+            await coordinator.execute(request, connection: h.connection,
+                currentConnection: { h.connection }, currentLocale: { .en }) {
+                guard case .temporarilyUnavailable = $0 else { return XCTFail("Transport error must not open login") }
+                failures += 1
+            }
+        }
+        try await waitForSuspension(h.fixture)
+        h.fixture.release()
+        await operation.value
+        XCTAssertEqual(failures, 1)
+        XCTAssertFalse(coordinator.busy)
+        try auth(h, owner: owner, token: "fixture-root-retry", refresh: true)
+        let next = try XCTUnwrap(coordinator.begin(connection: h.connection, locale: .en))
+        var opened = false
+        await coordinator.execute(next, connection: h.connection,
+            currentConnection: { h.connection }, currentLocale: { .en }) {
+            guard case .permanent = $0 else { return XCTFail("Explicit retry must recover") }
+            opened = true
+        }
+        XCTAssertTrue(opened)
+        XCTAssertFalse(coordinator.busy)
+        assertOpeningReadOnly(h, refreshes: 3)
+    }
+
     func testCollectionOpeningRefreshInsideProductionReadKeepsOldSnapshotsAndModelsRevoked() async throws {
         for sameToken in [false, true] {
             let h = try Harness(emitLocalSessionAsInitialSession: false)

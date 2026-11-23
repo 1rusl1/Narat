@@ -1,16 +1,16 @@
 # Narat — текущий статус и передача работы
 
-## Сейчас: полный прогон после исправления иконок — 23 ноября 2026
+## Сейчас: технический код принят, готовится сборка — 23 ноября2026
 
-Новый чистый кандидат **a131e57d45fc0c597cba6a03ae4aaf7d4c6def51**, fingerprint `de92a2afa571cb2ce2c73cdb1d0051c5ae290e08d5e5dc98595540597f5b2c0f`. По сравнению с отклонённым f352 изменены только два декоративных Image: реальный Home destination и общий Today label теперь имеют ограничение24×24. Текст/Dynamic Type, действия, IDs, guards и тесты сохранены; остальные22 iOS-файла побайтно прежние. Root production остаётся A; три пользовательских PBX/xcstrings сохранены.
+Принят a131e57/FPde92: все14 наборов реально PASS, независимые Review195.604с/QA263.734с без замечаний. Root фактически VIEW44/SHA44, Light22 просмотрен независимо; наложение иконки при AccessibilityXXXL устранено в EN/PL/light/dark. [Полные результаты и24изменённых iOS-пути](validation/tester-quiet-garden-technical-2026-11-23.md), [карта UI](quiet-garden-coverage-2026-11-23.md). Это local/fixture/representative acceptance, не новая live/физическая приёмка.
 
-Actual Developer: Home PASS41.068с; Today PASS31.773с реализовал правильный layout, strict scope FAIL0.089с касался только переноса строк, штатный format-only Developer25.250с привёл к точной ожидаемой записи. Оба patch/FAIL сохранены; финальные inverse-two-expression/Swift parse/diff/SHA PASS. Это реализация и подготовка, **не UI-приёмка**. Ранее Root просмотрел все44 f352-снимка и нашёл P2; Today имеет такой же механизм по source-аудиту, отдельный TodayXXXL UI FAIL не заявляется. [Предыдущий отчёт](validation/tester-quiet-garden-visual-blocker-2026-11-23.md).
+В Root скопированы точные bytes24iOS из принятого коммита; три исходных пользовательских PBX/xcstrings сохранены и не включаются. Визуальный Quiet Garden и технический B приняты совместно; источник живого transient-login не объявляется доказанным. Ожидаемое полное iOS Git-дерево `bcee2aea03537bce09138d5bcaf095b273c8a787`, Равенство staged iOS-дерева реально подтверждено перед коммитом; postcommit проверка обязательна до push. Private WIP-история не переносится.
 
-Один новый `tester-care-qg-fixed-icons-final-readonly-whole-20261123-01` запущен: PID95996/session78816, все14 проверок заново. Порядок12 pre-review +2 QA: ordinary2/visual44 перенесены сразу после ios/MCP, до длинных UI; только прозрачные alias для сортировки (`tester-00-00-qg-ordinary-ui`, `tester-00-01-qg-visual-ui`). Сами scripts/assertions/timeouts/models не изменены. Нужны новые реальные44, их просмотр, полный независимый Review/QA; старые PASS не переиспользуются как новый прогон.
+Реальные проверки:149automation/508Swift(505XCTest без пропусков)/Release/build/welcome/MCP/ordinary2/44PNG/foreground1/routing3/SDK2/consent8/result4/care13/Today6 и оба high-role. Контроллер WAITING/publish-disabled, actualexit1/wrapper0 — ожидаемый отказ от автоматической публикации, ошибок0. Postterminal engine добавил только2 private Markdown-отчёта; код/пины не изменены, эти Markdown не копируются.
 
-Далее: принять текущие14/Review/QA/Root44 → перенести точные24 iOS-файла с равенством полного Git-дерева iOS → commit/push → чистый checkout принятого Root commit → обычные Simulator/Personal0.1.0(4), dSYM и пакет с инструкцией. Новая сборка пока не создана. Полный QG7/VoiceOver/клавиатура/узкий экран, физическая/внешняя/полная MVP-приёмка и T075/T077/T080/T098 открыты. Покупки и расширение рекомендаций отложены. Старые live1371/Personal3 отдельно.
+Этот этап меняет24iOS и7документов: handoff/tasks/rollout/tester-handoff/coverage и validation MD/JSON. Далее: commit/push принятого кода → чистый checkout Root commit → обычные Simulator/Personal0.1.0(4), подписи/App-dSYM/19DEBUG-marker exclusion → пакет с44PNG и инструкцией. Новая сборка пока не создана.
 
-Этот документальный этап меняет handoff/tasks/план/инструкцию; реально проверены exact inverse2 expressions, SHA24/user3, новый cleanHEAD, подготовка/неизменность helpers и diff. Новые App/live/подписанные сборки этим этапом Root не запускались. Последнее использование58%, оставить30%, hard70/soft68, сброс запрещён; свободно6.35GiB, удалений0.
+FullQG7/TodayXXXL/VoiceOver/клавиатура/узкий экран, physical/external/fullMVP и T075/T077/T080/T098 открыты. Покупки и расширение рекомендаций отложены. Старые live1371/Personal3 отдельно. Последнее использование60%, оставить30%, hard70/soft68, сброс запрещён; старый кэш не удалялся.
 
 ## Исторические срезы — актуален верхний блок
 

@@ -31,6 +31,7 @@ struct CatalogueSavedConditionsView: View {
                     .accessibilityIdentifier("catalogue.saved.conditions.drainage")
             }
         }
+        .qgCard(padding: 16)
         .font(.subheadline)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("catalogue.saved.conditions")
@@ -108,13 +109,22 @@ struct CataloguePrivatePhotoView: View {
                 if let image, loadedScope == expected {
                     Image(uiImage: image).resizable().scaledToFit()
                         .frame(maxHeight: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .accessibilityLabel(photoLabel)
                         .accessibilityIdentifier(subject.accessibilityId)
                 } else if failed, loadedScope == expected {
-                    Button(polish ? "Wczytaj zdjęcie ponownie" : "Retry photo") { attempt += 1 }
-                        .accessibilityIdentifier(subject.accessibilityId + ".retry")
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "photo").font(.largeTitle)
+                            .foregroundStyle(QuietGarden.secondaryText).accessibilityHidden(true)
+                        Button(polish ? "Wczytaj zdjęcie ponownie" : "Retry photo") { attempt += 1 }
+                            .buttonStyle(QuietGardenSecondaryButtonStyle())
+                            .accessibilityIdentifier(subject.accessibilityId + ".retry")
+                    }
+                    .qgCard()
                 } else {
                     ProgressView(polish ? "Wczytywanie zdjęcia…" : "Loading photo…")
+                        .frame(maxWidth: .infinity, minHeight: 160)
+                        .background(QuietGarden.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }
             }
             .task(id: read) { await load(read) }
@@ -266,6 +276,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 if let notice { noticeText(notice) }
             }
         }
+        .qgScreen()
+        .buttonStyle(QuietGardenSecondaryButtonStyle())
         .background {
             CatalogueWindowPresenter(controller: $presenter)
                 .frame(width: 0, height: 0)
@@ -316,7 +328,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     private var publicHeading: some View {
         if showsSpeciesHeading {
             VStack(alignment: .leading) {
-                Text(displayName).font(.title)
+                Text(displayName).font(.largeTitle.weight(.semibold))
                 Text(scientificName).italic()
                     .accessibilityIdentifier("catalogue.selected.scientific")
             }
@@ -335,7 +347,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
 
     private var saveForm: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(polish ? "Zapisz w kolekcji" : "Save to collection").font(.headline)
+            Text(polish ? "Zapisz w kolekcji" : "Save to collection").qgSectionTitle()
             Text(polish ? "Nazwa rośliny (opcjonalnie)" : "Plant name (optional)")
             if model == nil || model?.input != nil {
                 TextField(
@@ -357,7 +369,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 saveControls(model)
             } else {
                 Button(polish ? "Zapisz roślinę" : "Save plant") { save() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(QuietGardenPrimaryButtonStyle())
                     .disabled(working)
                     .accessibilityIdentifier("catalogue.save.submit")
                 if intent != nil {
@@ -366,6 +378,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             }
             if working && !nativeInFlight { ProgressView() }
         }
+        .qgCard(padding: 20)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(operationIdentifier)
     }
@@ -519,6 +532,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             PlantCareRecommendationContent(recommendation: recommendation)
         case .unavailable:
             Text("No verified care recommendation is available.")
+                .qgNotice(.warning)
                 .accessibilityIdentifier("catalogue.saved.care.unavailable")
         case .failed:
             Button("Retry care recommendation") {
@@ -564,26 +578,30 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .accessibilityIdentifier("catalogue.saved.history.retry")
             }
         }
+        .qgCard(padding: 16)
     }
 
     @ViewBuilder
     private func wateringControls(_ model: CatalogueSaveModel) -> some View {
-        switch model.manualWateringState {
-        case .ready:
-            Button("Record watering") { watering(model) }
-                .accessibilityIdentifier("catalogue.care.record")
-        case .saving:
-            ProgressView("Saving watering history…")
-                .accessibilityIdentifier("catalogue.care.saving")
-        case .pending:
-            Text("Watering history change pending.")
-                .accessibilityIdentifier("catalogue.care.pending")
-            Button("Retry watering change") { watering(model, retry: true) }
-                .accessibilityIdentifier("catalogue.care.retry")
-        case .unavailable:
-            Button("Reload watering history") { loadDetails(model) }
-                .accessibilityIdentifier("catalogue.care.refresh")
-        }
+        VStack(alignment: .leading, spacing: 12) {
+            switch model.manualWateringState {
+            case .ready:
+                Button("Record watering") { watering(model) }
+                    .accessibilityIdentifier("catalogue.care.record")
+            case .saving:
+                ProgressView("Saving watering history…")
+                    .accessibilityIdentifier("catalogue.care.saving")
+            case .pending:
+                Text("Watering history change pending.")
+                    .accessibilityIdentifier("catalogue.care.pending")
+                Button("Retry watering change") { watering(model, retry: true) }
+                    .accessibilityIdentifier("catalogue.care.retry")
+            case .unavailable:
+                Button("Reload watering history") { loadDetails(model) }
+                    .accessibilityIdentifier("catalogue.care.refresh")
+            }
+            }
+            .qgCard()
     }
 
     private func noticeText(_ notice: CatalogueViewNotice) -> some View {
@@ -600,7 +618,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         case .authenticationFailed:
             text = polish ? "Logowanie nie powiodło się. Spróbuj ponownie lub wróć." : "Sign-in failed. Try again or go back."
         }
-        return Text(text).accessibilityIdentifier("catalogue.save.notice")
+        return Text(text).qgNotice(.warning).accessibilityIdentifier("catalogue.save.notice")
     }
 
     private func isCurrent(_ ticket: Int, _ expected: CatalogueSDKSnapshot) -> Bool {
@@ -973,6 +991,7 @@ struct PlantCareRecommendationContent: View {
             Text(verbatim: recommendation.text)
                 .accessibilityIdentifier("catalogue.saved.care.text")
             Link("Verified care source", destination: recommendation.source.url)
+                .font(.subheadline).frame(minHeight: 44, alignment: .leading)
                 .accessibilityIdentifier("catalogue.saved.care.source")
             if showNextCheck, let check = recommendation.nextCheck {
                 Text("Next soil check · \(check.dueOn)")
@@ -981,9 +1000,11 @@ struct PlantCareRecommendationContent: View {
                 Text(verbatim: check.basis)
                     .accessibilityIdentifier("catalogue.saved.care.next.basis")
                 Link("Soil check interval source", destination: check.source.url)
+                    .font(.subheadline).frame(minHeight: 44, alignment: .leading)
                     .accessibilityIdentifier("catalogue.saved.care.next.source")
             }
         }
+        .qgCard(padding: 20)
     }
 }
 

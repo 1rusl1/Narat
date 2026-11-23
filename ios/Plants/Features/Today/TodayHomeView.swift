@@ -110,29 +110,41 @@ struct TodayHomeView: View {
     var body: some View {
         let projection = TodayCalendar(state: state, now: now, polish: polish)
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(polish ? "Dzisiaj" : "Today").font(.largeTitle).accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 24) {
+                Text(polish ? "Dzisiaj" : "Today").font(.largeTitle.weight(.semibold)).accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("today.title")
-                Button(polish ? "Moje rośliny" : "My plants", action: collection)
+                Button(action: collection) {
+                    QuietGardenActionLabel(title: polish ? "Moje rośliny" : "My plants", symbol: "leaf")
+                }
                     .accessibilityIdentifier("collection.open")
-                Button(polish ? "Sprawdź roślinę" : "Check a plant", action: check)
+                Button(action: check) {
+                    QuietGardenActionLabel(title: polish ? "Sprawdź roślinę" : "Check a plant", symbol: "camera")
+                }
+                    .buttonStyle(QuietGardenPrimaryButtonStyle())
                     .accessibilityIdentifier("welcome.check")
-                Button(polish ? "Dodaj / przeglądaj katalog" : "Add / browse catalogue", action: browse)
+                Button(action: browse) {
+                    QuietGardenActionLabel(title: polish ? "Dodaj / przeglądaj katalog" : "Add / browse catalogue", symbol: "books.vertical")
+                }
                     .accessibilityIdentifier("welcome.catalogue")
-                Button(polish ? "Rozpoznaj roślinę" : "Identify a plant", action: identify)
+                Button(action: identify) {
+                    QuietGardenActionLabel(title: polish ? "Rozpoznaj roślinę" : "Identify a plant", symbol: "viewfinder")
+                }
                     .accessibilityIdentifier("welcome.identify")
                 if unavailable {
                     Text(polish ? "Opieka jest niedostępna." : "Care is unavailable.")
+                        .qgNotice(.error)
                         .accessibilityIdentifier("today.failed")
                 } else if model.hasError {
                     Text(polish ? "Nie udało się odświeżyć opieki." : "Couldn’t refresh care.")
+                        .qgNotice(.error)
                         .accessibilityIdentifier("today.failed")
                 } else if state == nil {
                     ProgressView(polish ? "Wczytywanie opieki…" : "Loading care…")
                 }
                 if model.refreshing { ProgressView(polish ? "Odświeżanie…" : "Refreshing…") }
                 if state?.origin == .cache, state?.lastCheckedAt != nil {
-                    Text(polish ? "Zapisana opieka." : "Saved care.").foregroundStyle(.secondary)
+                    Text(polish ? "Zapisana opieka." : "Saved care.").foregroundStyle(QuietGarden.secondaryText)
+                        .qgNotice(.neutral)
                         .accessibilityIdentifier("today.cached")
                 }
                 if let checked = state?.lastCheckedAt {
@@ -140,12 +152,14 @@ struct TodayHomeView: View {
                 }
                 if projection.needsRevalidation {
                     Text(polish ? "Harmonogram wymaga odświeżenia." : "Schedule needs revalidation.")
+                        .qgNotice(.warning)
                         .accessibilityIdentifier("today.stale")
                 }
                 if let state, !state.pending.isEmpty {
                     Text(state.pending.contains { $0.status == .retryRequired }
                          ? (polish ? "Zmiany wymagają ponowienia." : "Saved changes need a retry.")
                          : (polish ? "Zmiany oczekują na synchronizację." : "Changes pending sync."))
+                        .qgNotice(.warning)
                         .accessibilityIdentifier("today.pending")
                 }
                 if state != nil, !model.hasError,
@@ -158,23 +172,27 @@ struct TodayHomeView: View {
                     Text(section.day == projection.today ? (polish ? "Dzisiaj" : "Today")
                          : ((section.day < projection.today ? (polish ? "Zaległe" : "Overdue")
                              : (polish ? "Następna kontrola" : "Next check")) + " — " + section.day))
-                        .font(.headline).accessibilityAddTraits(.isHeader)
+                        .qgSectionTitle()
                         .accessibilityIdentifier("today.section." + kind + "." + section.day)
                     ForEach(section.checks) { item in
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 12) {
                             Button { openPlant(item.plantId) } label: {
                                 VStack(alignment: .leading) {
                                     Text(item.title).font(.headline)
                                     Text(item.followUp ? (polish ? "Kontrola pierwszej pomocy" : "First aid follow-up")
                                          : (polish ? "Sprawdź podłoże" : "Check soil"))
-                                    Text(item.due)
+                                    Text(item.due).font(.subheadline).foregroundStyle(QuietGarden.secondaryText)
                                 }
                             }
+                            .buttonStyle(.plain)
+                            .frame(minHeight: 44, alignment: .leading)
                             .accessibilityIdentifier("today.task." + item.id)
                             if item.source.isVerifiedLink {
                                 Link(item.source.locator, destination: item.source.url)
+                                    .font(.subheadline).frame(minHeight: 44, alignment: .leading)
                             }
                         }
+                        .qgCard()
                     }
                 }
                 if let state {
@@ -183,17 +201,19 @@ struct TodayHomeView: View {
                             Text((plant.card.personalName ?? plant.card.speciesSlug ?? (polish ? "Roślina" : "Plant"))
                                  + (polish ? " — karta i dziennik" : " — card and journal"))
                         }
+                        .buttonStyle(QuietGardenSecondaryButtonStyle())
                         .accessibilityIdentifier("today.plant." + plant.card.id.uuidString.lowercased())
                     }
                 }
                 Button(polish ? "Spróbuj ponownie" : "Refresh care", action: retry)
                     .accessibilityIdentifier("today.retry")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(QuietGardenSecondaryButtonStyle())
             .disabled(busy)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
+            .padding(20)
         }
+        .qgScreen()
         .accessibilityIdentifier("today.root")
         .task(id: ClockRead(scope: model.scope, deadline: boundary)) {
             let scope = model.scope
@@ -221,7 +241,7 @@ struct TodayHomeView: View {
     }
 
     private func lastChecked(_ date: Date) -> some View {
-        let text = Text(checkedText(date)).foregroundStyle(.secondary)
+        let text = Text(checkedText(date)).foregroundStyle(QuietGarden.secondaryText)
             .accessibilityIdentifier("today.lastChecked")
         #if DEBUG
         let formatter = ISO8601DateFormatter()
@@ -235,14 +255,19 @@ struct TodayHomeView: View {
     @ViewBuilder private func status(_ status: TodayCalendar.Status) -> some View {
         switch status {
         case .empty: Text(polish ? "Nie masz jeszcze roślin." : "You haven’t saved any plants yet.")
+            .qgNotice(.neutral)
             .accessibilityIdentifier("today.empty")
         case .noSchedule: Text(polish ? "Brak zaplanowanych kontroli." : "No scheduled checks.")
+            .qgNotice(.neutral)
             .accessibilityIdentifier("today.noSchedule")
         case .paused: Text(polish ? "Automatyczna opieka jest wstrzymana." : "Automatic care is paused.")
+            .qgNotice(.warning)
             .accessibilityIdentifier("today.paused")
         case .unknown: Text(polish ? "Dostęp do opieki nie jest potwierdzony." : "Care access is not confirmed.")
+            .qgNotice(.warning)
             .accessibilityIdentifier("today.unknown")
         case .unavailable: Text(polish ? "Harmonogram wymaga odświeżenia." : "Schedule needs revalidation.")
+            .qgNotice(.warning)
             .accessibilityIdentifier("today.stale")
         case .pending, .scheduled: EmptyView()
         }

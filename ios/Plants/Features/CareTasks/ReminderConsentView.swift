@@ -144,15 +144,17 @@ struct ReminderConsentView: View {
                 controls
             }
         }
+        .qgCard(padding: 20)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("care.reminders")
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
             // Keep the accessibility action target on the native switch.
             HStack {
                 Text(polish ? "Przypomnienia o pielęgnacji" : "Care reminders")
+                    .font(.headline).fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabeledPair(role: .label, id: "optIn", in: consentAccessibility)
                 Spacer()
                 Toggle(isOn: Binding(
@@ -166,6 +168,7 @@ struct ReminderConsentView: View {
                 .accessibilityLabeledPair(role: .content, id: "optIn", in: consentAccessibility)
             }
             Text(message(status.phase))
+                .font(.body).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("care.reminders.status")
             if status.phase == .confirmed {
                 Text((polish ? "Potwierdzone oczekujące: " : "Confirmed pending: ")
@@ -178,17 +181,20 @@ struct ReminderConsentView: View {
                         : "iOS notifications may still be pending. Retry the check.")
                      : (polish ? "Ostatnie sprawdzenie nie potwierdziło uprawnień iOS. Sprawdź status ponownie."
                         : "The latest status check did not confirm iOS permission. Check status again."))
+                    .qgNotice(.warning)
                     .accessibilityIdentifier("care.reminders.readback")
             }
             if status.partial {
                 Text(polish ? "Część przypomnień pozostaje niepotwierdzona."
                      : "Some reminders remain unconfirmed.")
+                    .qgNotice(.warning)
                     .accessibilityIdentifier("care.reminders.partial")
             }
             if status.canAllow {
                 Button(polish ? "Zezwól na powiadomienia" : "Allow notifications") {
                     lifecycle.performConsentAction(.allow, binding: binding)
                 }
+                .buttonStyle(QuietGardenPrimaryButtonStyle())
                 .accessibilityIdentifier("care.reminders.allow")
             }
             Button(polish ? "Sprawdź status / ponów" : "Check status / retry") {
@@ -206,6 +212,7 @@ struct ReminderConsentView: View {
                 lifecycle.performConsentAction(.checkStatus, binding: binding)
             }
             .disabled(!lifecycle.isCurrent(binding: binding) || lifecycle.requestingPermission)
+            .buttonStyle(QuietGardenSecondaryButtonStyle())
             .accessibilityIdentifier("care.reminders.retry")
             if status.phase == .denied || (status.phase == .confirmed && status.readbackWarning && lifecycle.authorization == .denied) {
                 Button(polish ? "Ustawienia iOS" : "iOS Settings") {
@@ -213,6 +220,7 @@ struct ReminderConsentView: View {
                           let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     openURL(url)
                 }
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("care.reminders.settings")
             }
             Text(polish ? "Godzinę zmienisz w ustawieniach konta. Ręczny dziennik pielęgnacji pozostaje dostępny."

@@ -258,4 +258,64 @@ final class PlantsUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 25))
         XCTAssertEqual(name.label, "Monstera deliciosa")
     }
+
+    @MainActor
+    func testQuietGardenOrdinaryHomeAndCatalogueVisuals() {
+        quietGardenOrdinaryVisuals(accessibilitySize: false)
+    }
+
+    @MainActor
+    func testQuietGardenAccessibilityHomeAndCatalogueVisuals() {
+        quietGardenOrdinaryVisuals(accessibilitySize: true)
+    }
+
+    @MainActor
+    private func quietGardenOrdinaryVisuals(accessibilitySize: Bool) {
+        for language in ["en", "pl"] {
+            let app = XCUIApplication()
+            defer { app.terminate() }
+            let locale = ["-AppleLanguages", "(\(language))", "-AppleLocale", language == "pl" ? "pl_PL" : "en_US"]
+            app.launchArguments = locale + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"]
+            app.launch()
+            let title = app.staticTexts["welcome.title"]
+            XCTAssertTrue(title.waitForExistence(timeout: 10))
+            let ordinaryHeight = title.frame.height
+            if accessibilitySize {
+                app.terminate()
+                app.launchArguments = locale + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+                app.launch()
+                XCTAssertTrue(title.waitForExistence(timeout: 10))
+                XCTAssertGreaterThan(title.frame.height, ordinaryHeight * 1.5)
+            }
+            let size = accessibilitySize ? "accessibility" : "standard"
+            quietGardenImage(app, "qg-home-\(language)-\(size)")
+            let catalogue = app.buttons["welcome.catalogue"]
+            XCTAssertTrue(catalogue.waitForExistence(timeout: 10))
+            let scroll = app.scrollViews.firstMatch
+            for _ in 0..<10 {
+                if catalogue.isEnabled && catalogue.isHittable && scroll.frame.contains(catalogue.frame) { break }
+                scroll.swipeUp()
+            }
+            XCTAssertGreaterThanOrEqual(catalogue.frame.height, 44)
+            XCTAssertTrue(catalogue.isEnabled && catalogue.isHittable)
+            XCTAssertTrue(scroll.frame.contains(catalogue.frame))
+            if accessibilitySize { quietGardenImage(app, "qg-actions-\(language)-\(size)") }
+            catalogue.tap()
+            let error = app.staticTexts["catalogue.error"]
+            XCTAssertTrue(error.waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["catalogue.retry"].isEnabled)
+            quietGardenImage(app, "qg-catalogue-error-\(language)-\(size)")
+            app.buttons["catalogue.back"].tap()
+            XCTAssertTrue(app.buttons["welcome.check"].waitForExistence(timeout: 10))
+        }
+    }
+
+    @MainActor
+    private func quietGardenImage(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
 }

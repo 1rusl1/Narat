@@ -71,6 +71,8 @@ public struct PreliminaryResultView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if model.isAnalyzing {
                     ProgressView(isPolish ? "Analizowanie zdjęcia" : "Analyzing photo")
+                        .frame(maxWidth: .infinity, minHeight: 100)
+                        .qgCard()
                         .accessibilityIdentifier("analysis.progress")
                     exitButtons
                 } else if model.identificationResult != nil {
@@ -95,7 +97,7 @@ public struct PreliminaryResultView: View {
                         } else if let guestActions, let session = catalogueConnection?.snapshot,
                                   session.isAnonymous, session.session.userId == confirmed.ownerId {
                             Button("Sign in to save") { guestActions.save(confirmed) }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(QuietGardenPrimaryButtonStyle())
                                 .disabled(guestActions.busy)
                                 .accessibilityIdentifier("staging.guest.draft.save")
                             if guestActions.busy { ProgressView("Preparing your plant…") }
@@ -105,7 +107,7 @@ public struct PreliminaryResultView: View {
                         Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
                             model.confirmPhotoIdentification()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(QuietGardenPrimaryButtonStyle())
                         .accessibilityIdentifier("analysis.identification.confirm")
                     }
                     exitButtons
@@ -125,6 +127,7 @@ public struct PreliminaryResultView: View {
                                  : (isPolish
                                     ? "Nie ustalono jednoznacznej diagnozy."
                                     : "No conclusive diagnosis is available."))
+                                .qgNotice(.warning)
                                 .accessibilityIdentifier("analysis.result.uncertainty")
                         }
                     }
@@ -132,6 +135,7 @@ public struct PreliminaryResultView: View {
                         isInitial: model.repeatDiagnosisTarget == nil
                     ) {
                         Text(verbatim: guidance)
+                            .qgNotice(.neutral)
                             .accessibilityIdentifier("analysis.result.photoGuidance")
                     }
                     if model.repeatDiagnosisTarget == nil, result.mode == .diagnosis {
@@ -143,6 +147,7 @@ public struct PreliminaryResultView: View {
                                     Text(verbatim: evidence)
                                 }
                             }
+                            .qgCard()
                             .accessibilityIdentifier("analysis.result.evidence")
                         }
                         if let summary = explanation.firstAction {
@@ -151,6 +156,7 @@ public struct PreliminaryResultView: View {
                                     .font(.headline)
                                 Text(verbatim: summary)
                             }
+                            .qgCard()
                             .accessibilityIdentifier("analysis.result.firstAction")
                         }
                     }
@@ -173,7 +179,7 @@ public struct PreliminaryResultView: View {
                            isInitial: model.repeatDiagnosisTarget == nil, expected: session
                        ) {
                         Button(isPolish ? "Zaloguj się, aby zapisać" : "Sign in to save") { save(selection) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(QuietGardenPrimaryButtonStyle())
                             .disabled(guestActions.busy)
                             .accessibilityIdentifier("staging.guest.draft.save")
                         if guestActions.busy {
@@ -210,8 +216,10 @@ public struct PreliminaryResultView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
+            .padding(20)
         }
+        .qgScreen()
+        .buttonStyle(QuietGardenSecondaryButtonStyle())
         .navigationTitle(isPolish ? "Analiza" : "Analysis")
     }
 
@@ -224,7 +232,7 @@ public struct PreliminaryResultView: View {
     private var exitButtons: some View {
         AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
             .disabled((catalogueConnection != nil && saveLocked) || guestActions?.busy == true)
-            .buttonStyle(.bordered)
+            .buttonStyle(QuietGardenSecondaryButtonStyle())
     }
 }
 
@@ -347,10 +355,11 @@ private struct FirstAidRecordControls: View {
                 Text("Couldn’t record the soil check.")
             } else {
                 Button("Record soil check") { confirming = true }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(QuietGardenPrimaryButtonStyle())
                     .accessibilityIdentifier("analysis.firstAid.record")
             }
         }
+        .qgCard(padding: 20)
         .task {
             do {
                 let lease = try await context.connection.collectionLease(expected: context.expected)
@@ -406,11 +415,14 @@ struct AnalysisExitButtons: View {
     var body: some View {
         if let returnToPlant {
             Button("Back to plant", action: returnToPlant)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("analysis.back.button")
         } else {
             Button(polish ? "Wstecz" : "Back") { model.returnFromAnalysis() }
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("analysis.back.button")
             Button(polish ? "Przejdź do katalogu" : "Open catalogue") { model.showCatalogue() }
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("analysis.catalogue.button")
         }
     }
@@ -466,6 +478,7 @@ struct AnalysisUnavailableSection: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(failureText)
                 .font(.headline)
+                .qgNotice(.error)
                 .accessibilityIdentifier("analysis.unavailable.title")
 
             if model.analysisError != "analysis.error.provider_terminal",
@@ -475,13 +488,14 @@ struct AnalysisUnavailableSection: View {
                 Button(isPolish ? "Spróbuj ponownie" : "Retry") {
                     model.submitAnalysis(locale: languageStore.currentLocale)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(QuietGardenPrimaryButtonStyle())
                 .accessibilityIdentifier("analysis.retry.button")
             }
 
             AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
-                .buttonStyle(.bordered)
+                .buttonStyle(QuietGardenSecondaryButtonStyle())
         }
+        .qgCard(padding: 20)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
