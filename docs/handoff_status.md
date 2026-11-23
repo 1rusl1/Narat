@@ -1,5 +1,13 @@
 # Narat — текущий статус и передача работы
 
+## Актуальный срез: технический B и дизайн — 23 ноября 2026
+
+- **Новое поручение:** фирменный Quiet Garden для всех существующих экранов. Основа найдена в design-concept/EN/PL и текущем flow; полного актуального комплекта макетов нет. Выполнен аудит семи SwiftUI-групп/около25 семейств экранов. [План QG1–QG7](quiet-garden-rollout-2026-11-23.md); реализация дизайна ещё не начата, прежние1–2ч её не включают.
+- **Техническая база:** A принят и отправлен `ae49e13`. B остаётся в изолированной ветке, в Root не перенесён. Последний B:508Swift (505XCTest+3),149automation,Release/build/welcome и8consentUI PASS на тестовых данных. Routing дважды2/3: точная карточка открылась, XCTest не активировал rename. Новые2SDKUI/оставшиеся gates/общий ReviewQA ещё не выполнены; это не готовая приёмка B.
+- **Точка остановки B:** pipeline BLOCKED, ресурс освобождён. Offline видео/AX показывают переход загрузки и disabled edit control; требуется узкий repair помощника ожидания exists+enabled до native isHittable с сохранением assertions. Нельзя объявлять причину живого transient-login доказанной. Живая доставка и cleanup1371 — отдельные прежние доказательства, не проверка нового B.
+- **Этот этап:** изменены только данный handoff, tasks.md и новый план дизайна. Проверки — чтение материалов/исходников, согласование плана, git diff --check и SHA256 сохранности трёх пользовательских файлов; новых build/UI/live проверок для плана нет.
+- **Следующий шаг:** bounded helper repair B→затронутые реальные gates/новые2SDKUI/полный ReviewQA→Root commit/push→QG1. Personal0.1.0(3) сохранён отдельно; новая сборка ещё не выпущена. T075/T077/T080/T098, physical/external/fullMVP открыты. Покупки/расширение рекомендаций отложены. Последний usage42%, soft48/hard50, без reset.
+
 ## Актуальный срез A — 23 ноября 2026
 
 - **A проверен:** отдельный collection-opening API сохраняет строгие epoch/identity/ABA fences; in-flight signedOut→superseded, новый stablemissing read→login. Только Guest+ConnectionTests. [Отчёт](validation/tester-care-sdk-collection-read-2026-11-23.md).
