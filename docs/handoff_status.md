@@ -1,5 +1,16 @@
 # Narat — текущий статус и передача работы
 
+## Актуальный кандидат после визуального исправления — 23 ноября 2026
+
+- Private clean **f352573da0bd37c3e466317078dfc98ffddf14d8**, FP `242a610b9ca721b8284a11d365ccb94186492155b7a6468049bde3432ea9378f`, полный объём24iOS/36paths от A. Root production пока A, первоначальные3userPBX/xcstrings сохранены.
+- После mode-only исправления на d325 новый high Review **PASS175.739**, MCP реально запустил приложение/показал Home/выполнил один переход, но FAIL50.884: errorID нашли у текста и пустой3ptполосы. Raw nativeAX: StaticText48 и Other1 — siblings, accessible/VoiceOver flags не экспортируются; в source полоса уже hidden. Root просмотрел actualPNG и обнаружил отдельный реальный дефект: фон каталога заполняет только среднюю полосу, верх/низ белые. Это не был полный visualPASS. ПослеFAIL source/cached9/installed4 доказанно не изменились; исходный raw сохранён.
+- Actual CLI Developer **PASS51.670с**, ровно2 преобразования (3+/2−): `LanguageStore.swift/qgScreen` теперь расширяет frame перед background; в `GuestCatalogueView.swift/catalogueError` существующий identifier стоит на тексте перед qgNotice. Остальные22 SHA/async/callbacks/guards/ID literals/testbodies неизменны; exactscope/Swiftparse/diff PASS. Controller safe exit130 доReview/UI, private checkpoint only2files/noWIPpush. Новая пользовательская приёмка ещё не получена; старые d3259PASS/Review — исторические.
+- **Один новый full14 запущен:** `tester-care-qg-background-final-readonly-whole-20261123-01`, PID65513/session27225. Все14 ACTUALfresh; MCP перенесён раньше — unit послеrealios/new9 и передfocused/routing/SDK/consent/result:10preReview+4QA. Это проверит реальный фон и errorAX до длинной восьмёрки в том же прогоне. Original5MCPlookup/wait/PNG bodies неизменны, semanticfilter не добавлялся. ModeV2допускает только observed755/644 дляdylib при строгих4SHA/size/cached9/beforeafter; privatehelper меняет лишь expectedHEAD/new9paths.11metadata selfchecks/preflight PASS — неUIacceptance.
+- Лимит: последнее55%, остаётся45%, hard70/soft68, сброс запрещён. Свободно7.87GiB, удалений0. Auto-review прежнюю очистку old intermediates отклонил без явного согласия; продолжаем без неё. Новые source/config/READY послестарта не меняются.
+- **Далее:** наMCPsuccess сразуRootVIEW2PNG/AX uniqueerror/fullwarmbackground, затемоставшиесяреальныеchecks/whole24ReviewQA, main44ENPL/lightdark+Rootreport. Послеaccepted — exact24safeRootlanding с completeiosTree equality, commit/push, ordinarySimulator+Personal4/dSYM/package. Всеold landing manifests исторические; новый f352 prepared/notapplied. FullQG7/VoiceOver/клавиатура/узкийэкран/physical/external/fullMVP иT075/T077/T080/T098 открыты; покупки/расширениерекомендацийотложены. Новаяsignedсборка4 не создана/не передана. Этот документальный этап запускает только diff/SHAuser3 проверки, неApp/live.
+
+## История до визуального исправления
+
 ## Актуально: Review PASS, исправляется metadata guard MCP — 23 ноября 2026
 
 - **Source unchanged:** private clean `d32594a85c4ce6f80ac22c5f2d3d539391ce2a22`, FP `7703a30330d2f5e860526d3e06765987b0158e257c5021f905bbc3c58d1f1892`, 24 iOS-файла/36 путей от A. Root production пока принятый A; исходные3 пользовательских PBX/xcstrings сохранены.

@@ -19,7 +19,7 @@
 
 ## Последовательность
 
-Технические и визуальные изменения объединены в private `d32594a`:24iOS от принятого A. Все9 pre-review checks и full high Review PASS. QA остановлен на установленном dylib mode755→644 при byte identity; правка касается только внешнего metadata guard. Основные44 PNG и итоговая QA ещё не пройдены. Root production до общей приёмки не заменяется.
+Технические и визуальные изменения объединены в private `f352573`:24iOS от A. По actualMCPснимку исправлен фон каталога, заполнявший только полосу, и IDперемещён на текст доnotice. Developer51.670с/exactscope/parse/diff PASS; это не новая UIприёмка. Один freshwhole14 ставитMCPраньше длинныхтестов; исходныеMCPlookupguards сохранены. Rootproduction до общейприёмки не заменяется.
 
 | Этап | Экраны и результат | Статус |
 |---|---|---|
@@ -49,4 +49,4 @@
 
 Инвентаризация выявила семь основных SwiftUI-групп и около 25 семейств экранов/состояний. Оформление внедрено в изолированном кандидате, Release compile и static инварианты PASS. Нативная визуальная приёмка ещё не завершена; Root production до принятия не заменён.
 
-Следующий шаг: metadata-only guard с одной доказанной парой file mode, строгие source-bound9 prior actual+5remaining actual, независимые whole-24 Review/QA, Root44 EN/PL/light/dark и обычная подписанная техническая сборка. Старые результаты не называются новым выполнением; cached9/source и originalREADY/raw остаются неизменны. Дополнительные7+27 EN/light снимков — отдельные доказательства. Лимит soft68/hard70, оставить30%, без сброса; old cache очистка отклонена авто-проверкой, удалений0.
+Следующий шаг: earlyMCPпроверка fullbackground/uniqueerror наf352, затемвсе14actual/whole24ReviewQA/Root44 иsignedtechnical4. Original5AXlookupguards не ослаблялись. Старые d3259PASS/Review остаются историческими. FullQG7/physical/VO/external открыты; soft68/hard70/оставить30%/reset0. Oldintermediates сохранены послеотказаавтопроверки; удалений0.
