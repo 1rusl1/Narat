@@ -1,5 +1,19 @@
 # Narat — текущий статус и передача работы
 
+## Актуально25ноября: исправления после ручного обзора
+
+Владелец поручил4целевых маршрута: первый вход/сохранение, direct Check/Identify/Back/starters, list-first/явноеresume+миниатюры, wrong/unknown/manualspecies с исходным фото. [Критерии/план](tester-feedback-2026-11-25.md). T150 переоткрыта; добавлена отдельная T175. Критерии T041/T046/T047/T049/T093/T094/T096/T097/T098/T150/T154/T170 уточнены без ложного закрытия родителей. Главная композиция не меняется, поиск/покупки/расширение рекомендаций отложены.
+
+Реально проверено на старте: Root a6d03c3, только3исходных пользовательских PBX/xcstrings dirty. Read-only audit source/contracts/реальных artifact metadata выявил: Google UI доступен при отсутствующих Google IDs/callback; каталог автоматически восстанавливает selection; identification→обычный catalogue очищает originaljob/photo context; published listDTO уже содержит hero_image. Это не доказательство причины на устройстве. Разработки/новых UI/live checks этим документальным этапом ещё нет.
+
+Доступ уточнён владельцем: Google OAuth-конфигурация не создана; пока только Simulator. Positive liveGoogle/physical остаются OPEN; прочие исправления продолжаются без подтверждений. Сборка4/её14PASS исторические. Тестовая учётка и точные зависимости проверяются отдельно, секреты не помещаются в Git/чат.
+
+Оркестраторы: care_orchestrator готовит AUTH→catalogue в отдельном checkout, care_sources — directnavigation→identification в изолированном UX checkout; перекрывающиеся файлы не делятся, Xcode/Sim под общимlease/раздельнымиDerivedData. Root интегрирует только принятые sourceсрезы, обновляет доказательства и собирает новый артефакт. Этот этап меняет tasks/новый feedback-plan/handoff, проверки — чтение source/contracts/конфигурации и diff/user3SHA; новых App/live/build проверок пока нет.
+
+Точный следующий шаг: bounded actualDeveloper AUTH и UX через существующийworkflow→targetedtests/ReviewQA→последовательная интеграция→объединённая регрессия/ordinarysignedSimulator→пакет. Бюджет:62% used, разрешён весь остаток и один реально доступный штатный сброс при необходимости; прежний30%резерв/no-reset отменён. Реально использовано сбросов0.
+
+## История — прежний готовый technical checkpoint4
+
 ## Сейчас: пакет0.1.0(4) готов для технической приёмки — 23 ноября2026
 
 **Готовы исходники и обычные сборки с Quiet Garden.** Код `f1abe59c9bc3bf2329b51f73330aa86738ff7f06` отправлен в origin; полное iOS Git-дерево `bcee2aea03537bce09138d5bcaf095b273c8a787` совпало с принятым a131e57. [Инструкция/пакет](../build/technical-checkpoint-0.1.0-4/README.md), [Simulator ZIP](../build/technical-checkpoint-0.1.0-4/Narat-0.1.0-4-Simulator.zip), [отчёт сборки](validation/tester-quiet-garden-checkpoint-2026-11-23.md). Артефакты Git-ignored; секреты/локальные конфигурации/пользовательские базы не включены.
