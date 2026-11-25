@@ -9,7 +9,7 @@
 - При переносе Root проверил SHA/modes5, source/role/40receipt hashes, сохранность disjoint App9d/PlantsUITests/ID-B1, user preservation и diff. Native-проверки на Root повторно не запускались. Точное изменение public API-документа только уточняет56/240 SwiftUI pt вместо px; source не менялся. [Манифест](validation/tester-catalogue-C2-source-2026-11-25.json).
 - Это local/fixture приёмка каталога и permanent ID-checkpoint, не guest photo claim. T046/T047/T096/T150/T175 остаются открыты до соответствующих проверок. Новый ordinary7/архив, live C2 и полный photo/manual/unknown/Google/cold, physical/Apple/качество исходного снимка ещё не подтверждены. Прежний live Google probe6 принят отдельно; исходного пользовательского фото нет.
 - Следующий шаг: clean B2 worktree от нового Root: P0 только два prompt initializer (Guest+Save), затем Prelim → fixtures/meaningful integration → real Root guest/auth/claim bridge → append UI; финальная whole7 с текущими combined regressions/high ReviewQA. Затем strict ordinary7/пакет/live. Приватная WIP-история не переносится. Исходные8строк PBX и2xcstrings сохранены вне commit; последний actual91% used/сбросов0, удержание экрана не продлевалось.
-- Git: публикация этого этапа выполняется после фиксации данного handoff; фактический результат будет записан отдельной строкой.
+- Git: source-коммит `9c7dd2f66f7635a68b4e41508c08471e1113f2e8` создан и успешно отправлен в `origin/codex/development-throughput-audit` без force (push exit0). Эта строка подтверждения публикуется отдельным doc-only коммитом.
 
 ## Ordinary Account: видимые исходы входа приняты — 25 ноября
 
