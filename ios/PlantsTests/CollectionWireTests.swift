@@ -7188,13 +7188,14 @@ extension CollectionWireTests {
         let nameless = try identificationResult(jobId: operationId, releaseId: release, plantId: serverPlantId)
         let invalid: [(result: String, quota: String)] = [
             (mismatched, "released"), (falseUnknown, "released"), (nameless, "consumed"),
-            (unknown, "consumed"), (identified, "released"),
+            (unknown, "reserved"), (identified, "released"),
             (unknown.replacingOccurrences(of: "1.0", with: "2.0"), "released"),
             (identified.replacingOccurrences(of: serverPlantId.uuidString, with: "monstera_deliciosa"), "consumed")
         ]
         let transport = CatalogueTransport([
             .http(200, identificationJob(id: operationId, status: "succeeded", quota: "released", result: unknown)),
-            .http(200, identificationJob(id: operationId, status: "succeeded", quota: "consumed", result: identified))
+            .http(200, identificationJob(id: operationId, status: "succeeded", quota: "consumed", result: identified)),
+            .http(200, identificationJob(id: operationId, status: "succeeded", quota: "consumed", result: unknown))
         ] + invalid.map {
             .http(200, identificationJob(id: operationId, status: "succeeded", quota: $0.quota, result: $0.result))
         })
@@ -7207,6 +7208,13 @@ extension CollectionWireTests {
         XCTAssertNil(unresolved.result)
         let resolved = try await api.fetchAnalysisJob(id: operationId, mode: .identification, locale: .en, context: lease)
         XCTAssertEqual(resolved.identificationResult?.plant?.taxonId, serverPlantId)
+        let consumedUnknown = try await api.fetchAnalysisJob(id: operationId, mode: .identification, locale: .en, context: lease)
+        XCTAssertEqual(consumedUnknown.jobId, operationId)
+        XCTAssertEqual(consumedUnknown.identificationResult?.jobId, operationId)
+        XCTAssertNil(consumedUnknown.identificationResult?.plant)
+        XCTAssertEqual(consumedUnknown.quotaState, .consumed)
+        XCTAssertEqual(consumedUnknown.status, .succeeded)
+        XCTAssertEqual(consumedUnknown.mode, .identification)
         for _ in invalid {
             do {
                 _ = try await api.fetchAnalysisJob(id: operationId, mode: .identification, locale: .en, context: lease)

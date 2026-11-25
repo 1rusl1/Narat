@@ -1467,7 +1467,7 @@ struct AnalysisJobWire: Decodable, Sendable {
             switch status {
             case .succeeded:
                 guard let identificationResult, identificationResult.jobId == jobId,
-                      quotaState == (identificationResult.plant == nil ? .released : .consumed) else {
+                      (quotaState == .consumed || (identificationResult.plant == nil && quotaState == .released)) else {
                     throw AnalysisHTTPError.invalidResponse
                 }
             case .queued, .running:

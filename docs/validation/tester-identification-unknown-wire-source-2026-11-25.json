@@ -1,0 +1,52 @@
+{
+  "status": "SCOPED_ACCEPTED_EXPORT_SOURCE2_ONLY",
+  "base": "226a1666ee4f92c1c1d26d983b0882080716e5d5",
+  "review_fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+  "source": [
+    {
+      "path": "ios/Plants/Data/Remote/APIModels.swift",
+      "sha256": "58187f46b8ccbdda9cc4265154ef80cc77e4c02aeb1fde56fff87892d55c63c6",
+      "mode": 420,
+      "bytes": 66850,
+      "baseline_sha256": "7f932702dd82b7d96c2dc93c5dcd5f10891c40b99b7164aef71b6d9dd558cc2f"
+    },
+    {
+      "path": "ios/PlantsTests/CollectionWireTests.swift",
+      "sha256": "058dc299f9e5feb163ac8b1d7ce82db16f96d7c9983e5a00d71adb7946159924",
+      "mode": 420,
+      "bytes": 977335,
+      "baseline_sha256": "1d34b5a40cd0c5ec262f70ac484cf8465acb78123a937755d11b12e79a3ef390"
+    }
+  ],
+  "source_patch": "/private/tmp/narat-unknown-wire-W0-prep-20261125/accepted-W0-source2.patch",
+  "patch_sha256": "5db8ee73df6cd126ddf96789047165aeb1ed88a7cca5abb0c60193006ca51b4d",
+  "report_md": "/private/tmp/narat-unknown-wire-W0-prep-20261125/tester-identification-unknown-wire-2026-11-25.md",
+  "report_json": "/private/tmp/narat-unknown-wire-W0-prep-20261125/tester-identification-unknown-wire-2026-11-25.json",
+  "raw_state": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/state.json",
+  "audit_report": "/private/tmp/narat-nov25-unknown-result-source-audit.md",
+  "report_hashes": {
+    "md": "91bc02137cbd8f507ddffffa3361350d705ef0b80490dfbfe4baa77205a4b62b",
+    "json": "36dc25382e5dc19df0dfc719eaeaab08eecbc8dbb8714c940ca910f48a753572"
+  },
+  "no_private_push": true,
+  "root_transfer_source2_verified": true,
+  "root_native_checks_repeated": false,
+  "protected_disjoint_source_sha256": {
+    "ios/Plants/App/PlantsApp.swift": "4b6b3a37e9990a90fced4234c69b7ba629dad990cf71e79679e393aa0d08a116",
+    "ios/PlantsUITests/PlantsUITests.swift": "6d1c7214370d7f964820766dd901a26fb4e269ce4f30d6784718dbd35a36df1b",
+    "ios/Plants/Features/Analysis/AnalysisFlowModel.swift": "cf8d42eaa7b6736316917333263ead72b17848ccfed6fb513949a817c30be368",
+    "ios/Plants/Features/Analysis/PreliminaryResultView.swift": "501f2771e6edcfd13a30a0505ef3a207a74bc07dd9a96b0fb175b1c62051f23e",
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": "e1cddd04400a9305a8f9c001dec30d5ccd8dd43411a4df6b8d5adb8d871e6ac7",
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift": "7c050f8e34046eb7dd316ec7ce4d25175e2e5e6fdc3d3e6e42a448058f910dba",
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift": "8b04e78900a78c38f6ab5406c7010a67c73e0af831af1d826b135d4d647bbc6b",
+    "ios/PlantsTests/CatalogueUIFixtureTests.swift": "0fda6fdec0659704e57585df0d973079f399793e2fcdb63c3cf975d04713b0e4",
+    "ios/PlantsUITests/CatalogueSaveUITests.swift": "cd23ccd5b57578c53279f96acb1a357da02cf9cd4663bd15266fad031dbc03fa"
+  },
+  "export_manifest_sha256_at_transfer": "52d7fe8e68cd4c7041d2171a6cca973feb2879f158f6b0e8735e34b4868457ed",
+  "audit_base_before_fix": "226a1666ee4f92c1c1d26d983b0882080716e5d5",
+  "root_report_sha256": {
+    "tester-identification-unknown-wire-2026-11-25.md": "91bc02137cbd8f507ddffffa3361350d705ef0b80490dfbfe4baa77205a4b62b",
+    "tester-identification-unknown-wire-2026-11-25.json": "36dc25382e5dc19df0dfc719eaeaab08eecbc8dbb8714c940ca910f48a753572"
+  },
+  "publication": "See docs/handoff_status.md; this manifest binds source transfer only"
+}

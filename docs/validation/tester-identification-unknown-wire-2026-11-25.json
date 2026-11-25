@@ -1,0 +1,168 @@
+{
+  "status": "SCOPED_WIRE_CONTRACT_ACCEPTED_NOT_LIVE_OR_UI",
+  "date": "2026-11-25",
+  "base": "226a1666ee4f92c1c1d26d983b0882080716e5d5",
+  "run_id": "nov25-unknown-wire-W0-01",
+  "task_id": "nov25-unknown-wire-W0",
+  "review_fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+  "source": [
+    {
+      "path": "ios/Plants/Data/Remote/APIModels.swift",
+      "sha256": "58187f46b8ccbdda9cc4265154ef80cc77e4c02aeb1fde56fff87892d55c63c6",
+      "mode": 420,
+      "bytes": 66850,
+      "baseline_sha256": "7f932702dd82b7d96c2dc93c5dcd5f10891c40b99b7164aef71b6d9dd558cc2f"
+    },
+    {
+      "path": "ios/PlantsTests/CollectionWireTests.swift",
+      "sha256": "058dc299f9e5feb163ac8b1d7ce82db16f96d7c9983e5a00d71adb7946159924",
+      "mode": 420,
+      "bytes": 977335,
+      "baseline_sha256": "1d34b5a40cd0c5ec262f70ac484cf8465acb78123a937755d11b12e79a3ef390"
+    }
+  ],
+  "patch_sha256": "5db8ee73df6cd126ddf96789047165aeb1ed88a7cca5abb0c60193006ca51b4d",
+  "checks_actual_executed": [
+    {
+      "id": "W0-scope",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 0.363,
+      "identity": "33edf3a1804511f7ffbfacdd637fa8b6ad6f9acfc095d240558ce9b87a06bdb7",
+      "fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+      "stdout": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-1-W0-scope/stdout.log",
+      "stderr": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-1-W0-scope/stderr.log",
+      "evidence_directory": null
+    },
+    {
+      "id": "diff-check",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 0.049,
+      "identity": "faefa9ff417e30d4d5fd71218893b38bf9a00d36f4e857764126d2a8fd831d7b",
+      "fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+      "stdout": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-2-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-2-diff-check/stderr.log",
+      "evidence_directory": null
+    },
+    {
+      "id": "00-full-swift",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 199.439,
+      "identity": "17fb042cb084fa7f94e58227aacf3898c7f79594d7f789f157a9272e2204b3f9",
+      "fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+      "stdout": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-3-00-full-swift/stdout.log",
+      "stderr": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-3-00-full-swift/stderr.log",
+      "evidence_directory": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/q-847ef0c003bac4a8a74ad1bd"
+    },
+    {
+      "id": "W0-server-contract",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "fixture",
+      "elapsed_seconds": 3.216,
+      "identity": "087affca087b8b1be7803fb9e4d7b3b6eee9c46261260b75b5604b6526cca235",
+      "fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+      "stdout": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-4-W0-server-contract/stdout.log",
+      "stderr": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-4-W0-server-contract/stderr.log",
+      "evidence_directory": null
+    },
+    {
+      "id": "automation-tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "fixture",
+      "elapsed_seconds": 51.223,
+      "identity": "2153787c77005e54033e8e4f1a8c17fa6502505b3c0c4c1b59ec899036b20611",
+      "fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+      "stdout": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-5-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-5-automation-tests/stderr.log",
+      "evidence_directory": null
+    },
+    {
+      "id": "care-release-compile",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 100.31,
+      "identity": "1a3dd2772f186d97838cdd1898e22b55d769de77b86246716ad8bf2facd576c3",
+      "fingerprint": "5b40ec50c4997c623464174f9d38932b7d99f85b5a6d019229f430690366e5b0",
+      "stdout": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-6-care-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/check-6-care-release-compile/stderr.log",
+      "evidence_directory": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/q-dcdae5f499cd3abb62eaea8f"
+    }
+  ],
+  "roles_actual": [
+    {
+      "agent": "developer",
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "elapsed_seconds": 62.607,
+      "status": "PASS",
+      "findings": [],
+      "answer_path": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/call-1-developer/answer.json",
+      "answer_sha256": "d0fd1df40da6542a61d3b02a2ce9229beec96b14277243044d550cbe05cf0d57"
+    },
+    {
+      "agent": "reviewer",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 66.203,
+      "status": "PASS",
+      "findings": [],
+      "answer_path": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/call-2-reviewer/answer.json",
+      "answer_sha256": "0e18a7e0f33c014a32cd534b3341ab9337acf225f455c36f3dd2b1ce6ec2b671"
+    },
+    {
+      "agent": "qa",
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 82.232,
+      "status": "PASS",
+      "findings": [],
+      "answer_path": "/private/tmp/narat-unknown-wire-W0-20261125/docs/validation/automation/runs/orchestrator-nov25-unknown-wire-W0-01/nov25-unknown-wire-W0/call-3-qa/answer.json",
+      "answer_sha256": "84fa54fa955e6acf590d773da46dd3a4c4717bc455a1c6ffa814fda33842b907"
+    }
+  ],
+  "unit": {
+    "total": 544,
+    "xctest_methods": 541,
+    "missing_methods": 0
+  },
+  "server_production_path_fixture_cases": 8,
+  "automation_cases": 149,
+  "spec_reference": "specs/001-plants-ios-mvp/spec.md:165 FR-065: Unknown сам по себе не выдаёт бесплатный повтор.",
+  "contract": {
+    "succeeded_identified_quota": [
+      "consumed"
+    ],
+    "succeeded_unknown_quota": [
+      "consumed",
+      "released"
+    ],
+    "unknown_reserved": "REJECTED",
+    "other_identity_schema_mode_phase_diagnosis_guards": "UNCHANGED"
+  },
+  "server_policy_changed": false,
+  "limitations": [
+    "Local HTTP/mock/server fixtures, not live unknown/photo/manual claim/UI/physical acceptance.",
+    "Provider unusable normalizes to unknown with released quota; usable unknown is consumed. Wire has no explicit image-quality reason.",
+    "No historical job was fetched and no old-runtime failure reproduced; original rejection guard/test preserved in private baseline snapshot.",
+    "Existing injected model unknown tests bypass wire validation and do not replace B2 actual PhotoAnalysisService fixture coverage."
+  ],
+  "publication": {
+    "engine_status": "WAITING",
+    "phase": "publish",
+    "reason": "publish disabled expected; parent integrates exact source2 and curated reports",
+    "actual_controller_exit_code": 1,
+    "private_branch_push": false
+  },
+  "actual_reset_count": 0
+}
