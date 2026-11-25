@@ -9,6 +9,7 @@ private struct CatalogueViewIntent {
 
 private enum CatalogueViewNotice {
     case invalidInput, unavailable, sessionChanged, nativeCancelled, authenticationFailed
+    case configurationMissing, presentationUnavailable
 }
 
 /// Read-only recorded values shared by the saved result and collection card.
@@ -395,14 +396,28 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         case .signInRequired:
             Text(polish ? "Zaloguj się, aby zapisać wybraną roślinę." : "Sign in to save your chosen plant.")
                 .accessibilityIdentifier("catalogue.save.signInRequired")
+            Text(polish
+                 ? "Przy pierwszym użyciu Apple lub Google utworzymy konto Narat. Wybrane dane pozostaną zachowane. Roślina zostanie zapisana dopiero po potwierdzeniu zapisu."
+                 : "Using Apple or Google for the first time creates a Narat account. Your choices are kept. The plant is saved only after the save is confirmed.")
+            if connection.accountProviders.isEmpty {
+                Text(polish
+                     ? "Logowanie jest teraz niedostępne. Spróbuj później, wróć lub zmień wybrane dane."
+                     : "Sign-in is unavailable right now. Try again later, go back or edit your choices.")
+            } else if presenter?.viewIfLoaded?.window == nil {
+                Text(polish
+                     ? "Przygotowywanie logowania… Poczekaj chwilę lub wróć i spróbuj ponownie."
+                     : "Preparing sign-in… Wait a moment or go back and try again.")
+            }
             if connection.accountProviders.contains(.apple) {
                 Button(polish ? "Kontynuuj z Apple" : "Continue with Apple") { signIn(.apple) }
                     .accessibilityIdentifier("catalogue.save.apple")
                     .disabled(working || presenter?.viewIfLoaded?.window == nil)
             }
-            Button(polish ? "Kontynuuj z Google" : "Continue with Google") { signIn(.google) }
-                .accessibilityIdentifier("catalogue.save.google")
-                .disabled(working || presenter?.viewIfLoaded?.window == nil)
+            if connection.accountProviders.contains(.google) {
+                Button(polish ? "Kontynuuj z Google" : "Continue with Google") { signIn(.google) }
+                    .accessibilityIdentifier("catalogue.save.google")
+                    .disabled(working || presenter?.viewIfLoaded?.window == nil)
+            }
             editButton
         case .pending:
             if model.pendingAPIError?.error.code == "COLLECTION_LIMIT_REACHED" {
@@ -617,6 +632,10 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             text = polish ? "Logowanie anulowane. Wybrane dane zostały zachowane." : "Sign-in cancelled. Your chosen input has been retained."
         case .authenticationFailed:
             text = polish ? "Logowanie nie powiodło się. Spróbuj ponownie lub wróć." : "Sign-in failed. Try again or go back."
+        case .configurationMissing:
+            text = polish ? "Ta metoda logowania jest niedostępna. Wybierz inną, spróbuj później lub wróć. Wybrane dane pozostają zachowane." : "This sign-in method is unavailable. Choose another, try later or go back. Your choices are kept."
+        case .presentationUnavailable:
+            text = polish ? "Nie udało się otworzyć logowania. Spróbuj ponownie lub wróć. Wybrane dane pozostają zachowane." : "Couldn’t open sign-in. Try again or go back. Your choices are kept."
         }
         return Text(text).qgNotice(.warning).accessibilityIdentifier("catalogue.save.notice")
     }
@@ -867,6 +886,14 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         }
     }
 
+    private func authenticationNotice(_ failure: NativeAuthFailure) -> CatalogueViewNotice {
+        switch failure {
+        case .configurationMissing: .configurationMissing
+        case .presentationUnavailable: .presentationUnavailable
+        default: .authenticationFailed
+        }
+    }
+
     private func signIn(_ provider: NativeAuthProvider) {
         guard !working, scopeIsCurrent, let expected = scope, let original = model,
               case .signInRequired = original.state,
@@ -902,12 +929,19 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     try await adopt(verified, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
                 case let .inputRetained(verified, reason):
                     try await adopt(verified, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
-                    notice = reason == .cancelled ? .nativeCancelled : .authenticationFailed
+                    switch reason {
+                    case .cancelled: notice = .nativeCancelled
+                    case let .authenticationFailed(failure): notice = authenticationNotice(failure)
+                    }
                 case .busy:
                     notice = .authenticationFailed
                 case let .unavailable(reason):
                     if connection.snapshot == expected, original.input != nil {
-                        notice = reason == .cancelled ? .nativeCancelled : .authenticationFailed
+                        if !connection.accountProviders.contains(provider) {
+                            notice = .configurationMissing
+                        } else {
+                            notice = reason == .cancelled ? .nativeCancelled : .authenticationFailed
+                        }
                     } else {
                         clearPrivateState()
                     }
@@ -915,7 +949,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             } catch {
                 guard active, revision == ticket, !Task.isCancelled else { return }
                 if connection.snapshot == expected, original.input != nil {
-                    notice = .authenticationFailed
+                    notice = (error as? NativeAuthFailure).map { authenticationNotice($0) } ?? .authenticationFailed
                 } else {
                     clearPrivateState()
                 }

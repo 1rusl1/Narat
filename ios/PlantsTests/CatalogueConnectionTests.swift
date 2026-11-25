@@ -212,15 +212,21 @@ final class CatalogueConnectionTests: XCTestCase {
 
         init(
             storedSession: Session? = nil, emitLocalSessionAsInitialSession: Bool = true,
-            allowsSave: Bool = true,
+            allowsSave: Bool = true, configuredGoogle: Bool = false,
             prepareFixture: (ConnectionHTTPFixture) throws -> Void = { _ in }
         ) throws {
             directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            configuration = try NativeAuthConfiguration(values: [
+            var values = [
                 "NaratSupabaseURL": "https://" + UUID().uuidString.lowercased() + ".invalid",
                 "NaratSupabasePublishableKey": "fixture-public-key"
-            ])
+            ]
+            if configuredGoogle {
+                values["GIDClientID"] = "fixture.apps.googleusercontent.com"
+                configuration = try NativeAuthConfiguration(values: values, bundle: Self.googleBundle(in: directory))
+            } else {
+                configuration = try NativeAuthConfiguration(values: values)
+            }
             fixture = ConnectionHTTPFixture()
             ConnectionURLProtocol.registry.set(fixture, host: configuration.supabaseURL.host!)
             try prepareFixture(fixture)
@@ -253,6 +259,25 @@ final class CatalogueConnectionTests: XCTestCase {
                 transport: URLSessionAPITransport(session: http),
                 identityProvider: identity, resumeDefaults: defaults
             )
+        }
+
+        static func googleBundle(
+            in directory: URL, callback: String? = "com.googleusercontent.apps.fixture"
+        ) throws -> Bundle {
+            let url = directory.appendingPathComponent(UUID().uuidString + ".bundle")
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            var plist: [String: Any] = [
+                "CFBundleIdentifier": "invalid.fixture." + UUID().uuidString,
+                "NaratSupabaseURL": "https://fixture.invalid",
+                "NaratSupabasePublishableKey": "fixture-public-key",
+                "GIDClientID": "fixture.apps.googleusercontent.com"
+            ]
+            if let callback {
+                plist["CFBundleURLTypes"] = [["CFBundleURLSchemes": [callback]]]
+            }
+            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                .write(to: url.appendingPathComponent("Info.plist"))
+            return try XCTUnwrap(Bundle(url: url))
         }
 
         func close() {
@@ -1100,6 +1125,113 @@ final class CatalogueConnectionTests: XCTestCase {
         assertClosed(h)
     }
 
+    func testConfigurationValidatesCallbacksInTheSuppliedBundle() throws {
+        let h = try Harness()
+        defer { h.close() }
+        let callbacks: [String?] = [nil, "wrong.callback", "com.googleusercontent.apps.fixture"]
+        for callback in callbacks {
+            let bundle = try Harness.googleBundle(in: h.directory, callback: callback)
+            let expected = callback == "com.googleusercontent.apps.fixture"
+            XCTAssertEqual(try NativeAuthConfiguration(bundle: bundle).supportsGoogleSignIn, expected)
+            let values = try XCTUnwrap(bundle.infoDictionary).compactMapValues { $0 as? String }
+            XCTAssertEqual(try NativeAuthConfiguration(values: values, bundle: bundle).supportsGoogleSignIn, expected)
+            var missingClient = values
+            missingClient.removeValue(forKey: "GIDClientID")
+            XCTAssertFalse(try NativeAuthConfiguration(values: missingClient, bundle: bundle).supportsGoogleSignIn)
+        }
+        XCTAssertEqual(h.connection.accountProviders, [.apple])
+        assertClosed(h)
+    }
+
+    func testOrdinaryUnavailableGoogleDoesNotOpenProviderOrChangeSDKOrDisk() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let flow = UUID(), operation = UUID()
+        let model = try await guestModel(h, flow: flow, operation: operation)
+        let checkpoint = try await model.checkpointInput()
+        let scope = try await h.connection.accountScope()
+        let session = try XCTUnwrap(h.client.auth.currentSession)
+        let journal = Data("fixture-existing-photo-journal".utf8)
+        h.connection.storeGuestPhotoClaimData(journal)
+        let beforeMetadata = metadata(h)
+        do {
+            _ = try await h.connection.signInAccount(with: .google, presenting: UIViewController(), scope: scope)
+            XCTFail("Unconfigured Google must be rejected")
+        } catch { XCTAssertEqual(error as? NativeAuthFailure, .configurationMissing) }
+        XCTAssertEqual(h.identity.calls, 0)
+        XCTAssertEqual(h.connection.snapshot, scope.snapshot)
+        XCTAssertEqual(h.client.auth.currentSession?.user.id, session.user.id)
+        XCTAssertEqual(h.client.auth.currentSession?.accessToken, session.accessToken)
+        XCTAssertEqual(h.client.auth.currentSession?.user.isAnonymous, true)
+        XCTAssertEqual(model.input, input)
+        XCTAssertEqual(model.checkpoint, checkpoint)
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), journal)
+        XCTAssertEqual(metadata(h), beforeMetadata)
+        XCTAssertFalse(h.connection.authenticationInFlight)
+        XCTAssertEqual(h.fixture.captured.map(\.url?.path), ["/auth/v1/signup"])
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testCatalogueUnavailableGoogleRetainsRememberedInputAndBothOwnerQueues() async throws {
+        for selected in [input, CatalogueInput(diagnosisJobId: UUID(), speciesSlug: "fixture-fern", personalName: input.personalName),
+                         CatalogueInput(identification: .init(jobId: UUID(), taxonId: UUID()), personalName: input.personalName)] {
+            let h = try Harness()
+            defer { h.close() }
+            await h.ready()
+            try auth(h, owner: owner, anonymous: true, signup: true)
+            _ = try await h.connection.sessionOwner()
+            let expected = try await h.connection.sessionSnapshot()
+            let flow = UUID(), operation = UUID()
+            let model = try await h.connection.makeModel(
+                input: selected, flowId: flow, operationId: operation, expected: expected
+            )
+            let checkpoint = try await h.connection.rememberModel(model, expected: expected)
+            let envelope = try selected.makeEnvelope(operationId: operation)
+            let state = model.state
+            for queueOwner in [owner, other] {
+                _ = try await h.store.enqueueCommand(
+                    ownerId: queueOwner, plantId: UUID(), commandName: "care.complete", payloadJSON: "{}"
+                )
+            }
+            let ownQueue = try await h.store.pendingOutboxEntries(for: owner)
+            let foreignQueue = try await h.store.pendingOutboxEntries(for: other)
+            let journal = Data("fixture-existing-photo-journal".utf8)
+            h.connection.storeGuestPhotoClaimData(journal)
+            let beforeMetadata = metadata(h)
+            let result = await h.connection.signInAndSave(model, with: .google, presenting: UIViewController())
+            assertUnavailable(result, .storageOrServiceUnavailable)
+            XCTAssertEqual(h.identity.calls, 0)
+            XCTAssertEqual(model.input, selected)
+            XCTAssertEqual(model.state, state)
+            XCTAssertEqual(model.checkpoint, checkpoint)
+            XCTAssertEqual(checkpoint.flowId, flow)
+            XCTAssertEqual(checkpoint.operationId, operation)
+            XCTAssertEqual(checkpoint.envelope, envelope)
+            XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), checkpoint)
+            XCTAssertNil(try diskInput(h, owner: other, flow: flow))
+            XCTAssertEqual(h.connection.snapshot, expected)
+            XCTAssertEqual(h.client.auth.currentSession?.accessToken, expected.session.accessToken)
+            XCTAssertEqual(h.client.auth.currentSession?.user.id, owner)
+            XCTAssertEqual(h.client.auth.currentSession?.user.isAnonymous, true)
+            XCTAssertEqual(h.connection.guestPhotoClaimData(), journal)
+            XCTAssertEqual(metadata(h), beforeMetadata)
+            XCTAssertEqual(try h.connection.resumableFlow(expected: expected), flow)
+            XCTAssertFalse(h.connection.authenticationInFlight)
+            let disk = try Harness.container(h.directory.appendingPathComponent("connection.sqlite"))
+            let reopened = LocalStore(modelContainer: disk)
+            let afterOwn = try await reopened.pendingOutboxEntries(for: owner)
+            let afterForeign = try await reopened.pendingOutboxEntries(for: other)
+            XCTAssertEqual(afterOwn, ownQueue)
+            XCTAssertEqual(afterForeign, foreignQueue)
+            XCTAssertEqual(try ModelContext(disk).fetchCount(FetchDescriptor<CatalogueCreateConfirmationRecord>()), 0)
+            XCTAssertEqual(h.fixture.captured.map(\.url?.path), ["/auth/v1/signup"])
+            assertNoPlants(h)
+            assertClosed(h)
+        }
+    }
+
     func testOrdinaryNativeCancellationPreservesDraftAndOwnerWithoutWrites() async throws {
         let h = try Harness()
         defer { h.close() }
@@ -1125,7 +1257,7 @@ final class CatalogueConnectionTests: XCTestCase {
 
     func testOrdinaryNativeSuccessReturnsOneVerifiedPermanentSnapshotWithoutMigration() async throws {
         for provider in [NativeAuthProvider.apple, .google] {
-            let h = try Harness()
+            let h = try Harness(configuredGoogle: provider == .google)
             defer { h.close() }
             let flow = UUID(), operation = UUID()
             let model = try await guestModel(h, flow: flow, operation: operation)

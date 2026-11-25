@@ -1,0 +1,155 @@
+{
+  "status": "SCOPED_AUTH_A2_PASS_NOT_FULL_AUTH",
+  "date": "2026-11-25",
+  "run_id": "nov25-auth-provider-truth-A2-01",
+  "base_head": "a6d03c3cfd27a0ae462bd23c95b4dddb7cb9a09f",
+  "source_fingerprint": "6e10b698f834d73ba0cec425e4f90bb28aa435d3cbf7128afeba5ae2bc101102",
+  "source_committed_in_lane": false,
+  "source_files": {
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift": {
+      "sha256": "a1ac62eb04369dd500d9633ef6661e6016e2cb7e7985031fb38b8448a186aa4d",
+      "mode": "0o644",
+      "bytes": 49765
+    },
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": {
+      "sha256": "18e3edaf3c0a01bac49f609af1e352b6f02aca466fe65114c10eaeab9849feee",
+      "mode": "0o644",
+      "bytes": 171130
+    },
+    "ios/Plants/Integrations/Auth/NativeAuthConfiguration.swift": {
+      "sha256": "97f2d407e8c35d57700b19a97a4b6b0469842be5bebdb0f65984e6e64f46c46c",
+      "mode": "0o644",
+      "bytes": 1953
+    },
+    "ios/PlantsTests/CatalogueConnectionTests.swift": {
+      "sha256": "de3af7ca61363d8b6e28f8c0242f426b154d2cd7e9184820fc45991693afa883",
+      "mode": "0o644",
+      "bytes": 203034
+    }
+  },
+  "full_patch_sha256": "abca2beb8e034adf1eec36ff005402eb7b414842ce25758c79262a00417b018c",
+  "changes": [
+    "Configured-provider filter and guard for ordinary/catalogue native sign-in",
+    "Recoverable configuration/presentation notices and EN/PL account explanation",
+    "Google callback validation uses supplied Bundle",
+    "Three new realSDK/HTTP/SQLite regressions; default Apple-only fixture preserved"
+  ],
+  "actual_checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "elapsed_seconds": 0.038,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-1-diff-check/stderr.log"
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "elapsed_seconds": 46.71,
+      "mode": "fixture",
+      "stdout": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-2-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-2-automation-tests/stderr.log"
+    },
+    {
+      "name": "care-release-compile",
+      "status": "PASS",
+      "elapsed_seconds": 172.93,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-3-care-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-3-care-release-compile/stderr.log"
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "elapsed_seconds": 195.427,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-4-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/check-4-ios-tests/stderr.log"
+    }
+  ],
+  "automation_tests": {
+    "passed": 149
+  },
+  "swift_tests": {
+    "total": 511,
+    "passed": 511,
+    "failed": 0,
+    "skipped": 0,
+    "baseline": 508,
+    "new": 3
+  },
+  "roles": [
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "reasoning_effort": "medium",
+      "elapsed_seconds": 325.666
+    },
+    {
+      "agent": "reviewer",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 89.08
+    },
+    {
+      "agent": "qa",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 108.098
+    }
+  ],
+  "answers": {
+    "developer": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/call-1-developer/answer.json",
+    "reviewer": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/call-2-reviewer/answer.json",
+    "qa": "/private/tmp/narat-auth-readiness-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-provider-truth-A2-01/nov25-auth-provider-truth-A2/call-3-qa/answer.json"
+  },
+  "state": {
+    "status": "WAITING",
+    "phase": "publish",
+    "publish_disabled_expected": true,
+    "inflight": null,
+    "failures": [],
+    "controller_exit": 1,
+    "wrapper_exit": 0
+  },
+  "historical_failures_retained": [
+    {
+      "run": "nov25-auth-configured-continuation-01",
+      "developer_seconds": 900.017,
+      "outcome": "TIMEOUT",
+      "source_applied": 0,
+      "checks": 0
+    },
+    {
+      "run": "nov25-auth-provider-truth-A-01",
+      "developer_seconds": 53.233,
+      "transport": "PASS",
+      "semantic": "BLOCKED",
+      "cause": "Default Apple-only Harness conflicts with original Google success iteration",
+      "source_applied": 0,
+      "checks": 0
+    }
+  ],
+  "limits": [
+    "Local fixtures/compiler/core only; native rendered auth flow not run",
+    "No real Google/Apple OAuth, physical test or account creation",
+    "Email login continuation and live guest-photo claim remain unverified",
+    "Copy clarification in AUTH-B: OAuth success automatically continues saving; no separate user confirmation step",
+    "Root created remote Google configuration independently; frozen lane did not consume new local configuration"
+  ],
+  "next": "Root integrates exact4 bytes/reports; wait accepted Nav+A base before AUTH-B existing email LOGIN/checkpoint/rendered tests. T046/full user flow remains open.",
+  "budget": {
+    "authorization": "Nov25 use current remaining; at most one official reset if needed and available, centrally coordinated by Root",
+    "actual_resets": 0,
+    "last_used_percent": 66,
+    "ordinaryUsageAllowed": true
+  },
+  "git_delivery": "Root transports reviewed isolated lane bytes and publishes curated commit; outcome reported separately"
+}

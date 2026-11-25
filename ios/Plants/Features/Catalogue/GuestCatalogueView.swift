@@ -550,8 +550,9 @@ final class CatalogueConnection {
         with provider: NativeAuthProvider, presenting: UIViewController,
         scope: CatalogueAccountScope
     ) async throws -> CatalogueSDKSnapshot? {
+        guard nativeFlow == nil else { throw NativeAuthFailure.providerFailed }
         guard let nativeAuth else { throw NativeAuthFailure.configurationMissing }
-        guard provider != .apple || accountProviders.contains(.apple) else {
+        guard accountProviders.contains(provider) else {
             throw NativeAuthFailure.configurationMissing
         }
         return try await signInAccount(scope: scope) {
@@ -817,7 +818,7 @@ final class CatalogueConnection {
     ) async -> CatalogueNativeOutcome {
         guard nativeFlow == nil else { return .busy }
         guard let nativeAuth, let store, let apiClient,
-              provider != .apple || accountProviders.contains(.apple) else {
+              accountProviders.contains(provider) else {
             return .unavailable(.storageOrServiceUnavailable)
         }
         let intent = UUID()

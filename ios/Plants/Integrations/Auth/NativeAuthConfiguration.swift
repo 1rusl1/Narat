@@ -8,11 +8,9 @@ public struct NativeAuthConfiguration: Sendable {
     public let googleServerClientId: String?
     public let supportsAppleSignIn: Bool
 
-    public var supportsGoogleSignIn: Bool {
-        NativeIdentityProvider.isGoogleConfigured(clientId: googleClientId)
-    }
+    public let supportsGoogleSignIn: Bool
 
-    public init(values: [String: String]) throws {
+    public init(values: [String: String], bundle: Bundle = .main) throws {
         func configured(_ key: String) -> String? {
             guard let value = values[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !value.isEmpty, !value.contains("$(") else { return nil }
@@ -27,12 +25,13 @@ public struct NativeAuthConfiguration: Sendable {
         supabaseURL = url
         supabasePublishableKey = key
         googleClientId = configured("GIDClientID")
+        supportsGoogleSignIn = NativeIdentityProvider.isGoogleConfigured(clientId: googleClientId, bundle: bundle)
         googleServerClientId = configured("GIDServerClientID")
         supportsAppleSignIn = configured("NaratAppleSignInEnabled") != "NO"
     }
 
     public init(bundle: Bundle = .main) throws {
-        try self.init(values: (bundle.infoDictionary ?? [:]).compactMapValues { $0 as? String })
+        try self.init(values: (bundle.infoDictionary ?? [:]).compactMapValues { $0 as? String }, bundle: bundle)
     }
 
     /// Use one shared SupabaseClient for auth, claim preparation and session refresh.
