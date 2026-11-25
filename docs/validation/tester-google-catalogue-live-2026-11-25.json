@@ -1,0 +1,63 @@
+{
+  "phase": "LIVE_GOOGLE_CATALOGUE_SAVE_AND_COLD_UI_PASS",
+  "source_commit": "0c9b53049081d483f2a7988876958de725f06897",
+  "build": "0.1.0(6)",
+  "binary_sha256": "dc04d5430eabab739697354b6e36999544730d95411dc5f5445356aae099f10a",
+  "simulator_udid": "59EDB547-D026-43D1-801B-AA6D644765C7",
+  "mode": "ordinary signed Simulator Release with real Google and Supabase staging",
+  "observed_at_utc": "2026-11-25T10:55:36Z/2026-11-25T10:59:26Z",
+  "retained_pre_auth_name": "Narat Google QA25Nov",
+  "retained_species": "Achimenes grandiflora",
+  "pre_auth_checkpoint_restored_after_in_place_update": true,
+  "google_native_presentation_observed": true,
+  "google_accounts_existing_account_and_continue_observed": true,
+  "owner_password_entered_by_agent": false,
+  "native_return_to_app_observed": true,
+  "automatic_save_after_google_without_second_save_tap": true,
+  "plant_saved_notice_observed": true,
+  "collection_count_before_cold": 1,
+  "plant_id_before_cold": "4d9b2648-d9e5-4698-97f0-7bf49c1da0f0",
+  "card_opened_before_cold": true,
+  "cold_restart_old_pid": 1154,
+  "cold_restart_new_pid": 2483,
+  "collection_count_after_cold": 1,
+  "plant_id_after_cold": "4d9b2648-d9e5-4698-97f0-7bf49c1da0f0",
+  "card_opened_after_cold": true,
+  "name_and_species_retained_after_cold": true,
+  "server_nonce_validation_left_enabled": true,
+  "personal_photo_path_tested": false,
+  "physical_iphone_tested": false,
+  "final_tester_artifact": false,
+  "actual_system_app_name": "Plants",
+  "system_name_issue_open": true,
+  "strict_build_helper_outcome": "FAIL on embedded Name only, after actual BUILD_SUCCEEDED; raw retained",
+  "auth_only_retention_checks": {
+    "expected_google_ids_callback": true,
+    "signature": true,
+    "app_dsym_uuids": true,
+    "debug_sentinels_absent": 19,
+    "expected_backend_public_key": true
+  },
+  "native_lease_6843_released_terminal_exit": 0,
+  "original_probe5_nonce400_retained": true,
+  "screenshots": "Actual CUA tool screenshots viewed inline; no exported PNG artifact claimed",
+  "backend_independent_readonly_proof": {
+    "status": "NOT_CONFIRMED",
+    "direct_rest_http_status": 403,
+    "read_only_attempts": 2,
+    "only_exact_plant_endpoint_reached": true,
+    "backend_mutations": 0,
+    "permission_changes": 0
+  },
+  "test_tool_secrets_written": false,
+  "resets_used": 0,
+  "limitations": [
+    "This is the catalogue path on internal auth probe6; future AUTH-B/C1/C2/ID-B changes are absent.",
+    "Old system name Plants remains; strict artifact name acceptance is FAIL, not waived for final release.",
+    "No photo path, physical iPhone, Apple, classifier quality, or full MVP acceptance in this run."
+  ],
+  "helper_limitations": [
+    "First sandbox preflight stopped on ps permission before Xcode; proper host preflight later passed.",
+    "First update helper installed6 then stopped on an invalid path-identity assumption; no second install. Exact installed binary was verified, then actual UI proved durable input retention."
+  ]
+}

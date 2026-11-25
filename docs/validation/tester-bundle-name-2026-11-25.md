@@ -5,3 +5,7 @@ Private commit `5afe8ee80b510fe8248c78513113525be3bf25bd`, base `916109231f00012
 Developer28.502s / Reviewer22.538s / QA27.648s — PASS, findings0. Фактические diff-check, plutil-lint и точный raw+parsed preservation guard — PASS. Raw state `/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/state.json`; WAITING/publish = отключённый publish.
 
 Native/Xcode/Simulator/UI/backend0. Это только source/static acceptance; embedded runtimeName PENDING доordinarybuild. PBX/xcstrings/ProductName/executable/bundleID/URLschemes/signing untouched. Root интегрирует единственный plist-патч и свой handoff/commit/push; privatehandoff целиком не переносится.
+
+## Последующий ordinary probe6
+
+Реальная сборка25ноября показала: compiled CFBundleName всё ещё Plants, хотя исходный Info.plist содержит Narat. Строгий build guard FAIL, системный Google-диалог также показывает Plants. Статическая приёмка выше не была доказательством runtime; имя исправляется отдельным generated-metadata пакетом. [Live report](tester-google-catalogue-live-2026-11-25.md).

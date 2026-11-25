@@ -1,5 +1,12 @@
 # Narat — текущий статус и передача работы
 
+## Живой Google и сохранение прошли — 25 ноября
+
+- Ordinary auth probe6, source `0c9b530`: восстановились прежние имя/вид/checkpoint; реальный Google → автоматическое Plant saved → одна карточка в My plants → открытие → cold PID 1154→2483 → та же одна карточка с UUID `4d9b2648-d9e5-4698-97f0-7bf49c1da0f0` → открытие с прежними полями. [Отчёт](validation/tester-google-catalogue-live-2026-11-25.md). Это живая UI-проверка, не fixture.
+- Независимый прямой REST GET по этому UUID получил 403, поэтому отдельная DB-проверка числа строк не заявляется. Прав/данных сервера не меняли. В интерфейсе коллекции одна карточка подтверждена до и после холодного запуска.
+- Итогового tester-артефакта ещё нет: Xcode build probe6 прошёл, но embedded CFBundleName остался Plants; строгий name guard FAIL. Google-вход проверен на явно обозначенном внутреннем probe. Metadata исправляется отдельным двухфайловым кандидатом; исходный FAIL сохранён.
+- Native lease освобождён; старые Simulator не менялись. Фото/physical/Apple/качество классификации этим не принимаются. Далее AUTH-B → C1 → C2 → ID-B, metadata имени и объединённая проверка/пакет. Исходный PBX diff 8 строк и два xcstrings сохранены. Сбросов 0.
+
 ## Secure Google nonce принят — 25 ноября
 
 - В Root перенесены NativeIdentityProvider, NativeAuthTests, Google requirement в PBX и обе Package.resolved. Свежий SHA-256 nonce передаётся Google, исходный nonce — Supabase. Google SDK 10.1 требует AppAuth 3.0/GTMAppAuth 6.0; остальные 12 pins сохранены. Проверка nonce на сервере включена.
