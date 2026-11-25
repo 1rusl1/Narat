@@ -1,5 +1,11 @@
 # Narat — текущий статус и передача работы
 
+## Актуальный лимит работы — указание владельца 25 ноября
+
+Текущее обычное окно разрешено до исчерпания. Затем при необходимости доступен максимум один штатный сброс, только Root; после него сохранить15% остатка (не расходовать новое окно выше85%). Завершить задачу раньше этого порога допустимо, искусственный расход и покупки не разрешены. Фактически сбросов0, последнее наблюдение96% used/ordinary allowed. Центральное локальное разрешение `/private/tmp/narat-nov25-budget-authorization.json` содержит before-reset100/post-reset85 и счётчик сбросов.
+
+B2 ещё в private реализации: P0/P1/F1/F2 скомпилированы, два новых integration methods фактически прошли после data/access/test-baseline repairs. Сейчас actual UI packet (App DEBUG SDK/revision instrumentation +appendPlantsUITests) от accepted Root W0; новая ordinary7 ещё не собрана. Затем нужны current-loaded UI/свежая whole7/high ReviewQA, selective Root landing/push, Release archive и live-проверка. Предыдущие accepted C2/W0 опубликованы, исходные пользовательские3файла сохранены.
+
 ## W0: исправлен реальный wire-контракт неизвестного вида — 25 ноября
 
 - Root перенёс только APIModels.swift и узкую правку одного HTTP-теста CollectionWireTests.swift из принятого W0. `succeeded/unknown` теперь принимает consumed/released, identified требует consumed; unknown+reserved остаётся ошибкой. Все проверки job/schema/mode/phase/diagnosis и остальные методы Wire сохранены. [Отчёт](validation/tester-identification-unknown-wire-2026-11-25.md), [манифест](validation/tester-identification-unknown-wire-source-2026-11-25.json).
