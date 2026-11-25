@@ -1,0 +1,87 @@
+{
+  "status": "STATIC_COMPONENT_ACCEPTED_RUNTIME_PENDING",
+  "base_commit": "916109231f000127716a3145660a37d5f322630b",
+  "private_commit": "5afe8ee80b510fe8248c78513113525be3bf25bd",
+  "checked_source_fingerprint": "40eb8a1fba86ec3ae588667e9ac60676fd45efe8327a918d959155155803916e",
+  "source_path": "ios/Configuration/Info.plist",
+  "before_sha256": "3c746da922ffd5b5307b999caa6064c1edc6c8704d31589888b2ea8b7c030ac6",
+  "after_sha256": "3be3a901ad55b0fa867268484a37b282d37ea4a591c8f5a705109531c5a7b508",
+  "patch_path": "/private/tmp/narat-nov25-bundle-name-prep/accepted-bundle-name.patch",
+  "patch_sha256": "eed701543883b088c83ee81db4d244956f48a464f56bc5a2b1599f3e1233bc1b",
+  "checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "40eb8a1fba86ec3ae588667e9ac60676fd45efe8327a918d959155155803916e",
+      "elapsed_seconds": 0.037,
+      "stdout": "/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/nov25-bundle-name/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/nov25-bundle-name/check-1-diff-check/stderr.log"
+    },
+    {
+      "name": "plist-lint",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "40eb8a1fba86ec3ae588667e9ac60676fd45efe8327a918d959155155803916e",
+      "elapsed_seconds": 0.012,
+      "stdout": "/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/nov25-bundle-name/check-2-plist-lint/stdout.log",
+      "stderr": "/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/nov25-bundle-name/check-2-plist-lint/stderr.log"
+    },
+    {
+      "name": "plist-preservation",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "40eb8a1fba86ec3ae588667e9ac60676fd45efe8327a918d959155155803916e",
+      "elapsed_seconds": 0.19,
+      "stdout": "/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/nov25-bundle-name/check-3-plist-preservation/stdout.log",
+      "stderr": "/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/nov25-bundle-name/check-3-plist-preservation/stderr.log"
+    }
+  ],
+  "roles": [
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "status": "PASS",
+      "elapsed_seconds": 28.502,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "reviewer",
+      "model": "gpt-6.1-sol",
+      "status": "PASS",
+      "elapsed_seconds": 22.538,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "qa",
+      "model": "gpt-6.1-sol",
+      "status": "PASS",
+      "elapsed_seconds": 27.648,
+      "reasoning_effort": "medium"
+    }
+  ],
+  "reviewer_findings": [],
+  "qa_findings": [],
+  "raw_state": "/private/tmp/narat-bundle-name-20261125/docs/validation/automation/runs/orchestrator-nov25-bundle-name-01/state.json",
+  "raw_status": "WAITING",
+  "raw_phase": "publish",
+  "raw_reason": "Verified; commit/push disabled. Publication remains pending.",
+  "native_calls": 0,
+  "runtime_embedded_name_verified": false,
+  "preserved": [
+    "allotherrawplistbytes",
+    "allotherparsedplistvalues",
+    "PBX",
+    "xcstrings",
+    "PRODUCT_NAME",
+    "CFBundleExecutable",
+    "bundleID",
+    "URLschemes",
+    "Signing",
+    "Rootuser3"
+  ],
+  "next_step": "Rootland onefilepatch andcentralhandoff/push; futureordinarybuild verify actual embedded CFBundleName=Narat and DisplayName=Narat; noIDBstart"
+}
