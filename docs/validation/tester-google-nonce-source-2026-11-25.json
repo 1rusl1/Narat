@@ -1,0 +1,20 @@
+{
+  "base": "7de70deadac5b6718b45c77761747e02149d71ab",
+  "private_accepted_commit": "9039005d543e2b6d5b4e62bbe4e0029f4cf5f47b",
+  "checked_source_fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+  "files_sha256": {
+    "Package.resolved": "0bcc17b5a7a34de5b410d919f416fdf8153065c376e640c162ccf076ee903cc8",
+    "ios/Plants.xcodeproj/project.pbxproj": "f8fc522cd227d1d69b4f23a75f53e77ff26eeefda6e471db832c477c5df79e99",
+    "ios/Plants.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": "0bcc17b5a7a34de5b410d919f416fdf8153065c376e640c162ccf076ee903cc8",
+    "ios/Plants/Integrations/Auth/NativeIdentityProvider.swift": "9f8394440bf7a14c0fda2c4499e01b1ff520c81def9bddfd46df47e23366c5ef",
+    "ios/PlantsTests/NativeAuthTests.swift": "19c0ef66210805c2498bfe56ef8616e2b77e3f3dc03eb17e76b2be0f9a3c5118"
+  },
+  "source5_patch": "/private/tmp/narat-nov25-google-nonce-prep/accepted-google-nonce-source5.patch",
+  "source5_patch_sha256": "f534be7423b9e83cae6dc68fc520598970f97305d86359ade90bb8caff2d02f9",
+  "pbx_selective_patch": "/private/tmp/narat-nov25-google-nonce-prep/accepted-google-nonce-pbx-only.patch",
+  "pbx_selective_patch_sha256": "184bda8a30bc312509e7017fbf4b55d7670c7555b43afab5439294d79aed330a",
+  "checked_FP_precedes_engine_report_handoff_generation": true,
+  "private_clean_worktree": true,
+  "no_root_user_file_writes": true,
+  "no_force_push": true
+}

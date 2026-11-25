@@ -1,0 +1,219 @@
+{
+  "status": "SCOPED_SECURE_CLIENT_FIX_ACCEPTED_LIVE_PENDING",
+  "base_commit": "7de70deadac5b6718b45c77761747e02149d71ab",
+  "private_commit": "9039005d543e2b6d5b4e62bbe4e0029f4cf5f47b",
+  "source_fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+  "source_manifest": "/private/tmp/narat-nov25-google-nonce-prep/accepted-google-nonce-source5-manifest.json",
+  "official_sdk_proof": "/private/tmp/narat-nov25-google-nonce-prep/official-sdk-proof.json",
+  "dependency_preflight": "/private/tmp/narat-nov25-google-nonce-prep/dependency-preflight.json",
+  "own_sdk15_manifest": "/private/tmp/narat-nov25-google-nonce-prep/accepted-own-sdk-sourcepackages.json",
+  "scope": [
+    "NativeIdentityProvider Googlebranch usesfresh secure immutableattemptnonce: digest→actualSDK10.1 customnonce,raw→credentials",
+    "InternalSDK-call/Bundle dependencyinjection exercisesactualproviderpath inunit;publicprotocol/initpreserved",
+    "Googleexact10.1+AppAuth3.0+GTMAppAuth6.0,onlyrequired3pins",
+    "ExistingAppleAuthorizationRequest/AppleSignInNonce/authprotocol/exchange/providerconfig/skipnonce/GoogleIDs untouched"
+  ],
+  "dependencies_changed": {
+    "appauth-ios": {
+      "before": {
+        "revision": "2781038865a80e2c425a1da12cc1327bcd56501f",
+        "version": "1.7.6"
+      },
+      "after": {
+        "revision": "a972daac82d449d58ab119e91c68153e29ddac33",
+        "version": "3.0.0"
+      }
+    },
+    "googlesignin-ios": {
+      "before": {
+        "revision": "65fb3f1aa6ffbfdc79c4e22178a55cd91561f5e9",
+        "version": "8.0.0"
+      },
+      "after": {
+        "revision": "bfaebbc04a4d13ed7a89b0fc1fb8ad66b362cc1c",
+        "version": "10.1.0"
+      }
+    },
+    "gtmappauth": {
+      "before": {
+        "revision": "5d7d66f647400952b1758b230e019b07c0b4b22a",
+        "version": "4.1.1"
+      },
+      "after": {
+        "revision": "57094cd46bc8700d3a887e2a429f42b6e8ea3f0b",
+        "version": "6.0.0"
+      }
+    }
+  },
+  "other12_pins_semantically_exact": true,
+  "lock_serialization_note": "Both auditedpreflight lockcopies normalizedJSONcolonspacing;93+/93-linesperfile, semanticdelta only3pins; originHash/order/otherpinvalues preserved.",
+  "actual_checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 0.207,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-3-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-3-diff-check/stderr.log"
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 136.671,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-4-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-4-ios-tests/stderr.log",
+      "evidence_directory": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/q-6df0c757ef15ba98aecba8cf"
+    },
+    {
+      "name": "release-compile",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 173.439,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-5-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-5-release-compile/stderr.log",
+      "evidence_directory": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/q-3597292b07fefebf086265e5"
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "fixture",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 56.287,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-6-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-6-automation-tests/stderr.log"
+    }
+  ],
+  "all_check_history": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "fingerprint": "3fdc6c01bb34dad427e6ea2bc87a048e6db2a6f791df6abee82e1ecbb34414d1",
+      "elapsed_seconds": 0.151,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-1-diff-check/stderr.log"
+    },
+    {
+      "name": "ios-tests",
+      "status": "FAIL",
+      "fingerprint": "3fdc6c01bb34dad427e6ea2bc87a048e6db2a6f791df6abee82e1ecbb34414d1",
+      "elapsed_seconds": 211.516,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-2-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-2-ios-tests/stderr.log",
+      "evidence_directory": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/q-4d2db406c16d03800fb03123"
+    },
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 0.207,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-3-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-3-diff-check/stderr.log"
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 136.671,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-4-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-4-ios-tests/stderr.log",
+      "evidence_directory": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/q-6df0c757ef15ba98aecba8cf"
+    },
+    {
+      "name": "release-compile",
+      "status": "PASS",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 173.439,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-5-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-5-release-compile/stderr.log",
+      "evidence_directory": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/q-3597292b07fefebf086265e5"
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "fingerprint": "405a247c9482b7785d47ca247e5a78c25111dcbd79b9cebd6de0e7b204d150f4",
+      "elapsed_seconds": 56.287,
+      "stdout": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-6-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/nov25-google-nonce/check-6-automation-tests/stderr.log"
+    }
+  ],
+  "roles": [
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 370.985,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 78.98,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "reviewer",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 90.308,
+      "reasoning_effort": "high"
+    },
+    {
+      "agent": "qa",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 72.626,
+      "reasoning_effort": "high"
+    }
+  ],
+  "reviewer_findings": [],
+  "qa_findings": [],
+  "raw_state": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-google-nonce-01/state.json",
+  "raw_status": "WAITING",
+  "raw_phase": "publish",
+  "raw_reason": "Verified; commit/push disabled. Publication remains pending.",
+  "test_evidence": {
+    "total": 523,
+    "expected_xctest_methods": 520,
+    "passed_xctest_methods": 520,
+    "missing": [],
+    "automation": 149,
+    "scope": "local_fixture_transport_not_live"
+  },
+  "first_failure": "Firstunit run211.516s failedfour assertions innewGoogle draft test: comparedinputAddFlowState withLocalStore-assignedupdatedAt. Dev2 changedonlytest tofull persistedcheckpointbefore/aftercancel/error/retry, withnonemptyphoto/species/result; no preservationassertion dropped. RawFAIL retained.",
+  "limits": [
+    "RootliveGoogle400 remains historicalFAIL, not erased byfixtures",
+    "NewGoogle→permanent/onecard/cold liveflow PENDINGRootordinarysecureprobe6",
+    "NoactualGoogleSDKUI/network/providerexchange oraccountchanges bythislane",
+    "Nativewelcome/fullunit/Release onlyonowned32009; live59ED untouched",
+    "Privatecommitnotpushed;RootmustselectivelylandPBXSDKrequirementpreservingoriginaluserPBXdelta and2xcstrings"
+  ],
+  "next_step": "Rootapply exactsource5patch/selectivePBXhunk, verifyuser3guard, centralhandoff/tasks+commit/push; then ownSDK10ordinaryprobe6 withnoncechecksON andnewliveGoogle/save/cold. IDBstillwaitC1/C2.",
+  "root_landing": {
+    "source5_exact_accepted": true,
+    "pbx_clean_index_matches_accepted": true,
+    "user_preservation": {
+      "mode": "accepted-sdk-plus-original-user-delta",
+      "xcstrings": 2,
+      "original_user_delta_lines": 8,
+      "pbx_user_delta_preserved": true,
+      "accepted_sdk_only_index": true,
+      "reverse_patch_recovers_accepted_clean_pbx": true
+    },
+    "original_pbx_whole_byte_identity_after_sdk_update": false,
+    "original_xcstrings_byte_identity": true,
+    "private_wip_ancestors_not_imported": true
+  }
+}

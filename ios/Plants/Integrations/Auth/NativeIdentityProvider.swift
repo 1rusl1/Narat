@@ -22,10 +22,35 @@ public final class NativeIdentityProvider: NativeIdentityProviding {
     private let googleClientId: String?
     private let googleServerClientId: String?
     private var appleRequest: AppleAuthorizationRequest?
+    struct GoogleTokens: Sendable {
+        let idToken: String?
+        let accessToken: String
+    }
+    typealias GoogleSignInCall = @MainActor (UIViewController, String) async throws -> GoogleTokens
+    private let googleBundle: Bundle
+    private let googleSignIn: GoogleSignInCall
 
     public init(googleClientId: String?, googleServerClientId: String? = nil) {
         self.googleClientId = googleClientId
         self.googleServerClientId = googleServerClientId
+        self.googleBundle = .main
+        self.googleSignIn = Self.signInGoogle
+    }
+
+    internal init(googleClientId: String?, googleServerClientId: String? = nil,
+                  bundle: Bundle, googleSignIn: @escaping GoogleSignInCall) {
+        self.googleClientId = googleClientId
+        self.googleServerClientId = googleServerClientId
+        self.googleBundle = bundle
+        self.googleSignIn = googleSignIn
+    }
+
+    private static func signInGoogle(presenting: UIViewController, nonce: String) async throws -> GoogleTokens {
+        let result = try await GIDSignIn.sharedInstance.signIn(
+            withPresenting: presenting, hint: nil, additionalScopes: nil, nonce: nonce
+        )
+        return GoogleTokens(idToken: result.user.idToken?.tokenString,
+                            accessToken: result.user.accessToken.tokenString)
     }
 
     nonisolated static func isGoogleConfigured(clientId: String?, bundle: Bundle = .main) -> Bool {
@@ -48,20 +73,24 @@ public final class NativeIdentityProvider: NativeIdentityProviding {
             defer { appleRequest = nil }
             return try await request.perform()
         case .google:
-            guard let clientId = googleClientId, Self.isGoogleConfigured(clientId: clientId) else {
+            guard let clientId = googleClientId, Self.isGoogleConfigured(clientId: clientId, bundle: googleBundle) else {
                 throw NativeAuthFailure.configurationMissing
             }
+            try Task.checkCancellation()
+            let nonce = try AppleSignInNonce()
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(
                 clientID: clientId, serverClientID: googleServerClientId
             )
             do {
-                let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting)
-                guard let token = result.user.idToken?.tokenString, !token.isEmpty else {
+                let result = try await googleSignIn(presenting, nonce.sha256)
+                try Task.checkCancellation()
+                guard let token = result.idToken, !token.isEmpty else {
                     throw NativeAuthFailure.invalidCredential
                 }
                 return NativeAuthCredentials(provider: .google, idToken: token,
-                                             accessToken: result.user.accessToken.tokenString)
+                                             accessToken: result.accessToken, nonce: nonce.raw)
             } catch {
+                try Task.checkCancellation()
                 let nsError = error as NSError
                 if nsError.domain == kGIDSignInErrorDomain && nsError.code == GIDSignInError.canceled.rawValue {
                     throw CancellationError()

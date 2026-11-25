@@ -1,0 +1,41 @@
+{
+  "status": "PRIMARY_SDK_SOURCE_AND_ACTUAL_RESOLVE_VERIFIED",
+  "sources": {
+    "GoogleSignIn10.1": {
+      "path": "/private/tmp/narat-google-signin-10.1.0-source",
+      "commit": "bfaebbc04a4d13ed7a89b0fc1fb8ad66b362cc1c",
+      "files_sha256": {
+        "Package.swift": "f912fbb2258c89f009054743ac413394b661c96af2a24ebcceed7be1cde4c554",
+        "GoogleSignIn/Sources/Public/GoogleSignIn/GIDSignIn.h": "2fae0b63420beb932a466347fb8eda7f73de5681317ec42269e8ffc1646bf0ec",
+        "Package@swift-5.7.swift": "4cbb8467d1b5500da60d670cec7b23005983e039d64a2376116c2c57843abf90"
+      }
+    },
+    "AppAuth3.0": {
+      "path": "/private/tmp/narat-appauth-3.0.0-source",
+      "commit": "a972daac82d449d58ab119e91c68153e29ddac33",
+      "files_sha256": {
+        "Package.swift": "2bba5a41f3d284ef36c8d532a6b44044655106d80007071665dd6f587ac0b172"
+      }
+    },
+    "GTMAppAuth6.0": {
+      "path": "/private/tmp/narat-gtmappauth-6.0.0-source",
+      "commit": "57094cd46bc8700d3a887e2a429f42b6e8ea3f0b",
+      "files_sha256": {
+        "Package.swift": "1c917acf8eea4d61edb7a4b59cf22440710d24e01c2da5f2a407d39c378c972d"
+      }
+    }
+  },
+  "official_urls": [
+    "https://developers.google.com/identity/sign-in/ios/release",
+    "https://supabase.com/docs/guides/auth/social-sign-in/auth-google",
+    "https://github.com/google/GoogleSignIn-iOS/tree/10.1.0",
+    "https://github.com/openid/AppAuth-iOS/tree/3.0.0",
+    "https://github.com/google/GTMAppAuth/tree/6.0.0"
+  ],
+  "actual_google_header_signature": "signInWithPresentingViewController:hint:additionalScopes:nonce:completion:",
+  "swift_import_used": "signIn(withPresenting:hint:additionalScopes:nonce:)",
+  "preflight_graph": "/private/tmp/narat-nov25-google-nonce-prep/dependency-preflight.json",
+  "nonce_contract": "fresh secure RAW perattempt; SHA256(RAW)lowercasehex\u2192Google, RAW\u2192existingSupabase exchange",
+  "server_skip_nonce_configuration_changed": false,
+  "runtime_live_google_pass": false
+}
