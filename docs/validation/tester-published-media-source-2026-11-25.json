@@ -1,0 +1,27 @@
+{
+  "status": "APPEND_ONLY_PUBLISHED_MEDIA_FOUNDATION_ACCEPTED",
+  "base_commit": "9f811ad06e7ecb5730d62a66370fba4d149b5f98",
+  "private_accepted_commit": "5e442540bf59977ebcb11b811cb5e2c56cf9edf4",
+  "checked_source_fingerprint": "0912fbf314018ef0c125e3312e7f27ef6c1eb4fe0d898337fa54303a1be1455f",
+  "files": {
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": {
+      "before_sha256": "18e3edaf3c0a01bac49f609af1e352b6f02aca466fe65114c10eaeab9849feee",
+      "after_sha256": "e6f0440f917627d95f403314296dba2899bf483de2d150b8a37648db6711e29e",
+      "old_bytes": 171130,
+      "appended_bytes": 11166,
+      "old_entire_prefix_exact": true
+    },
+    "ios/PlantsTests/CollectionWireTests.swift": {
+      "before_sha256": "38e9e251d5476e3c31a32e7bf48c9f6c538b526afddc08bf69be751f87ec83c3",
+      "after_sha256": "76e07b5f0dde4096114e6fea5dc421edf0edb4822438df432ee9901f43f04e7a",
+      "old_bytes": 939512,
+      "appended_bytes": 15187,
+      "old_entire_prefix_exact": true
+    }
+  },
+  "source2_patch": "/private/tmp/narat-nov25-published-media-prep/accepted-media-source2.patch",
+  "patch_sha256": "f5ba3a28d0c73bddc00c9495a612674e810455a254f6251ad9b6a46bafeea41b",
+  "private_worktree_clean": true,
+  "root_user_files_written": false,
+  "wiring_UI_T175_complete": false
+}

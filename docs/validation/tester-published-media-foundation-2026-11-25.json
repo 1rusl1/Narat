@@ -1,0 +1,136 @@
+{
+  "status": "MEDIA_FOUNDATION_ACCEPTED_NOT_UI_WIRING",
+  "base_commit": "9f811ad06e7ecb5730d62a66370fba4d149b5f98",
+  "private_commit": "5e442540bf59977ebcb11b811cb5e2c56cf9edf4",
+  "source_fingerprint": "0912fbf314018ef0c125e3312e7f27ef6c1eb4fe0d898337fa54303a1be1455f",
+  "manifest": "/private/tmp/narat-nov25-published-media-prep/accepted-media-source2-manifest.json",
+  "checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "0912fbf314018ef0c125e3312e7f27ef6c1eb4fe0d898337fa54303a1be1455f",
+      "elapsed_seconds": 0.141,
+      "stdout": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-3-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-3-diff-check/stderr.log"
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "0912fbf314018ef0c125e3312e7f27ef6c1eb4fe0d898337fa54303a1be1455f",
+      "elapsed_seconds": 260.399,
+      "stdout": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-4-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-4-ios-tests/stderr.log",
+      "evidence_directory": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/q-db61ce781acb59c158c76667"
+    },
+    {
+      "name": "release-compile",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "0912fbf314018ef0c125e3312e7f27ef6c1eb4fe0d898337fa54303a1be1455f",
+      "elapsed_seconds": 265.481,
+      "stdout": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-5-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-5-release-compile/stderr.log",
+      "evidence_directory": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/q-b5b162a5f2bc67cd3b8849ce"
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "fixture",
+      "fingerprint": "0912fbf314018ef0c125e3312e7f27ef6c1eb4fe0d898337fa54303a1be1455f",
+      "elapsed_seconds": 51.859,
+      "stdout": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-6-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/nov25-published-media-foundation/check-6-automation-tests/stderr.log"
+    }
+  ],
+  "roles": [
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 423.654,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 200.084,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 30.304,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "reviewer",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 69.23,
+      "reasoning_effort": "high"
+    },
+    {
+      "agent": "qa",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 76.481,
+      "reasoning_effort": "high"
+    }
+  ],
+  "reviewer_findings": [],
+  "qa_findings": [],
+  "source_body_preservation": "Both complete originalfile byteprefixes exact, so existingConnection/Browse/auth/savedcardbodies andoldassertions untouched",
+  "test_count": {
+    "total": 530,
+    "xctest_expected": 527,
+    "xctest_passed": 527,
+    "missing": [],
+    "new_media_cases": 7,
+    "automation": 149
+  },
+  "failure_history": [
+    "Dev1returnedpatchbutgitapplyGuestfooterfailed; no sourceapplied",
+    "Dev2correctedappendpatchbutstraydiffheaderliteralcausedcompileFAIL37.35s; rawq-1e1a7e94cb31bc38310c2402 retained",
+    "Dev3removedONLYheader; freshfullSwift/Release/149 allPASS, noassertwaiver/manualprodcode"
+  ],
+  "raw_state": "/private/tmp/narat-published-media-20261125/docs/validation/automation/runs/orchestrator-nov25-published-media-01/state.json",
+  "raw_status": "WAITING",
+  "raw_phase": "publish",
+  "raw_reason": "Verified; commit/push disabled. Publication remains pending.",
+  "API_contract": "/private/tmp/narat-nov25-published-media-prep/accepted-media-API.md",
+  "scope": [
+    "internalSource+publicHTTPSunauthloader+boundedmemorycache+State+sharedView",
+    "7injectedURLSession/realPNGJPEGfixturetests",
+    "NoexistingViewwiring/sourcebodies changed"
+  ],
+  "limits": [
+    "NoactualmediaUI/thumbnail/resultcard/livepublishedimage/physical/performanceacceptance",
+    "T175/C2UI/IDB notcomplete; mustwireandcaptureseparatelyonacceptedRootunion",
+    "OnlyPNG/JPEGdecoded; othershonestunavailableplaceholder",
+    "InjectedURLSessionmustbededicatedtrustedpublicconfiguration; noauthenticatedSDKsession/globalURLProtocol",
+    "DoNOTuse thiscacheforpersonal/observationphotos; thoseexistingauthenticatedflows unchanged",
+    "SeparateC1authnoticeP2remainsopen; notfixedbythisappendfoundation",
+    "Privatecommitnotpushed;Rootownsexactsource2integration/centralhandoff/tasks/push"
+  ],
+  "next_step": "Rootlandexactappend2sourcepatch+freezeAPI forC1/C2/IDB; thenUIwiringandstrictfixturemedia/navigationscreens onnewacceptedunion.",
+  "root_landing": {
+    "exact_source2": true,
+    "old_entire_Guest_and_Wire_prefixes_preserved": true,
+    "accepted_AUTH_B5_unchanged": true,
+    "no_UI_wiring_claim": true,
+    "combined_Root_regression_pending": true
+  }
+}

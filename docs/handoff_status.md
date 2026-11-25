@@ -1,12 +1,18 @@
 # Narat — текущий статус и передача работы
 
+## База изображений принята — 25 ноября
+
+- В Root перенесены append-only footer GuestCatalogueView и новые media-тесты CollectionWireTests. Старые тела обоих файлов сохранены побайтно, AUTH-B5 не менялся. Есть общий published Source/HTTPS loader/ограниченный memory cache/state/View; [API](validation/published-media-api-2026-11-25.md).
+- Фактически PASS: 530 Swift/527 XCTest без пропусков, Release,149 automation и high Review69,230с/QA76,481с; замечаний0. Проверены PNG/JPEG decode, privacy транспорта, cache/eviction/error, unsafeURL и отмена/замена источника. Первые mechanical patch/compile FAIL сохранены. [Отчёт](validation/tester-published-media-foundation-2026-11-25.md).
+- Это local/fixture foundation: миниатюры и карточка результата ещё не подключены; UI/live/performance не принимались. T175 остаётся открытой. Следующий шаг — C1 на свежем Root, затем C2/ID-B с принятым renderer; объединённая регрессия и новый ordinary7 ещё впереди. Пользовательские правки сохранены; сбросов0.
+
 ## Текущий срез — 25 ноября: auth принят, следующий этап каталог
 
 - В Root перенесён AUTH-B5: понятный текст первого входа/автосохранения, сценарии unavailable/cancel/error/retry и обычного existing-email входа. Для пароля задана ASCII-capable клавиатура; auth validation не менялась. Четыре файла совпадают с принятыми байтами; App получил только один modifier, ID-A mapping сохранён.
 - Фактически: 7 UI-методов EN/PL, 6 строгих namespace-ledgers и выбранные PNG — PASS; текущий загруженный runner, test-time 9 pins и App4 проверены. 516 Swift/Release/149 automation и high Review 133,265 с / QA 146,362 с — PASS. Один отдельный gate валидировал прежний target, не выполнял его заново. [Отчёт и raw-границы](validation/tester-auth-rendered-accepted-2026-11-25.md).
 - Это scoped fixture/local приёмка на базе9b9. Объединение с RootSDK10/ID-A/metadata ещё требует общей проверки. Живой ordinary6 Google → одна карточка → cold launch прошёл отдельно; фото/physical/Apple этим не приняты. Новый итоговый артефакт7 ещё не собран.
 - Открыт AUTH-VIS-01: cancel/error notice частично скрыт фиксированным footer даже в коротких EN/PL fixtures. Первая строка видна; невозможность прокрутки не доказана. C1 обязан показать полное сообщение и доступный Retry/provider action на short+long details. T046/T096/T098 остаются открытыми.
-- Следующий шаг: C1 — fresh Browse/list-first, явное продолжение/точный retry, понятное изменение нового сохранения и видимость результата; C2 — миниатюры; ID-B — карточка предположения/ручной выбор с исходным фото. Media foundation проверяется независимо; T175 ещё не закрыта.
+- Следующий шаг: C1 — fresh Browse/list-first, явное продолжение/точный retry, понятное изменение нового сохранения и видимость результата; C2 — миниатюры; ID-B — карточка предположения/ручной выбор с исходным фото. Media foundation принята отдельным срезом; UI wiring и T175 ещё открыты.
 - Исходный PBX diff из8строк и два xcstrings сохранены. Удержание экрана завершено, не продлевалось; следующий живой прогон при необходимости требует ручной разблокировки. Последний фактический лимит78% used, сбросов0. Credentials отдельной учётки остаются только в ignored файле0600.
 
 Ниже — принятые этапы и история; актуален текущий срез выше.

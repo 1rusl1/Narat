@@ -399,6 +399,8 @@
 
 - [ ] T175 Миниатюры опубликованных видов в списке каталога. Использовать существующий listDTO hero_image без detail-запроса на каждую строку и без импорта всех606 файлов в app bundle. Сохранить доступные author/source/license attribution, ограниченную загрузку/reuse/cancellation и стабильную44pt+ строку/selection/ID. Явные loading/missing/error placeholders; не подменять личное фото каталогом, не брать unpublished/private/неразрешённые изображения. Проверить EN/PL/light/dark/scroll и отсутствие массового скачивания. Зависимости: T045/T148 и опубликованный каталог. Приоритет выше улучшения поиска (поиск отложен). Связанные FR-042/FR-043/FR-044 и T047/T096.
 
+  - 25 ноября: published media foundation принята (append-only Guest+Wire,530Swift/Release/149automation/high Review/QA); общий безопасный HTTPS loader/FIFO cache/View. Существующие Browse/auth тела и assertions сохранены. Миниатюры ещё не подключены, ENPL/light/dark/scroll/live UI не приняты, T175 остаётся открытой. API `docs/validation/published-media-api-2026-11-25.md`.
+
 ## Зависимости срезов
 
 | Поток | Порядок |

@@ -16023,3 +16023,322 @@ extension CollectionWireTests {
 
 }
 #endif
+// Scoped published-media fixtures; no global URLProtocol registration or live HTTP.
+private final class PublishedMediaFixture: @unchecked Sendable {
+    struct Reply: Sendable {
+        var status = 200
+        var mime = "image/png"
+        var data: Data
+        var length: Int? = nil
+        var held = false
+    }
+    private final class Registry: @unchecked Sendable {
+        let lock = NSLock()
+        var entries: [String: PublishedMediaFixture] = [:]
+    }
+    private static let registry = Registry()
+    let host = UUID().uuidString.lowercased() + ".media.invalid"
+    let started = XCTestExpectation(description: "held image request started")
+    let stopped = XCTestExpectation(description: "held image request stopped")
+    private let lock = NSLock()
+    private var routes: [String: Reply]
+    private var captured: [URLRequest] = []
+    private var held: PublishedMediaProtocol?
+
+    init(_ routes: [String: Reply]) {
+        self.routes = routes
+        Self.registry.lock.lock()
+        Self.registry.entries[host] = self
+        Self.registry.lock.unlock()
+    }
+    func close() {
+        Self.registry.lock.lock()
+        Self.registry.entries.removeValue(forKey: host)
+        Self.registry.lock.unlock()
+    }
+    static func find(_ host: String?) -> PublishedMediaFixture? {
+        registry.lock.lock()
+        defer { registry.lock.unlock() }
+        return registry.entries[host ?? ""]
+    }
+    func url(_ path: String = "/a") -> URL { URL(string: "https://" + host + path)! }
+    @MainActor
+    func session() -> URLSession {
+        let config = PublishedPlantImageLoader.publicConfiguration()
+        config.protocolClasses = [PublishedMediaProtocol.self]
+        return URLSession(configuration: config)
+    }
+    func reply(for request: URLRequest, transport: PublishedMediaProtocol) -> Reply {
+        lock.lock()
+        captured.append(request)
+        let reply = routes[request.url!.path] ?? Reply(status: 404, data: Data())
+        if reply.held { held = transport }
+        lock.unlock()
+        return reply
+    }
+    func set(_ path: String, _ reply: Reply) {
+        lock.lock()
+        routes[path] = reply
+        lock.unlock()
+    }
+    var requests: [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return captured
+    }
+    func releaseHeld() {
+        lock.lock()
+        let transport = held
+        held = nil
+        lock.unlock()
+        transport?.finishHeld()
+    }
+}
+
+private final class PublishedMediaProtocol: URLProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var canceled = false
+    private var pending: PublishedMediaFixture.Reply?
+    private var fixture: PublishedMediaFixture?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let fixture = PublishedMediaFixture.find(request.url?.host) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        self.fixture = fixture
+        let reply = fixture.reply(for: request, transport: self)
+        lock.lock()
+        pending = reply
+        lock.unlock()
+        if reply.held { fixture.started.fulfill() } else { finishHeld() }
+    }
+    func finishHeld() {
+        lock.lock()
+        guard !canceled, let reply = pending else { lock.unlock(); return }
+        pending = nil
+        lock.unlock()
+        let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": reply.mime,
+                           "Content-Length": String(reply.length ?? reply.data.count)])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: reply.data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {
+        lock.lock()
+        canceled = true
+        let wasHeld = pending?.held == true
+        pending = nil
+        lock.unlock()
+        if wasHeld { fixture?.stopped.fulfill() }
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    private func publishedMediaBytes(jpeg: Bool = false) throws -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 8), format: format).image { context in
+            UIColor.green.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 12, height: 8))
+        }
+        return try XCTUnwrap(jpeg ? image.jpegData(compressionQuality: 0.8) : image.pngData())
+    }
+
+    @MainActor
+    private func assertPublishedMediaFails(_ loader: PublishedPlantImageLoader, _ url: URL?,
+                                          file: StaticString = #filePath, line: UInt = #line) async {
+        do {
+            _ = try await loader.load(.init(url: url))
+            XCTFail("Expected image load to fail", file: file, line: line)
+        } catch {}
+    }
+
+    @MainActor
+    func testPublishedMediaPNGPrivacyCreditAndCacheHit() async throws {
+        let fixture = PublishedMediaFixture(["/a": .init(data: try publishedMediaBytes())])
+        let session = fixture.session()
+        defer { session.invalidateAndCancel(); fixture.close() }
+        let loader = PublishedPlantImageLoader(session: session)
+        let source = PublishedPlantImageSource(url: fixture.url(), author: "Author", license: "CC BY",
+                                              attribution: "Published credit", sourcePage: fixture.url("/source"))
+        let first = try await loader.load(source)
+        let second = try await loader.load(source)
+        XCTAssertTrue(first === second)
+        XCTAssertEqual(first.size, CGSize(width: 12, height: 8))
+        XCTAssertEqual(source.credit, "Author · CC BY · Published credit")
+        XCTAssertEqual(PublishedPlantImageSource.safeURL(source.sourcePage), fixture.url("/source"))
+        XCTAssertEqual(fixture.requests.count, 1)
+        let request = try XCTUnwrap(fixture.requests.first)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertFalse(request.httpShouldHandleCookies)
+        for header in ["Authorization", "apikey", "Cookie", "X-Installation-ID", "Proxy-Authorization"] {
+            XCTAssertNil(request.value(forHTTPHeaderField: header))
+        }
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "image/png, image/jpeg")
+    }
+
+    @MainActor
+    func testPublishedMediaJPEGCapacityEvictionAndFailuresNeverCached() async throws {
+        let bytes = try publishedMediaBytes(jpeg: true)
+        let fixture = PublishedMediaFixture([
+            "/a": .init(mime: "image/jpeg", data: bytes),
+            "/b": .init(mime: "image/jpeg", data: bytes),
+            "/bad": .init(status: 503, data: bytes)
+        ])
+        let session = fixture.session()
+        defer { session.invalidateAndCancel(); fixture.close() }
+        let loader = PublishedPlantImageLoader(session: session, capacity: 1)
+        for path in ["/a", "/b", "/a"] {
+            let image = try await loader.load(.init(url: fixture.url(path)))
+            XCTAssertEqual(image.size, CGSize(width: 12, height: 8))
+        }
+        for _ in 0..<2 { await assertPublishedMediaFails(loader, fixture.url("/bad")) }
+        XCTAssertEqual(fixture.requests.map { $0.url!.path }, ["/a", "/b", "/a", "/bad", "/bad"])
+        let noRoom = PublishedPlantImageLoader(session: session, costLimit: 1)
+        _ = try await noRoom.load(.init(url: fixture.url()))
+        _ = try await noRoom.load(.init(url: fixture.url()))
+        XCTAssertEqual(fixture.requests.count, 7)
+    }
+
+    @MainActor
+    func testPublishedMediaRejectsResponseDecodeMIMEAndOversize() async throws {
+        let png = try publishedMediaBytes()
+        let fixture = PublishedMediaFixture([
+            "/status": .init(status: 404, data: png),
+            "/decode": .init(data: Data("not an image".utf8)),
+            "/mime": .init(mime: "text/html", data: png),
+            "/size": .init(data: png, length: PublishedPlantImageLoader.maximumPayload + 1)
+        ])
+        let session = fixture.session()
+        defer { session.invalidateAndCancel(); fixture.close() }
+        let loader = PublishedPlantImageLoader(session: session)
+        for path in ["/status", "/decode", "/mime", "/size"] {
+            await assertPublishedMediaFails(loader, fixture.url(path))
+        }
+        XCTAssertEqual(fixture.requests.count, 4)
+        let state = PublishedPlantImageState()
+        await state.load(.init(url: fixture.url("/decode")), using: loader)
+        guard case .failed = state.phase else { return XCTFail("Must display failure") }
+        await state.load(.init(url: nil), using: loader)
+        guard case .missing = state.phase else { return XCTFail("Must display missing") }
+    }
+
+    @MainActor
+    func testPublishedMediaUnsafeURLsNeverReachTransport() async throws {
+        let fixture = PublishedMediaFixture(["/a": .init(data: try publishedMediaBytes())])
+        let session = fixture.session()
+        defer { session.invalidateAndCancel(); fixture.close() }
+        let loader = PublishedPlantImageLoader(session: session)
+        let invalid: [URL?] = [nil, URL(string: "http://" + fixture.host + "/a"),
+            URL(string: "https://user:password@" + fixture.host + "/a"),
+            URL(string: "https://user@" + fixture.host + "/a"),
+            URL(string: "https:/a"), URL(string: "file:///a")]
+        for url in invalid {
+            await assertPublishedMediaFails(loader, url)
+            XCTAssertNil(PublishedPlantImageSource.safeURL(url))
+        }
+        XCTAssertTrue(fixture.requests.isEmpty)
+    }
+
+    @MainActor
+    func testPublishedMediaDefaultPrivacyAndUnsafeInjectedSessionRejected() async throws {
+        let config = PublishedPlantImageLoader.publicConfiguration()
+        XCTAssertNil(config.urlCredentialStorage)
+        XCTAssertNil(config.httpCookieStorage)
+        XCTAssertNil(config.urlCache)
+        XCTAssertFalse(config.httpShouldSetCookies)
+        XCTAssertTrue((config.httpAdditionalHeaders ?? [:]).isEmpty)
+        let fixture = PublishedMediaFixture(["/a": .init(data: try publishedMediaBytes())])
+        defer { fixture.close() }
+        config.protocolClasses = [PublishedMediaProtocol.self]
+        config.httpAdditionalHeaders = ["Authorization": "Bearer fixture-only"]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        await assertPublishedMediaFails(PublishedPlantImageLoader(session: session), fixture.url())
+        XCTAssertTrue(fixture.requests.isEmpty)
+        let policy = PublishedPlantImagePolicy()
+        let task = session.dataTask(with: fixture.url())
+        let redirect = HTTPURLResponse(url: fixture.url(), statusCode: 302, httpVersion: nil, headerFields: nil)!
+        let rejected = XCTestExpectation(description: "downgrade redirect rejected")
+        policy.urlSession(session, task: task, willPerformHTTPRedirection: redirect,
+                          newRequest: URLRequest(url: URL(string: "http://" + fixture.host)!)) { request in
+            XCTAssertNil(request)
+            rejected.fulfill()
+        }
+        let result = await XCTWaiter.fulfillment(of: [rejected], timeout: 2)
+        XCTAssertEqual(result, .completed)
+    }
+
+    @MainActor
+    func testPublishedMediaCancellationStopsHeldRequestAndRetryFetches() async throws {
+        let bytes = try publishedMediaBytes()
+        let fixture = PublishedMediaFixture(["/a": .init(data: bytes, held: true)])
+        let session = fixture.session()
+        defer { session.invalidateAndCancel(); fixture.close() }
+        let loader = PublishedPlantImageLoader(session: session)
+        let task = Task { try await loader.load(.init(url: fixture.url())) }
+        let started = await XCTWaiter.fulfillment(of: [fixture.started], timeout: 2)
+        XCTAssertEqual(started, .completed)
+        task.cancel()
+        let stopped = await XCTWaiter.fulfillment(of: [fixture.stopped], timeout: 2)
+        XCTAssertEqual(stopped, .completed)
+        fixture.releaseHeld()
+        do {
+            _ = try await task.value
+            XCTFail("Canceled request returned an image")
+        } catch {}
+        fixture.releaseHeld()
+        fixture.set("/a", .init(data: bytes))
+        _ = try await loader.load(.init(url: fixture.url()))
+        XCTAssertEqual(fixture.requests.count, 2)
+    }
+
+    @MainActor
+    func testPublishedMediaSourceReplacementAndDisappearCancelOwnedWork() async throws {
+        let bytes = try publishedMediaBytes()
+        let fixture = PublishedMediaFixture([
+            "/a": .init(data: bytes, held: true), "/b": .init(data: bytes)
+        ])
+        let session = fixture.session()
+        defer { session.invalidateAndCancel(); fixture.close() }
+        let loader = PublishedPlantImageLoader(session: session)
+        let state = PublishedPlantImageState()
+        let old = Task { await state.load(.init(url: fixture.url()), using: loader) }
+        let started = await XCTWaiter.fulfillment(of: [fixture.started], timeout: 2)
+        XCTAssertEqual(started, .completed)
+        await state.load(.init(url: fixture.url("/b")), using: loader)
+        let stopped = await XCTWaiter.fulfillment(of: [fixture.stopped], timeout: 2)
+        XCTAssertEqual(stopped, .completed)
+        fixture.releaseHeld()
+        await old.value
+        guard case .ready(let current) = state.phase else { return XCTFail("Current source must remain ready") }
+        let cachedB = try await loader.load(.init(url: fixture.url("/b")))
+        XCTAssertTrue(current === cachedB)
+        fixture.set("/a", .init(data: bytes))
+        _ = try await loader.load(.init(url: fixture.url()))
+        XCTAssertEqual(fixture.requests.filter { $0.url == fixture.url() }.count, 2)
+        state.cancel()
+        guard case .missing = state.phase else { return XCTFail("Disappeared image must be cleared") }
+        // The same cancellation path used by onDisappear cancels an in-flight load.
+        let disappearing = PublishedMediaFixture(["/a": .init(data: bytes, held: true)])
+        let otherSession = disappearing.session()
+        defer { otherSession.invalidateAndCancel(); disappearing.close() }
+        let otherLoader = PublishedPlantImageLoader(session: otherSession)
+        let work = Task { await state.load(.init(url: disappearing.url()), using: otherLoader) }
+        let entered = await XCTWaiter.fulfillment(of: [disappearing.started], timeout: 2)
+        XCTAssertEqual(entered, .completed)
+        state.cancel()
+        let canceled = await XCTWaiter.fulfillment(of: [disappearing.stopped], timeout: 2)
+        XCTAssertEqual(canceled, .completed)
+        disappearing.releaseHeld()
+        await work.value
+        guard case .missing = state.phase else { return XCTFail("Late image published after disappearance") }
+        disappearing.set("/a", .init(data: bytes))
+        _ = try await otherLoader.load(.init(url: disappearing.url()))
+        XCTAssertEqual(disappearing.requests.count, 2)
+    }
+}

@@ -3576,3 +3576,263 @@ struct GuestCatalogueView: View {
         }
     }
 }
+
+// Published catalogue media only. Never pass personal/observation photo URLs here.
+import ImageIO
+
+struct PublishedPlantImageSource: Equatable, Hashable, Sendable {
+    let url: URL?
+    let author: String?
+    let license: String?
+    let attribution: String?
+    let sourcePage: URL?
+
+    init(url: URL?, author: String? = nil, license: String? = nil,
+         attribution: String? = nil, sourcePage: URL? = nil) {
+        self.url = url
+        self.author = author
+        self.license = license
+        self.attribution = attribution
+        self.sourcePage = sourcePage
+    }
+
+    var credit: String {
+        [author, license, attribution].compactMap { value in
+            guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return value
+        }.joined(separator: " · ")
+    }
+
+    static func safeURL(_ url: URL?) -> URL? {
+        guard let url, let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.scheme?.lowercased() == "https",
+              let host = parts.host, !host.isEmpty,
+              parts.user == nil, parts.password == nil else { return nil }
+        return url
+    }
+}
+
+enum PublishedPlantImageFailure: Error {
+    case unsafeURL, unsafeSession, response, payload, decode
+}
+
+// Per-task delegate: no redirects, passwords, client certificates or HTTP authentication.
+final class PublishedPlantImagePolicy: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        completionHandler(challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust
+                          ? .performDefaultHandling : .cancelAuthenticationChallenge, nil)
+    }
+}
+
+@MainActor
+final class PublishedPlantImageLoader {
+    static let shared = PublishedPlantImageLoader()
+    static let maximumPayload = 4 * 1_024 * 1_024
+    private let session: URLSession
+    private let ownsSession: Bool
+    private let capacity: Int
+    private let costLimit: Int
+    private var cache: [URL: UIImage] = [:]
+    private var costs: [URL: Int] = [:]
+    private var order: [URL] = []
+
+    static func publicConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpShouldSetCookies = false
+        config.httpCookieStorage = nil
+        config.urlCredentialStorage = nil
+        config.urlCache = nil
+        config.httpAdditionalHeaders = [:]
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 30
+        return config
+    }
+
+    // Injection is for dedicated, trusted, unauthenticated sessions only.
+    // Custom protocolClasses must obey the same contract; SDK sessions are forbidden.
+    init(session: URLSession? = nil, capacity: Int = 8, costLimit: Int = 16 * 1_024 * 1_024) {
+        self.session = session ?? URLSession(configuration: Self.publicConfiguration())
+        ownsSession = session == nil
+        self.capacity = min(64, max(0, capacity))
+        self.costLimit = min(64 * 1_024 * 1_024, max(0, costLimit))
+    }
+
+    deinit {
+        if ownsSession { session.invalidateAndCancel() }
+    }
+
+    func load(_ source: PublishedPlantImageSource) async throws -> UIImage {
+        try Task.checkCancellation()
+        guard let url = PublishedPlantImageSource.safeURL(source.url) else {
+            throw PublishedPlantImageFailure.unsafeURL
+        }
+        let config = session.configuration
+        guard session.delegate == nil, config.identifier == nil,
+              !config.httpShouldSetCookies, config.httpCookieStorage == nil,
+              config.urlCredentialStorage == nil, config.urlCache == nil,
+              (config.httpAdditionalHeaders ?? [:]).isEmpty,
+              (config.connectionProxyDictionary ?? [:]).isEmpty else {
+            throw PublishedPlantImageFailure.unsafeSession
+        }
+        if let image = cache[url] { return image }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpShouldHandleCookies = false
+        request.setValue("image/png, image/jpeg", forHTTPHeaderField: "Accept")
+        let (bytes, response) = try await session.bytes(for: request, delegate: PublishedPlantImagePolicy())
+        defer { bytes.task.cancel() }
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              http.url == url, ["image/png", "image/jpeg"].contains(http.mimeType?.lowercased() ?? "") else {
+            throw PublishedPlantImageFailure.response
+        }
+        guard response.expectedContentLength <= Int64(Self.maximumPayload) else {
+            throw PublishedPlantImageFailure.payload
+        }
+        var data = Data()
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            guard data.count < Self.maximumPayload else { throw PublishedPlantImageFailure.payload }
+            data.append(byte)
+        }
+        try Task.checkCancellation()
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(imageSource) == 1,
+              let type = CGImageSourceGetType(imageSource) as String?,
+              ["public.png", "public.jpeg"].contains(type),
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, width <= 20_000, height <= 20_000,
+              width * height <= 40_000_000,
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: 1_024
+              ] as CFDictionary) else { throw PublishedPlantImageFailure.decode }
+        try Task.checkCancellation()
+        let image = UIImage(cgImage: cgImage)
+        let cost = cgImage.bytesPerRow * cgImage.height
+        if capacity > 0, cost <= costLimit {
+            while !order.isEmpty && (order.count >= capacity || costs.values.reduce(0, +) + cost > costLimit) {
+                let evicted = order.removeFirst()
+                cache.removeValue(forKey: evicted)
+                costs.removeValue(forKey: evicted)
+            }
+            // Concurrent loads can finish for the same URL; retain one FIFO entry.
+            order.removeAll { $0 == url }
+            cache[url] = image
+            costs[url] = cost
+            order.append(url)
+        }
+        return image
+    }
+}
+
+@MainActor
+final class PublishedPlantImageState: ObservableObject {
+    enum Phase { case missing, loading, ready(UIImage), failed }
+    @Published private(set) var phase: Phase = .missing
+    private var generation = UUID()
+    private var worker: Task<Void, Never>?
+
+    func cancel() {
+        generation = UUID()
+        worker?.cancel()
+        worker = nil
+        phase = .missing
+    }
+
+    func load(_ source: PublishedPlantImageSource, using loader: PublishedPlantImageLoader) async {
+        worker?.cancel()
+        let token = UUID()
+        generation = token
+        guard source.url != nil else { phase = .missing; return }
+        phase = .loading
+        let task = Task { @MainActor in
+            do {
+                let image = try await loader.load(source)
+                guard !Task.isCancelled, self.generation == token else { return }
+                self.phase = .ready(image)
+            } catch {
+                guard !Task.isCancelled, self.generation == token else { return }
+                self.phase = .failed
+            }
+        }
+        worker = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+}
+
+@MainActor
+struct PublishedPlantImageView: View {
+    enum Presentation { case thumbnail, hero }
+    let source: PublishedPlantImageSource
+    let presentation: Presentation
+    let label: String
+    var locale: Locale = Locale(identifier: "en")
+    var loader: PublishedPlantImageLoader = .shared
+    @StateObject private var state = PublishedPlantImageState()
+
+    private var polish: Bool { locale.language.languageCode?.identifier == "pl" }
+    private var imageLabel: String {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? (polish ? "Zdjęcie rośliny" : "Plant image") : label
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                QuietGarden.surface
+                switch state.phase {
+                case .ready(let image):
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .accessibilityLabel(imageLabel)
+                case .loading:
+                    ProgressView().accessibilityLabel(polish ? "Ładowanie zdjęcia" : "Loading image")
+                case .missing:
+                    placeholder(polish ? "Brak zdjęcia" : "No image")
+                case .failed:
+                    placeholder(polish ? "Nie udało się wczytać zdjęcia" : "Image unavailable")
+                }
+            }
+            .frame(width: presentation == .thumbnail ? 56 : nil,
+                   height: presentation == .thumbnail ? 56 : 240)
+            .frame(maxWidth: presentation == .hero ? 640 : 56)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            if presentation == .hero {
+                if !source.credit.isEmpty {
+                    Text(source.credit).font(.caption).foregroundStyle(QuietGarden.secondaryText)
+                }
+                if let page = PublishedPlantImageSource.safeURL(source.sourcePage) {
+                    Link(polish ? "Źródło zdjęcia" : "Image source", destination: page).font(.caption)
+                }
+            }
+        }
+        .task(id: source) { await state.load(source, using: loader) }
+        .onDisappear { state.cancel() }
+    }
+
+    private func placeholder(_ message: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: "photo").accessibilityHidden(true)
+            if presentation == .hero { Text(message).font(.caption) }
+        }
+        .foregroundStyle(QuietGarden.secondaryText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(imageLabel + ". " + message)
+    }
+}
