@@ -1916,7 +1916,7 @@ final class PhotoAnalysisService: AnalysisService {
                 if let plant = result.plant {
                     let card = try await api.fetchPublishedSpecies(taxonId: plant.taxonId, locale: locale)
                     try verify(lease, attempt: attempt)
-                    species = .init(taxonId: card.taxonId, slug: card.id, displayName: plant.displayName)
+                    species = .init(published: card, displayName: plant.displayName)
                 }
                 return AnalysisServiceResult(identification: .init(
                     jobId: result.jobId, catalogueReleaseId: result.catalogueReleaseId, species: species

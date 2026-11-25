@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import ImageIO
+import CryptoKit
 @testable import Plants
 
 @MainActor
@@ -633,7 +634,8 @@ final class FirstHelpUnitTests: XCTestCase {
         mode: AnalysisMode = .diagnosis,
         status: IdentificationStatus = .resolved,
         labels: Bool = true,
-        uploadedPhotoId: UUID? = nil
+        uploadedPhotoId: UUID? = nil,
+        photoOwnerId: UUID? = nil
     ) -> AnalysisServiceResult {
         let resolved = status == .resolved
         if mode == .identification {
@@ -642,7 +644,7 @@ final class FirstHelpUnitTests: XCTestCase {
             ) : nil
             return AnalysisServiceResult(identification: .init(
                 jobId: UUID(), catalogueReleaseId: UUID(), species: species
-            ), uploadedPhotoId: uploadedPhotoId)
+            ), uploadedPhotoId: uploadedPhotoId, photoOwnerId: photoOwnerId)
         }
         return AnalysisServiceResult(
             analysis: PreliminaryAnalysis(
@@ -761,6 +763,164 @@ final class FirstHelpUnitTests: XCTestCase {
             XCTAssertNil(model.router.flowState.confirmedPlantId)
             XCTAssertFalse(model.canConfirmPhotoIdentification)
         }
+    }
+
+    private func correctionModel(owner: UUID? = UUID(), photo: UUID? = UUID(), unknown: Bool = false)
+        async throws -> (AnalysisFlowModel, GalleryAnalysisFixture) {
+        let service = GalleryAnalysisFixture(response: serviceResult(
+            mode: .identification, status: unknown ? .unknown : .resolved,
+            uploadedPhotoId: photo, photoOwnerId: owner
+        ))
+        let model = AnalysisFlowModel(service: service)
+        model.router.selectIntent(.care)
+        model.router.selectCareMethod(.scan)
+        model.selectPhotoData(photoFixture())
+        try await XCTUnwrap(model.submitAnalysis(locale: .en)).value
+        return (model, service)
+    }
+
+    private func correctionCard(slug: String = "published_b") -> PublishedSpeciesCard {
+        PublishedSpeciesCard(id: slug, taxonId: UUID(), displayName: "Published B",
+                             scientificName: "Published scientific B", description: nil,
+                             heroImage: nil, careProfileAvailable: false)
+    }
+
+    func testManualCorrectionPreservesIdentifiedAndUnknownSourceAndCancellation() async throws {
+        let owner = UUID(), photo = UUID(), card = correctionCard()
+        for unknown in [false, true] {
+            let (model, service) = try await correctionModel(owner: owner, photo: photo, unknown: unknown)
+            let source = try XCTUnwrap(model.correctionSource)
+            let original = model.identificationResult
+            let jpegHash = SHA256.hash(data: source.request.photo.cloudNormalizedJPEG)
+            let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: owner))
+            model.cancelManualCorrection(ticket)
+            XCTAssertEqual(model.correctionSource, source)
+            XCTAssertEqual(model.identificationResult, original)
+            XCTAssertNil(model.manualSpecies)
+            XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                    ticket: ticket, expectedOwnerId: owner))
+
+            let selection = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            XCTAssertTrue(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                   ticket: selection, expectedOwnerId: owner))
+            let candidate = try XCTUnwrap(model.manualPhotoIdentification(expectedOwnerId: owner))
+            XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: UUID()))
+            XCTAssertEqual(candidate, PhotoIdentificationSelection(
+                jobId: source.result.jobId, photoAssetId: photo, speciesSlug: card.id,
+                taxonId: card.taxonId, ownerId: owner
+            ))
+            XCTAssertNotEqual(original?.species?.taxonId, card.taxonId)
+            let cancelled = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            model.cancelManualCorrection(cancelled)
+            XCTAssertEqual(model.manualPhotoIdentification(expectedOwnerId: owner), candidate)
+            let replacement = correctionCard(slug: "published_c")
+            let reselect = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            XCTAssertTrue(model.selectManualSpecies(replacement, requestedTaxonId: replacement.taxonId,
+                                                   ticket: reselect, expectedOwnerId: owner))
+            XCTAssertEqual(model.manualSpecies?.publishedFacts?.scientificName, replacement.scientificName)
+            XCTAssertEqual(model.correctionSource, source)
+            XCTAssertEqual(model.frozenRequest, source.request)
+            XCTAssertEqual(model.currentOperationId, source.request.operationId)
+            XCTAssertEqual(model.router.flowState.flowId, source.request.flowId)
+            XCTAssertEqual(model.identificationResult, original)
+            XCTAssertEqual(SHA256.hash(data: try XCTUnwrap(model.preparedPhoto).cloudNormalizedJPEG), jpegHash)
+            XCTAssertEqual(service.requests, [source.request])
+            // The old Confirm/Save contract remains tied to AI A.
+            XCTAssertEqual(model.canConfirmPhotoIdentification, !unknown)
+            model.confirmPhotoIdentification()
+            XCTAssertEqual(model.confirmedPhotoIdentification?.taxonId, original?.species?.taxonId)
+        }
+    }
+
+    func testManualCorrectionRejectsMissingForeignChangedPhotoAndInvalidCard() async throws {
+        let owner = UUID(), card = correctionCard()
+        for missingOwner in [false, true] {
+            let (model, _) = try await correctionModel(owner: missingOwner ? nil : owner,
+                                                       photo: missingOwner ? UUID() : nil)
+            XCTAssertNil(model.correctionSource)
+            XCTAssertNil(model.beginManualCorrection(expectedOwnerId: owner))
+            XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: owner))
+        }
+        let (model, _) = try await correctionModel(owner: owner)
+        XCTAssertNil(model.beginManualCorrection(expectedOwnerId: UUID()))
+        let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+        XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                ticket: ticket, expectedOwnerId: UUID()))
+        XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: UUID(),
+                                                ticket: ticket, expectedOwnerId: owner))
+        let malformed = correctionCard(slug: "not a published slug")
+        XCTAssertFalse(model.selectManualSpecies(malformed, requestedTaxonId: malformed.taxonId,
+                                                ticket: ticket, expectedOwnerId: owner))
+        XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: owner))
+        let originalPhoto = model.preparedPhoto
+        model.preparedPhoto = try AnalysisPhotoInput().preparePhoto(from: photoFixture(color: .systemBlue))
+        XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                ticket: ticket, expectedOwnerId: owner))
+        model.preparedPhoto = originalPhoto
+        model.currentOperationId = UUID()
+        XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                ticket: ticket, expectedOwnerId: owner))
+        XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: owner))
+    }
+
+    func testManualCorrectionTicketsRejectLateSelectionAfterReselectCancelAndNewJob() async throws {
+        let owner = UUID(), card = correctionCard()
+        let (model, _) = try await correctionModel(owner: owner)
+        let old = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+        let current = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+        model.cancelManualCorrection(old)
+        XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                ticket: old, expectedOwnerId: owner))
+        XCTAssertTrue(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                               ticket: current, expectedOwnerId: owner))
+        XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                ticket: old, expectedOwnerId: owner))
+        for reset in 0..<3 {
+            let pending = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            if reset == 0 { _ = model.beginPhotoSelection() }
+            if reset == 1 { model.cancelAnalysis() }
+            if reset == 2 {
+                model.installAnalysisService(GalleryAnalysisFixture(response: serviceResult(
+                    mode: .identification, uploadedPhotoId: UUID(), photoOwnerId: owner
+                )))
+            }
+            XCTAssertNil(model.correctionSource)
+            XCTAssertNil(model.manualSpecies)
+            XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: owner))
+            model.selectPhotoData(photoFixture())
+            try await XCTUnwrap(model.submitAnalysis(locale: .en)).value
+            XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                    ticket: pending, expectedOwnerId: owner))
+            XCTAssertNotEqual(model.correctionSource?.generation, pending.source.generation)
+        }
+        let changedFlow = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+        model.router.flowState.flowId = UUID()
+        XCTAssertFalse(model.selectManualSpecies(card, requestedTaxonId: card.taxonId,
+                                                ticket: changedFlow, expectedOwnerId: owner))
+        XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: owner))
+    }
+
+    func testLateIdentificationCannotCaptureCorrectionSourceForReplacementPhoto() async throws {
+        let owner = UUID()
+        let service = GalleryAnalysisFixture(response: serviceResult(
+            mode: .identification, uploadedPhotoId: UUID(), photoOwnerId: owner
+        ))
+        service.suspend = true
+        let model = AnalysisFlowModel(service: service)
+        model.router.selectIntent(.care)
+        model.router.selectCareMethod(.scan)
+        model.selectPhotoData(photoFixture())
+        let task = try XCTUnwrap(model.submitAnalysis(locale: .en))
+        await service.waitForRequestCount(1)
+        _ = model.beginPhotoSelection()
+        model.preparedPhoto = try AnalysisPhotoInput().preparePhoto(from: photoFixture(color: .systemBlue))
+        service.completeNext(service.response)
+        await task.value
+        XCTAssertNil(model.identificationResult)
+        XCTAssertNil(model.correctionSource)
+        XCTAssertNil(model.beginManualCorrection(expectedOwnerId: owner))
+        XCTAssertNil(model.manualPhotoIdentification(expectedOwnerId: owner))
     }
 
     func testInjectedUnknownOutOfScopeAndMissingLabelsRemainUncertain() async throws {

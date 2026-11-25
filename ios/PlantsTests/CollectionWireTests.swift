@@ -7727,6 +7727,27 @@ extension CollectionWireTests {
     }
 
     @MainActor
+    func testIdentificationPublishedReadRejectsWrongTaxonMalformedAndUnpublishedCard() async throws {
+        for scenario in 0..<3 {
+            let card = try syncJSON([
+                "plant_id": scenario == 1 ? "invalid slug" : "published_species",
+                "taxon_id": (scenario == 0 ? UUID() : serverPlantId).uuidString,
+                "display_name": "Published name", "scientific_name": "Published scientific name",
+                "care_profile_available": false
+            ])
+            let transport = CatalogueTransport([.http(scenario == 2 ? 404 : 200, card)])
+            let api = client(transport)
+            do {
+                _ = try await api.fetchPublishedSpecies(taxonId: serverPlantId, locale: .en)
+                XCTFail("Wrong, malformed or unpublished card must not reach selection")
+            } catch {}
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET"])
+            XCTAssertEqual(requests.first?.url?.lastPathComponent, serverPlantId.uuidString.lowercased())
+        }
+    }
+
+    @MainActor
     func testStagingIdentificationRecoversUploadAndResolvesExactTaxon() async throws {
         let photo = UUID(), jobId = UUID(), releaseId = UUID()
         let upload = "https://example.invalid/functions/v1/plants-api/media/uploads/\(photo.uuidString.lowercased())?sig=mock"
@@ -7734,7 +7755,12 @@ extension CollectionWireTests {
         let result = try identificationResult(jobId: jobId, releaseId: releaseId, plantId: serverPlantId, name: "Pinned Monstera")
         let card = try syncJSON([
             "plant_id": "monstera_deliciosa", "taxon_id": serverPlantId.uuidString,
-            "display_name": "Current Monstera", "scientific_name": "Monstera deliciosa", "care_profile_available": true
+            "display_name": "Current Monstera", "scientific_name": "Monstera deliciosa", "care_profile_available": true,
+            "description": ["text": "Published description", "language": "en",
+                            "attribution": "Published source", "source_url": "https://example.invalid/facts"],
+            "hero_image": ["download_url": "https://example.invalid/hero.jpg",
+                           "source_page": "https://example.invalid/photo", "attribution": "Image credit",
+                           "author": "Photographer", "license": "CC BY 4.0"]
         ])
         let transport = CatalogueTransport([
             .http(200, diagnosisTicket(url: upload, photoId: photo)), .network, .http(200, ready),
@@ -7765,9 +7791,22 @@ extension CollectionWireTests {
         XCTAssertEqual(finished.uploadedPhotoId, photo)
         XCTAssertEqual(finished.identification?.jobId, jobId)
         XCTAssertEqual(finished.identification?.catalogueReleaseId, releaseId)
-        XCTAssertEqual(finished.identification?.species, .init(
-            taxonId: serverPlantId, slug: "monstera_deliciosa", displayName: "Pinned Monstera"
-        ))
+        let species = try XCTUnwrap(finished.identification?.species)
+        XCTAssertEqual(species.taxonId, serverPlantId)
+        XCTAssertEqual(species.slug, "monstera_deliciosa")
+        XCTAssertEqual(species.displayName, "Pinned Monstera")
+        let facts = try XCTUnwrap(species.publishedFacts)
+        XCTAssertEqual(facts.scientificName, "Monstera deliciosa")
+        XCTAssertEqual(facts.commonName, "Current Monstera")
+        XCTAssertEqual(facts.descriptionText, "Published description")
+        XCTAssertEqual(facts.descriptionLanguage, "en")
+        XCTAssertEqual(facts.descriptionAttribution, "Published source")
+        XCTAssertEqual(facts.descriptionSourceURL?.absoluteString, "https://example.invalid/facts")
+        XCTAssertEqual(facts.imageURL?.absoluteString, "https://example.invalid/hero.jpg")
+        XCTAssertEqual(facts.imageSourcePage?.absoluteString, "https://example.invalid/photo")
+        XCTAssertEqual(facts.imageAttribution, "Image credit")
+        XCTAssertEqual(facts.imageAuthor, "Photographer")
+        XCTAssertEqual(facts.imageLicense, "CC BY 4.0")
         let requests = await transport.capturedRequests()
         XCTAssertEqual(requests.map(\.httpMethod), ["POST", "PUT", "POST", "POST", "GET", "GET"])
         guard requests.count == 6 else { return }

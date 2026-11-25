@@ -40,11 +40,68 @@ public struct PhotoIdentificationResult: Equatable, Sendable {
         let taxonId: UUID
         let slug: String
         let displayName: String
+        let publishedFacts: PublishedIdentificationFacts?
+
+        init(taxonId: UUID, slug: String, displayName: String,
+             publishedFacts: PublishedIdentificationFacts? = nil) {
+            self.taxonId = taxonId
+            self.slug = slug
+            self.displayName = displayName
+            self.publishedFacts = publishedFacts
+        }
+
+        init(published card: PublishedSpeciesCard, displayName: String? = nil) {
+            self.init(taxonId: card.taxonId, slug: card.id, displayName: displayName ?? card.displayName,
+                      publishedFacts: PublishedIdentificationFacts(card))
+        }
     }
 
     let jobId: UUID
     let catalogueReleaseId: UUID
     let species: Species?
+}
+
+/// Value projection of published facts; no runtime-generated care or botany copy.
+struct PublishedIdentificationFacts: Equatable, Sendable {
+    let scientificName: String
+    let commonName: String
+    let descriptionText: String?
+    let descriptionLanguage: String?
+    let descriptionAttribution: String?
+    let descriptionSourceURL: URL?
+    let imageURL: URL?
+    let imageSourcePage: URL?
+    let imageAttribution: String?
+    let imageAuthor: String?
+    let imageLicense: String?
+
+    init(_ card: PublishedSpeciesCard) {
+        scientificName = card.scientificName
+        commonName = card.displayName
+        descriptionText = card.description?.text
+        descriptionLanguage = card.description?.language
+        descriptionAttribution = card.description?.attribution
+        descriptionSourceURL = card.description?.sourceURL
+        imageURL = card.heroImage?.downloadURL
+        imageSourcePage = card.heroImage?.sourcePage
+        imageAttribution = card.heroImage?.attribution
+        imageAuthor = card.heroImage?.author
+        imageLicense = card.heroImage?.license
+    }
+}
+
+/// Original successful identification, independent of whether AI resolved a species.
+struct IdentificationCorrectionSource: Equatable, Sendable {
+    let result: PhotoIdentificationResult
+    let photoAssetId: UUID
+    let ownerId: UUID
+    let request: AnalysisServiceRequest
+    let generation: UUID
+}
+
+struct IdentificationCorrectionTicket: Equatable, Sendable {
+    let id: UUID
+    let source: IdentificationCorrectionSource
 }
 
 public struct AnalysisServiceResult: Sendable {
@@ -229,6 +286,9 @@ public final class AnalysisFlowModel {
     public private(set) var conditionLabel: String?
     private var identifiedPhoto: PhotoIdentificationSelection?
     private var confirmedPhoto: PhotoIdentificationSelection?
+    private(set) var correctionSource: IdentificationCorrectionSource?
+    private(set) var manualSpecies: PhotoIdentificationResult.Species?
+    private var correctionTicket: IdentificationCorrectionTicket?
     private var firstAidAction: RecordableFirstAidAction?
     private(set) var diagnosisPhoto: (id: UUID, owner: UUID)?
     private let photoInput = AnalysisPhotoInput()
@@ -284,6 +344,9 @@ public final class AnalysisFlowModel {
         speciesLabel = nil
         conditionLabel = nil
         identifiedPhoto = nil
+        correctionSource = nil
+        correctionTicket = nil
+        manualSpecies = nil
         if confirmedPhoto != nil { router.flowState.confirmedPlantId = nil }
         confirmedPhoto = nil
         firstAidAction = nil
@@ -313,6 +376,54 @@ public final class AnalysisFlowModel {
               identifiedPhoto.taxonId == species.taxonId,
               identifiedPhoto.speciesSlug == species.slug else { return nil }
         return identifiedPhoto
+    }
+
+    // ID-B contract: Root captures owner/context before fetching the published card,
+    // passes the same ticket, owner and requested taxon after its callback, and keeps
+    // its SDK/locale checks. These APIs never navigate or alter confirmed save input.
+    func beginManualCorrection(expectedOwnerId: UUID) -> IdentificationCorrectionTicket? {
+        guard confirmedPhoto == nil, let source = validCorrectionSource(ownerId: expectedOwnerId) else { return nil }
+        let ticket = IdentificationCorrectionTicket(id: UUID(), source: source)
+        correctionTicket = ticket
+        return ticket
+    }
+
+    @discardableResult
+    func selectManualSpecies(_ card: PublishedSpeciesCard, requestedTaxonId: UUID,
+                             ticket: IdentificationCorrectionTicket, expectedOwnerId: UUID) -> Bool {
+        guard confirmedPhoto == nil, correctionTicket == ticket,
+              validCorrectionSource(ownerId: expectedOwnerId) == ticket.source,
+              card.hasValidIdentity, card.taxonId == requestedTaxonId else { return false }
+        manualSpecies = .init(published: card)
+        correctionTicket = nil
+        return true
+    }
+
+    func cancelManualCorrection(_ ticket: IdentificationCorrectionTicket) {
+        guard correctionTicket == ticket else { return }
+        correctionTicket = nil
+    }
+
+    /// Internal candidate only; existing Confirm/Save continues to use its original input.
+    func manualPhotoIdentification(expectedOwnerId: UUID) -> PhotoIdentificationSelection? {
+        guard confirmedPhoto == nil, let source = validCorrectionSource(ownerId: expectedOwnerId),
+              let species = manualSpecies else { return nil }
+        return PhotoIdentificationSelection(jobId: source.result.jobId, photoAssetId: source.photoAssetId,
+                                            speciesSlug: species.slug, taxonId: species.taxonId,
+                                            ownerId: source.ownerId)
+    }
+
+    private func validCorrectionSource(ownerId: UUID) -> IdentificationCorrectionSource? {
+        guard let source = correctionSource, source.ownerId == ownerId,
+              source.generation == generation, frozenRequest == source.request,
+              currentOperationId == source.request.operationId,
+              source.request.mode == .identification,
+              source.request.flowId == router.flowState.flowId,
+              source.request.intent == router.flowState.intent,
+              source.request.photo == preparedPhoto,
+              source.result == identificationResult,
+              router.flowState.currentStep == .preliminaryResult else { return nil }
+        return source
     }
 
     var confirmedPhotoIdentification: PhotoIdentificationSelection? {
@@ -488,6 +599,12 @@ public final class AnalysisFlowModel {
                 guard let self, self.accepts(request, generation: submittedGeneration) else { return }
                 if request.mode == .identification, let identification = result.identification {
                     self.identificationResult = identification
+                    if let photoId = result.uploadedPhotoId, let ownerId = result.photoOwnerId {
+                        self.correctionSource = IdentificationCorrectionSource(
+                            result: identification, photoAssetId: photoId, ownerId: ownerId,
+                            request: request, generation: submittedGeneration
+                        )
+                    }
                     if let species = identification.species {
                         self.speciesLabel = Self.nonempty(species.displayName)
                         if let photoId = result.uploadedPhotoId {
@@ -538,6 +655,8 @@ public final class AnalysisFlowModel {
     private func accepts(_ request: AnalysisServiceRequest, generation: UUID) -> Bool {
         self.generation == generation
             && frozenRequest == request
+            && currentOperationId == request.operationId
+            && preparedPhoto == request.photo
             && router.flowState.flowId == request.flowId
             && router.flowState.intent == request.intent
             && router.flowState.currentStep == .analyzing

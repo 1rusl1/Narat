@@ -1,0 +1,105 @@
+{
+  "status": "SCOPED_ID_A_INTERNAL_COMPONENT_ACCEPTED",
+  "source_manifest": "/private/tmp/narat-nov25-identification-prep/accepted-ID-A-source-manifest.json",
+  "private_commit": "b2b303cc445e7077285c1954939acf9ccd10d2dd",
+  "base": "9b9eeebb89d384ee34b0e1cd39f281ff159e83d6",
+  "source_fingerprint": "ef2f43ac41a1881137ca8a1682a6612ea3ffcb13311758649b8aa750790fd71b",
+  "raw_state": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/state.json",
+  "raw_status": "WAITING",
+  "raw_phase": "publish",
+  "raw_reason": "Verified; commit/push disabled. Publication remains pending.",
+  "checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "ef2f43ac41a1881137ca8a1682a6612ea3ffcb13311758649b8aa750790fd71b",
+      "elapsed_seconds": 0.048,
+      "stdout": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-1-diff-check/stderr.log"
+    },
+    {
+      "name": "ios-tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "ef2f43ac41a1881137ca8a1682a6612ea3ffcb13311758649b8aa750790fd71b",
+      "elapsed_seconds": 212.768,
+      "stdout": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-2-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-2-ios-tests/stderr.log",
+      "evidence_directory": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/q-a6d77aa5f8557f85dba1aa42"
+    },
+    {
+      "name": "release-compile",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "ef2f43ac41a1881137ca8a1682a6612ea3ffcb13311758649b8aa750790fd71b",
+      "elapsed_seconds": 102.681,
+      "stdout": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-3-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-3-release-compile/stderr.log",
+      "evidence_directory": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/q-e5c5fbed3febf728189fc7fd"
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "fixture",
+      "fingerprint": "ef2f43ac41a1881137ca8a1682a6612ea3ffcb13311758649b8aa750790fd71b",
+      "elapsed_seconds": 64.648,
+      "stdout": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-4-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-identification-a-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-A-01/nov25-identification-A-source/check-4-automation-tests/stderr.log"
+    }
+  ],
+  "roles": [
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 415.182,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "reviewer",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 87.35,
+      "reasoning_effort": "high"
+    },
+    {
+      "agent": "qa",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 82.22,
+      "reasoning_effort": "high"
+    }
+  ],
+  "reviewer_findings": [],
+  "qa_findings": [],
+  "test_evidence": {
+    "total": 519,
+    "expected_xctest_methods": 516,
+    "passed_xctest_methods": 516,
+    "missing": [],
+    "new_cases": "fourmodel+onewire; existing lost-upload/exacttaxon wireextended",
+    "automation_tests": 149
+  },
+  "scope": [
+    "Immutable source captured for identified andunknown successfulresult withphoto+owner, independent of selectedspecies",
+    "Published facts/description/photo attribution retained as Sendable Equatable value projection",
+    "Ticket-gated manual published selection/cancel supports A→B withoutmutatingoriginal job/photo/request/result",
+    "Existing Confirm/Save and all production routes unchanged"
+  ],
+  "limits": [
+    "Fixture/local transport only, noAI/provider/livebackend/physical proof",
+    "Manual internalcandidate intentionally not consumedbyoldSave; ID-B UI/Confirm/Root scope wiring still required",
+    "Rootcurrent SDK+locale checks remain required aroundfuture publishedselection callback",
+    "No original owner photo available; no AI quality or confidence-threshold claim",
+    "Private commit not pushed; Rootowns exactintegration/centralhandoff/push"
+  ],
+  "next_step": "Rootland exactfourfileiospatch onacceptedNav+A; ID-Bafter Rootaccepted ID-A+AUTHB+C1/C2; no ID-Bactualrunyet"
+}
