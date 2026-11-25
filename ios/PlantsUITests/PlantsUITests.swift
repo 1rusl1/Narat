@@ -319,3 +319,157 @@ final class PlantsUITests: XCTestCase {
     }
 
 }
+
+extension PlantsUITests {
+    @MainActor
+    func testOrdinaryAccountNativeFeedbackEnglish() throws {
+        try verifyOrdinaryAccountNativeFeedback(polish: false)
+        let flag = "--catalogue-account-native-feedback-fixture"
+        let companions = ["--catalogue-fixture", "guestProviderCancel",
+                          "--catalogue-namespace", UUID().uuidString.lowercased()]
+        for invalid in [[flag], companions + [flag, flag],
+                        companions + [flag, "--today-fixture", "todayMixed"]] {
+            let app = XCUIApplication()
+            app.launchArguments = invalid + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+            app.launch()
+            defer { app.terminate() }
+            XCTAssertTrue(app.staticTexts["welcome.unavailable"].waitForExistence(timeout: 15))
+            XCTAssertFalse(app.buttons["collection.open"].isEnabled)
+            XCTAssertFalse(app.textFields["account.email"].exists)
+            XCTAssertFalse(app.buttons["account.signin.google"].exists)
+            XCTAssertFalse(app.segmentedControls["welcome.language.picker"].exists)
+            XCTAssertFalse(app.buttons["catalogue.save.google"].exists)
+        }
+    }
+
+    @MainActor
+    func testOrdinaryAccountNativeFeedbackPolish() throws {
+        try verifyOrdinaryAccountNativeFeedback(polish: true)
+    }
+
+    @MainActor
+    private func verifyOrdinaryAccountNativeFeedback(polish: Bool) throws {
+        let language = polish ? "pl" : "en"
+        for scenario in ["guestProviderCancel", "guestProviderFailureRetry"] {
+            let namespace = UUID().uuidString.lowercased()
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "--catalogue-fixture", scenario, "--catalogue-namespace", namespace,
+                "--catalogue-account-native-feedback-fixture",
+                "-AppleLanguages", "(\(language))", "-AppleLocale", polish ? "pl_PL" : "en_US"
+            ]
+            app.launch()
+            defer { app.terminate() }
+            let collection = app.buttons["collection.open"]
+            nativeFeedbackEnabled(collection)
+            XCTAssertEqual(collection.label, polish ? "Moje rośliny" : "My plants")
+            collection.tap()
+            let email = app.textFields["account.email"]
+            nativeFeedbackEnabled(email)
+            let google = app.buttons["account.signin.google"]
+            nativeFeedbackEnabled(google)
+            let creation = app.staticTexts["account.signin.accountCreation"]
+            XCTAssertTrue(creation.waitForExistence(timeout: 10))
+            XCTAssertEqual(creation.label, polish
+                ? "Pierwsze logowanie przez Google tworzy konto Narat."
+                : "First sign-in with Google creates your Narat account.")
+            XCTAssertFalse(app.staticTexts[
+                "First sign-in creates your Narat account. After sign-in, we continue saving this plant with your chosen details."
+            ].exists)
+            XCTAssertFalse(app.staticTexts[
+                "Pierwsze logowanie tworzy konto Narat. Po zalogowaniu kontynuujemy zapisywanie tej rośliny z wybranymi danymi."
+            ].exists)
+            nativeFeedbackReveal(creation, app: app)
+            XCTAssertTrue(nativeFeedbackViewport(app).contains(creation.frame))
+            let marker = "fixture@" + namespace + ".invalid"
+            email.tap()
+            email.typeText(marker)
+            XCTAssertEqual(email.value as? String, marker)
+            let keyboard = app.keyboards.firstMatch
+            let returnKey = keyboard.buttons.matching(NSPredicate(
+                format: "label IN %@", ["Return", "return", "Done", "Gotowe", "Wróć", "Dalej", "Next"]
+            )).firstMatch
+            if returnKey.exists && returnKey.isHittable { returnKey.tap() }
+            nativeFeedbackReveal(google, app: app)
+            XCTAssertGreaterThanOrEqual(google.frame.height, 44)
+            google.tap()
+            let cancelled = scenario == "guestProviderCancel"
+            let notice = app.staticTexts[cancelled ? "account.signin.cancelled" : "account.signin.error"]
+            XCTAssertTrue(notice.waitForExistence(timeout: 15))
+            XCTAssertEqual(notice.label, cancelled
+                ? (polish ? "Logowanie przez Google anulowane. Możesz spróbować ponownie."
+                    : "Google sign-in was cancelled. You can try again.")
+                : (polish ? "Nie udało się zalogować przez Google. Spróbuj ponownie."
+                    : "Couldn’t sign in with Google. Try again."))
+            nativeFeedbackEnabled(google)
+            nativeFeedbackReveal(notice, app: app)
+            XCTAssertTrue(nativeFeedbackViewport(app).contains(notice.frame))
+            XCTAssertTrue(nativeFeedbackViewport(app).contains(google.frame))
+            XCTAssertGreaterThanOrEqual(google.frame.height, 44)
+            XCTAssertTrue(google.isEnabled)
+            XCTAssertTrue(email.exists)
+            XCTAssertEqual(email.value as? String, marker)
+            XCTAssertTrue(app.secureTextFields["account.password"].exists)
+            XCTAssertFalse(app.buttons["account.signin"].isEnabled)
+            XCTAssertFalse(app.staticTexts["catalogue.saved.name"].exists)
+            XCTAssertFalse(app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH %@", "collection.plant."
+            )).firstMatch.exists)
+            XCTAssertFalse(app.staticTexts[cancelled ? "account.signin.error" : "account.signin.cancelled"].exists)
+            let image = XCTAttachment(screenshot: app.screenshot())
+            image.name = "account-native-feedback-\(scenario)-\(language)"
+            image.lifetime = .keepAlways
+            add(image)
+            let proof = try JSONSerialization.data(withJSONObject: [
+                "namespace": namespace, "scenario": scenario, "language": language, "emailRetained": true
+            ], options: [.sortedKeys])
+            let attachment = XCTAttachment(data: proof, uniformTypeIdentifier: "public.json")
+            attachment.name = "account-native-feedback-proof-\(scenario)-\(language)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    @MainActor
+    private func nativeFeedbackEnabled(_ element: XCUIElement) {
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"),
+            object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
+    }
+
+    @MainActor
+    private func nativeFeedbackViewport(_ app: XCUIApplication) -> CGRect {
+        var viewport = app.windows.firstMatch.frame
+        let navigation = app.navigationBars.firstMatch
+        if navigation.exists {
+            let top = max(viewport.minY, navigation.frame.maxY)
+            viewport = CGRect(x: viewport.minX, y: top, width: viewport.width,
+                              height: max(0, viewport.maxY - top))
+        }
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists && viewport.intersects(keyboard.frame) {
+            viewport.size.height = max(0, keyboard.frame.minY - viewport.minY)
+        }
+        return viewport
+    }
+
+    @MainActor
+    private func nativeFeedbackReveal(_ element: XCUIElement, app: XCUIApplication) {
+        for _ in 0..<4 {
+            let viewport = nativeFeedbackViewport(app)
+            if viewport.contains(element.frame) && element.isHittable { return }
+            guard element.frame.maxY > viewport.maxY, viewport.height > 80 else { break }
+            // Scroll upward inside the visible form, never drag the sheet down.
+            let window = app.windows.firstMatch
+            let origin = window.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: viewport.midX - window.frame.minX,
+                                                   dy: viewport.minY + viewport.height * 0.8 - window.frame.minY))
+            let end = origin.withOffset(CGVector(dx: viewport.midX - window.frame.minX,
+                                                 dy: viewport.minY + viewport.height * 0.3 - window.frame.minY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+        XCTAssertTrue(nativeFeedbackViewport(app).contains(element.frame))
+        XCTAssertTrue(element.isHittable)
+    }
+}

@@ -1,0 +1,7 @@
+# Accepted ordinary Account feedback contract
+
+Production privateAccountSignInView init/callback API unchanged. Local Attempt/password-nativeprovider and Notice distinguish nilcancel, providerfailure, passwordfailure, initialunavailable. Nilnativecancel visible only active/notcompleted/notTaskcancelled; successoriginalconnection.snapshotguard andsignedIn(snapshot,scope.snapshot) unchanged. Retryclearsnotice; noauthprotocol/session/lease/provider/owner changes. ConditionalavailableGooglecopy neverpromisesautosave forHome. Existingfield/buttonIDs kept; new account.signin.accountCreation and account.signin.cancelled; errorretains account.signin.error.
+
+DEBUGONLY flag --catalogue-account-native-feedback-fixture requires exactlyoneflag+--catalogue-fixture guestProviderCancel ORguestProviderFailureRetry+--catalogue-namespace lowercanonicalUUID; no today/staging/reminder/resultsave/malformedmix. ExistingearlySystempolicyreserved--catalogue catchesallforms; Releasecodeflag excluded. RealRootHome/Myplants->loginRequired->ordinaryAccountSignInView thenexistingfakeidentity stopbeforeexchange. No newfixture/shortcutoutcome.
+
+Tests appendliteralENPL2methods inexistingPlantsUITests, alloldsourceprefixpreserved. CurrentloadedUI3includesunchangedCatalogueSaveUITests existingAccountLoginENPL. PhotoGuestDraft job/photo/claim preservation andfullT046remainB2, notcoveredbythishomefixture. No guessedC2 API.

@@ -403,7 +403,10 @@ struct RootContainerView: View {
 
     private var usesLegacyWelcome: Bool {
 #if DEBUG
-        isStagingAnalysis || (fixtureContext != nil && fixtureContext?.testsToday != true)
+        if ProcessInfo.processInfo.arguments.contains(where: {
+            $0.hasPrefix("--catalogue-account-native-feedback-fixture")
+        }) { return false }
+        return isStagingAnalysis || (fixtureContext != nil && fixtureContext?.testsToday != true)
 #else
         false
 #endif
@@ -1396,6 +1399,36 @@ struct RootContainerView: View {
 
     @MainActor
     private func prepareCatalogue() async {
+#if DEBUG
+        // Validate the private ordinary-account route before any bootstrap side effects.
+        let launch = ProcessInfo.processInfo.arguments
+        let feedbackFlag = "--catalogue-account-native-feedback-fixture"
+        if launch.contains(where: { $0.hasPrefix(feedbackFlag) }) {
+            func value(_ flag: String) -> String? {
+                let positions = launch.indices.filter { launch[$0] == flag }
+                guard positions.count == 1, let index = positions.first,
+                      launch.indices.contains(index + 1) else { return nil }
+                return launch[index + 1]
+            }
+            let flags = launch.filter { $0.hasPrefix("--catalogue") || $0.hasPrefix("--today") }
+            guard flags.count == 3,
+                  Set(flags) == Set([feedbackFlag, "--catalogue-fixture", "--catalogue-namespace"]),
+                  let flagIndex = launch.firstIndex(of: feedbackFlag),
+                  !launch.indices.contains(flagIndex + 1) || launch[flagIndex + 1].hasPrefix("-"),
+                  !launch.contains(where: {
+                      $0.hasPrefix("--narat-staging") || $0.hasPrefix("--care-reminder")
+                          || $0.hasPrefix("--result-save-presentation")
+                  }),
+                  let name = value("--catalogue-fixture"),
+                  ["guestProviderCancel", "guestProviderFailureRetry"].contains(name),
+                  let namespace = value("--catalogue-namespace"),
+                  let id = UUID(uuidString: namespace),
+                  id.uuidString.lowercased() == namespace else {
+                startupFailed = true
+                return
+            }
+        }
+#endif
         guard collectionOpening.beginPreparation() else { return }
         defer {
             collectionOpening.finishPreparation()
@@ -1435,6 +1468,7 @@ struct RootContainerView: View {
         let fixtureFlags = arguments.filter {
             $0.hasPrefix("--catalogue-fixture") || $0.hasPrefix("--catalogue-namespace")
                 || $0.hasPrefix("--today-fixture")
+                || $0.hasPrefix("--catalogue-account-native-feedback-fixture")
         }
         if preloadedReminderFixture != nil {
             // The validated bootstrap already owns this exact SDK and runtime pair.
@@ -1447,8 +1481,11 @@ struct RootContainerView: View {
             }
             let today = arguments.contains("--today-fixture")
             let scenarioFlag = today ? "--today-fixture" : "--catalogue-fixture"
-            guard fixtureFlags.count == 2,
-                  Set(fixtureFlags) == Set([scenarioFlag, "--catalogue-namespace"]),
+            let feedback = arguments.contains("--catalogue-account-native-feedback-fixture")
+            let expectedFlags = [scenarioFlag, "--catalogue-namespace"]
+                + (feedback ? ["--catalogue-account-native-feedback-fixture"] : [])
+            guard fixtureFlags.count == expectedFlags.count,
+                  Set(fixtureFlags) == Set(expectedFlags),
                   let name = value(scenarioFlag),
                   let scenario = CatalogueUIFixtureScenario(rawValue: name),
                   scenario.testsToday == today,
@@ -2211,7 +2248,16 @@ private struct AccountSignInView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var signingIn = false
-    @State private var failed = false
+    private enum Attempt {
+        case password, native(NativeAuthProvider)
+    }
+
+    private enum Notice {
+        case passwordFailure, unavailable
+        case cancelled(NativeAuthProvider), nativeFailure(NativeAuthProvider)
+    }
+
+    @State private var notice: Notice?
     @State private var scope: CatalogueAccountScope?
     @State private var presenter: UIViewController?
     @State private var work: Task<Void, Never>?
@@ -2220,6 +2266,45 @@ private struct AccountSignInView: View {
 
     private var busy: Bool { signingIn || connection.authenticationInFlight }
     private var isPolish: Bool { polish && !staging }
+
+    private func providerName(_ provider: NativeAuthProvider) -> String {
+        provider == .apple ? "Apple" : "Google"
+    }
+
+    private var accountCreationCopy: String {
+        let providers = connection.accountProviders.contains(.google) ? "Google" : "Apple"
+        return isPolish ? "Pierwsze logowanie przez \(providers) tworzy konto Narat."
+            : "First sign-in with \(providers) creates your Narat account."
+    }
+
+    @ViewBuilder
+    private var feedback: some View {
+        if let notice {
+            let cancelled: Bool = if case .cancelled = notice { true } else { false }
+            Text(noticeCopy(notice))
+                .qgNotice(cancelled ? .neutral : .error)
+                .accessibilityIdentifier(staging ? "staging.signin.error"
+                    : (cancelled ? "account.signin.cancelled" : "account.signin.error"))
+        }
+    }
+
+    private func noticeCopy(_ notice: Notice) -> String {
+        switch notice {
+        case .passwordFailure:
+            return staging ? "Could not sign in to the test stand. Check the test account."
+                : (isPolish ? "Nie udało się zalogować. Sprawdź adres e-mail i hasło, a następnie spróbuj ponownie."
+                    : "Couldn’t sign in. Check your email and password and try again.")
+        case .unavailable:
+            return isPolish ? "Logowanie jest teraz niedostępne. Spróbuj ponownie później."
+                : "Sign-in is unavailable right now. Try again later."
+        case .cancelled(let provider):
+            return isPolish ? "Logowanie przez \(providerName(provider)) anulowane. Możesz spróbować ponownie."
+                : "\(providerName(provider)) sign-in was cancelled. You can try again."
+        case .nativeFailure(let provider):
+            return isPolish ? "Nie udało się zalogować przez \(providerName(provider)). Spróbuj ponownie."
+                : "Couldn’t sign in with \(providerName(provider)). Try again."
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -2234,6 +2319,12 @@ private struct AccountSignInView: View {
                         .disabled(busy || scope == nil || presenter?.viewIfLoaded?.window == nil)
                         .accessibilityIdentifier("account.signin." + provider.rawValue)
                     }
+                    if !connection.accountProviders.isEmpty {
+                        Text(accountCreationCopy)
+                            .qgNotice(.neutral)
+                            .accessibilityIdentifier("account.signin.accountCreation")
+                    }
+                    feedback
                 }
                 TextField(isPolish ? "Adres e-mail" : "Email", text: $email)
                     .textContentType(.username)
@@ -2245,14 +2336,7 @@ private struct AccountSignInView: View {
                     .textContentType(.password)
                     .keyboardType(.asciiCapable)
                     .accessibilityIdentifier(staging ? "staging.password" : "account.password")
-                if failed {
-                    Text(staging ? "Could not sign in to the test stand. Check the test account."
-                         : (isPolish ? "Nie udało się zalogować. Sprawdź adres e-mail i hasło, a następnie spróbuj ponownie."
-                            : "Couldn’t sign in. Check your email and password and try again."))
-                        .foregroundStyle(QuietGarden.danger)
-                        .qgNotice(.error)
-                        .accessibilityIdentifier(staging ? "staging.signin.error" : "account.signin.error")
-                }
+                if staging { feedback }
                 Button(signingIn ? (isPolish ? "Logowanie…" : "Signing in…")
                        : (isPolish ? "Zaloguj się" : "Sign in")) {
                     signIn()
@@ -2278,7 +2362,7 @@ private struct AccountSignInView: View {
             active = true
             guard scope == nil else { return }
             do { scope = try await connection.accountScope() }
-            catch { failed = true }
+            catch { notice = .unavailable }
         }
         .onDisappear {
             active = false
@@ -2292,37 +2376,48 @@ private struct AccountSignInView: View {
         let loginEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let loginPassword = password
         password = ""
-        start(scope: scope) {
+        start(scope: scope, attempt: .password) {
             try await connection.signInAccount(email: loginEmail, password: loginPassword, scope: scope)
         }
     }
 
     private func signIn(_ provider: NativeAuthProvider) {
         guard !busy, let scope, let presenter, presenter.viewIfLoaded?.window != nil else { return }
-        start(scope: scope) {
+        start(scope: scope, attempt: .native(provider)) {
             try await connection.signInAccount(with: provider, presenting: presenter, scope: scope)
         }
     }
 
     private func start(
         scope: CatalogueAccountScope,
+        attempt: Attempt,
         action: @escaping @MainActor () async throws -> CatalogueSDKSnapshot?
     ) {
         guard active, !completed else { return }
         signingIn = true
-        failed = false
+        notice = nil
         work = Task { @MainActor in
             defer {
                 signingIn = false
                 work = nil
             }
             do {
-                guard let snapshot = try await action() else { return }
+                guard let snapshot = try await action() else {
+                    guard active, !completed, !Task.isCancelled else { return }
+                    if case .native(let provider) = attempt { notice = .cancelled(provider) }
+                    else { notice = .unavailable }
+                    return
+                }
                 guard active, !completed, !Task.isCancelled, connection.snapshot == snapshot else { return }
                 completed = true
                 signedIn(snapshot, scope.snapshot)
             } catch {
-                if active, !Task.isCancelled { failed = true }
+                if active, !completed, !Task.isCancelled {
+                    switch attempt {
+                    case .password: notice = .passwordFailure
+                    case .native(let provider): notice = .nativeFailure(provider)
+                    }
+                }
             }
         }
     }

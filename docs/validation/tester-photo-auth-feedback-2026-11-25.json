@@ -1,0 +1,124 @@
+{
+  "status": "ACCEPTED_SCOPED_ACCOUNT_NATIVE_FEEDBACK",
+  "source_commit": "a33c7b8d05c8390af6260196c9b5cbfb6b54aa8f",
+  "source_base": "a8919b69db29c19f426ddcc9a95d26f9623cb730",
+  "source_patch_sha256": "e7729763a40893a7da3b14c8a57ff6c41e5f6effd20b35e292f24abe215b4282",
+  "source2": [
+    {
+      "path": "ios/Plants/App/PlantsApp.swift",
+      "base_blob": "163402fa7a04b1ff05f5c969b5985c478b610575",
+      "accepted_blob": "eefb154bc8468ac3cf8f5f4781292fc492a5934f",
+      "base_sha256": "3351d7e246b333a196d648cac6164d9718f330afc3b5e41bcdd0c64c7d24cc7e",
+      "sha256": "4b6b3a37e9990a90fced4234c69b7ba629dad990cf71e79679e393aa0d08a116",
+      "bytes": 121504
+    },
+    {
+      "path": "ios/PlantsUITests/PlantsUITests.swift",
+      "base_blob": "552f949c026554006d5adf4ebafbffae34a4850e",
+      "accepted_blob": "62013c992a73605425a1f737c8e4e650536725a1",
+      "base_sha256": "3e1f0f559a6a32b3273467bacb404909a14b26bd2b8a25f9596cd07c3de331b4",
+      "sha256": "6d1c7214370d7f964820766dd901a26fb4e269ce4f30d6784718dbd35a36df1b",
+      "bytes": 24667
+    }
+  ],
+  "source_fingerprint": "afaff09008c06ed5add771d39dd95c186c81a72ecf5d7b8dd6d22b5006ed4b2e",
+  "changes": [
+    "Provider-aware visible native cancellation andfailure; password guidance distinct, retryclears priornotice.",
+    "Native first-signin accountcreationcopy conditional onavailableproviders/nonstaging; no HomeautoSavepromise.",
+    "StrictDEBUG --catalogue-account-native-feedback-fixture opts onlytwo existingvalidcataloguescenarios intoordinaryHome; earlyreservedprefixSystem isolation unchanged.",
+    "Two append-only ENPL nativefeedbacktests throughrealHome/Myplants/AccountSignInView plusstrictinvalidlaunch andunchangedexistingpasswordregression."
+  ],
+  "checks": {
+    "diff-check": {
+      "status": "PASS",
+      "elapsed_seconds": 0.195,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-1-diff-check/stderr.log"
+    },
+    "ios-tests": {
+      "status": "PASS",
+      "elapsed_seconds": 216.197,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-2-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-2-ios-tests/stderr.log"
+    },
+    "release-compile": {
+      "status": "PASS",
+      "elapsed_seconds": 323.79,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-3-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-3-release-compile/stderr.log"
+    },
+    "account-ui": {
+      "status": "PASS",
+      "elapsed_seconds": 189.746,
+      "mode": "fixture",
+      "stdout": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-4-account-ui/stdout.log",
+      "stderr": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-4-account-ui/stderr.log"
+    },
+    "automation-tests": {
+      "status": "PASS",
+      "elapsed_seconds": 54.045,
+      "mode": "fixture",
+      "stdout": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-5-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/orchestrator-nov25-photo-account-feedback-01/nov25-photo-account-feedback/check-5-automation-tests/stderr.log"
+    }
+  },
+  "swift_total": 538,
+  "xctest_methods": 535,
+  "missing_methods": 0,
+  "review": {
+    "status": "PASS",
+    "seconds": 121.484,
+    "findings": 0
+  },
+  "qa": {
+    "status": "PASS",
+    "seconds": 122.693,
+    "findings": 0
+  },
+  "ui": {
+    "case_count": 3,
+    "locale_scope": "new2methodsENPL+existing1methoditeratesENPL",
+    "new_native_cases": 4,
+    "strict_invalid_launch_cases": 3,
+    "bound_images": 8,
+    "ledgers": 6,
+    "current_loaded": {
+      "name": "ACTUAL-loaded-current-image",
+      "status": "PASS",
+      "pid": 5086,
+      "path": "/Users/ruslansabirov/Library/Developer/CoreSimulator/Devices/32009F39-32EF-426B-A91E-31B368D6C27E/data/Containers/Bundle/Application/47475C59-5FC5-4FA3-9DAF-31702D2897EC/PlantsUITests-Runner.app/PlugIns/PlantsUITests.xctest/PlantsUITests",
+      "image": {
+        "sha256": "8e8cfa32b5b09f896c85aae779b0e17ae43343029ca7e0f60ab60c212608e838",
+        "size": 1960592
+      },
+      "uuid": "f0915dad-a527-35ee-8a23-70cb6a3d86b3",
+      "source_fingerprint": "afaff09008c06ed5add771d39dd95c186c81a72ecf5d7b8dd6d22b5006ed4b2e"
+    },
+    "summary": "/private/tmp/narat-photo-account-feedback-20261125/docs/validation/automation/runs/q-0ed1555c88f2a56b5860ba78/summary.json",
+    "new_native_counts": "eachcaseproviderAttempts1/token0/password0/emailRegistration0/domain0;signup1onlyfakeguestbootstrap",
+    "existing_password_counts": "password2(initialfixture+explicitlogin),signup0,no domainwrite,samecard"
+  },
+  "visual": {
+    "new4": "/private/tmp/narat-nov25-photo-account-feedback-prep/visual-new4.json",
+    "Root_existing4": "/private/tmp/narat-nov25-photo-account-feedback-prep/root-visual-existing4.json",
+    "all8_across_two_reviewers": true,
+    "blocking_findings": []
+  },
+  "limits": [
+    "Synthetic scoped ordinary AccountSignInView Home/Myplants routing; fakeproviders cancel/throw BEFOREtokenexchange. No realGoogle/physical/newaccount onbackend.",
+    "Photo originaljob/photo/helddraft/GuestPhotoClaim chain not rendered here; mandatoryB2 afterC1/C2, fullT046 OPEN.",
+    "NativeRetryCTA enabled; no second successful native exchange attempted.",
+    "New4 reviewed by care_sources +existing4 reviewed byRoot =8 acrossTWOreviewers, notone reviewer. Existing ordinary-login images BEFOREtyping, notpassword-error PNGs.",
+    "Standard-size/light/portrait; no broadDark/large/VoiceOver/physical claims."
+  ],
+  "next": "C2 thumbnails/ID resume and B2 photo/claim rendered preservation on fresh Root union",
+  "fullT046": false,
+  "ordinary_live": false,
+  "physical": false,
+  "Root_modified": false,
+  "private_push": false,
+  "root_source2_landed_exact": true
+}

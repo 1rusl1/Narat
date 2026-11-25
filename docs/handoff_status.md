@@ -1,5 +1,14 @@
 # Narat — текущий статус и передача работы
 
+## Ordinary Account: видимые исходы входа приняты — 25 ноября
+
+- Root перенёс exact App/appendPlantsUITests из private a33c7b8. В обычном AccountSignInView отмена Google/Apple видна нейтральным сообщением; ошибка провайдера не советует менять email/password; Retry очищает прежнее сообщение. Первый нативный вход понятно создаёт аккаунт, без обещания автосохранения на Home. Init/success/busy/owner/SDK/credentials/authservice не менялись. [Контракт](validation/account-native-feedback-api-2026-11-25.md).
+- Фактически PASS:538 Swift/535 XCTest0missing, Release323,79с с очередьюf813,149 automation, actual UI3 189,746с/current-loaded SHA+UUID/8PNG/6ledgers; whole2 high Review121,484с/QA122,693с без замечаний. New4 просмотрел care_sources, existing4 — Root. [Отчёт](validation/tester-photo-auth-feedback-2026-11-25.md).
+- В новых сценариях fake identity отменяет/бросает ошибку до token exchange; providerAttempts1, token/password/email-registration0, domainwrites0. Anonymous signup1 относится к прежнему guest bootstrap. Google-кнопка доступна для повтора; второй успешный native exchange здесь не выполнялся. Existing-login PNG сняты до ввода и после открытия прежней карточки, не показывают password error; её assertions прошли.
+- Строгий DEBUG opt-in использует зарезервированный `--catalogue-account-native-feedback-fixture`, реальный ordinaryHome→AccountView и существующие provider fixtures. Bare/dupe/mixed launch реально fail-closed; новая регистрация email/fixture case/System policy не добавлялись. Остальные App bytes и весь прежний PlantsUITests prefix сохранены.
+- Это scoped fixture/local, не сохранность photo draft. Full T046/T047/T150 остаются открыты: B2 обязан пройти фото/manual/job/draft/auth/claim/cold и реальное удаление result при heldGET. C2 уже запущен на Root5da1: Guest production отдельно, затем tests3. Он добавляет миниатюры и корректный IDresume; после его приёмки B2 использует свежий Root union.
+- Предыдущие ID-B1 source3/C1 source5 побайтно сохранены. SHA2/user preservation/diff Root PASS, native-проверки при переносе повторно не запускались. Исходные8строк PBX и2xcstrings вне коммита. Новая ordinary7/архив ещё не собраны; physical/качество AI не подтверждены. Actual87% used/reset0, удержание экрана не продлевалось.
+
 ## C1: обычный каталог принят — 25 ноября
 
 - Root перенёс exact source5: GuestCatalogueView/CatalogueSaveView/CatalogueUIFixtures/CatalogueConnectionTests/CatalogueSaveUITests. Browse открывает список; Continue save/Open saved plant — явные действия. Новый ввод отделён от точного retry; pointer проверяется до/после ожидания checkpoint, более новый не затирается. Техническая надпись заменена на Edit plant details. [API](validation/catalogue-save-binding-api-2026-11-25.md).
