@@ -84,6 +84,147 @@ final class CatalogueSaveUITests: XCTestCase {
     @MainActor func testNativeCancellationRestartPolish() { verifyNativeCancellation(.pl) }
     @MainActor func testNativeSuccessEnglish() { verifyNativeSuccess(.en) }
     @MainActor func testNativeSuccessPolish() { verifyNativeSuccess(.pl) }
+    @MainActor func testAuthUnavailableProvidersEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            let run = Run("guestProvidersUnavailable", language)
+            defer { screenshot(run, "failure-or-final"); run.app.terminate() }
+            openCatalogue(run)
+            enterName(run, language.input)
+            submit(run)
+            require(run.app.staticTexts["catalogue.save.signInRequired"])
+            let original = operation(run)
+            assertFrozen(run, name: language.input)
+            XCTAssertFalse(run.app.buttons["catalogue.save.apple"].exists)
+            XCTAssertFalse(run.app.buttons["catalogue.save.google"].exists)
+            require(run.app.staticTexts[language.text(
+                "Sign-in is unavailable right now. Try again later, go back or edit your choices.",
+                "Logowanie jest teraz niedostępne. Spróbuj później, wróć lub zmień wybrane dane.")])
+            authBCopy(run)
+            screenshot(run, "unavailable")
+            restart(run)
+            require(run.app.staticTexts["catalogue.save.signInRequired"])
+            assertFrozen(run, name: language.input)
+            XCTAssertEqual(operation(run), original)
+            localizedText(run, "catalogue.selected.scientific", "Nephrolepis exaltata", "Nephrolepis exaltata")
+            XCTAssertFalse(run.app.buttons["catalogue.save.apple"].exists)
+            XCTAssertFalse(run.app.buttons["catalogue.save.google"].exists)
+            try authBProof(run, ["originalOperation": authBUUID(original, "catalogue.save.operation."),
+                                 "finalOperation": authBUUID(operation(run), "catalogue.save.operation.")])
+            screenshot(run, "final")
+        }
+    }
+
+    @MainActor func testAuthProviderFailureRetryEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            let run = Run("guestProviderFailureRetry", language)
+            defer { screenshot(run, "failure-or-final"); run.app.terminate() }
+            openCatalogue(run)
+            enterName(run, language.input)
+            submit(run)
+            assertSignIn(run)
+            authBCopy(run)
+            let original = operation(run)
+            tap(run, "catalogue.save.google")
+            localizedText(run, "catalogue.save.notice", "Sign-in failed. Try again or go back.",
+                          "Logowanie nie powiodło się. Spróbuj ponownie lub wróć.")
+            assertSignIn(run)
+            XCTAssertEqual(operation(run), original)
+            localizedText(run, "catalogue.selected.scientific", "Nephrolepis exaltata", "Nephrolepis exaltata")
+            screenshot(run, "provider-failed")
+            tap(run, "catalogue.save.google")
+            let card = assertCard(run, name: language.canonicalName)
+            XCTAssertEqual(operation(run), original)
+            screenshot(run, "saved")
+            restart(run)
+            let cold = assertCard(run, name: language.canonicalName)
+            XCTAssertEqual(cold, card)
+            XCTAssertEqual(operation(run), original)
+            try authBProof(run, ["originalOperation": authBUUID(original, "catalogue.save.operation."),
+                                 "finalOperation": authBUUID(operation(run), "catalogue.save.operation."),
+                                 "savedCardId": authBUUID(card, "catalogue.saved.card."),
+                                 "coldCardId": authBUUID(cold, "catalogue.saved.card."),
+                                 "expectedName": language.canonicalName, "expectedSpeciesSlug": "fixture_fern"])
+            screenshot(run, "final")
+        }
+    }
+
+    @MainActor func testExistingAccountLoginEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            let run = Run("todaySDKOpening", language, today: true)
+            defer { screenshot(run, "failure-or-final"); run.app.terminate() }
+            launch(run)
+            require(todayElement(run, "sdk-opening.ready"))
+            todayTap(run, "collection.open")
+            todayTap(run, "Fixture 1")
+            let before = identity(run, "catalogue.saved.card.")
+            XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+            screenshot(run, "before-login")
+            todayTap(run, "collection.back")
+            todayTap(run, "collection.settings.open")
+            todayTap(run, "account.signOut.open")
+            let confirm = run.app.alerts.buttons["account.signOut.confirm"].firstMatch
+            enabled(confirm)
+            confirm.tap()
+            require(todayElement(run, "account.signedOut"))
+            todayAbsent(run, "today.root")
+            todayTap(run, "collection.open")
+            let email = run.app.textFields["account.email"]
+            enabled(email)
+            XCTAssertFalse(run.app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH %@", "collection.plant.")).firstMatch.exists)
+            XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+            screenshot(run, "ordinary-login")
+            email.tap()
+            let fixtureEmail = "fixture@" + run.namespace.lowercased() + ".invalid"
+            email.typeText(fixtureEmail)
+            XCTAssertEqual(email.value as? String, fixtureEmail)
+            let password = run.app.secureTextFields["account.password"]
+            enabled(password)
+            password.tap()
+            password.typeText("fixture-only-password")
+            todayTap(run, "account.signin")
+            let plant = run.app.buttons["collection.plant." + authBUUID(before, "catalogue.saved.card.")]
+            enabled(plant)
+            require(run.app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label == %@", "collection.plant.", "Fixture 2")).firstMatch)
+            XCTAssertFalse(run.app.textFields["account.email"].exists)
+            plant.tap()
+            let after = identity(run, "catalogue.saved.card.")
+            XCTAssertEqual(after, before)
+            XCTAssertEqual(run.app.staticTexts["catalogue.saved.name"].label, "Fixture 1")
+            try authBProof(run, ["beforeCardId": authBUUID(before, "catalogue.saved.card."),
+                                 "afterCardId": authBUUID(after, "catalogue.saved.card.")])
+            screenshot(run, "final")
+        }
+    }
+
+    @MainActor
+    private func authBCopy(_ run: Run) {
+        require(run.app.staticTexts[run.language.text(
+            "First sign-in creates your Narat account. After sign-in, we continue saving this plant with your chosen details.",
+            "Pierwsze logowanie tworzy konto Narat. Po zalogowaniu kontynuujemy zapisywanie tej rośliny z wybranymi danymi.")])
+    }
+
+    private func authBUUID(_ identifier: String, _ prefix: String) -> String {
+        XCTAssertTrue(identifier.hasPrefix(prefix))
+        let value = String(identifier.dropFirst(prefix.count))
+        XCTAssertNotNil(UUID(uuidString: value))
+        return value
+    }
+
+    @MainActor
+    private func authBProof(_ run: Run, _ fields: [String: String]) throws {
+        var proof = fields
+        proof["namespace"] = run.namespace.lowercased()
+        proof["scenario"] = run.scenario
+        proof["language"] = run.language.rawValue
+        let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: proof, options: [.sortedKeys]),
+                                       uniformTypeIdentifier: "public.json")
+        attachment.name = "auth-b-proof-" + run.scenario + "-" + run.language.rawValue
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor func testACKFailureRestartEnglish() { verifyACKFailureRestart(.en) }
     @MainActor func testACKFailureRestartPolish() { verifyACKFailureRestart(.pl) }
 

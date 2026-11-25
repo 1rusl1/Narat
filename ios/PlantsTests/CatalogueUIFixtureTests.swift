@@ -423,6 +423,62 @@ final class CatalogueUIFixtureTests: XCTestCase {
         XCTAssertTrue(try durableDisk.fetch(FetchDescriptor<LocalOutboxRecord>()).isEmpty)
     }
 
+    func testNativeFixtureSuppliedBundleAvailabilityAndAbsentMetadata() async throws {
+        for scenario in [CatalogueUIFixtureScenario.guestProviderCancel, .guestProviderSuccess,
+                         .guestProviderFailureRetry, .guestProvidersUnavailable] {
+            let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: scenario)
+            defer { try? h.cleanup() }
+            XCTAssertEqual(h.connection.accountProviders.contains(.google), scenario != .guestProvidersUnavailable)
+            XCTAssertEqual(h.connection.accountProviders.contains(.apple), scenario != .guestProvidersUnavailable)
+            if scenario == .guestProvidersUnavailable {
+                let original = try await model(h)
+                _ = try await original.checkpointInput()
+                let outcome = await h.connection.signInAndSave(original, with: .google, presenting: UIViewController())
+                guard case .unavailable = outcome else { return XCTFail("Missing metadata must fail closed") }
+                XCTAssertEqual(h.identity.calls, 0)
+                XCTAssertEqual(h.server.snapshot.authProof?.providerAttempts, 0)
+                XCTAssertEqual(h.server.snapshot.authProof?.authIdTokenRequests, 0)
+                XCTAssertTrue(h.server.snapshot.commits.isEmpty)
+            }
+        }
+    }
+
+    func testNativeFirstFailureRetainsDiskCheckpointAndExplicitRetryCommitsOnce() async throws {
+        let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .guestProviderFailureRetry)
+        defer { try? h.cleanup() }
+        let original = try await model(h)
+        let checkpoint = try await original.checkpointInput()
+        let first = await h.connection.signInAndSave(original, with: .google, presenting: UIViewController())
+        guard case let .inputRetained(retained, .authenticationFailed(.providerFailed)) = first else {
+            return XCTFail("Expected the first actual provider action to fail")
+        }
+        XCTAssertTrue(retained === original)
+        XCTAssertEqual(retained.input, input)
+        XCTAssertEqual(retained.checkpoint, checkpoint)
+        let disk = ModelContext(h.connection.store!.modelContainer)
+        let row = try XCTUnwrap(try disk.fetch(FetchDescriptor<CatalogueInputCheckpointRecord>()).first {
+            $0.flowId == checkpoint.flowId
+        })
+        XCTAssertEqual(row.operationId, checkpoint.operationId)
+        XCTAssertEqual(row.payloadJSON, checkpoint.envelope.payloadJSON)
+        XCTAssertTrue(h.server.snapshot.attempts.isEmpty)
+        XCTAssertTrue(h.server.snapshot.commits.isEmpty)
+        XCTAssertEqual(h.server.snapshot.authProof?.providerAttempts, 1)
+        XCTAssertEqual(h.server.snapshot.authProof?.providerFailures, 1)
+        XCTAssertEqual(h.server.snapshot.authProof?.authIdTokenRequests, 0)
+        let retry = await h.connection.signInAndSave(retained, with: .google, presenting: UIViewController())
+        guard case let .continued(permanent) = retry else { return XCTFail("Explicit retry must continue saving") }
+        let receipt = try saved(permanent)
+        XCTAssertEqual(receipt.operationId, checkpoint.operationId)
+        XCTAssertEqual(receipt.payloadJSON, checkpoint.envelope.payloadJSON)
+        XCTAssertEqual(h.server.snapshot.authProof?.providerAttempts, 2)
+        XCTAssertEqual(h.server.snapshot.authProof?.providerFailures, 1)
+        XCTAssertEqual(h.server.snapshot.authProof?.authIdTokenRequests, 1)
+        XCTAssertEqual(h.server.snapshot.attempts.count, 1)
+        XCTAssertEqual(h.server.snapshot.commits.count, 1)
+        XCTAssertEqual(try disk.fetch(FetchDescriptor<CatalogueCreateConfirmationRecord>()).count, 1)
+    }
+
     func testGuestCancelAndNativeSuccessUseSameSDKCheckpointBeforeProviderWithoutTransfer() async throws {
         for scenario in [CatalogueUIFixtureScenario.guestProviderCancel, .guestProviderSuccess] {
             let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: scenario)

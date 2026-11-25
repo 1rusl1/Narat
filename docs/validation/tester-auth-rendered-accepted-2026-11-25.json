@@ -1,0 +1,163 @@
+{
+  "status": "SCOPED_AUTH_B5_TECHNICAL_ACCEPTED_WITH_C1_VISUAL_P2_OPEN",
+  "source_commit": "d55c23a8cf98d88f85f28783ca669ad7d47400a2",
+  "comparison_base": "9b9eeebb89d384ee34b0e1cd39f281ff159e83d6",
+  "verified_fingerprint": "f94820e1da569a45aa8738c591eccf26eef1a640305ddf8bc0d0ccc9b27f3604",
+  "source_files": {
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift": {
+      "sha256": "1e6738424edcb4430c3023d24ff82abafe55618f8edf66a087f2915ae9335b8f",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift": {
+      "sha256": "8c792070bc732fdff18af1c2f2f3d684fa4f69cf936d9b29fe7e8b4658c6fccc",
+      "mode": 420
+    },
+    "ios/PlantsTests/CatalogueUIFixtureTests.swift": {
+      "sha256": "a3bc6c59b7ea13d9a03df5ea442aaed2c497969df315d5b504e0c3cfeadd9245",
+      "mode": 420
+    },
+    "ios/PlantsUITests/CatalogueSaveUITests.swift": {
+      "sha256": "3049815df7ee34c5c4ba10c6ebcd5d79f2ca7c300b2f6b4703fcbbce93bbe4d0",
+      "mode": 420
+    },
+    "ios/Plants/App/PlantsApp.swift": {
+      "sha256": "a5c1b6b34214b3679fa1c5ad6e5eb23fa4d04a3f1560418b8852180553c0841a",
+      "mode": 420
+    }
+  },
+  "actual_implementation": "Developer95.072s final AppONEmodifier and newUI globe-removal; previousB implementation/raw retained",
+  "check_results": {
+    "diff-check": {
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.025,
+      "mode": "local"
+    },
+    "prior-target-validation": {
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.049,
+      "mode": "local"
+    },
+    "00-full-auth-B-ui": {
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 494.29,
+      "mode": "fixture"
+    },
+    "automation-tests": {
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 62.441,
+      "mode": "fixture"
+    },
+    "care-release-compile": {
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 86.065,
+      "mode": "local"
+    },
+    "ios-tests": {
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 334.541,
+      "mode": "local"
+    }
+  },
+  "check_count": 6,
+  "prior_validation_not_reexecution": [
+    "prior-target-validation"
+  ],
+  "actual_full7": {
+    "status": "PASS",
+    "method_count": 7,
+    "en_pl_iterations_png_count": 10,
+    "namespace_proof_count": 6,
+    "raw_run": "q-d4c216b4545bdf4d3744d465",
+    "runner_actual_loaded_binding": "PASS",
+    "source9pins_App4_before_after_relative_oldledgers": "PASS"
+  },
+  "full_swift": {
+    "passed_methods": 513,
+    "total_tests": 516,
+    "missing_methods": 0,
+    "mode": "local_fixture_transport_not_live"
+  },
+  "models": [
+    {
+      "role": "reviewer",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "status": "PASS",
+      "elapsed_seconds": 133.265
+    },
+    {
+      "role": "qa",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high",
+      "status": "PASS",
+      "elapsed_seconds": 146.362
+    }
+  ],
+  "review_findings": 0,
+  "qa_findings": 0,
+  "publication": "Intentionally disabled; WAITING/publish, controllerexit1/outerwrapperexit0 expected; no private WIP push",
+  "controller_exit": 1,
+  "outer_wrapper_exit": 0,
+  "visual_followup": {
+    "severity": "P2",
+    "id": "AUTH-VIS-01",
+    "finding": "Both short EN/PL error/cancel notice partly clipped above fixed footer; full message visibility not accepted",
+    "next": "C1 must fix short and ordinarylong notice/CTA visibility with actual PNG+geometry+hittability",
+    "parent_tasks_open": [
+      "T046",
+      "T096"
+    ]
+  },
+  "scope_limits": [
+    "Fixture/local B5 only; Root realGoogle catalogue/onecard/cold PASS separate",
+    "RootSDK10/ID-A/Name integrated regression pending; this frozen laneSDK8",
+    "Longdetails/guest-photo claim/physical not accepted by B5"
+  ],
+  "retained_failures": [
+    "Initialfull7 twice6PASS1FAIL/newlinecauseunresolved",
+    "Exact boundary2of21 probes/rawDoctor65 retained; temporary36probes removed",
+    "OldDeadbundleq626 binding mismatch retained; later currentdriver verified",
+    "Current maskreadback firstchar empty withRUkeyboard retained; not productionbindingbug",
+    "Globequery absent/invisiblekeyboard targetFAIL retained",
+    "ASCII targetUI1ENPLPASS108.803 but overallmetadataFAILold→freshdylib retained; separateexactcachedafter validation"
+  ],
+  "patches": {
+    "accepted-B5-source.patch": {
+      "path": "/private/tmp/narat-auth-B-final-prep-20261125/accepted-B5-source.patch",
+      "sha256": "4ca6ae937f5a09967fecbb327d36ddbf03772fbbe9455e5b24c3d809a1ad89e4",
+      "size": 23339
+    },
+    "accepted-B4-without-App.patch": {
+      "path": "/private/tmp/narat-auth-B-final-prep-20261125/accepted-B4-without-App.patch",
+      "sha256": "aebeb167c4d325e59561e2bf39042ce294c8910afd696ca0bd2a0402786a6816",
+      "size": 22600
+    },
+    "App-ONE-hunk-preserve-Root-IDA.patch": {
+      "path": "/private/tmp/narat-auth-B-final-prep-20261125/App-ONE-hunk-preserve-Root-IDA.patch",
+      "sha256": "569b1cfbaf3737c0d482b29d933e330d439771a55fe68c459de751974c146207",
+      "size": 739
+    }
+  },
+  "root_integration": "ApplyB4source exact then AppONEhunk preserving existingRootID-A; never overwrite wholeRootApp",
+  "next": "Root land/push scopedB5 then C1 immediately from fresh integratedRoot (media foundation if accepted)",
+  "root_landing": {
+    "source_base": "9b9eeebb89d384ee34b0e1cd39f281ff159e83d6",
+    "accepted_source_commit": "d55c23a8cf98d88f85f28783ca669ad7d47400a2",
+    "root_before_commit": "9f811ad06e7ecb5730d62a66370fba4d149b5f98",
+    "source4_exact": true,
+    "app_only_expected_keyboard_modifier_added": true,
+    "root_ID_A_and_all_other_App_bytes_preserved": true,
+    "root_app_before_sha256": "cd24a9e82fff5eece9539120fef5aacacf7ab2503358abfdd480fc6101b0270c",
+    "root_app_after_sha256": "3351d7e246b333a196d648cac6164d9718f330afc3b5e41bcdd0c64c7d24cc7e",
+    "private_history_imported": false,
+    "known_C1_notice_viewport_followup": true
+  },
+  "root_visual_review": "Root actually viewed current full7 cancellation EN/PL; notice partly clipped, scroll reveal not verified. C1 mandatory; no full visual acceptance claimed.",
+  "later_build_artifact_note": "Full7 testtime before/after9pins and loadedSHA/UUID PASS. Later approved fullSwift/build regenerated only cached xctestrun; 8 binary/Info/Assets pins remained exact. No post-allchecks9identity claim."
+}

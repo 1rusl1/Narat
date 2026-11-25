@@ -7,6 +7,7 @@ import UIKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case guestProviderCancel, guestProviderSuccess, ackFailure
+    case guestProvidersUnavailable, guestProviderFailureRetry
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
     case plantLightEdit, plantDrainageEdit, plantWateringEdit, plantPotTypeEdit, plantTaxonEdit, careRecommendationRefresh, basicCareEnable
 
@@ -47,6 +48,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
 
     var startsAnonymous: Bool {
         self == .guestProviderCancel || self == .guestProviderSuccess
+            || self == .guestProvidersUnavailable || self == .guestProviderFailureRetry
     }
     var initialCount: Int {
         if self == .todayEmpty { return 0 }
@@ -117,10 +119,32 @@ enum CatalogueUIFixtures {
         guard let defaults = UserDefaults(suiteName: suite) else {
             throw CatalogueUIFixtureError.invalidStorage
         }
-        let configuration = try NativeAuthConfiguration(values: [
+        var authValues = [
             "NaratSupabaseURL": "https://" + name + ".invalid",
             "NaratSupabasePublishableKey": "fixture-only-public-key"
-        ])
+        ]
+        let configuration: NativeAuthConfiguration
+        if scenario.startsAnonymous {
+            // Validate real synthetic Bundle metadata; never override production availability.
+            let bundleURL = directory.appendingPathComponent("NativeProviders.bundle", isDirectory: true)
+            try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+            var metadata: [String: Any] = ["CFBundleIdentifier": "app.narat.fixture." + name]
+            if scenario != .guestProvidersUnavailable {
+                let clientID = "fixture-" + name + ".apps.googleusercontent.com"
+                authValues["GIDClientID"] = clientID
+                metadata["CFBundleURLTypes"] = [["CFBundleURLSchemes": [
+                    clientID.split(separator: ".").reversed().joined(separator: ".")
+                ]]]
+            } else {
+                authValues["NaratAppleSignInEnabled"] = "NO"
+            }
+            try PropertyListSerialization.data(fromPropertyList: metadata, format: .xml, options: 0)
+                .write(to: bundleURL.appendingPathComponent("Info.plist"), options: .atomic)
+            guard let bundle = Bundle(url: bundleURL) else { throw CatalogueUIFixtureError.invalidStorage }
+            configuration = try NativeAuthConfiguration(values: authValues, bundle: bundle)
+        } else {
+            configuration = try NativeAuthConfiguration(values: authValues)
+        }
         let options = URLSessionConfiguration.ephemeral
         options.protocolClasses = [CatalogueFixtureProtocol.self]
         options.httpAdditionalHeaders = ["X-Catalogue-Fixture-Namespace": name]
@@ -142,6 +166,7 @@ enum CatalogueUIFixtures {
             )
         )
         let identity = CatalogueFixtureIdentity(cancel: scenario == .guestProviderCancel)
+        identity.beforeCredentials = { try server.recordProviderAttempt() }
         func connect(_ storage: ModelContainer) -> CatalogueConnection {
             CatalogueConnection(
                 client: client, configuration: configuration,
@@ -472,6 +497,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         let expired: Bool?
     }
 
+    struct AuthProof: Codable, Sendable {
+        var version = 1
+        var providerAttempts = 0
+        var providerFailures = 0
+        var authIdTokenRequests = 0
+        var passwordRequests = 0
+        var emailRegistrationRequests = 0
+    }
+
     struct Ledger: Codable, Sendable {
         let scenario: CatalogueUIFixtureScenario
         let guest: UUID
@@ -501,6 +535,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var reminderReadRequests: Int?
         var reminderScheduleRestored: Bool?
         var openingProof: OpeningProof?
+        var authProof: AuthProof?
         var directEntryAccessReads: Int?
         var directEntryDeniedRequests: Int?
     }
@@ -518,6 +553,22 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             && ledger.tick > 0 ? 23 : 9
     }
     var snapshot: Ledger { lock.withLock { ledger } }
+
+    /// Actual fake identity entry only; availability and read predicates have no side effects.
+    func recordProviderAttempt() throws {
+        let fail = try lock.withLock {
+            var next = ledger
+            var proof = next.authProof ?? AuthProof()
+            guard proof.version == 1 else { throw CatalogueUIFixtureError.invalidStorage }
+            proof.providerAttempts += 1
+            let fail = next.scenario == .guestProviderFailureRetry && proof.providerAttempts == 1
+            if fail { proof.providerFailures += 1 }
+            next.authProof = proof
+            try persist(next)
+            return fail
+        }
+        if fail { throw NativeAuthFailure.providerFailed }
+    }
 
     func verifyDirectEntry() throws {
         try lock.withLock {
@@ -542,11 +593,13 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         file = directory.appendingPathComponent("server-ledger.json")
         if FileManager.default.fileExists(atPath: file.path) {
             ledger = try JSONDecoder().decode(Ledger.self, from: Data(contentsOf: file))
-            guard ledger.scenario == scenario, ledger.reminderMode == reminderMode
+            guard ledger.authProof == nil || ledger.authProof?.version == 1,
+                  ledger.scenario == scenario, ledger.reminderMode == reminderMode
             else { throw CatalogueUIFixtureError.scenarioMismatch }
         } else {
             let owner = UUID()
             ledger = Ledger(scenario: scenario, guest: UUID(), permanent: owner, plants: [])
+            ledger.authProof = AuthProof()
             ledger.reminderMode = reminderMode
             if reminderMode != nil {
                 ledger.reminderCommandRequests = 0; ledger.reminderAuthRequests = 0
@@ -741,6 +794,23 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 throw URLError(.unsupportedURL)
             }
             capturedRequests.append(request)
+            // Atomic counters at HTTP dispatch, including rejected email signup attempts.
+            if request.httpMethod == "POST", url.path.hasPrefix("/auth/v1/") {
+                var next = ledger
+                var proof = next.authProof ?? AuthProof()
+                guard proof.version == 1 else { throw CatalogueUIFixtureError.invalidStorage }
+                let grant = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                    .first(where: { $0.name == "grant_type" })?.value
+                let authBody = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
+                let emailSignup = url.path == "/auth/v1/signup"
+                    && (authBody?["email"] != nil || authBody?["password"] != nil)
+                if emailSignup { proof.emailRegistrationRequests += 1 }
+                if url.path == "/auth/v1/token", grant == "password" { proof.passwordRequests += 1 }
+                if url.path == "/auth/v1/token", grant == "id_token" { proof.authIdTokenRequests += 1 }
+                next.authProof = proof
+                try persist(next)
+                if emailSignup { throw CatalogueUIFixtureError.invalidRequest }
+            }
             if ledger.scenario.testsDirectEntry, request.httpMethod != "GET" {
                 // Only fixture bootstrap may write. Providers, uploads, commands and signup are denied.
                 let bootstrap = request.httpMethod == "POST" && url.path == "/auth/v1/token"

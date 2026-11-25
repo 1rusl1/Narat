@@ -397,8 +397,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             Text(polish ? "Zaloguj się, aby zapisać wybraną roślinę." : "Sign in to save your chosen plant.")
                 .accessibilityIdentifier("catalogue.save.signInRequired")
             Text(polish
-                 ? "Przy pierwszym użyciu Apple lub Google utworzymy konto Narat. Wybrane dane pozostaną zachowane. Roślina zostanie zapisana dopiero po potwierdzeniu zapisu."
-                 : "Using Apple or Google for the first time creates a Narat account. Your choices are kept. The plant is saved only after the save is confirmed.")
+                 ? "Pierwsze logowanie tworzy konto Narat. Po zalogowaniu kontynuujemy zapisywanie tej rośliny z wybranymi danymi."
+                 : "First sign-in creates your Narat account. After sign-in, we continue saving this plant with your chosen details.")
             if connection.accountProviders.isEmpty {
                 Text(polish
                      ? "Logowanie jest teraz niedostępne. Spróbuj później, wróć lub zmień wybrane dane."

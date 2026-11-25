@@ -1,0 +1,51 @@
+{
+  "status": "SCOPED_AUTH_B5_TECHNICAL_ACCEPTED_WITH_C1_VISUAL_P2_OPEN",
+  "base": "9b9eeebb89d384ee34b0e1cd39f281ff159e83d6",
+  "source_commit": "d55c23a8cf98d88f85f28783ca669ad7d47400a2",
+  "verified_fingerprint": "f94820e1da569a45aa8738c591eccf26eef1a640305ddf8bc0d0ccc9b27f3604",
+  "files": {
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift": {
+      "sha256": "1e6738424edcb4430c3023d24ff82abafe55618f8edf66a087f2915ae9335b8f",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift": {
+      "sha256": "8c792070bc732fdff18af1c2f2f3d684fa4f69cf936d9b29fe7e8b4658c6fccc",
+      "mode": 420
+    },
+    "ios/PlantsTests/CatalogueUIFixtureTests.swift": {
+      "sha256": "a3bc6c59b7ea13d9a03df5ea442aaed2c497969df315d5b504e0c3cfeadd9245",
+      "mode": 420
+    },
+    "ios/PlantsUITests/CatalogueSaveUITests.swift": {
+      "sha256": "3049815df7ee34c5c4ba10c6ebcd5d79f2ca7c300b2f6b4703fcbbce93bbe4d0",
+      "mode": 420
+    },
+    "ios/Plants/App/PlantsApp.swift": {
+      "sha256": "a5c1b6b34214b3679fa1c5ad6e5eb23fa4d04a3f1560418b8852180553c0841a",
+      "mode": 420
+    }
+  },
+  "patches": {
+    "accepted-B5-source.patch": {
+      "path": "/private/tmp/narat-auth-B-final-prep-20261125/accepted-B5-source.patch",
+      "sha256": "4ca6ae937f5a09967fecbb327d36ddbf03772fbbe9455e5b24c3d809a1ad89e4",
+      "size": 23339
+    },
+    "accepted-B4-without-App.patch": {
+      "path": "/private/tmp/narat-auth-B-final-prep-20261125/accepted-B4-without-App.patch",
+      "sha256": "aebeb167c4d325e59561e2bf39042ce294c8910afd696ca0bd2a0402786a6816",
+      "size": 22600
+    },
+    "App-ONE-hunk-preserve-Root-IDA.patch": {
+      "path": "/private/tmp/narat-auth-B-final-prep-20261125/App-ONE-hunk-preserve-Root-IDA.patch",
+      "sha256": "569b1cfbaf3737c0d482b29d933e330d439771a55fe68c459de751974c146207",
+      "size": 739
+    }
+  },
+  "report_md": "/private/tmp/narat-auth-rendered-B-20261125/docs/validation/tester-auth-rendered-accepted-2026-11-25.md",
+  "report_json": "/private/tmp/narat-auth-rendered-B-20261125/docs/validation/tester-auth-rendered-accepted-2026-11-25.json",
+  "raw_state": "/private/tmp/narat-auth-rendered-B-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-B-final-whole-01/state.json",
+  "review_answer": "/private/tmp/narat-auth-rendered-B-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-B-final-whole-01/nov25-auth-B-final-whole/call-1-reviewer/answer.json",
+  "qa_answer": "/private/tmp/narat-auth-rendered-B-20261125/docs/validation/automation/runs/orchestrator-nov25-auth-B-final-whole-01/nov25-auth-B-final-whole/call-2-qa/answer.json",
+  "known_C1_P2": true
+}

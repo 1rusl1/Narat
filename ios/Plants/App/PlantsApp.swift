@@ -2243,6 +2243,7 @@ private struct AccountSignInView: View {
                     .accessibilityIdentifier(staging ? "staging.email" : "account.email")
                 SecureField(isPolish ? "Hasło" : "Password", text: $password)
                     .textContentType(.password)
+                    .keyboardType(.asciiCapable)
                     .accessibilityIdentifier(staging ? "staging.password" : "account.password")
                 if failed {
                     Text(staging ? "Could not sign in to the test stand. Check the test account."
