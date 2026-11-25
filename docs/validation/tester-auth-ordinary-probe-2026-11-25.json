@@ -1,0 +1,31 @@
+{
+  "bundle": "app.narat.plants",
+  "version": "0.1.0",
+  "build": "5",
+  "binary_sha256": "c076b96ec539a4ec7a432b9f004e90edbcc20967f3a78676678ebcf9d07819ae",
+  "host_signature_verified": true,
+  "debug_markers_absent": 19,
+  "expected_backend": true,
+  "public_client_key_verified": true,
+  "install_or_launch_executed": false,
+  "new_source_live_delivery_tested": false,
+  "google_ios_server_ids_and_callback_verified": true,
+  "apple_sign_in_enabled": false,
+  "oauth_manifest_sha256": "01ed2765e9c998855be0a6f2dc948fa6231ec724630ba8ecfd4e02c9ab58e3b4",
+  "commit": "9b9eeebb89d384ee34b0e1cd39f281ff159e83d6",
+  "app": "/private/tmp/narat-nov25-auth-live-probe5-9b9eeebb/signed-simulator/Plants.app",
+  "dsym": "/private/tmp/narat-nov25-auth-live-probe5-9b9eeebb/signed-simulator/Plants.app.dSYM",
+  "dsym_uuid_match": true,
+  "binary_uuids": [
+    [
+      "4852FE3E-09A7-395B-ABCF-B32DD3C0BA5E",
+      "arm64"
+    ],
+    [
+      "96C56656-4A94-312C-8FD9-C0D083D38B5D",
+      "x86_64"
+    ]
+  ],
+  "configuration": "ordinary Simulator Release, ad hoc signed",
+  "retained_at_utc": "2026-11-25T09:12:04.071989+00:00"
+}
