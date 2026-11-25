@@ -1,0 +1,80 @@
+{
+  "status": "SCOPED_C2_SOURCE5_ACCEPTED_EXPORT",
+  "base": "5da1ab5f7b8f12ae0a9b72cca277877383eb533f",
+  "source_frozen_commit": "ecd0845159483a74d354e878fee35806778d1e9f",
+  "review_fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078",
+  "final_docs_fingerprint": "5d355158f71c6ca5eccfa01a0285cc00c41d397c075fcca308382dcaa3404f11",
+  "files": {
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": {
+      "sha256": "e1cddd04400a9305a8f9c001dec30d5ccd8dd43411a4df6b8d5adb8d871e6ac7",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift": {
+      "sha256": "7c050f8e34046eb7dd316ec7ce4d25175e2e5e6fdc3d3e6e42a448058f910dba",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift": {
+      "sha256": "8b04e78900a78c38f6ab5406c7010a67c73e0af831af1d826b135d4d647bbc6b",
+      "mode": 420
+    },
+    "ios/PlantsTests/CatalogueUIFixtureTests.swift": {
+      "sha256": "0fda6fdec0659704e57585df0d973079f399793e2fcdb63c3cf975d04713b0e4",
+      "mode": 420
+    },
+    "ios/PlantsUITests/CatalogueSaveUITests.swift": {
+      "sha256": "cd23ccd5b57578c53279f96acb1a357da02cf9cd4663bd15266fad031dbc03fa",
+      "mode": 420
+    }
+  },
+  "export_directory": "/private/tmp/narat-catalogue-C2-whole5-prep-20261125/accepted-source5",
+  "patch": "/private/tmp/narat-catalogue-C2-whole5-prep-20261125/accepted-C2-source5.patch",
+  "patch_sha256": "c722ecc7094d2cc4c3bbfc2e124229648580d713785f318d6d8f4a915f6bcd01",
+  "reports": {
+    "/private/tmp/narat-catalogue-C2-20261125/docs/validation/tester-catalogue-C2-2026-11-25.md": "0181feb03df4ba690b925536bb0f0cf7b8b6f656470a4089199bc5f4fcef7510",
+    "/private/tmp/narat-catalogue-C2-20261125/docs/validation/tester-catalogue-C2-2026-11-25.json": "f39d58ba52e2398a9c9cfc676adc13457c810444c9b3abcc0ba3dd3d0eb220e2",
+    "/private/tmp/narat-catalogue-C2-20261125/docs/validation/catalogue-C2-api-2026-11-25.md": "64a7241b7ca8177a2d8165ba1a46d5483e4753af48ee03c7efc707b5d5380e93"
+  },
+  "bridge": "/private/tmp/narat-catalogue-C2-whole5-prep-20261125/source-to-final-docs-bridge.json",
+  "state": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/state.json",
+  "human40_receipt": "/private/tmp/narat-catalogue-C2-whole5-prep-20261125/root-C2-visual-review.json",
+  "reviewer": {
+    "status": "PASS",
+    "findings": 0,
+    "seconds": 119.614,
+    "raw_answer": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/call-1-reviewer/answer.json",
+    "sha256": "3bfc0f4ebb33b9f99c1e68cdf8109e0449ed902d48d93e8377d7269e31c3030d"
+  },
+  "qa": {
+    "status": "PASS",
+    "findings": 0,
+    "seconds": 186.798,
+    "raw_answer": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/call-2-qa/answer.json",
+    "sha256": "f692885726cf9e122292084edbf320cb75665165a1f7aa2b1b71d9275a374d85"
+  },
+  "Root_merge_target": "latestRoot9d; preserve App/PlantsUITests +original3userfiles",
+  "private_push": false,
+  "root_transfer_base": "9d656eee9015c8229abf5442aecf2a10be154ec3",
+  "root_source5_verified": true,
+  "root_native_checks_repeated": false,
+  "preserved_disjoint_source_sha256": {
+    "ios/Plants/App/PlantsApp.swift": "4b6b3a37e9990a90fced4234c69b7ba629dad990cf71e79679e393aa0d08a116",
+    "ios/PlantsUITests/PlantsUITests.swift": "6d1c7214370d7f964820766dd901a26fb4e269ce4f30d6784718dbd35a36df1b",
+    "ios/Plants/Features/Analysis/AnalysisFlowModel.swift": "cf8d42eaa7b6736316917333263ead72b17848ccfed6fb513949a817c30be368",
+    "ios/Plants/Features/Analysis/PreliminaryResultView.swift": "501f2771e6edcfd13a30a0505ef3a207a74bc07dd9a96b0fb175b1c62051f23e",
+    "ios/PlantsTests/CollectionWireTests.swift": "1d34b5a40cd0c5ec262f70ac484cf8465acb78123a937755d11b12e79a3ef390"
+  },
+  "export_manifest_sha256": "1677af151e3328dca62ab67e2a498f7836d9df56da01b6ca8faf98877be40f38",
+  "root_report_sha256": {
+    "tester-catalogue-C2-2026-11-25.md": "0181feb03df4ba690b925536bb0f0cf7b8b6f656470a4089199bc5f4fcef7510",
+    "tester-catalogue-C2-2026-11-25.json": "f39d58ba52e2398a9c9cfc676adc13457c810444c9b3abcc0ba3dd3d0eb220e2",
+    "catalogue-C2-api-2026-11-25.md": "d83343d7416c77683d3ea5f4f14acecf7172805ffee9488628bf98b461e23dd7"
+  },
+  "root_doc_only_normalization": "56px/240px→56pt/240pt; actual SwiftUI dimensions, source unchanged",
+  "root_commit_push": "See docs/handoff_status.md; this manifest binds source transfer, not a Git publication receipt",
+  "export_manifest_sha256_at_transfer": "095f947bd90c87e6fab907bd593967f0a066df4e83dd7358fb314a3c46175501",
+  "private_final_commit": "ec118f36d0e9bcb4da02da3754da4a92305e95d6",
+  "export_manifest_append_only_metadata_after_transfer": [
+    "private_final_commit",
+    "Root_API_doc_only_normalization"
+  ]
+}

@@ -1,0 +1,179 @@
+{
+  "status": "SCOPED_C2_FIXTURE_ACCEPTED_WITH_MINOR_FOLLOWUP",
+  "date": "2026-11-25",
+  "source_base": "5da1ab5f7b8f12ae0a9b72cca277877383eb533f",
+  "source_frozen_commit": "ecd0845159483a74d354e878fee35806778d1e9f",
+  "review_fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078",
+  "source5": {
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": {
+      "sha256": "e1cddd04400a9305a8f9c001dec30d5ccd8dd43411a4df6b8d5adb8d871e6ac7",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift": {
+      "sha256": "7c050f8e34046eb7dd316ec7ce4d25175e2e5e6fdc3d3e6e42a448058f910dba",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift": {
+      "sha256": "8b04e78900a78c38f6ab5406c7010a67c73e0af831af1d826b135d4d647bbc6b",
+      "mode": 420
+    },
+    "ios/PlantsTests/CatalogueUIFixtureTests.swift": {
+      "sha256": "0fda6fdec0659704e57585df0d973079f399793e2fcdb63c3cf975d04713b0e4",
+      "mode": 420
+    },
+    "ios/PlantsUITests/CatalogueSaveUITests.swift": {
+      "sha256": "cd23ccd5b57578c53279f96acb1a357da02cf9cd4663bd15266fad031dbc03fa",
+      "mode": 420
+    }
+  },
+  "full_source_patch_sha256": "c722ecc7094d2cc4c3bbfc2e124229648580d713785f318d6d8f4a915f6bcd01",
+  "actual_fresh_checks": {
+    "C2-source-proof": {
+      "status": "PASS",
+      "elapsed_seconds": 0.475,
+      "exit_code": 0,
+      "stdout": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-1-C2-source-proof/stdout.log",
+      "stderr": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-1-C2-source-proof/stderr.log",
+      "fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078"
+    },
+    "diff-check": {
+      "status": "PASS",
+      "elapsed_seconds": 0.025,
+      "exit_code": 0,
+      "stdout": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-2-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-2-diff-check/stderr.log",
+      "fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078"
+    },
+    "00-swift-current": {
+      "status": "PASS",
+      "elapsed_seconds": 163.686,
+      "exit_code": 0,
+      "stdout": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-3-00-swift-current/stdout.log",
+      "stderr": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-3-00-swift-current/stderr.log",
+      "fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078"
+    },
+    "01-C2-light-ui": {
+      "status": "PASS",
+      "elapsed_seconds": 781.634,
+      "exit_code": 0,
+      "stdout": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-4-01-C2-light-ui/stdout.log",
+      "stderr": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-4-01-C2-light-ui/stderr.log",
+      "fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078"
+    },
+    "02-C2-dark-ui": {
+      "status": "PASS",
+      "elapsed_seconds": 253.218,
+      "exit_code": 0,
+      "stdout": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-5-02-C2-dark-ui/stdout.log",
+      "stderr": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-5-02-C2-dark-ui/stderr.log",
+      "fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078"
+    },
+    "automation-tests": {
+      "status": "PASS",
+      "elapsed_seconds": 53.295,
+      "exit_code": 0,
+      "stdout": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-6-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-6-automation-tests/stderr.log",
+      "fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078"
+    },
+    "care-release-compile": {
+      "status": "PASS",
+      "elapsed_seconds": 121.4,
+      "exit_code": 0,
+      "stdout": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-7-care-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/check-7-care-release-compile/stderr.log",
+      "fingerprint": "5a3af671baa96faafa16d6a5db8b42ab95fac21399c3db515b2e251efed3d078"
+    }
+  },
+  "prior_validation_checks_in_final_run": 0,
+  "Swift": {
+    "total": 544,
+    "XCTest_methods": 541,
+    "missing": 0
+  },
+  "automation_tests": 149,
+  "UI": {
+    "actual_case_executions": 7,
+    "light_cases": 5,
+    "dark_cases": 2,
+    "actual_PNG": 40,
+    "strict_proofs": 20,
+    "light_PNG": 26,
+    "dark_PNG": 14,
+    "current_loaded_runner_and_App4_nine_pins": "PASS",
+    "old_namespace_ledgers_before_after": "PASS",
+    "appearance_restore": "PASS"
+  },
+  "independent_roles": {
+    "reviewer": {
+      "status": "PASS",
+      "findings": 0,
+      "seconds": 119.614,
+      "raw_answer": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/call-1-reviewer/answer.json",
+      "sha256": "3bfc0f4ebb33b9f99c1e68cdf8109e0449ed902d48d93e8377d7269e31c3030d"
+    },
+    "qa": {
+      "status": "PASS",
+      "findings": 0,
+      "seconds": 186.798,
+      "raw_answer": "/private/tmp/narat-catalogue-C2-20261125/docs/validation/automation/runs/orchestrator-nov25-catalogue-C2-whole5-04/nov25-catalogue-C2-whole5/call-2-qa/answer.json",
+      "sha256": "f692885726cf9e122292084edbf320cb75665165a1f7aa2b1b71d9275a374d85"
+    }
+  },
+  "human_visual": {
+    "status": "ALL_CURRENT40_ACTUALLY_VIEWED_TWO_REVIEWERS_PASS_WITH_MINOR_FOLLOWUP",
+    "receipt_path": "/private/tmp/narat-catalogue-C2-whole5-prep-20261125/root-C2-visual-review.json",
+    "receipt_sha256": "511bbdcc773dcd3f9f3c147ec32d9994373fac9c371c710aa8e73b1e9f3c6d65",
+    "actual_viewed": 40,
+    "reviewer_counts": {
+      "/root": 20,
+      "/root/care_sources": 20
+    },
+    "blocking_findings": [],
+    "minor_findings": [
+      {
+        "id": "C2-VIS-P3-PROMPT",
+        "priority": 3,
+        "blocking": false,
+        "observed_by": [
+          "/root",
+          "/root/care_sources"
+        ],
+        "description": "Dark search and empty-name placeholders are visibly dim on black; external name label remains readable. No numerical contrast/standards claim. Bounded prompt-only follow-up planned before final artifact and subsequent combined regression."
+      }
+    ],
+    "limits": [
+      "Only current 26light+14dark targeted default-size Simulator captures; not whole app matrix",
+      "Root viewed EN20; care_sources viewed PL20; no claim Root personally viewed PL",
+      "Transient loading not visually captured",
+      "Fixture bitmaps are decoded synthetic green/orange patterns, not plant photographs or live/all606/accuracy evidence",
+      "Hero-focused Save/Retry may lie partly below ordinary scroll viewport; actual interaction/full notice geometry is separate strict functional proof",
+      "Fresh final screenshot already typed; saved resume screenshot alone does not prove list-first or initially empty form",
+      "No physical/VO/XXXL/narrow-device/contrast-conformance proof"
+    ]
+  },
+  "retained_history": [
+    "A1contextapplyFAIL/source0; actualA2regeneration118.778/compile85.03",
+    "B1zero-contextapplyFAIL/source0; actualB2regeneration288.002/compile66.51",
+    "Firstwhole2NEWunitlifetimeerrors/rawexit65; actualunit-only47.205repair",
+    "ExternalwrongengineFD/globalleaseinodeguardFAIL0.139beforeApp/UI; immutableoldREADYkept; correctedparent+heldflockguard3behaviorPASS",
+    "Guard03same-source prior544VALIDATION_NOT_REEXECUTION explicitlyhistorical; actualLIGHT3FAILs retained",
+    "ActualfocusDeveloper51.065 fixedSaveone-shotexplicitresume +NEWUIrole/startup/readiness; oldUIunchanged; finalsourcechanged→ALL7fresh"
+  ],
+  "final_cached_nine_after_Release_roles": "PASS exactlastDarktest-time set",
+  "publication": {
+    "engine": "WAITING/publish disabled intentionally; actualcontroller1 expected",
+    "private_branch_push": false,
+    "Root_transport": "Root selectively transports exactfive-byteunion andcuratedreports; outcome reported separately"
+  },
+  "limits": [
+    "Fixture/local C2 only; syntheticgreen-orange8x8bitmaps, notbotanicalphotos",
+    "PhotoAuth App9d integration differsfromchildbase5da andremainsforRoot/B2combinedregression",
+    "Permanentread-onlyIDresume isnotanonymousguestphotoClaim",
+    "OrdinaryGoogleprobe6 catalogueonecard/cold previouslypassedseparately; noC2live/physical/finalordinary7 acceptance",
+    "Native dark search/empty-name prompts P3 needsboundedGuest+Save readabilityfollowup beforefinalartifact",
+    "T150/T175/parentreadiness notdeclared100%; no loadingvisual/VO/XXXL/narrow-device/contraststandard claim"
+  ],
+  "next_step": "Root source5landing on9d preserving App/PlantsUITests/user3; prompt-onlyP0 andB2 onfreshacceptedRoot; combinedregression/ordinaryartifact afterward",
+  "review_to_final_docs_bridge": "/private/tmp/narat-catalogue-C2-whole5-prep-20261125/source-to-final-docs-bridge.json"
+}

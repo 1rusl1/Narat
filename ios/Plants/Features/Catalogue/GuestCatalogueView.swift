@@ -160,6 +160,7 @@ private final class CatalogueSDKEpoch: @unchecked Sendable {
 @MainActor
 @Observable
 final class CatalogueConnection {
+    @ObservationIgnored var publicMediaLoader: PublishedPlantImageLoader = .shared
     #if DEBUG
     @ObservationIgnored var collectionOpeningLocalReadFixture: (() throws -> Void)?
     var routineFixtureNow: Date?
@@ -3315,6 +3316,9 @@ struct GuestCatalogueView: View {
         let taxonId: UUID?
         let slug: String?
         let select: (UUID) -> Void
+        var confirmationTitle: String? = nil
+        var cancelTitle: String? = nil
+        var contextTitle: String? = nil
 
         func isCurrent(_ card: PublishedSpeciesCard) -> Bool {
             taxonId.map { card.taxonId == $0 } ?? (card.id == slug)
@@ -3397,12 +3401,15 @@ struct GuestCatalogueView: View {
 
     var body: some View {
         VStack {
+            if let contextTitle = speciesPicker?.contextTitle {
+                Text(contextTitle).font(.headline)
+            }
             if let selection {
                 selectedSpecies(selection)
             } else {
                 searchResults
             }
-            Button(speciesPicker == nil ? (polish ? "Wstecz" : "Back") : "Cancel", action: back)
+            Button(speciesPicker == nil ? (polish ? "Wstecz" : "Back") : (speciesPicker?.cancelTitle ?? "Cancel"), action: back)
                 .accessibilityIdentifier("catalogue.back")
         }
         .qgScreen()
@@ -3473,10 +3480,18 @@ struct GuestCatalogueView: View {
                         selectedTaxon = card.taxonId
                         selection = card.id
                     } label: {
-                        VStack(alignment: .leading) {
-                            Text(card.displayName).font(.headline)
-                            Text(card.scientificName).font(.subheadline).foregroundStyle(QuietGarden.secondaryText)
+                        HStack(spacing: 12) {
+                            PublishedPlantImageView(
+                                source: publishedImageSource(card), presentation: .thumbnail,
+                                label: publishedPhotoLabel(card), locale: Locale(identifier: locale.rawValue),
+                                loader: connection.publicMediaLoader
+                            )
+                            VStack(alignment: .leading) {
+                                Text(card.displayName).font(.headline)
+                                Text(card.scientificName).font(.subheadline).foregroundStyle(QuietGarden.secondaryText)
+                            }
                         }
+                        .frame(minHeight: 56)
                     }
                     .padding(.vertical, 8)
                     .listRowBackground(QuietGarden.surface)
@@ -3496,13 +3511,13 @@ struct GuestCatalogueView: View {
 
     @ViewBuilder
     private func selectedSpecies(_ slug: String) -> some View {
-        if let speciesPicker, let card = selectedCard, card.id == slug {
+        if let speciesPicker, let card = selectedCard, selectedCardMatches(card, identifier: slug) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(card.displayName).font(.title)
                     Text(card.scientificName).font(.subheadline)
                     speciesDetails(card)
-                    Button("Confirm species change") { speciesPicker.select(card.taxonId) }
+                    Button(speciesPicker.confirmationTitle ?? "Confirm species change") { speciesPicker.select(card.taxonId) }
                         .buttonStyle(QuietGardenPrimaryButtonStyle())
                         .disabled(speciesPicker.isCurrent(card))
                         .accessibilityIdentifier("collection.species.confirm")
@@ -3510,7 +3525,7 @@ struct GuestCatalogueView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
-        } else if selectedCard?.id == slug || restoredSelection {
+        } else if selectedCard.map({ selectedCardMatches($0, identifier: slug) }) == true || restoredSelection {
             let card = selectedCard
             let host = selectionRevision
             let selectedPolish = polish
@@ -3520,7 +3535,7 @@ struct GuestCatalogueView: View {
                 ScrollView {
                     CatalogueSaveView(
                         connection: connection, speciesSlug: slug,
-                        displayName: card?.displayName ?? slug, scientificName: card?.scientificName ?? "",
+                        displayName: card?.displayName ?? (resumed?.selection.identification != nil ? (polish ? "Roślina" : "Plant") : slug), scientificName: card?.scientificName ?? "",
                         polish: polish, careReminderLocaleIsCurrent: careReminderLocaleIsCurrent,
                         restoresResumableSave: restoredSelection,
                         resumeFlowId: resumed?.selection.flowId,
@@ -3532,11 +3547,20 @@ struct GuestCatalogueView: View {
                                   connection.snapshot == expected else { return }
                             feedback = Feedback(scope: expected, host: host, localeRevision: uiLocaleRevision, polish: selectedPolish)
                         },
+                        analysisSaveIdentity: resumed.flatMap {
+                            $0.selection.identification != nil || $0.selection.diagnosisJobId != nil ? $0.selection.flowId : nil
+                        },
                         identification: resumed?.selection.identification,
                         diagnosisJobId: resumed?.selection.diagnosisJobId,
                         openCollection: openCollection, selectionLocked: $selectionLocked
                     ) {
-                        if let card { speciesDetails(card) }
+                        if let card {
+                            speciesDetails(card)
+                        } else if detailFailed {
+                            catalogueError { detailAttempt += 1 }
+                        } else {
+                            ProgressView()
+                        }
                     }
                     .id(host)
                     .padding()
@@ -3571,24 +3595,31 @@ struct GuestCatalogueView: View {
         }
     }
 
+    private func selectedCardMatches(_ card: PublishedSpeciesCard, identifier: String) -> Bool {
+        selectedTaxon.map { card.taxonId == $0 } ?? (card.id == identifier)
+    }
+
+    private func publishedImageSource(_ card: PublishedSpeciesCard) -> PublishedPlantImageSource {
+        PublishedPlantImageSource(
+            url: card.heroImage?.downloadURL,
+            author: card.heroImage?.author,
+            license: card.heroImage?.license,
+            attribution: card.heroImage?.attribution,
+            sourcePage: card.heroImage?.sourcePage
+        )
+    }
+
+    private func publishedPhotoLabel(_ card: PublishedSpeciesCard) -> String {
+        (polish ? "Przykładowe zdjęcie gatunku: " : "Example species photo: ") + card.displayName
+    }
+
     @ViewBuilder
     private func speciesDetails(_ card: PublishedSpeciesCard) -> some View {
-        if let photo = card.heroImage, let url = safeWebURL(photo.downloadURL) {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFit()
-            } placeholder: { Color.clear }
-            .frame(maxHeight: 240)
-            let credit = [photo.author ?? photo.attribution, photo.license].compactMap { $0 }.joined(separator: " · ")
-            if !credit.isEmpty {
-                if let source = safeWebURL(photo.sourcePage) {
-                    Link(credit, destination: source).font(.caption)
-                        .accessibilityIdentifier("catalogue.species.photo.credit")
-                } else {
-                    Text(credit).font(.caption)
-                        .accessibilityIdentifier("catalogue.species.photo.credit")
-                }
-            }
-        }
+        PublishedPlantImageView(
+            source: publishedImageSource(card), presentation: .hero,
+            label: publishedPhotoLabel(card), locale: Locale(identifier: locale.rawValue),
+            loader: connection.publicMediaLoader
+        )
         if let description = card.description {
             Text(description.text)
             if let source = safeWebURL(description.sourceURL) {
@@ -3668,15 +3699,18 @@ struct GuestCatalogueView: View {
             guard case let .restored(model) = result,
                   let restored = CatalogueResumeSelection(model),
                   restored.flowId == flow, restored.speciesSlug == entry.selection.speciesSlug,
-                  let slug = model.input?.speciesSlug else {
+                  let input = model.input, input.speciesIdentifier == restored.speciesSlug else {
                 throw CatalogueSaveUnavailable.storageOrServiceUnavailable
             }
+            let saved: Bool
+            if case .saved = model.state { saved = true } else { saved = false }
+            resumeEntry = ResumeEntry(scope: expected, selection: restored, saved: saved)
             selectionRevision = UUID()
             feedback = nil
             restoredSelection = true
             selectedCard = nil
-            selectedTaxon = nil
-            selection = slug
+            selectedTaxon = restored.identification?.taxonId
+            selection = input.speciesIdentifier
         } catch {
             guard !Task.isCancelled, active, resumeRead == requested, selection == nil else { return }
             resumeFailed = true
@@ -3746,7 +3780,11 @@ struct GuestCatalogueView: View {
             } else {
                 card = try await api.fetchPublishedSpecies(slug: slug, locale: requested.locale)
             }
-            guard card.id == slug else { throw URLError(.cannotParseResponse) }
+            if let taxonId = requested.taxonId {
+                guard card.taxonId == taxonId else { throw URLError(.cannotParseResponse) }
+            } else {
+                guard card.id == slug else { throw URLError(.cannotParseResponse) }
+            }
             guard !Task.isCancelled, detail == requested else { return }
             selectedCard = card
         } catch {

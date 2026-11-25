@@ -3,9 +3,11 @@ import Foundation
 import Supabase
 import SwiftData
 import UIKit
+import CryptoKit
 
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
+    case publishedMedia, publishedIdentificationResume
     case guestProviderCancel, guestProviderSuccess, ackFailure
     case guestProvidersUnavailable, guestProviderFailureRetry
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
@@ -105,6 +107,8 @@ enum CatalogueUIFixtures {
             SyncedEntityRecord.self, SyncCheckpointRecord.self
         ])
         let database = directory.appendingPathComponent("catalogue.sqlite")
+        let preparePublishedResume = scenario == .publishedIdentificationResume
+            && !FileManager.default.fileExists(atPath: database.path)
         let prepareACK = scenario == .ackFailure && !FileManager.default.fileExists(atPath: database.path)
         let prepareWateringCache = scenario.testsSavedWatering && !FileManager.default.fileExists(atPath: database.path)
         func container(allowsSave: Bool) throws -> ModelContainer {
@@ -238,6 +242,9 @@ enum CatalogueUIFixtures {
                 context.connection = connect(try container(allowsSave: false))
                 _ = try await context.connection.sessionOwner()
             }
+            if scenario == .publishedMedia || scenario == .publishedIdentificationResume {
+                try await context.preparePublishedFixture(isNewResume: preparePublishedResume)
+            }
             return context
         } catch {
             context.shutdown()
@@ -256,6 +263,8 @@ final class CatalogueUIFixtureContext {
     let server: CatalogueFixtureServer
     let identity: CatalogueFixtureIdentity
     private let openingAuthStorage: CatalogueFixtureAuthStorage
+    private var mediaProtocol: CatalogueScopedMediaProtocol.Type?
+    private(set) var mediaHTTP: URLSession?
     private var openingReady = false
     private var openingExpiryArmed = false
 
@@ -376,6 +385,12 @@ final class CatalogueUIFixtureContext {
 
     /// Releases the connection without erasing SDK state, SQLite, receipts or scenario flags.
     func shutdown() {
+        if let mediaProtocol {
+            mediaHTTP?.invalidateAndCancel()
+            CatalogueScopedMediaProtocol.release(mediaProtocol, server: server)
+            self.mediaProtocol = nil
+            mediaHTTP = nil
+        }
         connection = nil
         http.invalidateAndCancel()
         CatalogueFixtureProtocol.registry.remove(server, name: namespace)
@@ -939,6 +954,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                       request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
                       let locale = request.value(forHTTPHeaderField: "X-Client-Locale"),
                       ["pl", "en"].contains(locale) else { throw CatalogueUIFixtureError.invalidRequest }
+                if ledger.scenario == .publishedMedia || ledger.scenario == .publishedIdentificationResume {
+                    return try publishedCatalogue(request, locale: locale)
+                }
                 let fern: [String: Any] = [
                     "plant_id": "fixture_fern", "taxon_id": Self.fernTaxon,
                     "display_name": locale == "pl" ? "Paproć" : "Fern",
@@ -1959,4 +1977,316 @@ private final class CatalogueFixtureProtocol: URLProtocol, @unchecked Sendable {
     }
     override func stopLoading() {}
 }
+
+// C2 fixtures use a separate public transport. These values contain no session data.
+enum CataloguePublishedFixture {
+    static let taxon = UUID(uuidString: "32e72c49-4e06-434a-86dd-bbf8a5cb209e")!
+    static let job = UUID(uuidString: "6e816a9e-f658-44cb-803e-535aaf87e019")!
+    static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAHElEQVR4nGNQWODw/0ODwH9cNAM+SRDNMCxMAAAEvo/B6J5EcQAAAABJRU5ErkJggg==")!
+    static let author = "Narat Fixture Studio"
+    static let license = "CC0-1.0"
+    static let attribution = "Deterministic fern colour study"
+    static let sourcePage = "https://catalogue-media.fixture.invalid/sources/fern"
+    static let pngSHA256 = "86c56b330ed7a9d3659270bbaaff8906aa19837c0d8f21097c91c368234b3671"
+
+    static func imageURL(namespace: String, filename: String = "fern.png") -> URL {
+        URL(string: "https://catalogue-media.fixture.invalid/media/" + namespace + "/" + filename)!
+    }
+
+    static func envelopeHash(_ envelope: CommandEnvelopeDTO) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return SHA256.hash(data: try encoder.encode(envelope)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+struct CataloguePublishedMediaLedger: Codable, Sendable {
+    struct Request: Codable, Sendable {
+        let path: String
+        let accepted: Bool
+        let authorizationPresent: Bool
+        let installationPresent: Bool
+        let namespaceHeaderPresent: Bool
+        let cookiePresent: Bool
+    }
+    let namespace: String
+    let scenario: CatalogueUIFixtureScenario
+    let author: String
+    let license: String
+    let attribution: String
+    let sourcePage: String
+    let pngSHA256: String
+    let width: Int
+    let height: Int
+    var listGETs = 0
+    var detailGETs = 0
+    var requests: [Request] = []
+}
+
+struct CataloguePublishedResumeProof: Codable {
+    struct Identity: Codable, Equatable {
+        let owner: UUID
+        let flow: UUID
+        let operation: UUID
+        let job: UUID
+        let taxon: UUID
+        let name: String
+        let envelopeSHA256: String
+
+        @MainActor init(_ model: CatalogueSaveModel) throws {
+            guard let checkpoint = model.checkpoint, let input = model.input,
+                  let identification = input.identification, let name = input.personalName else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            owner = checkpoint.ownerId; flow = checkpoint.flowId
+            operation = checkpoint.operationId; job = identification.jobId
+            taxon = identification.taxonId; self.name = name
+            envelopeSHA256 = try CataloguePublishedFixture.envelopeHash(checkpoint.envelope)
+        }
+    }
+    let namespace: String
+    let original: Identity
+    let current: Identity
+    let checkpointCount: Int
+    let commandAttempts: Int
+    let newCommits: Int
+    let plantCount: Int
+}
+
+extension CatalogueUIFixtureContext {
+    fileprivate func preparePublishedFixture(isNewResume: Bool) async throws {
+        try server.preparePublishedMedia()
+        let type = try CatalogueScopedMediaProtocol.scopes.reserve(server)
+        mediaProtocol = type
+        let configuration = PublishedPlantImageLoader.publicConfiguration()
+        configuration.protocolClasses = [type]
+        let session = URLSession(configuration: configuration)
+        mediaHTTP = session
+        connection.publicMediaLoader = PublishedPlantImageLoader(session: session)
+        guard server.snapshot.scenario == .publishedIdentificationResume else { return }
+        let expected = try await connection.sessionSnapshot()
+        let proofURL = directory.appendingPathComponent("c2-resume-proof.json")
+        let original: CataloguePublishedResumeProof.Identity
+        let restored: CatalogueSaveModel
+        if isNewResume {
+            guard !FileManager.default.fileExists(atPath: proofURL.path),
+                  try connection.resumableFlow(expected: expected) == nil else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            let model = try await connection.makeModel(
+                input: CatalogueInput(identification: .init(
+                    jobId: CataloguePublishedFixture.job, taxonId: CataloguePublishedFixture.taxon
+                ), personalName: "Luna"),
+                flowId: UUID(), operationId: UUID(), expected: expected
+            )
+            _ = try await connection.rememberModel(model, expected: expected)
+            restored = model
+            original = try CataloguePublishedResumeProof.Identity(model)
+        } else {
+            // An existing namespace must restore its actual SQLite checkpoint, never reseed.
+            let proof = try JSONDecoder().decode(CataloguePublishedResumeProof.self, from: Data(contentsOf: proofURL))
+            guard proof.namespace == namespace,
+                  try connection.resumableFlow(expected: expected) == proof.original.flow else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            let result = await connection.restoreModel(
+                ownerId: expected.session.userId, flowId: proof.original.flow, expected: expected
+            )
+            guard case let .restored(model) = result else { throw CatalogueUIFixtureError.invalidStorage }
+            restored = model
+            original = proof.original
+        }
+        let current = try CataloguePublishedResumeProof.Identity(restored)
+        guard current == original, let store = connection.store else {
+            throw CatalogueUIFixtureError.invalidStorage
+        }
+        let disk = ModelContext(store.modelContainer)
+        let count = try disk.fetchCount(FetchDescriptor<CatalogueInputCheckpointRecord>())
+        guard count == 1 else { throw CatalogueUIFixtureError.invalidStorage }
+        let ledger = server.snapshot
+        let proof = CataloguePublishedResumeProof(
+            namespace: namespace, original: original, current: current, checkpointCount: count,
+            commandAttempts: ledger.attempts.count, newCommits: ledger.commits.count,
+            plantCount: ledger.plants.count
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(proof).write(to: proofURL, options: .atomic)
+    }
+}
+
+extension CatalogueFixtureServer {
+    private var publishedMediaFile: URL {
+        file.deletingLastPathComponent().appendingPathComponent("media-ledger.json")
+    }
+
+    var publishedMediaLedger: CataloguePublishedMediaLedger {
+        get throws {
+            try lock.withLock {
+                try JSONDecoder().decode(CataloguePublishedMediaLedger.self, from: Data(contentsOf: publishedMediaFile))
+            }
+        }
+    }
+
+    fileprivate func preparePublishedMedia() throws {
+        try lock.withLock {
+            if FileManager.default.fileExists(atPath: publishedMediaFile.path) {
+                let old = try JSONDecoder().decode(CataloguePublishedMediaLedger.self, from: Data(contentsOf: publishedMediaFile))
+                guard old.namespace == namespace, old.scenario == ledger.scenario else {
+                    throw CatalogueUIFixtureError.scenarioMismatch
+                }
+                return
+            }
+            let value = CataloguePublishedMediaLedger(
+                namespace: namespace, scenario: ledger.scenario,
+                author: CataloguePublishedFixture.author, license: CataloguePublishedFixture.license,
+                attribution: CataloguePublishedFixture.attribution, sourcePage: CataloguePublishedFixture.sourcePage,
+                pngSHA256: CataloguePublishedFixture.pngSHA256, width: 8, height: 8
+            )
+            try JSONEncoder().encode(value).write(to: publishedMediaFile, options: .atomic)
+        }
+    }
+
+    // Called only while handle owns the server lock. Ordinary scenarios never enter this branch.
+    fileprivate func publishedCatalogue(_ request: URLRequest, locale: String) throws -> Reply {
+        guard let url = request.url, request.httpMethod == "GET",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        let root = "/functions/v1/plants-api/catalogue"
+        let rows: [[String: Any]] = (0..<50).map { index in
+            let slug = index == 0 ? "fixture_fern" : (index == 1 ? "fixture_missing" : (index == 2 ? "fixture_error" : String(format: "fixture_media_%03d", index)))
+            let taxon = index == 0 ? CataloguePublishedFixture.taxon
+                : UUID(uuidString: String(format: "a2000000-0000-4000-8000-%012d", index))!
+            let name = index == 0 ? (locale == "pl" ? "Paproć" : "Fern")
+                : (index == 1 ? (locale == "pl" ? "Bez zdjęcia" : "Missing photo")
+                   : (index == 2 ? (locale == "pl" ? "Błąd zdjęcia" : "Failed photo") : "Fern \(index)"))
+            let filename = index == 0 ? "fern.png" : (index == 2 ? "error.png" : String(format: "row-%03d.png", index))
+            let photo: Any = index == 1 ? NSNull() : [
+                "download_url": CataloguePublishedFixture.imageURL(namespace: namespace, filename: filename).absoluteString,
+                "author": CataloguePublishedFixture.author, "license": CataloguePublishedFixture.license,
+                "attribution": CataloguePublishedFixture.attribution, "source_page": CataloguePublishedFixture.sourcePage
+            ]
+            return [
+                "plant_id": slug, "taxon_id": taxon.uuidString.lowercased(), "display_name": name,
+                "scientific_name": index == 0 ? "Nephrolepis exaltata" : "Fixture taxon \(index)",
+                "description": NSNull(), "hero_image": photo, "care_profile_available": false
+            ]
+        }
+        var media = try JSONDecoder().decode(CataloguePublishedMediaLedger.self, from: Data(contentsOf: publishedMediaFile))
+        if url.path != root {
+            guard components.queryItems == nil,
+                  let row = rows.first(where: {
+                      url.path == root + "/" + ($0["plant_id"] as! String)
+                          || url.path == root + "/" + ($0["taxon_id"] as! String)
+                  }) else { throw CatalogueUIFixtureError.invalidRequest }
+            media.detailGETs += 1
+            try JSONEncoder().encode(media).write(to: publishedMediaFile, options: .atomic)
+            if ledger.scenario == .publishedIdentificationResume, media.detailGETs == 1 {
+                return try error(503, "INTERNAL_ERROR", retryable: true)
+            }
+            return Reply(status: 200, data: try json(row))
+        }
+        let query = components.queryItems ?? []
+        guard query.map(\.name) == ["q", "limit", "offset"],
+              let term = query[0].value, let limit = query[1].value.flatMap(Int.init),
+              let offset = query[2].value.flatMap(Int.init), (1...200).contains(limit), offset >= 0 else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        let matches = rows.filter {
+            term.isEmpty || ($0["display_name"] as! String).localizedStandardContains(term)
+                || ($0["scientific_name"] as! String).localizedStandardContains(term)
+        }
+        media.listGETs += 1
+        try JSONEncoder().encode(media).write(to: publishedMediaFile, options: .atomic)
+        return Reply(status: 200, data: try json([
+            "release_version": "fixture", "kb_release_id": NSNull(), "locale": locale,
+            "total": matches.count, "limit": limit, "offset": offset,
+            "items": Array(matches.dropFirst(offset).prefix(limit))
+        ]))
+    }
+
+    fileprivate func publishedMedia(_ request: URLRequest) throws -> Reply {
+        try lock.withLock {
+            let url = request.url
+            let filename = url?.lastPathComponent ?? ""
+            let allowed = filename == "fern.png" || filename == "error.png"
+                || (3..<50).contains(where: { filename == String(format: "row-%03d.png", $0) })
+            let valid = allowed && request.httpMethod == "GET"
+                && url?.absoluteString == CataloguePublishedFixture.imageURL(namespace: namespace, filename: filename).absoluteString
+            let capture = CataloguePublishedMediaLedger.Request(
+                path: valid ? "/media/" + namespace + "/" + filename : "<rejected>", accepted: valid,
+                authorizationPresent: request.value(forHTTPHeaderField: "Authorization") != nil,
+                installationPresent: request.value(forHTTPHeaderField: "X-Installation-Credential") != nil,
+                namespaceHeaderPresent: request.value(forHTTPHeaderField: "X-Catalogue-Fixture-Namespace") != nil,
+                cookiePresent: request.value(forHTTPHeaderField: "Cookie") != nil
+            )
+            var media = try JSONDecoder().decode(CataloguePublishedMediaLedger.self, from: Data(contentsOf: publishedMediaFile))
+            guard media.requests.count < 256 else { throw CatalogueUIFixtureError.invalidRequest }
+            media.requests.append(capture)
+            try JSONEncoder().encode(media).write(to: publishedMediaFile, options: .atomic)
+            guard valid, !capture.authorizationPresent, !capture.installationPresent,
+                  !capture.namespaceHeaderPresent, !capture.cookiePresent else { throw URLError(.unsupportedURL) }
+            if filename == "error.png" { return Reply(status: 503, data: Data(), contentType: "image/png") }
+            return Reply(status: 200, data: CataloguePublishedFixture.png, contentType: "image/png")
+        }
+    }
+}
+
+// A bounded class pool binds each session to ONE namespace, including when another context is active.
+// Only configuration.protocolClasses is used; no process-wide URLProtocol registration.
+private final class CatalogueMediaScopes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var servers: [ObjectIdentifier: CatalogueFixtureServer] = [:]
+    private let types: [CatalogueScopedMediaProtocol.Type] = [
+        CatalogueMediaProtocolA.self, CatalogueMediaProtocolB.self,
+        CatalogueMediaProtocolC.self, CatalogueMediaProtocolD.self
+    ]
+    func reserve(_ server: CatalogueFixtureServer) throws -> CatalogueScopedMediaProtocol.Type {
+        try lock.withLock {
+            guard let type = types.first(where: { servers[ObjectIdentifier($0)] == nil }) else {
+                throw CatalogueUIFixtureError.namespaceInUse
+            }
+            servers[ObjectIdentifier(type)] = server
+            return type
+        }
+    }
+    func get(_ type: CatalogueScopedMediaProtocol.Type) -> CatalogueFixtureServer? {
+        lock.withLock { servers[ObjectIdentifier(type)] }
+    }
+    func release(_ type: CatalogueScopedMediaProtocol.Type, server: CatalogueFixtureServer) {
+        lock.withLock {
+            if servers[ObjectIdentifier(type)] === server { servers[ObjectIdentifier(type)] = nil }
+        }
+    }
+}
+
+private class CatalogueScopedMediaProtocol: URLProtocol, @unchecked Sendable {
+    static let scopes = CatalogueMediaScopes()
+    static func release(_ type: CatalogueScopedMediaProtocol.Type, server: CatalogueFixtureServer) {
+        scopes.release(type, server: server)
+    }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            guard let server = Self.scopes.get(type(of: self)), let url = request.url else {
+                throw URLError(.unsupportedURL)
+            }
+            let reply = try server.publishedMedia(request)
+            guard let response = HTTPURLResponse(
+                url: url, statusCode: reply.status, httpVersion: nil,
+                headerFields: ["Content-Type": reply.contentType, "Cache-Control": "no-store"]
+            ) else { throw URLError(.badServerResponse) }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: reply.data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+    override func stopLoading() {}
+}
+private final class CatalogueMediaProtocolA: CatalogueScopedMediaProtocol, @unchecked Sendable {}
+private final class CatalogueMediaProtocolB: CatalogueScopedMediaProtocol, @unchecked Sendable {}
+private final class CatalogueMediaProtocolC: CatalogueScopedMediaProtocol, @unchecked Sendable {}
+private final class CatalogueMediaProtocolD: CatalogueScopedMediaProtocol, @unchecked Sendable {}
 #endif

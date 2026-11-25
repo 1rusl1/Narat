@@ -577,5 +577,232 @@ final class CatalogueUIFixtureTests: XCTestCase {
         try await reopened.connection.client!.auth.signOut()
         XCTAssertNil(reopened.connection.client!.auth.currentSession)
     }
+
+    private func c2Source(_ card: PublishedSpeciesCard) -> PublishedPlantImageSource {
+        PublishedPlantImageSource(
+            url: card.heroImage?.downloadURL, author: card.heroImage?.author,
+            license: card.heroImage?.license, attribution: card.heroImage?.attribution,
+            sourcePage: card.heroImage?.sourcePage
+        )
+    }
+
+    private func c2Reject(_ session: URLSession, _ url: URL) async {
+        do {
+            _ = try await session.data(from: url)
+            XCTFail("Scoped public fixture accepted a foreign or malformed URL")
+        } catch {}
+    }
+
+    func testPublishedFixtureDecodedPixelsCacheMetadataAndPublicTransport() async throws {
+        let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .publishedMedia)
+        defer { try? h.cleanup() }
+        let api = try XCTUnwrap(h.connection.apiClient)
+        let page = try await api.searchPublishedCatalogue(query: "", locale: .en, limit: 50, offset: 0)
+        XCTAssertEqual(page.items.count, 50)
+        XCTAssertEqual(page.total, 50)
+        XCTAssertEqual(try h.server.publishedMediaLedger.listGETs, 1)
+        XCTAssertEqual(try h.server.publishedMediaLedger.detailGETs, 0)
+        XCTAssertTrue(try h.server.publishedMediaLedger.requests.isEmpty)
+        let source = c2Source(try XCTUnwrap(page.items.first))
+        XCTAssertEqual(source.author, CataloguePublishedFixture.author)
+        XCTAssertEqual(source.license, CataloguePublishedFixture.license)
+        XCTAssertEqual(source.attribution, CataloguePublishedFixture.attribution)
+        XCTAssertEqual(source.sourcePage?.absoluteString, CataloguePublishedFixture.sourcePage)
+        XCTAssertEqual(source.credit, "Narat Fixture Studio · CC0-1.0 · Deterministic fern colour study")
+        let beforeAPI = h.server.requests.count
+        let loader = h.connection.publicMediaLoader
+        let image = try await loader.load(source)
+        let cached = try await loader.load(source)
+        XCTAssertTrue(image === cached)
+        let cg = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(cg.width, 8)
+        XCTAssertEqual(cg.height, 8)
+        var pixels = [UInt8](repeating: 0, count: 8 * 8 * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(
+                data: bytes.baseAddress, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 32,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.interpolationQuality = .none
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        var green = 0, orange = 0
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let rgba = Array(pixels[index..<(index + 4)])
+            if rgba == [32, 160, 64, 255] { green += 1 }
+            if rgba == [240, 128, 16, 255] { orange += 1 }
+        }
+        XCTAssertEqual(green, 32)
+        XCTAssertEqual(orange, 32)
+        let media = try h.server.publishedMediaLedger
+        XCTAssertEqual(media.requests.count, 1, "The second load must use the actual image cache")
+        XCTAssertTrue(media.requests.allSatisfy {
+            $0.accepted && !$0.authorizationPresent && !$0.installationPresent
+                && !$0.namespaceHeaderPresent && !$0.cookiePresent
+        })
+        XCTAssertEqual(media.pngSHA256, CataloguePublishedFixture.pngSHA256)
+        XCTAssertEqual(h.server.requests.count, beforeAPI, "Image loads must never use the API session")
+        let session = try XCTUnwrap(h.mediaHTTP)
+        XCTAssertTrue(session.configuration.httpAdditionalHeaders?.isEmpty != false)
+        XCTAssertNil(session.configuration.httpCookieStorage)
+        XCTAssertNil(session.configuration.urlCredentialStorage)
+        XCTAssertNil(session.configuration.urlCache)
+        let (data, _) = try await session.data(from: try XCTUnwrap(source.url))
+        XCTAssertEqual(data, CataloguePublishedFixture.png)
+        XCTAssertNotNil(UIImage(data: data))
+        let nilState = PublishedPlantImageState()
+        let beforeNil = try h.server.publishedMediaLedger.requests.count
+        await nilState.load(c2Source(page.items[1]), using: loader)
+        guard case .missing = nilState.phase else { return XCTFail("Nil metadata must render the missing phase") }
+        XCTAssertEqual(try h.server.publishedMediaLedger.requests.count, beforeNil)
+        let failed = PublishedPlantImageState()
+        await failed.load(c2Source(page.items[2]), using: loader)
+        guard case .failed = failed.phase else { return XCTFail("HTTP 503 must render the failure phase") }
+        let failureCount = try h.server.publishedMediaLedger.requests.count
+        await failed.load(c2Source(page.items[2]), using: loader)
+        XCTAssertEqual(try h.server.publishedMediaLedger.requests.count, failureCount + 1, "Failures are not cached")
+        for value in [
+            "https://unknown.invalid/image.png",
+            "https://catalogue-media.fixture.invalid/media/" + h.namespace + "/unknown.png",
+            "https://catalogue-media.fixture.invalid/media/" + h.namespace + "/fern.png?unexpected=1",
+            "http://catalogue-media.fixture.invalid/media/" + h.namespace + "/fern.png"
+        ] {
+            await c2Reject(session, try XCTUnwrap(URL(string: value)))
+        }
+        XCTAssertEqual(h.server.requests.count, beforeAPI)
+    }
+
+    func testPublishedFixtureConcurrentNamespaceIsolationAndShutdown() async throws {
+        let first = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .publishedMedia)
+        let second = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .publishedMedia)
+        defer { try? first.cleanup(); try? second.cleanup() }
+        let firstSession = try XCTUnwrap(first.mediaHTTP)
+        let secondSession = try XCTUnwrap(second.mediaHTTP)
+        let firstURL = CataloguePublishedFixture.imageURL(namespace: first.namespace)
+        let secondURL = CataloguePublishedFixture.imageURL(namespace: second.namespace)
+        let firstAPI = first.server.requests.count, secondAPI = second.server.requests.count
+        let a = try await first.connection.publicMediaLoader.load(.init(url: firstURL))
+        let b = try await second.connection.publicMediaLoader.load(.init(url: secondURL))
+        XCTAssertFalse(a === b, "Each context owns its decoded cache")
+        await c2Reject(firstSession, secondURL)
+        await c2Reject(secondSession, firstURL)
+        XCTAssertEqual(try first.server.publishedMediaLedger.requests.filter(\.accepted).count, 1)
+        XCTAssertEqual(try second.server.publishedMediaLedger.requests.filter(\.accepted).count, 1)
+        XCTAssertEqual(first.server.requests.count, firstAPI)
+        XCTAssertEqual(second.server.requests.count, secondAPI)
+        let name = first.namespace
+        first.shutdown()
+        XCTAssertNil(first.mediaHTTP)
+        XCTAssertNil(first.connection)
+        let reopened = try await CatalogueUIFixtures.make(namespace: name, scenario: .publishedMedia)
+        defer { reopened.shutdown() }
+        let count = try reopened.server.publishedMediaLedger.requests.count
+        _ = try await reopened.connection.publicMediaLoader.load(.init(url: firstURL))
+        XCTAssertEqual(try reopened.server.publishedMediaLedger.requests.count, count + 1, "Cold context cannot reuse the old cache")
+        _ = try await second.connection.publicMediaLoader.load(.init(url: secondURL))
+        XCTAssertEqual(try second.server.publishedMediaLedger.requests.filter(\.accepted).count, 1)
+    }
+
+    func testPublishedIdentificationCheckpointUUIDMappingAndColdRestoreWithoutCreate() async throws {
+        let name = UUID().uuidString
+        let h = try await CatalogueUIFixtures.make(namespace: name, scenario: .publishedIdentificationResume)
+        defer { h.shutdown() }
+        let proofURL = h.directory.appendingPathComponent("c2-resume-proof.json")
+        let proofData = try Data(contentsOf: proofURL)
+        let proof = try JSONDecoder().decode(CataloguePublishedResumeProof.self, from: proofData)
+        let expected = try await h.connection.sessionSnapshot()
+        XCTAssertEqual(proof.namespace, h.namespace)
+        XCTAssertEqual(proof.original, proof.current)
+        XCTAssertEqual(proof.original.job, CataloguePublishedFixture.job)
+        XCTAssertEqual(proof.original.taxon, CataloguePublishedFixture.taxon)
+        XCTAssertEqual(proof.original.name, "Luna")
+        XCTAssertEqual(proof.original.owner, expected.session.userId)
+        XCTAssertEqual(proof.checkpointCount, 1)
+        XCTAssertEqual(proof.commandAttempts, 0)
+        XCTAssertEqual(proof.newCommits, 0)
+        XCTAssertEqual(proof.plantCount, 2)
+        let initialResult = await h.connection.restoreModel(
+            ownerId: expected.session.userId, flowId: proof.original.flow, expected: expected
+        )
+        guard case let .restored(initial) = initialResult else { return XCTFail("Expected real durable checkpoint") }
+        let originalInput = try XCTUnwrap(initial.input)
+        let originalEnvelope = try XCTUnwrap(initial.envelope)
+        let originalCheckpoint = try XCTUnwrap(initial.checkpoint)
+        XCTAssertNil(initial.input?.speciesSlug)
+        XCTAssertEqual(initial.input?.speciesIdentifier, CataloguePublishedFixture.taxon.uuidString.lowercased())
+        XCTAssertEqual(initial.input?.identification?.jobId, proof.original.job)
+        XCTAssertEqual(initial.input?.personalName, "Luna")
+        XCTAssertEqual(try CataloguePublishedFixture.envelopeHash(originalEnvelope), proof.original.envelopeSHA256)
+        let selection = try XCTUnwrap(CatalogueResumeSelection(initial))
+        XCTAssertEqual(selection.flowId, proof.original.flow)
+        XCTAssertEqual(selection.speciesSlug, CataloguePublishedFixture.taxon.uuidString.lowercased())
+        XCTAssertEqual(selection.identification, initial.input?.identification)
+        XCTAssertNil(selection.diagnosisJobId)
+        XCTAssertFalse(CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: selection.flowId))
+        do {
+            _ = try await h.connection.apiClient!.fetchPublishedSpecies(taxonId: proof.original.taxon, locale: .en)
+            XCTFail("The first public detail GET must fail with the fixture 503")
+        } catch let failure as APIErrorResponse {
+            XCTAssertEqual(failure.error.code, "INTERNAL_ERROR")
+            XCTAssertTrue(failure.error.retryable)
+        }
+        XCTAssertEqual(try h.server.publishedMediaLedger.detailGETs, 1)
+        for locale in [SupportedLocale.en, .pl] {
+            let card = try await h.connection.apiClient!.fetchPublishedSpecies(taxonId: proof.original.taxon, locale: locale)
+            XCTAssertEqual(card.id, "fixture_fern")
+            XCTAssertNotEqual(card.id, selection.speciesSlug)
+            XCTAssertEqual(card.taxonId, selection.identification?.taxonId)
+            XCTAssertEqual(card.displayName, locale == .pl ? "Paproć" : "Fern")
+            let slugCard = try await h.connection.apiClient!.fetchPublishedSpecies(slug: card.id, locale: locale)
+            XCTAssertEqual(slugCard.taxonId, card.taxonId)
+        }
+        h.shutdown()
+        let cold = try await CatalogueUIFixtures.make(namespace: name, scenario: .publishedIdentificationResume)
+        defer { try? cold.cleanup() }
+        let current = try await cold.connection.sessionSnapshot()
+        XCTAssertEqual(current.session.userId, expected.session.userId)
+        XCTAssertEqual(try cold.connection.resumableFlow(expected: current), proof.original.flow)
+        let result = await cold.connection.restoreModel(
+            ownerId: current.session.userId, flowId: proof.original.flow, expected: current
+        )
+        guard case let .restored(restored) = result else { return XCTFail("Expected SQLite restore after cold context") }
+        XCTAssertEqual(restored.checkpoint, originalCheckpoint)
+        XCTAssertEqual(restored.envelope, originalEnvelope)
+        XCTAssertEqual(restored.input, originalInput)
+        XCTAssertEqual(try Data(contentsOf: proofURL), proofData)
+        let disk = ModelContext(cold.connection.store!.modelContainer)
+        XCTAssertEqual(try disk.fetchCount(FetchDescriptor<CatalogueInputCheckpointRecord>()), 1)
+        XCTAssertTrue(cold.server.snapshot.attempts.isEmpty)
+        XCTAssertTrue(cold.server.snapshot.commits.isEmpty)
+        XCTAssertEqual(cold.server.snapshot.plants.count, 2)
+        XCTAssertFalse(cold.server.requests.contains {
+            $0.httpMethod == "POST" && $0.url?.path.hasPrefix("/functions/") == true
+        })
+
+        // The same production selection helper preserves diagnosis identity too.
+        let diagnosis = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: .free2)
+        defer { try? diagnosis.cleanup() }
+        let diagnosisScope = try await diagnosis.connection.sessionSnapshot()
+        let job = UUID(), flow = UUID(), operation = UUID()
+        let model = try await diagnosis.connection.makeModel(
+            input: CatalogueInput(diagnosisJobId: job, speciesSlug: "fixture_fern", personalName: "Luna"),
+            flowId: flow, operationId: operation, expected: diagnosisScope
+        )
+        let checkpoint = try await diagnosis.connection.rememberModel(model, expected: diagnosisScope)
+        let diagnosisResult = await diagnosis.connection.restoreModel(
+            ownerId: diagnosisScope.session.userId, flowId: flow, expected: diagnosisScope
+        )
+        guard case let .restored(diagnosisModel) = diagnosisResult else { return XCTFail("Expected diagnosis checkpoint") }
+        let diagnosisSelection = try XCTUnwrap(CatalogueResumeSelection(diagnosisModel))
+        XCTAssertEqual(diagnosisSelection.flowId, flow)
+        XCTAssertEqual(diagnosisSelection.diagnosisJobId, job)
+        XCTAssertEqual(diagnosisSelection.speciesSlug, "fixture_fern")
+        XCTAssertNil(diagnosisSelection.identification)
+        XCTAssertEqual(diagnosisModel.checkpoint, checkpoint)
+        XCTAssertEqual(diagnosisModel.envelope?.operationId, operation)
+        XCTAssertTrue(diagnosis.server.snapshot.attempts.isEmpty)
+        XCTAssertTrue(diagnosis.server.snapshot.commits.isEmpty)
+    }
 }
 #endif

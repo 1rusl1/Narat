@@ -239,6 +239,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @State private var working = false
     @State private var nativeInFlight = false
     @State private var active = false
+    @State private var hasAppeared = false
     @State private var revision = 0
     @State private var work: Task<Void, Never>?
     @State private var presenter: UIViewController?
@@ -319,7 +320,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
 #endif
         .onAppear {
             active = true
-            synchronize()
+            let explicit = !hasAppeared && resumeFlowId != nil && restoresResumableSave
+            hasAppeared = true
+            synchronize(explicit: explicit)
         }
         .onChange(of: connection.snapshot) { _, current in
             // The native helper alone reconciles its intentional SDK transition.

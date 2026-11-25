@@ -6,6 +6,256 @@ final class CatalogueSaveUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor func testPublishedCatalogueMediaEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            let run = Run("publishedMedia", language)
+            defer { run.app.terminate() }
+            c2OpenList(run)
+            let list = try c2List(run)
+            let viewport = run.app.windows.firstMatch.frame.intersection(list.frame)
+            let fern = run.app.buttons["catalogue.species.fixture_fern"]
+            enabled(fern)
+            XCTAssertGreaterThanOrEqual(fern.frame.height, 44)
+            XCTAssertTrue(fern.label.contains(language.text("Fern", "Paproć")))
+            let label = language.text("Example species photo: Fern", "Przykładowe zdjęcie gatunku: Paproć")
+            let image = run.app.images[label]
+            require(image)
+            XCTAssertEqual(image.frame.width, 56, accuracy: 1)
+            XCTAssertEqual(image.frame.height, 56, accuracy: 1)
+            XCTAssertTrue(viewport.contains(image.frame))
+            var phases = [c2Phase(run, kind: "media", phase: "list", element: image, viewport: viewport,
+                                  description: "Decoded fern thumbnail before any species selection")]
+            let initialLabels = c2VisibleImages(run, viewport: viewport)
+            XCTAssertFalse(initialLabels.isEmpty)
+            list.swipeUp()
+            list.swipeUp()
+            reminderWait("Additional visible published images must finish decoding") {
+                !Set(self.c2VisibleImages(run, viewport: viewport)).subtracting(initialLabels).isEmpty
+            }
+            let scrolledLabels = c2VisibleImages(run, viewport: viewport)
+            XCTAssertFalse(Set(scrolledLabels).subtracting(initialLabels).isEmpty,
+                           "Scrolling the actual list must expose additional decoded images")
+            for _ in 0..<8 {
+                if fern.exists && fern.isHittable { break }
+                list.swipeDown()
+            }
+            c2Reach(fern, in: list, viewport: viewport)
+            enabled(fern)
+            fern.tap()
+            localizedText(run, "catalogue.selected.scientific", "Nephrolepis exaltata", "Nephrolepis exaltata")
+            let detail = try c1DetailScroll(run, containing: "catalogue.save.name")
+            let detailViewport = run.app.windows.firstMatch.frame.intersection(detail.frame)
+            let hero = run.app.images[label]
+            require(hero)
+            c2Reach(hero, in: detail, viewport: detailViewport)
+            XCTAssertEqual(hero.frame.height, 240, accuracy: 1)
+            let credit = run.app.staticTexts["Narat Fixture Studio · CC0-1.0 · Deterministic fern colour study"]
+            require(credit)
+            c2Reach(credit, in: detail, viewport: detailViewport)
+            XCTAssertTrue(credit.isHittable)
+            let actualCredit = credit.label
+            let source = run.app.buttons[language.text("Image source", "Źródło zdjęcia")]
+            require(source)
+            c2Reach(source, in: detail, viewport: detailViewport)
+            enabled(source)
+            c1Reach(run.app.textFields["catalogue.save.name"], in: detail)
+            c1Reach(run.app.buttons["catalogue.save.submit"], in: detail)
+            c2Reach(hero, in: detail, viewport: detailViewport)
+            phases.append(c2Phase(run, kind: "media", phase: "detail", element: hero, viewport: detailViewport,
+                                  description: "Decoded fern hero with published author, licence and source link"))
+            for (slug, name, message, phase) in [
+                ("fixture_missing", language.text("Missing photo", "Bez zdjęcia"),
+                 language.text("No image", "Brak zdjęcia"), "missing"),
+                ("fixture_error", language.text("Failed photo", "Błąd zdjęcia"),
+                 language.text("Image unavailable", "Nie udało się wczytać zdjęcia"), "error")
+            ] {
+                tap(run, "catalogue.change")
+                c1AssertList(run)
+                let currentList = try c2List(run)
+                let row = run.app.buttons["catalogue.species." + slug]
+                c2Reach(row, in: currentList, viewport: run.app.windows.firstMatch.frame.intersection(currentList.frame))
+                enabled(row)
+                row.tap()
+                let scroll = try c1DetailScroll(run, containing: "catalogue.save.name")
+                let placeholderLabel = language.text("Example species photo: ", "Przykładowe zdjęcie gatunku: ") + name + ". " + message
+                let placeholder = run.app.descendants(matching: .any).matching(
+                    NSPredicate(format: "label == %@", placeholderLabel)
+                ).firstMatch
+                require(placeholder)
+                let bounds = run.app.windows.firstMatch.frame.intersection(scroll.frame)
+                c2Reach(placeholder, in: scroll, viewport: bounds)
+                XCTAssertFalse(run.app.images[language.text("Example species photo: ", "Przykładowe zdjęcie gatunku: ") + name].exists)
+                phases.append(c2Phase(run, kind: "media", phase: phase, element: placeholder, viewport: bounds,
+                                      description: phase == "missing" ? "Published nil-photo placeholder" : "Published HTTP-failure placeholder"))
+            }
+            try c2Proof(run, kind: "media", phases: phases, fields: [
+                "initialVisibleImageLabels": initialLabels, "scrolledVisibleImageLabels": scrolledLabels,
+                "credit": actualCredit, "sourceLinkLabel": language.text("Image source", "Źródło zdjęcia"),
+                "fixtureLedger": "media-ledger.json"
+            ])
+        }
+    }
+
+    @MainActor func testPublishedIdentificationResumeEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            let run = Run("publishedIdentificationResume", language)
+            defer { run.app.terminate() }
+            c2OpenList(run)
+            enabled(run.app.buttons["catalogue.resume"])
+            tap(run, "catalogue.resume")
+            let detailError = run.app.staticTexts["catalogue.error"]
+            require(detailError)
+            let detailScroll = try c1DetailScroll(run, containing: "catalogue.save.name")
+            let viewport = run.app.windows.firstMatch.frame.intersection(detailScroll.frame)
+            let title = detailScroll.staticTexts[language.text("Plant", "Roślina")]
+            require(title)
+            XCTAssertFalse(run.app.staticTexts.matching(NSPredicate(
+                format: "label CONTAINS[c] %@", "32e72c49-4e06-434a-86dd-bbf8a5cb209e"
+            )).firstMatch.exists, "Unavailable public detail must never expose the taxon UUID")
+            let unavailableOperation = operation(run)
+            let field = run.app.textFields["catalogue.save.name"]
+            require(field)
+            XCTAssertEqual(field.value as? String, "Luna")
+            XCTAssertFalse(field.isEnabled)
+            let detailRetry = detailScroll.buttons["catalogue.retry"]
+            c2Reach(detailRetry, in: detailScroll, viewport: viewport)
+            enabled(detailRetry)
+            c2Reach(title, in: detailScroll, viewport: viewport)
+            XCTAssertTrue(viewport.contains(detailError.frame))
+            let unavailable = c2Phase(
+                run, kind: "id-resume", phase: "detail-unavailable", element: title, viewport: viewport,
+                description: "Unavailable public detail: localized generic plant title, error and retry without a taxon UUID"
+            )
+            c2Reach(detailRetry, in: detailScroll, viewport: viewport)
+            enabled(detailRetry)
+            detailRetry.tap()
+            let first = try c2ResumedForm(run, phase: "resumed")
+            let originalOperation = operation(run)
+            XCTAssertEqual(originalOperation, unavailableOperation)
+            run.app.terminate()
+            launch(run)
+            c1AssertList(run)
+            enabled(run.app.buttons["catalogue.resume"])
+            tap(run, "catalogue.resume")
+            let cold = try c2ResumedForm(run, phase: "cold-resumed")
+            let finalOperation = operation(run)
+            XCTAssertEqual(finalOperation, originalOperation)
+            try c2Proof(run, kind: "id-resume", phases: [unavailable, first, cold], fields: [
+                "unavailableOperation": authBUUID(unavailableOperation, "catalogue.save.operation.").lowercased(),
+                "originalOperation": authBUUID(originalOperation, "catalogue.save.operation.").lowercased(),
+                "finalOperation": authBUUID(finalOperation, "catalogue.save.operation.").lowercased(),
+                "observedName": "Luna", "scientificName": "Nephrolepis exaltata",
+                "fixtureProof": "c2-resume-proof.json", "fixtureLedger": "server-ledger.json"
+            ])
+        }
+    }
+
+    @MainActor
+    private func c2OpenList(_ run: Run) {
+        launch(run)
+        if run.scenario == "publishedIdentificationResume" {
+            c1AssertList(run)
+            return
+        }
+        tap(run, "welcome.intent.care")
+        tap(run, "care.method.catalogue")
+        c1AssertList(run)
+    }
+
+    @MainActor
+    private func c2List(_ run: Run) throws -> XCUIElement {
+        let lists = (run.app.collectionViews.allElementsBoundByIndex + run.app.tables.allElementsBoundByIndex).filter {
+            $0.buttons["catalogue.species.fixture_fern"].exists
+        }
+        XCTAssertEqual(lists.count, 1, "Scroll only the actual catalogue List")
+        return try XCTUnwrap(lists.first)
+    }
+
+    @MainActor
+    private func c2VisibleImages(_ run: Run, viewport: CGRect) -> [String] {
+        run.app.images.allElementsBoundByIndex.filter {
+            viewport.contains($0.frame) && $0.frame.width > 0 && $0.frame.height > 0
+                && ($0.label.hasPrefix("Example species photo: ") || $0.label.hasPrefix("Przykładowe zdjęcie gatunku: "))
+        }.map(\.label).sorted()
+    }
+
+    @MainActor
+    private func c2Reach(_ element: XCUIElement, in scroll: XCUIElement, viewport: CGRect) {
+        require(element)
+        for _ in 0..<12 {
+            if element.isHittable && viewport.contains(element.frame) { break }
+            if element.frame.midY < viewport.midY { scroll.swipeDown() }
+            else { scroll.swipeUp() }
+        }
+        XCTAssertTrue(element.isHittable)
+        XCTAssertTrue(viewport.contains(element.frame), "Evidence must be fully inside the visible viewport")
+    }
+
+    @MainActor
+    private func c2ResumedForm(_ run: Run, phase: String) throws -> [String: Any] {
+        localizedText(run, "catalogue.selected.scientific", "Nephrolepis exaltata", "Nephrolepis exaltata")
+        let field = run.app.textFields["catalogue.save.name"]
+        require(field)
+        XCTAssertEqual(field.value as? String, "Luna")
+        let scroll = try c1DetailScroll(run, containing: "catalogue.save.name")
+        let viewport = run.app.windows.firstMatch.frame.intersection(scroll.frame)
+        c2Reach(field, in: scroll, viewport: viewport)
+        XCTAssertFalse(field.isEnabled, "Restored checkpoint input is immutable")
+        c1Reach(run.app.buttons["catalogue.save.retry"], in: scroll)
+        XCTAssertFalse(run.app.buttons["catalogue.save.edit"].exists, "Analysis flow must remain pinned")
+        XCTAssertFalse(run.app.staticTexts["catalogue.save.saved"].exists)
+        XCTAssertFalse(run.app.buttons["catalogue.save.submit"].exists)
+        let label = run.language.text("Example species photo: Fern", "Przykładowe zdjęcie gatunku: Paproć")
+        let hero = run.app.images[label]
+        require(hero)
+        c2Reach(hero, in: scroll, viewport: viewport)
+        XCTAssertEqual(hero.frame.height, 240, accuracy: 1)
+        return c2Phase(run, kind: "id-resume", phase: phase, element: hero, viewport: viewport,
+                       description: "Resumed identification form: decoded published fern, Luna input and reachable retry")
+    }
+
+    @MainActor
+    private func c2Phase(
+        _ run: Run, kind: String, phase: String, element: XCUIElement, viewport: CGRect, description: String
+    ) -> [String: Any] {
+        XCTAssertTrue(viewport.contains(element.frame))
+        let screenshot = XCTAttachment(screenshot: run.app.screenshot())
+        screenshot.name = "c2-" + kind + "-" + run.language.rawValue + "-" + phase
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        return [
+            "phase": phase, "description": description, "path-independentdescription": description,
+            "imageFrame": c1Rect(element.frame), "viewportFrame": c1Rect(viewport),
+            "elementType": element.elementType.rawValue, "label": element.label
+        ]
+    }
+
+    @MainActor
+    private func c2Proof(_ run: Run, kind: String, phases: [[String: Any]], fields: [String: Any]) throws {
+        var proof = fields
+        proof["kind"] = kind
+        proof["namespace"] = try XCTUnwrap(UUID(uuidString: run.namespace)).uuidString.lowercased()
+        proof["scenario"] = run.scenario
+        proof["language"] = run.language.rawValue
+        proof["imagePhases"] = phases
+        proof["knownPayloadMetadata"] = [
+            "author": "Narat Fixture Studio", "license": "CC0-1.0",
+            "attribution": "Deterministic fern colour study",
+            "sourcePage": "https://catalogue-media.fixture.invalid/sources/fern",
+            "pngSHA256": "86c56b330ed7a9d3659270bbaaff8906aa19837c0d8f21097c91c368234b3671",
+            "width": 8, "height": 8
+        ] as [String: Any]
+        // UI runner cannot read the app sandbox. The external gate joins the actual
+        // durable ledgers by this canonical namespace; no request counts are invented here.
+        let attachment = XCTAttachment(
+            data: try JSONSerialization.data(withJSONObject: proof, options: [.sortedKeys]),
+            uniformTypeIdentifier: "public.json"
+        )
+        attachment.name = "c2-proof-" + kind + "-" + run.language.rawValue
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor func testCatalogueListFirstExplicitResumeEnglishAndPolish() throws {
         for language in [Language.en, .pl] {
             let run = Run("guestProviderSuccess", language)
