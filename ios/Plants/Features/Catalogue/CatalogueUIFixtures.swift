@@ -946,7 +946,18 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     "hero_image": NSNull(), "care_profile_available": false
                 ]
                 if [path + "/fixture_fern", path + "/" + Self.fernTaxon].contains(url.path), query.isEmpty {
-                    return Reply(status: 200, data: try json(fern))
+                    var detail = fern
+                    if ProcessInfo.processInfo.arguments.contains("--catalogue-long-details"),
+                       [.guestProviderCancel, .guestProviderFailureRetry].contains(ledger.scenario) {
+                        let paragraph = locale == "pl"
+                            ? "Nephrolepis exaltata to paproć o długich, łukowato wygiętych liściach. Wzdłuż osi każdego liścia wyrastają liczne drobne listki."
+                            : "Nephrolepis exaltata is a fern with long, arching fronds. Each frond carries many small leaflets along its central stem."
+                        detail["description"] = [
+                            "text": Array(repeating: paragraph, count: 16).joined(separator: "\n\n"),
+                            "language": locale
+                        ]
+                    }
+                    return Reply(status: 200, data: try json(detail))
                 }
                 let palm: [String: Any] = [
                     "plant_id": "fixture_palm", "taxon_id": Self.palmTaxon,

@@ -193,6 +193,16 @@ enum CatalogueSaveIdentity {
     }
 }
 
+/// A nil flow pins the absence of a pointer while an explicit new input is edited.
+struct CatalogueSaveBinding: Equatable {
+    let scope: CatalogueSDKSnapshot
+    let flowId: UUID?
+
+    func matches(scope: CatalogueSDKSnapshot, flowId: UUID?) -> Bool {
+        self.scope == scope && self.flowId == flowId
+    }
+}
+
 /// Private form state belongs to one actual SDK snapshot, including its event epoch.
 @MainActor
 struct CatalogueSaveView<SpeciesDetails: View>: View {
@@ -202,6 +212,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     let scientificName: String
     let polish: Bool
     var careReminderLocaleIsCurrent: () -> Bool = { false }
+    var restoresResumableSave: Bool = true
+    var resumeFlowId: UUID? = nil
+    var resumeScope: CatalogueSDKSnapshot? = nil
+    var feedbackAnchor: String? = nil
+    var onExplicitFeedback: ((CatalogueSDKSnapshot) -> Void)? = nil
     var showsSpeciesHeading: Bool = true
     var analysisSaveIdentity: UUID? = nil
     var identification: CatalogueInput.Identification? = nil
@@ -218,6 +233,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @State private var previousFlow: UUID?
     @State private var notice: CatalogueViewNotice?
     @State private var restoreFailed = false
+    @State private var preparedNewIntent = false
+    @State private var saveBinding: CatalogueSaveBinding?
     @State private var journalAllowsNewIntent = false
     @State private var working = false
     @State private var nativeInFlight = false
@@ -232,7 +249,8 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private var scopeIsCurrent: Bool {
-        scope != nil && connection.snapshot == scope
+        guard let scope else { return false }
+        return (try? validateSaveBinding(expected: scope)) != nil
     }
 
     private var speciesIdentifier: String { identification?.taxonId.uuidString.lowercased() ?? speciesSlug }
@@ -255,26 +273,35 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     .accessibilityIdentifier("catalogue.save.native.busy")
             } else if !scopeIsCurrent {
                 publicHeading
-                Text(polish ? "Sesja uległa zmianie. Wczytaj bieżące konto." : "Session changed. Load the current account.")
-                    .accessibilityIdentifier("catalogue.save.unavailable")
-                Button(polish ? "Wczytaj konto" : "Load account") { synchronize() }
-                    .accessibilityIdentifier("catalogue.save.restore")
+                if saveBinding != nil {
+                    Text(polish ? "Sesja lub zapis uległy zmianie. Wróć i ponownie otwórz katalog." : "Session or save changed. Go back and reopen the catalogue.")
+                        .accessibilityIdentifier("catalogue.save.unavailable")
+                } else {
+                    Text(polish ? "Sesja uległa zmianie. Wczytaj bieżące konto." : "Session changed. Load the current account.")
+                        .accessibilityIdentifier("catalogue.save.unavailable")
+                    Button(polish ? "Wczytaj konto" : "Load account") { synchronize(explicit: true) }
+                        .accessibilityIdentifier("catalogue.save.restore")
+                }
             } else if let model, case .saved = model.state {
                 VStack(alignment: .leading, spacing: 12) { savedCard(model) }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier(operationIdentifier)
+                    .id(feedbackAnchor ?? "catalogue.save.feedback")
             } else {
                 publicHeading
                 speciesDetails()
-                if restoreFailed {
-                    Text(polish ? "Nie udało się przywrócić zapisu." : "Couldn’t restore your save.")
-                        .accessibilityIdentifier("catalogue.save.unavailable")
-                    Button(polish ? "Spróbuj ponownie" : "Try again") { synchronize() }
-                        .accessibilityIdentifier("catalogue.save.restore")
-                } else {
-                    saveForm
+                VStack(alignment: .leading, spacing: 12) {
+                    if let notice { noticeText(notice) }
+                    if restoreFailed {
+                        Text(polish ? "Nie udało się przywrócić zapisu." : "Couldn’t restore your save.")
+                            .accessibilityIdentifier("catalogue.save.unavailable")
+                        Button(polish ? "Spróbuj ponownie" : "Try again") { synchronize(explicit: true) }
+                            .accessibilityIdentifier("catalogue.save.restore")
+                    } else {
+                        saveForm
+                    }
                 }
-                if let notice { noticeText(notice) }
+                .id(feedbackAnchor ?? "catalogue.save.feedback")
             }
         }
         .qgScreen()
@@ -448,7 +475,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 // Queue truth may be unknown after a storage failure: keep this operation.
                 retrySaveButton
             } else {
-                Button(polish ? "Przywróć zapis" : "Restore save") { synchronize() }
+                Button(polish ? "Przywróć zapis" : "Restore save") { synchronize(explicit: true) }
                     .accessibilityIdentifier("catalogue.save.restore")
             }
         case .saved:
@@ -465,7 +492,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     @ViewBuilder
     private var editButton: some View {
         if CatalogueSaveIdentity.allowsEditingAsNewSave(analysisFlow: analysisSaveIdentity) {
-        Button(polish ? "Edytuj jako nowy zapis" : "Edit as a new save") { editAsNewIntent() }
+        Button(polish ? "Zmień dane rośliny" : "Edit plant details") { editAsNewIntent() }
             .disabled(working || !journalAllowsNewIntent)
             .accessibilityIdentifier("catalogue.save.edit")
         }
@@ -640,11 +667,28 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         return Text(text).qgNotice(.warning).accessibilityIdentifier("catalogue.save.notice")
     }
 
-    private func isCurrent(_ ticket: Int, _ expected: CatalogueSDKSnapshot) -> Bool {
+    private func validateSaveBinding(expected: CatalogueSDKSnapshot) throws {
+        guard let saveBinding, saveBinding.scope == expected, connection.snapshot == expected,
+              saveBinding.matches(scope: expected, flowId: try connection.resumableFlow(expected: expected)) else {
+            throw CatalogueSaveUnavailable.sessionChanged
+        }
+    }
+
+    private func requestIsCurrent(_ ticket: Int, _ expected: CatalogueSDKSnapshot) -> Bool {
         active && revision == ticket && !Task.isCancelled && scope == expected && connection.snapshot == expected
     }
 
-    private func synchronize() {
+    private func isCurrent(_ ticket: Int, _ expected: CatalogueSDKSnapshot) -> Bool {
+        requestIsCurrent(ticket, expected) && (try? validateSaveBinding(expected: expected)) != nil
+    }
+
+    private func revealFeedback(ticket: Int, locale: Bool) {
+        guard active, revision == ticket, !Task.isCancelled, polish == locale,
+              let expected = scope, connection.snapshot == expected else { return }
+        onExplicitFeedback?(expected)
+    }
+
+    private func synchronize(explicit: Bool = false) {
         guard active, !nativeInFlight else { return }
         revision += 1
         let ticket = revision
@@ -659,21 +703,40 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         journalAllowsNewIntent = false
         scope = connection.snapshot
         guard let expected = scope else { working = false; return }
+        let requestedPolish = polish
         let locale = polish ? "pl" : "en"
         let localeIsCurrent = careReminderLocaleIsCurrent
         working = true
         work = Task { @MainActor in
-            defer { if revision == ticket { working = false; work = nil } }
+            defer {
+                if revision == ticket { working = false; work = nil }
+                if explicit { revealFeedback(ticket: ticket, locale: requestedPolish) }
+            }
             do {
-                previousFlow = try connection.resumableFlow(expected: expected)
+                // Seed once. Passive SDK events and retries never replace this binding.
+                if saveBinding == nil {
+                    if let resumeScope, resumeScope != expected {
+                        throw CatalogueSaveUnavailable.sessionChanged
+                    }
+                    let flow = try connection.resumableFlow(expected: expected)
+                    if let resumeFlowId, flow != resumeFlowId {
+                        throw CatalogueSaveUnavailable.sessionChanged
+                    }
+                    saveBinding = CatalogueSaveBinding(scope: expected, flowId: flow)
+                }
+                try validateSaveBinding(expected: expected)
+                previousFlow = saveBinding?.flowId
                 if let flow = previousFlow {
                     let result = await connection.restoreModel(
                         ownerId: expected.session.userId, flowId: flow, expected: expected
                     )
                     guard isCurrent(ticket, expected) else { return }
+                    guard try connection.resumableFlow(expected: expected) == flow else {
+                        throw CatalogueSaveUnavailable.sessionChanged
+                    }
                     switch result {
                     case let .restored(restored):
-                        if CatalogueSaveIdentity.canRestore(
+                        if (restoresResumableSave || preparedNewIntent), CatalogueSaveIdentity.canRestore(
                             selectedSpecies: speciesIdentifier, restoredSpecies: restored.input?.speciesIdentifier,
                             analysisFlow: analysisSaveIdentity, restoredFlow: restored.checkpoint?.flowId
                         ), restored.input?.identification == identification {
@@ -698,14 +761,33 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                         } else {
                             // An undisplayed flow still owns its pointer until its journal
                             // proves that a different species can start safely.
-                            _ = try await replaceableFlow(expected: expected)
+                            let replaceable = try await replaceableFlow(expected: expected)
                             guard isCurrent(ticket, expected) else { return }
+                            if !restoresResumableSave, !preparedNewIntent, let replaceable {
+                                guard replaceable == flow else { throw CatalogueSaveUnavailable.sessionChanged }
+                                guard try connection.forgetResumableFlow(
+                                    ownerId: expected.session.userId, expectedFlowId: replaceable, expected: expected
+                                ) else { throw CatalogueSaveUnavailable.sessionChanged }
+                                saveBinding = CatalogueSaveBinding(scope: expected, flowId: nil)
+                                previousFlow = nil
+                            }
+                            preparedNewIntent = true
                             journalAllowsNewIntent = true
                         }
-                    case .absent: journalAllowsNewIntent = true
+                    case .absent:
+                        if !restoresResumableSave, !preparedNewIntent {
+                            guard try connection.forgetResumableFlow(
+                                ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
+                            ) else { throw CatalogueSaveUnavailable.sessionChanged }
+                            saveBinding = CatalogueSaveBinding(scope: expected, flowId: nil)
+                            previousFlow = nil
+                        }
+                        preparedNewIntent = true
+                        journalAllowsNewIntent = true
                     case .unavailable: restoreFailed = true
                     }
                 } else {
+                    preparedNewIntent = true
                     journalAllowsNewIntent = true
                 }
             } catch {
@@ -717,11 +799,12 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     /// Restoration alone can hide queue truth (for example for anonymous owners).
     /// Only an actual journal read may authorize replacing the current-owner pointer.
     private func replaceableFlow(expected: CatalogueSDKSnapshot) async throws -> UUID? {
-        guard let flow = try connection.resumableFlow(expected: expected) else { return nil }
+        try validateSaveBinding(expected: expected)
+        guard let flow = saveBinding?.flowId else { return nil }
         let result = await connection.restoreModel(
             ownerId: expected.session.userId, flowId: flow, expected: expected
         )
-        guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
+        try validateSaveBinding(expected: expected)
         switch result {
         case .absent:
             return flow
@@ -731,13 +814,14 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 throw CatalogueSaveUnavailable.storageOrServiceUnavailable
             }
             let context = try await api.captureSyncContext(ownerId: expected.session.userId)
-            guard context.session == expected.session, connection.snapshot == expected else {
+            try validateSaveBinding(expected: expected)
+            guard context.session == expected.session else {
                 throw CatalogueSaveUnavailable.sessionChanged
             }
             let journal = try await store.catalogueCreateJournal(
                 envelope, mode: .checkOnly, context: context, authority: api.syncAuthority
             )
-            guard connection.snapshot == expected else { throw CatalogueSaveUnavailable.sessionChanged }
+            try validateSaveBinding(expected: expected)
             switch journal {
             case .absent, .confirmed: return flow
             case .pending, .collectionLimitNotEnqueued:
@@ -785,6 +869,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
 
     private func save() {
         guard !working, !restoreFailed, scopeIsCurrent, let expected = scope else { return }
+        let requestedPolish = polish
         let locale = polish ? "pl" : "en"
         let localeIsCurrent = careReminderLocaleIsCurrent
         nameFocused = false
@@ -800,14 +885,21 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             }
             let chosen = CatalogueViewIntent(input: input, flowId: analysisSaveIdentity ?? UUID(), operationId: UUID())
             do { _ = try input.makeEnvelope(operationId: chosen.operationId) }
-            catch { notice = .invalidInput; return }
+            catch {
+                notice = .invalidInput
+                revealFeedback(ticket: revision, locale: requestedPolish)
+                return
+            }
             intent = chosen
         }
         let ticket = revision
         working = true
         notice = nil
         work = Task { @MainActor in
-            defer { if revision == ticket { working = false; work = nil } }
+            defer {
+                if revision == ticket { working = false; work = nil }
+                revealFeedback(ticket: ticket, locale: requestedPolish)
+            }
             do {
                 let target: CatalogueSaveModel
                 if let model {
@@ -835,10 +927,26 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     }
                     guard isCurrent(ticket, expected) else { return }
                 }
-                // Publish the replacement pointer only after its checkpoint succeeds.
-                let checkpoint = try await connection.rememberModel(target, expected: expected)
+                try validateSaveBinding(expected: expected)
+                if let checkpoint = target.checkpoint, checkpoint.flowId == saveBinding?.flowId {
+                    // A retry already owns its durable pointer; never republish it over a newer flow.
+                    previousFlow = checkpoint.flowId
+                } else {
+                    // Only this explicit input may publish and bind a newly prepared checkpoint.
+                    guard let intent else { throw CatalogueSaveUnavailable.sessionChanged }
+                    let replacingFlow = saveBinding?.flowId
+                    let checkpoint = try await connection.rememberModel(
+                        target, expected: expected, replacingFlow: replacingFlow
+                    )
+                    guard requestIsCurrent(ticket, expected),
+                          checkpoint.flowId == intent.flowId, checkpoint.operationId == intent.operationId,
+                          try connection.resumableFlow(expected: expected) == checkpoint.flowId else {
+                        throw CatalogueSaveUnavailable.sessionChanged
+                    }
+                    saveBinding = CatalogueSaveBinding(scope: expected, flowId: checkpoint.flowId)
+                    previousFlow = checkpoint.flowId
+                }
                 guard isCurrent(ticket, expected) else { return }
-                previousFlow = checkpoint.flowId
                 let done = localeIsCurrent() ? completion(expected: expected, ticket: ticket,
                     locale: locale, localeIsCurrent: localeIsCurrent) : nil
                 await target.save(completion: done, includeManualWateringActions: showsManualWateringActions(target))
@@ -873,6 +981,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                         ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
                     ) else { throw CatalogueSaveUnavailable.sessionChanged }
                 }
+                // Retire the old selection only after the exact pointer was forgotten.
+                saveBinding = CatalogueSaveBinding(scope: expected, flowId: nil)
+                preparedNewIntent = true
                 guard isCurrent(ticket, expected) else { return }
                 model?.cancel()
                 model = nil
@@ -898,6 +1009,7 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
         guard !working, scopeIsCurrent, let expected = scope, let original = model,
               case .signInRequired = original.state,
               let presenter, presenter.viewIfLoaded?.window != nil else { return }
+        let requestedPolish = polish
         let ticket = revision
         let locale = polish ? "pl" : "en"
         let localeIsCurrent = careReminderLocaleIsCurrent
@@ -913,9 +1025,15 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     nativeInFlight = false
                     work = nil
                 }
+                revealFeedback(ticket: ticket, locale: requestedPolish)
             }
             do {
-                _ = try await connection.rememberModel(original, expected: expected)
+                let prepared = try await original.checkpointInput()
+                guard isCurrent(ticket, expected), model === original,
+                      prepared.ownerId == expected.session.userId,
+                      prepared.flowId == saveBinding?.flowId, original.checkpoint == prepared else {
+                    throw CatalogueSaveUnavailable.sessionChanged
+                }
                 let outcome = await connection.signInAndSave(original, with: provider, presenting: presenter,
                     includeManualWateringActions: includeManual,
                     completion: { expected in
@@ -926,9 +1044,11 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                 guard active, revision == ticket, !Task.isCancelled else { return }
                 switch outcome {
                 case let .continued(verified):
-                    try await adopt(verified, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
+                    try await adopt(verified, original: original, prepared: prepared, originalScope: expected,
+                                    ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
                 case let .inputRetained(verified, reason):
-                    try await adopt(verified, ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
+                    try await adopt(verified, original: original, prepared: prepared, originalScope: expected,
+                                    ticket: ticket, locale: locale, localeIsCurrent: localeIsCurrent)
                     switch reason {
                     case .cancelled: notice = .nativeCancelled
                     case let .authenticationFailed(failure): notice = authenticationNotice(failure)
@@ -958,10 +1078,20 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
     }
 
     private func adopt(
-        _ verified: CatalogueSaveModel, ticket: Int, locale: String, localeIsCurrent: @escaping () -> Bool
+        _ verified: CatalogueSaveModel, original: CatalogueSaveModel,
+        prepared: CatalogueInputCheckpointSnapshot, originalScope: CatalogueSDKSnapshot,
+        ticket: Int, locale: String, localeIsCurrent: @escaping () -> Bool
     ) async throws {
+        // Only a typed native outcome may advance the scope of the captured logical save.
+        guard nativeInFlight, scope == originalScope, model === original,
+              saveBinding?.matches(scope: originalScope, flowId: prepared.flowId) == true,
+              prepared.ownerId == originalScope.session.userId else {
+            throw CatalogueSaveUnavailable.sessionChanged
+        }
         let expected = try await connection.sessionSnapshot()
-        guard active, revision == ticket, !Task.isCancelled,
+        guard active, revision == ticket, !Task.isCancelled, nativeInFlight,
+              scope == originalScope, model === original,
+              saveBinding?.matches(scope: originalScope, flowId: prepared.flowId) == true,
               let store = connection.store, let api = connection.apiClient else {
             throw CatalogueSaveUnavailable.sessionChanged
         }
@@ -969,10 +1099,15 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
             of: store, apiClient: api, session: expected.session, isAnonymous: expected.isAnonymous
         )
         guard connection.snapshot == expected, verified.input?.speciesIdentifier == speciesIdentifier,
-              verified.input?.identification == identification else {
+              verified.input?.identification == identification,
+              let checkpoint = verified.checkpoint, checkpoint.ownerId == expected.session.userId,
+              checkpoint.flowId == prepared.flowId, checkpoint.operationId == prepared.operationId,
+              checkpoint.envelope.payloadJSON.utf8.elementsEqual(prepared.envelope.payloadJSON.utf8),
+              try connection.resumableFlow(expected: expected) == checkpoint.flowId else {
             throw CatalogueSaveUnavailable.sessionChanged
         }
         if let old = model, old !== verified { old.cancel() }
+        saveBinding = CatalogueSaveBinding(scope: expected, flowId: checkpoint.flowId)
         scope = expected
         model = verified
         intent = nil
@@ -1005,12 +1140,16 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
 
     private func loadDetails(_ target: CatalogueSaveModel) {
         guard !working, scopeIsCurrent, let expected = scope, model === target else { return }
+        let requestedPolish = polish
         let ticket = revision
         let done = readCompletion(target, expected: expected, ticket: ticket,
             locale: polish ? "pl" : "en", localeIsCurrent: careReminderLocaleIsCurrent)
         working = true
         work = Task { @MainActor in
-            defer { if revision == ticket { working = false; work = nil } }
+            defer {
+                if revision == ticket { working = false; work = nil }
+                revealFeedback(ticket: ticket, locale: requestedPolish)
+            }
             await target.readCard(includeManualWateringActions: showsManualWateringActions(target), completion: done)
         }
     }

@@ -431,6 +431,217 @@ final class CatalogueConnectionTests: XCTestCase {
         )
     }
 
+    func testGuardedRememberPinsAbsenceOrOldFlowAcrossCheckpointAndDefaultsCallbacks() async throws {
+        // Each case uses real SDK authority, SQLite, pending journal and synchronous publication.
+        for pinnedOld in [false, true] {
+            for phase in 0..<6 {
+                let h = try Harness()
+                defer { h.close() }
+                await h.ready()
+                try auth(h, owner: owner)
+                try await h.signIn()
+                let source = h.connection
+                let expected = try await source.sessionSnapshot()
+                let oldFlow = UUID(), oldOperation = UUID(), flow = UUID(), operation = UUID(), newer = UUID()
+                let old = try await source.makeModel(
+                    input: input, flowId: oldFlow, operationId: oldOperation, expected: expected
+                )
+                let oldCheckpoint = try await source.rememberModel(old, expected: expected, replacingFlow: nil)
+                try plants(h, commandFailure: .networkConnectionLost)
+                await old.save()
+                guard case .pending = old.state else { return XCTFail("Retain a real pending journal") }
+                let queue = try await h.store.pendingOutboxEntries(for: owner)
+                XCTAssertEqual(queue.count, 1)
+                if !pinnedOld {
+                    XCTAssertTrue(try source.forgetResumableFlow(
+                        ownerId: owner, expectedFlowId: oldFlow, expected: expected
+                    ))
+                }
+                let pinned: UUID? = pinnedOld ? oldFlow : nil
+                let newerModel = try await source.makeModel(
+                    input: input, flowId: newer, operationId: UUID(), expected: expected
+                )
+                let newerCheckpoint = try await newerModel.checkpointInput()
+                let model = try await source.makeModel(
+                    input: input, flowId: flow, operationId: operation, expected: expected
+                )
+                let foreign = UUID()
+                h.defaults.set(foreign.uuidString, forKey: resumeKey(other))
+                let key = resumeKey(owner)
+                let requests = h.fixture.captured.count
+                let publication = ConnectionCheckpointPublication(metadataBefore: metadata(h))
+                if phase == 1 { h.defaults.set(newer.uuidString, forKey: key) }
+                if phase == 2 {
+                    // willSet runs after the actual disk commit, before rememberModel publishes.
+                    let onCheckpoint: @MainActor () throws -> Void = {
+                        publication.fired = true
+                        publication.committed = try XCTUnwrap(self.diskInput(h, owner: self.owner, flow: flow))
+                        XCTAssertEqual(publication.committed?.envelope, try self.input.makeEnvelope(operationId: operation))
+                        XCTAssertEqual(try source.resumableFlow(expected: expected), pinned)
+                        h.defaults.set(newer.uuidString, forKey: key)
+                    }
+                    withObservationTracking {
+                        _ = model.checkpoint
+                    } onChange: {
+                        MainActor.assumeIsolated {
+                            do { try onCheckpoint() }
+                            catch { XCTFail("Checkpoint callback failed: \(error)") }
+                        }
+                    }
+                }
+                var callbackFired = false
+                let api = try XCTUnwrap(source.apiClient)
+                let observer = ConnectionDefaultsObserver(defaults: h.defaults) {
+                    guard phase >= 3, !callbackFired,
+                          h.defaults.string(forKey: key) == flow.uuidString else { return }
+                    callbackFired = true
+                    XCTAssertEqual(try self.diskInput(h, owner: self.owner, flow: flow), model.checkpoint)
+                    if phase == 3 || phase == 5 { h.defaults.set(newer.uuidString, forKey: key) }
+                    if phase >= 4 { api.syncAuthority.invalidate() }
+                }
+                defer { observer.stop() }
+                do {
+                    let checkpoint = try await source.rememberModel(model, expected: expected, replacingFlow: pinned)
+                    XCTAssertEqual(phase, 0, "Displaced or revoked publication must throw")
+                    XCTAssertEqual(checkpoint.envelope, try input.makeEnvelope(operationId: operation))
+                    XCTAssertEqual(try source.resumableFlow(expected: expected), flow)
+                    let restarted = try reopenedConnection(h)
+                    let current = try await restarted.sessionSnapshot()
+                    guard case let .restored(restored) = await restarted.restoreModel(
+                        ownerId: owner, flowId: flow, expected: current
+                    ) else { return XCTFail("Matching pinned publication must really restore from SQLite") }
+                    XCTAssertEqual(restored.checkpoint, checkpoint)
+                    XCTAssertEqual(restored.envelope, checkpoint.envelope)
+                } catch {
+                    XCTAssertNotEqual(phase, 0, "Normal pinned publication failed: \(error)")
+                    if phase < 4 {
+                        guard case CatalogueSaveUnavailable.sessionChanged = error else {
+                            return XCTFail("Expected pointer mismatch, got \(error)")
+                        }
+                    } else {
+                        guard case SyncWireValidationError.invalidSession = error else {
+                            return XCTFail("Expected revoked lease, got \(error)")
+                        }
+                    }
+                }
+                observer.stop()
+                if phase == 1 {
+                    XCTAssertNil(model.checkpoint)
+                    XCTAssertNil(try diskInput(h, owner: owner, flow: flow), "Reject before checkpoint await")
+                } else {
+                    let committed = try XCTUnwrap(diskInput(h, owner: owner, flow: flow))
+                    XCTAssertEqual(committed.envelope, try input.makeEnvelope(operationId: operation))
+                }
+                XCTAssertEqual(publication.fired, phase == 2)
+                XCTAssertEqual(callbackFired, phase >= 3)
+                let retained = phase == 0 ? flow : (phase == 4 ? pinned : newer)
+                XCTAssertEqual(h.defaults.string(forKey: key), retained?.uuidString)
+                XCTAssertEqual(h.defaults.string(forKey: resumeKey(other)), foreign.uuidString)
+                XCTAssertEqual(try diskInput(h, owner: owner, flow: oldFlow), oldCheckpoint)
+                XCTAssertEqual(try diskInput(h, owner: owner, flow: newer), newerCheckpoint)
+                let afterQueue = try await h.store.pendingOutboxEntries(for: owner)
+                let receipt = try await h.store.catalogueCreateConfirmation(ownerId: owner, operationId: oldOperation)
+                XCTAssertEqual(afterQueue, queue, "Never discard the original pending journal")
+                XCTAssertNil(receipt)
+                XCTAssertEqual(h.fixture.captured.count, requests, "Remember/restore must never POST")
+                XCTAssertEqual(h.identity.calls, 0)
+                assertClosed(h)
+            }
+        }
+    }
+
+    func testFreshGuestCheckpointRetainsOriginalInputAndUsesDistinctOperationWithoutServerCreate() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let oldFlow = UUID(), oldOperation = UUID(), newFlow = UUID(), newOperation = UUID()
+        let old = try await guestModel(h, flow: oldFlow, operation: oldOperation)
+        let expected = try await h.connection.sessionSnapshot()
+        let original = try await h.connection.rememberModel(old, expected: expected, replacingFlow: nil)
+        await old.save()
+        XCTAssertEqual(old.state, .signInRequired)
+        XCTAssertTrue(try h.connection.forgetResumableFlow(
+            ownerId: owner, expectedFlowId: oldFlow, expected: expected
+        ))
+        let speciesSlug = try XCTUnwrap(input.speciesSlug)
+        let changed = CatalogueInput(speciesSlug: speciesSlug, personalName: "Another fern")
+        let fresh = try await h.connection.makeModel(
+            input: changed, flowId: newFlow, operationId: newOperation, expected: expected
+        )
+        let requests = h.fixture.captured.count
+        let next = try await h.connection.rememberModel(fresh, expected: expected, replacingFlow: nil)
+        await fresh.save()
+        XCTAssertEqual(fresh.state, .signInRequired)
+        XCTAssertNotEqual(original.envelope.operationId, next.envelope.operationId)
+        XCTAssertEqual(next.envelope, try changed.makeEnvelope(operationId: newOperation))
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: oldFlow), original)
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: newFlow), next)
+        let restarted = try reopenedConnection(h)
+        let current = try await restarted.sessionSnapshot()
+        XCTAssertEqual(try restarted.resumableFlow(expected: current), newFlow)
+        guard case let .restored(restored) = await restarted.restoreModel(
+            ownerId: owner, flowId: oldFlow, expected: current
+        ) else { return XCTFail("The original guest checkpoint must remain restorable") }
+        XCTAssertEqual(restored.input, input)
+        XCTAssertEqual(restored.envelope, original.envelope)
+        let queue = try await h.store.pendingOutboxEntries(for: owner)
+        let receipt = try await h.store.catalogueCreateConfirmation(ownerId: owner, operationId: oldOperation)
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertNil(receipt)
+        XCTAssertEqual(h.fixture.captured.count, requests)
+        XCTAssertEqual(h.identity.calls, 0)
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
+    func testSaveBindingRejectsActualPointerReplacementForeignScopeAndSDKABA() async throws {
+        let h = try Harness()
+        defer { h.close() }
+        let flow = UUID()
+        let model = try await guestModel(h, flow: flow, operation: UUID())
+        let original = try await h.connection.sessionSnapshot()
+        let absent = CatalogueSaveBinding(scope: original, flowId: nil)
+        XCTAssertTrue(absent.matches(scope: original, flowId: try h.connection.resumableFlow(expected: original)))
+        let originalCheckpoint = try await h.connection.rememberModel(model, expected: original, replacingFlow: nil)
+        XCTAssertFalse(absent.matches(scope: original, flowId: try h.connection.resumableFlow(expected: original)))
+        let pinned = CatalogueSaveBinding(scope: original, flowId: flow)
+        XCTAssertTrue(pinned.matches(scope: original, flowId: try h.connection.resumableFlow(expected: original)))
+        let replacement = try await h.connection.makeModel(
+            input: input, flowId: UUID(), operationId: UUID(), expected: original
+        )
+        let checkpoint = try await h.connection.rememberModel(replacement, expected: original, replacingFlow: flow)
+        XCTAssertFalse(pinned.matches(scope: original, flowId: try h.connection.resumableFlow(expected: original)))
+        XCTAssertFalse(pinned.matches(scope: original, flowId: nil))
+        let requests = h.fixture.captured.count
+        try auth(h, owner: other)
+        try await h.signIn()
+        let foreign = try await h.connection.sessionSnapshot()
+        XCTAssertFalse(pinned.matches(scope: foreign, flowId: flow))
+        try auth(h, owner: owner, anonymous: true)
+        try await h.signIn()
+        let returned = try await h.connection.sessionSnapshot()
+        XCTAssertEqual(returned.session, original.session)
+        XCTAssertNotEqual(returned, original, "The real SDK event epoch must reject ABA")
+        XCTAssertFalse(pinned.matches(scope: returned, flowId: flow))
+        XCTAssertFalse(absent.matches(scope: returned, flowId: nil))
+        XCTAssertThrowsError(try h.connection.resumableFlow(expected: original))
+        XCTAssertEqual(try h.connection.resumableFlow(expected: returned), checkpoint.flowId)
+        let currentBinding = CatalogueSaveBinding(scope: returned, flowId: checkpoint.flowId)
+        try auth(h, owner: owner, anonymous: true, refresh: true)
+        _ = try await h.client.auth.refreshSession()
+        let refreshed = try await h.connection.sessionSnapshot()
+        XCTAssertEqual(refreshed.session, returned.session)
+        XCTAssertNotEqual(refreshed, returned)
+        XCTAssertFalse(currentBinding.matches(
+            scope: refreshed, flowId: try h.connection.resumableFlow(expected: refreshed)
+        ))
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: flow), originalCheckpoint)
+        XCTAssertEqual(try diskInput(h, owner: owner, flow: checkpoint.flowId), checkpoint)
+        XCTAssertEqual(h.fixture.captured.count, requests + 3, "Only explicit SDK auth/refresh calls")
+        XCTAssertEqual(h.identity.calls, 0)
+        assertNoPlants(h)
+        assertClosed(h)
+    }
+
     func testRememberDefaultsNotificationReentersConnectionAndOriginalModelAfterDiskCommit() async throws {
         let h = try Harness()
         defer { h.close() }

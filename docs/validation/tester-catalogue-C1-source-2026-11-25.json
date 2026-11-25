@@ -1,0 +1,45 @@
+{
+  "status": "PASS_EXACT_ROOT_SOURCE5_LANDING",
+  "root_before": "a8919b69db29c19f426ddcc9a95d26f9623cb730",
+  "reviewed_base": "1bbde61bcec873ce8bd41953862c01d31f97d24a",
+  "private_commit": "960f762e993e1868f5e6e8a9dece7a867dd2a690",
+  "patch_sha256": "4c46f29aca64af56658faf0d65fd1bcfed27b357e7605d76d125905fa77839b1",
+  "files": {
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift": {
+      "sha256": "f5e7bf35bab0ccd95557eaea164a9ee67054bfa801b50deaa93b4bb15da68e5c",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift": {
+      "sha256": "473f127fc9748383cd2508640abbdb079edb5cb45a982afaed12af714618639d",
+      "mode": 420
+    },
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift": {
+      "sha256": "a7b3cb57f33439434e1b795b3b1532859e9c17716fcdfa8f73521bb78541bff5",
+      "mode": 420
+    },
+    "ios/PlantsTests/CatalogueConnectionTests.swift": {
+      "sha256": "86d83b10ecd8195728e09f4c900dcaa58574149230a5b4c332fd1afaaa9db078",
+      "mode": 420
+    },
+    "ios/PlantsUITests/CatalogueSaveUITests.swift": {
+      "sha256": "1311935949c33082dd760b8bbb5911bb235e6bbe0103c8e93f87582facd48b26",
+      "mode": 420
+    }
+  },
+  "all_five_bytes_exact": true,
+  "base_per_file_exact_despite_ID_B1_root_advance": true,
+  "user_preservation": {
+    "mode": "accepted-project-plus-original-user-delta",
+    "xcstrings": 2,
+    "original_user_delta_lines": 8,
+    "pbx_user_delta_preserved": true,
+    "accepted_clean_index": true,
+    "reverse_patch_recovers_accepted_clean_pbx": true
+  },
+  "reviewed_fingerprint": "344cb5d6eccebfda109e69a3ab33f48e78390b8b21e1e1b0a7e1eb99b67da965",
+  "checks_executed_on_private_source_not_repeated_by_root": true,
+  "root_viewed_outcome8_and_ACKfinal2": true,
+  "other14_viewed_by_care_sources": true,
+  "photo_resume_verified": false,
+  "new_ordinary_build_verified": false
+}

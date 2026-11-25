@@ -729,6 +729,45 @@ final class CatalogueConnection {
         return checkpoint
     }
 
+    /// Publish only over the caller's captured pointer, including explicitly captured absence.
+    @discardableResult
+    func rememberModel(
+        _ model: CatalogueSaveModel, expected: CatalogueSDKSnapshot, replacingFlow: UUID?
+    ) async throws -> CatalogueInputCheckpointSnapshot {
+        try validate(model, expected: expected)
+        guard try resumableFlow(expected: expected) == replacingFlow else {
+            throw CatalogueSaveUnavailable.sessionChanged
+        }
+        let checkpoint = try await model.checkpointInput()
+        try validate(model, expected: expected)
+        guard checkpoint.ownerId == expected.session.userId else {
+            throw CatalogueSaveUnavailable.sessionChanged
+        }
+        let key = resumeKey(checkpoint.ownerId)
+        let previous = resumeDefaults.string(forKey: key)
+        let pointer = checkpoint.flowId.uuidString
+        try validate(model, expected: expected)
+        guard try resumableFlow(expected: expected) == replacingFlow else {
+            throw CatalogueSaveUnavailable.sessionChanged
+        }
+        // Notifications may synchronously replace this pointer or revoke the original lease.
+        resumeDefaults.set(pointer, forKey: key)
+        do {
+            try validate(model, expected: expected)
+            guard resumeDefaults.string(forKey: key) == pointer else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+        } catch {
+            // Undo only our publication; retain newer callback pointers and all checkpoints.
+            if resumeDefaults.string(forKey: key) == pointer {
+                if let previous { resumeDefaults.set(previous, forKey: key) }
+                else { resumeDefaults.removeObject(forKey: key) }
+            }
+            throw error
+        }
+        return checkpoint
+    }
+
     /// Explicit new intent may forget ONLY the matching pointer, never durable records.
     @discardableResult
     func forgetResumableFlow(
@@ -3295,6 +3334,27 @@ struct GuestCatalogueView: View {
         let attempt: Int
     }
 
+    private struct ResumeRead: Equatable {
+        let scope: CatalogueSDKSnapshot?
+        let polish: Bool
+        let revision: UUID
+        let localeRevision: UUID
+    }
+
+    private struct ResumeEntry {
+        let scope: CatalogueSDKSnapshot
+        let selection: CatalogueResumeSelection
+        let saved: Bool
+    }
+
+    private struct Feedback {
+        let id = UUID()
+        let scope: CatalogueSDKSnapshot
+        let host: UUID
+        let localeRevision: UUID
+        let polish: Bool
+    }
+
     let connection: CatalogueConnection
     let polish: Bool
     var careReminderLocaleIsCurrent: () -> Bool = { false }
@@ -3308,6 +3368,13 @@ struct GuestCatalogueView: View {
     @State private var selectedCard: PublishedSpeciesCard?
     @State private var selectionLocked = false
     @State private var restoredSelection = false
+    @State private var resumeEntry: ResumeEntry?
+    @State private var resumeFailed = false
+    @State private var resuming = false
+    @State private var active = false
+    @State private var selectionRevision = UUID()
+    @State private var localeRevision = UUID()
+    @State private var feedback: Feedback?
     @State private var query = ""
     @State private var loading = true
     @State private var loadingMore = false
@@ -3324,6 +3391,10 @@ struct GuestCatalogueView: View {
         Detail(slug: selection, taxonId: selectedTaxon, locale: locale, attempt: detailAttempt)
     }
 
+    private var resumeRead: ResumeRead {
+        ResumeRead(scope: connection.snapshot, polish: polish, revision: selectionRevision, localeRevision: localeRevision)
+    }
+
     var body: some View {
         VStack {
             if let selection {
@@ -3336,13 +3407,49 @@ struct GuestCatalogueView: View {
         }
         .qgScreen()
         .buttonStyle(QuietGardenSecondaryButtonStyle())
-        .task { if speciesPicker == nil { await restoreSelection() } }
+        .onAppear { active = true }
+        .onDisappear {
+            active = false
+            selectionRevision = UUID()
+            feedback = nil
+        }
+        .task {
+            if speciesPicker == nil { _ = try? await connection.sessionOwner() }
+        }
+        .onChange(of: polish) { _, _ in
+            localeRevision = UUID()
+            feedback = nil
+        }
+        .task(id: resumeRead) {
+            if speciesPicker == nil, selection == nil { await loadResume(resumeRead) }
+        }
         .task(id: search) { await loadCatalogue(search) }
         .task(id: detail) { await loadSpecies(detail) }
     }
 
     @ViewBuilder
     private var searchResults: some View {
+        if speciesPicker == nil {
+            if let entry = resumeEntry, entry.scope == connection.snapshot {
+                Button(entry.saved
+                       ? (polish ? "Otwórz zapisaną roślinę" : "Open saved plant")
+                       : (polish ? "Kontynuuj zapisywanie" : "Continue save")) {
+                    let requested = resumeRead
+                    Task { await resumeSelection(entry, requested: requested) }
+                }
+                .disabled(resuming)
+                .accessibilityIdentifier("catalogue.resume")
+            }
+            if resumeFailed {
+                Text(polish ? "Nie udało się przywrócić zapisu." : "Couldn’t restore your save.")
+                    .qgNotice(.warning)
+                    .accessibilityIdentifier("catalogue.resume.error")
+                Button(polish ? "Spróbuj ponownie" : "Try again") {
+                    selectionRevision = UUID()
+                }
+                .accessibilityIdentifier("catalogue.resume.retry")
+            }
+        }
         TextField(polish ? "Szukaj gatunku" : "Search species", text: $query)
             .textFieldStyle(.roundedBorder).padding(.horizontal, 20).padding(.vertical, 8)
             .accessibilityIdentifier("catalogue.search")
@@ -3358,6 +3465,9 @@ struct GuestCatalogueView: View {
             List {
                 ForEach(cards) { card in
                     Button {
+                        guard !resuming, !selectionLocked else { return }
+                        selectionRevision = UUID()
+                        feedback = nil
                         restoredSelection = false
                         selectedCard = nil
                         selectedTaxon = card.taxonId
@@ -3371,7 +3481,7 @@ struct GuestCatalogueView: View {
                     .padding(.vertical, 8)
                     .listRowBackground(QuietGarden.surface)
                     .accessibilityIdentifier("catalogue.species." + card.id)
-                    .disabled(speciesPicker?.isCurrent(card) == true)
+                    .disabled(speciesPicker?.isCurrent(card) == true || resuming || selectionLocked)
                 }
                 if searchFailed {
                     catalogueError { Task { await loadMore() } }
@@ -3402,17 +3512,44 @@ struct GuestCatalogueView: View {
             }
         } else if selectedCard?.id == slug || restoredSelection {
             let card = selectedCard
-            ScrollView {
-                CatalogueSaveView(
-                    connection: connection, speciesSlug: slug,
-                    displayName: card?.displayName ?? slug, scientificName: card?.scientificName ?? "",
-                    polish: polish, careReminderLocaleIsCurrent: careReminderLocaleIsCurrent,
-                    openCollection: openCollection, selectionLocked: $selectionLocked
-                ) {
-                    if let card { speciesDetails(card) }
+            let host = selectionRevision
+            let selectedPolish = polish
+            let uiLocaleRevision = localeRevision
+            let resumed = restoredSelection ? resumeEntry : nil
+            ScrollViewReader { proxy in
+                ScrollView {
+                    CatalogueSaveView(
+                        connection: connection, speciesSlug: slug,
+                        displayName: card?.displayName ?? slug, scientificName: card?.scientificName ?? "",
+                        polish: polish, careReminderLocaleIsCurrent: careReminderLocaleIsCurrent,
+                        restoresResumableSave: restoredSelection,
+                        resumeFlowId: resumed?.selection.flowId,
+                        resumeScope: resumed?.scope,
+                        feedbackAnchor: "catalogue.save.feedback",
+                        onExplicitFeedback: { expected in
+                            guard active, selectionRevision == host, localeRevision == uiLocaleRevision,
+                                  polish == selectedPolish,
+                                  connection.snapshot == expected else { return }
+                            feedback = Feedback(scope: expected, host: host, localeRevision: uiLocaleRevision, polish: selectedPolish)
+                        },
+                        identification: resumed?.selection.identification,
+                        diagnosisJobId: resumed?.selection.diagnosisJobId,
+                        openCollection: openCollection, selectionLocked: $selectionLocked
+                    ) {
+                        if let card { speciesDetails(card) }
+                    }
+                    .id(host)
+                    .padding()
                 }
-                .id(slug)
-                .padding()
+                .task(id: feedback?.id) {
+                    guard let event = feedback else { return }
+                    await Task.yield()
+                    guard !Task.isCancelled, active, feedback?.id == event.id,
+                          selectionRevision == event.host, localeRevision == event.localeRevision,
+                          polish == event.polish,
+                          selection != nil, connection.snapshot == event.scope else { return }
+                    proxy.scrollTo("catalogue.save.feedback", anchor: .top)
+                }
             }
         } else if detailFailed {
             catalogueError { detailAttempt += 1 }
@@ -3470,37 +3607,79 @@ struct GuestCatalogueView: View {
     @MainActor
     private func beginNewPlantIntent() {
         guard !selectionLocked else { return }
-        do {
-            if speciesPicker == nil, let expected = connection.snapshot,
-               let flow = try connection.resumableFlow(expected: expected) {
-                guard try connection.forgetResumableFlow(
-                    ownerId: expected.session.userId, expectedFlowId: flow, expected: expected
-                ) else { throw CatalogueSaveUnavailable.sessionChanged }
-            }
-            restoredSelection = false
-            selection = nil
-            selectedTaxon = nil
-            selectedCard = nil
-        } catch {
-            detailFailed = true
-        }
+        // The next form proves journal replaceability before forgetting its pointer.
+        // Merely returning to public search never removes durable save state.
+        selectionRevision = UUID()
+        feedback = nil
+        restoredSelection = false
+        selection = nil
+        selectedTaxon = nil
+        selectedCard = nil
     }
 
     @MainActor
-    private func restoreSelection() async {
+    private func loadResume(_ requested: ResumeRead) async {
+        guard !Task.isCancelled, active, resumeRead == requested, selection == nil else { return }
+        resumeEntry = nil
+        resumeFailed = false
+        guard let expected = requested.scope else { return }
         do {
-            _ = try await connection.sessionOwner()
-            let expected = try await connection.sessionSnapshot()
             guard let flow = try connection.resumableFlow(expected: expected) else { return }
             let outcome = await connection.restoreModel(
                 ownerId: expected.session.userId, flowId: flow, expected: expected
             )
-            guard connection.snapshot == expected, !Task.isCancelled, selection == nil,
-                  case let .restored(model) = outcome, let slug = model.input?.speciesSlug else { return }
+            guard !Task.isCancelled, active, resumeRead == requested, selection == nil,
+                  try connection.resumableFlow(expected: expected) == flow else { return }
+            switch outcome {
+            case let .restored(model):
+                guard let selected = CatalogueResumeSelection(model) else {
+                    throw CatalogueSaveUnavailable.storageOrServiceUnavailable
+                }
+                let saved: Bool
+                if case .saved = model.state { saved = true } else { saved = false }
+                resumeEntry = ResumeEntry(scope: expected, selection: selected, saved: saved)
+            case .absent: break
+            case let .unavailable(reason): throw reason
+            }
+        } catch {
+            guard !Task.isCancelled, active, resumeRead == requested, selection == nil else { return }
+            resumeFailed = true
+        }
+    }
+
+    @MainActor
+    private func resumeSelection(_ entry: ResumeEntry, requested: ResumeRead) async {
+        guard !resuming, active, resumeRead == requested, selection == nil,
+              connection.snapshot == entry.scope else { return }
+        resuming = true
+        defer { resuming = false }
+        do {
+            let expected = entry.scope
+            let flow = entry.selection.flowId
+            guard try connection.resumableFlow(expected: expected) == flow else {
+                throw CatalogueSaveUnavailable.sessionChanged
+            }
+            let result = await connection.restoreModel(
+                ownerId: expected.session.userId, flowId: flow, expected: expected
+            )
+            guard !Task.isCancelled, active, resumeRead == requested, selection == nil,
+                  connection.snapshot == expected,
+                  try connection.resumableFlow(expected: expected) == flow else { return }
+            guard case let .restored(model) = result,
+                  let restored = CatalogueResumeSelection(model),
+                  restored.flowId == flow, restored.speciesSlug == entry.selection.speciesSlug,
+                  let slug = model.input?.speciesSlug else {
+                throw CatalogueSaveUnavailable.storageOrServiceUnavailable
+            }
+            selectionRevision = UUID()
+            feedback = nil
             restoredSelection = true
+            selectedCard = nil
+            selectedTaxon = nil
             selection = slug
         } catch {
-            // Public search is independent of authentication and local restoration.
+            guard !Task.isCancelled, active, resumeRead == requested, selection == nil else { return }
+            resumeFailed = true
         }
     }
 

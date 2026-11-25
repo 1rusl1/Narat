@@ -6,6 +6,218 @@ final class CatalogueSaveUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor func testCatalogueListFirstExplicitResumeEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            let run = Run("guestProviderSuccess", language)
+            defer { run.app.terminate() }
+            openCatalogue(run)
+            enterName(run, language.input)
+            submit(run)
+            assertSignIn(run)
+            let originalOperation = operation(run)
+            tap(run, "catalogue.back")
+            tap(run, "care.method.catalogue")
+            c1AssertList(run)
+            tap(run, "catalogue.resume")
+            assertSignIn(run)
+            XCTAssertEqual(operation(run), originalOperation)
+
+            // Raw cold launches deliberately bypass the legacy resume convenience.
+            run.app.terminate()
+            launch(run)
+            c1AssertList(run)
+            tap(run, "catalogue.resume", language.text("Continue save", "Kontynuuj zapisywanie"))
+            assertSignIn(run)
+            XCTAssertEqual(operation(run), originalOperation)
+            tap(run, "catalogue.save.google")
+            let originalCard = assertCard(run, name: language.canonicalName)
+            XCTAssertEqual(operation(run), originalOperation)
+            tap(run, "catalogue.change")
+            c1AssertList(run)
+            tap(run, "catalogue.resume", language.text("Open saved plant", "Otwórz zapisaną roślinę"))
+            XCTAssertEqual(assertCard(run, name: language.canonicalName), originalCard)
+            XCTAssertEqual(operation(run), originalOperation)
+
+            run.app.terminate()
+            launch(run)
+            c1AssertList(run)
+            tap(run, "catalogue.resume", language.text("Open saved plant", "Otwórz zapisaną roślinę"))
+            let resumedCard = assertCard(run, name: language.canonicalName)
+            XCTAssertEqual(resumedCard, originalCard)
+            XCTAssertEqual(operation(run), originalOperation)
+            try c1Proof(run, kind: "resume", fields: [
+                "originalCardId": authBUUID(originalCard, "catalogue.saved.card.").lowercased(),
+                "resumedCardId": authBUUID(resumedCard, "catalogue.saved.card.").lowercased(),
+                "originalOperation": authBUUID(originalOperation, "catalogue.save.operation.").lowercased(),
+                "finalOperation": authBUUID(operation(run), "catalogue.save.operation.").lowercased()
+            ])
+        }
+    }
+
+    @MainActor func testCatalogueFreshIntentEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            let run = Run("guestProvidersUnavailable", language)
+            defer { run.app.terminate() }
+            openCatalogue(run)
+            enterName(run, language.input)
+            submit(run)
+            require(run.app.staticTexts["catalogue.save.signInRequired"])
+            assertFrozen(run, name: language.input)
+            let originalOperation = operation(run)
+            tap(run, "catalogue.change")
+            c1AssertList(run)
+            chooseSpecies(run) // The same slug must create a fresh instance.
+            let field = run.app.textFields["catalogue.save.name"]
+            let value = try XCTUnwrap(field.value as? String)
+            let freshNameEmpty = value.isEmpty || value == field.placeholderValue
+            XCTAssertTrue(freshNameEmpty)
+            XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+            enterName(run, language.secondName)
+            submit(run)
+            require(run.app.staticTexts["catalogue.save.signInRequired"])
+            assertFrozen(run, name: language.secondName)
+            let newOperation = operation(run)
+            XCTAssertNotEqual(newOperation, originalOperation)
+            XCTAssertFalse(run.app.buttons["catalogue.save.apple"].exists)
+            XCTAssertFalse(run.app.buttons["catalogue.save.google"].exists)
+            try c1Proof(run, kind: "new", fields: [
+                "originalOperation": authBUUID(originalOperation, "catalogue.save.operation.").lowercased(),
+                "newOperation": authBUUID(newOperation, "catalogue.save.operation.").lowercased(),
+                "freshNameEmpty": freshNameEmpty
+            ])
+        }
+    }
+
+    @MainActor func testCatalogueOutcomeVisibilityEnglishAndPolish() throws {
+        for language in [Language.en, .pl] {
+            for longDetails in [false, true] {
+                for cancelled in [true, false] {
+                    let kind = (longDetails ? "long-" : "short-") + (cancelled ? "cancel" : "error")
+                    let run = Run(cancelled ? "guestProviderCancel" : "guestProviderFailureRetry",
+                                  language, longDetails: longDetails)
+                    defer { run.app.terminate() }
+                    launch(run)
+                    tap(run, "welcome.intent.care")
+                    tap(run, "care.method.catalogue")
+                    tap(run, "catalogue.species.fixture_fern")
+                    if longDetails {
+                        let paragraph = language.text(
+                            "Nephrolepis exaltata is a fern with long, arching fronds. Each frond carries many small leaflets along its central stem.",
+                            "Nephrolepis exaltata to paproć o długich, łukowato wygiętych liściach. Wzdłuż osi każdego liścia wyrastają liczne drobne listki.")
+                        let fullText = Array(repeating: paragraph, count: 16).joined(separator: "\n\n")
+                        let description = run.app.staticTexts.matching(NSPredicate(format: "label == %@", fullText)).firstMatch
+                        require(description)
+                        XCTAssertEqual(description.label, fullText, "Long details must render the complete response")
+                    }
+                    require(run.app.textFields["catalogue.save.name"])
+                    let scroll = try c1DetailScroll(run, containing: "catalogue.save.name")
+                    c1Reach(run.app.textFields["catalogue.save.name"], in: scroll)
+                    enterName(run, language.input)
+                    c1Reach(run.app.buttons["catalogue.save.submit"], in: scroll)
+                    submit(run)
+                    require(run.app.staticTexts["catalogue.save.signInRequired"])
+                    c1Reach(run.app.buttons["catalogue.save.google"], in: scroll)
+                    tap(run, "catalogue.save.google")
+                    localizedText(run, "catalogue.save.notice",
+                                  cancelled ? "Sign-in cancelled. Your chosen input has been retained."
+                                      : "Sign-in failed. Try again or go back.",
+                                  cancelled ? "Logowanie anulowane. Wybrane dane zostały zachowane."
+                                      : "Logowanie nie powiodło się. Spróbuj ponownie lub wróć.")
+                    // No scrolling after the outcome: this verifies the production feedback anchor.
+                    let notice = run.app.staticTexts["catalogue.save.notice"]
+                    let provider = run.app.buttons["catalogue.save.google"]
+                    enabled(notice)
+                    enabled(provider)
+                    let detailScroll = try c1DetailScroll(run, containing: "catalogue.save.notice")
+                    var viewport = detailScroll.frame.intersection(run.app.windows.firstMatch.frame)
+                    for bar in run.app.navigationBars.allElementsBoundByIndex where bar.exists {
+                        let frame = bar.frame
+                        if frame.intersects(viewport) {
+                            let bottom = viewport.maxY
+                            viewport.origin.y = max(viewport.minY, frame.maxY)
+                            viewport.size.height = bottom - viewport.minY
+                        }
+                    }
+                    for id in ["catalogue.change", "catalogue.back"] {
+                        let footer = run.app.buttons[id]
+                        require(footer)
+                        let frame = footer.frame
+                        if frame.intersects(viewport) {
+                            viewport.size.height = min(viewport.maxY, frame.minY) - viewport.minY
+                        }
+                    }
+                    let noticeFrame = notice.frame
+                    let providerFrame = provider.frame
+                    XCTAssertTrue(viewport.contains(noticeFrame), "The complete notice must be visible")
+                    XCTAssertTrue(viewport.contains(providerFrame), "The complete Google CTA must be visible")
+                    try c1Proof(run, kind: kind, fields: [
+                        "noticeFrame": c1Rect(noticeFrame),
+                        "providerFrame": c1Rect(providerFrame),
+                        "viewportFrame": c1Rect(viewport),
+                        "nativeNoticeHittable": notice.exists && notice.isEnabled && notice.isHittable,
+                        "providerHittable": provider.exists && provider.isEnabled && provider.isHittable
+                    ])
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func c1AssertList(_ run: Run) {
+        enabled(run.app.textFields["catalogue.search"])
+        enabled(run.app.buttons["catalogue.species.fixture_fern"])
+        XCTAssertFalse(run.app.textFields["catalogue.save.name"].exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.save.saved"].exists)
+        XCTAssertFalse(run.app.staticTexts["catalogue.saved.name"].exists)
+        XCTAssertFalse(run.app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "catalogue.saved.card.")).firstMatch.exists)
+    }
+
+    @MainActor
+    private func c1DetailScroll(_ run: Run, containing identifier: String) throws -> XCUIElement {
+        let matches = run.app.scrollViews.allElementsBoundByIndex.filter {
+            $0.descendants(matching: .any).matching(identifier: identifier).firstMatch.exists
+        }
+        XCTAssertEqual(matches.count, 1, "Use the current detail scroll containing the actual control")
+        return try XCTUnwrap(matches.first)
+    }
+
+    @MainActor
+    private func c1Reach(_ element: XCUIElement, in scroll: XCUIElement) {
+        require(element)
+        for _ in 0..<24 {
+            if element.isHittable { break }
+            scroll.swipeUp()
+        }
+        enabled(element)
+    }
+
+    private func c1Rect(_ rect: CGRect) -> [Double] {
+        let values = [rect.minX, rect.minY, rect.width, rect.height].map { Double($0) }
+        XCTAssertTrue(values.allSatisfy { $0.isFinite })
+        XCTAssertGreaterThan(rect.width, 0)
+        XCTAssertGreaterThan(rect.height, 0)
+        return values
+    }
+
+    @MainActor
+    private func c1Proof(_ run: Run, kind: String, fields: [String: Any]) throws {
+        var proof = fields
+        proof["namespace"] = try XCTUnwrap(UUID(uuidString: run.namespace)).uuidString.lowercased()
+        proof["scenario"] = run.scenario
+        proof["language"] = run.language.rawValue
+        proof["kind"] = kind
+        let screenshot = XCTAttachment(screenshot: run.app.screenshot())
+        screenshot.name = "c1-" + kind + "-" + run.language.rawValue
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: proof, options: [.sortedKeys]),
+                                       uniformTypeIdentifier: "public.json")
+        attachment.name = "c1-proof-" + kind + "-" + run.language.rawValue
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor func testDirectAnalysisEntryNavigationEnglish() { verifyDirectEntry(.en) }
     @MainActor func testDirectAnalysisEntryNavigationPolish() { verifyDirectEntry(.pl) }
 
@@ -2463,7 +2675,7 @@ final class CatalogueSaveUITests: XCTestCase {
         // One namespace for this test, including every subsequent process launch.
         let namespace = UUID().uuidString
 
-        init(_ scenario: String, _ language: Language, today: Bool = false) {
+        init(_ scenario: String, _ language: Language, today: Bool = false, longDetails: Bool = false) {
             self.scenario = scenario
             self.language = language
             app.launchArguments = [
@@ -2471,6 +2683,7 @@ final class CatalogueSaveUITests: XCTestCase {
                 "-AppleLanguages", "(" + language.rawValue + ")",
                 "-AppleLocale", language == .pl ? "pl_PL" : "en_US"
             ]
+            if longDetails { app.launchArguments.append("--catalogue-long-details") }
         }
     }
 
@@ -2628,7 +2841,7 @@ final class CatalogueSaveUITests: XCTestCase {
         enabled(run.app.buttons["catalogue.save.retry"])
         enabled(run.app.buttons["catalogue.save.edit"])
         XCTAssertEqual(run.app.buttons["catalogue.save.edit"].label,
-                       run.language.text("Edit as a new save", "Edytuj jako nowy zapis"))
+                       run.language.text("Edit plant details", "Zmień dane rośliny"))
         enabled(run.app.buttons["catalogue.change"])
         XCTAssertFalse(run.app.staticTexts["catalogue.save.serverLimit"].exists)
         XCTAssertFalse(run.app.staticTexts["catalogue.save.pending"].exists)
@@ -2662,6 +2875,11 @@ final class CatalogueSaveUITests: XCTestCase {
     private func restart(_ run: Run) {
         run.app.terminate()
         launch(run) // Identical fixture arguments, scenario, namespace and persisted SDK session.
+        let resume = run.app.buttons["catalogue.resume"]
+        if resume.waitForExistence(timeout: 15) {
+            enabled(resume)
+            resume.tap()
+        }
     }
 
     @MainActor
@@ -2789,8 +3007,9 @@ final class CatalogueSaveUITests: XCTestCase {
     private func verifyACKFailureRestart(_ language: Language) {
         let run = Run("ackFailure", language)
         defer { screenshot(run, "final"); run.app.terminate() }
-        // Setup has only checkpointed/enqueued an intent; Root restores it without a send.
+        // Setup has only checkpointed/enqueued an intent; explicitly reopen it without a send.
         launch(run)
+        tap(run, "catalogue.resume")
         assertACKFlow(run, unavailable: false)
         let originalOperation = operation(run)
         retry(run)
@@ -2802,6 +3021,7 @@ final class CatalogueSaveUITests: XCTestCase {
         tap(run, "catalogue.back", language.text("Back", "Wstecz"))
         tap(run, "care.method.catalogue",
             language.text("Choose species from catalogue (no photo)", "Wybierz gatunek z katalogu (bez zdjęcia)"))
+        tap(run, "catalogue.resume")
         assertACKFlow(run, unavailable: false)
         XCTAssertEqual(operation(run), originalOperation)
         restart(run)

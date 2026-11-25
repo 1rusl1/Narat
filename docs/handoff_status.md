@@ -1,5 +1,14 @@
 # Narat — текущий статус и передача работы
 
+## C1: обычный каталог принят — 25 ноября
+
+- Root перенёс exact source5: GuestCatalogueView/CatalogueSaveView/CatalogueUIFixtures/CatalogueConnectionTests/CatalogueSaveUITests. Browse открывает список; Continue save/Open saved plant — явные действия. Новый ввод отделён от точного retry; pointer проверяется до/после ожидания checkpoint, более новый не затирается. Техническая надпись заменена на Edit plant details. [API](validation/catalogue-save-binding-api-2026-11-25.md).
+- Реально PASS на проверенной базе1bb: 7 checks,535 Swift/532 XCTest0missing, Release/149 automation, UI10 ENPL/22PNG/18proofs; whole5 Review208,532с/QA203,760с без замечаний. Root просмотрел8 notice, care_sources — остальные14; complete notice+Google видимы short/long без прокрутки после результата. Blank/list-first подтверждены функциональными assertions, не финальными картинками. [Отчёт](validation/tester-catalogue-C1-2026-11-25.md).
+- Дополнительно actual ACK2 EN101,370с/PL100,639с PASS:3 идентичных POST/1operation/1commit/1новый Luna плюс2 исходные seed-карточки. Ошибочный metadata FAIL ожидал1карточку всего; raw сохранён, corrected offline validator PASS без повтора UI. Начальные seed fields сверены с fixtureinit, отдельного precreation snapshot нет. Root просмотрел2финальных ACK PNG, не все10.
+- Pins UI10 проверены во время этого прогона. Позднее разрешённый fullSwift перелинковал debug dylib и xctestrun; остальные7 pins/source5 прежние. ACK2 привязан к новому post-build комплекту/actual loaded runner. Причина различия байтов не установлена; первые preflight FAIL сохранены. Это не утверждение об одинаковых9pins всех запусков.
+- C1 принят только plain catalogue/local/fixtures. T046/T047/T096/T150/T175 открыты. C2 обязан добавить миниатюры и исправить IDresume (speciesIdentifier/taxon lookup/analysis flow); затем B2 wrong/unknown/manual photo+UI и обычная сборка7/live. Отдельное исправление AccountSignInView отмены/ошибки Google идёт в disjoint App/PlantsUITests, ещё не принято.
+- Перенос SHA5/user-preservation/diff PASS; native-проверки в Root повторно не запускались. Accepted ID-B1 сохранён, исходные8строк PBX и2xcstrings вне коммита. Новый tester-артефакт ещё не собран. Последний actual86% used, reset0; удержание экрана не продлевалось.
+
 ## ID-B1 принят в техническом объёме — 25 ноября
 
 - В Root перенесены только принятые AnalysisFlowModel/PreliminaryResultView/CollectionWireTests: выбор опубликованного вида сохраняет исходные job/photo/owner/request; Confirm отделён от Save. Есть карточка опубликованных фактов и ручной picker, scoped GET и отмена собственного запроса/ticket при уходе результата. [API](validation/identification-manual-api-2026-11-25.md).
