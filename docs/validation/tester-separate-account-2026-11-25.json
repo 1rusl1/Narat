@@ -1,0 +1,21 @@
+{
+  "scope": "one separate Narat staging tester account",
+  "created_at_utc": "2026-11-25T10:37:39.373934+00:00",
+  "mail_sent": false,
+  "production_touched": false,
+  "app_feature_changed": false,
+  "secrets_output": false,
+  "native_ui_tested": false,
+  "admin_create_http_status": 200,
+  "password_login_http_status": 200,
+  "profile_get_http_status": 200,
+  "profile_response_is_object": true,
+  "result": "LIVE_AUTH_AND_PROFILE_PASS_NATIVE_UI_PENDING",
+  "login_file_mode": "0o600",
+  "credential_file_ignored": true,
+  "created_accounts": 1,
+  "credentials_location": "build/private/tester-account-20261125/login.json",
+  "credentials_in_git": false,
+  "credentials_in_chat": false,
+  "ordinary_ui_pending": true
+}
