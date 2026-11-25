@@ -330,6 +330,13 @@ public final class AnalysisFlowModel {
         router.flowState.confirmedPlantId = candidate.speciesSlug
     }
 
+    public func startDirectAnalysis(_ intent: AddIntent) {
+        cancelAnalysis()
+        preparedPhoto = nil
+        isReplacingQuestionPhoto = false
+        router.startDirectAnalysis(intent)
+    }
+
     public func returnFromAnalysis() {
         isReplacingQuestionPhoto = false
         if hasAnalysisService { cancelAnalysis() }

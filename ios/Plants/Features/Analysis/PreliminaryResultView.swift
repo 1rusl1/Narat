@@ -411,6 +411,7 @@ struct AnalysisExitButtons: View {
     let model: AnalysisFlowModel
     let polish: Bool
     let returnToPlant: (() -> Void)?
+    var hostOwnsNativeBack: Bool = false
 
     var body: some View {
         if let returnToPlant {
@@ -418,9 +419,11 @@ struct AnalysisExitButtons: View {
                 .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("analysis.back.button")
         } else {
-            Button(polish ? "Wstecz" : "Back") { model.returnFromAnalysis() }
-                .buttonStyle(QuietGardenSecondaryButtonStyle())
-                .accessibilityIdentifier("analysis.back.button")
+            if !hostOwnsNativeBack {
+                Button(polish ? "Wstecz" : "Back") { model.returnFromAnalysis() }
+                    .buttonStyle(QuietGardenSecondaryButtonStyle())
+                    .accessibilityIdentifier("analysis.back.button")
+            }
             Button(polish ? "Przejdź do katalogu" : "Open catalogue") { model.showCatalogue() }
                 .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("analysis.catalogue.button")
@@ -433,6 +436,7 @@ struct AnalysisUnavailableSection: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
     var returnToPlant: (() -> Void)? = nil
+    var hostOwnsNativeBack: Bool = false
 
     private var isPolish: Bool { languageStore.currentLocale == .pl }
 
@@ -492,7 +496,10 @@ struct AnalysisUnavailableSection: View {
                 .accessibilityIdentifier("analysis.retry.button")
             }
 
-            AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+            AnalysisExitButtons(
+                model: model, polish: isPolish, returnToPlant: returnToPlant,
+                hostOwnsNativeBack: hostOwnsNativeBack
+            )
                 .buttonStyle(QuietGardenSecondaryButtonStyle())
         }
         .qgCard(padding: 20)

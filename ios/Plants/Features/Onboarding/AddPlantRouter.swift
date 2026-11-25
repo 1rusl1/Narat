@@ -6,6 +6,7 @@ import Observation
 public final class AddPlantRouter {
     public var flowState: AddFlowState
     public var hasCompletedWelcome: Bool
+    public private(set) var isDirectAnalysisEntry = false
 
     public init(
         initialState: AddFlowState = AddFlowState(),
@@ -15,7 +16,16 @@ public final class AddPlantRouter {
         self.hasCompletedWelcome = hasCompletedWelcome
     }
 
+    public func startDirectAnalysis(_ intent: AddIntent) {
+        flowState = AddFlowState()
+        selectIntent(intent)
+        isDirectAnalysisEntry = true
+        flowState.addMethod = .scan
+        flowState.currentStep = .selectPhoto
+    }
+
     public func selectIntent(_ intent: AddIntent) {
+        isDirectAnalysisEntry = false
         flowState.switchIntent(to: intent)
         if intent == .problem {
             flowState.addMethod = .scan
@@ -26,6 +36,7 @@ public final class AddPlantRouter {
     }
 
     public func selectCareMethod(_ method: AddMethod) {
+        isDirectAnalysisEntry = false
         flowState.intent = .care
         flowState.addMethod = method
         switch method {
@@ -52,11 +63,14 @@ public final class AddPlantRouter {
     }
 
     public func returnFromUnavailableAnalysis() {
-        flowState.currentStep = flowState.intent == .care ? .selectCareMethod : .selectIntent
+        flowState.currentStep = isDirectAnalysisEntry ? .selectIntent
+            : (flowState.intent == .care ? .selectCareMethod : .selectIntent)
+        isDirectAnalysisEntry = false
         flowState.updatedAt = Date()
     }
 
     public func showCatalogue() {
+        isDirectAnalysisEntry = false
         flowState.currentStep = .selectCatalogueSpecies
         flowState.updatedAt = Date()
     }
@@ -68,7 +82,11 @@ public final class AddPlantRouter {
         case .selectCareMethod:
             flowState.currentStep = .selectIntent
         case .selectPhoto:
-            flowState.currentStep = flowState.intent == .care ? .selectCareMethod : .selectIntent
+            if isDirectAnalysisEntry {
+                returnFromUnavailableAnalysis()
+            } else {
+                flowState.currentStep = flowState.intent == .care ? .selectCareMethod : .selectIntent
+            }
         case .selectCatalogueSpecies:
             flowState.currentStep = flowState.intent == .care ? .selectCareMethod : .selectPhoto
         case .confirmSpecies:

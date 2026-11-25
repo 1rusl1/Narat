@@ -5,6 +5,98 @@ import ImageIO
 
 @MainActor
 final class FirstHelpUnitTests: XCTestCase {
+    func testDirectEntriesReturnHomeWhileLegacyCareKeepsItsMethodPicker() {
+        let router = AddPlantRouter()
+        for intent in [AddIntent.problem, .care] {
+            router.startDirectAnalysis(intent)
+            XCTAssertEqual(router.flowState.intent, intent)
+            XCTAssertEqual(router.flowState.addMethod, .scan)
+            XCTAssertEqual(router.flowState.currentStep, .selectPhoto)
+            router.navigateBack()
+            XCTAssertEqual(router.flowState.currentStep, .selectIntent)
+            router.startDirectAnalysis(intent)
+            router.returnFromUnavailableAnalysis()
+            XCTAssertEqual(router.flowState.currentStep, .selectIntent)
+        }
+        router.selectIntent(.care)
+        router.selectCareMethod(.scan)
+        router.navigateBack()
+        XCTAssertEqual(router.flowState.currentStep, .selectCareMethod)
+        router.selectCareMethod(.catalogue)
+        router.navigateBack()
+        XCTAssertEqual(router.flowState.currentStep, .selectCareMethod)
+    }
+
+    func testDirectModesFreezeRetriesAndSwitchToANewRequest() async throws {
+        for intent in [AddIntent.problem, .care] {
+            let mode: AnalysisMode = intent == .problem ? .diagnosis : .identification
+            let service = GalleryAnalysisFixture(response: serviceResult(mode: mode))
+            service.failure = AnalysisServiceFailure.retryableProvider
+            let model = AnalysisFlowModel(service: service)
+            model.startDirectAnalysis(intent)
+            model.selectPhotoData(photoFixture(), locale: .en)
+            if intent == .problem {
+                XCTAssertEqual(model.router.flowState.currentStep, .careQuestions)
+                model.selectLightLevel(.medium)
+                model.advanceQuestionOrStartAnalysis(locale: .en)
+                model.selectWateringHabit(.moderate)
+                model.advanceQuestionOrStartAnalysis(locale: .en)
+                model.selectDrainage(.yes)
+                model.advanceQuestionOrStartAnalysis(locale: .en)
+            } else {
+                XCTAssertEqual(model.router.flowState.currentStep, .analyzing)
+            }
+            let first = try XCTUnwrap(model.submitAnalysis(locale: .en))
+            await first.value
+            let original = try XCTUnwrap(service.requests.first)
+            let retry = try XCTUnwrap(model.submitAnalysis(locale: .pl))
+            await retry.value
+            XCTAssertEqual(service.requests, [original, original])
+            XCTAssertEqual(original.mode, mode)
+            XCTAssertEqual(original.locale, .en)
+
+            model.returnFromAnalysis()
+            XCTAssertEqual(model.router.flowState.currentStep, .selectIntent)
+            let other: AddIntent = intent == .problem ? .care : .problem
+            model.startDirectAnalysis(other)
+            XCTAssertEqual(model.router.flowState.intent, other)
+            XCTAssertNotEqual(model.router.flowState.flowId, original.flowId)
+            XCTAssertNil(model.frozenRequest)
+            XCTAssertNil(model.preparedPhoto)
+            XCTAssertEqual(service.requests.count, 2)
+            model.selectPhotoData(photoFixture(), locale: .pl)
+            if other == .problem {
+                model.selectLightLevel(.medium)
+                model.advanceQuestionOrStartAnalysis(locale: .pl)
+                model.selectWateringHabit(.moderate)
+                model.advanceQuestionOrStartAnalysis(locale: .pl)
+                model.selectDrainage(.yes)
+                model.advanceQuestionOrStartAnalysis(locale: .pl)
+            }
+            let switched = try XCTUnwrap(model.submitAnalysis(locale: .pl))
+            await switched.value
+            XCTAssertEqual(service.requests.count, 3)
+            XCTAssertEqual(service.requests.last?.mode, mode == .diagnosis ? .identification : .diagnosis)
+            XCTAssertEqual(service.requests.first, original)
+        }
+    }
+
+    func testStarterPresentationUsesIndependentAuthoritativeModeInBothLanguages() throws {
+        for exhausted in [AnalysisAccessWireDTO.AnalysisMode.diagnosis, .identification] {
+            let access = try quotaDenialFixture(mode: exhausted)
+            for locale in [SupportedLocale.en, .pl] {
+                for mode in [AnalysisAccessWireDTO.AnalysisMode.diagnosis, .identification] {
+                    let label = AnalysisEntryPresentation.starter(access: access, mode: mode, locale: locale)
+                    let heading = mode == .diagnosis
+                        ? (locale == .pl ? "Startowa diagnoza" : "Starter health check")
+                        : (locale == .pl ? "Startowe rozpoznanie gatunku" : "Starter species identification")
+                    XCTAssertEqual(label, heading + (mode == exhausted ? ": 0/1" : ": 1/1"))
+                    XCTAssertEqual(access.modes[mode.rawValue]?.allowed, mode != exhausted)
+                }
+            }
+        }
+    }
+
     private func quotaDenialFixture(
         mode: AnalysisAccessWireDTO.AnalysisMode,
         guest: Bool = true,

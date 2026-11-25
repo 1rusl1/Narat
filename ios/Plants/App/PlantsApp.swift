@@ -324,6 +324,7 @@ struct RootContainerView: View {
     @State private var opening: AccountDestination? {
         didSet { if opening != nil { collectionOpening.presentationBegan() } }
     }
+    @State private var analysisOpeningId: UUID?
     @State private var analysisOwner: UUID?
     @State private var analysisCredential: String?
     @State private var guestPhotoClaim: GuestPhotoClaim?
@@ -335,6 +336,9 @@ struct RootContainerView: View {
     @State private var analysisAccessRepository = AnalysisAccessRepository()
     @State private var collectionOpening = CollectionOpeningCoordinator()
     @State private var collectionOpeningFailed = false
+#if DEBUG
+    @State private var directEntryVerified = false
+#endif
     @State private var startupFailed = false
 #if DEBUG && (targetEnvironment(simulator) || NARAT_DEVICE_STAGING_ANALYSIS)
     @State private var stagingAccount: StagingAccountPresentation? {
@@ -405,6 +409,12 @@ struct RootContainerView: View {
 #endif
     }
 
+    private var ownsAnalysisNativeBack: Bool {
+        opening != nil || (analysisModel.router.isDirectAnalysisEntry
+            && analysisModel.router.flowState.currentStep == .selectPhoto
+            && !analysisModel.isReplacingQuestionPhoto)
+    }
+
     var body: some View {
         let reminderRead = TrialReminderRead(
             snapshot: catalogue?.snapshot, authResolved: catalogue?.hasResolvedAuth == true || catalogue?.unavailable != nil,
@@ -443,6 +453,18 @@ struct RootContainerView: View {
                                 .accessibilityIdentifier("today.fixture.resume")
                         }
                     }
+                    if let fixtureContext, fixtureContext.testsDirectEntry {
+                        Button("Verify no actions") {
+                            do {
+                                try fixtureContext.verifyDirectEntry()
+                                directEntryVerified = true
+                            } catch { directEntryVerified = false }
+                        }
+                        .accessibilityIdentifier("direct-entry.verify")
+                        if directEntryVerified {
+                            Text("No actions").accessibilityIdentifier("direct-entry.proof")
+                        }
+                    }
                     if fixtureContext?.supportsCareReconnect == true {
                         Button("Reconnect fixture network") { try? fixtureContext?.reconnectCare() }
                             .accessibilityIdentifier("care.fixture.reconnect")
@@ -471,6 +493,10 @@ struct RootContainerView: View {
                         .buttonStyle(QuietGardenSecondaryButtonStyle())
                         .disabled(collectionOpening.busy || !collectionOpening.preparationSettled)
                         .accessibilityIdentifier("collection.open.retry")
+                }
+                if opening != nil || collectionOpening.busy {
+                    ProgressView(isPolish ? "Otwieranie…" : "Opening…")
+                        .accessibilityIdentifier("welcome.opening")
                 }
                 switch analysisModel.router.flowState.currentStep {
                 case .selectIntent:
@@ -580,7 +606,8 @@ struct RootContainerView: View {
                     }
                 case .selectPhoto, .careQuestions:
                     CareQuestionsView(
-                        model: analysisModel, languageStore: languageStore, accessSource: analysisAccessSource
+                        model: analysisModel, languageStore: languageStore, accessSource: analysisAccessSource,
+                        hostOwnsNativeBack: ownsAnalysisNativeBack
                     )
                 case .analyzing, .preliminaryResult, .diagnosticRefinement:
                     PreliminaryResultView(
@@ -599,12 +626,28 @@ struct RootContainerView: View {
                 }
                 if usesLegacyWelcome { guestSaveButtons }
             }
+            .toolbar {
+                if ownsAnalysisNativeBack {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            if opening != nil { cancelAnalysisOpening() }
+                            else { analysisModel.returnFromAnalysis() }
+                        } label: {
+                            Label(isPolish ? "Wstecz" : "Back", systemImage: "chevron.left")
+                        }
+                        .accessibilityIdentifier("analysis.navigation.back")
+                    }
+                }
+            }
         }
+        .onChange(of: languageStore.currentLocale) { _, _ in cancelAnalysisOpening() }
         .onChange(of: catalogue.map { ObjectIdentifier($0) }) { _, _ in
+            cancelAnalysisOpening()
             collectionOpening.connectionReplaced()
         }
         .qgScreen()
         .onChange(of: catalogue?.snapshot) { previous, current in
+            if previous != nil, previous != current { cancelAnalysisOpening() }
             if let target = collectionPresentation?.target, target.snapshot != current {
                 collectionPresentation = nil
             }
@@ -1239,43 +1282,63 @@ struct RootContainerView: View {
             }
             return
         }
+        let requestId = UUID()
+        let original = connection.snapshot
+        let locale = languageStore.currentLocale
+        analysisOpeningId = requestId
         opening = destination
         guestAccessFailed = false
+        func isCurrent() -> Bool {
+            !Task.isCancelled && analysisOpeningId == requestId && opening == destination
+                && catalogue === connection && languageStore.currentLocale == locale
+                && analysisModel.router.flowState.currentStep == .selectIntent
+                && (original == nil || connection.snapshot == original)
+        }
         Task { @MainActor in
-            defer { opening = nil }
-            if let snapshot = try? await connection.sessionSnapshot(), !snapshot.isAnonymous {
-                activate(destination, connection: connection, snapshot: snapshot)
-            } else if destination == .identification || destination == .diagnosis {
-                do { try await openGuestAnalysis(destination, connection: connection) }
-                catch {
-                    if !Task.isCancelled { guestAccessFailed = true }
+            defer {
+                if analysisOpeningId == requestId { cancelAnalysisOpening() }
+            }
+            do {
+                // Explicit entry may join the existing guarded guest bootstrap.
+                if original == nil {
+                    _ = try await connection.sessionOwner()
+                    guard isCurrent() else { return }
                 }
-            } else if !Task.isCancelled {
-                accountDestination = destination
+                let snapshot = try await connection.sessionSnapshot()
+                guard isCurrent(), connection.snapshot == snapshot else { return }
+                if !snapshot.isAnonymous {
+                    activate(destination, connection: connection, snapshot: snapshot)
+                } else if destination == .identification || destination == .diagnosis {
+                    try await openGuestAnalysis(
+                        destination, connection: connection, expected: snapshot, isCurrent: isCurrent
+                    )
+                } else {
+                    accountDestination = destination
+                }
+            } catch {
+                // An unresolved session is an availability failure, never proof of sign-out.
+                if isCurrent() { guestAccessFailed = true }
             }
         }
     }
 
-    private func openGuestAnalysis(_ destination: AccountDestination, connection: CatalogueConnection) async throws {
-        _ = try await connection.sessionOwner()
-        let expected = try await connection.sessionSnapshot()
-        if !expected.isAnonymous {
-            activate(destination, connection: connection, snapshot: expected)
-            return
-        }
+    private func cancelAnalysisOpening() {
+        analysisOpeningId = nil
+        opening = nil
+    }
+
+    private func openGuestAnalysis(
+        _ destination: AccountDestination, connection: CatalogueConnection,
+        expected: CatalogueSDKSnapshot, isCurrent: @MainActor () -> Bool
+    ) async throws {
+        guard isCurrent(), connection.snapshot == expected, expected.isAnonymous else { return }
         let claim = await photoClaim(for: connection)
+        guard isCurrent(), connection.snapshot == expected else { return }
         try await claim.register(expected)
-        guard !Task.isCancelled, connection.snapshot == expected else {
-            throw SyncWireValidationError.invalidSession
-        }
+        guard isCurrent(), connection.snapshot == expected else { return }
         installAnalysis(connection: connection, owner: expected.session.userId,
                         identificationEnabled: true, guestCredential: claim.credential)
-        if destination == .diagnosis {
-            analysisModel.router.selectIntent(.problem)
-        } else {
-            analysisModel.router.selectIntent(.care)
-            analysisModel.router.selectCareMethod(.scan)
-        }
+        analysisModel.startDirectAnalysis(destination == .diagnosis ? .problem : .care)
     }
 
     private func photoClaim(for connection: CatalogueConnection) async -> GuestPhotoClaim {
@@ -1311,12 +1374,7 @@ struct RootContainerView: View {
         installAnalysis(
             connection: connection, owner: snapshot.session.userId, identificationEnabled: true
         )
-        if destination == .diagnosis {
-            analysisModel.router.selectIntent(.problem)
-        } else {
-            analysisModel.router.selectIntent(.care)
-            analysisModel.router.selectCareMethod(.scan)
-        }
+        analysisModel.startDirectAnalysis(destination == .diagnosis ? .problem : .care)
     }
 
     private var guestIdentificationActions: GuestIdentificationActions? {
@@ -2315,7 +2373,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                         .font(.body)
                         .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                     Button(action: check) {
-                        Label(polish ? "Sprawdź roślinę" : "Check a plant", systemImage: "camera")
+                        Label(polish ? "Sprawdź zdrowie rośliny" : "Check plant health", systemImage: "camera")
                             .font(.headline)
                             .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                             .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 44 : nil)
@@ -2331,7 +2389,7 @@ private struct PlantHomeView<GuestActions: View>: View {
                 .background(green, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
 
                 VStack(spacing: 0) {
-                    destination(polish ? "Rozpoznaj roślinę" : "Identify a plant", systemImage: "viewfinder", id: "welcome.identify", action: identify)
+                    destination(polish ? "Rozpoznaj gatunek" : "Identify species", systemImage: "viewfinder", id: "welcome.identify", action: identify)
                         .disabled(unavailable)
                     Divider().padding(.leading, 52)
                     destination(polish ? "Przeglądaj katalog" : "Browse catalogue", systemImage: "books.vertical", id: "welcome.catalogue", action: browse)
@@ -2353,10 +2411,6 @@ private struct PlantHomeView<GuestActions: View>: View {
                         .foregroundStyle(QuietGarden.secondaryText)
                         .qgNotice(.error)
                         .accessibilityIdentifier("welcome.guest.error")
-                }
-                if busy {
-                    ProgressView(polish ? "Otwieranie…" : "Opening…")
-                        .accessibilityIdentifier("welcome.opening")
                 }
             }
             .padding(20)

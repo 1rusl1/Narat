@@ -1,0 +1,215 @@
+{
+  "status": "SCOPED_NAV_ACCEPTED_COMBINED_REGRESSION_PENDING",
+  "source_fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+  "state_path": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/state.json",
+  "state_sha256": "0c3bd0ef4a6031e3cb6457d00c91724f7e495ad52cecde4e6b86021a531ea9f2",
+  "source_base": "a6d03c3",
+  "root_base_before_landing": "0053cba",
+  "root_landing": {
+    "root_base": "0053cba",
+    "nav_source_fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+    "patch_sha256": "7c65a03e059f84bc8236f3b73c1dccbbebd22bc67c7f64a30713c13f5ceb20c9",
+    "nav_files_sha256": {
+      "ios/Plants/App/PlantsApp.swift": "360fcb131055018cbb34fe2f859357d3cc2a6983717867e3240c2b68bcbfaa18",
+      "ios/Plants/Features/Analysis/AnalysisFlowModel.swift": "c2d5db55155dad3a3d27104576993358565188173d91050d6ff01fb26c53d348",
+      "ios/Plants/Features/Analysis/CareQuestionsView.swift": "14bbcd1d2c2430063524b36c35a812b472cf910781c4327defbd15a8864fb66a",
+      "ios/Plants/Features/Analysis/PreliminaryResultView.swift": "5adc38f7b218daf6b0c2115735183ebbf09cfaf81085a017f9eca2ed548eb563",
+      "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift": "d88addabe40dc5d75ba1e0e14d86d70f137167b790352f223d4f1230c9482482",
+      "ios/Plants/Features/Onboarding/AddPlantRouter.swift": "5ec0d4e974393fe8bee2d420d6944c19add625da327048300e92cc5121c1a4d2",
+      "ios/Plants/Features/Today/TodayHomeView.swift": "523553c2e17ee7dd20fdfadb687f9293533978488285a4bbfa5aba19758dba85",
+      "ios/PlantsTests/FirstHelpUnitTests.swift": "888a6c8bd576199bf1625f31658aeeda209832711c2476aec2a2023d8856cd10",
+      "ios/PlantsUITests/CatalogueSaveUITests.swift": "a583cbe1103c619275815cf394ad73d4046e9a3b5d7b537a8b56becb54e97dc9",
+      "ios/PlantsUITests/PlantsUITests.swift": "3e1f0f559a6a32b3273467bacb404909a14b26bd2b8a25f9596cd07c3de331b4"
+    },
+    "all10_root_exact_bytes_match": true,
+    "accepted_auth4_preserved": true,
+    "protected_user_files3_preserved": true,
+    "combined_native_regression_pending": true
+  },
+  "checks": {
+    "diff-check": {
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 0.025,
+      "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+      "stdout": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-1-diff-check/stderr.log",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "ios-tests": {
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 212.387,
+      "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+      "stdout": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-2-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-2-ios-tests/stderr.log",
+      "stdout_sha256": "80459fd248a7af8d994f2d4e02a647ea946893a0bbf7d384e441260cd275cd02",
+      "stderr_sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+    },
+    "release-compile": {
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 100.112,
+      "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+      "stdout": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-3-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-3-release-compile/stderr.log",
+      "stdout_sha256": "01b3dd900399e1296955196dadbe82b5b6043ec17f0f9f6eb09d84f08d0b885d",
+      "stderr_sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+    },
+    "automation-tests": {
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "fixture",
+      "elapsed_seconds": 47.335,
+      "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+      "stdout": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-4-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-4-automation-tests/stderr.log",
+      "stdout_sha256": "a7d45fe7337ab6d733573a345dd46ef48a9d30651385f1c25a72c77c16e3fbc6",
+      "stderr_sha256": "c914a26ff7cc30ae596862bbc482a141f42c922383109ceb372efeb079de79a9"
+    },
+    "direct-entry-ui": {
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "fixture",
+      "elapsed_seconds": 135.289,
+      "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+      "stdout": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-5-direct-entry-ui/stdout.log",
+      "stderr": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-5-direct-entry-ui/stderr.log",
+      "stdout_sha256": "ca1c56656a120d8eff943a26493d4e01183a9dc9fc476d37ab77d8cb9b3d43d4",
+      "stderr_sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+    },
+    "simulator-smoke": {
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "elapsed_seconds": 45.614,
+      "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+      "stdout": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-6-simulator-smoke/stdout.log",
+      "stderr": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/orchestrator-nov25-native-back-owner-repair-04/nov25-native-back-owner-repair/check-6-simulator-smoke/stderr.log",
+      "stdout_sha256": "077cc12dad761adae32fac2ef17109ac771fee6b72d5f497281bfca7e20a0484",
+      "stderr_sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+    }
+  },
+  "review": {
+    "task_id": "nov25-native-back-owner-repair",
+    "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+    "status": "PASS",
+    "summary": "Дублирующий Back устранён. Полный diff, исходники, сохранённые проверки и оба PNG проверены; дефектов не найдено.",
+    "patch": "",
+    "decisions": [
+      "Единый предикат владельца native Back сохраняет standalone/legacy, replacement, return-to-plant и OpenCatalogue.",
+      "UI-петли EN/PL проверяют ready/exhausted состояния обоих режимов; на двух PNG виден один верхний Back без нижнего дубля.",
+      "Сохранённые Swift/build/welcome, Release, 149 automation-тестов, два UI-теста и MCP-навигация завершились PASS.",
+      "Проверки локальные и fixture; живые интеграции не подтверждаются. Последующий QA выполняет контроллер.",
+      "Файлы, Git, handoff/tasks не изменялись; проверки повторно не запускались."
+    ],
+    "findings": [],
+    "finding_complexity": "low",
+    "criteria": [
+      {
+        "id": "BACK1",
+        "status": "PASS",
+        "evidence": [
+          "ios-tests",
+          "release-compile"
+        ]
+      },
+      {
+        "id": "BACK2",
+        "status": "PASS",
+        "evidence": [
+          "direct-entry-ui",
+          "automation-tests"
+        ]
+      },
+      {
+        "id": "BACK3",
+        "status": "PASS",
+        "evidence": [
+          "simulator-smoke"
+        ]
+      }
+    ]
+  },
+  "qa": {
+    "task_id": "nov25-native-back-owner-repair",
+    "fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+    "status": "PASS",
+    "summary": "Дублирующий Back устранён; исходники, полный патч, сохранённые проверки и PNG подтверждают критерии.",
+    "patch": "",
+    "decisions": [
+      "Единый предикат native Back сохраняет standalone/legacy, replacement, return-to-plant и OpenCatalogue.",
+      "Обе EN/PL UI-петли проверили ready/exhausted для двух режимов. На обоих PNG один верхний Back, нижнего дубля нет, каталог доступен.",
+      "Подтверждены Swift/build/welcome, Release, 149 automation-тестов, два UI-теста и фактическая MCP-навигация; независимый Reviewer также PASS.",
+      "Доказательства локальные и fixture; живые интеграции не подтверждаются. Проверки повторно не запускались, файлы и Git не изменялись."
+    ],
+    "findings": [],
+    "finding_complexity": "low",
+    "criteria": [
+      {
+        "id": "BACK1",
+        "status": "PASS",
+        "evidence": [
+          "ios-tests",
+          "release-compile"
+        ]
+      },
+      {
+        "id": "BACK2",
+        "status": "PASS",
+        "evidence": [
+          "direct-entry-ui",
+          "automation-tests"
+        ]
+      },
+      {
+        "id": "BACK3",
+        "status": "PASS",
+        "evidence": [
+          "simulator-smoke"
+        ]
+      }
+    ]
+  },
+  "root_visual": {
+    "source_fingerprint": "037f00ed301fb8ba39e33603787679e868de2dfc5d6033bd58ffde37afc2a21f",
+    "root_viewed": true,
+    "scope": "two fixture Identify quota-unavailable viewports only",
+    "result": "SCOPED_ROOT_VIEW_PASS",
+    "observed": [
+      "upper Back visible",
+      "duplicate lower Back absent in EN and PL",
+      "Open catalogue preserved"
+    ],
+    "starter_clipping_observation": "not substantiated: exact decoded RGB ROI equality with earlier source and ink bounds inside card",
+    "starter_roi_proof": "/private/tmp/narat-nov25-direct-entry-prep/starter-exact-roi-proof.json",
+    "starter_roi_proof_sha256": "34c9c9f2fa7cb355106b658f9cfec3c5345aa4959ad75e8d2aee57d3fec464c1",
+    "screenshots": {
+      "en": {
+        "path": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/q-b81fb23ee1d8b81618d5fc04/attachments/E79ACB73-478C-4E31-A56E-5E55DC8CCD76.png",
+        "sha256": "58e4ad2b84e74ebace6b97722dbbab5cf8fb844b25c3cdce9c77f07d9113eb48"
+      },
+      "pl": {
+        "path": "/private/tmp/narat-ux-direct-entry-20261125/docs/validation/automation/runs/q-b81fb23ee1d8b81618d5fc04/attachments/289771C4-B6E8-41B7-846D-98CF8A210A2B.png",
+        "sha256": "9e71dba1455234b54fa1c3d47cfd07b0244e562662e017e42a73239d974be3fb"
+      }
+    },
+    "not_claimed": [
+      "all ready states visual",
+      "Check screen visual",
+      "live quota/provider",
+      "ordinary signed artifact",
+      "full user journey accepted before final QA"
+    ]
+  },
+  "history": [
+    "90cf first candidate had actual duplicate bottom Back; Root rejected it",
+    "UI harness class matcher and missing npm setup failures retained; not relabeled product failures or passes"
+  ],
+  "ordinary_live_or_physical_tested": false,
+  "reset_used": 0
+}

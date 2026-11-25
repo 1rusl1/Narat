@@ -118,7 +118,7 @@ struct TodayHomeView: View {
                 }
                     .accessibilityIdentifier("collection.open")
                 Button(action: check) {
-                    QuietGardenActionLabel(title: polish ? "Sprawdź roślinę" : "Check a plant", symbol: "camera")
+                    QuietGardenActionLabel(title: polish ? "Sprawdź zdrowie rośliny" : "Check plant health", symbol: "camera")
                 }
                     .buttonStyle(QuietGardenPrimaryButtonStyle())
                     .accessibilityIdentifier("welcome.check")
@@ -127,7 +127,7 @@ struct TodayHomeView: View {
                 }
                     .accessibilityIdentifier("welcome.catalogue")
                 Button(action: identify) {
-                    QuietGardenActionLabel(title: polish ? "Rozpoznaj roślinę" : "Identify a plant", symbol: "viewfinder")
+                    QuietGardenActionLabel(title: polish ? "Rozpoznaj gatunek" : "Identify species", symbol: "viewfinder")
                 }
                     .accessibilityIdentifier("welcome.identify")
                 if unavailable {

@@ -111,6 +111,31 @@ enum AnalysisQuotaDenialPresentation: Equatable {
     }
 }
 
+enum AnalysisEntryPresentation {
+    static func title(mode: AnalysisAccessWireDTO.AnalysisMode, locale: SupportedLocale) -> String {
+        switch mode {
+        case .diagnosis: locale == .pl ? "Sprawdź zdrowie rośliny" : "Check plant health"
+        case .identification: locale == .pl ? "Rozpoznaj gatunek" : "Identify species"
+        }
+    }
+
+    static func starter(
+        access: AnalysisAccessWireDTO, mode: AnalysisAccessWireDTO.AnalysisMode, locale: SupportedLocale
+    ) -> String {
+        // FR-065: the independent one-time starters precede the shared monthly pool.
+        let remaining = mode == .diagnosis
+            ? access.starter.diagnosisRemaining : access.starter.identificationRemaining
+        let heading: String
+        switch mode {
+        case .diagnosis:
+            heading = locale == .pl ? "Startowa diagnoza" : "Starter health check"
+        case .identification:
+            heading = locale == .pl ? "Startowe rozpoznanie gatunku" : "Starter species identification"
+        }
+        return "\(heading): \(remaining)/1"
+    }
+}
+
 private struct AnalysisQuotaGate<Content: View>: View {
     let source: AnalysisAccessSource
     let mode: AnalysisAccessWireDTO.AnalysisMode
@@ -170,12 +195,8 @@ private struct AnalysisQuotaGate<Content: View>: View {
 
     @ViewBuilder
     private func summary(_ access: AnalysisAccessWireDTO, quota: AnalysisAccessWireDTO.Mode) -> some View {
-        if quota.activeQuotaKind == .starterIdentification || quota.activeQuotaKind == .starterDiagnosis {
-            Text(isPolish
-                 ? "Analiza startowa: \(quota.remaining) z \(quota.limit)"
-                 : "Starter analysis: \(quota.remaining) of \(quota.limit)")
-                .accessibilityIdentifier("analysis.access.starter")
-        }
+        Text(AnalysisEntryPresentation.starter(access: access, mode: mode, locale: locale))
+            .accessibilityIdentifier("analysis.access.starter")
         if let remaining = access.monthly.remaining, let limit = access.monthly.limit {
             Text(isPolish ? "Analizy miesięczne: \(remaining) z \(limit)" : "Monthly analyses: \(remaining) of \(limit)")
                 .accessibilityIdentifier("analysis.access.monthly")
@@ -238,6 +259,7 @@ public struct CareQuestionsView: View {
     @Bindable var languageStore: LanguageStore
     private let accessSource: AnalysisAccessSource?
     private let returnToPlant: (() -> Void)?
+    private let hostOwnsNativeBack: Bool
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoLoadTask: Task<Void, Never>?
     @State private var cameraPermissionTask: Task<Void, Never>?
@@ -252,12 +274,13 @@ public struct CareQuestionsView: View {
 
     init(
         model: AnalysisFlowModel, languageStore: LanguageStore, accessSource: AnalysisAccessSource?,
-        returnToPlant: (() -> Void)? = nil
+        returnToPlant: (() -> Void)? = nil, hostOwnsNativeBack: Bool = false
     ) {
         self.model = model
         self.languageStore = languageStore
         self.accessSource = accessSource
         self.returnToPlant = returnToPlant
+        self.hostOwnsNativeBack = hostOwnsNativeBack
     }
 
     private var isPolish: Bool {
@@ -271,7 +294,10 @@ public struct CareQuestionsView: View {
                     if model.hasAnalysisService {
                         photoSection
                     } else {
-                        AnalysisUnavailableSection(model: model, languageStore: languageStore, returnToPlant: returnToPlant)
+                        AnalysisUnavailableSection(
+                            model: model, languageStore: languageStore, returnToPlant: returnToPlant,
+                            hostOwnsNativeBack: hostOwnsNativeBack
+                        )
                     }
                 } else {
                     questionStepSection
@@ -280,7 +306,8 @@ public struct CareQuestionsView: View {
             .padding(20)
         }
         .qgScreen()
-        .navigationTitle(isPolish ? "Pierwsza pomoc" : "First Help")
+        .navigationTitle(AnalysisEntryPresentation.title(mode: entryMode, locale: languageStore.currentLocale))
+        .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $showingCamera, onDismiss: finishCameraSelection) {
             PlantCameraPicker { result in
                 cameraResult = result
@@ -318,12 +345,26 @@ public struct CareQuestionsView: View {
         }
     }
 
+    private var entryMode: AnalysisAccessWireDTO.AnalysisMode {
+        model.router.flowState.intent == .problem ? .diagnosis : .identification
+    }
+
     private var photoSection: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Text(AnalysisEntryPresentation.title(mode: entryMode, locale: languageStore.currentLocale))
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("analysis.photo.header")
+            Text(entryMode == .diagnosis
+                 ? (isPolish ? "Dodaj zdjęcie, aby sprawdzić stan zdrowia rośliny."
+                    : "Add a photo to check your plant’s health.")
+                 : (isPolish ? "Dodaj zdjęcie, aby rozpoznać gatunek rośliny."
+                    : "Add a photo to identify the plant’s species."))
+                .foregroundStyle(QuietGarden.secondaryText)
             if let accessSource {
                 AnalysisQuotaGate(
                     source: accessSource,
-                    mode: model.router.flowState.intent == .problem ? .diagnosis : .identification,
+                    mode: entryMode,
                     locale: languageStore.currentLocale
                 ) { photoChoices }
             } else {
@@ -349,7 +390,10 @@ public struct CareQuestionsView: View {
                     .buttonStyle(QuietGardenSecondaryButtonStyle())
                     .accessibilityIdentifier("care.photo.replacement.back")
             } else {
-                AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+                AnalysisExitButtons(
+                    model: model, polish: isPolish, returnToPlant: returnToPlant,
+                    hostOwnsNativeBack: hostOwnsNativeBack
+                )
             }
         }
     }

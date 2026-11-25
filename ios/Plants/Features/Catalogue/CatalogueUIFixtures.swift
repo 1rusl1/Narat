@@ -17,8 +17,15 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
 
     case todayMixed, todayFuture, todayNoSchedule, todayEmpty, todayFirstFailure, todaySaved, todaySDKOpening
 
+    case directEntryDiagnosisExhausted, directEntryIdentificationExhausted
+
+    var testsDirectEntry: Bool {
+        self == .directEntryDiagnosisExhausted || self == .directEntryIdentificationExhausted
+    }
+
     var testsToday: Bool {
-        switch self {
+        if testsDirectEntry { return true }
+        return switch self {
         case .todayMixed, .todayFuture, .todayNoSchedule, .todayEmpty, .todayFirstFailure, .todaySaved, .todaySDKOpening: true
         default: false
         }
@@ -226,6 +233,10 @@ final class CatalogueUIFixtureContext {
     private let openingAuthStorage: CatalogueFixtureAuthStorage
     private var openingReady = false
     private var openingExpiryArmed = false
+
+    var testsDirectEntry: Bool { server.snapshot.scenario.testsDirectEntry }
+
+    func verifyDirectEntry() throws { try server.verifyDirectEntry() }
 
     var testsSDKOpening: Bool { server.snapshot.scenario == .todaySDKOpening }
 
@@ -490,6 +501,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var reminderReadRequests: Int?
         var reminderScheduleRestored: Bool?
         var openingProof: OpeningProof?
+        var directEntryAccessReads: Int?
+        var directEntryDeniedRequests: Int?
     }
     struct Reply {
         let status: Int
@@ -505,6 +518,20 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             && ledger.tick > 0 ? 23 : 9
     }
     var snapshot: Ledger { lock.withLock { ledger } }
+
+    func verifyDirectEntry() throws {
+        try lock.withLock {
+            guard ledger.scenario.testsDirectEntry, ledger.signupCount == 0,
+                  ledger.attempts.isEmpty, ledger.commits.isEmpty,
+                  (ledger.directEntryAccessReads ?? 0) >= 2,
+                  (ledger.directEntryDeniedRequests ?? 0) == 0,
+                  capturedRequests.filter({ $0.httpMethod == "POST" }).count == 1,
+                  capturedRequests.filter({ $0.httpMethod == "POST" }).allSatisfy({
+                      $0.url?.path == "/auth/v1/token"
+                          && $0.url?.query == "grant_type=password"
+                  }) else { throw CatalogueUIFixtureError.invalidRequest }
+        }
+    }
     private var capturedRequests: [URLRequest] = []
     var requests: [URLRequest] { lock.withLock { capturedRequests } }
 
@@ -714,6 +741,18 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                 throw URLError(.unsupportedURL)
             }
             capturedRequests.append(request)
+            if ledger.scenario.testsDirectEntry, request.httpMethod != "GET" {
+                // Only fixture bootstrap may write. Providers, uploads, commands and signup are denied.
+                let bootstrap = request.httpMethod == "POST" && url.path == "/auth/v1/token"
+                    && url.query == "grant_type=password"
+                    && capturedRequests.filter({ $0.httpMethod == "POST" }).count == 1
+                if !bootstrap {
+                    var next = ledger
+                    next.directEntryDeniedRequests = (next.directEntryDeniedRequests ?? 0) + 1
+                    try persist(next)
+                    return try error(403, "fixture_read_only")
+                }
+            }
             if ledger.scenario == .todaySDKOpening, url.path.hasSuffix("/commands") {
                 try recordOpeningLocked("domain-command")
                 return try error(403, "fixture_read_only")
@@ -749,6 +788,40 @@ final class CatalogueFixtureServer: @unchecked Sendable {
             let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
             let method = request.httpMethod ?? "GET"
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if ledger.scenario.testsDirectEntry, url.path == "/functions/v1/plants-api/analysis/access" {
+                guard method == "GET", query.isEmpty, body.isEmpty,
+                      request.value(forHTTPHeaderField: "Authorization") == "Bearer " + token(ledger.permanent),
+                      request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
+                      let locale = request.value(forHTTPHeaderField: "X-Client-Locale"),
+                      ["en", "pl"].contains(locale) else { throw CatalogueUIFixtureError.invalidRequest }
+                let exhausted = ledger.scenario == .directEntryDiagnosisExhausted ? "diagnosis" : "identification"
+                let null = NSNull()
+                let modes = Dictionary(uniqueKeysWithValues: ["diagnosis", "identification"].map { mode in
+                    (mode, [
+                        "mode": mode, "allowed": mode != exhausted,
+                        "activeQuotaKind": "starter_" + mode, "remaining": mode == exhausted ? 0 : 1,
+                        "limit": 1, "inProgressJobId": null, "nextResetAt": null,
+                        "reason": mode == exhausted ? "starter_exhausted" as Any : null
+                    ] as [String: Any])
+                })
+                var next = ledger
+                next.directEntryAccessReads = (next.directEntryAccessReads ?? 0) + 1
+                try persist(next)
+                return Reply(status: 200, data: try json([
+                    "owner_id": ledger.permanent.uuidString, "is_guest": false,
+                    "starter": [
+                        "identification_remaining": exhausted == "identification" ? 0 : 1,
+                        "diagnosis_remaining": exhausted == "diagnosis" ? 0 : 1,
+                        "identification_in_progress_job_id": null, "diagnosis_in_progress_job_id": null,
+                        "first_starter_success_at": null
+                    ],
+                    "monthly": [
+                        "quota_kind": "free_monthly", "registered_at": null, "period_start": null,
+                        "period_end": null, "limit": null, "consumed": null, "reserved": null,
+                        "remaining": null, "status": "history_unresolved"
+                    ], "modes": modes
+                ]))
+            }
             if method == "POST", url.path == "/auth/v1/signup", query.isEmpty {
                 guard Set(object.keys).isSubset(of: ["data", "gotrue_meta_security"]) else {
                     throw CatalogueUIFixtureError.invalidRequest

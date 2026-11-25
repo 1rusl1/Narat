@@ -6,6 +6,68 @@ final class CatalogueSaveUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor func testDirectAnalysisEntryNavigationEnglish() { verifyDirectEntry(.en) }
+    @MainActor func testDirectAnalysisEntryNavigationPolish() { verifyDirectEntry(.pl) }
+
+    @MainActor
+    private func verifyDirectEntry(_ language: Language) {
+        for scenario in ["directEntryDiagnosisExhausted", "directEntryIdentificationExhausted"] {
+            let run = Run(scenario, language, today: true)
+            launch(run)
+            require(run.app.staticTexts["today.title"])
+            for diagnosis in [true, false] {
+                tap(run, diagnosis ? "welcome.check" : "welcome.identify",
+                    diagnosis ? language.text("Check plant health", "Sprawdź zdrowie rośliny")
+                        : language.text("Identify species", "Rozpoznaj gatunek"))
+                let header = run.app.staticTexts["analysis.photo.header"]
+                require(header)
+                XCTAssertEqual(header.label, diagnosis
+                    ? language.text("Check plant health", "Sprawdź zdrowie rośliny")
+                    : language.text("Identify species", "Rozpoznaj gatunek"))
+                XCTAssertFalse(run.app.buttons["care.method.scan"].exists)
+                XCTAssertFalse(run.app.buttons["care.method.catalogue"].exists)
+                XCTAssertFalse(run.app.staticTexts["care.questions.progress"].exists)
+                let exhausted = diagnosis == (scenario == "directEntryDiagnosisExhausted")
+                let starter = run.app.staticTexts["analysis.access.starter"]
+                require(starter)
+                let heading = diagnosis
+                    ? language.text("Starter health check", "Startowa diagnoza")
+                    : language.text("Starter species identification", "Startowe rozpoznanie gatunku")
+                XCTAssertEqual(starter.label, heading + (exhausted ? ": 0/1" : ": 1/1"))
+                if exhausted {
+                    require(run.app.staticTexts["analysis.access.denied"])
+                    XCTAssertFalse(run.app.buttons["photo.select.gallery"].exists)
+                    XCTAssertFalse(run.app.buttons["photo.select.camera"].exists)
+                } else {
+                    enabled(run.app.buttons["photo.select.gallery"])
+                    enabled(run.app.buttons["photo.select.camera"])
+                    XCTAssertFalse(run.app.staticTexts["analysis.access.denied"].exists)
+                }
+                let back = run.app.buttons["analysis.navigation.back"]
+                enabled(back)
+                XCTAssertEqual(run.app.buttons.matching(identifier: "analysis.navigation.back").count, 1)
+                XCTAssertFalse(run.app.buttons["analysis.back.button"].exists)
+                enabled(run.app.buttons["analysis.catalogue.button"])
+                XCTAssertLessThan(back.frame.maxY, header.frame.minY)
+                back.tap()
+                require(run.app.staticTexts["today.title"])
+                XCTAssertFalse(run.app.buttons["care.method.scan"].exists)
+            }
+            tap(run, "direct-entry.verify")
+            require(run.app.staticTexts["direct-entry.proof"])
+            XCTAssertEqual(run.app.staticTexts["direct-entry.proof"].label, "No actions")
+            if scenario == "directEntryIdentificationExhausted" {
+                tap(run, "welcome.identify")
+                require(run.app.staticTexts["analysis.access.denied"])
+                let attachment = XCTAttachment(screenshot: run.app.screenshot())
+                attachment.name = "direct-entry-" + language.rawValue
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+            run.app.terminate()
+        }
+    }
+
     @MainActor func testFreeSaveEnglish() { verifySave(.en, paid: false) }
     @MainActor func testFreeSavePolish() { verifySave(.pl, paid: false) }
     @MainActor func testPaidSaveEnglish() { verifySave(.en, paid: true) }

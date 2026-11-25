@@ -27,8 +27,8 @@ final class PlantsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Jak się ma Twoja roślina?"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["welcome.title"].label, "Narat")
         XCTAssertTrue(app.staticTexts["Dodaj zdjęcie, aby sprawdzić, czego może potrzebować Twoja roślina."].exists)
-        XCTAssertEqual(app.buttons["welcome.check"].label, "Sprawdź roślinę")
-        XCTAssertEqual(app.buttons["welcome.identify"].label, "Rozpoznaj roślinę")
+        XCTAssertEqual(app.buttons["welcome.check"].label, "Sprawdź zdrowie rośliny")
+        XCTAssertEqual(app.buttons["welcome.identify"].label, "Rozpoznaj gatunek")
         XCTAssertEqual(app.buttons["welcome.catalogue"].label, "Przeglądaj katalog")
         XCTAssertEqual(app.buttons["collection.open"].label, "Moje rośliny")
         XCTAssertFalse(app.segmentedControls["welcome.language.picker"].exists)
@@ -52,7 +52,7 @@ final class PlantsUITests: XCTestCase {
         XCTAssertEqual(back.label, "Wstecz")
         back.tap()
         XCTAssertTrue(app.buttons["welcome.check"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["welcome.check"].label, "Sprawdź roślinę")
+        XCTAssertEqual(app.buttons["welcome.check"].label, "Sprawdź zdrowie rośliny")
         XCTAssertTrue(unavailable.exists)
     }
 
@@ -80,8 +80,8 @@ final class PlantsUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(collection.frame.minY, title.frame.maxY)
             XCTAssertGreaterThanOrEqual(collection.frame.height, 44)
             XCTAssertFalse(collection.isEnabled)
-            XCTAssertEqual(app.buttons["welcome.check"].label, language == "pl" ? "Sprawdź roślinę" : "Check a plant")
-            XCTAssertEqual(app.buttons["welcome.identify"].label, language == "pl" ? "Rozpoznaj roślinę" : "Identify a plant")
+            XCTAssertEqual(app.buttons["welcome.check"].label, language == "pl" ? "Sprawdź zdrowie rośliny" : "Check plant health")
+            XCTAssertEqual(app.buttons["welcome.identify"].label, language == "pl" ? "Rozpoznaj gatunek" : "Identify species")
             XCTAssertFalse(app.buttons["welcome.check"].isEnabled)
             XCTAssertFalse(app.buttons["welcome.identify"].isEnabled)
 
