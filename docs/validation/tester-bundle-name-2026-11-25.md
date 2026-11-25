@@ -9,3 +9,7 @@ Native/Xcode/Simulator/UI/backend0. Это только source/static acceptance
 ## Последующий ordinary probe6
 
 Реальная сборка25ноября показала: compiled CFBundleName всё ещё Plants, хотя исходный Info.plist содержит Narat. Строгий build guard FAIL, системный Google-диалог также показывает Plants. Статическая приёмка выше не была доказательством runtime; имя исправляется отдельным generated-metadata пакетом. [Live report](tester-google-catalogue-live-2026-11-25.md).
+
+## Принятое продолжение
+
+[Generated metadata source2](tester-generated-bundle-name-2026-11-25.md) дал actual compiled Name/DisplayName Narat с сохранением всех остальных37значений и ENPL strings. Runtime AS-диалог ждёт ordinary7; прежний FAIL не переписан.

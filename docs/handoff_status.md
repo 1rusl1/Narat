@@ -1,5 +1,12 @@
 # Narat — текущий статус и передача работы
 
+## Системное имя и metadata приняты — 25 ноября
+
+- Приняты два файла: три app-конфигурации PBX используют явный Info.plist; в Info.plist сохранены девять ранее генерировавшихся значений, включая разрешения, scene, ориентацию и LSRequiresIPhoneOS. PRODUCT_NAME, executable, module и signing не переименовывались.
+- Реальная Release-сборка: Name/DisplayName Narat. Остальные 37 из 38 значений compiled Info.plist и EN/PL InfoPlist.strings совпали с ordinary6 без нормализаций. Static/whole Release/high Review 47,964 с / QA 71,176 с — PASS, замечаний 0. [Отчёт](validation/tester-generated-bundle-name-2026-11-25.md).
+- В Root перенесён полный принятый source2. В index только metadata flags; исходные пользовательские 8 строк PBX остаются вне stage, два xcstrings побайтно сохранены. Обратное применение исходных изменений восстанавливает точный принятый SHA. Приватные failed-коммиты не включены в историю Root.
+- Это compiled metadata proof; новое имя в системном AS-диалоге ещё не наблюдалось. Далее AUTH-B/C1/C2/ID-B, общий прогон и ordinary7. Живой каталог/Google/cold probe6 уже прошёл отдельно; фото/physical ещё открыты. Сбросов 0.
+
 ## Живой Google и сохранение прошли — 25 ноября
 
 - Ordinary auth probe6, source `0c9b530`: восстановились прежние имя/вид/checkpoint; реальный Google → автоматическое Plant saved → одна карточка в My plants → открытие → cold PID 1154→2483 → та же одна карточка с UUID `4d9b2648-d9e5-4698-97f0-7bf49c1da0f0` → открытие с прежними полями. [Отчёт](validation/tester-google-catalogue-live-2026-11-25.md). Это живая UI-проверка, не fixture.

@@ -1,0 +1,21 @@
+{
+  "status": "WHOLE2_METADATA9_ACCEPTED_COMPILED_NAME_NARAT",
+  "full_source_base": "0c9b53049081d483f2a7988876958de725f06897",
+  "private_accepted_commit": "978c0ad1427bb72956787c4795db4c5b9ce47c34",
+  "checked_source_fingerprint": "3cf7ca55c0342cf579928c8712c2d1596616b0d475c117a70925052e446a991c",
+  "files_sha256": {
+    "ios/Configuration/Info.plist": "7cfc6883197f0c8c06889f1290c5acfe9d555274207175810f8926d0e1c4c269",
+    "ios/Plants.xcodeproj/project.pbxproj": "a6f2c15e19f04359d52c8efcc7c3f927c96092526b5fce584305e4b1c2cef95d"
+  },
+  "full2_patch": "/private/tmp/narat-nov25-generated-name-v3-prep/accepted-generated-name-source2.patch",
+  "full2_patch_sha256": "6d29ccc5f8abb5e400e3e5f8e59efd307dc779b9390d284c5156a45fa578a543",
+  "clean_PBX_bytes": "/private/tmp/narat-nov25-generated-name-v3-prep/accepted-project.pbxproj",
+  "clean_PBX_sha256": "a6f2c15e19f04359d52c8efcc7c3f927c96092526b5fce584305e4b1c2cef95d",
+  "clean_Info_bytes": "/private/tmp/narat-nov25-generated-name-v3-prep/accepted-Info.plist",
+  "clean_Info_sha256": "7cfc6883197f0c8c06889f1290c5acfe9d555274207175810f8926d0e1c4c269",
+  "PBX_only_patch": "/private/tmp/narat-nov25-generated-name-v3-prep/accepted-generated-name-pbx-only.patch",
+  "PBX_only_patch_sha256": "7cb3f95cdf27082c84c2976a2ef1d1a41e00bb78240fd3aee572be4d51b7d433",
+  "must_not_land_private_failed_ancestors": true,
+  "private_source_worktree_clean": true,
+  "root_user3_not_written": true
+}

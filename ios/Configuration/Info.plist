@@ -39,5 +39,33 @@
 	<string>$(NARAT_STAGING_ANALYSIS_HOST)</string>
 	<key>NaratSupabaseURL</key>
 	<string>$(NARAT_SUPABASE_URL)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Narat</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Narat uses the camera to photograph plants for identification or symptom analysis.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Narat accesses your photo library to analyze plant photos and attach diary pictures.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Narat saves your plant diary photos to your photo library when requested.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict/>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UILaunchScreen</key>
+		<dict/>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
 </dict>
 </plist>

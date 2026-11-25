@@ -1,0 +1,138 @@
+{
+  "status": "WHOLE_METADATA_SOURCE_AND_COMPILED_RELEASE_ACCEPTED_ASDIALOG_PENDING",
+  "full_source_base": "0c9b53049081d483f2a7988876958de725f06897",
+  "private_accepted_commit": "978c0ad1427bb72956787c4795db4c5b9ce47c34",
+  "source_fingerprint": "3cf7ca55c0342cf579928c8712c2d1596616b0d475c117a70925052e446a991c",
+  "manifest": "/private/tmp/narat-nov25-generated-name-v3-prep/accepted-generated-name-source2-manifest.json",
+  "actual_checks": [
+    {
+      "name": "diff-check",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "3cf7ca55c0342cf579928c8712c2d1596616b0d475c117a70925052e446a991c",
+      "elapsed_seconds": 0.193,
+      "stdout": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/orchestrator-nov25-generated-name-v3-01/nov25-generated-name-v3/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/orchestrator-nov25-generated-name-v3-01/nov25-generated-name-v3/check-1-diff-check/stderr.log"
+    },
+    {
+      "name": "embedded-name-release",
+      "status": "PASS",
+      "exit_code": 0,
+      "mode": "local",
+      "fingerprint": "3cf7ca55c0342cf579928c8712c2d1596616b0d475c117a70925052e446a991c",
+      "elapsed_seconds": 16.659,
+      "stdout": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/orchestrator-nov25-generated-name-v3-01/nov25-generated-name-v3/check-2-embedded-name-release/stdout.log",
+      "stderr": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/orchestrator-nov25-generated-name-v3-01/nov25-generated-name-v3/check-2-embedded-name-release/stderr.log",
+      "evidence_directory": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/q-2c4e45f4504b574ca472c803"
+    }
+  ],
+  "roles": [
+    {
+      "agent": "developer",
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 34.495,
+      "reasoning_effort": "medium"
+    },
+    {
+      "agent": "reviewer",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 47.964,
+      "reasoning_effort": "high"
+    },
+    {
+      "agent": "qa",
+      "model": "gpt-6-astra",
+      "provider": "codex",
+      "status": "PASS",
+      "elapsed_seconds": 71.176,
+      "reasoning_effort": "high"
+    }
+  ],
+  "reviewer_findings": [],
+  "qa_findings": [],
+  "reviewer_whole_union_inspected": [
+    "Проверен полный двухфайловый union относительно Root 0c9b530: source2-full-current.patch, фактический Git diff и соответствующие исходники. Изменены только три app-флага GENERATE_INFOPLIST_FILE и добавлены девять типизированных Info-ключей; прежние значения, PRODUCT_NAME, executable, module и harness сохранены.",
+    "Узкий task.patch добавляет только LSRequiresIPhoneOS=true. Предыдущий FAIL сохранён; его причина устранена.",
+    "Изучены реализация проверок, сохранённые логи и whole-info-proof: фактическая Release-сборка успешна, весь compiled Info отличается только CFBundleName; EN/PL семантически совпадают без нормализации.",
+    "Сборка использует публичные настройки baseline и версию 6, собственные DerivedData/SDK; переопределения имени и чтения Auth storage нет.",
+    "Проверки повторно не запускались. Runtime AS-диалог остаётся отдельной проверкой; live-приёмка не заявляется. Файлы, handoff/tasks и Git не изменялись."
+  ],
+  "qa_whole_union_inspected": [
+    "Проверен полный union обоих metadata-файлов относительно Root 0c9b53049081d483f2a7988876958de725f06897, включая source2-full-current.patch: только три app-флага GENERATE_INFOPLIST_FILE=NO и девять типизированных Info-добавлений. Прежние ключи, PRODUCT_NAME, executable, module и harness сохранены.",
+    "Изучены сохранённые PASS обоих checks, лог реальной Release-сборки, whole-info-proof и скомпилированные артефакты. Хеши совпадают; остальные Info-значения и локализованные EN/PL сохранены точно, без нормализации.",
+    "Сборка использует публичные настройки baseline и версию 6 без командного переопределения имени и чтения Auth storage. Предыдущий FAIL восьмиключевого варианта сохранён.",
+    "Runtime-имя в AS-диалоге остаётся отдельной непроверенной приёмкой. Проверки повторно не запускались; файлы, handoff/tasks и Git не изменялись."
+  ],
+  "compiled_info_proof": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/q-2c4e45f4504b574ca472c803/whole-info-proof.json",
+  "compiled_info_proof_sha256": "db40100799f49aaa0664a09b7b30b8e7f4a9915c5f761fe1809a541270104268",
+  "compiled_result_names": {
+    "CFBundleName": "Narat",
+    "CFBundleDisplayName": "Narat"
+  },
+  "compiled_changed_keys": [
+    "CFBundleName"
+  ],
+  "all_other37_info_values_exact": true,
+  "en_pl_localized_exact": true,
+  "normalizations": [],
+  "raw_state": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/orchestrator-nov25-generated-name-v3-01/state.json",
+  "raw_status": "WAITING",
+  "raw_phase": "publish",
+  "raw_reason": "Verified; commit/push disabled. Publication remains pending.",
+  "failure_history": [
+    {
+      "stage": "sourceInfoNameonly",
+      "scope": "static sourceacceptedRoot7de; ordinary6 actualcompiledNamePlantsFAIL retainedbyRoot"
+    },
+    {
+      "stage": "Authconfigprefixtrial",
+      "state": "BLOCKED",
+      "private_failed_commit": "aede1b62d9001d1f29387b84399bc3b14af8b5e2",
+      "scope": "actualReleasebuildPASS/NameFAIL;failedkeyNOTincludedfinal",
+      "raw": "/private/tmp/narat-google-nonce-20261125/docs/validation/automation/runs/orchestrator-nov25-generated-name-01/state.json"
+    },
+    {
+      "stage": "metadata8trial",
+      "state": "BLOCKED",
+      "private_failed_commit": "89b33d5e4f77bfbf0d9d7850f0351ddbd1f5335b",
+      "scope": "actualReleasebuildPASS120.22;NameNaratbutLSRequiresIPhoneOSmissing;ENPLexact,wholeguardFAIL",
+      "raw": "/private/tmp/narat-generated-name-v2-20261125/docs/validation/automation/runs/orchestrator-nov25-generated-name-v2-01/state.json"
+    }
+  ],
+  "scope": [
+    "PBX only3applicationGenerateNO; testconfigs/otherPBXbytes unchanged",
+    "Info only9typedbaselineadditions; oldkeys/placeholders preserved",
+    "LSRequiresIPhoneOS true explicitlyrestoresbaseline, no runtimebehaviorchange",
+    "NoProductName/executable/module/harnesspaths/bundleID/signing/AuthIDs/SDK/nonce/xcstrings changes"
+  ],
+  "limits": [
+    "ASdialognameview pendingRootnextordinary7, noinstall/UI inthispacket",
+    "ActualReleasewholeInfo only; Debug/Personal sourceflagschecked, notbuilt",
+    "RootLIVEGoogle6PASS existsseparately; notrerunbythisactor",
+    "Publicbaselineclientbuildvalues/version6 reusedinmemory tocompareentireInfo; noAuthsessionstorage/readaccountcommands",
+    "ExplicitInfo nowauthoritativeforpermission/scene metadata; futureeditsmustkeepitcurrent",
+    "Privatefailedancestors/handoff mustnotbecherrypicked; Rootexportsfull2sourcepatchfrom0c9 only"
+  ],
+  "next_step": "RootselectivelylandcleanPBX3flags+Info preservingoriginal8lineuserPBXdelta and2xcstrings; centralhandoff/tasks+commit/push; actualordinary7Name/signature/runtimeview proof.",
+  "root_landing": {
+    "whole2_exact_clean_source": true,
+    "user_preservation": {
+      "mode": "accepted-project-plus-original-user-delta",
+      "xcstrings": 2,
+      "original_user_delta_lines": 8,
+      "pbx_user_delta_preserved": true,
+      "accepted_clean_index": true,
+      "reverse_patch_recovers_accepted_clean_pbx": true
+    },
+    "original_user_delta_reapplied_from_immutable_zero_context_patch": true,
+    "reason_for_zero_context": "Original patch context contains now-changed GENERATE flag; exact original8 delta lines and reverse accepted SHA remain required.",
+    "original_baseline_and_original_patch_unchanged": true,
+    "user_xcstrings_byte_identical": true,
+    "user_settings_staged": false
+  }
+}
