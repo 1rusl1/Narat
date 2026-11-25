@@ -286,6 +286,7 @@ public final class AnalysisFlowModel {
     public private(set) var conditionLabel: String?
     private var identifiedPhoto: PhotoIdentificationSelection?
     private var confirmedPhoto: PhotoIdentificationSelection?
+    private var confirmedUsingSelection = false
     private(set) var correctionSource: IdentificationCorrectionSource?
     private(set) var manualSpecies: PhotoIdentificationResult.Species?
     private var correctionTicket: IdentificationCorrectionTicket?
@@ -349,6 +350,7 @@ public final class AnalysisFlowModel {
         manualSpecies = nil
         if confirmedPhoto != nil { router.flowState.confirmedPlantId = nil }
         confirmedPhoto = nil
+        confirmedUsingSelection = false
         firstAidAction = nil
         diagnosisPhoto = nil
         analysisError = nil
@@ -378,9 +380,7 @@ public final class AnalysisFlowModel {
         return identifiedPhoto
     }
 
-    // ID-B contract: Root captures owner/context before fetching the published card,
-    // passes the same ticket, owner and requested taxon after its callback, and keeps
-    // its SDK/locale checks. These APIs never navigate or alter confirmed save input.
+    // A ticket binds a picker to the immutable original analysis and owner.
     func beginManualCorrection(expectedOwnerId: UUID) -> IdentificationCorrectionTicket? {
         guard confirmedPhoto == nil, let source = validCorrectionSource(ownerId: expectedOwnerId) else { return nil }
         let ticket = IdentificationCorrectionTicket(id: UUID(), source: source)
@@ -397,6 +397,28 @@ public final class AnalysisFlowModel {
         manualSpecies = .init(published: card)
         correctionTicket = nil
         return true
+    }
+
+    /// One published detail read per explicit choice, bound to the caller's SDK,
+    /// locale and local request identity across suspension.
+    @discardableResult
+    func selectManualSpecies(taxonId: UUID, locale: SupportedLocale, api: PlantsAPIClient,
+                             context: SyncSessionLease, ticket: IdentificationCorrectionTicket,
+                             expectedOwnerId: UUID, isCurrent: () -> Bool) async throws -> Bool {
+        func sourceIsCurrent() -> Bool {
+            !Task.isCancelled && context.session?.userId == expectedOwnerId
+                && confirmedPhoto == nil && correctionTicket == ticket
+                && validCorrectionSource(ownerId: expectedOwnerId) == ticket.source
+        }
+        guard sourceIsCurrent(), isCurrent() else { return false }
+        try api.syncAuthority.withBoundValid(context) {}
+        let card = try await api.fetchPublishedSpecies(taxonId: taxonId, locale: locale)
+        guard sourceIsCurrent(), isCurrent() else { return false }
+        return try api.syncAuthority.withBoundValid(context) {
+            guard sourceIsCurrent() else { return false }
+            return selectManualSpecies(card, requestedTaxonId: taxonId,
+                                       ticket: ticket, expectedOwnerId: expectedOwnerId)
+        }
     }
 
     func cancelManualCorrection(_ ticket: IdentificationCorrectionTicket) {
@@ -426,9 +448,45 @@ public final class AnalysisFlowModel {
         return source
     }
 
+    /// Production Confirm input, independent of the immutable AI result.
+    func selectedPhotoIdentification(expectedOwnerId: UUID) -> PhotoIdentificationSelection? {
+        guard let source = validCorrectionSource(ownerId: expectedOwnerId) else { return nil }
+        if let species = manualSpecies {
+            return .init(jobId: source.result.jobId, photoAssetId: source.photoAssetId,
+                         speciesSlug: species.slug, taxonId: species.taxonId, ownerId: source.ownerId)
+        }
+        guard let candidate = photoIdentificationCandidate, candidate.ownerId == expectedOwnerId else { return nil }
+        return candidate
+    }
+
+    var selectedIdentificationSpecies: PhotoIdentificationResult.Species? {
+        if confirmedPhoto != nil {
+            return confirmedUsingSelection ? (manualSpecies ?? identificationResult?.species) : identificationResult?.species
+        }
+        if let source = correctionSource, validCorrectionSource(ownerId: source.ownerId) != nil {
+            return manualSpecies ?? identificationResult?.species
+        }
+        return identificationResult?.species
+    }
+
     var confirmedPhotoIdentification: PhotoIdentificationSelection? {
-        guard let confirmedPhoto, confirmedPhoto == photoIdentificationCandidate else { return nil }
+        guard let confirmedPhoto else { return nil }
+        if confirmedUsingSelection {
+            guard let owner = confirmedPhoto.ownerId,
+                  confirmedPhoto == selectedPhotoIdentification(expectedOwnerId: owner) else { return nil }
+        } else {
+            guard confirmedPhoto == photoIdentificationCandidate else { return nil }
+        }
         return confirmedPhoto
+    }
+
+    func confirmPhotoIdentification(expectedOwnerId: UUID) {
+        guard confirmedPhoto == nil,
+              let candidate = selectedPhotoIdentification(expectedOwnerId: expectedOwnerId) else { return }
+        confirmedUsingSelection = true
+        confirmedPhoto = candidate
+        correctionTicket = nil
+        router.flowState.confirmedPlantId = candidate.speciesSlug
     }
 
     var canConfirmPhotoIdentification: Bool {
@@ -438,6 +496,7 @@ public final class AnalysisFlowModel {
     func confirmPhotoIdentification() {
         guard confirmedPhoto == nil, let candidate = photoIdentificationCandidate else { return }
         confirmedPhoto = candidate
+        correctionTicket = nil
         router.flowState.confirmedPlantId = candidate.speciesSlug
     }
 

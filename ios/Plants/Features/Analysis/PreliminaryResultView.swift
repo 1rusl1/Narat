@@ -1,7 +1,5 @@
 import SwiftUI
-#if DEBUG
 import UIKit
-#endif
 
 struct GuestIdentificationActions {
     let busy: Bool
@@ -35,6 +33,104 @@ struct FirstAidResultContext {
     let openJournal: () -> Void
 }
 
+/// Owned by the mounted result, including while its picker sheet is presented.
+@MainActor
+final class IdentificationResultLifetime {
+    private(set) var presentation: UUID?
+    var task: Task<Void, Never>?
+    private var invalidateTicket: (() -> Void)?
+    private var visibleAnchors: Set<UUID> = []
+
+    func enter() -> UUID {
+        cancelRead()
+        visibleAnchors.removeAll()
+        let id = UUID()
+        presentation = id
+        return id
+    }
+
+    func isCurrent(_ id: UUID) -> Bool { presentation == id }
+
+    func setVisible(_ visible: Bool, anchor: UUID, presentation id: UUID) {
+        guard isCurrent(id) else { return }
+        if visible { visibleAnchors.insert(anchor) }
+        else {
+            visibleAnchors.remove(anchor)
+            if visibleAnchors.isEmpty { leave(id) }
+        }
+    }
+
+    @discardableResult
+    func own(_ ticket: IdentificationCorrectionTicket, model: AnalysisFlowModel,
+             presentation id: UUID) -> Bool {
+        guard isCurrent(id) else { return false }
+        cancelRead()
+        invalidateTicket = { model.cancelManualCorrection(ticket) }
+        return true
+    }
+
+    func cancelRead() {
+        task?.cancel()
+        task = nil
+        invalidateTicket?()
+        invalidateTicket = nil
+    }
+
+    func leave(_ id: UUID) {
+        guard isCurrent(id) else { return }
+        presentation = nil
+        cancelRead()
+    }
+}
+
+/// Covers both structural removal and a retained host leaving its window.
+/// The picker shares presence so covering the result keeps its read alive.
+@MainActor
+struct IdentificationResultLifetimeAnchor: UIViewRepresentable {
+    let lifetime: IdentificationResultLifetime
+    var presentation: UUID? = nil
+
+    @MainActor
+    final class Coordinator {
+        let lifetime: IdentificationResultLifetime
+        var presentation: UUID
+        let anchor = UUID()
+        let isResult: Bool
+        init(_ lifetime: IdentificationResultLifetime, presentation: UUID?) {
+            self.lifetime = lifetime
+            isResult = presentation == nil
+            self.presentation = presentation ?? lifetime.enter()
+        }
+        func setVisible(_ visible: Bool) {
+            if visible && isResult && lifetime.presentation == nil {
+                presentation = lifetime.enter()
+            }
+            lifetime.setVisible(visible, anchor: anchor, presentation: presentation)
+        }
+    }
+
+    @MainActor
+    final class PresenceView: UIView {
+        var presenceChanged: ((Bool) -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            presenceChanged?(window != nil)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(lifetime, presentation: presentation) }
+    func makeUIView(context: Context) -> UIView {
+        let view = PresenceView(frame: .zero)
+        view.presenceChanged = { [coordinator = context.coordinator] in coordinator.setVisible($0) }
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {}
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) {
+        if coordinator.isResult { coordinator.lifetime.leave(coordinator.presentation) }
+        else { coordinator.setVisible(false) }
+    }
+}
+
 public struct PreliminaryResultView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
@@ -44,6 +140,19 @@ public struct PreliminaryResultView: View {
     private var returnToPlant: (() -> Void)? = nil
     private var firstAidContext: FirstAidResultContext? = nil
     @State private var saveLocked = false
+    private struct Correction {
+        let id = UUID()
+        let connection: CatalogueConnection
+        let snapshot: CatalogueSDKSnapshot
+        let locale: SupportedLocale
+        let ticket: IdentificationCorrectionTicket
+        let presentation: UUID
+    }
+    @State private var correction: Correction?
+    @State private var showingCorrection = false
+    @State private var correctionRequest: UUID?
+    @State private var correctionLifetime = IdentificationResultLifetime()
+    @State private var correctionFailed = false
 
     public init(model: AnalysisFlowModel, languageStore: LanguageStore) {
         self.model = model
@@ -77,15 +186,18 @@ public struct PreliminaryResultView: View {
                     exitButtons
                 } else if model.identificationResult != nil {
                     speciesHeading
+                    publishedIdentification
                     if let confirmed = model.confirmedPhotoIdentification {
                         Text(isPolish ? "Gatunek potwierdzony." : "Species confirmed.")
                             .accessibilityIdentifier("analysis.identification.confirmed")
                         if let connection = catalogueConnection, let owner = confirmed.ownerId,
                            let session = connection.snapshot, !session.isAnonymous, session.session.userId == owner,
-                           let label = model.speciesLabel {
+                           let label = model.selectedIdentificationSpecies?.displayName {
                             CatalogueSaveView(
                                 connection: connection, speciesSlug: confirmed.speciesSlug,
-                                displayName: label, scientificName: "", polish: isPolish,
+                                displayName: label,
+                                scientificName: model.selectedIdentificationSpecies?.publishedFacts?.scientificName ?? "",
+                                polish: isPolish,
                                 careReminderLocaleIsCurrent: { [languageStore, locale] in languageStore.currentLocale == locale },
                                 showsSpeciesHeading: false,
                                 analysisSaveIdentity: confirmed.jobId,
@@ -103,12 +215,27 @@ public struct PreliminaryResultView: View {
                             if guestActions.busy { ProgressView("Preparing your plant…") }
                             if guestActions.failed { Text("Couldn’t prepare your plant. Try again.") }
                         }
-                    } else if model.canConfirmPhotoIdentification {
-                        Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
-                            model.confirmPhotoIdentification()
+                    } else {
+                        if canConfirmIdentification {
+                            Button(isPolish ? "Potwierdź gatunek" : "Confirm this species") {
+                                if let owner = catalogueConnection?.snapshot?.session.userId {
+                                    model.confirmPhotoIdentification(expectedOwnerId: owner)
+                                } else {
+                                    model.confirmPhotoIdentification()
+                                }
+                            }
+                            .buttonStyle(QuietGardenPrimaryButtonStyle())
+                            .disabled(identificationBusy)
+                            .accessibilityIdentifier("analysis.identification.confirm")
                         }
-                        .buttonStyle(QuietGardenPrimaryButtonStyle())
-                        .accessibilityIdentifier("analysis.identification.confirm")
+                        if let connection = catalogueConnection, let expected = connection.snapshot,
+                           model.correctionSource?.ownerId == expected.session.userId {
+                            Button(isPolish ? "Wybierz inny gatunek" : "Choose species manually") {
+                                openCorrection(connection: connection, expected: expected)
+                            }
+                            .disabled(identificationBusy)
+                            .accessibilityIdentifier("analysis.identification.manual")
+                        }
                     }
                     exitButtons
                 } else if let result = model.preliminaryResult {
@@ -221,10 +348,142 @@ public struct PreliminaryResultView: View {
         .qgScreen()
         .buttonStyle(QuietGardenSecondaryButtonStyle())
         .navigationTitle(isPolish ? "Analiza" : "Analysis")
+        .background {
+            IdentificationResultLifetimeAnchor(lifetime: correctionLifetime)
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        }
+        .sheet(isPresented: $showingCorrection, onDismiss: closeCorrection) {
+            if let correction {
+                VStack {
+                    if correctionFailed {
+                        Text(isPolish ? "Nie udało się wczytać gatunku. Wybierz ponownie lub anuluj."
+                             : "Couldn’t load the species. Choose again or cancel.")
+                    }
+                    if correctionRequest != nil {
+                        ProgressView()
+                        Button(isPolish ? "Anuluj" : "Cancel", action: closeCorrection)
+                    }
+                    GuestCatalogueView(
+                        connection: correction.connection, polish: correction.locale == .pl,
+                        careReminderLocaleIsCurrent: { correctionIsCurrent(correction) },
+                        speciesPicker: .init(
+                            taxonId: model.selectedIdentificationSpecies?.taxonId,
+                            slug: model.selectedIdentificationSpecies?.slug,
+                            select: { selectCorrection($0, correction: correction) }
+                        ),
+                        openCollection: nil, back: closeCorrection
+                    )
+                    .disabled(correctionRequest != nil)
+                }
+                .background {
+                    IdentificationResultLifetimeAnchor(
+                        lifetime: correctionLifetime, presentation: correction.presentation
+                    )
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                }
+            }
+        }
+        .onChange(of: languageStore.currentLocale) { _, _ in closeCorrection() }
+        .onChange(of: catalogueConnection?.snapshot) { _, _ in closeCorrection() }
+        .onChange(of: model.correctionSource) { _, _ in closeCorrection() }
+    }
+
+    private var identificationBusy: Bool {
+        saveLocked || guestActions?.busy == true || showingCorrection
+    }
+
+    private var canConfirmIdentification: Bool {
+        if let connection = catalogueConnection {
+            guard let expected = connection.snapshot else { return false }
+            return model.selectedPhotoIdentification(expectedOwnerId: expected.session.userId) != nil
+        }
+        return model.canConfirmPhotoIdentification
+    }
+
+    @ViewBuilder
+    private var publishedIdentification: some View {
+        if model.confirmedPhotoIdentification == nil {
+            Text(isPolish ? "To wstępne rozpoznanie. Potwierdź gatunek lub wybierz go ręcznie."
+                 : "This identification is preliminary. Confirm the species or choose it manually.")
+                .accessibilityIdentifier("analysis.identification.uncertainty")
+        }
+        if let facts = model.selectedIdentificationSpecies?.publishedFacts {
+            Text(facts.scientificName).italic()
+            Text(facts.commonName)
+            PublishedPlantImageView(
+                source: .init(url: facts.imageURL, author: facts.imageAuthor, license: facts.imageLicense,
+                              attribution: facts.imageAttribution, sourcePage: facts.imageSourcePage),
+                presentation: .hero, label: facts.commonName, locale: languageStore.currentLocale.locale
+            )
+            Text(isPolish ? "Przykładowe zdjęcie gatunku — nie Twoje zdjęcie."
+                 : "Example species photo — separate from your original photo.")
+                .font(.caption)
+            if let text = facts.descriptionText { Text(text) }
+            if let attribution = facts.descriptionAttribution { Text(attribution).font(.caption) }
+            if let url = PublishedPlantImageSource.safeURL(facts.descriptionSourceURL) {
+                Link(isPolish ? "Źródło opisu" : "Description source", destination: url).font(.caption)
+            }
+        }
+    }
+
+    private func openCorrection(connection: CatalogueConnection, expected: CatalogueSDKSnapshot) {
+        guard !identificationBusy, connection.snapshot == expected,
+              let presentation = correctionLifetime.presentation,
+              let ticket = model.beginManualCorrection(expectedOwnerId: expected.session.userId),
+              correctionLifetime.own(ticket, model: model, presentation: presentation) else { return }
+        correction = Correction(connection: connection, snapshot: expected,
+                                locale: languageStore.currentLocale, ticket: ticket, presentation: presentation)
+        correctionFailed = false
+        showingCorrection = true
+    }
+
+    private func correctionIsCurrent(_ value: Correction) -> Bool {
+        !Task.isCancelled && correctionLifetime.isCurrent(value.presentation)
+            && showingCorrection && correction?.id == value.id
+            && catalogueConnection === value.connection && value.connection.snapshot == value.snapshot
+            && languageStore.currentLocale == value.locale && model.correctionSource == value.ticket.source
+            && model.confirmedPhotoIdentification == nil && !saveLocked && guestActions?.busy != true
+    }
+
+    private func selectCorrection(_ taxonId: UUID, correction value: Correction) {
+        guard correctionRequest == nil, correctionIsCurrent(value),
+              let api = value.connection.apiClient else { return }
+        let request = UUID()
+        correctionRequest = request
+        correctionFailed = false
+        correctionLifetime.task = Task { @MainActor in
+            do {
+                guard correctionIsCurrent(value), correctionRequest == request else { return }
+                let lease = try await value.connection.analysisLease(expected: value.snapshot)
+                guard correctionIsCurrent(value), correctionRequest == request else { return }
+                let selected = try await model.selectManualSpecies(
+                    taxonId: taxonId, locale: value.locale, api: api, context: lease,
+                    ticket: value.ticket, expectedOwnerId: value.snapshot.session.userId,
+                    isCurrent: { correctionIsCurrent(value) && correctionRequest == request }
+                )
+                guard correctionIsCurrent(value), correctionRequest == request else { return }
+                if selected { closeCorrection() }
+                else { correctionRequest = nil; correctionFailed = true }
+            } catch {
+                guard correctionIsCurrent(value), correctionRequest == request else { return }
+                correctionRequest = nil
+                correctionFailed = true
+            }
+        }
+    }
+
+    private func closeCorrection() {
+        correctionLifetime.cancelRead()
+        correctionRequest = nil
+        correction = nil
+        showingCorrection = false
+        correctionFailed = false
     }
 
     private var speciesHeading: some View {
-        Text(model.speciesLabel ?? (isPolish ? "Nie udało się ustalić gatunku." : "Species could not be determined."))
+        Text(model.selectedIdentificationSpecies?.displayName ?? model.speciesLabel ?? (isPolish ? "Nie udało się ustalić gatunku." : "Species could not be determined."))
             .font(.headline)
             .accessibilityIdentifier("analysis.result.species")
     }

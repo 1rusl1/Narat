@@ -1,5 +1,14 @@
 # Narat — текущий статус и передача работы
 
+## ID-B1 принят в техническом объёме — 25 ноября
+
+- В Root перенесены только принятые AnalysisFlowModel/PreliminaryResultView/CollectionWireTests: выбор опубликованного вида сохраняет исходные job/photo/owner/request; Confirm отделён от Save. Есть карточка опубликованных фактов и ручной picker, scoped GET и отмена собственного запроса/ticket при уходе результата. [API](validation/identification-manual-api-2026-11-25.md).
+- Фактически PASS: fresh538 Swift/535 XCTest без пропусков, Release133,098с,149 automation51,755с, whole3 high Review121,422с/QA120,733с без замечаний. Дополнительный actual old4 —62,58с, current-loaded SHA/UUID,4 PNG,9 pins/прежние ledgers сохранены; Root просмотрел все4. Это регрессия существующих header/form EN/PL, не новый manual UI. [Отчёт](validation/tester-identification-b1-2026-11-25.md).
+- Первичный Session-fixture FAIL и прежний PASS с найденным Root lifecycle gap сохранены. После реального исправления выполнены свежие проверки всего source3. Разница fingerprints old4 обусловлена только controller-документами; source3 побайтно совпал. Перенос не включает WIP-историю, старый Wire prefix сохранён.
+- T047/T150 и прочие родители открыты: B2 обязан показать wrong/unknown/manualB image+placeholder, contextual labels, long-info/actions, реальное открытие/выбор/cancel picker и уход whole-result при heldGET. Текущие generic labels/default.shared loader промежуточные; original owner photo отсутствует, качество AI/live/physical этим этапом не проверены.
+- C1 сейчас принимает только обычный каталог. В C2 обязательно исправить identification-resume: speciesSlug у такого input nil; сохраняются taxonId и analysisSaveIdentity, без нового bare-catalogue save/Edit new. Затем B2 и объединённая ordinary7 → фото/Google/одна новая карточка/cold launch. Итогового нового tester-артефакта ещё нет.
+- Исходные8строк PBX и два xcstrings сохранены; секреты/локальные настройки/артефакты не включены. Последний фактический лимит82% used; сбросов0. Screen-awake не продлевался. Root при переносе проверил SHA3/prefix/user preservation/diff, native-проверки заново не запускал.
+
 ## База изображений принята — 25 ноября
 
 - В Root перенесены append-only footer GuestCatalogueView и новые media-тесты CollectionWireTests. Старые тела обоих файлов сохранены побайтно, AUTH-B5 не менялся. Есть общий published Source/HTTPS loader/ограниченный memory cache/state/View; [API](validation/published-media-api-2026-11-25.md).

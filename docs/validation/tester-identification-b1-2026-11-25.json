@@ -1,0 +1,190 @@
+{
+  "status": "ACCEPTED_SCOPED_PRODUCTION_MODEL_WIRE_PLUS_OLD4",
+  "source_commit": "ea5e45e085d188774ddea5048d532355e140b517",
+  "base_commit": "1bbde61bcec873ce8bd41953862c01d31f97d24a",
+  "source_patch_sha256": "ad32098fa1a9e1f3321efafa53d037fdcc1d34bc961415dbc60662ce1ff641e2",
+  "files": [
+    {
+      "path": "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+      "base_blob": "e836de42a36cf9c2a66cedbdcf83fa1392d2f1f4",
+      "accepted_blob": "f38584a765626e09bbeeec7b67b07cb7f41245e6",
+      "base_sha256": "1e2f73f88ae2a0db4ffffa88234f11d465386a268d972be9d86a479abb4250b7",
+      "sha256": "cf8d42eaa7b6736316917333263ead72b17848ccfed6fb513949a817c30be368",
+      "bytes": 31496
+    },
+    {
+      "path": "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+      "base_blob": "93b3ac14aa5e92e0e021edbce343f4b3db7469aa",
+      "accepted_blob": "9a41db8ea1453e987cf5492e54634871346a1c6d",
+      "base_sha256": "5adc38f7b218daf6b0c2115735183ebbf09cfaf81085a017f9eca2ed548eb563",
+      "sha256": "501f2771e6edcfd13a30a0505ef3a207a74bc07dd9a96b0fb175b1c62051f23e",
+      "bytes": 36748
+    },
+    {
+      "path": "ios/PlantsTests/CollectionWireTests.swift",
+      "base_blob": "5254bfb22a40328796cbe454a99f6b33dbbcde9d",
+      "accepted_blob": "bd239524df14b60be6fc5589eef1f57b93d34d2c",
+      "base_sha256": "76e07b5f0dde4096114e6fea5dc421edf0edb4822438df432ee9901f43f04e7a",
+      "sha256": "1d34b5a40cd0c5ec262f70ac484cf8465acb78123a937755d11b12e79a3ef390",
+      "bytes": 976699
+    }
+  ],
+  "source_fingerprint_checks": "0cc33ffc11731723c24881ff7533a61a558ac62ce76d7cd8111c755263546397",
+  "checks": {
+    "diff-check": {
+      "status": "PASS",
+      "elapsed_seconds": 0.204,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-1-diff-check/stdout.log",
+      "stderr": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-1-diff-check/stderr.log"
+    },
+    "ios-tests": {
+      "status": "PASS",
+      "elapsed_seconds": 190.653,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-2-ios-tests/stdout.log",
+      "stderr": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-2-ios-tests/stderr.log"
+    },
+    "release-compile": {
+      "status": "PASS",
+      "elapsed_seconds": 133.098,
+      "mode": "local",
+      "stdout": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-3-release-compile/stdout.log",
+      "stderr": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-3-release-compile/stderr.log"
+    },
+    "automation-tests": {
+      "status": "PASS",
+      "elapsed_seconds": 51.755,
+      "mode": "fixture",
+      "stdout": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-4-automation-tests/stdout.log",
+      "stderr": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-b1-lifetime-02/nov25-identification-b1-lifetime/check-4-automation-tests/stderr.log"
+    }
+  },
+  "swift_total": 538,
+  "xctest_methods": 535,
+  "missing_methods": 0,
+  "review": {
+    "status": "PASS",
+    "seconds": 121.422,
+    "findings": 0,
+    "scope": "whole source3 versus1bb including Root lifecycle finding"
+  },
+  "qa": {
+    "status": "PASS",
+    "seconds": 120.733,
+    "findings": 0,
+    "scope": "whole source3 versus1bb, local fixtures"
+  },
+  "old4": {
+    "status": "PASS",
+    "seconds": 62.58,
+    "summary": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/nov25-identification-b1-old4-03/summary.json",
+    "current_loaded": {
+      "name": "ACTUAL-loaded-current-image",
+      "status": "PASS",
+      "pid": 82035,
+      "path": "/Users/ruslansabirov/Library/Developer/CoreSimulator/Devices/32009F39-32EF-426B-A91E-31B368D6C27E/data/Containers/Bundle/Application/D8966F37-A16C-47CB-9422-23507DA3BA37/PlantsUITests-Runner.app/PlugIns/PlantsUITests.xctest/PlantsUITests",
+      "image": {
+        "sha256": "f4e30b1db632c141a235d488cd6949cbbd5372212c9a846239366c58f2b35d30",
+        "size": 1874480
+      },
+      "uuid": "d825548e-c785-3076-a1c5-62ac9efc1797",
+      "source_fingerprint": "3831dc549449d64faed34b206639936cd19b7803a1d59755abf1cc31bf5fc29e"
+    },
+    "images": [
+      {
+        "test": "testDiagnosisSavePresentationEnglish",
+        "mode": "diagnosis",
+        "locale": "en",
+        "path": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/nov25-identification-b1-old4-03/attachments/79CCEE87-9C3E-44EF-99AC-B1AECD9D7E8C.png",
+        "sha256": "7dba62d7943730335ef0b1e149b4aeb2918b71d6bbb7146459e55c0a65c485c0",
+        "width": 1206,
+        "height": 2622,
+        "root_viewed": true,
+        "visual_scope": "Existing header/form only; no new wrong/unknown/image/manual or directnav proof"
+      },
+      {
+        "test": "testDiagnosisSavePresentationPolish",
+        "mode": "diagnosis",
+        "locale": "pl",
+        "path": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/nov25-identification-b1-old4-03/attachments/A842292C-E741-4248-830D-1BCA62048B33.png",
+        "sha256": "8078d07086f2b9aae01f64916d0093b246f915b7b90340a868bb7b8b747e8cc6",
+        "width": 1206,
+        "height": 2622,
+        "root_viewed": true,
+        "visual_scope": "Existing header/form only; no new wrong/unknown/image/manual or directnav proof"
+      },
+      {
+        "test": "testIdentificationSavePresentationEnglish",
+        "mode": "identification",
+        "locale": "en",
+        "path": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/nov25-identification-b1-old4-03/attachments/9EAD7B3E-8E18-4B3C-A6F6-0234C62B43FA.png",
+        "sha256": "a2446973412e9e5e51c61f034b0f761c6fa16dadbb854b2cc0c7efefe6308e9e",
+        "width": 1206,
+        "height": 2622,
+        "root_viewed": true,
+        "visual_scope": "Existing header/form only; no new wrong/unknown/image/manual or directnav proof"
+      },
+      {
+        "test": "testIdentificationSavePresentationPolish",
+        "mode": "identification",
+        "locale": "pl",
+        "path": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/nov25-identification-b1-old4-03/attachments/39D63091-4A88-4075-8782-381D009CB6F3.png",
+        "sha256": "880e2ec44ed18e5aaa013646dae91c2c86be6aa8d67c98de958f398b560f5bc4",
+        "width": 1206,
+        "height": 2622,
+        "root_viewed": true,
+        "visual_scope": "Existing header/form only; no new wrong/unknown/image/manual or directnav proof"
+      }
+    ],
+    "frozen_review_check": false,
+    "scope": "Supplementary unchanged four header/save-form fixture methods; Root viewed four PNG"
+  },
+  "fingerprint_bridge": {
+    "status": "PASS",
+    "checks_review_qa_fingerprint": "0cc33ffc11731723c24881ff7533a61a558ac62ce76d7cd8111c755263546397",
+    "old4_fingerprint": "3831dc549449d64faed34b206639936cd19b7803a1d59755abf1cc31bf5fc29e",
+    "changed_paths_only_controller_publication": [
+      "docs/handoff_status.md",
+      "docs/validation/automation/tasks/nov25-identification-b1-lifetime.md"
+    ],
+    "all_source_bytes_exact": true,
+    "source3_sha256": {
+      "ios/Plants/Features/Analysis/AnalysisFlowModel.swift": "cf8d42eaa7b6736316917333263ead72b17848ccfed6fb513949a817c30be368",
+      "ios/Plants/Features/Analysis/PreliminaryResultView.swift": "501f2771e6edcfd13a30a0505ef3a207a74bc07dd9a96b0fb175b1c62051f23e",
+      "ios/PlantsTests/CollectionWireTests.swift": "1d34b5a40cd0c5ec262f70ac484cf8465acb78123a937755d11b12e79a3ef390"
+    },
+    "final_global_fingerprint": "3b4fd4cdeb62d86378b11a1a4f5e44fa843ae99fc86e9dcba70c2241c5274cb9",
+    "final_diff_vs_checks_only_controller_docs": [
+      "docs/handoff_status.md",
+      "docs/validation/automation/tasks/nov25-identification-b1-lifetime.md"
+    ],
+    "final_source3_sha256": {
+      "ios/Plants/Features/Analysis/AnalysisFlowModel.swift": "cf8d42eaa7b6736316917333263ead72b17848ccfed6fb513949a817c30be368",
+      "ios/Plants/Features/Analysis/PreliminaryResultView.swift": "501f2771e6edcfd13a30a0505ef3a207a74bc07dd9a96b0fb175b1c62051f23e",
+      "ios/PlantsTests/CollectionWireTests.swift": "1d34b5a40cd0c5ec262f70ac484cf8465acb78123a937755d11b12e79a3ef390"
+    }
+  },
+  "history": [
+    {
+      "kind": "actual unitFAIL new Session fixture keyDecodingStrategy; source proof retained",
+      "raw": "/private/tmp/narat-identification-b1-20261125/docs/validation/automation/runs/q-ea1098e3eca2d42a2eb592a7/summary.json"
+    },
+    {
+      "kind": "prior source/checks/ReviewQA PASS but Root independently found real lifecycle gap, checkpoint unaccepted; repaired in new actual run",
+      "checkpoint": "8ddc2ffa5220843ce83cd5252cd91d3f1a5c17c3",
+      "finding": "/private/tmp/narat-nov25-identification-b1-prep/ROOT-lifecycle-finding.md"
+    }
+  ],
+  "limits": [
+    "New wrong/unknown/manual/image/longinfo/whole-result UIKit hierarchy/explicit identification resume ENPL rendered acceptance = ID-B2 afterC1/C2",
+    "Current manual/picker copy interim; Prelim uses default.shared media loader, not future C2 fixture loader",
+    "Old4 only existing fixture headers/save form, no actual Save/newproposal/directnav; DEBUG inner/outer Back preserved",
+    "Original owner photo absent; no fresh AI/live cloud/physical/quality claim"
+  ],
+  "next": "C1 plain catalogue acceptance; C2 thumbnails and analysis identity resume; B2 actual manual UI; final ordinary7",
+  "ordinary_live": false,
+  "physical": false,
+  "private_push": false,
+  "root_source3_landed_exact": true
+}

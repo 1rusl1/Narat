@@ -1,0 +1,47 @@
+{
+  "status": "PASS_EXACT_ROOT_SOURCE3_LANDING",
+  "root_base": "1bbde61bcec873ce8bd41953862c01d31f97d24a",
+  "private_commit": "ea5e45e085d188774ddea5048d532355e140b517",
+  "patch_sha256": "ad32098fa1a9e1f3321efafa53d037fdcc1d34bc961415dbc60662ce1ff641e2",
+  "files": [
+    {
+      "path": "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+      "base_blob": "e836de42a36cf9c2a66cedbdcf83fa1392d2f1f4",
+      "accepted_blob": "f38584a765626e09bbeeec7b67b07cb7f41245e6",
+      "base_sha256": "1e2f73f88ae2a0db4ffffa88234f11d465386a268d972be9d86a479abb4250b7",
+      "sha256": "cf8d42eaa7b6736316917333263ead72b17848ccfed6fb513949a817c30be368",
+      "bytes": 31496
+    },
+    {
+      "path": "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+      "base_blob": "93b3ac14aa5e92e0e021edbce343f4b3db7469aa",
+      "accepted_blob": "9a41db8ea1453e987cf5492e54634871346a1c6d",
+      "base_sha256": "5adc38f7b218daf6b0c2115735183ebbf09cfaf81085a017f9eca2ed548eb563",
+      "sha256": "501f2771e6edcfd13a30a0505ef3a207a74bc07dd9a96b0fb175b1c62051f23e",
+      "bytes": 36748
+    },
+    {
+      "path": "ios/PlantsTests/CollectionWireTests.swift",
+      "base_blob": "5254bfb22a40328796cbe454a99f6b33dbbcde9d",
+      "accepted_blob": "bd239524df14b60be6fc5589eef1f57b93d34d2c",
+      "base_sha256": "76e07b5f0dde4096114e6fea5dc421edf0edb4822438df432ee9901f43f04e7a",
+      "sha256": "1d34b5a40cd0c5ec262f70ac484cf8465acb78123a937755d11b12e79a3ef390",
+      "bytes": 976699
+    }
+  ],
+  "all_three_bytes_exact": true,
+  "old_root_wire_prefix_exact": true,
+  "user_preservation": {
+    "mode": "accepted-project-plus-original-user-delta",
+    "xcstrings": 2,
+    "original_user_delta_lines": 8,
+    "pbx_user_delta_preserved": true,
+    "accepted_clean_index": true,
+    "reverse_patch_recovers_accepted_clean_pbx": true
+  },
+  "source3_review_fingerprint": "0cc33ffc11731723c24881ff7533a61a558ac62ce76d7cd8111c755263546397",
+  "new_root_native_checks_run": false,
+  "prior_scoped_checks_validated_not_reexecuted": true,
+  "new_manual_rendered_and_live_verified": false,
+  "next": "C1 plain catalogue; C2 thumbnails+analysis resume; B2 actual manual UI; ordinary7"
+}

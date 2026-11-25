@@ -1,0 +1,22 @@
+# Accepted ID-B1 production/model+wire API — 2026-11-25
+
+Base Root 1bbde61bcec873ce8bd41953862c01d31f97d24a. Private final ea5e45e085d188774ddea5048d532355e140b517. Root imported exact source3 bytes; private WIP ancestry was not imported. Current API, no future C2 props invented.
+
+AnalysisFlowModel (all internal unless original public):
+- `selectedPhotoIdentification(expectedOwnerId: UUID) -> PhotoIdentificationSelection?`: immutable correctionSource, manualSpecies if present else original valid source; same original jobId/photoAssetId/ownerId, chosen taxon/slug. Requires exact source generation/request/flow/op/photo/result/current preliminary step.
+- `selectedIdentificationSpecies: PhotoIdentificationResult.Species?`: displayed manual/original published facts, consistent with confirmed input.
+- `confirmPhotoIdentification(expectedOwnerId: UUID)`: explicit scoped original/manual selection freeze, records chosen slug, invalidates correction ticket; does NOT create draft. Existing noarg Confirm remains original-candidate compatible for old callers/tests.
+- `confirmedPhotoIdentification` validates frozen confirmed input against the corresponding scoped/manual or old original path. No later correction after confirmation.
+- `selectManualSpecies(taxonId: UUID, locale: SupportedLocale, api: PlantsAPIClient, context: SyncSessionLease, ticket: IdentificationCorrectionTicket, expectedOwnerId: UUID, isCurrent: () -> Bool) async throws -> Bool`: exactly one public validated published-card GET after explicit picker UUID choice. Original source/ticket/owner/task + caller request/SDK/locale guards before/after, bound authority check including ABA before publication. Error retains original source/ticket for explicit retry. No extra analysis/upload/job/draft.
+- Existing beginManualCorrection/selectManualSpecies(card...)/cancelManualCorrection/manualPhotoIdentification and immutable ID-A source remain. Model unchanged in lifetime repair.
+
+PreliminaryResultView:
+- Existing init inputs unchanged. Real existing GuestCatalogueView.SpeciesPicker in sheet; no Root/Guest write/new callback interface. Captures connection object, original SDK snapshot, locale, source ticket, presentation+request UUID. `analysisLease(expected:)`, then Model scoped one-card GET. Cancel/dismiss only invalidates own matching ticket, not original analysis.
+- Published facts and real `PublishedPlantImageView` .hero only; example species image explicitly separate from original photo. Current loader default .shared; C2 connection-owned fixture/media injection is NOT connected here yet. No new care/AI facts/confidence threshold.
+- Explicit Confirm alone no draft. Later existing CatalogueSaveView/guestActions.save use chosen published species/taxon and original job/photo/owner; real GuestPhotoClaim wire has operation_id+identification_job_id+taxon_id ONLY (no fabricated photo_id field), originalphoto in durable journal. Permanent save retains existing samejob identity/selection lock.
+- Unknown has immediate manual choice; current generic manual button/picker copy is interim until B2 contextual ENPL copy.
+- `IdentificationResultLifetime` + `IdentificationResultLifetimeAnchor: UIViewRepresentable` (in same existing file): result and picker presence share presentation UUID; zero-size noninteractive UIKit didMoveToWindow/dismantle guards. Real result removal/window departure cancels own Task+matching model ticket; structural result dismantle always leaves even picker present. Old coordinator cannot cancel newer presentation; picker does not create a new result lifetime. Deterministic Coordinator unit is NOT actual sheet/hierarchy acceptance.
+
+Proof: fresh full538 Swift/535 XCTest0missing, actualRelease,149automation + high independent Review/QA read FULL source3 versusRoot1bb. Separate unchanged old4 result-save UI passed current loaded Runner SHA/UUID +4 boundPNGs. These are header/form fixtures, not new manual/image/wrong/unknown UI or actual save.
+
+ID-B2 OPEN: after accepted C1/C2 union, actual picker open/select/cancel and whole-result-heldGET removal with picker still open, deterministic scoped published images/manualB+placeholder, longinfo QG hierarchy/controls ENPL, contextual labels, explicit identification/manualB resume originaljob/photo/flow with no Edit new/forcedAI. Root current C2 owns selectedTaxon/analysisSaveIdentity resume fix. Original owner photo absent; no AI photo-quality/live/physical claim. T150 not closed.

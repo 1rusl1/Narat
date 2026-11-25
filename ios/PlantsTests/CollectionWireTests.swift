@@ -16342,3 +16342,385 @@ extension CollectionWireTests {
         XCTAssertEqual(disappearing.requests.count, 2)
     }
 }
+
+import Supabase
+
+@MainActor
+private final class IdentificationB1Service: AnalysisService {
+    let owner: UUID
+    let photo = UUID()
+    let job = UUID()
+    let unknown: Bool
+    private(set) var requests: [AnalysisServiceRequest] = []
+
+    init(owner: UUID, unknown: Bool) { self.owner = owner; self.unknown = unknown }
+
+    func analyze(_ request: AnalysisServiceRequest) async throws -> AnalysisServiceResult {
+        requests.append(request)
+        return .init(identification: .init(
+            jobId: job, catalogueReleaseId: UUID(),
+            species: unknown ? nil : .init(taxonId: UUID(), slug: "original_a", displayName: "Original A")
+        ), uploadedPhotoId: photo, photoOwnerId: owner)
+    }
+}
+
+private final class IdentificationB1Storage: AuthLocalStorage, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+    func store(key: String, value: Data) throws { lock.withLock { values[key] = value } }
+    func retrieve(key: String) throws -> Data? { lock.withLock { values[key] } }
+    func remove(key: String) throws { lock.withLock { values[key] = nil } }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    private func identificationB1Model(owner: UUID, unknown: Bool = false)
+        async throws -> (AnalysisFlowModel, IdentificationB1Service) {
+        let service = IdentificationB1Service(owner: owner, unknown: unknown)
+        let model = AnalysisFlowModel(service: service)
+        model.router.selectIntent(.care)
+        model.router.selectCareMethod(.scan)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 800)).pngData { context in
+            UIColor.systemGreen.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 600, height: 800))
+        }
+        model.selectPhotoData(image)
+        try await XCTUnwrap(model.submitAnalysis(locale: .en)).value
+        return (model, service)
+    }
+
+    private func identificationB1Card(_ taxon: UUID) throws -> String {
+        try syncJSON([
+            "plant_id": "published_b", "taxon_id": taxon.uuidString,
+            "display_name": "Published B", "scientific_name": "Scientific B",
+            "care_profile_available": false
+        ])
+    }
+
+    @MainActor
+    func testIdentificationB1SelectedConfirmationPreservesOriginalAndUnknownSource() async throws {
+        for unknown in [false, true] {
+            let owner = syncOwner, taxon = UUID()
+            let card = try identificationB1Card(taxon)
+            let transport = CatalogueTransport([.http(200, card), .http(200, card)])
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let lease = try await api.captureSyncContext(ownerId: owner)
+            let (model, service) = try await identificationB1Model(owner: owner, unknown: unknown)
+            let source = try XCTUnwrap(model.correctionSource)
+            let original = model.identificationResult
+            let cancelled = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            model.cancelManualCorrection(cancelled)
+            XCTAssertEqual(model.selectedPhotoIdentification(expectedOwnerId: owner)?.taxonId,
+                           original?.species?.taxonId)
+            let rejected = try await model.selectManualSpecies(
+                taxonId: taxon, locale: .en, api: api, context: lease,
+                ticket: cancelled, expectedOwnerId: owner, isCurrent: { true })
+            XCTAssertFalse(rejected)
+            for _ in 0..<2 {
+                let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+                let wrongOwner = try await model.selectManualSpecies(
+                    taxonId: taxon, locale: .en, api: api, context: lease,
+                    ticket: ticket, expectedOwnerId: UUID(), isCurrent: { true })
+                XCTAssertFalse(wrongOwner)
+                let selected = try await model.selectManualSpecies(
+                    taxonId: taxon, locale: .en, api: api, context: lease,
+                    ticket: ticket, expectedOwnerId: owner, isCurrent: { true })
+                XCTAssertTrue(selected)
+                let cancelAfterChoice = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+                model.cancelManualCorrection(cancelAfterChoice)
+                XCTAssertEqual(model.selectedPhotoIdentification(expectedOwnerId: owner)?.taxonId, taxon)
+                XCTAssertNil(model.confirmedPhotoIdentification)
+            }
+            model.confirmPhotoIdentification(expectedOwnerId: UUID())
+            XCTAssertNil(model.confirmedPhotoIdentification)
+            model.confirmPhotoIdentification(expectedOwnerId: owner)
+            let confirmed = try XCTUnwrap(model.confirmedPhotoIdentification)
+            XCTAssertEqual(confirmed, .init(jobId: source.result.jobId, photoAssetId: source.photoAssetId,
+                                           speciesSlug: "published_b", taxonId: taxon, ownerId: owner))
+            XCTAssertEqual(model.selectedIdentificationSpecies?.publishedFacts?.scientificName, "Scientific B")
+            XCTAssertNil(model.beginManualCorrection(expectedOwnerId: owner))
+            model.confirmPhotoIdentification()
+            XCTAssertEqual(model.confirmedPhotoIdentification, confirmed)
+            XCTAssertEqual(model.correctionSource, source)
+            XCTAssertEqual(model.identificationResult, original)
+            XCTAssertEqual(model.frozenRequest, source.request)
+            XCTAssertEqual(model.currentOperationId, source.request.operationId)
+            XCTAssertEqual(model.preparedPhoto, source.request.photo)
+            XCTAssertEqual(model.router.flowState.flowId, source.request.flowId)
+            XCTAssertEqual(model.router.flowState.currentStep, .preliminaryResult)
+            XCTAssertEqual(service.requests, [source.request])
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "GET"])
+            XCTAssertTrue(requests.allSatisfy { $0.url?.lastPathComponent == taxon.uuidString.lowercased() })
+            XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == nil })
+        }
+    }
+
+    @MainActor
+    func testIdentificationB1ScopedOriginalConfirmRejectsStaleIdentity() async throws {
+        let (model, service) = try await identificationB1Model(owner: syncOwner)
+        let source = try XCTUnwrap(model.correctionSource)
+        model.confirmPhotoIdentification(expectedOwnerId: syncOwner)
+        let confirmed = try XCTUnwrap(model.confirmedPhotoIdentification)
+        XCTAssertEqual(confirmed.taxonId, source.result.species?.taxonId)
+        XCTAssertEqual(confirmed.jobId, source.result.jobId)
+        XCTAssertEqual(confirmed.photoAssetId, source.photoAssetId)
+        XCTAssertNil(model.beginManualCorrection(expectedOwnerId: syncOwner))
+        model.currentOperationId = UUID()
+        XCTAssertNil(model.confirmedPhotoIdentification)
+        XCTAssertEqual(service.requests, [source.request])
+    }
+
+    @MainActor
+    func testIdentificationB1FailedReadRetainsSourceAndSameTicketCanRetry() async throws {
+        for invalidTaxon in [false, true] {
+            let taxon = UUID(), owner = syncOwner
+            let transport = CatalogueTransport([
+                .http(invalidTaxon ? 200 : 503, invalidTaxon ? try identificationB1Card(UUID()) : "{}"),
+                .http(200, try identificationB1Card(taxon))
+            ])
+            let api = client(transport)
+            await api.bindSyncSession(try profileSession())
+            let context = try await api.captureSyncContext(ownerId: owner)
+            let (model, service) = try await identificationB1Model(owner: owner)
+            let source = try XCTUnwrap(model.correctionSource)
+            let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            do {
+                _ = try await model.selectManualSpecies(
+                    taxonId: taxon, locale: .en, api: api, context: context, ticket: ticket,
+                    expectedOwnerId: owner, isCurrent: { true })
+                XCTFail("An unavailable or mismatched published card must fail")
+            } catch {}
+            XCTAssertNil(model.manualSpecies)
+            XCTAssertEqual(model.correctionSource, source)
+            XCTAssertEqual(model.selectedPhotoIdentification(expectedOwnerId: owner)?.taxonId,
+                           source.result.species?.taxonId)
+            let selected = try await model.selectManualSpecies(
+                taxonId: taxon, locale: .en, api: api, context: context, ticket: ticket,
+                expectedOwnerId: owner, isCurrent: { true })
+            XCTAssertTrue(selected)
+            XCTAssertEqual(service.requests, [source.request])
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET", "GET"])
+        }
+    }
+
+    @MainActor
+    func testIdentificationB1HeldSelectionRejectsCancellationABAAndDisplacement() async throws {
+        for mode in ["cancel", "aba", "flow", "photo", "service", "locale", "task", "ticket"] {
+            let owner = syncOwner, taxon = UUID()
+            let transport = CatalogueTransport([.held(200, try identificationB1Card(taxon))])
+            let api = client(transport)
+            let session = try profileSession()
+            await api.bindSyncSession(session)
+            let lease = try await api.captureSyncContext(ownerId: owner)
+            let (model, service) = try await identificationB1Model(owner: owner, unknown: true)
+            let source = try XCTUnwrap(model.correctionSource)
+            let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+            var current = true
+            let pending = Task { @MainActor in
+                do {
+                    return try await model.selectManualSpecies(
+                        taxonId: taxon, locale: .en, api: api, context: lease, ticket: ticket,
+                        expectedOwnerId: owner, isCurrent: { current })
+                } catch { return false }
+            }
+            await transport.waitForHeld()
+            switch mode {
+            case "cancel": model.cancelManualCorrection(ticket)
+            case "aba":
+                api.syncAuthority.bind(try profileSession(ownerId: otherSyncOwner))
+                api.syncAuthority.bind(session)
+            case "flow": model.router.flowState.flowId = UUID()
+            case "photo": _ = model.beginPhotoSelection()
+            case "service": model.installAnalysisService(nil)
+            case "locale": current = false
+            case "task": pending.cancel()
+            default: _ = model.beginManualCorrection(expectedOwnerId: owner)
+            }
+            await transport.releaseHeld()
+            let selected = await pending.value
+            XCTAssertFalse(selected, mode)
+            XCTAssertNil(model.manualSpecies, mode)
+            XCTAssertNil(model.confirmedPhotoIdentification, mode)
+            XCTAssertEqual(service.requests, [source.request], mode)
+            let requests = await transport.capturedRequests()
+            XCTAssertEqual(requests.map(\.httpMethod), ["GET"], mode)
+        }
+    }
+
+    @MainActor
+    func testIdentificationB1ActualGuestSaveJournalsOriginalPhotoAndRetriesSelectedDraft() async throws {
+        let owner = syncOwner, taxon = UUID(), installation = UUID(), draft = UUID()
+        let transport = CatalogueTransport([
+            .http(200, try identificationB1Card(taxon)),
+            .http(200, try syncJSON(["installation_id": installation.uuidString])),
+            .network,
+            .http(200, try syncJSON(["installation_id": installation.uuidString])),
+            .http(201, try syncJSON(["draft_id": draft.uuidString, "expires_at": syncUntil]))
+        ])
+        let native = try profileSession(ownerId: owner, claims: ["sub": owner.uuidString, "is_anonymous": true])
+        let storage = IdentificationB1Storage()
+        let sessionJSON = try syncJSON([
+            "access_token": native.accessToken, "token_type": "bearer", "expires_in": 3600,
+            "expires_at": Date().addingTimeInterval(3600).timeIntervalSince1970,
+            "refresh_token": "fixture-b1-refresh",
+            "user": ["id": owner.uuidString, "aud": "authenticated", "role": "authenticated",
+                     "app_metadata": [:], "user_metadata": [:], "is_anonymous": true,
+                     "created_at": "2026-11-01T00:00:00Z", "updated_at": "2026-11-01T00:00:00Z"]
+        ])
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let storedSession = try decoder.decode(Session.self, from: Data(sessionJSON.utf8))
+        try storage.store(key: "b1-session", value: JSONEncoder().encode(storedSession))
+        let configuration = try NativeAuthConfiguration(values: [
+            "NaratSupabaseURL": "https://example.invalid", "NaratSupabasePublishableKey": "fixture-public-key"
+        ])
+        let sdk = SupabaseClient(
+            supabaseURL: configuration.supabaseURL, supabaseKey: configuration.supabasePublishableKey,
+            options: .init(auth: .init(storage: storage, storageKey: "b1-session",
+                                      autoRefreshToken: false, emitLocalSessionAsInitialSession: true)))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let suite = "identification-b1." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let connection = CatalogueConnection(
+            client: sdk, configuration: configuration,
+            store: LocalStore(modelContainer: try diskContainer(directory.appendingPathComponent("b1.sqlite"))),
+            transport: transport, clientLocale: "en", resumeDefaults: defaults)
+        let expected = try await connection.sessionSnapshot()
+        XCTAssertTrue(expected.isAnonymous)
+        let api = try XCTUnwrap(connection.apiClient)
+        let lease = try await connection.analysisLease(expected: expected)
+        let (model, service) = try await identificationB1Model(owner: owner)
+        let source = try XCTUnwrap(model.correctionSource)
+        let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+        let selected = try await model.selectManualSpecies(
+            taxonId: taxon, locale: .en, api: api, context: lease, ticket: ticket,
+            expectedOwnerId: owner, isCurrent: { connection.snapshot == expected })
+        XCTAssertTrue(selected)
+        model.confirmPhotoIdentification(expectedOwnerId: owner)
+        let selection = try XCTUnwrap(model.confirmedPhotoIdentification)
+        let beforeSave = await transport.capturedRequests()
+        XCTAssertEqual(beforeSave.map(\.httpMethod), ["GET"])
+        XCTAssertNil(connection.guestPhotoClaimData())
+        let claim = GuestPhotoClaim(connection: connection, credential: "fixture-b1-installation")
+        try await claim.register(expected)
+        let failed = await claim.createDraft(selection)
+        XCTAssertEqual(failed, .failed)
+        let data = try XCTUnwrap(connection.guestPhotoClaimData())
+        let journal = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        for (key, value) in ["guestOwner": owner, "photoId": source.photoAssetId,
+                             "jobId": source.result.jobId, "taxonId": taxon] {
+            XCTAssertEqual((journal[key] as? String).flatMap(UUID.init(uuidString:)), value)
+        }
+        let resumed = GuestPhotoClaim(connection: connection, credential: "fixture-b1-installation")
+        try await resumed.register(expected)
+        let ready = await resumed.resumeDraft()
+        XCTAssertEqual(ready, .ready)
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map { $0.url?.lastPathComponent },
+                       [taxon.uuidString.lowercased(), "register", "drafts", "register", "drafts"])
+        guard requests.count == 5 else { return }
+        let body = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(requests[2].httpBody))
+        let draftOperation = try XCTUnwrap((journal["draftOperationId"] as? String).flatMap(UUID.init(uuidString:)))
+        XCTAssertEqual(body, ["operation_id": draftOperation.uuidString.lowercased(),
+                              "identification_job_id": source.result.jobId.uuidString.lowercased(),
+                              "taxon_id": taxon.uuidString.lowercased()])
+        XCTAssertEqual(requests[2].httpBody, requests[4].httpBody)
+        let durable = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: XCTUnwrap(connection.guestPhotoClaimData())) as? [String: Any])
+        for key in ["guestOwner", "photoId", "jobId", "taxonId", "draftOperationId",
+                    "prepareOperationId", "commitOperationId"] {
+            XCTAssertEqual(journal[key] as? String, durable[key] as? String)
+        }
+        XCTAssertEqual(model.correctionSource, source)
+        XCTAssertEqual(model.frozenRequest, source.request)
+        XCTAssertEqual(model.currentOperationId, source.request.operationId)
+        XCTAssertEqual(model.preparedPhoto, source.request.photo)
+        XCTAssertEqual(service.requests, [source.request])
+    }
+}
+
+extension CollectionWireTests {
+    @MainActor
+    func testIdentificationB1ResultLifetimeCancelsHeldReadAndKeepsPickerAlive() async throws {
+        let owner = syncOwner, taxon = UUID()
+        let card = try identificationB1Card(taxon)
+        let transport = CatalogueTransport([.held(200, card), .held(200, card)])
+        let api = client(transport)
+        await api.bindSyncSession(try profileSession())
+        let lease = try await api.captureSyncContext(ownerId: owner)
+        let (model, service) = try await identificationB1Model(owner: owner, unknown: true)
+        let source = try XCTUnwrap(model.correctionSource)
+        let lifetime = IdentificationResultLifetime()
+        let anchor = IdentificationResultLifetimeAnchor(lifetime: lifetime)
+        let departed = anchor.makeCoordinator()
+        departed.setVisible(true)
+        let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+        XCTAssertTrue(lifetime.own(ticket, model: model, presentation: departed.presentation))
+        let pending = Task { @MainActor in
+            _ = try? await model.selectManualSpecies(
+                taxonId: taxon, locale: .en, api: api, context: lease, ticket: ticket,
+                expectedOwnerId: owner, isCurrent: { lifetime.isCurrent(departed.presentation) })
+        }
+        lifetime.task = pending
+        await transport.waitForHeld()
+        departed.setVisible(false) // Actual retained-host window departure callback.
+        XCTAssertTrue(pending.isCancelled)
+        XCTAssertFalse(lifetime.isCurrent(departed.presentation))
+        await transport.releaseHeld()
+        await pending.value
+        XCTAssertNil(model.manualSpecies)
+        // Also prove matching-ticket invalidation independently of Task cancellation.
+        let retried = try await model.selectManualSpecies(
+            taxonId: taxon, locale: .en, api: api, context: lease, ticket: ticket,
+            expectedOwnerId: owner, isCurrent: { true })
+        XCTAssertFalse(retried)
+        let afterLeave = await transport.capturedRequests()
+        XCTAssertEqual(afterLeave.count, 1)
+
+        let current = anchor.makeCoordinator()
+        current.setVisible(true)
+        let picker = IdentificationResultLifetimeAnchor(
+            lifetime: lifetime, presentation: current.presentation).makeCoordinator()
+        picker.setVisible(true)
+        current.setVisible(false) // Covering the result with its sheet preserves presence.
+        let newTicket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: owner))
+        XCTAssertTrue(lifetime.own(newTicket, model: model, presentation: current.presentation))
+        // Picker presentation retains the mounted anchor and its lifetime.
+        let choosing = Task { @MainActor in
+            _ = try? await model.selectManualSpecies(
+                taxonId: taxon, locale: .en, api: api, context: lease, ticket: newTicket,
+                expectedOwnerId: owner, isCurrent: { lifetime.isCurrent(current.presentation) })
+        }
+        lifetime.task = choosing
+        await transport.waitForHeld()
+        // A delayed departure from the old presentation cannot cancel this picker.
+        IdentificationResultLifetimeAnchor.dismantleUIView(UIView(), coordinator: departed)
+        XCTAssertTrue(lifetime.isCurrent(current.presentation))
+        XCTAssertFalse(choosing.isCancelled)
+        await transport.releaseHeld()
+        await choosing.value
+        XCTAssertEqual(model.manualSpecies?.taxonId, taxon)
+        XCTAssertNil(model.confirmedPhotoIdentification)
+        XCTAssertEqual(model.correctionSource, source)
+        XCTAssertEqual(model.frozenRequest, source.request)
+        XCTAssertEqual(model.preparedPhoto, source.request.photo)
+        XCTAssertEqual(service.requests, [source.request])
+        let requests = await transport.capturedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "GET"])
+        current.setVisible(true)
+        IdentificationResultLifetimeAnchor.dismantleUIView(UIView(), coordinator: picker)
+        XCTAssertTrue(lifetime.isCurrent(current.presentation))
+        IdentificationResultLifetimeAnchor.dismantleUIView(UIView(), coordinator: current)
+        XCTAssertNil(lifetime.presentation)
+        XCTAssertEqual(model.manualSpecies?.taxonId, taxon)
+    }
+}
