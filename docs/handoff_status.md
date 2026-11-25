@@ -7,7 +7,7 @@
 - Фактически заново PASS: шесть checks,544 Swift/541 XCTest0missing,149 automation, Release100,31с и8 неизменённых Deno production-path fixture-сценариев3,216с. Independent high whole2 Review66,203с/QA82,232с PASS0. Это local HTTP/server fixtures, не live unknown/фото/manual/UI. Старый runtime job не запрашивался: точная причина прежнего пользовательского фото и качество распознавания не установлены.
 - При переносе Root проверил source2/modes/patch/role/report hashes, сохранил disjoint C2/App9d/Prelim/PlantsUITests и исходные8строк PBX+2xcstrings; diff/userguard PASS. Проверки Swift/native на Root повторно не запускались. Приватная WIP-история не переносилась. Сбросов0; последний actual93% used/ordinary allowed.
 - B2 P0 и P1 готовы только как private compile-checkpoints: читаемые prompts, published suggestion card/manual labels/верхний direct Back, не итоговая UI-приёмка. Следующий шаг — merge нового Root W0 в isolated B2 после здорового checkpoint и rebind candidate_base/frozen7; F1a реальные fake HTTP upload/job через неизменённый PhotoAnalysisService → F1b meaningful integration → F2 real guest/auth/claim/host-removal → append UI → fresh combined whole7/high ReviewQA. Synthetic model-level unknown не заменяет consumed-unknown wire-путь. Далее ordinary7/архив/live. Родительские T046/T047/T150 и T175 остаются OPEN.
-- Git: публикация W0 выполняется после фиксации данного handoff; фактический результат будет записан отдельной строкой.
+- Git: source-коммит `aaea77f645d5b981053ca2a8e7cdee2fa1696cb6` создан и успешно отправлен в `origin/codex/development-throughput-audit` без force (push exit0). Подтверждение публикуется отдельным doc-only коммитом.
 
 ## C2: миниатюры и точное продолжение ID-save приняты — 25 ноября
 
