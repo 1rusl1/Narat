@@ -1,0 +1,65 @@
+{
+  "status": "ORDINARY7_SIMULATOR_ARCHIVE_DELIVERED_LIVE_BLOCKED_BY_MAC_LOCK",
+  "client_date": "2026-11-26",
+  "source_commit": "da50df4df8f046bd415384cb2b329f31258c094a",
+  "checked_B2_source": "e978bc8a281b8633a2f1b688e582dfcb31b13c94",
+  "ios_tree": "f4cd4d4b0ea2a0f7268c33bdb9dbdacfed406590",
+  "version": "0.1.0",
+  "build": "7",
+  "configuration": "ordinary Simulator Release, ad hoc signed",
+  "bundle": "app.narat.plants",
+  "archive": "/Users/ruslansabirov/Documents/ChatGPT/Plants/build/tester-feedback-0.1.0-7/Narat-0.1.0-7-Simulator.zip",
+  "archive_sha256": "f84563b746c4f3bdc901650513a8f0ce182d7dcf5d4bd0ed4b3d363e1b08b92c",
+  "archive_bytes": 42597996,
+  "binary_sha256": "d971a7fa4613882c5784292c3262093e0cd3b02e8a1e0caa00bb543da7ed2d00",
+  "binary_uuids": [
+    [
+      "A4A08E77-5435-32E0-AD58-40ADA23B498E",
+      "arm64"
+    ],
+    [
+      "D306C579-B1F8-3464-98F1-F7710C00783A",
+      "x86_64"
+    ]
+  ],
+  "host_signature_and_roundtrip_verified": true,
+  "dsym_uuid_match": true,
+  "system_and_display_app_names_narat": true,
+  "google_ios_server_ids_callback_and_public_backend_verified": true,
+  "apple_sign_in_enabled": false,
+  "baseline_DEBUG_markers_absent": 19,
+  "additional_DEBUG_markers_absent": 14,
+  "additional_marker_manifest_sha256": "8e669e6e6781cddf3a601bd7ddbbc4982eb726d7b31e5e92e909137e960b5be4",
+  "debug_dylib_or_xctest_present": false,
+  "peer_receipt": {
+    "path": "/private/tmp/narat-nov25-final7-prep/care-orchestrator-ordinary7-actual-artifact-peer.json",
+    "sha256": "7946b00e6ac9e1543fa828cf0408082b35f4742e047208e52daf589032200f1a",
+    "result": "PASS_WITH_LIMITS"
+  },
+  "delivery_directory_mode": "0700",
+  "delivery_git_ignored": true,
+  "delivery_top_level_allowlist_verified": true,
+  "credentials_files_copied": false,
+  "general_binary_secret_scan_performed": false,
+  "installation_or_launch_executed": false,
+  "new_source_live_photo_google_cold_tested": false,
+  "separate_tester_credentials_local_ready": true,
+  "separate_tester_ordinary_UI_tested": false,
+  "physical_iPhone_tested": false,
+  "iphone_installable_IPA": false,
+  "CUA_blocker": "Simulator app observation returned Mac locked; asynchronous manual unlock request pending. No security bypass/display-awake extension.",
+  "next_action": "Owner unlocks Mac; hold exclusive f813 lease and in-place install only owned59ED, verify baseline catalogue/direct entries, licensed photo→manual→Google→exactly1newcard→cold; separate tester login if accessible.",
+  "budget": {
+    "reset_performed_by_owner": 1,
+    "additional_resets_used_by_agent": 0,
+    "maximum_used_percent": 85,
+    "reserved_percent": 15
+  },
+  "limitations": [
+    "Simulator archive, not iPhone IPA.",
+    "New ordinary7 live auth/photo/cold and actual separate tester UI not observed.",
+    "Old ordinary6 Google catalogue live result remains separate historical proof.",
+    "Missing original user photo; licensed workflow sample not recognition accuracy eval.",
+    "No full-app visual, VoiceOver, XXXL or full PL care localization certification."
+  ]
+}
