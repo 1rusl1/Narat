@@ -8,6 +8,7 @@ import CryptoKit
 enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     case free2, paid4, cap3, server409, server503, lostresponse
     case publishedMedia, publishedIdentificationResume
+    case photoIdentificationWrong, photoIdentificationUnknown
     case guestProviderCancel, guestProviderSuccess, ackFailure
     case guestProvidersUnavailable, guestProviderFailureRetry
     case firstAidControl, trialReminder, plantDeletion, photoHistory, analysisHistory, plantRename, plantRenameRejected
@@ -26,8 +27,16 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
         self == .directEntryDiagnosisExhausted || self == .directEntryIdentificationExhausted
     }
 
+    var testsPhotoIdentification: Bool {
+        self == .photoIdentificationWrong || self == .photoIdentificationUnknown
+    }
+
+    var usesPublishedCatalogue: Bool {
+        self == .publishedMedia || self == .publishedIdentificationResume || testsPhotoIdentification
+    }
+
     var testsToday: Bool {
-        if testsDirectEntry { return true }
+        if testsDirectEntry || testsPhotoIdentification { return true }
         return switch self {
         case .todayMixed, .todayFuture, .todayNoSchedule, .todayEmpty, .todayFirstFailure, .todaySaved, .todaySDKOpening: true
         default: false
@@ -49,7 +58,7 @@ enum CatalogueUIFixtureScenario: String, Codable, Sendable {
     var testsPlantEdit: Bool { self == .plantRename || self == .plantRenameRejected || changesCareContext }
 
     var startsAnonymous: Bool {
-        self == .guestProviderCancel || self == .guestProviderSuccess
+        testsPhotoIdentification || self == .guestProviderCancel || self == .guestProviderSuccess
             || self == .guestProvidersUnavailable || self == .guestProviderFailureRetry
     }
     var initialCount: Int {
@@ -242,7 +251,7 @@ enum CatalogueUIFixtures {
                 context.connection = connect(try container(allowsSave: false))
                 _ = try await context.connection.sessionOwner()
             }
-            if scenario == .publishedMedia || scenario == .publishedIdentificationResume {
+            if scenario.usesPublishedCatalogue {
                 try await context.preparePublishedFixture(isNewResume: preparePublishedResume)
             }
             return context
@@ -385,6 +394,7 @@ final class CatalogueUIFixtureContext {
 
     /// Releases the connection without erasing SDK state, SQLite, receipts or scenario flags.
     func shutdown() {
+        server.cancelPhotoValidation()
         if let mediaProtocol {
             mediaHTTP?.invalidateAndCancel()
             CatalogueScopedMediaProtocol.release(mediaProtocol, server: server)
@@ -553,8 +563,9 @@ final class CatalogueFixtureServer: @unchecked Sendable {
         var authProof: AuthProof?
         var directEntryAccessReads: Int?
         var directEntryDeniedRequests: Int?
+        var photo: CataloguePhotoFixtureState? = nil
     }
-    struct Reply {
+    struct Reply: Sendable {
         let status: Int
         let data: Data
         var contentType = "application/json"
@@ -571,18 +582,22 @@ final class CatalogueFixtureServer: @unchecked Sendable {
 
     /// Actual fake identity entry only; availability and read predicates have no side effects.
     func recordProviderAttempt() throws {
-        let fail = try lock.withLock {
+        let outcome = try lock.withLock {
             var next = ledger
             var proof = next.authProof ?? AuthProof()
             guard proof.version == 1 else { throw CatalogueUIFixtureError.invalidStorage }
             proof.providerAttempts += 1
-            let fail = next.scenario == .guestProviderFailureRetry && proof.providerAttempts == 1
+            let photo = next.scenario.testsPhotoIdentification
+            let cancel = photo && proof.providerAttempts == 1
+            let fail = (next.scenario == .guestProviderFailureRetry && proof.providerAttempts == 1)
+                || (photo && proof.providerAttempts == 2)
             if fail { proof.providerFailures += 1 }
             next.authProof = proof
             try persist(next)
-            return fail
+            return (cancel, fail)
         }
-        if fail { throw NativeAuthFailure.providerFailed }
+        if outcome.0 { throw CancellationError() }
+        if outcome.1 { throw NativeAuthFailure.providerFailed }
     }
 
     func verifyDirectEntry() throws {
@@ -598,6 +613,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                   }) else { throw CatalogueUIFixtureError.invalidRequest }
         }
     }
+    private var photoValidation: CataloguePhotoValidationToken?
     private var capturedRequests: [URLRequest] = []
     var requests: [URLRequest] { lock.withLock { capturedRequests } }
 
@@ -954,7 +970,7 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                       request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
                       let locale = request.value(forHTTPHeaderField: "X-Client-Locale"),
                       ["pl", "en"].contains(locale) else { throw CatalogueUIFixtureError.invalidRequest }
-                if ledger.scenario == .publishedMedia || ledger.scenario == .publishedIdentificationResume {
+                if ledger.scenario.usesPublishedCatalogue {
                     return try publishedCatalogue(request, locale: locale)
                 }
                 let fern: [String: Any] = [
@@ -1006,6 +1022,8 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                     "items": Array(matches.dropFirst(offset).prefix(limit))
                 ]))
             }
+            if ledger.scenario.testsPhotoIdentification,
+               let reply = try photoRoute(request) { return reply }
             let caller = try owner(request)
             if method == "GET", url.path == "/functions/v1/care-overview" {
                 guard ledger.scenario.testsToday, caller == ledger.permanent, body.isEmpty,
@@ -1134,6 +1152,15 @@ final class CatalogueFixtureServer: @unchecked Sendable {
                         "revision": 1, "care_revision": 1,
                         "created_at": plant.timestamp
                      ]]
+                }
+                if ledger.scenario.testsPhotoIdentification, let photo = ledger.photo,
+                   let plantId = photo.plantId, let taxon = photo.selectedTaxon,
+                   let index = changes.firstIndex(where: { $0["id"] as? String == plantId.uuidString }),
+                   var data = changes[index]["data"] as? [String: Any] {
+                    data["main_photo_id"] = photo.photoId.uuidString
+                    data["taxon_id"] = taxon.uuidString
+                    data["display_name"] = CataloguePhotoFixture.name(taxon, locale: "en")
+                    changes[index]["data"] = data
                 }
                 if ledger.scenario == .collectionWateringMissingConditions,
                    let plant = plants.first(where: { $0.id == ledger.plants.first?.id }),
@@ -1961,21 +1988,581 @@ private final class CatalogueFixtureProtocol: URLProtocol, @unchecked Sendable {
                     let count = stream.read(&buffer, maxLength: buffer.count)
                     if count < 0 { throw stream.streamError ?? URLError(.cannotDecodeRawData) }
                     if count == 0 { break }
+                    if server.snapshot.scenario.testsPhotoIdentification,
+                       body.count + count > AnalysisPhotoInput.maxCloudBytes {
+                        throw URLError(.dataLengthExceedsMaximum)
+                    }
                     body.append(contentsOf: buffer.prefix(count))
                 }
                 captured.httpBody = body
             }
             let reply = try server.handle(captured)
+            let held = server.takePhotoValidation(captured)
+            let wasStopped = deliveryLock.withLock {
+                heldReply = held
+                return stopped
+            }
+            if wasStopped { held?.cancel() }
             guard let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: nil,
                                                 headerFields: ["Content-Type": reply.contentType, "Cache-Control": "private, no-store"]) else {
                 throw URLError(.badServerResponse)
             }
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: reply.data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch { client?.urlProtocol(self, didFailWithError: error) }
+            let deliver: @Sendable () -> Void = { [weak self] in
+                guard let self else { return }
+                self.deliveryLock.withLock {
+                    guard !self.stopped else { return }
+                    self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                    guard !self.stopped else { return }
+                    self.client?.urlProtocol(self, didLoad: reply.data)
+                    guard !self.stopped else { return }
+                    self.client?.urlProtocolDidFinishLoading(self)
+                }
+            }
+            if let held { held.attach(deliver) } else { deliver() }
+        } catch {
+            let held = deliveryLock.withLock { () -> CataloguePhotoValidationToken? in
+                if !stopped { client?.urlProtocol(self, didFailWithError: error) }
+                return heldReply
+            }
+            held?.cancel()
+        }
     }
-    override func stopLoading() {}
+    private let deliveryLock = NSRecursiveLock()
+    private var stopped = false
+    private var heldReply: CataloguePhotoValidationToken?
+    override func stopLoading() {
+        let held = deliveryLock.withLock {
+            stopped = true
+            return heldReply
+        }
+        held?.cancel()
+    }
+}
+
+// F1a: real SDK/service HTTP fixtures. This is not a replacement AnalysisService.
+enum CataloguePhotoFixture {
+    static let originalTaxon = CataloguePublishedFixture.taxon
+    static let correctedTaxon = UUID(uuidString: "a2000000-0000-4000-8000-000000000003")!
+    static let release = UUID(uuidString: "b2000000-0000-4000-8000-000000000001")!
+    static let expiry = "2099-01-08T12:00:00.000000Z"
+    static let correctedPNG = Data(base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGMQK9bBihiGlgQAqUctQVytyU8AAAAASUVORK5CYII="
+    )!
+
+    static func name(_ taxon: UUID, locale: String) -> String {
+        if taxon == originalTaxon { return locale == "pl" ? "Nefrolepis" : "Boston fern" }
+        if taxon == correctedTaxon { return locale == "pl" ? "Chamedora" : "Parlour palm" }
+        return "Published fixture species " + String(taxon.uuidString.suffix(12))
+    }
+
+    static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func description(locale: String) -> String {
+        if locale == "pl" {
+            return """
+                Ten opublikowany rekord testowy opisuje kształt i układ liści. Okaz ma widoczną główną łodygę oraz oddzielne obszary nowego przyrostu. Te szczegóły należą do rekordu katalogowego i nie stanowią diagnozy stanu sfotografowanej rośliny.
+
+                Dojrzałe liście mogą różnić się od rozwijających się liści rozmiarem, obrysem i kolorem. Przy porównywaniu okazu z materiałem referencyjnym należy obserwować kilka liści razem. Pojedynczy uszkodzony liść nie jest wystarczającym dowodem do określenia gatunku.
+
+                Ilustracja referencyjna jest syntetycznym studium kolorystycznym. W tym deterministycznym zestawie danych testowych demonstruje ładowanie obrazów i oznaczenie autorstwa. Nie jest fotografią botaniczną i nie może służyć jako dowód dokładności rozpoznawania.
+
+                Informacje katalogowe pozostają oddzielone od prywatnego zdjęcia przesłanego do rozpoznania. Zmiana wybranego gatunku zachowuje pierwotnie przesłane zdjęcie oraz jego zadanie analizy. Otwarcie tego opisu nie powoduje zlecenia dodatkowej analizy.
+
+                Ogólny wygląd zmienia się wraz z dojrzałością i warunkami wzrostu. Ten tekst dostarcza wyłącznie kontekstu opisowego dla długiego, przewijanego widoku szczegółów; nie zawiera spersonalizowanych porad, wniosków dotyczących toksyczności, leczenia, harmonogramu podlewania ani zaleceń.
+                """
+        }
+        return description
+    }
+
+    // Unique paragraphs exercise scrolling without repeating a common name.
+    static let description = """
+        This published fixture describes the shape and arrangement of the leaves. The specimen \
+        has a visible central stem and separate areas of new growth. These details belong to \
+        the catalogue record and do not diagnose the condition of the photographed plant.
+
+        Mature foliage can differ from emerging foliage in size, outline and colour. Observe \
+        several leaves together when comparing a specimen with a reference. A single damaged \
+        leaf is not sufficient evidence for a species decision.
+
+        The reference illustration is a synthetic colour study. It demonstrates image loading \
+        and attribution in this deterministic fixture. It is not a botanical photograph and \
+        must not be treated as evidence of identification accuracy.
+
+        Catalogue information remains separate from the private photograph submitted for \
+        identification. Correcting the selected species retains that original upload and its \
+        analysis job. No additional analysis is requested when this description is opened.
+
+        General appearance varies with maturity and growing conditions. This text supplies \
+        descriptive context for a long detail sheet only; it supplies no personalised advice, \
+        toxicity conclusion, treatment, watering schedule or recommendation.
+        """
+}
+
+/// Optional on old ledgers. Receipts contain only public IDs and hashes of canonical bodies.
+struct CataloguePhotoFixtureState: Codable, Sendable {
+    struct Receipt: Codable, Sendable {
+        let route: String
+        let owner: UUID
+        let bodySHA256: String
+        let status: Int
+        let data: Data
+    }
+    let installationId: UUID
+    let photoId: UUID
+    var uploadOperation: UUID?
+    var byteSize: Int?
+    var jpegSHA256: String?
+    var ready = false
+    var jobId: UUID?
+    var jobOperation: UUID?
+    var flowId: UUID?
+    var succeeded = false
+    var selectedTaxon: UUID?
+    var draftId: UUID?
+    var claimId: UUID?
+    var destination: UUID?
+    var plantId: UUID?
+    var receipts: [String: Receipt] = [:]
+    var requests: [String: Int] = [:]
+}
+
+struct CataloguePhotoFixtureProof: Sendable {
+    let namespace: String
+    let sourceOwner: UUID
+    let state: CataloguePhotoFixtureState?
+    let providerAttempts: Int
+    let providerFailures: Int
+}
+
+struct CataloguePhotoValidationProof: Sendable, Equatable {
+    let namespace: String
+    let requestId: UUID
+    let owner: UUID
+    let taxon: UUID
+    let locale: String
+    var arrivals = 0
+    var cancellations = 0
+    var releases = 0
+}
+
+/// One held reply, owned by one server and one URLProtocol instance, never a global queue.
+fileprivate final class CataloguePhotoValidationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: CataloguePhotoValidationProof
+    private var callback: (@Sendable () -> Void)?
+    init(_ value: CataloguePhotoValidationProof) { self.value = value }
+    var proof: CataloguePhotoValidationProof { lock.withLock { value } }
+    var finished: Bool { lock.withLock { value.cancellations + value.releases > 0 } }
+
+    func take(_ request: URLRequest) -> Bool {
+        lock.withLock {
+            guard value.arrivals == 0, value.cancellations == 0,
+                  request.httpMethod == "GET", request.httpBody?.isEmpty != false,
+                  request.url?.absoluteString == "https://" + value.namespace
+                    + ".invalid/functions/v1/plants-api/catalogue/" + value.taxon.uuidString.lowercased(),
+                  request.value(forHTTPHeaderField: "X-Client-Locale") == value.locale,
+                  request.value(forHTTPHeaderField: "Authorization") == nil,
+                  request.value(forHTTPHeaderField: "X-Installation-Credential") == nil else { return false }
+            value.arrivals = 1
+            return true
+        }
+    }
+
+    func attach(_ delivery: @escaping @Sendable () -> Void) {
+        let immediate = lock.withLock {
+            guard value.cancellations == 0 else { return false }
+            if value.releases == 1 { return true }
+            callback = delivery
+            return false
+        }
+        if immediate { delivery() }
+    }
+
+    func release() {
+        // Detach under lock; URLProtocol serializes client delivery with stopLoading.
+        let delivery = lock.withLock { () -> (@Sendable () -> Void)? in
+            guard value.cancellations == 0, value.releases == 0 else { return nil }
+            value.releases = 1
+            let pending = callback
+            callback = nil
+            return pending
+        }
+        delivery?()
+    }
+
+    func cancel() {
+        lock.withLock {
+            guard value.cancellations == 0, value.releases == 0 else { return }
+            value.cancellations = 1
+            callback = nil
+        }
+    }
+}
+
+extension CatalogueUIFixtureContext {
+    var testsPhotoIdentification: Bool { server.snapshot.scenario.testsPhotoIdentification }
+
+    var photoInstallationCredential: String {
+        get throws {
+            guard testsPhotoIdentification else { throw CatalogueUIFixtureError.invalidRequest }
+            return server.photoCredential
+        }
+    }
+
+    /// Synthetic input for the real model.selectPhotoData path, separate from public C2 PNG.
+    var photoSelectionData: Data {
+        get throws {
+            guard testsPhotoIdentification else { throw CatalogueUIFixtureError.invalidRequest }
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24), format: format)
+            let image = renderer.image { context in
+                UIColor(red: 0.15, green: 0.45, blue: 0.25, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 24, height: 24))
+                UIColor.white.setFill()
+                context.fill(CGRect(x: 5, y: 3, width: 3, height: 17))
+            }
+            guard let data = image.jpegData(compressionQuality: 0.9) else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            return data
+        }
+    }
+
+    var photoProof: CataloguePhotoFixtureProof { server.photoProof }
+
+    /// Call after picker preview, immediately before invoking Model validation.
+    /// Public HTTP has no owner headers: the current local SDK epoch supplies the owner proof.
+    func armPhotoValidation(
+        taxonId: UUID, locale: SupportedLocale, requestId: UUID, expected: CatalogueSDKSnapshot
+    ) throws {
+        guard testsPhotoIdentification, let connection, connection.snapshot == expected,
+              expected.isAnonymous, expected.session.userId == server.snapshot.guest else {
+            throw CatalogueUIFixtureError.invalidRequest
+        }
+        try server.armPhotoValidation(taxon: taxonId, locale: locale.rawValue,
+                                      requestId: requestId, owner: expected.session.userId)
+    }
+
+    func photoValidationProof(requestId: UUID) throws -> CataloguePhotoValidationProof {
+        try server.photoValidationProof(requestId: requestId)
+    }
+
+    func releasePhotoValidation(requestId: UUID) throws {
+        try server.releasePhotoValidation(requestId: requestId)
+    }
+}
+
+extension CatalogueFixtureServer {
+    fileprivate var photoCredential: String { "fixture-photo-" + namespace }
+    private var privatePhotoFile: URL {
+        file.deletingLastPathComponent().appendingPathComponent("private-original-upload.jpg")
+    }
+
+    var photoProof: CataloguePhotoFixtureProof {
+        lock.withLock {
+            CataloguePhotoFixtureProof(namespace: namespace, sourceOwner: ledger.guest,
+                                       state: ledger.photo,
+                                       providerAttempts: ledger.authProof?.providerAttempts ?? 0,
+                                       providerFailures: ledger.authProof?.providerFailures ?? 0)
+        }
+    }
+
+    fileprivate func armPhotoValidation(taxon: UUID, locale: String, requestId: UUID, owner: UUID) throws {
+        try lock.withLock {
+            let path = "/functions/v1/plants-api/catalogue/" + taxon.uuidString.lowercased()
+            guard ledger.scenario.testsPhotoIdentification, owner == ledger.guest,
+                  ledger.photo?.succeeded == true, ["en", "pl"].contains(locale),
+                  [CataloguePhotoFixture.originalTaxon, CataloguePhotoFixture.correctedTaxon].contains(taxon),
+                  photoValidation == nil || photoValidation?.finished == true,
+                  photoValidation?.proof.requestId != requestId,
+                  capturedRequests.contains(where: {
+                      $0.httpMethod == "GET" && $0.url?.path == path && $0.url?.query == nil
+                          && $0.value(forHTTPHeaderField: "X-Client-Locale") == locale
+                  }) else { throw CatalogueUIFixtureError.invalidRequest }
+            photoValidation = CataloguePhotoValidationToken(.init(
+                namespace: namespace, requestId: requestId, owner: owner, taxon: taxon, locale: locale))
+        }
+    }
+
+    fileprivate func validationToken(requestId: UUID) throws -> CataloguePhotoValidationToken {
+        try lock.withLock {
+            guard let token = photoValidation, token.proof.requestId == requestId else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            return token
+        }
+    }
+
+    fileprivate func photoValidationProof(requestId: UUID) throws -> CataloguePhotoValidationProof {
+        try validationToken(requestId: requestId).proof
+    }
+
+    fileprivate func releasePhotoValidation(requestId: UUID) throws {
+        let token = try validationToken(requestId: requestId)
+        guard token.proof.arrivals == 1 else { throw CatalogueUIFixtureError.invalidRequest }
+        token.release()
+    }
+
+    fileprivate func cancelPhotoValidation() {
+        let token = lock.withLock { photoValidation }
+        token?.cancel()
+    }
+
+    fileprivate func takePhotoValidation(_ request: URLRequest) -> CataloguePhotoValidationToken? {
+        lock.withLock {
+            guard let token = photoValidation, token.take(request) else { return nil }
+            return token
+        }
+    }
+
+    // Called under handle's existing lock; no network, second server, copied service or fake UI.
+    private func photoRoute(_ request: URLRequest) throws -> Reply? {
+        guard let url = request.url else { throw CatalogueUIFixtureError.invalidRequest }
+        let root = "/functions/v1/plants-api/"
+        guard url.path.hasPrefix(root) else { return nil }
+        let route = String(url.path.dropFirst(root.count))
+        let posts = ["media/upload-ticket", "analysis/jobs", "installations/register",
+                     "installations/bind", "drafts", "claims/prepare", "claims/commit"]
+        let privatePhoto = route.hasPrefix("plants/") && route.hasSuffix("/photo")
+        guard posts.contains(route) || route.hasPrefix("media/uploads/")
+                || route.hasPrefix("analysis/jobs/") || privatePhoto || route == "analysis/access" else { return nil }
+        guard url.query == nil, let caller = try? owner(request) else { return try error(403, "FORBIDDEN") }
+        let body = request.httpBody ?? Data()
+        if privatePhoto {
+            guard request.httpMethod == "GET", body.isEmpty,
+                  request.value(forHTTPHeaderField: "X-Installation-Credential") == nil,
+                  let state = ledger.photo, state.destination == caller, state.ready,
+                  let id = state.plantId, route == "plants/" + id.uuidString.lowercased() + "/photo",
+                  ledger.plants.contains(where: { $0.id == id && $0.owner == caller }) else {
+                return try error(404, "NOT_FOUND")
+            }
+            let original = try Data(contentsOf: privatePhotoFile)
+            guard original.count == state.byteSize,
+                  CataloguePhotoFixture.digest(original) == state.jpegSHA256 else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            return Reply(status: 200, data: original, contentType: "image/jpeg")
+        }
+        guard request.value(forHTTPHeaderField: "X-Installation-Credential") == photoCredential,
+              ["en", "pl"].contains(request.value(forHTTPHeaderField: "X-Client-Locale") ?? "") else {
+            return try error(403, "FORBIDDEN")
+        }
+        // B2_PHOTO_ACCESS_BEGIN
+        if route == "analysis/access" {
+            guard request.httpMethod == "GET", body.isEmpty,
+                  caller == ledger.guest, let state = ledger.photo else {
+                return try error(403, "FORBIDDEN")
+            }
+            let null = NSNull()
+            let remaining = state.succeeded || state.jobId != nil ? 0 : 1
+            let pointer: Any = state.succeeded ? null : (state.jobId.map { $0.uuidString as Any } ?? null)
+            let reason: Any = state.succeeded ? "starter_exhausted" as Any
+                : state.jobId != nil ? "starter_in_progress" as Any : null
+            return Reply(status: 200, data: try json([
+                "owner_id": caller.uuidString, "is_guest": true,
+                "starter": [
+                    "identification_remaining": remaining, "diagnosis_remaining": 1,
+                    "identification_in_progress_job_id": pointer,
+                    "diagnosis_in_progress_job_id": null,
+                    "first_starter_success_at": state.succeeded ? Self.time(ledger.tick) as Any : null
+                ],
+                "monthly": [
+                    "quota_kind": null, "registered_at": null, "period_start": null,
+                    "period_end": null, "limit": null, "consumed": null, "reserved": null,
+                    "remaining": null, "status": "not_applicable"
+                ],
+                "modes": [
+                    "identification": [
+                        "mode": "identification", "allowed": remaining == 1,
+                        "activeQuotaKind": "starter_identification", "remaining": remaining,
+                        "limit": 1, "inProgressJobId": pointer, "nextResetAt": null, "reason": reason
+                    ],
+                    "diagnosis": [
+                        "mode": "diagnosis", "allowed": true,
+                        "activeQuotaKind": "starter_diagnosis", "remaining": 1,
+                        "limit": 1, "inProgressJobId": null, "nextResetAt": null, "reason": null
+                    ]
+                ]
+            ]))
+        }
+        // B2_PHOTO_ACCESS_END
+        var state = ledger.photo ?? CataloguePhotoFixtureState(installationId: UUID(), photoId: UUID())
+        let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        let canonical = try json(object)
+        let bodyHash = CataloguePhotoFixture.digest(canonical)
+        func id(_ key: String) -> UUID? { (object[key] as? String).flatMap(UUID.init(uuidString:)) }
+        func keys(_ expected: [String]) -> Bool { Set(object.keys) == Set(expected) }
+        func finish(_ status: Int, _ payload: [String: Any], operation: UUID? = nil) throws -> Reply {
+            let data = try json(payload)
+            state.requests[route, default: 0] += 1
+            if let operation {
+                state.receipts[operation.uuidString] = .init(
+                    route: route, owner: caller, bodySHA256: bodyHash, status: status, data: data)
+            }
+            var next = ledger
+            next.photo = state
+            try persist(next)
+            return Reply(status: status, data: data)
+        }
+        func replay(_ operation: UUID) throws -> Reply? {
+            guard let receipt = state.receipts[operation.uuidString] else { return nil }
+            guard receipt.route == route, receipt.owner == caller, receipt.bodySHA256 == bodyHash else {
+                return try error(409, "CONFLICT")
+            }
+            state.requests[route, default: 0] += 1
+            var next = ledger
+            next.photo = state
+            try persist(next)
+            return Reply(status: receipt.status, data: receipt.data)
+        }
+        func jobPayload(completed: Bool) -> [String: Any] {
+            let unknown = ledger.scenario == .photoIdentificationUnknown
+            let result: [String: Any] = [
+                "schema_version": "1.0", "job_id": state.jobId!.uuidString,
+                "mode": "identification", "catalogue_release_id": CataloguePhotoFixture.release.uuidString,
+                "identification_status": unknown ? "unknown" : "identified",
+                "plant_id": unknown ? NSNull() : CataloguePhotoFixture.originalTaxon.uuidString as Any,
+                "plant_display_name": unknown ? NSNull()
+                    : CataloguePhotoFixture.name(CataloguePhotoFixture.originalTaxon,
+                                                 locale: request.value(forHTTPHeaderField: "X-Client-Locale")!) as Any
+            ]
+            return [
+                "job_id": state.jobId!.uuidString, "mode": "identification",
+                "status": completed ? "succeeded" : "queued", "quota_kind": "starter_identification",
+                "quota_state": completed ? "consumed" : "reserved", "target_plant_id": NSNull(),
+                "photo_asset_id": state.photoId.uuidString, "result": completed ? result as Any : NSNull(),
+                "error_code": NSNull(), "error_message": NSNull()
+            ]
+        }
+        if route.hasPrefix("media/uploads/") {
+            guard request.httpMethod == "PUT", caller == ledger.guest, ledger.photo != nil,
+                  route == "media/uploads/" + state.photoId.uuidString.lowercased(),
+                  state.uploadOperation != nil, request.value(forHTTPHeaderField: "Content-Type") == "image/jpeg",
+                  body.count == state.byteSize, CataloguePhotoFixture.digest(body) == state.jpegSHA256,
+                  body.starts(with: [0xff, 0xd8]), body.suffix(2) == Data([0xff, 0xd9]),
+                  body.count <= AnalysisPhotoInput.maxCloudBytes else { return try error(409, "CONFLICT") }
+            try body.write(to: privatePhotoFile, options: .atomic)
+            state.ready = true
+            return try finish(200, ["photo_asset_id": state.photoId.uuidString, "state": "ready"])
+        }
+        if route.hasPrefix("analysis/jobs/") {
+            guard request.httpMethod == "GET", caller == ledger.guest, body.isEmpty, state.ready,
+                  let job = state.jobId, route == "analysis/jobs/" + job.uuidString.lowercased() else {
+                return try error(404, "NOT_FOUND")
+            }
+            state.succeeded = true
+            return try finish(200, jobPayload(completed: true))
+        }
+        guard request.httpMethod == "POST",
+              request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("application/json") == true,
+              (try? JSONSerialization.jsonObject(with: body)) is [String: Any] else {
+            return try error(400, "VALIDATION_ERROR")
+        }
+        if route == "installations/register" {
+            guard caller == ledger.guest, keys([]) else { return try error(403, "FORBIDDEN") }
+            return try finish(200, ["installation_id": state.installationId.uuidString])
+        }
+        guard ledger.photo != nil else { return try error(403, "FORBIDDEN") }
+        if route == "installations/bind" {
+            guard caller == ledger.permanent, keys(["installation_id"]),
+                  id("installation_id") == state.installationId,
+                  state.destination == nil || state.destination == caller else { return try error(403, "FORBIDDEN") }
+            state.destination = caller
+            return try finish(200, ["installation_id": state.installationId.uuidString,
+                                    "owner_id": caller.uuidString, "bound": true])
+        }
+        guard let operation = id("operation_id") else { return try error(400, "VALIDATION_ERROR") }
+        switch route {
+        case "media/upload-ticket":
+            guard caller == ledger.guest, keys(["operation_id", "mime_type", "byte_size", "content_sha256"]),
+                  object["mime_type"] as? String == "image/jpeg",
+                  let number = object["byte_size"] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  let size = object["byte_size"] as? Int, (1...AnalysisPhotoInput.maxCloudBytes).contains(size),
+                  let sha = object["content_sha256"] as? String, sha.count == 64,
+                  sha.allSatisfy({ "0123456789abcdef".contains($0) }) else {
+                return try error(400, "VALIDATION_ERROR")
+            }
+            if let reply = try replay(operation) { return reply }
+            guard state.uploadOperation == nil else { return try error(409, "CONFLICT") }
+            state.uploadOperation = operation
+            state.byteSize = size
+            state.jpegSHA256 = sha
+            return try finish(200, [
+                "photo_asset_id": state.photoId.uuidString, "storage_bucket": "fixture-private",
+                "storage_path": namespace + "/" + state.photoId.uuidString.lowercased() + ".jpg",
+                "signed_upload_url": "https://" + namespace + ".invalid" + root
+                    + "media/uploads/" + state.photoId.uuidString.lowercased(),
+                "expires_in_seconds": 60, "max_byte_size": AnalysisPhotoInput.maxCloudBytes
+            ], operation: operation)
+        case "analysis/jobs":
+            guard caller == ledger.guest, keys(["operation_id", "mode", "photo_asset_id", "flow_id"]),
+                  object["mode"] as? String == "identification", id("photo_asset_id") == state.photoId,
+                  let flow = id("flow_id"), state.ready else { return try error(400, "VALIDATION_ERROR") }
+            if let reply = try replay(operation) { return reply }
+            guard state.jobId == nil else { return try error(409, "CONFLICT") }
+            state.jobOperation = operation
+            state.flowId = flow
+            state.jobId = UUID()
+            return try finish(202, jobPayload(completed: false), operation: operation)
+        case "drafts":
+            guard caller == ledger.guest, keys(["operation_id", "identification_job_id", "taxon_id"]),
+                  id("identification_job_id") == state.jobId, state.succeeded, state.ready,
+                  id("taxon_id") == CataloguePhotoFixture.correctedTaxon else {
+                return try error(400, "VALIDATION_ERROR")
+            }
+            if let reply = try replay(operation) { return reply }
+            guard state.draftId == nil else { return try error(409, "CONFLICT") }
+            state.selectedTaxon = CataloguePhotoFixture.correctedTaxon
+            state.draftId = UUID()
+            return try finish(201, ["draft_id": state.draftId!.uuidString,
+                                    "expires_at": CataloguePhotoFixture.expiry], operation: operation)
+        case "claims/prepare":
+            guard caller == ledger.permanent, state.destination == caller,
+                  keys(["operation_id", "draft_id"]), let draft = state.draftId,
+                  id("draft_id") == draft, state.succeeded, state.ready else { return try error(403, "FORBIDDEN") }
+            if let reply = try replay(operation) { return reply }
+            guard state.claimId == nil else { return try error(409, "CONFLICT") }
+            state.claimId = UUID()
+            return try finish(200, ["claim_id": state.claimId!.uuidString, "draft_id": draft.uuidString,
+                                    "proof_expires_at": CataloguePhotoFixture.expiry], operation: operation)
+        case "claims/commit":
+            guard caller == ledger.permanent, state.destination == caller,
+                  keys(["operation_id", "claim_id"]), let claim = state.claimId,
+                  id("claim_id") == claim, state.ready, state.succeeded,
+                  state.selectedTaxon == CataloguePhotoFixture.correctedTaxon else { return try error(403, "FORBIDDEN") }
+            if let reply = try replay(operation) { return reply }
+            guard state.plantId == nil, ledger.plants.filter({ $0.owner == caller }).count < 3 else {
+                return try error(409, "CONFLICT")
+            }
+            let original = try Data(contentsOf: privatePhotoFile)
+            guard original.count == state.byteSize,
+                  CataloguePhotoFixture.digest(original) == state.jpegSHA256 else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            let plant = UUID()
+            state.plantId = plant
+            // Persist canonical inventory and the idempotent receipt in ONE ledger transaction.
+            var next = ledger
+            next.tick += 1
+            next.plants.append(Plant(owner: caller, id: plant, species: "fixture_palm", name: CataloguePhotoFixture.name(CataloguePhotoFixture.correctedTaxon, locale: "en"),
+                                     timestamp: Self.time(next.tick)))
+            let payload = ["plant_id": plant.uuidString, "photo_id": state.photoId.uuidString]
+            let data = try json(payload)
+            state.requests[route, default: 0] += 1
+            state.receipts[operation.uuidString] = .init(
+                route: route, owner: caller, bodySHA256: bodyHash, status: 200, data: data)
+            next.photo = state
+            try persist(next)
+            return Reply(status: 200, data: data)
+        default:
+            return try error(404, "NOT_FOUND")
+        }
+    }
 }
 
 // C2 fixtures use a separate public transport. These values contain no session data.
@@ -2155,7 +2742,9 @@ extension CatalogueFixtureServer {
         }
         let root = "/functions/v1/plants-api/catalogue"
         let rows: [[String: Any]] = (0..<50).map { index in
-            let slug = index == 0 ? "fixture_fern" : (index == 1 ? "fixture_missing" : (index == 2 ? "fixture_error" : String(format: "fixture_media_%03d", index)))
+            let photoMode = ledger.scenario.testsPhotoIdentification
+            let slug = photoMode && index == 3 ? "fixture_palm"
+                : (index == 0 ? "fixture_fern" : (index == 1 ? "fixture_missing" : (index == 2 ? "fixture_error" : String(format: "fixture_media_%03d", index))))
             let taxon = index == 0 ? CataloguePublishedFixture.taxon
                 : UUID(uuidString: String(format: "a2000000-0000-4000-8000-%012d", index))!
             let name = index == 0 ? (locale == "pl" ? "Paproć" : "Fern")
@@ -2168,15 +2757,17 @@ extension CatalogueFixtureServer {
                 "attribution": CataloguePublishedFixture.attribution, "source_page": CataloguePublishedFixture.sourcePage
             ]
             return [
-                "plant_id": slug, "taxon_id": taxon.uuidString.lowercased(), "display_name": name,
-                "scientific_name": index == 0 ? "Nephrolepis exaltata" : "Fixture taxon \(index)",
+                "plant_id": slug, "taxon_id": taxon.uuidString.lowercased(),
+                "display_name": photoMode ? CataloguePhotoFixture.name(taxon, locale: locale) : name,
+                "scientific_name": photoMode && index == 3 ? "Chamaedorea elegans"
+                    : (index == 0 ? "Nephrolepis exaltata" : "Fixture taxon \(index)"),
                 "description": NSNull(), "hero_image": photo, "care_profile_available": false
             ]
         }
         var media = try JSONDecoder().decode(CataloguePublishedMediaLedger.self, from: Data(contentsOf: publishedMediaFile))
         if url.path != root {
             guard components.queryItems == nil,
-                  let row = rows.first(where: {
+                  var row = rows.first(where: {
                       url.path == root + "/" + ($0["plant_id"] as! String)
                           || url.path == root + "/" + ($0["taxon_id"] as! String)
                   }) else { throw CatalogueUIFixtureError.invalidRequest }
@@ -2184,6 +2775,9 @@ extension CatalogueFixtureServer {
             try JSONEncoder().encode(media).write(to: publishedMediaFile, options: .atomic)
             if ledger.scenario == .publishedIdentificationResume, media.detailGETs == 1 {
                 return try error(503, "INTERNAL_ERROR", retryable: true)
+            }
+            if ledger.scenario.testsPhotoIdentification {
+                row["description"] = ["text": CataloguePhotoFixture.description(locale: locale), "language": locale]
             }
             return Reply(status: 200, data: try json(row))
         }
@@ -2228,7 +2822,7 @@ extension CatalogueFixtureServer {
             guard valid, !capture.authorizationPresent, !capture.installationPresent,
                   !capture.namespaceHeaderPresent, !capture.cookiePresent else { throw URLError(.unsupportedURL) }
             if filename == "error.png" { return Reply(status: 503, data: Data(), contentType: "image/png") }
-            return Reply(status: 200, data: CataloguePublishedFixture.png, contentType: "image/png")
+            return Reply(status: 200, data: ledger.scenario.testsPhotoIdentification && filename == "row-003.png" ? CataloguePhotoFixture.correctedPNG : CataloguePublishedFixture.png, contentType: "image/png")
         }
     }
 }

@@ -806,3 +806,352 @@ final class CatalogueUIFixtureTests: XCTestCase {
     }
 }
 #endif
+
+#if DEBUG
+@MainActor
+extension CatalogueUIFixtureTests {
+    private func b2Pipeline(_ h: CatalogueUIFixtureContext, locale: SupportedLocale) async throws
+        -> (AnalysisFlowModel, GuestPhotoClaim, CatalogueSDKSnapshot, IdentificationCorrectionSource) {
+        let connection = try XCTUnwrap(h.connection)
+        let snapshot = try await connection.sessionSnapshot()
+        XCTAssertTrue(snapshot.isAnonymous)
+        let credential = try h.photoInstallationCredential
+        let claim = GuestPhotoClaim(connection: connection, credential: credential)
+        try await claim.register(snapshot)
+        let api = try XCTUnwrap(connection.apiClient)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        func assertAccess(_ access: AnalysisAccessWireDTO, consumed: Bool, before: Data) throws {
+            let after = try encoder.encode(XCTUnwrap(h.photoProof.state))
+            XCTAssertEqual(after, before, "Access GET must preserve photo state and request counters")
+            XCTAssertEqual(access.ownerId, snapshot.session.userId)
+            XCTAssertTrue(access.isGuest)
+            XCTAssertEqual(access.monthly.status, .notApplicable)
+            XCTAssertNil(access.monthly.quotaKind)
+            XCTAssertNil(access.monthly.registeredAt)
+            XCTAssertNil(access.monthly.periodStart)
+            XCTAssertNil(access.monthly.periodEnd)
+            XCTAssertNil(access.monthly.limit)
+            XCTAssertNil(access.monthly.consumed)
+            XCTAssertNil(access.monthly.reserved)
+            XCTAssertNil(access.monthly.remaining)
+            XCTAssertEqual(access.starter.identificationRemaining, consumed ? 0 : 1)
+            XCTAssertEqual(access.starter.diagnosisRemaining, 1)
+            XCTAssertNil(access.starter.identificationInProgressJobId)
+            XCTAssertNil(access.starter.diagnosisInProgressJobId)
+            if consumed {
+                XCTAssertNotNil(access.starter.firstStarterSuccessAt)
+            } else {
+                XCTAssertNil(access.starter.firstStarterSuccessAt)
+            }
+            let identification = try XCTUnwrap(access.modes["identification"])
+            XCTAssertEqual(identification.mode, .identification)
+            XCTAssertEqual(identification.activeQuotaKind, .starterIdentification)
+            XCTAssertEqual(identification.allowed, !consumed)
+            XCTAssertEqual(identification.remaining, consumed ? 0 : 1)
+            XCTAssertEqual(identification.limit, 1)
+            XCTAssertNil(identification.inProgressJobId)
+            XCTAssertNil(identification.nextResetAt)
+            XCTAssertEqual(identification.reason, consumed ? .starterExhausted : nil)
+            let diagnosis = try XCTUnwrap(access.modes["diagnosis"])
+            XCTAssertEqual(diagnosis.mode, .diagnosis)
+            XCTAssertEqual(diagnosis.activeQuotaKind, .starterDiagnosis)
+            XCTAssertTrue(diagnosis.allowed)
+            XCTAssertEqual(diagnosis.remaining, 1)
+            XCTAssertEqual(diagnosis.limit, 1)
+            XCTAssertNil(diagnosis.inProgressJobId)
+            XCTAssertNil(diagnosis.nextResetAt)
+            XCTAssertNil(diagnosis.reason)
+        }
+        let beforeInitialAccess = try encoder.encode(XCTUnwrap(h.photoProof.state))
+        let initialAccess = try await api.fetchAnalysisAccess(
+            context: try await connection.analysisLease(expected: snapshot),
+            expectedGuest: true, guestCredential: credential)
+        try assertAccess(initialAccess, consumed: false, before: beforeInitialAccess)
+        let service = PhotoAnalysisService(api: try XCTUnwrap(connection.apiClient),
+            identificationEnabled: true, guestCredential: credential,
+            session: { try await connection.analysisLease(expected: snapshot) })
+        let model = AnalysisFlowModel()
+        model.installAnalysisService(service)
+        model.startDirectAnalysis(.care)
+        model.selectPhotoData(try h.photoSelectionData, locale: locale)
+        await try XCTUnwrap(model.submitAnalysis(locale: locale)).value
+        let beforeConsumedAccess = try encoder.encode(XCTUnwrap(h.photoProof.state))
+        let consumedAccess = try await api.fetchAnalysisAccess(
+            context: try await connection.analysisLease(expected: snapshot),
+            expectedGuest: true, guestCredential: credential)
+        try assertAccess(consumedAccess, consumed: true, before: beforeConsumedAccess)
+        let source = try XCTUnwrap(model.correctionSource)
+        XCTAssertNil(model.analysisError)
+        XCTAssertEqual(source.ownerId, snapshot.session.userId)
+        XCTAssertEqual(source.request.locale, locale)
+        b2AssertSource(h, source)
+        return (model, claim, snapshot, source)
+    }
+
+    private func b2AssertSource(_ h: CatalogueUIFixtureContext, _ source: IdentificationCorrectionSource,
+                                file: StaticString = #filePath, line: UInt = #line) {
+        let state = h.photoProof.state
+        XCTAssertEqual(h.photoProof.sourceOwner, source.ownerId, file: file, line: line)
+        XCTAssertEqual(state?.ready, true, file: file, line: line)
+        XCTAssertEqual(state?.succeeded, true, file: file, line: line)
+        XCTAssertEqual(state?.photoId, source.photoAssetId, file: file, line: line)
+        XCTAssertEqual(state?.jobId, source.result.jobId, file: file, line: line)
+        XCTAssertEqual(state?.flowId, source.request.flowId, file: file, line: line)
+        XCTAssertEqual(state?.jobOperation, source.request.operationId, file: file, line: line)
+        XCTAssertEqual(state?.uploadOperation, source.request.uploadOperationId, file: file, line: line)
+        XCTAssertEqual(state?.byteSize, source.request.photo.aiVisionJPEG.count, file: file, line: line)
+        XCTAssertEqual(state?.jpegSHA256, CataloguePhotoFixture.digest(source.request.photo.aiVisionJPEG),
+                       file: file, line: line)
+        let routes = ["media/upload-ticket", "media/uploads/" + source.photoAssetId.uuidString.lowercased(),
+                      "analysis/jobs", "analysis/jobs/" + source.result.jobId.uuidString.lowercased()]
+        for route in routes {
+            XCTAssertEqual(state?.requests[route], 1, route, file: file, line: line)
+        }
+    }
+
+    private func b2Choose(_ model: AnalysisFlowModel, h: CatalogueUIFixtureContext,
+                          snapshot: CatalogueSDKSnapshot, source: IdentificationCorrectionSource,
+                          locale: SupportedLocale) async throws {
+        let api = try XCTUnwrap(h.connection.apiClient)
+        let lease = try await h.connection.analysisLease(expected: snapshot)
+        let cancelled = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: source.ownerId))
+        model.cancelManualCorrection(cancelled)
+        XCTAssertEqual(model.correctionSource, source)
+        let before = h.server.requests.count
+        let stale = try await model.selectManualSpecies(taxonId: CataloguePhotoFixture.correctedTaxon,
+            locale: locale, api: api, context: lease, ticket: cancelled,
+            expectedOwnerId: source.ownerId, isCurrent: { h.connection.snapshot == snapshot })
+        XCTAssertFalse(stale)
+        XCTAssertNil(model.beginManualCorrection(expectedOwnerId: UUID()))
+        XCTAssertEqual(h.server.requests.count, before)
+        XCTAssertNil(h.photoProof.state?.draftId)
+        let ticket = try XCTUnwrap(model.beginManualCorrection(expectedOwnerId: source.ownerId))
+        let selected = try await model.selectManualSpecies(taxonId: CataloguePhotoFixture.correctedTaxon,
+            locale: locale, api: api, context: lease, ticket: ticket,
+            expectedOwnerId: source.ownerId, isCurrent: { h.connection.snapshot == snapshot })
+        XCTAssertTrue(selected)
+        XCTAssertEqual(h.server.requests.count, before + 1, "Exactly one Model validation GET")
+        let validation = try XCTUnwrap(h.server.requests.last)
+        XCTAssertEqual(validation.httpMethod, "GET")
+        XCTAssertEqual(validation.url?.path,
+                       "/functions/v1/plants-api/catalogue/" + CataloguePhotoFixture.correctedTaxon.uuidString.lowercased())
+        XCTAssertEqual(model.selectedIdentificationSpecies?.taxonId, CataloguePhotoFixture.correctedTaxon)
+        XCTAssertEqual(model.correctionSource, source)
+        model.confirmPhotoIdentification(expectedOwnerId: source.ownerId)
+        let confirmed = try XCTUnwrap(model.confirmedPhotoIdentification)
+        XCTAssertEqual(confirmed.jobId, source.result.jobId)
+        XCTAssertEqual(confirmed.photoAssetId, source.photoAssetId)
+        XCTAssertEqual(confirmed.ownerId, source.ownerId)
+        XCTAssertEqual(confirmed.taxonId, CataloguePhotoFixture.correctedTaxon)
+        XCTAssertNil(h.connection.guestPhotoClaimData(), "Confirm alone must not create a draft")
+        XCTAssertNil(h.photoProof.state?.draftId)
+        XCTAssertEqual(h.photoProof.state?.requests["drafts"] ?? 0, 0)
+        b2AssertSource(h, source)
+    }
+
+    private func b2Journal(_ data: Data) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    private func b2Canonical(_ h: CatalogueUIFixtureContext, snapshot: CatalogueSDKSnapshot,
+                             receipt: GuestPhotoClaimReceipt, jpeg: Data,
+                             baseline: [CatalogueFixtureServer.Plant]) async throws {
+        let baselineIDs = Set(baseline.map(\.id))
+        XCTAssertEqual(baseline.count, 2)
+        XCTAssertEqual(baselineIDs.count, baseline.count)
+        XCTAssertTrue(baseline.allSatisfy { $0.owner == snapshot.session.userId })
+        XCTAssertFalse(baselineIDs.contains(receipt.plantId))
+        let expectedIDs = baselineIDs.union([receipt.plantId])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let baselineBytes = try Dictionary(uniqueKeysWithValues: baseline.map {
+            ($0.id, try encoder.encode($0))
+        })
+        let rows = h.server.snapshot.plants
+        XCTAssertEqual(rows.count, baseline.count + 1)
+        XCTAssertEqual(Set(rows.map(\.id)), expectedIDs)
+        let preservedBytes = try Dictionary(uniqueKeysWithValues: rows.filter {
+            baselineIDs.contains($0.id)
+        }.map { ($0.id, try encoder.encode($0)) })
+        XCTAssertEqual(preservedBytes, baselineBytes)
+        let lease = try await h.connection.collectionLease(expected: snapshot)
+        let cards = try await XCTUnwrap(h.connection.repository).collectionCards(context: lease)
+        XCTAssertFalse(cards.isCached)
+        XCTAssertEqual(cards.cards.count, baseline.count + 1)
+        XCTAssertEqual(Set(cards.cards.map(\.id)), expectedIDs)
+        for plant in baseline {
+            let existing = try XCTUnwrap(cards.cards.first { $0.id == plant.id })
+            XCTAssertEqual(existing.speciesSlug, plant.species)
+            XCTAssertEqual(existing.personalName, plant.name)
+        }
+        let card = try XCTUnwrap(cards.cards.first { $0.id == receipt.plantId })
+        XCTAssertEqual(card.id, receipt.plantId)
+        XCTAssertEqual(card.taxonId, CataloguePhotoFixture.correctedTaxon)
+        XCTAssertEqual(card.mainPhotoId, receipt.photoId)
+        XCTAssertEqual(card.personalName, "Parlour palm")
+        let owned = rows.filter { $0.owner == snapshot.session.userId }
+        XCTAssertEqual(owned.count, baseline.count + 1)
+        XCTAssertEqual(Set(owned.map(\.id)), expectedIDs)
+        let bytes = try await XCTUnwrap(h.connection.apiClient).fetchPlantPhoto(plantId: card.id, context: lease)
+        XCTAssertEqual(bytes, jpeg)
+    }
+
+    func testB2RealIdentificationCorrectionDraftAndPublishedMedia() async throws {
+        for (scenario, locale) in [(CatalogueUIFixtureScenario.photoIdentificationWrong, SupportedLocale.en),
+                                   (.photoIdentificationUnknown, .pl)] {
+            let h = try await CatalogueUIFixtures.make(namespace: UUID().uuidString, scenario: scenario)
+            defer { try? h.cleanup() }
+            let (model, claim, snapshot, source) = try await b2Pipeline(h, locale: locale)
+            if scenario == .photoIdentificationWrong {
+                XCTAssertEqual(source.result.species?.taxonId, CataloguePhotoFixture.originalTaxon)
+            } else {
+                XCTAssertNil(source.result.species, "Unknown must survive the real W0 decoder")
+            }
+            try await b2Choose(model, h: h, snapshot: snapshot, source: source, locale: locale)
+            let outcome = await claim.createDraft(try XCTUnwrap(model.confirmedPhotoIdentification))
+            XCTAssertEqual(outcome, .ready)
+            let held = try XCTUnwrap(h.connection.guestPhotoClaimData())
+            let journal = try b2Journal(held)
+            func uuid(_ key: String) -> UUID? { (journal[key] as? String).flatMap(UUID.init(uuidString:)) }
+            XCTAssertEqual(uuid("jobId"), source.result.jobId)
+            XCTAssertEqual(uuid("photoId"), source.photoAssetId)
+            XCTAssertEqual(uuid("guestOwner"), source.ownerId)
+            XCTAssertEqual(uuid("taxonId"), CataloguePhotoFixture.correctedTaxon)
+            let operations = try ["draftOperationId", "prepareOperationId", "commitOperationId"].map {
+                try XCTUnwrap(uuid($0))
+            }
+            XCTAssertEqual(Set(operations).count, 3)
+            let request = try XCTUnwrap(h.server.requests.last {
+                $0.httpMethod == "POST" && $0.url?.path == "/functions/v1/plants-api/drafts"
+            })
+            let body = try b2Journal(XCTUnwrap(request.httpBody))
+            XCTAssertEqual(Set(body.keys), Set(["identification_job_id", "taxon_id", "operation_id"]))
+            XCTAssertEqual((body["identification_job_id"] as? String).flatMap(UUID.init(uuidString:)), source.result.jobId)
+            XCTAssertEqual((body["taxon_id"] as? String).flatMap(UUID.init(uuidString:)), CataloguePhotoFixture.correctedTaxon)
+            XCTAssertEqual((body["operation_id"] as? String).flatMap(UUID.init(uuidString:)), operations[0])
+            let replay = await claim.createDraft(try XCTUnwrap(model.confirmedPhotoIdentification))
+            XCTAssertEqual(replay, .ready)
+            XCTAssertEqual(h.connection.guestPhotoClaimData(), held)
+            XCTAssertEqual(h.photoProof.state?.requests["drafts"], 1)
+            XCTAssertEqual(model.correctionSource, source)
+            let api = try XCTUnwrap(h.connection.apiClient)
+            let a = try await api.fetchPublishedSpecies(taxonId: CataloguePhotoFixture.originalTaxon, locale: locale)
+            let b = try await api.fetchPublishedSpecies(taxonId: CataloguePhotoFixture.correctedTaxon, locale: locale)
+            let description = try XCTUnwrap(b.description)
+            XCTAssertEqual(description.language, locale.rawValue)
+            XCTAssertGreaterThan(description.text.count, 500)
+            if locale == .pl {
+                let english = try await api.fetchPublishedSpecies(taxonId: CataloguePhotoFixture.correctedTaxon, locale: .en)
+                XCTAssertNotEqual(description.text, english.description?.text)
+            }
+            let page = try await api.searchPublishedCatalogue(query: "", locale: locale, limit: 50, offset: 0)
+            XCTAssertGreaterThan(page.items.count, 1)
+            XCTAssertNil(page.items[1].heroImage)
+            let aSource = c2Source(a), bSource = c2Source(b)
+            XCTAssertNotNil(aSource.url)
+            XCTAssertNotNil(bSource.url)
+            XCTAssertNotEqual(aSource.url, bSource.url)
+            let aImage = try await h.connection.publicMediaLoader.load(aSource)
+            let bImage = try await h.connection.publicMediaLoader.load(bSource)
+            for image in [aImage, bImage] {
+                let cg = try XCTUnwrap(image.cgImage)
+                XCTAssertEqual(cg.width, 8)
+                XCTAssertEqual(cg.height, 8)
+            }
+            XCTAssertNotEqual(try XCTUnwrap(aImage.pngData()), try XCTUnwrap(bImage.pngData()))
+            let media = try h.server.publishedMediaLedger
+            XCTAssertEqual(media.requests.count, 2)
+            XCTAssertTrue(media.requests.allSatisfy {
+                $0.accepted && !$0.authorizationPresent && !$0.installationPresent && !$0.cookiePresent
+            })
+            b2AssertSource(h, source)
+        }
+    }
+
+    func testB2RealNativeClaimCanonicalAndColdRestore() async throws {
+        let namespace = UUID().uuidString
+        let h = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .photoIdentificationWrong)
+        defer { try? h.cleanup() }
+        let baseline = h.server.snapshot.plants
+        let baselineIDs = Set(baseline.map(\.id))
+        XCTAssertEqual(baseline.count, 2)
+        XCTAssertEqual(baselineIDs.count, baseline.count)
+        XCTAssertTrue(baseline.allSatisfy { $0.owner == h.server.snapshot.permanent })
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let baselineBytes = try Dictionary(uniqueKeysWithValues: baseline.map {
+            ($0.id, try encoder.encode($0))
+        })
+        let (model, claim, original, source) = try await b2Pipeline(h, locale: .pl)
+        try await b2Choose(model, h: h, snapshot: original, source: source, locale: .pl)
+        let outcome = await claim.createDraft(try XCTUnwrap(model.confirmedPhotoIdentification))
+        XCTAssertEqual(outcome, .ready)
+        let held = try XCTUnwrap(h.connection.guestPhotoClaimData())
+        let cancelled = try await h.connection.signInAccount(with: .google, presenting: UIViewController(),
+                                                           scope: try await h.connection.accountScope())
+        XCTAssertNil(cancelled)
+        XCTAssertEqual(h.connection.snapshot, original)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), held)
+        XCTAssertEqual(h.server.snapshot.plants.count, baseline.count)
+        XCTAssertEqual(Set(h.server.snapshot.plants.map(\.id)), baselineIDs)
+        XCTAssertEqual(try Dictionary(uniqueKeysWithValues: h.server.snapshot.plants.map {
+            ($0.id, try encoder.encode($0))
+        }), baselineBytes)
+        do {
+            _ = try await h.connection.signInAccount(with: .google, presenting: UIViewController(),
+                                                     scope: try await h.connection.accountScope())
+            XCTFail("Second native attempt must fail")
+        } catch {
+            XCTAssertEqual(error as? NativeAuthFailure, .providerFailed)
+        }
+        XCTAssertEqual(h.connection.snapshot, original)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), held)
+        XCTAssertEqual(h.server.snapshot.plants.count, baseline.count)
+        XCTAssertEqual(Set(h.server.snapshot.plants.map(\.id)), baselineIDs)
+        XCTAssertEqual(try Dictionary(uniqueKeysWithValues: h.server.snapshot.plants.map {
+            ($0.id, try encoder.encode($0))
+        }), baselineBytes)
+        let signedIn = try await h.connection.signInAccount(with: .google, presenting: UIViewController(),
+                                                          scope: try await h.connection.accountScope())
+        let permanent = try XCTUnwrap(signedIn)
+        XCTAssertFalse(permanent.isAnonymous)
+        XCTAssertNotEqual(permanent.session.userId, source.ownerId)
+        XCTAssertEqual(h.photoProof.providerAttempts, 3)
+        XCTAssertEqual(h.photoProof.providerFailures, 1)
+        try claim.acceptDestination(permanent, from: original)
+        await claim.transfer()
+        let receipt = try XCTUnwrap(claim.receipt)
+        XCTAssertEqual(receipt.photoId, source.photoAssetId)
+        XCTAssertEqual(receipt.plantId, h.photoProof.state?.plantId)
+        try await b2Canonical(h, snapshot: permanent, receipt: receipt,
+                              jpeg: source.request.photo.aiVisionJPEG, baseline: baseline)
+        b2AssertSource(h, source)
+        let counters = try XCTUnwrap(h.photoProof.state).requests
+        for route in ["drafts", "claims/prepare", "claims/commit"] { XCTAssertEqual(counters[route], 1) }
+        let journal = try XCTUnwrap(h.connection.guestPhotoClaimData())
+        let beforeOps = try b2Journal(held), afterOps = try b2Journal(journal)
+        for key in ["draftOperationId", "prepareOperationId", "commitOperationId"] {
+            XCTAssertEqual(beforeOps[key] as? String, afterOps[key] as? String)
+        }
+        await claim.transfer()
+        XCTAssertEqual(h.photoProof.state?.requests, counters)
+        XCTAssertEqual(h.connection.guestPhotoClaimData(), journal)
+        let signups = h.server.snapshot.signupCount
+        h.shutdown()
+        let reopened = try await CatalogueUIFixtures.make(namespace: namespace, scenario: .photoIdentificationWrong)
+        defer { try? reopened.cleanup() }
+        let cold = try await reopened.connection.sessionSnapshot()
+        XCTAssertEqual(cold.session.userId, permanent.session.userId)
+        XCTAssertFalse(cold.isAnonymous)
+        let restored = GuestPhotoClaim(connection: reopened.connection, credential: try reopened.photoInstallationCredential)
+        XCTAssertEqual(restored.receipt, receipt)
+        XCTAssertEqual(reopened.connection.guestPhotoClaimData(), journal)
+        try await b2Canonical(reopened, snapshot: cold, receipt: receipt,
+                              jpeg: source.request.photo.aiVisionJPEG, baseline: baseline)
+        XCTAssertEqual(reopened.photoProof.state?.requests, counters)
+        XCTAssertEqual(reopened.server.snapshot.signupCount, signups)
+        b2AssertSource(reopened, source)
+    }
+}
+#endif

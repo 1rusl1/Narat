@@ -3457,7 +3457,12 @@ struct GuestCatalogueView: View {
                 .accessibilityIdentifier("catalogue.resume.retry")
             }
         }
-        TextField(polish ? "Szukaj gatunku" : "Search species", text: $query)
+        TextField(
+            polish ? "Szukaj gatunku" : "Search species",
+            text: $query,
+            prompt: Text(polish ? "Szukaj gatunku" : "Search species")
+                .foregroundStyle(QuietGarden.secondaryText)
+        )
             .textFieldStyle(.roundedBorder).padding(.horizontal, 20).padding(.vertical, 8)
             .accessibilityIdentifier("catalogue.search")
         if loading {

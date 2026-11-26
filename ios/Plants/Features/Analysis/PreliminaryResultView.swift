@@ -131,6 +131,14 @@ struct IdentificationResultLifetimeAnchor: UIViewRepresentable {
     }
 }
 
+// B2_PHOTO_FIXTURE_BEGIN action_type
+#if DEBUG
+struct PhotoFixtureActions {
+    let arm: (CatalogueSDKSnapshot, SupportedLocale) -> Void
+    let removeHost: () -> Void
+}
+#endif
+// B2_PHOTO_FIXTURE_END action_type
 public struct PreliminaryResultView: View {
     @Bindable var model: AnalysisFlowModel
     @Bindable var languageStore: LanguageStore
@@ -139,6 +147,17 @@ public struct PreliminaryResultView: View {
     private var openCollection: ((CatalogueSDKSnapshot) -> Void)? = nil
     private var returnToPlant: (() -> Void)? = nil
     private var firstAidContext: FirstAidResultContext? = nil
+    // B2_PHOTO_FIXTURE_BEGIN action_value
+#if DEBUG
+    private var photoFixtureActions: PhotoFixtureActions? = nil
+
+    func withPhotoFixtureActions(_ actions: PhotoFixtureActions?) -> Self {
+        var copy = self
+        copy.photoFixtureActions = actions
+        return copy
+    }
+#endif
+    // B2_PHOTO_FIXTURE_END action_value
     @State private var saveLocked = false
     private struct Correction {
         let id = UUID()
@@ -208,12 +227,17 @@ public struct PreliminaryResultView: View {
                             .id(confirmed.jobId)
                         } else if let guestActions, let session = catalogueConnection?.snapshot,
                                   session.isAnonymous, session.session.userId == confirmed.ownerId {
-                            Button("Sign in to save") { guestActions.save(confirmed) }
+                            Button(isPolish ? "Zaloguj się, aby zapisać" : "Sign in to save") { guestActions.save(confirmed) }
                                 .buttonStyle(QuietGardenPrimaryButtonStyle())
                                 .disabled(guestActions.busy)
                                 .accessibilityIdentifier("staging.guest.draft.save")
-                            if guestActions.busy { ProgressView("Preparing your plant…") }
-                            if guestActions.failed { Text("Couldn’t prepare your plant. Try again.") }
+                            if guestActions.busy {
+                                ProgressView(isPolish ? "Przygotowywanie rośliny…" : "Preparing your plant…")
+                            }
+                            if guestActions.failed {
+                                Text(isPolish ? "Nie udało się przygotować rośliny. Spróbuj ponownie."
+                                     : "Couldn’t prepare your plant. Try again.")
+                            }
                         }
                     } else {
                         if canConfirmIdentification {
@@ -230,7 +254,9 @@ public struct PreliminaryResultView: View {
                         }
                         if let connection = catalogueConnection, let expected = connection.snapshot,
                            model.correctionSource?.ownerId == expected.session.userId {
-                            Button(isPolish ? "Wybierz inny gatunek" : "Choose species manually") {
+                            Button(model.selectedIdentificationSpecies == nil
+                                   ? (isPolish ? "Wybierz gatunek" : "Choose a species")
+                                   : (isPolish ? "Wybierz inny gatunek" : "Choose another species")) {
                                 openCorrection(connection: connection, expected: expected)
                             }
                             .disabled(identificationBusy)
@@ -339,7 +365,10 @@ public struct PreliminaryResultView: View {
                     }
                     exitButtons
                 } else {
-                    AnalysisUnavailableSection(model: model, languageStore: languageStore, returnToPlant: returnToPlant)
+                    AnalysisUnavailableSection(
+                        model: model, languageStore: languageStore, returnToPlant: returnToPlant,
+                        hostOwnsNativeBack: ownsNativeBack
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -348,6 +377,17 @@ public struct PreliminaryResultView: View {
         .qgScreen()
         .buttonStyle(QuietGardenSecondaryButtonStyle())
         .navigationTitle(isPolish ? "Analiza" : "Analysis")
+        .toolbar {
+            if ownsNativeBack {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: model.returnFromAnalysis) {
+                        Label(isPolish ? "Wstecz" : "Back", systemImage: "chevron.left")
+                    }
+                    .disabled(identificationBusy)
+                    .accessibilityIdentifier("analysis.navigation.back")
+                }
+            }
+        }
         .background {
             IdentificationResultLifetimeAnchor(lifetime: correctionLifetime)
                 .frame(width: 0, height: 0)
@@ -370,11 +410,30 @@ public struct PreliminaryResultView: View {
                         speciesPicker: .init(
                             taxonId: model.selectedIdentificationSpecies?.taxonId,
                             slug: model.selectedIdentificationSpecies?.slug,
-                            select: { selectCorrection($0, correction: correction) }
+                            select: { selectCorrection($0, correction: correction) },
+                            confirmationTitle: isPolish ? "Wybierz ten gatunek" : "Choose this species",
+                            cancelTitle: isPolish ? "Anuluj" : "Cancel",
+                            contextTitle: model.selectedIdentificationSpecies == nil
+                                ? (isPolish ? "Wybierz gatunek" : "Choose a species")
+                                : (isPolish ? "Wybierz inny gatunek" : "Choose another species")
                         ),
                         openCollection: nil, back: closeCorrection
                     )
                     .disabled(correctionRequest != nil)
+                    // B2_PHOTO_FIXTURE_BEGIN sheet_controls
+#if DEBUG
+                    if let photoFixtureActions {
+                        Button("Arm validation") {
+                            photoFixtureActions.arm(correction.snapshot, correction.locale)
+                        }
+                        .disabled(correctionRequest != nil)
+                        .accessibilityIdentifier("photo.fixture.validation.arm")
+                        Button("Remove result host", action: photoFixtureActions.removeHost)
+                            .disabled(correctionRequest == nil)
+                            .accessibilityIdentifier("photo.fixture.host.remove")
+                    }
+#endif
+                    // B2_PHOTO_FIXTURE_END sheet_controls
                 }
                 .background {
                     IdentificationResultLifetimeAnchor(
@@ -394,6 +453,10 @@ public struct PreliminaryResultView: View {
         saveLocked || guestActions?.busy == true || showingCorrection
     }
 
+    private var ownsNativeBack: Bool {
+        model.router.isDirectAnalysisEntry && returnToPlant == nil
+    }
+
     private var canConfirmIdentification: Bool {
         if let connection = catalogueConnection {
             guard let expected = connection.snapshot else { return false }
@@ -405,26 +468,33 @@ public struct PreliminaryResultView: View {
     @ViewBuilder
     private var publishedIdentification: some View {
         if model.confirmedPhotoIdentification == nil {
-            Text(isPolish ? "To wstępne rozpoznanie. Potwierdź gatunek lub wybierz go ręcznie."
-                 : "This identification is preliminary. Confirm the species or choose it manually.")
+            Text(model.selectedIdentificationSpecies == nil
+                 ? (isPolish ? "Wybierz gatunek z katalogu, aby kontynuować."
+                    : "Choose a species from the catalogue to continue.")
+                 : (isPolish ? "To wstępne rozpoznanie. Potwierdź gatunek lub wybierz go ręcznie."
+                    : "This identification is preliminary. Confirm the species or choose it manually."))
                 .accessibilityIdentifier("analysis.identification.uncertainty")
         }
         if let facts = model.selectedIdentificationSpecies?.publishedFacts {
-            Text(facts.scientificName).italic()
-            Text(facts.commonName)
-            PublishedPlantImageView(
-                source: .init(url: facts.imageURL, author: facts.imageAuthor, license: facts.imageLicense,
-                              attribution: facts.imageAttribution, sourcePage: facts.imageSourcePage),
-                presentation: .hero, label: facts.commonName, locale: languageStore.currentLocale.locale
-            )
-            Text(isPolish ? "Przykładowe zdjęcie gatunku — nie Twoje zdjęcie."
-                 : "Example species photo — separate from your original photo.")
-                .font(.caption)
-            if let text = facts.descriptionText { Text(text) }
-            if let attribution = facts.descriptionAttribution { Text(attribution).font(.caption) }
-            if let url = PublishedPlantImageSource.safeURL(facts.descriptionSourceURL) {
-                Link(isPolish ? "Źródło opisu" : "Description source", destination: url).font(.caption)
+            VStack(alignment: .leading, spacing: 12) {
+                Text(facts.scientificName).italic()
+                PublishedPlantImageView(
+                    source: .init(url: facts.imageURL, author: facts.imageAuthor, license: facts.imageLicense,
+                                  attribution: facts.imageAttribution, sourcePage: facts.imageSourcePage),
+                    presentation: .hero, label: facts.commonName, locale: languageStore.currentLocale.locale,
+                    loader: catalogueConnection?.publicMediaLoader ?? .shared
+                )
+                Text(isPolish ? "Przykładowe zdjęcie gatunku — nie Twoje zdjęcie."
+                     : "Example species photo — separate from your original photo.")
+                    .font(.caption)
+                if let text = facts.descriptionText { Text(text) }
+                if let attribution = facts.descriptionAttribution { Text(attribution).font(.caption) }
+                if let url = PublishedPlantImageSource.safeURL(facts.descriptionSourceURL) {
+                    Link(isPolish ? "Źródło opisu" : "Description source", destination: url).font(.caption)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .qgCard()
         }
     }
 
@@ -483,13 +553,18 @@ public struct PreliminaryResultView: View {
     }
 
     private var speciesHeading: some View {
-        Text(model.selectedIdentificationSpecies?.displayName ?? model.speciesLabel ?? (isPolish ? "Nie udało się ustalić gatunku." : "Species could not be determined."))
+        Text(model.selectedIdentificationSpecies?.displayName
+             ?? (model.identificationResult == nil ? model.speciesLabel : nil)
+             ?? (isPolish ? "Nie udało się ustalić gatunku." : "Species could not be determined."))
             .font(.headline)
             .accessibilityIdentifier("analysis.result.species")
     }
 
     private var exitButtons: some View {
-        AnalysisExitButtons(model: model, polish: isPolish, returnToPlant: returnToPlant)
+        AnalysisExitButtons(
+            model: model, polish: isPolish, returnToPlant: returnToPlant,
+            hostOwnsNativeBack: ownsNativeBack
+        )
             .disabled((catalogueConnection != nil && saveLocked) || guestActions?.busy == true)
             .buttonStyle(QuietGardenSecondaryButtonStyle())
     }

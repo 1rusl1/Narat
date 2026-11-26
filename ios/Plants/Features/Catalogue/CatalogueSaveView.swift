@@ -386,7 +386,9 @@ struct CatalogueSaveView<SpeciesDetails: View>: View {
                     text: Binding(
                         get: { formName },
                         set: { if !working, model == nil, intent == nil, scopeIsCurrent { name = $0 } }
-                    )
+                    ),
+                    prompt: Text(polish ? "Nazwa rośliny (opcjonalnie)" : "Plant name (optional)")
+                        .foregroundStyle(QuietGarden.secondaryText)
                 )
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFocused)

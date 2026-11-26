@@ -353,6 +353,17 @@ struct RootContainerView: View {
 #if DEBUG
     var preloadedReminderFixture: ReminderConsentFixture? = nil
     @State private var fixtureContext: CatalogueUIFixtureContext?
+    // B2_PHOTO_FIXTURE_BEGIN state
+    @State private var photoSubmitUsed = false
+    @State private var photoOriginalEvidence: Data?
+    @State private var photoHostRemoved = false
+    @State private var photoValidationRequest: UUID?
+    @State private var photoValidationSDK: CatalogueSDKSnapshot?
+    @State private var photoProbeRevision = 0
+    @State private var photoProbeJSON = ""
+    @State private var photoProbeBusy = false
+    @State private var photoFixtureError: String?
+    // B2_PHOTO_FIXTURE_END state
 #endif
 
     private var isPolish: Bool {
@@ -434,6 +445,26 @@ struct RootContainerView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
                     .accessibilityIdentifier("welcome.language.picker")
+                    // B2_PHOTO_FIXTURE_BEGIN controls
+                    if fixtureContext?.testsPhotoIdentification == true {
+                        HStack {
+                            Button("Submit photo", action: submitPhotoFixture)
+                                .disabled(!canSubmitPhotoFixture)
+                                .accessibilityIdentifier("photo.fixture.submit")
+                            Button("Probe") { Task { await probePhotoFixture() } }
+                                .disabled(photoProbeBusy)
+                                .accessibilityIdentifier("photo.fixture.probe")
+                            Button("Release", action: releasePhotoFixture)
+                                .disabled(photoValidationRequest == nil)
+                                .accessibilityIdentifier("photo.fixture.release")
+                        }
+                        Text("Photo evidence").accessibilityIdentifier("photo.fixture.proof")
+                            .accessibilityValue(photoProbeJSON)
+                        if let photoFixtureError {
+                            Text(photoFixtureError).accessibilityIdentifier("photo.fixture.error")
+                        }
+                    }
+                    // B2_PHOTO_FIXTURE_END controls
                     if let fixtureContext, fixtureContext.testsSDKOpening,
                        collectionOpening.preparationSettled {
                         Text("Ready").accessibilityIdentifier("sdk-opening.ready")
@@ -619,6 +650,12 @@ struct RootContainerView: View {
                             ? catalogue : nil,
                         guestActions: guestIdentificationActions, openCollection: openSavedCollection
                     )
+                    // B2_PHOTO_FIXTURE_BEGIN host_usage
+#if DEBUG
+                    .withPhotoFixtureActions(photoFixtureActions)
+                    .modifier(PhotoFixtureHostGate(removed: photoHostRemoved))
+#endif
+                    // B2_PHOTO_FIXTURE_END host_usage
                 default:
                     welcomeIntentSection
                 }
@@ -798,7 +835,7 @@ struct RootContainerView: View {
             }
         }) {
             if let claim = guestPhotoClaim {
-                GuestPhotoTransferView(claim: claim) {
+                GuestPhotoTransferView(claim: claim, polish: isPolish) {
                     openClaimCollection = true
                     showingGuestTransfer = false
                 }
@@ -810,7 +847,7 @@ struct RootContainerView: View {
     private var guestSaveButtons: some View {
         if analysisModel.router.flowState.currentStep == .selectIntent,
            let claim = guestPhotoClaim, let scope = catalogue?.snapshot, claim.canResumeDraft(for: scope) {
-            Button("Continue saving") {
+            Button(isPolish ? "Kontynuuj zapisywanie" : "Continue saving") {
                 Task { @MainActor in
                     handleGuestDraft(await claim.resumeDraft(), claim: claim)
                 }
@@ -818,11 +855,11 @@ struct RootContainerView: View {
             .disabled(claim.busy)
             .buttonStyle(QuietGardenSecondaryButtonStyle())
             .accessibilityIdentifier("staging.guest.draft.resume")
-            if claim.failed { Text("Couldn’t prepare your plant. Try again.") }
+            if claim.failed { Text(isPolish ? "Nie udało się przygotować rośliny. Spróbuj ponownie." : "Couldn’t prepare your plant. Try again.") }
         }
         if let claim = guestPhotoClaim, let scope = catalogue?.snapshot, claim.pending(for: scope),
            !showingGuestTransfer {
-            Button("Finish saving your plant") { showingGuestTransfer = true }
+            Button(isPolish ? "Dokończ zapisywanie rośliny" : "Finish saving your plant") { showingGuestTransfer = true }
                 .buttonStyle(QuietGardenSecondaryButtonStyle())
                 .accessibilityIdentifier("staging.guest.claim.resume")
         }
@@ -1344,8 +1381,226 @@ struct RootContainerView: View {
         analysisModel.startDirectAnalysis(destination == .diagnosis ? .problem : .care)
     }
 
+    // B2_PHOTO_FIXTURE_BEGIN helpers
+#if DEBUG
+    private func photoFixtureScope() throws -> (CatalogueUIFixtureContext, CatalogueConnection, CatalogueSDKSnapshot) {
+        guard let context = fixtureContext, context.testsPhotoIdentification,
+              let connection = catalogue, context.connection === connection,
+              let snapshot = connection.snapshot else { throw CatalogueUIFixtureError.invalidRequest }
+        return (context, connection, snapshot)
+    }
+
+    private var canSubmitPhotoFixture: Bool {
+        guard let (context, _, snapshot) = try? photoFixtureScope() else { return false }
+        return snapshot.isAnonymous && analysisOwner == snapshot.session.userId && guestPhotoClaim != nil
+            && analysisModel.router.isDirectAnalysisEntry
+            && analysisModel.router.flowState.currentStep == .selectPhoto
+            && !analysisModel.isAnalyzing && !analysisModel.isPreparingPhoto
+            && analysisModel.correctionSource == nil && !photoSubmitUsed && photoOriginalEvidence == nil
+            && !FileManager.default.fileExists(atPath: context.directory.appendingPathComponent("photo-original.json").path)
+    }
+
+    private func submitPhotoFixture() {
+        do {
+            let (context, _, _) = try photoFixtureScope()
+            guard canSubmitPhotoFixture else { throw CatalogueUIFixtureError.invalidRequest }
+            photoSubmitUsed = true
+            analysisModel.selectPhotoData(try context.photoSelectionData, locale: languageStore.currentLocale)
+        } catch { photoFixtureError = error.localizedDescription }
+    }
+
+    private var photoFixtureActions: PhotoFixtureActions? {
+        guard fixtureContext?.testsPhotoIdentification == true else { return nil }
+        return PhotoFixtureActions(arm: { expected, locale in
+            do {
+                let (context, connection, snapshot) = try photoFixtureScope()
+                guard snapshot == expected, snapshot.isAnonymous, locale == languageStore.currentLocale,
+                      let source = analysisModel.correctionSource, source.ownerId == snapshot.session.userId,
+                      source.request.locale == locale else { throw CatalogueUIFixtureError.invalidRequest }
+                try capturePhotoOriginal(context)
+                let request = UUID()
+                try context.armPhotoValidation(taxonId: CataloguePhotoFixture.correctedTaxon,
+                                               locale: locale, requestId: request, expected: expected)
+                guard connection.snapshot == expected else { throw CatalogueUIFixtureError.invalidRequest }
+                photoValidationRequest = request
+                photoValidationSDK = expected
+            } catch { photoFixtureError = error.localizedDescription }
+        }, removeHost: {
+            do {
+                let (context, _, snapshot) = try photoFixtureScope()
+                guard snapshot.isAnonymous, photoValidationSDK == snapshot,
+                      let request = photoValidationRequest else {
+                    throw CatalogueUIFixtureError.invalidRequest
+                }
+                let held = try context.photoValidationProof(requestId: request)
+                guard held.owner == snapshot.session.userId, held.locale == languageStore.currentLocale.rawValue,
+                      held.arrivals > 0 else { throw CatalogueUIFixtureError.invalidRequest }
+                photoHostRemoved = true
+            } catch { photoFixtureError = error.localizedDescription }
+        })
+    }
+
+    private func releasePhotoFixture() {
+        do {
+            let (context, _, snapshot) = try photoFixtureScope()
+            guard photoValidationSDK == snapshot, let request = photoValidationRequest else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            let held = try context.photoValidationProof(requestId: request)
+            guard held.owner == snapshot.session.userId, held.locale == languageStore.currentLocale.rawValue else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            try context.releasePhotoValidation(requestId: request)
+        } catch { photoFixtureError = error.localizedDescription }
+    }
+
+    private func photoValue(_ value: Any?) -> Any { value ?? NSNull() }
+
+    private func photoSourceData(_ source: IdentificationCorrectionSource, _ context: CatalogueUIFixtureContext) throws -> Data {
+        let request = source.request
+        return try JSONSerialization.data(withJSONObject: [
+            "namespace": context.namespace, "scenario": context.server.snapshot.scenario.rawValue,
+            "owner": source.ownerId.uuidString, "job": source.result.jobId.uuidString,
+            "photo": source.photoAssetId.uuidString, "taxon": photoValue(source.result.species?.taxonId.uuidString),
+            "requestOperation": request.operationId.uuidString,
+            "uploadOperation": request.uploadOperationId.uuidString, "flow": request.flowId.uuidString,
+            "generation": source.generation.uuidString, "locale": request.locale.rawValue,
+            "aiVisionJPEGHash": CataloguePhotoFixture.digest(request.photo.aiVisionJPEG),
+            "aiVisionJPEGByteCount": request.photo.aiVisionJPEG.count
+        ], options: [.sortedKeys])
+    }
+
+    private func capturePhotoOriginal(_ context: CatalogueUIFixtureContext) throws {
+        if photoOriginalEvidence != nil { return }
+        let file = context.directory.appendingPathComponent("photo-original.json")
+        if FileManager.default.fileExists(atPath: file.path) {
+            let data = try Data(contentsOf: file)
+            guard let saved = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  saved["namespace"] as? String == context.namespace,
+                  saved["scenario"] as? String == context.server.snapshot.scenario.rawValue else {
+                throw CatalogueUIFixtureError.invalidStorage
+            }
+            photoOriginalEvidence = data
+        } else if let source = analysisModel.correctionSource {
+            guard catalogue?.snapshot?.isAnonymous == true,
+                  source.ownerId == catalogue?.snapshot?.session.userId else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            let data = try photoSourceData(source, context)
+            try data.write(to: file, options: .atomic)
+            photoOriginalEvidence = data
+        }
+    }
+
+    private func probePhotoFixture() async {
+        guard !photoProbeBusy else { return }
+        photoProbeBusy = true
+        photoProbeJSON = ""
+        defer { photoProbeBusy = false }
+        do {
+            let (context, connection, snapshot) = try photoFixtureScope()
+            let locale = languageStore.currentLocale
+            try capturePhotoOriginal(context)
+            var canonical: Any = NSNull()
+            if !snapshot.isAnonymous, let plant = context.photoProof.state?.plantId {
+                guard let repository = connection.repository, let api = connection.apiClient else {
+                    throw CatalogueUIFixtureError.invalidRequest
+                }
+                let lease = try await connection.collectionLease(expected: snapshot)
+                let cards = try await repository.collectionCards(context: lease)
+                guard connection.snapshot == snapshot, catalogue === connection,
+                      locale == languageStore.currentLocale else { throw CatalogueUIFixtureError.invalidRequest }
+                guard let card = cards.cards.first(where: { $0.id == plant }) else {
+                    throw CatalogueUIFixtureError.invalidStorage
+                }
+                let jpeg = try await api.fetchPlantPhoto(plantId: plant, context: lease)
+                canonical = ["plant": card.id.uuidString, "taxon": photoValue(card.taxonId?.uuidString),
+                             "mainPhoto": photoValue(card.mainPhotoId?.uuidString), "name": photoValue(card.personalName),
+                             "privateJPEGHash": CataloguePhotoFixture.digest(jpeg), "byteCount": jpeg.count,
+                             "collectionCount": cards.cards.count, "cached": cards.isCached]
+            }
+            guard connection.snapshot == snapshot, catalogue === connection,
+                  fixtureContext === context, locale == languageStore.currentLocale else {
+                throw CatalogueUIFixtureError.invalidRequest
+            }
+            let proof = context.photoProof
+            let state = proof.state
+            let ledger = context.server.snapshot
+            var held: Any = NSNull()
+            if let request = photoValidationRequest {
+                let value = try context.photoValidationProof(requestId: request)
+                held = ["request": value.requestId.uuidString, "owner": value.owner.uuidString,
+                        "taxon": value.taxon.uuidString, "locale": value.locale,
+                        "arrivals": value.arrivals, "cancellations": value.cancellations, "releases": value.releases]
+            }
+            var journal: Any = NSNull()
+            if let data = connection.guestPhotoClaimData() {
+                guard let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    throw CatalogueUIFixtureError.invalidStorage
+                }
+                var safe: [String: Any] = [:]
+                for key in ["guestOwner", "installationId", "jobId", "photoId", "taxonId",
+                            "draftOperationId", "prepareOperationId", "commitOperationId", "destinationOwner"] {
+                    safe[key] = photoValue(raw[key])
+                }
+                for (key, fields) in [("draft", ["draft_id"]), ("proof", ["claim_id", "draft_id"]),
+                                      ("receipt", ["plant_id", "photo_id"])] {
+                    if let value = raw[key] as? [String: Any] {
+                        safe[key] = Dictionary(uniqueKeysWithValues: fields.map { ($0, photoValue(value[$0])) })
+                    } else { safe[key] = NSNull() }
+                }
+                journal = safe
+            }
+            let original: Any = try photoOriginalEvidence.map { try JSONSerialization.jsonObject(with: $0) } ?? NSNull()
+            let current = try analysisModel.correctionSource.map { try photoSourceData($0, context) }
+            let payload: [String: Any] = [
+                "namespace": context.namespace, "scenario": ledger.scenario.rawValue,
+                "owner": snapshot.session.userId.uuidString, "anonymous": snapshot.isAnonymous,
+                "original": original, "currentSourceEqualsOriginal": snapshot.isAnonymous
+                    ? photoValue(current.map { $0 == photoOriginalEvidence }) : NSNull(),
+                "currentManualTaxon": photoValue(analysisModel.manualSpecies?.taxonId.uuidString),
+                "currentConfirmed": photoValue(analysisModel.confirmedPhotoIdentification?.taxonId.uuidString),
+                "hostRemoved": photoHostRemoved, "heldRequestProof": held,
+                "heldSDKIsCurrent": photoValidationSDK == snapshot, "probeRevision": photoProbeRevision + 1,
+                "state": ["ready": photoValue(state?.ready), "succeeded": photoValue(state?.succeeded),
+                          "sourceOwner": proof.sourceOwner.uuidString, "photo": photoValue(state?.photoId.uuidString),
+                          "job": photoValue(state?.jobId?.uuidString), "flow": photoValue(state?.flowId?.uuidString),
+                          "uploadOperation": photoValue(state?.uploadOperation?.uuidString),
+                          "jobOperation": photoValue(state?.jobOperation?.uuidString),
+                          "selectedTaxon": photoValue(state?.selectedTaxon?.uuidString),
+                          "draft": photoValue(state?.draftId?.uuidString), "claim": photoValue(state?.claimId?.uuidString),
+                          "destination": photoValue(state?.destination?.uuidString), "plant": photoValue(state?.plantId?.uuidString),
+                          "jpegHash": photoValue(state?.jpegSHA256), "byteCount": photoValue(state?.byteSize),
+                          "requests": photoValue(state?.requests), "receiptCount": photoValue(state?.receipts.count)],
+                "plantCount": ledger.plants.count,
+                "auth": ["providerAttempts": proof.providerAttempts, "providerFailures": proof.providerFailures,
+                         "idTokenRequests": photoValue(ledger.authProof?.authIdTokenRequests),
+                         "passwordRequests": photoValue(ledger.authProof?.passwordRequests),
+                         "emailRegistrationRequests": photoValue(ledger.authProof?.emailRegistrationRequests),
+                         "signupCount": ledger.signupCount],
+                "journal": journal, "canonical": canonical
+            ]
+            photoProbeJSON = String(decoding: try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]), as: UTF8.self)
+            photoProbeRevision += 1
+            photoFixtureError = nil
+        } catch { photoFixtureError = error.localizedDescription }
+    }
+#endif
+    // B2_PHOTO_FIXTURE_END helpers
     private func photoClaim(for connection: CatalogueConnection) async -> GuestPhotoClaim {
         if let guestPhotoClaim, guestPhotoClaim.connection === connection { return guestPhotoClaim }
+        // B2_PHOTO_FIXTURE_BEGIN credential
+#if DEBUG
+        if let context = fixtureContext, context.testsPhotoIdentification {
+            precondition(context.connection === connection, "Photo fixture connection mismatch")
+            do {
+                let claim = GuestPhotoClaim(connection: connection, credential: try context.photoInstallationCredential)
+                guestPhotoClaim = claim
+                return claim
+            } catch { preconditionFailure("Photo fixture credential unavailable") }
+        }
+#endif
+        // B2_PHOTO_FIXTURE_END credential
         let claim = GuestPhotoClaim(connection: connection, credential: await analysisAccessRepository.installationCredential())
         guestPhotoClaim = claim
         return claim
@@ -2194,32 +2449,46 @@ final class GuestPhotoClaim {
     }
 }
 
+// B2_PHOTO_FIXTURE_BEGIN host_gate
+#if DEBUG
+private struct PhotoFixtureHostGate: ViewModifier {
+    let removed: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if removed { Text("Photo result removed").accessibilityIdentifier("photo.fixture.host.removed") }
+        else { content }
+    }
+}
+#endif
+// B2_PHOTO_FIXTURE_END host_gate
 @MainActor
 private struct GuestPhotoTransferView: View {
     let claim: GuestPhotoClaim
+    var polish = false
     let openCollection: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if claim.receipt != nil {
-                Text("Plant and photo saved.")
+                Text(polish ? "Roślina i zdjęcie zapisane" : "Plant and photo saved.")
                     .accessibilityIdentifier("staging.guest.claim.status")
-                Button("Open My plants", action: openCollection)
+                Button(polish ? "Otwórz Moje rośliny" : "Open My plants", action: openCollection)
                     .accessibilityIdentifier("staging.guest.claim.collection")
             } else if claim.failed {
-                Text("Couldn’t finish saving your plant.")
+                Text(polish ? "Nie udało się dokończyć zapisywania rośliny." : "Couldn’t finish saving your plant.")
                     .accessibilityIdentifier("staging.guest.claim.status")
-                Button("Retry transfer") { Task { await claim.transfer() } }
+                Button(polish ? "Spróbuj ponownie" : "Retry transfer") { Task { await claim.transfer() } }
                     .accessibilityIdentifier("staging.guest.claim.retry")
             } else if let scope = claim.connection.snapshot, claim.pending(for: scope) {
-                ProgressView("Saving your plant and photo…")
+                ProgressView(polish ? "Zapisywanie rośliny i zdjęcia…" : "Saving your plant and photo…")
                     .accessibilityIdentifier("staging.guest.claim.status")
             } else {
-                Button("Choose a photo") { dismiss() }
+                Button(polish ? "Wybierz zdjęcie" : "Choose a photo") { dismiss() }
                     .accessibilityIdentifier("staging.guest.claim.closed")
             }
-            Button("Close") { dismiss() }
+            Button(polish ? "Zamknij" : "Close") { dismiss() }
         }
         .padding()
         .buttonStyle(QuietGardenSecondaryButtonStyle())

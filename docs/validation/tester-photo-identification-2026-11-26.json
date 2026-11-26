@@ -1,0 +1,103 @@
+{
+  "status": "SCOPED_TECHNICAL_ACCEPTANCE_FIXTURES",
+  "date": "2026-11-26",
+  "candidate_base": "8744d096466b1399c62c210b8695624b34880f87",
+  "checked_source_commit": "e978bc8a281b8633a2f1b688e582dfcb31b13c94",
+  "source_fingerprint": "65b22702ad1d330c9ab5c091c8590333a61267f7e94b2f99e26086fcb9678386",
+  "source_paths": [
+    "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+    "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+    "ios/PlantsTests/CatalogueUIFixtureTests.swift",
+    "ios/Plants/App/PlantsApp.swift",
+    "ios/PlantsUITests/PlantsUITests.swift",
+    "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+    "ios/Plants/Features/Catalogue/CatalogueSaveView.swift"
+  ],
+  "changes": [
+    "Published identification proposal with image/attribution/information, explicit Confirm and Choose another species; unknown opens manual choice immediately.",
+    "Manual picker preview and separately scoped validation preserve original job/photo/source owner; actual Save reuses existing guest draft/claim protocol.",
+    "Direct result/progress/error owns upper native Back without duplicated lower Back; legacy/return-to-plant preserved.",
+    "EN/PL photo save/transfer copy; adaptive search/name prompts readable in light and dark.",
+    "DEBUG-only isolated real-service HTTP fixtures, scoped media and cancellable GET/UIKit-host-removal instrumentation."
+  ],
+  "executed_tests": {
+    "full_swift_total": 546,
+    "xctest_methods": 543,
+    "missing_methods": 0,
+    "automation": 149,
+    "new_UI_tests": 4,
+    "new_UI_xcode_seconds": 1103.15,
+    "old_result_and_account_UI_methods": 5,
+    "C2_light_UI_methods": 5,
+    "C2_dark_UI_methods": 2,
+    "local_release_compile": true,
+    "new_debug_sentinels_absent": 7,
+    "compiled_name": "Narat",
+    "compiled_display_name": "Narat"
+  },
+  "runtime_matrix": {
+    "choices": "wrong and unknown in both EN and PL",
+    "full_guest_claim_and_cold": "wrong EN; unknown PL",
+    "held_GET_whole_UIKit_host_removal": "wrong EN; unknown PL",
+    "C2_media_and_ID_resume": "EN/PL light and dark"
+  },
+  "preservation": [
+    "Original photo/job/owner, source generation, upload/request operation and immutable original analysis result.",
+    "Selected B creates no draft at Confirm; actual Save produces one draft/bind/prepare/commit with same journal across native cancel/error/retry.",
+    "Uploaded normalized aiVisionJPEG bytes match canonical private photo after claim and cold launch.",
+    "Two existing fixture cards preserved; new card selected by receipt identity.",
+    "No additional upload or AI job during choose/cancel/confirm/save.",
+    "Same full SDK snapshot including ABA epoch during real UIKit host removal; live retained Model probe updated by increasing revision.",
+    "Whole-host removal proves arrival1/cancellation1/release0, not a delivered late HTTP success."
+  ],
+  "acceptance": {
+    "original_8_checks": "ACTUALLY_EXECUTED_PASS_on_unchanged_source",
+    "continuation_8_checks": "RETAINED_SOURCE_PROVENANCE_VALIDATION_NOT_NATIVE_REEXECUTION",
+    "independent_high_review_seconds": 170.524,
+    "independent_high_QA_seconds": 207.901,
+    "findings": 0,
+    "publication": "Private controller WAITING only because publish is disabled; Root selective landing/push pending."
+  },
+  "visual": {
+    "app_owned_records": 124,
+    "actual_raw_content_views": 98,
+    "exact_SHA_duplicates": 26,
+    "DEBUG_records_excluded": 34,
+    "new4": 84,
+    "fresh_C2_light_dark": 40,
+    "P0_prompts_readable_EN_PL_both_appearances": true,
+    "blockers": 0,
+    "known_minor": [
+      "Existing Account empty email/password placeholders faint on white (P3, outside this source change)."
+    ]
+  },
+  "limitations": [
+    "Synthetic images and isolated HTTP fixtures; no real AI quality, original owner photo, real Storage copy or new live provider run established.",
+    "Full claim is not tested for both result modes in each language; exact matrix above.",
+    "New4 captures light mode; C2 media/resume captures both appearances. No full-app/physical iPhone/VoiceOver/XXXL/narrow-window acceptance.",
+    "PL journey text is localized; fixture profile remains en, so canonical personal name and existing care text may be English. No broad PL care-write claim.",
+    "Loading/transient states and content outside the captured viewport are not visually certified.",
+    "Lost PUT acknowledgement, claim expiry/cleanup and real Storage concurrency are outside this fixture scope."
+  ],
+  "history": [
+    "Original first whole7 high review blocked only on missing aggregate visual receipt; code findings0. It remains unchanged.",
+    "Earlier helper/context/compile/test failures are retained in private raw artifacts; actual current new4 and final full checks passed without weakening original assertions."
+  ],
+  "next_step": "Root selective landing of exact source7 and curated reports, preserve original PBX/xcstrings user changes, commit/push; then fresh ordinary signed build7 and separate live integration.",
+  "private_evidence": {
+    "original_run": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01",
+    "continuation_run": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov26-identification-B2-whole7-continuation-01",
+    "retained_8_manifest": {
+      "path": "/private/tmp/narat-nov25-identification-B2-actual-prep/WHOLE7-01-RETAINED/manifest.json",
+      "sha256": "e8bdc51beb7b72dd835a35ff0de58f650ac455b74e2ff36fe55d925cc664a4c7"
+    },
+    "new4_seal": {
+      "path": "/private/tmp/narat-nov25-identification-B2-actual-prep/NEW4-03-SEALED/sealed-manifest.json",
+      "sha256": "d732592d9eead090552394c071e253b5d8e16612ec7358ccdfcb1e7a88e6e041"
+    },
+    "aggregate_visual": {
+      "path": "/private/tmp/narat-nov25-identification-B2-actual-prep/root-B2-whole7-visual-review.json",
+      "sha256": "66707d2f04c11d742d8d78d6bdb79a0fde3de86a953ab16bbbc05d8decfb8b5d"
+    }
+  }
+}

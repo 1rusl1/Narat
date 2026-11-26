@@ -1,0 +1,268 @@
+{
+  "status": "ROOT_EXACT_SOURCE7_TRANSFERRED_CHECKS_NOT_REEXECUTED",
+  "root_parent": "73da5d249045cbfeae7bcecd3ddbbbbca8bbb18f",
+  "export_manifest": "/private/tmp/narat-nov25-identification-B2-actual-prep/accepted-export/accepted-source7-manifest.json",
+  "export_manifest_sha256": "7c6c5f68661c65e6411c83cc7daf73239f56fe94f6151f9a7d199d90f58e26ba",
+  "checked_source_commit": "e978bc8a281b8633a2f1b688e582dfcb31b13c94",
+  "checked_fingerprint": "65b22702ad1d330c9ab5c091c8590333a61267f7e94b2f99e26086fcb9678386",
+  "candidate_base": "8744d096466b1399c62c210b8695624b34880f87",
+  "source7": [
+    {
+      "path": "ios/Plants/Features/Analysis/PreliminaryResultView.swift",
+      "sha256": "a9778cac8ada31551d30486f6d6d1cb40a96b39901cea3b412b730ef9bd2cd9d",
+      "base_sha256": "501f2771e6edcfd13a30a0505ef3a207a74bc07dd9a96b0fb175b1c62051f23e",
+      "mode": 420,
+      "git_mode": "100644"
+    },
+    {
+      "path": "ios/Plants/Features/Catalogue/CatalogueUIFixtures.swift",
+      "sha256": "e25bc6f0abfab58d044d697bd064b38c12dac922b367b9dee49b7b8bc46df175",
+      "base_sha256": "8b04e78900a78c38f6ab5406c7010a67c73e0af831af1d826b135d4d647bbc6b",
+      "mode": 420,
+      "git_mode": "100644"
+    },
+    {
+      "path": "ios/PlantsTests/CatalogueUIFixtureTests.swift",
+      "sha256": "8c4fbdcdd53bc22402dd615d9b6f1d39799e6451f8fe91c6516778dae5f0b74e",
+      "base_sha256": "0fda6fdec0659704e57585df0d973079f399793e2fcdb63c3cf975d04713b0e4",
+      "mode": 420,
+      "git_mode": "100644"
+    },
+    {
+      "path": "ios/Plants/App/PlantsApp.swift",
+      "sha256": "0d3d4ed465d07868e8b1beb54c7dab150c9cea3a47e716de6cabf2c5aef6b6ad",
+      "base_sha256": "4b6b3a37e9990a90fced4234c69b7ba629dad990cf71e79679e393aa0d08a116",
+      "mode": 420,
+      "git_mode": "100644"
+    },
+    {
+      "path": "ios/PlantsUITests/PlantsUITests.swift",
+      "sha256": "922fb339daa2709d3dfd6915b5fc16b570d721f717813b969969a0c55c262bcf",
+      "base_sha256": "6d1c7214370d7f964820766dd901a26fb4e269ce4f30d6784718dbd35a36df1b",
+      "mode": 420,
+      "git_mode": "100644"
+    },
+    {
+      "path": "ios/Plants/Features/Catalogue/GuestCatalogueView.swift",
+      "sha256": "70ebbb62c2acf5fb6b8205a6ce61946e8b627bc1e28b7406e3ccd96a6285c1d4",
+      "base_sha256": "e1cddd04400a9305a8f9c001dec30d5ccd8dd43411a4df6b8d5adb8d871e6ac7",
+      "mode": 420,
+      "git_mode": "100644"
+    },
+    {
+      "path": "ios/Plants/Features/Catalogue/CatalogueSaveView.swift",
+      "sha256": "5adaa2beb5fa19a4db1e14c8c9e99b597d6a901d1b5c5f37dc7812cdebcf621c",
+      "base_sha256": "7c050f8e34046eb7dd316ec7ce4d25175e2e5e6fdc3d3e6e42a448058f910dba",
+      "mode": 420,
+      "git_mode": "100644"
+    }
+  ],
+  "protected_clean_base_files": [
+    {
+      "path": "ios/PlantsTests/CollectionWireTests.swift",
+      "sha256": "058dc299f9e5feb163ac8b1d7ce82db16f96d7c9983e5a00d71adb7946159924"
+    },
+    {
+      "path": "ios/PlantsUITests/CatalogueSaveUITests.swift",
+      "sha256": "cd23ccd5b57578c53279f96acb1a357da02cf9cd4663bd15266fad031dbc03fa"
+    },
+    {
+      "path": "ios/Plants/Features/Analysis/AnalysisFlowModel.swift",
+      "sha256": "cf8d42eaa7b6736316917333263ead72b17848ccfed6fb513949a817c30be368"
+    },
+    {
+      "path": "ios/Plants/Data/Remote/APIModels.swift",
+      "sha256": "58187f46b8ccbdda9cc4265154ef80cc77e4c02aeb1fde56fff87892d55c63c6"
+    },
+    {
+      "path": "ios/Plants.xcodeproj/project.pbxproj",
+      "sha256": "a6f2c15e19f04359d52c8efcc7c3f927c96092526b5fce584305e4b1c2cef95d"
+    },
+    {
+      "path": "ios/Plants/Resources/InfoPlist.xcstrings",
+      "sha256": "7bfb150dd63980b8df3c63b479682f1671f681eaa079476f4327e19caff1fdc8"
+    },
+    {
+      "path": "ios/Plants/Resources/Localizable.xcstrings",
+      "sha256": "a45031ad6369edfb1d228f2371ea0f9b4e2411abf9e92c10056cb3f46a567815"
+    },
+    {
+      "path": "Package.resolved",
+      "sha256": "0bcc17b5a7a34de5b410d919f416fdf8153065c376e640c162ccf076ee903cc8"
+    },
+    {
+      "path": "ios/Plants.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+      "sha256": "0bcc17b5a7a34de5b410d919f416fdf8153065c376e640c162ccf076ee903cc8"
+    }
+  ],
+  "roles": [
+    {
+      "role": "reviewer",
+      "model": "gpt-6-astra",
+      "routing_level": "high",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 170.524,
+      "findings": 0,
+      "answer": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov26-identification-B2-whole7-continuation-01/nov26-identification-B2-whole7-continuation/call-1-reviewer/answer.json",
+        "sha256": "da410c826d31a0f4922bd8315e695d7573d70ee58c4a226c0963f60c10fb66f1"
+      },
+      "process": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov26-identification-B2-whole7-continuation-01/nov26-identification-B2-whole7-continuation/call-1-reviewer/process.json",
+        "sha256": "21ec41bd96a5d308dd48f64dcf623cbf3b61d531c1641fdfb61d537d2a9483d8"
+      }
+    },
+    {
+      "role": "qa",
+      "model": "gpt-6-astra",
+      "routing_level": "high",
+      "reasoning_effort": "high",
+      "elapsed_seconds": 207.901,
+      "findings": 0,
+      "answer": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov26-identification-B2-whole7-continuation-01/nov26-identification-B2-whole7-continuation/call-2-qa/answer.json",
+        "sha256": "a855caef6acc8e7c33b14d5a6f82b8aedd6fad9428b9f320e40cd0e2db386ab1"
+      },
+      "process": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov26-identification-B2-whole7-continuation-01/nov26-identification-B2-whole7-continuation/call-2-qa/process.json",
+        "sha256": "f955f8b51cf766889a92c7bc891644a796b0dd075ccbd349b500c25d8357e53f"
+      }
+    }
+  ],
+  "original_actual_checks": [
+    {
+      "name": "B2-whole-source",
+      "status": "PASS",
+      "actual_elapsed_seconds": 0.55,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-1-B2-whole-source/stdout.log",
+        "sha256": "f2db8bcc0d60951e43608996687042ce0b61c4ec8859764cb041176386f68044"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-1-B2-whole-source/stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "evidence_directory": null
+    },
+    {
+      "name": "00-swift-current",
+      "status": "PASS",
+      "actual_elapsed_seconds": 147.042,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-2-00-swift-current/stdout.log",
+        "sha256": "af4c89ea3321d3df7924c45b8470663d968d44c3deb03658c31f130853f6c799"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-2-00-swift-current/stderr.log",
+        "sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+      },
+      "evidence_directory": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/q-730ad0258986e3daec9b6bc2"
+    },
+    {
+      "name": "01-new4-current-validation",
+      "status": "PASS",
+      "actual_elapsed_seconds": 0.555,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-3-01-new4-current-validation/stdout.log",
+        "sha256": "d3d156a86d7500dd95740c86dd22ec81f4d2087bb010c78c9967afbc9ef22a87"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-3-01-new4-current-validation/stderr.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "evidence_directory": null
+    },
+    {
+      "name": "02-old4-account-regressions",
+      "status": "PASS",
+      "actual_elapsed_seconds": 161.88,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-4-02-old4-account-regressions/stdout.log",
+        "sha256": "72267cd10804a1108f4d0a00a9888821ce1001f7bf3c32b58611bcc7e8076286"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-4-02-old4-account-regressions/stderr.log",
+        "sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+      },
+      "evidence_directory": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/q-a1e2072710b8382bbae69b0a"
+    },
+    {
+      "name": "03-C2-light-regressions",
+      "status": "PASS",
+      "actual_elapsed_seconds": 778.75,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-5-03-C2-light-regressions/stdout.log",
+        "sha256": "8451914cfde989bddbbfaa0797adfdf65aa74266981c644041cf23ceea56a635"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-5-03-C2-light-regressions/stderr.log",
+        "sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+      },
+      "evidence_directory": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/q-24e0b939a18545512d4ac4f1"
+    },
+    {
+      "name": "04-C2-dark-regressions",
+      "status": "PASS",
+      "actual_elapsed_seconds": 253.005,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-6-04-C2-dark-regressions/stdout.log",
+        "sha256": "81d97facb015e48e4e7b6583c038a6019ca9bf60cf7b1a77a1ca8a9e6e8b1094"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-6-04-C2-dark-regressions/stderr.log",
+        "sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+      },
+      "evidence_directory": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/q-5cd57d94167e2a47204fa0d2"
+    },
+    {
+      "name": "automation-tests",
+      "status": "PASS",
+      "actual_elapsed_seconds": 47.902,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-7-automation-tests/stdout.log",
+        "sha256": "4e5eb15680f51e62db3e5ebac5a6561fb65194c94c29b193a341c46fc97d70e7"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-7-automation-tests/stderr.log",
+        "sha256": "53455f8e715f5382a96a7ec6fbd8ddeaf312a67969e7394e3ff7b9881f1dfbb8"
+      },
+      "evidence_directory": null
+    },
+    {
+      "name": "release-with-debug-isolation",
+      "status": "PASS",
+      "actual_elapsed_seconds": 80.379,
+      "raw_stdout": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-8-release-with-debug-isolation/stdout.log",
+        "sha256": "e640cea9f23c036a4285a4e0a5cf8b3d71a8727b7c799516603396d55b7f4476"
+      },
+      "raw_stderr": {
+        "path": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/orchestrator-nov25-identification-B2-whole7-01/nov25-identification-B2-whole7/check-8-release-with-debug-isolation/stderr.log",
+        "sha256": "25df20a62b217fea415d2bfa445f13eb0bf1937aa1c180899af2f8c50d5636fa"
+      },
+      "evidence_directory": "/private/tmp/narat-identification-b2-20261125/docs/validation/automation/runs/q-6940ebafc6a0438e7950924b"
+    }
+  ],
+  "visual124_receipt": {
+    "path": "/private/tmp/narat-nov25-identification-B2-actual-prep/root-B2-whole7-visual-review.json",
+    "sha256": "66707d2f04c11d742d8d78d6bdb79a0fde3de86a953ab16bbbc05d8decfb8b5d"
+  },
+  "curated_reports": [
+    {
+      "path": "/private/tmp/narat-nov25-identification-B2-actual-prep/accepted-export/curated/tester-photo-identification-2026-11-26.json",
+      "sha256": "0da9fd527a733756d432d8822b0c23db174fbf12281c91f0f7de4cece1b20da9"
+    },
+    {
+      "path": "/private/tmp/narat-nov25-identification-B2-actual-prep/accepted-export/curated/tester-photo-identification-2026-11-26.md",
+      "sha256": "68d4a49393bd2408fe9eadd45bb0d9bb46dd5b5754c93305f7e115bae90b8ccc"
+    },
+    {
+      "path": "/private/tmp/narat-nov25-identification-B2-actual-prep/accepted-export/curated/identification-photo-ui-api-2026-11-26.md",
+      "sha256": "8e69f6d3313bc4ead48d47bb69e620dfab06b14d8e5aab36de2edef8f99361d9"
+    }
+  ],
+  "root_user3": "Preserved separately by original-user-delta guard, excluded from stage.",
+  "private_WIP_history_transferred": false,
+  "native_tests_rerun_on_root": false,
+  "transfer_mode_check": "Initial transfer stopped before writes because private export copies are0600; corrected to verify checked Git mode100644 and write exact source0644. Export bytes unchanged."
+}
